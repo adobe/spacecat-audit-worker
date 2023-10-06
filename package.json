@@ -1,0 +1,49 @@
+{
+  "name": "@adobe/spacecat-audit-worker",
+  "version": "0.0.1",
+  "description": "SpaceCat Audit Worker",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "c8 mocha",
+    "lint": "eslint .",
+    "docs": "npx jsdoc2md -c .jsdoc.json --files 'src/*.js' > docs/API.md",
+    "semantic-release": "semantic-release",
+    "prepare": "husky install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adobe-rnd/spacecat-audit-worker"
+  },
+  "author": "",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/adobe-rnd/spacecat-audit-worker/issues"
+  },
+  "homepage": "https://github.com/adobe-rnd/spacecat-audit-worker#readme",
+  "mocha": {
+    "require": "test/setup-env.js",
+    "recursive": "true",
+    "reporter": "mocha-multi-reporters",
+    "reporter-options": "configFile=.mocha-multi.json"
+  },
+  "devDependencies": {
+    "@adobe/eslint-config-helix": "2.0.2",
+    "@semantic-release/changelog": "6.0.3",
+    "@semantic-release/git": "10.0.1",
+    "@semantic-release/npm": "10.0.4",
+    "c8": "8.0.1",
+    "eslint": "8.46.0",
+    "husky": "8.0.3",
+    "jsdoc-to-markdown": "8.0.0",
+    "junit-report-builder": "3.0.1",
+    "lint-staged": "13.2.3",
+    "mocha": "10.2.0",
+    "mocha-multi-reporters": "1.5.1",
+    "semantic-release": "21.0.7"
+  },
+  "lint-staged": {
+    "*.js": "eslint",
+    "*.cjs": "eslint"
+  }
+}
