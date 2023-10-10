@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Adobe. All rights reserved.
+ * Copyright 2019 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -9,12 +9,23 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import wrap from '@adobe/helix-shared-wrap';
+import { helixStatus } from '@adobe/helix-status';
+import { Response } from '@adobe/fetch';
+import secrets from '@adobe/helix-shared-secrets';
 
 /**
  * This is the main function
- * @param {string} name name of the person to greet
- * @returns {string} a greeting
+ * @param {Request} request the request object (see fetch api)
+ * @param {UniversalContext} context the context of the universal serverless function
+ * @returns {Response} a response
  */
-export function main(name = 'world') {
-  return `Hello, ${name}.`;
+function run(request, context) {
+  const name = new URL(request.url).searchParams.get('name') || process.env.SECRET;
+  context.log.info(`Saying hello to: ${name}.`);
+  return new Response(`Hello, ${name}.`);
 }
+
+export const main = wrap(run)
+  .with(helixStatus)
+  .with(secrets);
