@@ -45,5 +45,11 @@
   "lint-staged": {
     "*.js": "eslint",
     "*.cjs": "eslint"
+  },
+  "dependencies": {
+    "aws-sdk": "2.1472.0",
+    "@adobe/helix-shared-wrap": "2.0.0",
+    "@adobe/helix-status": "10.0.10",
+    "@adobe/helix-universal-logger": "3.0.11"
   }
 }
