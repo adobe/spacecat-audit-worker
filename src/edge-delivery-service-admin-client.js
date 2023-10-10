@@ -13,9 +13,11 @@ const BASE_URL = 'https://www.hlx.live/';
 /**
  * Retrieve the status of the admin endpoint.
  * @returns {Promise<string>} - The lastModification property.
- * @throws {Error} - Throws an error if there's a network issue or some other error while fetching data.
+ * @throws {Error} - Throws an error if there's a network issue
+ * or some other error while fetching data.
  */
 function EdgeDeliveryServiceAdminClient() {
+
   const getLastModification = async () => {
     try {
       const response = await fetch(`${BASE_URL}docs/status.json`);

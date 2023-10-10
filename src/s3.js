@@ -17,6 +17,7 @@ const s3 = new AWS.S3();
 function S3(config) {
   const { region, accessKeyId, secretAccessKey } = config;
   AWS.config.update({ region, accessKeyId, secretAccessKey });
+
   async function putObjectToS3(key, data) {
     const params = {
       Bucket: config.BUCKET_NAME,

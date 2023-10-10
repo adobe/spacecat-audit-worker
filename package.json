@@ -47,9 +47,11 @@
     "*.cjs": "eslint"
   },
   "dependencies": {
-    "aws-sdk": "2.1472.0",
+    "@adobe/fetch": "^4.1.0",
     "@adobe/helix-shared-wrap": "2.0.0",
     "@adobe/helix-status": "10.0.10",
-    "@adobe/helix-universal-logger": "3.0.11"
+    "@adobe/helix-universal-logger": "3.0.11",
+    "aws-sdk": "2.1472.0",
+    "axios": "^1.5.1"
   }
 }
