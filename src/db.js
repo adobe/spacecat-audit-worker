@@ -9,26 +9,30 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { DynamoDB } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { log } from './util.js';
+import {json} from 'mocha/lib/reporters/index.js';
 
-const TABLE_SITES = 'sites';
-const TABLE_AUDITS = 'audits';
+const TABLE_SITES = 'spacecat-site';
+const TABLE_AUDITS = 'spacecat-audit-index';
 
 function DB(config) {
-  const dynamoDb = new DynamoDB({ region: config.region });
+  const client = new DynamoDBClient({ region: config.region });
+  const docClient = DynamoDBDocumentClient.from(client);
 
   /**
-     * Save a record to the DynamoDB.
-     * @param {object} record - The new record to save.
-     */
+   * Save a record to the DynamoDB.
+   * @param {object} record - The new record to save.
+   * @param tableName - The name of the table to save the record to.
+   */
   async function saveRecord(record, tableName) {
     try {
-      const params = {
+      const command = new PutCommand({
         TableName: tableName,
         Item: record,
-      };
-      await dynamoDb.put(params);
+      });
+      await docClient.send(command);
     } catch (error) {
       log('error', 'Error saving record: ', error);
     }
@@ -41,17 +45,25 @@ function DB(config) {
      */
   async function saveAuditIndex(site, audit) {
     const now = new Date().toISOString();
+    const uuid = Date.now().toString();
+
     const newAudit = {
+      id: uuid,
       siteId: site.id,
       auditDate: now,
-      error: '',
       isLive: site.isLive,
       scores: {
         mobile: {
-          performance: audit.lighthouseResults.categories.performance.score,
-          seo: audit.lighthouseResults.categories.seo.score,
-          'best-practices': audit.lighthouseResults.categories['best-practices'].score,
-          accessibility: audit.lighthouseResults.categories.accesibility.score,
+          performance: audit.result.mobile.categories.performance.score,
+          seo: audit.result.mobile.categories.seo.score,
+          'best-practices': audit.result.mobile.categories['best-practices'].score,
+          accessibility: audit.result.mobile.categories.accessibility.score,
+        },
+        desktop: {
+          performance: audit.result.desktop.categories.performance.score,
+          seo: audit.result.desktop.categories.seo.score,
+          'best-practices': audit.result.desktop.categories['best-practices'].score,
+          accessibility: audit.result.desktop.categories.accessibility.score,
         },
       },
     };
