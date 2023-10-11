@@ -9,8 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-const axios = require('axios');
-const { log } = require('./util.js');
+import axios from 'axios';
+import { log } from './util.js';
 
 const SECONDS_IN_A_DAY = 86400; // Number of seconds in a day
 
@@ -120,4 +120,4 @@ function GithubClient(config) {
   };
 }
 
-module.exports = GithubClient;
+export default GithubClient;

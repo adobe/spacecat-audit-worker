@@ -28,6 +28,6 @@ const log = (level, message, ...args) => {
   }
 };
 
-module.exports = {
+export {
   log,
 };

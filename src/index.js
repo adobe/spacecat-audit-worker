@@ -13,9 +13,8 @@ import secrets from '@adobe/helix-shared-secrets';
 import wrap from '@adobe/helix-shared-wrap';
 import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
-
-const DB = require('./db');
-const PSIClient = require('./psi-client');
+import DB from './db.js'; // Assuming the exported content of './db' is default exported
+import PSIClient from './psi-client.js'; // Assuming the exported content of './psi-client' is default exported
 
 /**
  * This is the main function
@@ -24,11 +23,17 @@ const PSIClient = require('./psi-client');
  * @returns {Response} a response
  */
 async function run(request, context) {
-  const db = DB({ region: process.env.REGION, accessKeyId: process.env.ACCESS_KEY_ID, secretAccessKey: process.env.SECRET_ACCESS_KEY });
+  const db = DB({
+    region: process.env.REGION,
+    accessKeyId: process.env.ACCESS_KEY_ID,
+    secretAccessKey: process.env.SECRET_ACCESS_KEY,
+  });
+
   const psiClient = PSIClient({
     apiKey: process.env.PAGESPEED_API_KEY,
     baseUrl: process.env.PAGESPEED_API_BASE_URL,
   });
+
   const auditResult = await psiClient.runAudit('https://www.bamboohr.com/');
   await db.saveAuditIndex(auditResult);
 }

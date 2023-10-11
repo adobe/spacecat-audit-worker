@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 const BASE_URL = 'https://www.hlx.live/';
+
 /**
  * Retrieve the status of the admin endpoint.
  * @returns {Promise<string>} - The lastModification property.
@@ -17,7 +18,6 @@ const BASE_URL = 'https://www.hlx.live/';
  * or some other error while fetching data.
  */
 function EdgeDeliveryServiceAdminClient() {
-
   const getLastModification = async () => {
     try {
       const response = await fetch(`${BASE_URL}docs/status.json`);
@@ -34,6 +34,11 @@ function EdgeDeliveryServiceAdminClient() {
       throw error;
     }
   };
+
+  // Return the function from within the EdgeDeliveryServiceAdminClient
+  return {
+    getLastModification,
+  };
 }
 
-module.exports = EdgeDeliveryServiceAdminClient;
+export default EdgeDeliveryServiceAdminClient;

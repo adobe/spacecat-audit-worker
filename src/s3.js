@@ -9,8 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-const AWS = require('aws-sdk');
-const { log } = require('util');
+import AWS from 'aws-sdk';
+import { log } from 'util';
 
 const s3 = new AWS.S3();
 
@@ -35,4 +35,4 @@ function S3(config) {
   }
 }
 
-module.exports = { S3 };
+export { S3 };

@@ -9,8 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-const AWS = require('aws-sdk');
-const { log } = require('./util.js');
+import AWS from 'aws-sdk';
+import { log } from './util.js';
 
 const TABLE_SITES = 'sites';
 const TABLE_AUDITS = 'audits';
@@ -117,4 +117,5 @@ function DB(config) {
     saveAuditError,
   };
 }
-module.exports = DB;
+
+export default DB;

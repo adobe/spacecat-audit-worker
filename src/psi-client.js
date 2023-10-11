@@ -9,8 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-const axios = require('axios');
-const { log } = require('./util.js');
+import axios from 'axios';
+import { log } from './util.js';
 
 function PSIClient(config) {
   const AUDIT_TYPE = 'PSI';
@@ -182,4 +182,4 @@ function PSIClient(config) {
   };
 }
 
-module.exports = PSIClient;
+export default PSIClient;
