@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import secrets from '@adobe/helix-shared-secrets';
 import wrap from '@adobe/helix-shared-wrap';
 import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
@@ -21,7 +22,7 @@ import { Response } from '@adobe/fetch';
  * @returns {Response} a response
  */
 function run(request, context) {
-  const name = new URL(request.url).searchParams.get('name') || 'world';
+  const name = new URL(request.url).searchParams.get('name') || process.env.SECRET;
   context.log.info(`Saying hello to: ${name}.`);
   return new Response(`Hello, ${name}.`);
 }
@@ -29,4 +30,5 @@ function run(request, context) {
 export const main = wrap(run)
   .with(helixStatus)
   .with(logger.trace)
-  .with(logger);
+  .with(logger)
+  .with(secrets);
