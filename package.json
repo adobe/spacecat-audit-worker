@@ -12,7 +12,7 @@
     "semantic-release": "semantic-release",
     "semantic-release-dry": "semantic-release --dry-run --no-ci --branches $CIRCLE_BRANCH",
     "build": "hedy -v --test-bundle",
-    "deploy": "hedy -v --deploy --test",
+    "deploy": "hedy -v --deploy --test --aws-region=us-east-1",
     "deploy-routes": "hedy --no-build -no-hints -l major",
     "deploy-ci": "hedy -v --deploy --test --pkgVersion=ci$CIRCLE_BUILD_NUM -l ci --cleanup-ci=24h",
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",

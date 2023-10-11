@@ -13,7 +13,9 @@ import secrets from '@adobe/helix-shared-secrets';
 import wrap from '@adobe/helix-shared-wrap';
 import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
-import { Response } from '@adobe/fetch';
+
+const DB = require('./db');
+const PSIClient = require('./psi-client');
 
 /**
  * This is the main function
@@ -21,10 +23,14 @@ import { Response } from '@adobe/fetch';
  * @param {UniversalContext} context the context of the universal serverless function
  * @returns {Response} a response
  */
-function run(request, context) {
-  const name = new URL(request.url).searchParams.get('name') || process.env.SECRET;
-  context.log.info(`Saying hello to: ${name}.`);
-  return new Response(`Hello, ${name}.`);
+async function run(request, context) {
+  const db = DB({ region: process.env.REGION, accessKeyId: process.env.ACCESS_KEY_ID, secretAccessKey: process.env.SECRET_ACCESS_KEY });
+  const psiClient = PSIClient({
+    apiKey: process.env.PAGESPEED_API_KEY,
+    baseUrl: process.env.PAGESPEED_API_BASE_URL,
+  });
+  const auditResult = await psiClient.runAudit('https://www.bamboohr.com/');
+  await db.saveAuditIndex(auditResult);
 }
 
 export const main = wrap(run)
