@@ -35,7 +35,16 @@ async function run(request, context) {
   });
 
   const auditResult = await psiClient.runAudit('https://www.bamboohr.com/');
-  await db.saveAuditIndex(auditResult);
+  const site = {
+    id: 'bamboohr.com',
+    organization_id: 'bamboohr',
+    domain: 'bamboohr.com',
+    path: '/',
+    type: 'edge-delivery',
+  };
+  await db.saveSite(site);
+  await db.saveAuditIndex(site, auditResult);
+  return new Response('EXPERIENCE SUCCESS!!!');
 }
 
 export const main = wrap(run)

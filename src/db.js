@@ -9,31 +9,28 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import AWS from 'aws-sdk';
+import { DynamoDB } from "@aws-sdk/client-dynamodb";
 import { log } from './util.js';
 
 const TABLE_SITES = 'sites';
 const TABLE_AUDITS = 'audits';
 
 function DB(config) {
-  const { region, accessKeyId, secretAccessKey } = config;
-
-  AWS.config.update({ region, accessKeyId, secretAccessKey });
-  const dynamoDb = new AWS.DynamoDB.DocumentClient();
+  const dynamoDb = new DynamoDB({ region: config.region });
 
   /**
-     * Save an audit record to the DynamoDB.
-     * @param {object} newAudit - The new audit record to save.
+     * Save a record to the DynamoDB.
+     * @param {object} record - The new record to save.
      */
-  async function saveAuditIndexRecord(newAudit) {
+  async function saveRecord(record, tableName) {
     try {
       const params = {
-        TableName: TABLE_AUDITS,
-        Item: newAudit,
+        TableName: tableName,
+        Item: record,
       };
-      await dynamoDb.put(params).promise();
+      await dynamoDb.put(params);
     } catch (error) {
-      log('error', 'Error saving audit: ', error);
+      log('error', 'Error saving record: ', error);
     }
   }
   /**
@@ -58,8 +55,14 @@ function DB(config) {
         },
       },
     };
-    await saveAuditIndexRecord(newAudit);
+    await saveRecord(newAudit, TABLE_AUDITS);
     log('info', `Audit for domain ${site.domain} saved successfully at ${now}`);
+  }
+
+  async function saveSite(site) {
+    const now = new Date().toISOString();
+    await saveRecord(site, TABLE_SITES);
+    log('info', `Site for domain ${site.domain} saved successfully at ${now}`);
   }
   /**
      * Save an error that occurred during a Lighthouse audit to the DynamoDB.
@@ -75,7 +78,7 @@ function DB(config) {
       error: error.message,
       scores: {},
     };
-    await saveAuditIndexRecord(newAudit);
+    await saveRecord(newAudit, TABLE_AUDITS);
   }
   /**
      * Fetches a site by its ID and gets its latest audit.
@@ -90,7 +93,7 @@ function DB(config) {
           id: siteId,
         },
       };
-      const siteResult = await dynamoDb.get(siteParams).promise();
+      const siteResult = await dynamoDb.get(siteParams);
       if (!siteResult.Item) return null;
       const auditParams = {
         TableName: TABLE_AUDITS,
@@ -101,7 +104,7 @@ function DB(config) {
         Limit: 1,
         ScanIndexForward: false, // get the latest audit
       };
-      const auditResult = await dynamoDb.query(auditParams).promise();
+      const auditResult = await dynamoDb.query(auditParams);
       // eslint-disable-next-line prefer-destructuring
       siteResult.Item.latestAudit = auditResult.Items[0];
 
@@ -115,6 +118,7 @@ function DB(config) {
     findSiteById,
     saveAuditIndex,
     saveAuditError,
+    saveSite,
   };
 }
 

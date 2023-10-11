@@ -9,15 +9,11 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import AWS from 'aws-sdk';
+import { S3 } from "@aws-sdk/client-s3";
 import { log } from 'util';
 
-const s3 = new AWS.S3();
-
-function S3(config) {
-  const { region, accessKeyId, secretAccessKey } = config;
-  AWS.config.update({ region, accessKeyId, secretAccessKey });
-
+function storage(config) {
+  const s3 = new S3({ region: config.region });
   async function putObjectToS3(key, data) {
     const params = {
       Bucket: config.BUCKET_NAME,
@@ -27,12 +23,12 @@ function S3(config) {
     };
 
     try {
-      await s3.putObject(params).promise();
       log('info', `Data saved to S3 with key: ${key}`);
+      await s3.putObject(params);
     } catch (error) {
       log('error', 'Error saving data to S3: ', error);
     }
   }
 }
 
-export { S3 };
+export { storage };
