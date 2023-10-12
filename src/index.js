@@ -33,14 +33,12 @@ async function run(request, context) {
     baseUrl: process.env.PAGESPEED_API_BASE_URL,
   });
 
-  const uuid = Date.now().toString();
   const site = {
-    id: uuid,
+    id: message.siteId,
     githubURL: message.githubURL,
     domain: message.domain,
     path: message.path,
     isLive: message.isLive,
-    updatedAt: uuid,
   };
   const auditResult = await psiClient.runAudit(`https://${site.domain}/${site.path}`);
   await db.saveAuditIndex(site, auditResult);
