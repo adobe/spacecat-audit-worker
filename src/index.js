@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import secrets from '@adobe/helix-shared-secrets';
+import SQSQueue from './sqs-queue.js';
 import wrap from '@adobe/helix-shared-wrap';
 import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
@@ -26,6 +27,7 @@ async function run(request, context) {
   const db = DB({
     region: process.env.REGION,
   });
+  const sqsQueue = SQSQueue();
   const message = JSON.parse(context.invocation.event.Records[0].body);
 
   const psiClient = PSIClient({
@@ -41,7 +43,8 @@ async function run(request, context) {
     isLive: message.isLive,
   };
   const auditResult = await psiClient.runAudit(`https://${site.domain}/${site.path}`);
-  await db.saveAuditIndex(site, auditResult);
+  const auditResultMin = await db.saveAuditIndex(site, auditResult);
+  await sqsQueue.sendMessage(auditResultMin);
   return new Response('SUCCESS');
 }
 

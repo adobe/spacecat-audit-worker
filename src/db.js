@@ -12,7 +12,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { log } from './util.js';
-import {json} from 'mocha/lib/reporters/index.js';
 
 const TABLE_SITES = 'spacecat-site';
 const TABLE_AUDITS = 'spacecat-audit-index';
@@ -67,15 +66,11 @@ function DB(config) {
         },
       },
     };
-    await saveRecord(newAudit, TABLE_AUDITS);
     log('info', `Audit for domain ${site.domain} saved successfully at ${now}`);
+    await saveRecord(newAudit, TABLE_AUDITS);
+    return newAudit;
   }
 
-  async function saveSite(site) {
-    const now = new Date().toISOString();
-    await saveRecord(site, TABLE_SITES);
-    log('info', `Site for domain ${site.domain} saved successfully at ${now}`);
-  }
   /**
      * Save an error that occurred during a Lighthouse audit to the DynamoDB.
      * @param {object} site - site audited.
@@ -130,7 +125,6 @@ function DB(config) {
     findSiteById,
     saveAuditIndex,
     saveAuditError,
-    saveSite,
   };
 }
 
