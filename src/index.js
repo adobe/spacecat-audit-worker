@@ -42,7 +42,6 @@ async function run(request, context) {
     isLive: message.isLive,
     updatedAt: uuid,
   };
-  await db.saveSite(site);
   const auditResult = await psiClient.runAudit(`https://${site.domain}/${site.path}`);
   await db.saveAuditIndex(site, auditResult);
   return new Response('SUCCESS');
