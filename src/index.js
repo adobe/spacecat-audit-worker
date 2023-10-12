@@ -25,25 +25,25 @@ import PSIClient from './psi-client.js'; // Assuming the exported content of './
 async function run(request, context) {
   const db = DB({
     region: process.env.REGION,
-    accessKeyId: process.env.ACCESS_KEY_ID,
-    secretAccessKey: process.env.SECRET_ACCESS_KEY,
   });
+  const message = JSON.parse(context.invocation.event.Records[0].body);
 
   const psiClient = PSIClient({
     apiKey: process.env.PAGESPEED_API_KEY,
     baseUrl: process.env.PAGESPEED_API_BASE_URL,
   });
 
-  const auditResult = await psiClient.runAudit('https://www.bamboohr.com/');
   const uuid = Date.now().toString();
   const site = {
     id: uuid,
-    githubURL: 'bamboohr',
-    domain: 'bamboohr.com',
-    isLive: '/',
-    updatedAt: 'edge-delivery',
+    githubURL: message.githubURL,
+    domain: message.domain,
+    path: message.path,
+    isLive: message.isLive,
+    updatedAt: uuid,
   };
   await db.saveSite(site);
+  const auditResult = await psiClient.runAudit(`https://${site.domain}/${site.path}`);
   await db.saveAuditIndex(site, auditResult);
   return new Response('SUCCESS');
 }

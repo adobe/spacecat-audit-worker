@@ -61,7 +61,8 @@
     "@aws-sdk/client-dynamodb": "^3.427.0",
     "@aws-sdk/client-s3": "^3.427.0",
     "@aws-sdk/lib-dynamodb": "^3.427.0",
-    "axios": "^1.5.1"
+    "axios": "1.5.1",
+    "esm": "3.2.25"
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "2.0.3",
