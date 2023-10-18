@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetItemCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { log } from './util.js';
 
 const TABLE_SITES = 'spacecat-site';
@@ -49,22 +49,33 @@ function DB(config) {
     const newAudit = {
       id: uuid,
       siteId: site.id,
-      auditDate: now,
-      isLive: site.isLive,
-      scores: {
-        mobile: {
-          performance: audit.result.mobile.categories.performance.score,
-          seo: audit.result.mobile.categories.seo.score,
-          'best-practices': audit.result.mobile.categories['best-practices'].score,
-          accessibility: audit.result.mobile.categories.accessibility.score,
+      audit_date: now,
+      type: 'psi',
+      is_live: site.isLive,
+      content_publication_date: '',
+      git_hashes: [],
+      tag_manager: '',
+      error: '',
+      auditResults: [
+        {
+          strategy: 'mobile',
+          scores: {
+            performance: audit.result.mobile.categories.performance.score,
+            seo: audit.result.mobile.categories.seo.score,
+            'best-practices': audit.result.mobile.categories['best-practices'].score,
+            accessibility: audit.result.mobile.categories.accessibility.score,
+          },
         },
-        desktop: {
-          performance: audit.result.desktop.categories.performance.score,
-          seo: audit.result.desktop.categories.seo.score,
-          'best-practices': audit.result.desktop.categories['best-practices'].score,
-          accessibility: audit.result.desktop.categories.accessibility.score,
+        {
+          strategy: 'desktop',
+          scores: {
+            performance: audit.result.desktop.categories.performance.score,
+            seo: audit.result.desktop.categories.seo.score,
+            'best-practices': audit.result.desktop.categories['best-practices'].score,
+            accessibility: audit.result.desktop.categories.accessibility.score,
+          },
         },
-      },
+      ],
     };
     log('info', `Audit for domain ${site.domain} saved successfully at ${now}`);
     await saveRecord(newAudit, TABLE_AUDITS);
@@ -92,37 +103,33 @@ function DB(config) {
      * @param {string} siteId - The ID of the site to fetch.
      * @returns {Promise<object>} Site document with its latest audit.
      */
-  async function findSiteById(siteId) {
-    try {
-      const siteParams = {
-        TableName: TABLE_SITES,
-        Key: {
-          id: siteId,
-        },
-      };
-      const siteResult = await dynamoDb.get(siteParams);
-      if (!siteResult.Item) return null;
-      const auditParams = {
-        TableName: TABLE_AUDITS,
-        KeyConditionExpression: 'siteId = :siteId',
-        ExpressionAttributeValues: {
-          ':siteId': siteId,
-        },
-        Limit: 1,
-        ScanIndexForward: false, // get the latest audit
-      };
-      const auditResult = await dynamoDb.query(auditParams);
-      // eslint-disable-next-line prefer-destructuring
-      siteResult.Item.latestAudit = auditResult.Items[0];
+  async function getSite(domain, path) {
+    const params = {
+      TableName: TABLE_SITES, // Replace with your table name
+      Key: {
+        Domain: { S: domain }, // Partition key
+        Path: { S: path }, // Sort key
+      },
+    };
 
-      return siteResult.Item;
+    try {
+      const command = new GetItemCommand(params);
+      const response = await client.send(command);
+      const item = response.Item;
+      if (item) {
+        log('info', `Item retrieved successfully: ${item}`);
+        return item;
+      } else {
+        log('info', 'Item not found.');
+        return null;
+      }
     } catch (error) {
-      console.error('Error getting site by site id:', error.message);
-      return Error(error.message);
+      log('error', `Error ${error}`);
+      throw error;
     }
   }
   return {
-    findSiteById,
+    getSite,
     saveAuditIndex,
     saveAuditError,
   };
