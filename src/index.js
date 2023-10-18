@@ -10,10 +10,10 @@
  * governing permissions and limitations under the License.
  */
 import secrets from '@adobe/helix-shared-secrets';
-import SQSQueue from './sqs-queue.js';
 import wrap from '@adobe/helix-shared-wrap';
 import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
+import SQSQueue from './sqs-queue.js';
 import DB from './db.js'; // Assuming the exported content of './db' is default exported
 import PSIClient from './psi-client.js'; // Assuming the exported content of './psi-client' is default exported
 
@@ -28,7 +28,7 @@ async function run(request, context) {
     region: process.env.REGION,
   });
   const sqsQueue = SQSQueue();
-  const message = JSON.parse(context.invocation.event.Records[0].body);
+  const { message } = JSON.parse(context.invocation.event.Records[0].body);
 
   const psiClient = PSIClient({
     apiKey: process.env.PAGESPEED_API_KEY,
