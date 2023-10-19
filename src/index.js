@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Adobe. All rights reserved.
+ * Copyright 2023 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -13,9 +13,9 @@ import secrets from '@adobe/helix-shared-secrets';
 import wrap from '@adobe/helix-shared-wrap';
 import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
-import SQSQueue from './sqs-queue.js';
-import DB from './db.js'; // Assuming the exported content of './db' is default exported
-import PSIClient from './psi-client.js'; // Assuming the exported content of './psi-client' is default exported
+import DB from './db.js';
+import PSIClient from './psi-client.js';
+import { SQSWrapper } from './sqs-wrapper.js';
 
 /**
  * This is the main function
@@ -27,7 +27,6 @@ async function run(request, context) {
   const db = DB({
     region: process.env.REGION,
   });
-  const sqsQueue = SQSQueue();
   const { message } = JSON.parse(context.invocation.event.Records[0].body);
 
   const psiClient = PSIClient({
@@ -44,11 +43,12 @@ async function run(request, context) {
   };
   const auditResult = await psiClient.runAudit(`https://${site.domain}/${site.path}`);
   const auditResultMin = await db.saveAuditIndex(site, auditResult);
-  await sqsQueue.sendMessage(auditResultMin);
+  await context.sqsQueue.sendMessage(auditResultMin);
   return new Response('SUCCESS');
 }
 
 export const main = wrap(run)
+  .with(SQSWrapper)
   .with(helixStatus)
   .with(logger.trace)
   .with(logger)

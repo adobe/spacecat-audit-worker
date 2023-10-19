@@ -9,47 +9,41 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { SendMessageCommand } from '@aws-sdk/client-sqs';
+import { log } from './util.js';
 
 // Set up the region
 const REGION = 'us-east-1'; // change this to your desired region
 
-// Create SQS service client object
-const sqsClient = new SQSClient({ region: REGION });
-
 // Your SQS queue URL
 const queueURL = 'https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-audit-results';
 
-function SQSQueue() {
+function SQSQueue(sqsClient, queueUrl) {
   async function sendMessage(message) {
     const body = {
       message,
       timestamp: new Date().toISOString(),
     };
 
-    // Set up the parameters for the send message command
     const params = {
       DelaySeconds: 10,
       MessageBody: JSON.stringify(body),
-      QueueUrl: queueURL,
+      QueueUrl: queueUrl,
     };
 
     try {
       const data = await sqsClient.send(new SendMessageCommand(params));
-      console.log('Success, message sent. MessageID:', data.MessageId);
+      log('info', 'Success, message sent. MessageID:', data.MessageId);
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ message: 'SQS message sent!' }),
+      };
     } catch (err) {
-      console.log('Error:', err);
+      log('error', 'Error:', err);
       throw err;
     }
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ message: 'SQS message sent!' }),
-    };
   }
-  return {
-    sendMessage,
-  };
+  return { sendMessage };
 }
 
 export default SQSQueue;
