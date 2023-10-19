@@ -16,33 +16,36 @@ import { log } from './util.js';
 const TABLE_SITES = 'spacecat-site';
 const TABLE_AUDITS = 'spacecat-audit-index';
 
-function DB(context) {
-  const client = new DynamoDBClient({ region: context.region });
-  const docClient = DynamoDBDocumentClient.from(client);
+class DB {
+  constructor(context) {
+    this.client = new DynamoDBClient({ region: context.region });
+    this.docClient = DynamoDBDocumentClient.from(client);
+  }
 
   /**
    * Save a record to the DynamoDB.
    * @param {object} record - The new record to save.
    * @param tableName - The name of the table to save the record to.
    */
-  async function saveRecord(record, tableName) {
+  async saveRecord(record, tableName) {
     try {
       const command = new PutCommand({
         TableName: tableName,
         Item: record,
       });
-      await docClient.send(command);
+      await this.docClient.send(command);
     } catch (error) {
       log('error', 'Error saving record: ', error);
     }
   }
+
   /**
      * Saves an audit to the DynamoDB.
      * @param {object} site - Site object containing details of the audited site.
      * @param {object} audit - Audit object containing the type and result of the audit.
      * @returns {Promise<void>} Resolves once audit is saved.
      */
-  async function saveAuditIndex(site, audit) {
+  async saveAuditIndex(site, audit) {
     const now = new Date().toISOString();
     const uuid = Date.now().toString();
 
@@ -78,8 +81,8 @@ function DB(context) {
       ],
     };
     log('info', `Audit for domain ${site.domain} saved successfully at ${now}`);
-    await saveRecord(newAudit, TABLE_AUDITS);
-    return newAudit;
+    await this.saveRecord(newAudit, TABLE_AUDITS);
+    return Promise.resolve(newAudit);
   }
 
   /**
@@ -87,7 +90,7 @@ function DB(context) {
      * @param {object} site - site audited.
      * @param {Error} error - The error that occurred during the audit.
      */
-  async function saveAuditError(site, error) {
+  async saveAuditError(site, error) {
     const now = new Date().toISOString();
     const newAudit = {
       siteId: site.id,
@@ -96,15 +99,16 @@ function DB(context) {
       error: error.message,
       scores: {},
     };
-    await saveRecord(newAudit, TABLE_AUDITS);
+    await this.saveRecord(newAudit, TABLE_AUDITS);
   }
+
   /**
      * Fetches a site by its ID and gets its latest audit.
      * @param {string} domain - The domain of the site to fetch.
      * @param {string} path - The path of the site to fetch.
      * @returns {Promise<object>} Site document with its latest audit.
      */
-  async function getSite(domain, path) {
+  async getSite(domain, path) {
     const commandParams = {
       TableName: TABLE_SITES, // Replace with your table name
       Key: {
@@ -115,7 +119,7 @@ function DB(context) {
 
     try {
       const command = new GetItemCommand(commandParams);
-      const response = await client.send(command);
+      const response = await this.client.send(command);
       const item = response.Item;
       if (item) {
         log('info', `Item retrieved successfully: ${item}`);
@@ -129,13 +133,8 @@ function DB(context) {
       throw error;
     }
   }
-  return {
-    getSite,
-    saveAuditIndex,
-    saveAuditError,
-  };
 }
 
-const createDynamoDBService = (context) => DB(context);
-
-export default { createDynamoDBService };
+export default function createDynamoDBService(context) {
+  return new DB(context);
+}

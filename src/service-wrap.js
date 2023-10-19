@@ -9,13 +9,13 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-const serviceWrap = (
+export default function serviceWrap(
   lambdaFn,
   lambdaRequest,
   lambdaContext,
   paramName,
   factoryFn,
-) => {
+) {
   if (!lambdaContext[paramName]) {
     // pass params by reference and not value so later modifications
     // of the params are accessible to the wrap
@@ -23,6 +23,4 @@ const serviceWrap = (
     lambdaContext[paramName] = factoryFn(lambdaContext);
   }
   return lambdaFn(lambdaContext);
-};
-
-module.exports = serviceWrap;
+}

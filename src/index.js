@@ -14,7 +14,7 @@ import wrap from '@adobe/helix-shared-wrap';
 import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
 import SQSQueue from './sqs-queue.js';
-import { dynamoDBWrapper } from './db-wrapper.js'; // Assuming the exported content of './db' is default exported
+import dynamoDBWrapper from './db-wrapper.js'; // Assuming the exported content of './db' is default exported
 import PSIClient from './psi-client.js'; // Assuming the exported content of './psi-client' is default exported
 
 /**

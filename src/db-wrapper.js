@@ -12,7 +12,7 @@
 import createDynamoDBService from './db.js';
 import serviceWrap from './service-wrap.js';
 
-function wrapper(func) {
+export default function dynamoDBWrapper(func) {
   const region = process.env.AWS_REGION;
   if (!region) {
     throw Error('Please define region in secrets');
@@ -25,5 +25,3 @@ function wrapper(func) {
     createDynamoDBService,
   );
 }
-const dynamoDBWrapper = wrapper;
-export { dynamoDBWrapper };
