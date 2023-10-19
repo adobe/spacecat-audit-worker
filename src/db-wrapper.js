@@ -26,4 +26,4 @@ function wrapper(func) {
   );
 }
 const dynamoDBWrapper = wrapper;
-export default { dynamoDBWrapper };
+export { dynamoDBWrapper };
