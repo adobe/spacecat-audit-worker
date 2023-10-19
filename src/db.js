@@ -16,8 +16,8 @@ import { log } from './util.js';
 const TABLE_SITES = 'spacecat-site';
 const TABLE_AUDITS = 'spacecat-audit-index';
 
-function DB(config) {
-  const client = new DynamoDBClient({ region: config.region });
+function DB(params) {
+  const client = new DynamoDBClient({ region: params.region });
   const docClient = DynamoDBDocumentClient.from(client);
 
   /**
@@ -48,10 +48,10 @@ function DB(config) {
 
     const newAudit = {
       id: uuid,
-      siteId: site.id,
+      siteId: `${site.domain}/${site.path}`,
       audit_date: now,
       type: 'psi',
-      is_live: site.isLive,
+      is_live: false,
       content_publication_date: '',
       git_hashes: [],
       tag_manager: '',
@@ -100,11 +100,12 @@ function DB(config) {
   }
   /**
      * Fetches a site by its ID and gets its latest audit.
-     * @param {string} siteId - The ID of the site to fetch.
+     * @param {string} domain - The domain of the site to fetch.
+     * @param {string} path - The path of the site to fetch.
      * @returns {Promise<object>} Site document with its latest audit.
      */
   async function getSite(domain, path) {
-    const params = {
+    const commandParams = {
       TableName: TABLE_SITES, // Replace with your table name
       Key: {
         Domain: { S: domain }, // Partition key
@@ -113,7 +114,7 @@ function DB(config) {
     };
 
     try {
-      const command = new GetItemCommand(params);
+      const command = new GetItemCommand(commandParams);
       const response = await client.send(command);
       const item = response.Item;
       if (item) {
@@ -135,4 +136,8 @@ function DB(config) {
   };
 }
 
-export default DB;
+const createDynamoDBService = (params) => Object.freeze({
+  getInstance: () => DB(params),
+});
+
+export default { createDynamoDBService };

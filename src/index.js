@@ -14,7 +14,7 @@ import wrap from '@adobe/helix-shared-wrap';
 import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
 import SQSQueue from './sqs-queue.js';
-import DB from './db.js'; // Assuming the exported content of './db' is default exported
+import { dynamoDBWrapper } from './db-wrapper.js'; // Assuming the exported content of './db' is default exported
 import PSIClient from './psi-client.js'; // Assuming the exported content of './psi-client' is default exported
 
 /**
@@ -24,9 +24,9 @@ import PSIClient from './psi-client.js'; // Assuming the exported content of './
  * @returns {Response} a response
  */
 async function run(request, context) {
-  const db = DB({
-    region: process.env.REGION,
-  });
+  const {
+    __ow_dynamodb: db,
+  } = context;
   const sqsQueue = SQSQueue();
   const { message } = JSON.parse(context.invocation.event.Records[0].body);
 
@@ -36,11 +36,8 @@ async function run(request, context) {
   });
 
   const site = {
-    id: message.siteId,
-    githubURL: message.githubURL,
     domain: message.domain,
     path: message.path,
-    isLive: message.isLive,
   };
   const auditResult = await psiClient.runAudit(`https://${site.domain}/${site.path}`);
   const auditResultMin = await db.saveAuditIndex(site, auditResult);
@@ -50,6 +47,7 @@ async function run(request, context) {
 
 export const main = wrap(run)
   .with(helixStatus)
+  .with(dynamoDBWrapper)
   .with(logger.trace)
   .with(logger)
   .with(secrets);
