@@ -51,5 +51,5 @@ export const main = wrap(run)
   .with(helixStatus)
   .with(logger.trace)
   .with(logger)
-  .with(secrets)
-  .with(queueWrapper);
+  .with(queueWrapper)
+  .with(secrets);
