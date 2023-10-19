@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import secrets from '@adobe/helix-shared-secrets';
+import { log } from './util.js';
 import wrap from '@adobe/helix-shared-wrap';
 import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
@@ -28,7 +29,7 @@ async function run(request, context) {
     __ow_dynamodb: db,
   } = context;
   const sqsQueue = SQSQueue();
-  const { message } = JSON.parse(context.invocation.event.Records[0].body);
+  const message = JSON.parse(context.invocation.event.Records[0].body);
 
   const psiClient = PSIClient({
     apiKey: process.env.PAGESPEED_API_KEY,
