@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 export default function serviceWrap(
-  lambdaFn,
   lambdaRequest,
   lambdaContext,
   paramName,
@@ -22,5 +21,4 @@ export default function serviceWrap(
     // eslint-disable-next-line no-param-reassign
     lambdaContext[paramName] = factoryFn(lambdaContext);
   }
-  return lambdaFn(lambdaContext);
 }

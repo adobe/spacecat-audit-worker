@@ -13,15 +13,21 @@ import createDynamoDBService from './db.js';
 import serviceWrap from './service-wrap.js';
 
 export default function dynamoDBWrapper(func) {
-  const region = process.env.AWS_REGION;
-  if (!region) {
-    throw Error('Please define region in secrets');
-  }
-  return (request, context) => serviceWrap(
-    func,
-    request,
-    { ...context, region },
-    '__ow_dynamodb',
-    createDynamoDBService,
-  );
+  return async (...args) => {
+    let params = {};
+    let context;
+    [params, context = {}] = args;
+    const region = process.env.AWS_REGION;
+    if (!region) {
+      throw Error('Please define region in secrets');
+    }
+    context = { ...context, region };
+    serviceWrap(
+      params,
+      context,
+      '__ow_dynamodb',
+      createDynamoDBService,
+    );
+    return func(...args);
+  };
 }
