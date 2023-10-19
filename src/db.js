@@ -19,7 +19,7 @@ const TABLE_AUDITS = 'spacecat-audit-index';
 class DB {
   constructor(context) {
     this.client = new DynamoDBClient({ region: context.region });
-    this.docClient = DynamoDBDocumentClient.from(client);
+    this.docClient = DynamoDBDocumentClient.from(this.client);
   }
 
   /**
