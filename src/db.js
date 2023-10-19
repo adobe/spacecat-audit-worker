@@ -16,8 +16,8 @@ import { log } from './util.js';
 const TABLE_SITES = 'spacecat-site';
 const TABLE_AUDITS = 'spacecat-audit-index';
 
-function DB() {
-  const client = new DynamoDBClient({ region: process.env.REGION });
+function DB(context) {
+  const client = new DynamoDBClient({ region: context.region });
   const docClient = DynamoDBDocumentClient.from(client);
 
   /**
@@ -136,6 +136,6 @@ function DB() {
   };
 }
 
-const createDynamoDBService = () => DB();
+const createDynamoDBService = (context) => DB(context);
 
 export default { createDynamoDBService };
