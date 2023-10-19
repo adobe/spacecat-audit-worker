@@ -14,15 +14,12 @@
 
 import SqsQueue from './sqs-queue.js';
 
-function queueWrapper(func) {
+export default function queueWrapper(func) {
   return async (request, context) => {
-    const region = process.env.AWS_REGION;
-    const queueUrl = process.env.AUDIT_RESULTS_QUEUE_URL;
+    const region = context.env.AWS_REGION;
+    const queueUrl = context.env.AUDIT_RESULTS_QUEUE_URL;
     const { log } = context;
 
-    if (!region) {
-      throw new Error('AWS_REGION env variable is empty/not provided');
-    }
     if (!queueUrl) {
       throw new Error('AUDIT_RESULTS_QUEUE_URL env variable is empty/not provided');
     }
@@ -32,5 +29,3 @@ function queueWrapper(func) {
     return func(request, context);
   };
 }
-
-export default queueWrapper;

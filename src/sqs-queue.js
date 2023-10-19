@@ -13,7 +13,7 @@ import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 
 let sqsClient;
 
-function SQSQueue(region, queueUrl, log) {
+export default function SQSQueue(region, queueUrl, log) {
   if (!sqsClient) {
     sqsClient = new SQSClient({ region });
     log.info(`Creating SQS client in region ${region}`);
@@ -41,5 +41,3 @@ function SQSQueue(region, queueUrl, log) {
   }
   return { sendAuditResult };
 }
-
-export default SQSQueue;

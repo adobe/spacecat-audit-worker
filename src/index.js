@@ -15,7 +15,7 @@ import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
 import DB from './db.js';
 import PSIClient from './psi-client.js';
-import { queueWrapper } from './queue-wrapper.js';
+import queueWrapper from './queue-wrapper.js';
 
 /**
  * This is the main function
@@ -25,13 +25,13 @@ import { queueWrapper } from './queue-wrapper.js';
  */
 async function run(request, context) {
   const db = DB({
-    region: process.env.REGION,
+    region: context.env.REGION,
   });
   const { message } = JSON.parse(context.invocation.event.Records[0].body);
 
   const psiClient = PSIClient({
-    apiKey: process.env.PAGESPEED_API_KEY,
-    baseUrl: process.env.PAGESPEED_API_BASE_URL,
+    apiKey: context.env.PAGESPEED_API_KEY,
+    baseUrl: context.env.PAGESPEED_API_BASE_URL,
   });
 
   const site = {
