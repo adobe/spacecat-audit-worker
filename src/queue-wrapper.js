@@ -12,34 +12,25 @@
 
 'use strict';
 
-import { SQSClient } from '@aws-sdk/client-sqs';
-import { log } from './util.js';
 import SqsQueue from './sqs-queue.js';
 
-let sqsClient;
-
-function SQSWrapper(func) {
+function queueWrapper(func) {
   return async (request, context) => {
     const region = process.env.AWS_REGION;
-    const queueUrl = process.env.QUEUE_URL;
+    const queueUrl = process.env.AUDIT_RESULTS_QUEUE_URL;
+    const { log } = context;
 
     if (!region) {
-      throw new Error('region is required');
+      throw new Error('AWS_REGION env variable is empty/not provided');
     }
     if (!queueUrl) {
-      throw new Error('queueUrl is required');
+      throw new Error('AUDIT_RESULTS_QUEUE_URL env variable is empty/not provided');
     }
 
-    // Initialize the SQSClient only if it hasn't been initialized yet
-    if (!sqsClient) {
-      log('info', `Creating SQS client in region ${region}`);
-      sqsClient = new SQSClient({ region });
-    }
-
-    context.sqsQueue = SqsQueue(sqsClient, queueUrl);
+    context.queue = SqsQueue(region, queueUrl, log);
 
     return func(request, context);
   };
 }
 
-export default SQSWrapper;
+export default queueWrapper;

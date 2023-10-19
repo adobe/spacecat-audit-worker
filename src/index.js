@@ -15,7 +15,7 @@ import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
 import DB from './db.js';
 import PSIClient from './psi-client.js';
-import { SQSWrapper } from './sqs-wrapper.js';
+import { queueWrapper } from './queue-wrapper.js';
 
 /**
  * This is the main function
@@ -43,13 +43,13 @@ async function run(request, context) {
   };
   const auditResult = await psiClient.runAudit(`https://${site.domain}/${site.path}`);
   const auditResultMin = await db.saveAuditIndex(site, auditResult);
-  await context.sqsQueue.sendMessage(auditResultMin);
+  await context.queue.sendAuditResult(auditResultMin);
   return new Response('SUCCESS');
 }
 
 export const main = wrap(run)
-  .with(SQSWrapper)
   .with(helixStatus)
   .with(logger.trace)
   .with(logger)
-  .with(secrets);
+  .with(secrets)
+  .with(queueWrapper);

@@ -9,17 +9,17 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { SendMessageCommand } from '@aws-sdk/client-sqs';
-import { log } from './util.js';
+import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 
-// Set up the region
-const REGION = 'us-east-1'; // change this to your desired region
+let sqsClient;
 
-// Your SQS queue URL
-const queueURL = 'https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-audit-results';
+function SQSQueue(region, queueUrl, log) {
+  if (!sqsClient) {
+    sqsClient = new SQSClient({ region });
+    log.info(`Creating SQS client in region ${region}`);
+  }
 
-function SQSQueue(sqsClient, queueUrl) {
-  async function sendMessage(message) {
+  async function sendAuditResult(message) {
     const body = {
       message,
       timestamp: new Date().toISOString(),
@@ -33,17 +33,13 @@ function SQSQueue(sqsClient, queueUrl) {
 
     try {
       const data = await sqsClient.send(new SendMessageCommand(params));
-      log('info', 'Success, message sent. MessageID:', data.MessageId);
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ message: 'SQS message sent!' }),
-      };
+      log.info('Success, message sent. MessageID:', data.MessageId);
     } catch (err) {
-      log('error', 'Error:', err);
+      log.error('Error:', err);
       throw err;
     }
   }
-  return { sendMessage };
+  return { sendAuditResult };
 }
 
 export default SQSQueue;
