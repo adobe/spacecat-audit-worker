@@ -17,12 +17,10 @@ const serviceWrap = (
   factoryFn,
 ) => {
   if (!lambdaContext[paramName]) {
-    const service = factoryFn(lambdaContext);
-
     // pass params by reference and not value so later modifications
     // of the params are accessible to the wrap
     // eslint-disable-next-line no-param-reassign
-    lambdaContext[paramName] = service.getInstance(lambdaContext);
+    lambdaContext[paramName] = factoryFn(lambdaContext);
   }
   return lambdaFn(lambdaContext);
 };

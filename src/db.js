@@ -136,8 +136,6 @@ function DB() {
   };
 }
 
-const createDynamoDBService = () => Object.freeze({
-  getInstance: () => DB(),
-});
+const createDynamoDBService = () => DB();
 
 export default { createDynamoDBService };
