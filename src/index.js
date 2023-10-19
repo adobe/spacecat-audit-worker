@@ -47,7 +47,7 @@ async function run(request, context) {
 
 export const main = wrap(run)
   .with(helixStatus)
-  .with(dynamoDBWrapper)
   .with(logger.trace)
   .with(logger)
-  .with(secrets);
+  .with(secrets)
+  .with(dynamoDBWrapper);

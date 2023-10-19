@@ -15,13 +15,12 @@ import serviceWrap from './service-wrap.js';
 export default function dynamoDBWrapper(func) {
   return async (...args) => {
     let params = {};
-    let context;
+    let context = {};
     [params, context = {}] = args;
-    const region = process.env.AWS_REGION;
+    const region = context.env.AWS_REGION;
     if (!region) {
       throw Error('Please define region in secrets');
     }
-    context = { ...context, region };
     serviceWrap(
       params,
       context,
