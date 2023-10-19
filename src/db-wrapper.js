@@ -13,9 +13,10 @@ import createDynamoDBService from './db.js';
 import serviceWrap from './service-wrap.js';
 
 function wrapper(func) {
-  return (params) => serviceWrap(
+  return (request, context) => serviceWrap(
     func,
-    params,
+    request,
+    context,
     '__ow_dynamodb',
     createDynamoDBService,
   );
