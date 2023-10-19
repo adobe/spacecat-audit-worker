@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 import secrets from '@adobe/helix-shared-secrets';
-import { log } from './util.js';
 import wrap from '@adobe/helix-shared-wrap';
 import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
