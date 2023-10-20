@@ -24,7 +24,7 @@ export default function queueWrapper(func) {
       throw new Error('AUDIT_RESULTS_QUEUE_URL env variable is empty/not provided');
     }
 
-    context.queue = SqsQueue(region, queueUrl, log);
+    context.queue = new SqsQueue(region, queueUrl, log);
 
     return func(request, context);
   };
