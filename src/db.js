@@ -81,8 +81,8 @@ export default class DB {
         },
       ],
     };
-    this.logger('info', `Audit for domain ${site.domain} saved successfully at ${now}`);
     await this.saveRecord(newAudit, TABLE_AUDITS);
+    this.logger.info(`Audit for domain ${site.domain} saved successfully at ${now}`);
     return Promise.resolve(newAudit);
   }
 
@@ -123,14 +123,14 @@ export default class DB {
       const response = await this.client.send(command);
       const item = response.Item;
       if (item) {
-        this.logger('info', `Item retrieved successfully: ${item}`);
+        this.logger.info(`Item retrieved successfully: ${item}`);
         return item;
       } else {
-        this.logger('info', 'Item not found.');
+        this.logger.info('Item not found.');
         return null;
       }
     } catch (error) {
-      this.logger('error', `Error ${error}`);
+      this.logger.error(`Error ${error}`);
       throw error;
     }
   }
