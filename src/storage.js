@@ -9,8 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { S3 } from "@aws-sdk/client-s3";
-import { log } from 'util';
+import { S3 } from '@aws-sdk/client-s3';
 
 function storage(config) {
   const s3 = new S3({ region: config.region });
@@ -22,11 +21,11 @@ function storage(config) {
       ContentType: 'application/json',
     };
 
+    // eslint-disable-next-line no-useless-catch
     try {
-      log('info', `Data saved to S3 with key: ${key}`);
       await s3.putObject(params);
     } catch (error) {
-      log('error', 'Error saving data to S3: ', error);
+      throw error;
     }
   }
 }

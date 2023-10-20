@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 import axios from 'axios';
-import { log } from './util.js';
 
 function PSIClient(config) {
   const AUDIT_TYPE = 'PSI';
@@ -136,6 +135,7 @@ function PSIClient(config) {
    * @returns {Promise<object>} The processed PageSpeed Insights audit data.
    */
   const performPSICheck = async (domain, strategy) => {
+    // eslint-disable-next-line no-useless-catch
     try {
       const apiURL = getPSIApiUrl(domain, strategy);
       const { data: lhs } = await axios.get(apiURL);
@@ -144,7 +144,6 @@ function PSIClient(config) {
 
       return processLighthouseResult(lighthouseResult);
     } catch (e) {
-      log('error', `Error happened during PSI check: ${e}`);
       throw e;
     }
   };
@@ -153,12 +152,8 @@ function PSIClient(config) {
     const auditResults = {};
 
     for (const strategy of PSI_STRATEGIES) {
-      const strategyStartTime = process.hrtime();
       // eslint-disable-next-line no-await-in-loop
       const psiResult = await performPSICheck(domain, strategy);
-      const strategyEndTime = process.hrtime(strategyStartTime);
-      const strategyElapsedTime = (strategyEndTime[0] + strategyEndTime[1] / 1e9).toFixed(2);
-      log('info', `Audited ${domain} for ${strategy} strategy in ${strategyElapsedTime} seconds`);
 
       auditResults[strategy] = psiResult;
     }

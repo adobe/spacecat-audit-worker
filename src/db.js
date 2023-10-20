@@ -11,14 +11,14 @@
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetItemCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { log } from './util.js';
 
 const TABLE_SITES = 'spacecat-site';
 const TABLE_AUDITS = 'spacecat-audit-index';
 
-class DB {
+export default class DB {
   constructor(context) {
-    this.client = new DynamoDBClient({ region: context.region });
+    this.client = new DynamoDBClient({ region: context.runtime.region });
+    this.logger = context.log;
     this.docClient = DynamoDBDocumentClient.from(this.client);
   }
 
@@ -35,19 +35,20 @@ class DB {
       });
       await this.docClient.send(command);
     } catch (error) {
-      log('error', 'Error saving record: ', error);
+      this.logger('error', 'Error saving record: ', error);
     }
   }
 
   /**
-     * Saves an audit to the DynamoDB.
-     * @param {object} site - Site object containing details of the audited site.
-     * @param {object} audit - Audit object containing the type and result of the audit.
-     * @returns {Promise<void>} Resolves once audit is saved.
-     */
+   * Saves an audit to the DynamoDB.
+   * @param {object} site - Site object containing details of the audited site.
+   * @param {object} audit - Audit object containing the type and result of the audit.
+   * @returns {Promise<void>} Resolves once audit is saved.
+   */
   async saveAuditIndex(site, audit) {
     const now = new Date().toISOString();
-    const uuid = Date.now().toString();
+    const uuid = Date.now()
+      .toString();
 
     const newAudit = {
       id: uuid,
@@ -80,16 +81,16 @@ class DB {
         },
       ],
     };
-    log('info', `Audit for domain ${site.domain} saved successfully at ${now}`);
+    this.logger('info', `Audit for domain ${site.domain} saved successfully at ${now}`);
     await this.saveRecord(newAudit, TABLE_AUDITS);
     return Promise.resolve(newAudit);
   }
 
   /**
-     * Save an error that occurred during a Lighthouse audit to the DynamoDB.
-     * @param {object} site - site audited.
-     * @param {Error} error - The error that occurred during the audit.
-     */
+   * Save an error that occurred during a Lighthouse audit to the DynamoDB.
+   * @param {object} site - site audited.
+   * @param {Error} error - The error that occurred during the audit.
+   */
   async saveAuditError(site, error) {
     const now = new Date().toISOString();
     const newAudit = {
@@ -103,11 +104,11 @@ class DB {
   }
 
   /**
-     * Fetches a site by its ID and gets its latest audit.
-     * @param {string} domain - The domain of the site to fetch.
-     * @param {string} path - The path of the site to fetch.
-     * @returns {Promise<object>} Site document with its latest audit.
-     */
+   * Fetches a site by its ID and gets its latest audit.
+   * @param {string} domain - The domain of the site to fetch.
+   * @param {string} path - The path of the site to fetch.
+   * @returns {Promise<object>} Site document with its latest audit.
+   */
   async getSite(domain, path) {
     const commandParams = {
       TableName: TABLE_SITES, // Replace with your table name
@@ -122,19 +123,15 @@ class DB {
       const response = await this.client.send(command);
       const item = response.Item;
       if (item) {
-        log('info', `Item retrieved successfully: ${item}`);
+        this.logger('info', `Item retrieved successfully: ${item}`);
         return item;
       } else {
-        log('info', 'Item not found.');
+        this.logger('info', 'Item not found.');
         return null;
       }
     } catch (error) {
-      log('error', `Error ${error}`);
+      this.logger('error', `Error ${error}`);
       throw error;
     }
   }
-}
-
-export default function createDynamoDBService(context) {
-  return new DB(context);
 }

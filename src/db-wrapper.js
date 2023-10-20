@@ -9,24 +9,17 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import createDynamoDBService from './db.js';
-import serviceWrap from './service-wrap.js';
+import DB from './db.js';
 
 export default function dynamoDBWrapper(func) {
-  return async (...args) => {
-    let params = {};
-    let context = {};
-    [params, context = {}] = args;
-    const region = context.env.AWS_REGION;
+  return async (request, context) => {
+    const { region } = context.runtime;
     if (!region) {
-      throw Error('Please define region in secrets');
+      throw Error('Region is undefined');
     }
-    serviceWrap(
-      params,
-      context,
-      '__ow_dynamodb',
-      createDynamoDBService,
-    );
-    return func(...args);
+    if (!context.dynamoStorage) {
+      context.dynamoStorage = new DB(context);
+    }
+    return func(request, context);
   };
 }
