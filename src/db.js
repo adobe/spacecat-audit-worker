@@ -18,7 +18,7 @@ const TABLE_AUDITS = 'spacecat-audit-index';
 export default class DB {
   constructor(context) {
     this.client = new DynamoDBClient({ region: context.runtime.region });
-    this.logger = context.log;
+    this.log = context.log;
     this.docClient = DynamoDBDocumentClient.from(this.client);
   }
 
@@ -35,7 +35,7 @@ export default class DB {
       });
       await this.docClient.send(command);
     } catch (error) {
-      this.logger('error', 'Error saving record: ', error);
+      this.log.error(`Error saving record:  ${error}`);
     }
   }
 
@@ -82,7 +82,7 @@ export default class DB {
       ],
     };
     await this.saveRecord(newAudit, TABLE_AUDITS);
-    this.logger.info(`Audit for domain ${site.domain} saved successfully at ${now}`);
+    this.log.info(`Audit for domain ${site.domain} saved successfully at ${now}`);
     return Promise.resolve(newAudit);
   }
 
@@ -123,14 +123,14 @@ export default class DB {
       const response = await this.client.send(command);
       const item = response.Item;
       if (item) {
-        this.logger.info(`Item retrieved successfully: ${item}`);
+        this.log.info(`Item retrieved successfully: ${item}`);
         return item;
       } else {
-        this.logger.info('Item not found.');
+        this.log.info('Item not found.');
         return null;
       }
     } catch (error) {
-      this.logger.error(`Error ${error}`);
+      this.log.error(`Error ${error}`);
       throw error;
     }
   }
