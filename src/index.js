@@ -24,9 +24,7 @@ import PSIClient from './psi-client.js'; // Assuming the exported content of './
  * @returns {Response} a response
  */
 async function run(request, context) {
-  const {
-    __ow_dynamodb: db,
-  } = context;
+  const { db } = context;
   const sqsQueue = SQSQueue();
   const message = JSON.parse(context.invocation.event.Records[0].body);
 
@@ -47,7 +45,7 @@ async function run(request, context) {
 
 export const main = wrap(run)
   .with(helixStatus)
+  .with(dynamoDBWrapper)
   .with(logger.trace)
   .with(logger)
-  .with(secrets)
-  .with(dynamoDBWrapper);
+  .with(secrets);

@@ -17,8 +17,8 @@ export default function dynamoDBWrapper(func) {
     if (!region) {
       throw Error('Region is undefined');
     }
-    if (!context.dynamoStorage) {
-      context.dynamoStorage = new DB(context);
+    if (!context.db) {
+      context.db = new DB(context);
     }
     return func(request, context);
   };
