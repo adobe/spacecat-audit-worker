@@ -11,7 +11,6 @@
  */
 import secrets from '@adobe/helix-shared-secrets';
 import wrap from '@adobe/helix-shared-wrap';
-import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
 import SQSQueue from './sqs-queue.js';
 import dynamoDBWrapper from './db-wrapper.js'; // Assuming the exported content of './db' is default exported
@@ -45,7 +44,5 @@ async function run(request, context) {
 
 export const main = wrap(run)
   .with(dynamoDBWrapper)
-  .with(logger.trace)
-  .with(logger)
   .with(secrets)
   .with(helixStatus);
