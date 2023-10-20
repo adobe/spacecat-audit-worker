@@ -12,12 +12,20 @@
 
 'use strict';
 
-import DB from './db.js';
+import SqsQueue from './sqs-queue.js';
 
-export default function dynamoDBWrapper(func) {
+export default function queueWrapper(func) {
   return async (request, context) => {
-    if (!context.db) {
-      context.db = new DB(context);
+    const queueUrl = context.env.AUDIT_RESULTS_QUEUE_URL;
+
+    if (!queueUrl) {
+      throw new Error('AUDIT_RESULTS_QUEUE_URL env variable is empty/not provided');
+    }
+
+    context.attributes.queueUrl = queueUrl;
+
+    if (!context.queue) {
+      context.queue = new SqsQueue(context);
     }
 
     return func(request, context);

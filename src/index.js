@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Adobe. All rights reserved.
+ * Copyright 2023 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -12,9 +12,9 @@
 import secrets from '@adobe/helix-shared-secrets';
 import wrap from '@adobe/helix-shared-wrap';
 import { helixStatus } from '@adobe/helix-status';
-import SQSQueue from './sqs-queue.js';
-import dynamoDBWrapper from './db-wrapper.js'; // Assuming the exported content of './db' is default exported
-import PSIClient from './psi-client.js'; // Assuming the exported content of './psi-client' is default exported
+import dynamoDBWrapper from './db-wrapper.js';
+import PSIClient from './psi-client.js';
+import queueWrapper from './queue-wrapper.js';
 
 /**
  * This is the main function
@@ -23,13 +23,12 @@ import PSIClient from './psi-client.js'; // Assuming the exported content of './
  * @returns {Response} a response
  */
 async function run(request, context) {
-  const { db } = context;
-  const sqsQueue = SQSQueue();
+  const { db, queue } = context;
   const message = JSON.parse(context.invocation.event.Records[0].body);
 
   const psiClient = PSIClient({
-    apiKey: process.env.PAGESPEED_API_KEY,
-    baseUrl: process.env.PAGESPEED_API_BASE_URL,
+    apiKey: context.env.PAGESPEED_API_KEY,
+    baseUrl: context.env.PAGESPEED_API_BASE_URL,
   });
 
   const site = {
@@ -38,11 +37,12 @@ async function run(request, context) {
   };
   const auditResult = await psiClient.runAudit(`https://${site.domain}/${site.path}`);
   const auditResultMin = await db.saveAuditIndex(site, auditResult);
-  await sqsQueue.sendMessage(auditResultMin);
+  await queue.sendAuditResult(auditResultMin);
   return new Response('SUCCESS');
 }
 
 export const main = wrap(run)
   .with(dynamoDBWrapper)
+  .with(queueWrapper)
   .with(secrets)
   .with(helixStatus);
