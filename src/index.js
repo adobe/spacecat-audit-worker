@@ -20,14 +20,16 @@ import queueWrapper from './queue-wrapper.js';
 /**
  * This is the main function
  * @param {Request} request the request object (see fetch api)
- * @param {UniversalContext} context the context of the universal serverless function
+ * @param {UniversalContext} context the context of the universal serverle  ss function
  * @returns {Response} a response
  */
 async function run(request, context) {
   const db = DB({
     region: context.env.REGION,
   });
-  const { message } = JSON.parse(context.invocation.event.Records[0].body);
+  const message = JSON.parse(context.invocation.event.Records[0].body);
+  console.error('###body', context.invocation.event.Records[0].body);
+  console.error('###message', message);
 
   const psiClient = PSIClient({
     apiKey: context.env.PAGESPEED_API_KEY,
@@ -49,7 +51,7 @@ async function run(request, context) {
 
 export const main = wrap(run)
   .with(helixStatus)
+  .with(queueWrapper)
   .with(logger.trace)
   .with(logger)
-  .with(queueWrapper)
   .with(secrets);

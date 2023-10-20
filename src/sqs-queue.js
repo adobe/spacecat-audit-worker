@@ -11,15 +11,24 @@
  */
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 
-let sqsClient;
+/**
+ * @class SQSQueue class to send audit results to SQS
+ * @param {string} region - AWS region
+ * @param {string} queueUrl - SQS queue URL
+ * @param {object} log - OpenWhisk log object
+ */
+class SQSQueue {
+  constructor(region, queueUrl, log) {
+    if (!this.sqsClient) {
+      this.sqsClient = new SQSClient({ region });
+      log.info(`Creating SQS client in region ${region}`);
+    }
 
-export default function SQSQueue(region, queueUrl, log) {
-  if (!sqsClient) {
-    sqsClient = new SQSClient({ region });
-    log.info(`Creating SQS client in region ${region}`);
+    this.queueUrl = queueUrl;
+    this.log = log;
   }
 
-  async function sendAuditResult(message) {
+  async sendAuditResult(message) {
     const body = {
       message,
       timestamp: new Date().toISOString(),
@@ -28,16 +37,17 @@ export default function SQSQueue(region, queueUrl, log) {
     const params = {
       DelaySeconds: 10,
       MessageBody: JSON.stringify(body),
-      QueueUrl: queueUrl,
+      QueueUrl: this.queueUrl,
     };
 
     try {
-      const data = await sqsClient.send(new SendMessageCommand(params));
-      log.info('Success, message sent. MessageID:', data.MessageId);
+      const data = await this.sqsClient.send(new SendMessageCommand(params));
+      this.log.info(`Success, message sent. MessageID:  ${data.MessageId}`);
     } catch (err) {
-      log.error('Error:', err);
+      this.log.error(`Error: ${err}`);
       throw err;
     }
   }
-  return { sendAuditResult };
 }
+
+export default SQSQueue;

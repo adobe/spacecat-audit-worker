@@ -16,8 +16,8 @@ import SqsQueue from './sqs-queue.js';
 
 export default function queueWrapper(func) {
   return async (request, context) => {
-    const region = context.env.AWS_REGION;
-    const queueUrl = context.env.AUDIT_RESULTS_QUEUE_URL;
+    const { region } = context.runtime;
+    const queueUrl = process.env.AUDIT_RESULTS_QUEUE_URL;
     const { log } = context;
 
     if (!queueUrl) {
