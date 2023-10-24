@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetItemCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 const TABLE_SITES = 'spacecat-site';
 const TABLE_AUDITS = 'spacecat-audit-index';
@@ -82,7 +82,7 @@ export default class DB {
       ],
     };
     await this.saveRecord(newAudit, TABLE_AUDITS);
-    this.log.info(`Audit for domain ${site.domain} saved successfully at ${now}`);
+    this.log.info(`Audit for domain ${site.domain} saved successfully`);
     return Promise.resolve(newAudit);
   }
 
@@ -119,8 +119,8 @@ export default class DB {
     };
 
     try {
-      const command = new GetItemCommand(commandParams);
-      const response = await this.client.send(command);
+      const command = new GetCommand(commandParams);
+      const response = await this.docClient.send(command);
       const item = response.Item;
       if (item) {
         this.log.info(`Item retrieved successfully: ${item}`);
