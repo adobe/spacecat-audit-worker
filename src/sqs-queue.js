@@ -43,9 +43,9 @@ export default class SQSQueue {
 
     try {
       const data = await this.sqsClient.send(new SendMessageCommand(params));
-      this.log.info(`Success, message sent. MessageID:  ${data.MessageId}`);
+      this.log.info(`Success, message sent. MessageID: ${data.MessageId}`);
     } catch (err) {
-      this.log.error(`Error: ${err}`);
+      this.log.error(`${err}`);
       throw err;
     }
   }
