@@ -83,10 +83,13 @@ describe('PSIClient', () => {
       nock.cleanAll();
     });
 
-    xit('should run mobile strategy audit', async () => {
+    it('should run  and desktop strategy audit', async () => {
       const mockResponse = { data: 'some mobile data' };
       nock('https://www.googleapis.com')
         .get('/pagespeedonline/v5/runPagespeed?url=https%3A%2F%2FsomeUrl&key=test-api-key&strategy=mobile&category=performance&category=accessibility&category=best-practices&category=seo')
+        .reply(200, mockResponse);
+      nock('https://www.googleapis.com')
+        .get('/pagespeedonline/v5/runPagespeed?url=https%3A%2F%2FsomeUrl&key=test-api-key&strategy=desktop&category=performance&category=accessibility&category=best-practices&category=seo')
         .reply(200, mockResponse);
 
       const audit = await client.runAudit('someUrl');
@@ -110,16 +113,6 @@ describe('PSIClient', () => {
         timing: undefined,
         userAgent: undefined,
       });
-    });
-    xit('should run desktop strategy audit', async () => {
-      const mockResponse = { data: 'some desktop data' };
-      nock('https://www.googleapis.com')
-        .get('/pagespeedonline/v5/runPagespeed?url=https%3A%2F%2FsomeUrl&key=test-api-key&strategy=mobile&category=performance&category=accessibility&category=best-practices&category=seo')
-        .reply(200, mockResponse);
-
-      const audit = await client.runAudit('someUrl');
-
-      // Ensure the response structure is correct
       assert.deepStrictEqual(audit.result.desktop, {
         audits: {
           'third-party-summary': undefined,
