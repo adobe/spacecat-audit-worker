@@ -24,20 +24,50 @@ import queueWrapper from './queue-wrapper.js';
  */
 async function run(request, context) {
   const { db, queue } = context;
-  const message = JSON.parse(context.invocation.event.Records[0].body);
-
+  const event = context.invocation?.event;
+  if (!event) {
+    return new Response('', {
+      status: 400,
+      headers: {
+        'x-error': 'Action was not triggered by an event',
+      },
+    });
+  }
+  let message = event.Records[0]?.body?.message;
+  if (!message) {
+    return new Response('', {
+      status: 400,
+      headers: {
+        'x-error': 'Event does not contain a message body',
+      },
+    });
+  }
+  message = JSON.parse(message);
   const psiClient = PSIClient({
     apiKey: context.env.PAGESPEED_API_KEY,
     baseUrl: context.env.PAGESPEED_API_BASE_URL,
   });
 
+  if (!message.domain) {
+    return new Response('', {
+      status: 400,
+      headers: {
+        'x-error': 'Event message does not contain a domain',
+      },
+    });
+  }
+
   const site = {
     domain: message.domain,
     path: message.path,
   };
-  const auditResult = await psiClient.runAudit(`https://${site.domain}/${site.path}`);
-  const auditResultMin = await db.saveAuditIndex(site, auditResult);
-  await queue.sendAuditResult(auditResultMin);
+  try {
+    const auditResult = await psiClient.runAudit(`https://${site.domain}/${site.path}`);
+    const auditResultMin = await db.saveAuditIndex(site, auditResult);
+    await queue.sendAuditResult(auditResultMin);
+  } catch (e) {
+    await db.saveAuditError(site, e);
+  }
   return new Response('SUCCESS');
 }
 

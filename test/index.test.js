@@ -13,11 +13,61 @@
 /* eslint-env mocha */
 
 import assert from 'assert';
+import nock from 'nock';
 import { main } from '../src/index.js';
 
 describe('Index Tests', () => {
-  it('index function is present', async () => {
-    const result = await main();
-    assert.strictEqual(result, 'Hello, world.');
+  let mockContext;
+  beforeEach(() => {
+    mockContext = {
+      runtime: { region: 'test-region' },
+      env: {
+        AUDIT_RESULTS_QUEUE_URL: 'queue-url',
+      },
+      attributes: {
+      },
+      log: {
+        info: () => {},
+        error: () => {},
+      },
+    };
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
+  it('index function returns an error if not triggered by an event', async () => {
+    const response = await main({}, mockContext);
+    assert.strictEqual(response.headers.get('x-error'), 'Action was not triggered by an event');
+  });
+
+  it('index function returns an error if event does not contain a message', async () => {
+    const eventMockContext = {
+      ...mockContext,
+      ...{ invocation: { event: { Records: [{ body: {} }] } } },
+    };
+    const response = await main({}, eventMockContext);
+    assert.strictEqual(response.headers.get('x-error'), 'Event does not contain a message body');
+  });
+
+  it('index function returns an error if event message does not contain a domain', async () => {
+    const eventMockContext = {
+      ...mockContext,
+      ...{ invocation: { event: { Records: [{ body: { message: '{ "text": "foo" }' } }] } } },
+    };
+    const response = await main({}, eventMockContext);
+    assert.strictEqual(response.headers.get('x-error'), 'Event message does not contain a domain');
+  });
+
+  it('index function returns SUCCESS if trigerred by an event that contain a domain', async () => {
+    const eventMockContext = {
+      ...mockContext,
+      ...{ invocation: { event: { Records: [{ body: { message: '{ "domain": "adobe.com" }' } }] } } },
+    };
+    const response = await main({}, eventMockContext);
+    const reader = response.body.getReader();
+    const { value } = await reader.read();
+    assert.strictEqual(String.fromCharCode(...value), 'SUCCESS');
   });
 });

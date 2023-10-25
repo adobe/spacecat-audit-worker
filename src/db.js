@@ -94,9 +94,8 @@ export default class DB {
   async saveAuditError(site, error) {
     const now = new Date().toISOString();
     const newAudit = {
-      siteId: site.id,
+      siteId: `${site.domain}/${site.path}`,
       auditDate: now,
-      isLive: site.isLive,
       error: error.message,
       scores: {},
     };
