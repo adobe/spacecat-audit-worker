@@ -82,7 +82,7 @@ export default class DB {
       ],
     };
     await this.saveRecord(newAudit, TABLE_AUDITS);
-    this.log.info(`Audit for domain ${site.domain} saved successfully`);
+    this.log.info(`Saving successful audit for domain ${site.domain} saved successfully`);
     return Promise.resolve(newAudit);
   }
 
@@ -100,6 +100,7 @@ export default class DB {
       scores: {},
     };
     await this.saveRecord(newAudit, TABLE_AUDITS);
+    this.log.info(`Saving error audit for domain ${site.domain} saved successfully`);
   }
 
   /**

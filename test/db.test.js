@@ -24,7 +24,7 @@ describe('DB Tests', () => {
   let mockContext;
   let logInfo = '';
   let logError = '';
-  let testSite = { domain: 'www.testdomain.com', path: '/testpath' };
+  const testSite = { domain: 'www.testdomain.com', path: '/testpath' };
 
   beforeEach(() => {
     mockContext = {
@@ -49,7 +49,7 @@ describe('DB Tests', () => {
     assert.strictEqual(db.log, mockContext.log);
   });
 
-  it('should save the record to dynamodb and log success', async () => {
+  it('should save the successful audit to dynamodb and log success', async () => {
     const DBDocMock = await esmock('../src/db.js', {
       '@aws-sdk/lib-dynamodb': {
         DynamoDBDocumentClient: DBDocClientMock,
@@ -76,7 +76,22 @@ describe('DB Tests', () => {
         },
       },
     });
-    assert.strictEqual(logInfo, 'Audit for domain www.testdomain.com saved successfully');
+    assert.strictEqual(logInfo, 'Saving successful audit for domain www.testdomain.com saved successfully');
+  });
+
+  it('should save the error audit to dynamodb and log success', async () => {
+    const DBDocMock = await esmock('../src/db.js', {
+      '@aws-sdk/lib-dynamodb': {
+        DynamoDBDocumentClient: DBDocClientMock,
+      },
+    });
+    const db = new DBDocMock(mockContext);
+    await db.saveAuditError(testSite, {
+      error: {
+        message: 'Could not run audit for www.testdomain.com',
+      },
+    });
+    assert.strictEqual(logInfo, 'Saving error audit for domain www.testdomain.com saved successfully');
   });
 
   it('should get the site from dynamodb', async () => {
