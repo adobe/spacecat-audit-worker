@@ -49,4 +49,8 @@ export default class SQSQueue {
       throw err;
     }
   }
+
+  destroy() {
+    this.sqsClient.destroy();
+  }
 }

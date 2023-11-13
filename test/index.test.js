@@ -13,7 +13,6 @@
 /* eslint-env mocha */
 
 import assert from 'assert';
-import nock from 'nock';
 import { main } from '../src/index.js';
 
 describe('Index Tests', () => {
@@ -31,10 +30,6 @@ describe('Index Tests', () => {
         error: () => {},
       },
     };
-  });
-
-  afterEach(() => {
-    nock.cleanAll();
   });
 
   it('index function returns an error if not triggered by an event', async () => {

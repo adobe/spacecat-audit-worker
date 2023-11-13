@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-'use strict';
-
 import DB from './db.js';
 
 export default function dynamoDBWrapper(func) {

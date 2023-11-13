@@ -43,7 +43,26 @@ export default class DB {
    * Saves an audit to the DynamoDB.
    * @param {object} site - Site object containing details of the audited site.
    * @param {object} audit - Audit object containing the type and result of the audit.
-   * @returns {Promise<void>} Resolves once audit is saved.
+   * @typedef {Object} audit
+   * @property {string} uuid - Audit unique identifier
+   * @property {string} siteId - Site unique identifier composed of domain and path.
+   * @property {string} auditDate - Date when audit was run.
+   * @property {string} type - Type of the run audit (default psi)
+   * @property {boolean} isLive - Indicates if the site is live at the time of the audit
+   * @property {string} git_hashes - Git commit hashes since the last audit was run.
+   * @property {string} tag_manager - Tag manager used for the site and the version.
+   * @property {string} error - The error if auditing returned an error.
+   * @property {Object[]} auditResults - The minified audit results from the psi checks
+   * @param {string} auditResults[].strategy - The psi audit strategy can be desktop or mobile.
+   * @param {object} auditResults[].scores - The minified results of the psi audit for the strategy.
+   * @param {object} auditResults[].score.performance - The performance score of psi check for
+   * the site strategy.
+   * @param {object} auditResults[].scores.seo - The seo score of psi check for the site strategy.
+   * @param {object} auditResults[].scores.best-practices - The best-practices score of psi check
+   * for the site strategy.
+   * @param {object} auditResults[].scores.accessibility - The accessibility score of psi check for
+   * the site strategy.
+   * @returns {Promise<object>} Resolves the new saved audit.
    */
   async saveAuditIndex(site, audit) {
     const now = new Date().toISOString();
@@ -83,7 +102,7 @@ export default class DB {
     };
     await this.saveRecord(newAudit, TABLE_AUDITS);
     this.log.info(`Saving successful audit for domain ${site.domain} saved successfully`);
-    return Promise.resolve(newAudit);
+    return newAudit;
   }
 
   /**
@@ -133,5 +152,10 @@ export default class DB {
       this.log.error(`Error ${error}`);
       throw error;
     }
+  }
+
+  destroy() {
+    this.docClient.destroy();
+    this.client.destroy();
   }
 }

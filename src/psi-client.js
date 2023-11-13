@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import axios from 'axios';
+import { fetch } from '@adobe/fetch';
 
 function PSIClient(config) {
   const AUDIT_TYPE = 'PSI';
@@ -138,7 +138,8 @@ function PSIClient(config) {
     // eslint-disable-next-line no-useless-catch
     try {
       const apiURL = getPSIApiUrl(domain, strategy);
-      const { data: lhs } = await axios.get(apiURL);
+      const response = await fetch(apiURL);
+      const { data: lhs } = await response.json();
 
       const { lighthouseResult } = processAuditData(lhs);
 

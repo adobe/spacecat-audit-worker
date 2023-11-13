@@ -12,7 +12,6 @@
 
 /* eslint-env mocha */
 
-import nock from 'nock';
 import assert from 'assert';
 import esmock from 'esmock';
 import DB from '../src/db.js';
@@ -38,10 +37,6 @@ describe('DB Tests', () => {
         },
       },
     };
-  });
-
-  afterEach(() => {
-    nock.cleanAll();
   });
 
   it('should initialize with provided context', () => {

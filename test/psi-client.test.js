@@ -75,10 +75,6 @@ describe('PSIClient', () => {
   });
 
   describe('runAudit', () => {
-    beforeEach(() => {
-
-    });
-
     afterEach(() => {
       nock.cleanAll();
     });
@@ -172,16 +168,14 @@ describe('PSIClient', () => {
         .get('/pagespeedonline/v5/runPagespeed?url=https%3A%2F%2Fexample.com&key=test-api-key&strategy=mobile&category=performance&category=accessibility&category=best-practices&category=seo')
         .reply(200, { data: {} });
       const data = await client.performPSICheck('example.com');
-      assert.deepEqual(data, expectedResult); // Assuming axios mock returns empty object as data
+      assert.deepEqual(data, expectedResult);
     });
-
-    // Input edge cases for performPSICheck
     it('should handle empty domain input gracefully', async () => {
       nock('https://www.googleapis.com')
         .get('/pagespeedonline/v5/runPagespeed?url=https%3A%2F%2F&key=test-api-key&strategy=mobile&category=performance&category=accessibility&category=best-practices&category=seo')
         .reply(200, { data: {} });
       const data = await client.performPSICheck('');
-      assert.deepEqual(data, expectedResult); // Assuming axios mock returns empty object for any input
+      assert.deepEqual(data, expectedResult);
     });
 
     it('should handle domain with special characters', async () => {
@@ -189,7 +183,7 @@ describe('PSIClient', () => {
         .get('/pagespeedonline/v5/runPagespeed?url=https%3A%2F%2Fexample.com/some%20path&key=test-api-key&strategy=mobile&category=performance&category=accessibility&category=best-practices&category=seo')
         .reply(200, { data: {} });
       const data = await client.performPSICheck('example.com/some path');
-      assert.deepEqual(data, expectedResult); // Assuming axios mock returns empty object for any input
+      assert.deepEqual(data, expectedResult);
     });
   });
 

@@ -43,11 +43,6 @@ async function run(request, context) {
     });
   }
   message = JSON.parse(message);
-  const psiClient = PSIClient({
-    apiKey: context.env.PAGESPEED_API_KEY,
-    baseUrl: context.env.PAGESPEED_API_BASE_URL,
-  });
-
   if (!message.domain) {
     return new Response('', {
       status: 400,
@@ -56,6 +51,11 @@ async function run(request, context) {
       },
     });
   }
+
+  const psiClient = PSIClient({
+    apiKey: context.env.PAGESPEED_API_KEY,
+    baseUrl: context.env.PAGESPEED_API_BASE_URL,
+  });
 
   const site = {
     domain: message.domain,
@@ -68,6 +68,8 @@ async function run(request, context) {
   } catch (e) {
     await db.saveAuditError(site, e);
   }
+  db.destroy();
+  queue.destroy();
   return new Response('SUCCESS');
 }
 

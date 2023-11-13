@@ -13,7 +13,6 @@
 /* eslint-env mocha */
 
 import assert from 'assert';
-import nock from 'nock';
 import esmock from 'esmock';
 import SqsClientMock from './sqs-client-mock.js';
 import SQSQueue from '../src/sqs-queue.js';
@@ -42,10 +41,6 @@ describe('SQSQueue Tests', () => {
         },
       },
     };
-  });
-
-  afterEach(() => {
-    nock.cleanAll();
   });
 
   it('should initialize with provided context', () => {

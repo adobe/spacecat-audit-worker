@@ -54,16 +54,15 @@
     "loader": "esmock"
   },
   "dependencies": {
-    "@adobe/fetch": "^4.1.0",
+    "@adobe/fetch": "4.1.1",
     "@adobe/helix-shared-secrets": "^2.1.2",
     "@adobe/helix-shared-wrap": "2.0.0",
     "@adobe/helix-status": "10.0.10",
     "@adobe/helix-universal-logger": "3.0.11",
     "@aws-sdk/client-dynamodb": "^3.427.0",
-    "@aws-sdk/client-s3": "^3.427.0",
-    "@aws-sdk/client-sqs": "^3.427.0",
-    "@aws-sdk/lib-dynamodb": "^3.427.0",
-    "axios": "1.5.1",
+    "@aws-sdk/client-s3": "3.427.0",
+    "@aws-sdk/client-sqs": "3.427.0",
+    "@aws-sdk/lib-dynamodb": "3.427.0",
     "esm": "3.2.25"
   },
   "devDependencies": {
