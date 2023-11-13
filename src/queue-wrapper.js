@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-'use strict';
 
 import SqsQueue from './sqs-queue.js';
 
