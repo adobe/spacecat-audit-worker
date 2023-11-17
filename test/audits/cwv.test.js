@@ -11,18 +11,21 @@
  */
 
 /* eslint-env mocha */
+/* eslint-disable no-unused-expressions */ // expect statements
 
 import chai from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { Request } from '@adobe/fetch';
-import { main } from '../src/index.js';
+import nock from 'nock';
+import { main } from '../../src/index.js';
+import { DEFAULT_PARAMS, getRUMUrl } from '../../src/cwv/handler.js';
+import { expectedAuditResult, rumData } from '../rum-data.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
 
 const sandbox = sinon.createSandbox();
-
 describe('Index Tests', () => {
   const request = new Request('https://space.cat');
   let context;
@@ -41,6 +44,10 @@ describe('Index Tests', () => {
       runtime: {
         region: 'us-east-1',
       },
+      env: {
+        AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
+        RUM_DOMAIN_KEY: 'domainkey',
+      },
       invocation: {
         event: {
           Records: [{
@@ -48,35 +55,44 @@ describe('Index Tests', () => {
           }],
         },
       },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
     };
   });
 
-  afterEach('clean', () => {
-    sandbox.restore();
-  });
+  it('fetch cwv for base url > process > send results', async () => {
+    nock('https://adobe.com')
+      .get('/')
+      .reply(200);
+    nock('https://helix-pages.anywhere.run')
+      .get('/helix-services/run-query@v3/rum-dashboard')
+      .query({
+        ...DEFAULT_PARAMS,
+        domainkey: context.env.RUM_DOMAIN_KEY,
+        url: 'adobe.com/',
+      })
+      .reply(200, rumData);
 
-  it('requests without a valid event payload are rejected', async () => {
-    delete context.invocation;
     const resp = await main(request, context);
 
-    expect(resp.status).to.equal(400);
-    expect(resp.headers.plain()['x-error']).to.equal('Event does not contain a valid message body');
+    const expectedMessage = {
+      ...messageBodyJson,
+      auditResult: expectedAuditResult,
+    };
+
+    expect(resp.status).to.equal(200);
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been
+      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
   });
 
-  it('rejects when a message received with unknown type audit', async () => {
-    messageBodyJson.type = 'unknown-type';
-    context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
-    const errorSpy = sandbox.spy(console, 'error');
-    const resp = await main(request, context);
+  it('getRUMUrl do not add scheme to urls with a scheme already', async () => {
+    nock('http://space.cat')
+      .get('/')
+      .reply(200);
 
-    expect(resp.status).to.equal(404);
-    expect(errorSpy).to.have.been.calledWith('no such audit type: unknown-type');
-  });
-
-  it('fails when missing required env variables', async () => {
-    const resp = await main(request, context);
-
-    expect(resp.status).to.equal(500);
-    expect(resp.headers.plain()['x-error']).to.equal('internal server error');
+    const finalUrl = await getRUMUrl('http://space.cat');
+    expect(finalUrl).to.eql('space.cat/');
   });
 });

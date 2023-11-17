@@ -39,3 +39,37 @@ $ npm test
 ```bash
 $ npm run lint
 ```
+
+## Message Body Formats 
+
+Audit worker consumes the `AUDIT_JOBS_QUEUE` queue, performs the requested audit, then queues the result to `AUDIT_RESULTS_QUEUE` for the interested parties to consume later on.
+
+Expected message body format in `AUDIT_JOBS_QUEUE` is:
+
+```json
+{
+  "type": "string",
+  "url": "string",
+  "auditContext": "object"
+}
+```
+
+Output message body format sent to `AUDIT_RESULTS_QUEUE` is:
+
+```json
+{
+  "type": "string",
+  "url": "string",
+  "auditContext": "object",
+  "auditResult": "object"
+}
+```
+
+## Required ENV Variables
+
+Currently, audit worker requires two env variables:
+
+```plaintext
+AUDIT_RESULTS_QUEUE_URL=url of the queue to send audit results to
+RUM_DOMAIN_KEY=global domain key for the rum api
+```

@@ -9,8 +9,9 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-// eslint-disable-next-line no-console
-console.log('Forcing HTTP/1.1 for Adobe Fetch');
-process.env.HELIX_FETCH_FORCE_HTTP1 = 'true';
-process.env.AWS_ACCESS_KEY_ID = 'fake-key-id';
-process.env.AWS_SECRET_ACCESS_KEY = 'fake-secret';
+import { context as h2, h1 } from '@adobe/fetch';
+
+/* c8 ignore next 3 */
+export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
+  ? h1()
+  : h2();
