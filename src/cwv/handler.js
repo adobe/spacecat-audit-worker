@@ -16,24 +16,48 @@ import { fetch } from '../support/utils.js';
 export const DEFAULT_PARAMS = {
   interval: 7,
   offset: 0,
-  limit: 100,
+  limit: 101,
 };
+
+const DOMAIN_LIST_URL = 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-dashboard';
 
 // weekly pageview threshold to eliminate urls with lack of samples
 const PAGEVIEW_THRESHOLD = 7000;
 
+/**
+ * url param in run-query@v3/rum-dashboard works in a 'startsWith' fashion. url=domain.com returns
+ * an empty result whereas url=www.domain.com/ returns the desired result. To catch the redirects
+ * to subdomains we issue a GET call to the domain, then use the final url after redirects
+ * @param url
+ * @returns finalUrl {Promise<string>}
+ */
 export async function getRUMUrl(url) {
   const urlWithScheme = url.startsWith('http') ? url : `https://${url}`;
   const resp = await fetch(urlWithScheme);
   return resp.url.split('://')[1];
 }
 
-const DOMAIN_LIST_URL = 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-dashboard';
+function filterRUMData(data) {
+  return data.pageviews > PAGEVIEW_THRESHOLD // ignore the pages with low pageviews
+    && data.url.toLowerCase() !== 'other'; // ignore the combined result
+}
 
+function processRUMResponse(respJson) {
+  return respJson?.results?.data
+    .filter(filterRUMData)
+    .map((row) => ({
+      url: row.url,
+      pageviews: row.pageviews,
+      avglcp: row.avglcp,
+    }));
+}
 export default async function auditCWV(message, context) {
   const { type, url, auditContext } = message;
   const { log, sqs } = context;
-  const { AUDIT_JOBS_QUEUE_URL: queueUrl } = context.env;
+  const {
+    AUDIT_RESULTS_QUEUE_URL: queueUrl,
+    RUM_DOMAIN_KEY: domainkey,
+  } = context.env;
 
   log.info(`Received audit req for domain: ${url}`);
 
@@ -41,21 +65,14 @@ export default async function auditCWV(message, context) {
 
   const params = {
     ...DEFAULT_PARAMS,
-    domainkey: context.env.RUM_DOMAIN_KEY,
+    domainkey,
     url: finalUrl,
   };
 
   const resp = await fetch(createUrl(DOMAIN_LIST_URL, params));
   const respJson = await resp.json();
 
-  const auditResult = respJson?.results?.data
-    .filter((row) => row.pageviews > PAGEVIEW_THRESHOLD)
-    .filter((row) => row.url.toLowerCase() !== 'other')
-    .map((row) => ({
-      url: row.url,
-      pageviews: row.pageviews,
-      avglcp: row.avglcp,
-    }));
+  const auditResult = processRUMResponse(respJson);
 
   await sqs.sendMessage(queueUrl, {
     type,

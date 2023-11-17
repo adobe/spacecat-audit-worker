@@ -33,11 +33,13 @@ function sqsEventAdapter(fn) {
     let message;
 
     try {
-      log.info(`number of records in message: ${context.invocation?.event?.Records.length}`);
       // currently not publishing batch messages
-      message = JSON.parse(context.invocation?.event?.Records[0]?.body);
+      const records = context.invocation?.event?.Records;
+      log.info(`Received ${records.length} many records. ID of the first message in the batch: ${records[0]?.messageId}`);
+      message = JSON.parse(records[0]?.body);
+      log.info(`Received message with id: ${context.invocation?.event?.Records.length}`);
     } catch (e) {
-      log.error('Function was not invoked properly, message body is not a valid JSON');
+      log.error('Function was not invoked properly, message body is not a valid JSON', e);
       return new Response('', {
         status: 400,
         headers: {

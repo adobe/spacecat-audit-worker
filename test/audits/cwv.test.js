@@ -45,7 +45,7 @@ describe('Index Tests', () => {
         region: 'us-east-1',
       },
       env: {
-        AUDIT_JOBS_QUEUE_URL: 'queueUrl',
+        AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
         RUM_DOMAIN_KEY: 'domainkey',
       },
       invocation: {
@@ -84,7 +84,7 @@ describe('Index Tests', () => {
     expect(resp.status).to.equal(200);
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_JOBS_QUEUE_URL, expectedMessage);
+      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
   });
 
   it('getRUMUrl do not add scheme to urls with a scheme already', async () => {
