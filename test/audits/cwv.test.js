@@ -36,7 +36,7 @@ describe('Index Tests', () => {
       type: 'cwv',
       url: 'adobe.com',
       auditContext: {
-        key: 'value',
+        finalUrl: 'adobe.com',
       },
     };
     context = {
@@ -70,7 +70,7 @@ describe('Index Tests', () => {
       .query({
         ...DEFAULT_PARAMS,
         domainkey: context.env.RUM_DOMAIN_KEY,
-        url: 'adobe.com/',
+        url: 'adobe.com',
       })
       .reply(200, rumData);
 
@@ -93,6 +93,6 @@ describe('Index Tests', () => {
       .reply(200);
 
     const finalUrl = await getRUMUrl('http://space.cat');
-    expect(finalUrl).to.eql('space.cat/');
+    expect(finalUrl).to.eql('space.cat');
   });
 });

@@ -34,7 +34,8 @@ const PAGEVIEW_THRESHOLD = 7000;
 export async function getRUMUrl(url) {
   const urlWithScheme = url.startsWith('http') ? url : `https://${url}`;
   const resp = await fetch(urlWithScheme);
-  return resp.url.split('://')[1];
+  const finalUrl = resp.url.split('://')[1];
+  return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
 }
 
 function filterRUMData(data) {
@@ -48,6 +49,8 @@ function processRUMResponse(respJson) {
     .map((row) => ({
       url: row.url,
       pageviews: row.pageviews,
+      avgcls: row.avgcls,
+      avginp: row.avginp,
       avglcp: row.avglcp,
     }));
 }
@@ -62,6 +65,7 @@ export default async function auditCWV(message, context) {
   log.info(`Received audit req for domain: ${url}`);
 
   const finalUrl = await getRUMUrl(url);
+  auditContext.finalUrl = finalUrl;
 
   const params = {
     ...DEFAULT_PARAMS,

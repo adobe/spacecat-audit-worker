@@ -14,16 +14,22 @@ export const expectedAuditResult = [
   {
     url: 'https://www.adobe.com/',
     pageviews: '36064271',
+    avgcls: 0.148,
+    avginp: 65,
     avglcp: 5239,
   },
   {
     url: 'https://www.adobe.com/express/feature/image/remove-background',
     pageviews: '2737380',
+    avgcls: 0.129,
+    avginp: 95,
     avglcp: 1423,
   },
   {
     url: 'https://www.adobe.com/express/',
     pageviews: '2703493',
+    avgcls: 0.028,
+    avginp: 79,
     avglcp: 1869,
   },
 ];
