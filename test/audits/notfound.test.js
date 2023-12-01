@@ -20,7 +20,7 @@ import { Request } from '@adobe/fetch';
 import nock from 'nock';
 import { main } from '../../src/index.js';
 import { DOMAIN_REQUEST_DEFAULT_PARAMS, getRUMUrl } from '../../src/support/utils.js';
-import { expectedAuditResult, rumData } from '../rum-data.js';
+import { notFoundData, expectedAuditResult } from '../notfounddata.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
@@ -33,7 +33,7 @@ describe('Index Tests', () => {
 
   beforeEach('setup', () => {
     messageBodyJson = {
-      type: 'cwv',
+      type: '404',
       url: 'adobe.com',
       auditContext: {
         finalUrl: 'adobe.com',
@@ -70,9 +70,10 @@ describe('Index Tests', () => {
       .query({
         ...DOMAIN_REQUEST_DEFAULT_PARAMS,
         domainkey: context.env.RUM_DOMAIN_KEY,
+        checkpoint: 404,
         url: 'adobe.com',
       })
-      .reply(200, rumData);
+      .reply(200, notFoundData);
 
     const resp = await main(request, context);
 

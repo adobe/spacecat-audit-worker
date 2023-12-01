@@ -15,9 +15,11 @@ import { Response } from '@adobe/fetch';
 import secrets from '@adobe/helix-shared-secrets';
 import sqs from './support/sqs.js';
 import cwv from './cwv/handler.js';
+import notfound from './notfound/handler.js';
 
 const HANDLERS = {
   cwv,
+  404: notfound,
 };
 
 /**

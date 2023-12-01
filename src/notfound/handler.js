@@ -15,11 +15,10 @@ import {
   DOMAIN_LIST_URL, DOMAIN_REQUEST_DEFAULT_PARAMS, fetch, getRUMUrl, PAGEVIEW_THRESHOLD,
 } from '../support/utils.js';
 
-export function filterRUMData(data) {
-  return data.pageviews > PAGEVIEW_THRESHOLD // ignore the pages with low pageviews
+export function filter404Data(data) {
+  return data.views > PAGEVIEW_THRESHOLD // ignore the pages with low pageviews
       && data.url.toLowerCase() !== 'other'; // ignore the combined result
 }
-
 /**
  * url param in run-query@v3/rum-dashboard works in a 'startsWith' fashion. url=domain.com returns
  * an empty result whereas url=www.domain.com/ returns the desired result. To catch the redirects
@@ -28,18 +27,15 @@ export function filterRUMData(data) {
  * @returns finalUrl {Promise<string>}
  */
 
-function processRUMResponse(respJson) {
+function process404Response(respJson) {
   return respJson?.results?.data
-    .filter(filterRUMData)
+    .filter(filter404Data)
     .map((row) => ({
       url: row.url,
-      pageviews: row.pageviews,
-      avgcls: row.avgcls,
-      avginp: row.avginp,
-      avglcp: row.avglcp,
+      pageviews: row.views,
     }));
 }
-export default async function auditCWV(message, context) {
+export default async function audit404(message, context) {
   const { type, url, auditContext } = message;
   const { log, sqs } = context;
   const {
@@ -56,12 +52,13 @@ export default async function auditCWV(message, context) {
     ...DOMAIN_REQUEST_DEFAULT_PARAMS,
     domainkey,
     url: finalUrl,
+    checkpoint: 404,
   };
 
   const resp = await fetch(createUrl(DOMAIN_LIST_URL, params));
   const respJson = await resp.json();
 
-  const auditResult = processRUMResponse(respJson);
+  const auditResult = process404Response(respJson);
 
   await sqs.sendMessage(queueUrl, {
     type,
