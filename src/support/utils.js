@@ -10,8 +10,17 @@
  * governing permissions and limitations under the License.
  */
 import { context as h2, h1 } from '@adobe/fetch';
+import { isValidUrl } from '@adobe/spacecat-shared-utils';
 
 /* c8 ignore next 3 */
 export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
   ? h1()
   : h2();
+
+export const ensureValidUrl = (input) => {
+  if (isValidUrl(input)) {
+    return input;
+  }
+
+  return `https://${input}`;
+};

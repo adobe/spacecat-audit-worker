@@ -11,7 +11,6 @@
  */
 
 /* eslint-env mocha */
-/* eslint-disable no-unused-expressions */ // expect statements
 
 import chai from 'chai';
 import sinon from 'sinon';
@@ -34,7 +33,7 @@ describe('Index Tests', () => {
   beforeEach('setup', () => {
     messageBodyJson = {
       type: 'cwv',
-      url: 'adobe.com',
+      url: 'https://adobe.com',
       auditContext: {
         finalUrl: 'adobe.com',
       },
