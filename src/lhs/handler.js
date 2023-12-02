@@ -28,18 +28,16 @@ const AUDIT_TYPES = {
  * @throws {Error} - Throws an error if the type is not supported.
  */
 const typeToPSIStrategy = (type) => {
-  let strategy;
-  switch (type) {
-    case AUDIT_TYPES.MOBILE:
-      strategy = 'mobile';
-      break;
-    case AUDIT_TYPES.DESKTOP:
-      strategy = 'desktop';
-      break;
-    default:
-      throw new Error('Unsupported type. Supported types are lhs-mobile and lhs-desktop.');
+  const strategyMap = {
+    [AUDIT_TYPES.MOBILE]: 'mobile',
+    [AUDIT_TYPES.DESKTOP]: 'desktop',
+  };
+
+  if (!strategyMap[type]) {
+    throw new Error('Unsupported type. Supported types are lhs-mobile and lhs-desktop.');
   }
-  return strategy;
+
+  return strategyMap[type];
 };
 
 /**
