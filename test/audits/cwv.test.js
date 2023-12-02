@@ -60,6 +60,11 @@ describe('Index Tests', () => {
     };
   });
 
+  afterEach(() => {
+    nock.cleanAll();
+    sinon.restore();
+  });
+
   it('fetch cwv for base url > process > send results', async () => {
     nock('https://adobe.com')
       .get('/')
@@ -96,7 +101,7 @@ describe('Index Tests', () => {
   });
 
   it('getRUMUrl adds scheme to urls without a scheme', async () => {
-    nock('http://space.cat')
+    nock('https://space.cat')
       .get('/')
       .reply(200);
 
