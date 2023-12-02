@@ -15,6 +15,7 @@
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 
 import chai from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
@@ -23,6 +24,7 @@ import audit from '../../src/lhs/handler.js';
 
 const { expect } = chai;
 chai.use(sinonChai);
+chai.use(chaiAsPromised);
 
 describe('audit', () => {
   let context;
@@ -96,10 +98,6 @@ describe('audit', () => {
         sendMessage: sandbox.stub().resolves(),
       },
     };
-
-    nock('https://psi-audit-service.com', { encodedQueryParams: true })
-      .get('/?url=https://adobe.com&strategy=mobile')
-      .reply(200, psiResult);
   });
 
   afterEach(() => {
@@ -107,10 +105,98 @@ describe('audit', () => {
     sinon.restore();
   });
 
-  it('should successfully perform an audit', async () => {
+  it('should successfully perform an audit for mobile strategy', async () => {
+    nock('https://psi-audit-service.com', { encodedQueryParams: true })
+      .get('/?url=https://adobe.com&strategy=mobile')
+      .reply(200, psiResult);
+
     const response = await audit(auditQueueMessage, context);
 
     expect(response.status).to.equal(204);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+  });
+
+  it('should successfully perform an audit for mobile strategy with valid URL', async () => {
+    nock('https://psi-audit-service.com', { encodedQueryParams: true })
+      .get('/?url=https://adobe.com&strategy=mobile')
+      .reply(200, psiResult);
+
+    auditQueueMessage.url = 'https://adobe.com';
+
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(204);
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+  });
+
+  it('successfully performs an audit for desktop strategy', async () => {
+    nock('https://psi-audit-service.com', { encodedQueryParams: true })
+      .get('/?url=https://adobe.com&strategy=desktop')
+      .reply(200, psiResult);
+
+    auditQueueMessage.type = 'lhs-desktop';
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(204);
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+  });
+
+  it('throws error for an audit of unknown type', async () => {
+    auditQueueMessage.type = 'unknown-type';
+
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(500);
+    expect(response.statusText).to.equal('LHS Audit Error: Unexpected error occurred: Unsupported type. Supported types are lhs-mobile and lhs-desktop.');
+  });
+
+  it('throws error when psi api fetch fails', async () => {
+    nock('https://psi-audit-service.com', { encodedQueryParams: true })
+      .get('/?url=https://adobe.com&strategy=mobile')
+      .reply(405, 'Method Not Allowed');
+
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(500);
+    expect(response.statusText).to.equal('LHS Audit Error: Unexpected error occurred: Expected a 200 status from PSI API');
+  });
+
+  it('throws error when site does not exist', async () => {
+    mockDataAccess.getSiteByBaseURL.resolves(null);
+
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(500);
+    expect(response.statusText).to.equal('LHS Audit Error: Unexpected error occurred: Site not found');
+  });
+
+  it('throws error when data access fails', async () => {
+    mockDataAccess.getSiteByBaseURL.rejects(new Error('Data Error'));
+
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(500);
+    expect(response.statusText).to.equal('LHS Audit Error: Unexpected error occurred: Error getting site with baseURL adobe.com');
+  });
+
+  it('throws error when context is incomplete', async () => {
+    delete context.dataAccess;
+
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(500);
+    expect(response.statusText).to.equal('LHS Audit Error: Invalid configuration');
+  });
+
+  it('performs audit even when sqs message send fails', async () => {
+    nock('https://psi-audit-service.com', { encodedQueryParams: true })
+      .get('/?url=https://adobe.com&strategy=mobile')
+      .reply(200, psiResult);
+
+    context.sqs.sendMessage.rejects(new Error('SQS Error'));
+
+    await audit(auditQueueMessage, context);
+
+    expect(mockLog.error).to.have.been.calledOnceWith('Error while sending audit result to queue', sinon.match.instanceOf(Error));
   });
 });

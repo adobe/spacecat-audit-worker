@@ -73,7 +73,7 @@ const validateContext = (config) => {
  * @returns {Object} - Returns an object containing the audit data.
  */
 const createAuditData = (site, psiData, psiApiBaseUrl, fullAuditRef, strategy) => {
-  const { categories } = psiData.lighthouseResult;
+  const { categories, finalUrl } = psiData.lighthouseResult;
   return {
     siteId: site.getId(),
     auditType: `lhs-${strategy}`,
@@ -81,6 +81,7 @@ const createAuditData = (site, psiData, psiApiBaseUrl, fullAuditRef, strategy) =
     fullAuditRef,
     auditResult: {
       // TODO: add content and github diff here
+      finalUrl,
       scores: {
         performance: categories.performance.score,
         seo: categories.seo.score,
@@ -96,16 +97,17 @@ const createAuditData = (site, psiData, psiApiBaseUrl, fullAuditRef, strategy) =
  *
  * @param {Object} site - The site object containing information about the site.
  * @param {Object} auditData - The audit data to be included in the message.
- * @param {Object} originalMessage - The original message received for auditing.
  * @returns {Object} - Returns a message object formatted for SQS.
  */
-const createSQSMessage = (site, auditData, originalMessage) => ({
-  type: originalMessage.type,
-  url: originalMessage.url,
-  auditContext: originalMessage.auditContext,
+const createSQSMessage = (site, auditData) => ({
+  type: auditData.auditType,
+  url: site.getBaseURL(),
+  auditContext: {
+    finalUrl: auditData.auditResult.finalUrl,
+  },
   auditResult: {
     siteId: site.getId(),
-    scores: auditData.auditResult,
+    scores: auditData.auditResult.scores,
   },
 });
 
@@ -170,13 +172,14 @@ const retrieveSite = async (dataAccess, url, log) => {
  * @returns {Response} - Returns a response object with status 500.
  */
 const respondWithError = (message, log, e) => {
-  const finalMessage = `LHS Audit Error: ${message}`;
+  let finalMessage = `LHS Audit Error: ${message}`;
   if (e) {
+    finalMessage += `: ${e.message}`;
     log.error(finalMessage, e);
   } else {
     log.error(finalMessage);
   }
-  return new Response(message, { status: 500 });
+  return new Response('Internal Server Error', { status: 500, statusText: finalMessage });
 };
 
 /**
@@ -230,9 +233,8 @@ async function processAudit(
   const auditData = createAuditData(site, psiData, psiApiBaseUrl, fullAuditRef, strategy);
   await dataAccess.addAudit(auditData);
 
-  // TODO: Uncomment this once the audit result queue is ready.
-  // const message = createSQSMessage(site, auditData, context.message);
-  // await sendMessageToSQS(sqs, queueUrl, message, log);
+  const message = createSQSMessage(site, auditData);
+  await sendMessageToSQS(sqs, queueUrl, message, log);
 }
 
 /**
@@ -272,9 +274,9 @@ export default async function audit(message, context) {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
 
-  const strategy = typeToPSIStrategy(type);
-
   try {
+    const strategy = typeToPSIStrategy(type);
+
     if (!validateContext({
       dataAccess, psiApiBaseUrl, queueUrl, sqs,
     })) {

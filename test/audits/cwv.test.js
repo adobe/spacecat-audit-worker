@@ -94,4 +94,13 @@ describe('Index Tests', () => {
     const finalUrl = await getRUMUrl('http://space.cat');
     expect(finalUrl).to.eql('space.cat');
   });
+
+  it('getRUMUrl adds scheme to urls without a scheme', async () => {
+    nock('http://space.cat')
+      .get('/')
+      .reply(200);
+
+    const finalUrl = await getRUMUrl('space.cat');
+    expect(finalUrl).to.eql('space.cat');
+  });
 });
