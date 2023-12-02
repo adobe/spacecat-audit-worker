@@ -93,18 +93,21 @@ const createAuditData = (site, psiData, psiApiBaseUrl, fullAuditRef, strategy) =
 /**
  * Creates a message object to be sent to SQS.
  *
+ * @param {Object} auditContext - The audit context object containing information about the audit.
  * @param {Object} site - The site object containing information about the site.
  * @param {Object} auditData - The audit data to be included in the message.
  * @returns {Object} - Returns a message object formatted for SQS.
  */
-const createSQSMessage = (site, auditData) => ({
+const createSQSMessage = (auditContext, site, auditData) => ({
   type: auditData.auditType,
   url: site.getBaseURL(),
   auditContext: {
+    ...auditContext,
     finalUrl: auditData.auditResult.finalUrl,
   },
   auditResult: {
     siteId: site.getId(),
+    finalUrl: auditData.auditResult.finalUrl,
     scores: auditData.auditResult.scores,
   },
 });
@@ -204,6 +207,7 @@ const sendMessageToSQS = async (sqs, queueUrl, message, log) => {
  *
  * @async
  * @param {Object} dataAccess - The data access object for database operations.
+ * @param {Object} auditContext - The audit context object containing information about the audit.
  * @param {string} queueUrl - The URL of the SQS queue.
  * @param {Object} sqs - The SQS service object.
  * @param {string} psiApiBaseUrl - The base URL for the PageSpeed Insights API.
@@ -215,6 +219,7 @@ const sendMessageToSQS = async (sqs, queueUrl, message, log) => {
  */
 async function processAudit(
   dataAccess,
+  auditContext,
   queueUrl,
   sqs,
   psiApiBaseUrl,
@@ -231,7 +236,7 @@ async function processAudit(
   const auditData = createAuditData(site, psiData, psiApiBaseUrl, fullAuditRef, strategy);
   await dataAccess.addAudit(auditData);
 
-  const message = createSQSMessage(site, auditData);
+  const message = createSQSMessage(auditContext, site, auditData);
   await sendMessageToSQS(sqs, queueUrl, message, log);
 }
 
@@ -265,7 +270,7 @@ async function processAudit(
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
 export default async function audit(message, context) {
-  const { type, url } = message;
+  const { type, url, auditContext } = message;
   const { dataAccess, log, sqs } = context;
   const {
     PAGESPEED_API_BASE_URL: psiApiBaseUrl,
@@ -284,7 +289,7 @@ export default async function audit(message, context) {
     log.info(`Received ${type} audit request for baseURL: ${url}`);
 
     const startTime = process.hrtime();
-    await processAudit(dataAccess, queueUrl, sqs, psiApiBaseUrl, url, strategy, log);
+    await processAudit(dataAccess, auditContext, queueUrl, sqs, psiApiBaseUrl, url, strategy, log);
     const endTime = process.hrtime(startTime);
 
     const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
