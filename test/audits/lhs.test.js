@@ -158,7 +158,9 @@ describe('audit', () => {
     const response = await audit(auditQueueMessage, context);
 
     expect(response.status).to.equal(500);
-    expect(response.statusText).to.equal('LHS Audit Error: Unexpected error occurred: Expected a 200 status from PSI API');
+    expect(response.statusText).to.equal(
+      'LHS Audit Error: Unexpected error occurred: Expected a 200 status from PSI API, received 405',
+    );
   });
 
   it('throws error when site does not exist', async () => {
@@ -176,16 +178,22 @@ describe('audit', () => {
     const response = await audit(auditQueueMessage, context);
 
     expect(response.status).to.equal(500);
-    expect(response.statusText).to.equal('LHS Audit Error: Unexpected error occurred: Error getting site with baseURL adobe.com');
+    expect(response.statusText).to.equal(
+      'LHS Audit Error: Unexpected error occurred: Error getting site with baseURL adobe.com: Data Error',
+    );
   });
 
   it('throws error when context is incomplete', async () => {
     delete context.dataAccess;
+    delete context.sqs;
+    context.env = {};
 
     const response = await audit(auditQueueMessage, context);
 
     expect(response.status).to.equal(500);
-    expect(response.statusText).to.equal('LHS Audit Error: Invalid configuration');
+    expect(response.statusText).to.equal(
+      'LHS Audit Error: Invalid configuration: Invalid dataAccess object, Invalid psiApiBaseUrl, Invalid queueUrl, Invalid sqs object',
+    );
   });
 
   it('performs audit even when sqs message send fails', async () => {
@@ -197,6 +205,14 @@ describe('audit', () => {
 
     await audit(auditQueueMessage, context);
 
-    expect(mockLog.error).to.have.been.calledOnceWith('Error while sending audit result to queue', sinon.match.instanceOf(Error));
+    expect(mockLog.error).to.have.been.calledWith(
+      'Error while sending audit result to queue',
+      sinon.match.instanceOf(Error),
+    );
+
+    expect(mockLog.error).to.have.been.calledWith(
+      'LHS Audit Error: Unexpected error occurred: Failed to send message to SQS: SQS Error',
+      sinon.match.instanceOf(Error),
+    );
   });
 });

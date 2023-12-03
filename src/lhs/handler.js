@@ -48,16 +48,19 @@ const typeToPSIStrategy = (type) => {
  * @param {string} config.psiApiBaseUrl - The base URL for the PageSpeed Insights API.
  * @param {string} config.queueUrl - The URL of the SQS queue.
  * @param {Object} config.sqs - The SQS service object.
- * @returns {boolean} - Returns true if the configuration is valid, otherwise false.
+ * @returns {boolean|Array<string>} - Returns true if valid, otherwise an array of errors.
  */
 const validateContext = (config) => {
   const {
     dataAccess, psiApiBaseUrl, queueUrl, sqs,
   } = config;
-  return !(!isObject(dataAccess)
-    || !isValidUrl(psiApiBaseUrl)
-    || !hasText(queueUrl)
-    || !isObject(sqs));
+  const errors = [];
+  if (!isObject(dataAccess)) errors.push('Invalid dataAccess object');
+  if (!isValidUrl(psiApiBaseUrl)) errors.push('Invalid psiApiBaseUrl');
+  if (!hasText(queueUrl)) errors.push('Invalid queueUrl');
+  if (!isObject(sqs)) errors.push('Invalid sqs object');
+
+  return errors.length === 0 ? true : errors;
 };
 
 /**
@@ -131,11 +134,10 @@ const fetchPsiData = async (psiApiBaseUrl, url, strategy) => {
   const response = await fetch(psiUrl);
 
   if (response.status !== 200) {
-    throw new Error('Expected a 200 status from PSI API');
+    throw new Error(`Expected a 200 status from PSI API, received ${response.status}`);
   }
 
   const psiData = await response.json();
-
   return { psiData, fullAuditRef: response.url };
 };
 
@@ -160,7 +162,7 @@ const retrieveSite = async (dataAccess, url, log) => {
     }
     return site;
   } catch (e) {
-    throw new Error(`Error getting site with baseURL ${url}`);
+    throw new Error(`Error getting site with baseURL ${url}: ${e.message}`);
   }
 };
 
@@ -198,6 +200,7 @@ const sendMessageToSQS = async (sqs, queueUrl, message, log) => {
     await sqs.sendMessage(queueUrl, message);
   } catch (e) {
     log.error('Error while sending audit result to queue', e);
+    throw new Error(`Failed to send message to SQS: ${e.message}`);
   }
 };
 
@@ -279,24 +282,21 @@ export default async function audit(message, context) {
 
   try {
     const strategy = typeToPSIStrategy(type);
-
-    if (!validateContext({
+    const validationResults = validateContext({
       dataAccess, psiApiBaseUrl, queueUrl, sqs,
-    })) {
-      return respondWithError('Invalid configuration', log);
+    });
+    if (validationResults !== true) {
+      return respondWithError(`Invalid configuration: ${validationResults.join(', ')}`, log);
     }
 
     log.info(`Received ${type} audit request for baseURL: ${url}`);
-
     const startTime = process.hrtime();
     await processAudit(dataAccess, auditContext, queueUrl, sqs, psiApiBaseUrl, url, strategy, log);
     const endTime = process.hrtime(startTime);
-
     const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
     const formattedElapsed = elapsedSeconds.toFixed(2);
 
     log.info(`Audit for ${type} completed in ${formattedElapsed} seconds`);
-
     return new Response('', { status: 204 });
   } catch (e) {
     return respondWithError('Unexpected error occurred', log, e);
