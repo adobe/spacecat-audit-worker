@@ -26,7 +26,7 @@ const { expect } = chai;
 chai.use(sinonChai);
 chai.use(chaiAsPromised);
 
-describe('audit', () => {
+describe('LHS Audit', () => {
   let context;
   let auditQueueMessage;
   let mockDataAccess;
@@ -41,6 +41,7 @@ describe('audit', () => {
 
   const psiResult = {
     lighthouseResult: {
+      finalUrl: 'https://adobe.com/',
       categories: {
         performance: {
           score: 0.5,
@@ -61,6 +62,7 @@ describe('audit', () => {
   beforeEach(() => {
     mockDataAccess = {
       getSiteByBaseURL: sinon.stub().resolves(site),
+      getLatestAuditForSite: sinon.stub().resolves(null),
       addAudit: sinon.stub(),
     };
 
@@ -135,6 +137,19 @@ describe('audit', () => {
       .reply(200, psiResult);
 
     auditQueueMessage.type = 'lhs-desktop';
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(204);
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+  });
+
+  it('should successfully perform an audit with latest audit', async () => {
+    mockDataAccess.getLatestAuditForSite.resolves({ getAuditedAt: () => '2021-01-01T00:00:00.000Z' });
+
+    nock('https://psi-audit-service.com', { encodedQueryParams: true })
+      .get('/?url=https://adobe.com&strategy=mobile')
+      .reply(200, psiResult);
+
     const response = await audit(auditQueueMessage, context);
 
     expect(response.status).to.equal(204);
