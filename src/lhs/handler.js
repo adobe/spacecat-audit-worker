@@ -10,13 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { createUrl, Response } from '@adobe/fetch';
 import { hasText, isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
-import { ensureValidUrl, fetch } from '../support/utils.js';
 import GithubClient from '../support/github-client.js';
 import ContentClient from '../support/content-client.js';
 import { extractAuditScores, extractThirdPartySummary, extractTotalBlockingTime } from '../utils/lhs.js';
+import PSIClient from '../support/psi-client.js';
 
 const AUDIT_TYPES = {
   MOBILE: 'lhs-mobile',
@@ -71,10 +70,9 @@ const validateContext = (config) => {
  *
  * @param {Object} site - The site object containing information about the site.
  * @param {Object} latestAudit - The latest audit for the site.
- * @param {Object} psiData - The PageSpeed Insights data.
+ * @param {Object} lighthouseResult - The PageSpeed Insights data.
  * @param {object} gitHubDiff - The GitHub diff object.
  * @param {object} markdownContext - The markdown context object.
- * @param {string} psiApiBaseUrl - The base URL for the PageSpeed Insights API.
  * @param {string} fullAuditRef - The URL to the full audit results.
  * @param {string} strategy - The strategy of the audit.
  *
@@ -83,10 +81,9 @@ const validateContext = (config) => {
 const createAuditData = (
   site,
   latestAudit,
-  psiData,
+  lighthouseResult,
   gitHubDiff,
   markdownContext,
-  psiApiBaseUrl,
   fullAuditRef,
   strategy,
 ) => {
@@ -94,7 +91,7 @@ const createAuditData = (
     audits,
     categories,
     finalUrl,
-  } = psiData.lighthouseResult;
+  } = lighthouseResult;
 
   const scores = extractAuditScores(categories);
   const totalBlockingTime = extractTotalBlockingTime(audits);
@@ -137,32 +134,6 @@ const createSQSMessage = (auditContext, site, auditData) => ({
     scores: auditData.auditResult.scores,
   },
 });
-
-/**
- * Fetches PageSpeed Insights data for the given URL and PSI strategy. The data is fetched from the
- * PSI API URL provided in the configuration. The PSI API URL is expected to return
- * a 302 redirect to the actual data. This is currently provided by the EaaS API.
- *
- * @async
- * @param {string} psiApiBaseUrl - The base URL for the PageSpeed Insights API.
- * @param {string} url - The URL of the site to fetch PSI data for.
- * @param {string} strategy - The strategy of the audit.
- * @throws {Error} - Throws an error if the expected HTTP responses are not received.
- * @returns {Promise<Object>} - Returns an object containing PSI data and a task ID.
- */
-const fetchPsiData = async (psiApiBaseUrl, url, strategy) => {
-  const urlToBeAudited = ensureValidUrl(url);
-  const psiUrl = createUrl(psiApiBaseUrl, { url: urlToBeAudited, strategy });
-
-  const response = await fetch(psiUrl);
-
-  if (response.status !== 200) {
-    throw new Error(`Expected a 200 status from PSI API, received ${response.status}`);
-  }
-
-  const psiData = await response.json();
-  return { psiData, fullAuditRef: response.url };
-};
 
 /**
  * Fetches site data based on the given base URL. If no site is found for the given
@@ -232,54 +203,42 @@ const sendMessageToSQS = async (sqs, queueUrl, message, log) => {
  * and sending a message to SQS.
  *
  * @async
- * @param {Object} dataAccess - The data access object for database operations.
+ * @param {Object} services - The services object containing the PSI client,
+ * content client, and more.
+ * @param {Object} site - The site which to audit.
  * @param {Object} auditContext - The audit context object containing information about the audit.
  * @param {string} queueUrl - The URL of the SQS queue.
- * @param {Object} sqs - The SQS service object.
- * @param {string} psiApiBaseUrl - The base URL for the PageSpeed Insights API.
- * @param {string} url - The URL of the site to audit.
  * @param {string} strategy - The strategy of the audit.
- * @param {string} gitHubId - The GitHub ID.
- * @param {string} gitHubSecret - The GitHub secret.
  * @param {Object} log - The logging object.
  *
  * @throws {Error} - Throws an error if any step in the audit process fails.
  */
 async function processAudit(
-  dataAccess,
+  services,
+  site,
   auditContext,
   queueUrl,
-  sqs,
-  psiApiBaseUrl,
-  url,
   strategy,
-  gitHubId,
-  gitHubSecret,
   log = console,
 ) {
-  const site = await retrieveSite(dataAccess, url, log);
-  if (!site) {
-    throw new Error('Site not found');
-  }
+  const {
+    dataAccess, contentClient, githubClient, psiClient, sqs,
+  } = services;
 
-  const { psiData, fullAuditRef } = await fetchPsiData(psiApiBaseUrl, url, strategy);
+  const baseURL = site.getBaseURL();
   const latestAudit = await dataAccess.getLatestAuditForSite(site.getId(), `lhs-${strategy}`);
 
-  const contentClient = ContentClient(log);
+  const { lighthouseResult, fullAuditRef } = await psiClient.runAudit(baseURL, strategy);
+
   const markdownContext = await contentClient.fetchMarkdownDiff(
-    site.getBaseURL(),
+    baseURL,
     latestAudit,
-    psiData.lighthouseResult.finalUrl,
+    lighthouseResult.finalUrl,
   );
 
-  const githubClient = new GithubClient({
-    baseUrl: site.getBaseURL(),
-    gitHubId,
-    gitHubSecret,
-  }, log);
   const gitHubDiff = await githubClient.fetchGithubDiff(
-    site.getBaseURL(),
-    psiData.lighthouseResult.fetchTime,
+    baseURL,
+    lighthouseResult.fetchTime,
     latestAudit?.getAuditedAt(),
     site.getGitHubURL(),
   );
@@ -287,10 +246,9 @@ async function processAudit(
   const auditData = createAuditData(
     site,
     latestAudit,
-    psiData,
+    lighthouseResult,
     markdownContext,
     gitHubDiff,
-    psiApiBaseUrl,
     fullAuditRef,
     strategy,
   );
@@ -299,6 +257,50 @@ async function processAudit(
 
   const message = createSQSMessage(auditContext, site, auditData);
   await sendMessageToSQS(sqs, queueUrl, message, log);
+}
+
+/**
+ * Initializes the services used by the audit process.
+ *
+ * @param {Object} config - The configuration object.
+ * @param {Object} config.site - The site object containing information about the site.
+ * @param {string} config.psiApiKey - The PageSpeed Insights API key.
+ * @param {string} config.psiApiBaseUrl - The PageSpeed Insights API base URL.
+ * @param {string} config.gitHubId - The GitHub client ID.
+ * @param {string} config.gitHubSecret - The GitHub client secret.
+ * @param {Object} config.sqs - The SQS service object.
+ * @param {Object} config.dataAccess - The data access object for database operations.
+ * @param {Object} log - The logging object.
+ *
+ * @returns {Object} - Returns an object containing the services.
+ * @throws {Error} - Throws an error if any of the services cannot be initialized.
+ */
+function initServices(config, log = console) {
+  const {
+    site,
+    psiApiKey,
+    psiApiBaseUrl,
+    gitHubId,
+    gitHubSecret,
+    sqs,
+    dataAccess,
+  } = config;
+
+  const psiClient = PSIClient({ apiKey: psiApiKey, baseUrl: psiApiBaseUrl }, log);
+  const contentClient = ContentClient(log);
+  const githubClient = new GithubClient({
+    baseUrl: site.getBaseURL(),
+    gitHubId,
+    gitHubSecret,
+  }, log);
+
+  return {
+    dataAccess,
+    contentClient,
+    githubClient,
+    psiClient,
+    sqs,
+  };
 }
 
 /**
@@ -335,6 +337,7 @@ export default async function audit(message, context) {
   const { dataAccess, log, sqs } = context;
   const {
     PAGESPEED_API_BASE_URL: psiApiBaseUrl,
+    PAGESPEED_API_KEY: psiApiKey,
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
     GITHUB_CLIENT_ID: gitHubId,
     GITHUB_CLIENT_SECRET: gitHubSecret,
@@ -342,26 +345,39 @@ export default async function audit(message, context) {
 
   try {
     const strategy = typeToPSIStrategy(type);
+
     const validationResults = validateContext({
       dataAccess, psiApiBaseUrl, queueUrl, sqs,
     });
+
     if (validationResults !== true) {
       return respondWithError(`Invalid configuration: ${validationResults.join(', ')}`, log);
     }
 
     log.info(`Received ${type} audit request for baseURL: ${url}`);
 
-    const startTime = process.hrtime();
-    await processAudit(
-      dataAccess,
-      auditContext,
-      queueUrl,
-      sqs,
+    const site = await retrieveSite(dataAccess, url, log);
+    if (!site) {
+      return new Response('Site not found', { status: 404 });
+    }
+
+    const services = initServices({
+      site,
+      psiApiKey,
       psiApiBaseUrl,
-      url,
-      strategy,
       gitHubId,
       gitHubSecret,
+      sqs,
+      dataAccess,
+    }, log);
+
+    const startTime = process.hrtime();
+    await processAudit(
+      services,
+      site,
+      auditContext,
+      queueUrl,
+      strategy,
       log,
     );
     const endTime = process.hrtime(startTime);
@@ -370,7 +386,7 @@ export default async function audit(message, context) {
 
     log.info(`Audit for ${type} completed in ${formattedElapsed} seconds`);
 
-    return new Response('', { status: 204 });
+    return new Response('', { status: 200 });
   } catch (e) {
     return respondWithError('Unexpected error occurred', log, e);
   }

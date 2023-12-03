@@ -114,7 +114,7 @@ describe('LHS Audit', () => {
 
     const response = await audit(auditQueueMessage, context);
 
-    expect(response.status).to.equal(204);
+    expect(response.status).to.equal(200);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
   });
 
@@ -127,7 +127,7 @@ describe('LHS Audit', () => {
 
     const response = await audit(auditQueueMessage, context);
 
-    expect(response.status).to.equal(204);
+    expect(response.status).to.equal(200);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
   });
 
@@ -139,7 +139,7 @@ describe('LHS Audit', () => {
     auditQueueMessage.type = 'lhs-desktop';
     const response = await audit(auditQueueMessage, context);
 
-    expect(response.status).to.equal(204);
+    expect(response.status).to.equal(200);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
   });
 
@@ -152,7 +152,7 @@ describe('LHS Audit', () => {
 
     const response = await audit(auditQueueMessage, context);
 
-    expect(response.status).to.equal(204);
+    expect(response.status).to.equal(200);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
   });
 
@@ -174,17 +174,16 @@ describe('LHS Audit', () => {
 
     expect(response.status).to.equal(500);
     expect(response.statusText).to.equal(
-      'LHS Audit Error: Unexpected error occurred: Expected a 200 status from PSI API, received 405',
+      'LHS Audit Error: Unexpected error occurred: HTTP error! Status: 405',
     );
   });
 
-  it('throws error when site does not exist', async () => {
+  it('returns a 404 when site does not exist', async () => {
     mockDataAccess.getSiteByBaseURL.resolves(null);
 
     const response = await audit(auditQueueMessage, context);
 
-    expect(response.status).to.equal(500);
-    expect(response.statusText).to.equal('LHS Audit Error: Unexpected error occurred: Site not found');
+    expect(response.status).to.equal(404);
   });
 
   it('throws error when data access fails', async () => {

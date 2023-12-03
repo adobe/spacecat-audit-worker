@@ -10,12 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { createPatch } from 'diff';
 import { isValidUrl } from '@adobe/spacecat-shared-utils';
+import { createPatch } from 'diff';
 
 import { fetch } from './utils.js';
-
-const NOT_FOUND_STATUS = 404;
 
 /**
  * Represents a utility for calculating content differences from Markdown files fetched via HTTP.
@@ -23,6 +21,20 @@ const NOT_FOUND_STATUS = 404;
  * @param {Object} log - The logger object.
  */
 function ContentClient(log = console) {
+  /**
+   * Returns the Markdown URL for a given content URL.
+   * @param {string} contentUrl - The URL of the content page used in the audit.
+   * @return {string} The Markdown URL.
+   */
+  function getMarkdownUrl(contentUrl) {
+    const markdownUrl = new URL(contentUrl);
+    const { pathname: path } = markdownUrl;
+
+    markdownUrl.pathname = path.endsWith('/') ? `${path}index.md` : `${path}.md`;
+
+    return markdownUrl.toString();
+  }
+
   /**
    * Creates a diff patch between two strings. Helper function for testability.
    * @param {string} url - The URL of the Markdown file.
@@ -64,10 +76,7 @@ function ContentClient(log = console) {
       return null;
     }
 
-    const markdownUrl = new URL(contentUrl);
-    const { pathname: path } = markdownUrl;
-
-    markdownUrl.pathname = path.endsWith('/') ? `${path}index.md` : `${path}.md`;
+    const markdownUrl = getMarkdownUrl(contentUrl);
 
     try {
       const response = await fetch(markdownUrl.toString());
