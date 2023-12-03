@@ -19,6 +19,8 @@ import { fetch } from './utils.js';
  * Represents a utility for calculating content differences from Markdown files fetched via HTTP.
  *
  * @param {Object} log - The logger object.
+ *
+ * @returns {ContentClient} - The content client.
  */
 function ContentClient(log = console) {
   /**

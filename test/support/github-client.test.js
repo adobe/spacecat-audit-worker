@@ -31,25 +31,25 @@ describe('GithubClient', () => {
 
   describe('createGithubApiUrl', () => {
     it('creates a basic URL', () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com' });
       const url = client.createGithubApiUrl('some-org');
       expect(url).to.equal('https://api.github.com/repos/some-org?page=1&per_page=100');
     });
 
     it('includes repoName in the URL', () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com' });
       const url = client.createGithubApiUrl('some-org', 'test');
       expect(url).to.equal('https://api.github.com/repos/some-org/test?page=1&per_page=100');
     });
 
     it('appends additional path to the URL', () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com' });
       const url = client.createGithubApiUrl('some-org', 'test', 'commits');
       expect(url).to.equal('https://api.github.com/repos/some-org/test/commits?page=1&per_page=100');
     });
 
     it('includes page number in the URL', () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com' });
       const url = client.createGithubApiUrl('some-org', 'test', 'commits', 5);
       expect(url).to.equal('https://api.github.com/repos/some-org/test/commits?page=5&per_page=100');
     });
@@ -57,12 +57,12 @@ describe('GithubClient', () => {
 
   describe('createGithubAuthHeaderValue', () => {
     it('throws error if credentials are missing', () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com' });
       expect(() => client.createGithubAuthHeaderValue()).to.throw('GitHub credentials not provided');
     });
 
     it('creates a valid Basic Auth header', () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
       const header = client.createGithubAuthHeaderValue();
       expect(header).to.equal(`Basic ${Buffer.from('id:secret').toString('base64')}`);
     });
@@ -70,7 +70,7 @@ describe('GithubClient', () => {
 
   describe('fetchGithubDiff', () => {
     it('fetches diffs from GitHub', async () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
       const audit = {
         time: '2023-06-16T00:00:00.000Z',
       };
@@ -100,7 +100,7 @@ describe('GithubClient', () => {
     });
 
     it('handles errors from GitHub API', async () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
       nock('https://api.github.com').get('/repos/some-org/test/commits').query(true).replyWithError('Network Error');
 
       const audit = {
@@ -114,7 +114,7 @@ describe('GithubClient', () => {
     });
 
     it('handles unexpected data format from GitHub API', async () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
       nock('https://api.github.com').get('/repos/some-org/test/commits').query(true).reply(200, null);
 
       const audit = {
@@ -128,7 +128,7 @@ describe('GithubClient', () => {
     });
 
     it('sets "since" to 24 hours before "until" if "lastAuditedAt" is not provided', async () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
       const fixedFetchTime = '2023-06-16T00:00:00.000Z';
       const audit = {
         time: fixedFetchTime,
@@ -145,7 +145,7 @@ describe('GithubClient', () => {
     });
 
     it('skips binary or too large diffs', async () => {
-      const client = new GithubClient(
+      const client = GithubClient(
         { baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' },
         console,
       );
@@ -179,7 +179,7 @@ describe('GithubClient', () => {
     });
 
     it('includes diffs that are not binary and within size limit', async () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
       const mockDiffs = [
         { sha: 'commit1', data: 'Sample diff content' },
         { sha: 'commit2', data: 'Another valid diff content' },
@@ -206,7 +206,7 @@ describe('GithubClient', () => {
     });
 
     it('logs error.response.data when error has a response property', async () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
 
       const errorWithResponse = {
         response: {
@@ -232,7 +232,7 @@ describe('GithubClient', () => {
     });
 
     it('logs the error directly when error does not have a response property', async () => {
-      const client = new GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
       const audit = {
         time: '2023-06-16T00:00:00.000Z',
       };

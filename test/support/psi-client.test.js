@@ -20,7 +20,10 @@ import PSIClient from '../../src/support/psi-client.js';
 describe('PSIClient', () => {
   let client;
   let logMock;
-  const config = { apiKey: 'testApiKey', baseUrl: 'https://example.com' };
+  const config = {
+    apiKey: 'testApiKey',
+    apiBaseUrl: 'https://example.com',
+  };
 
   beforeEach(() => {
     logMock = { info: sinon.spy(), error: sinon.spy() };
@@ -30,6 +33,12 @@ describe('PSIClient', () => {
   afterEach(() => {
     sinon.restore();
     nock.cleanAll();
+  });
+
+  describe('PSI Function', () => {
+    it('throws error when api base url is missing', () => {
+      expect(() => PSIClient({})).to.throw('Invalid PSI API Base URL: undefined');
+    });
   });
 
   describe('formatURL', () => {

@@ -17,23 +17,19 @@ import { fetch } from './utils.js';
 const MAX_DIFF_SIZE = 102400; // Maximum size of diff in bytes
 const SECONDS_IN_A_DAY = 86400; // Number of seconds in a day
 
-class GithubClient {
-  /**
-   * Creates a new GitHub client.
-   * @param {object} config - The configuration object.
-   * @param {string} config.baseUrl - The base URL of the GitHub API.
-   * @param {string} config.githubId - The GitHub ID.
-   * @param {string} config.githubSecret - The GitHub secret.
-   * @param {object} [log] - The logger object.
-   */
-  constructor(config, log = console) {
-    const { baseUrl, githubId, githubSecret } = config;
-    this.baseUrl = baseUrl;
-    this.githubId = githubId;
-    this.githubSecret = githubSecret;
-    this.log = log;
-  }
-
+/**
+ * Creates a GitHub client.
+ *
+ * @param {object} config - The configuration object.
+ * @param {string} config.baseUrl - The base URL of the GitHub API.
+ * @param {string} config.githubId - The GitHub ID.
+ * @param {string} config.githubSecret - The GitHub secret.
+ * @param {object} log - The logger.
+ * @param {object} log - The logger.
+ *
+ * @return {GithubClient} - The GitHub client.
+ */
+function GithubClient({ baseUrl, githubId, githubSecret }, log = console) {
   /**
    * Creates a URL for the GitHub API.
    *
@@ -43,12 +39,12 @@ class GithubClient {
    * @param {number} page - The page number for pagination (optional).
    * @returns {string} The created GitHub API URL.
    */
-  createGithubApiUrl(githubOrg, repoName = '', path = '', page = 1) {
+  const createGithubApiUrl = (githubOrg, repoName = '', path = '', page = 1) => {
     const repoPart = repoName ? `/${repoName}` : '';
     const pathPart = path ? `/${path}` : '';
 
-    return `${this.baseUrl}/repos/${githubOrg}${repoPart}${pathPart}?page=${page}&per_page=100`;
-  }
+    return `${baseUrl}/repos/${githubOrg}${repoPart}${pathPart}?page=${page}&per_page=100`;
+  };
 
   /**
    * Creates a Basic Authentication header value from a given GitHub ID and secret.
@@ -56,12 +52,12 @@ class GithubClient {
    * @returns {string} - The Basic Authentication header value.
    * @throws {Error} - Throws an error if GitHub credentials are not provided.
    */
-  createGithubAuthHeaderValue() {
-    if (!hasText(this.githubId) || !hasText(this.githubSecret)) {
+  const createGithubAuthHeaderValue = () => {
+    if (!hasText(githubId) || !hasText(githubSecret)) {
       throw new Error('GitHub credentials not provided');
     }
-    return `Basic ${Buffer.from(`${this.githubId}:${this.githubSecret}`).toString('base64')}`;
-  }
+    return `Basic ${Buffer.from(`${githubId}:${githubSecret}`).toString('base64')}`;
+  };
 
   /**
    * Fetches and compiles the diffs of all changes made in a GitHub repository between two
@@ -89,9 +85,9 @@ class GithubClient {
    *   'yourGithubSecret'
    * ).then(diffs => console.log(diffs));
    */
-  async fetchGithubDiff(baseURL, latestAuditTime, lastAuditedAt, gitHubURL) {
+  const fetchGithubDiff = async (baseURL, latestAuditTime, lastAuditedAt, gitHubURL) => {
     if (!isValidUrl(gitHubURL)) {
-      this.log.info(`No github repo defined for site ${baseURL}. Skipping github diff calculation`);
+      log.info(`No github repo defined for site ${baseURL}. Skipping github diff calculation`);
       return '';
     }
 
@@ -102,12 +98,12 @@ class GithubClient {
         : new Date(until - SECONDS_IN_A_DAY * 1000); // 24 hours before until
       const repoPath = new URL(gitHubURL).pathname.slice(1); // Removes leading '/'
 
-      this.log.info(`Fetching diffs for domain ${baseURL} with repo ${repoPath} between ${since.toISOString()} and ${until.toISOString()}`);
+      log.info(`Fetching diffs for domain ${baseURL} with repo ${repoPath} between ${since.toISOString()} and ${until.toISOString()}`);
 
       const [githubOrg, repoName] = repoPath.split('/');
 
-      const authHeader = this.createGithubAuthHeaderValue();
-      const commitsUrl = this.createGithubApiUrl(githubOrg, repoName, 'commits');
+      const authHeader = createGithubAuthHeaderValue();
+      const commitsUrl = createGithubApiUrl(githubOrg, repoName, 'commits');
 
       const response = await fetch(commitsUrl, {
         headers: {
@@ -119,12 +115,12 @@ class GithubClient {
       let diffs = '';
       let totalSize = 0;
 
-      this.log.info(`Found ${commitSHAs.length} commits for site ${baseURL}.`);
+      log.info(`Found ${commitSHAs.length} commits for site ${baseURL}.`);
 
       for (const sha of commitSHAs) {
-        this.log.info(`Fetching diff for commit ${sha} for site ${baseURL}`);
+        log.info(`Fetching diff for commit ${sha} for site ${baseURL}`);
 
-        const diffUrl = this.createGithubApiUrl(githubOrg, repoName, `commits/${sha}`);
+        const diffUrl = createGithubApiUrl(githubOrg, repoName, `commits/${sha}`);
 
         // eslint-disable-next-line no-await-in-loop
         const diffResponse = await fetch(diffUrl, {
@@ -138,19 +134,25 @@ class GithubClient {
         if (!diffResponse.includes('Binary files differ') && (totalSize + diffResponse.length) < MAX_DIFF_SIZE) {
           diffs += `${diffResponse}\n`;
           totalSize += diffResponse.length;
-          this.log.info(`Added commit ${sha} (${totalSize} of ${MAX_DIFF_SIZE}) to diff for site ${baseURL}.`);
+          log.info(`Added commit ${sha} (${totalSize} of ${MAX_DIFF_SIZE}) to diff for site ${baseURL}.`);
         } else {
-          this.log.warn(`Skipping commit ${sha} because it is binary or too large (${totalSize} of ${MAX_DIFF_SIZE}) for site ${baseURL}.`);
+          log.warn(`Skipping commit ${sha} because it is binary or too large (${totalSize} of ${MAX_DIFF_SIZE}) for site ${baseURL}.`);
           break;
         }
       }
 
       return diffs;
     } catch (error) {
-      this.log.error(`Error fetching GitHub diff data for site ${baseURL}: ${error}`);
+      log.error(`Error fetching GitHub diff data for site ${baseURL}: ${error}`);
       return '';
     }
-  }
+  };
+
+  return {
+    createGithubApiUrl,
+    createGithubAuthHeaderValue,
+    fetchGithubDiff,
+  };
 }
 
 export default GithubClient;

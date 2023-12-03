@@ -12,14 +12,16 @@
 
 import { hasText, isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
-import GithubClient from '../support/github-client.js';
 import ContentClient from '../support/content-client.js';
-import { extractAuditScores, extractThirdPartySummary, extractTotalBlockingTime } from '../utils/lhs.js';
-import PSIClient from '../support/psi-client.js';
+import GithubClient from '../support/github-client.js';
+import PSIClient, { PSI_STRATEGY_MOBILE, PSI_STRATEGY_DESKTOP } from '../support/psi-client.js';
 
+import { extractAuditScores, extractThirdPartySummary, extractTotalBlockingTime } from '../utils/lhs.js';
+
+const AUDIT_TYPE = 'lhs';
 const AUDIT_TYPES = {
-  MOBILE: 'lhs-mobile',
-  DESKTOP: 'lhs-desktop',
+  MOBILE: `${AUDIT_TYPE}-${PSI_STRATEGY_MOBILE}`,
+  DESKTOP: `${AUDIT_TYPE}-${PSI_STRATEGY_DESKTOP}`,
 };
 
 /**
@@ -31,8 +33,8 @@ const AUDIT_TYPES = {
  */
 const typeToPSIStrategy = (type) => {
   const strategyMap = {
-    [AUDIT_TYPES.MOBILE]: 'mobile',
-    [AUDIT_TYPES.DESKTOP]: 'desktop',
+    [AUDIT_TYPES.MOBILE]: PSI_STRATEGY_MOBILE,
+    [AUDIT_TYPES.DESKTOP]: PSI_STRATEGY_DESKTOP,
   };
 
   if (!strategyMap[type]) {
@@ -99,7 +101,7 @@ const createAuditData = (
 
   return {
     siteId: site.getId(),
-    auditType: `lhs-${strategy}`,
+    auditType: AUDIT_TYPES[strategy.toUpperCase()],
     auditedAt: new Date().toISOString(),
     fullAuditRef,
     auditResult: {
@@ -226,7 +228,10 @@ async function processAudit(
   } = services;
 
   const baseURL = site.getBaseURL();
-  const latestAudit = await dataAccess.getLatestAuditForSite(site.getId(), `lhs-${strategy}`);
+  const latestAudit = await dataAccess.getLatestAuditForSite(
+    site.getId(),
+    AUDIT_TYPES[strategy.toUpperCase()],
+  );
 
   const { lighthouseResult, fullAuditRef } = await psiClient.runAudit(baseURL, strategy);
 
@@ -286,9 +291,9 @@ function initServices(config, log = console) {
     dataAccess,
   } = config;
 
-  const psiClient = PSIClient({ apiKey: psiApiKey, baseUrl: psiApiBaseUrl }, log);
+  const psiClient = PSIClient({ apiKey: psiApiKey, apiBaseUrl: psiApiBaseUrl }, log);
   const contentClient = ContentClient(log);
-  const githubClient = new GithubClient({
+  const githubClient = GithubClient({
     baseUrl: site.getBaseURL(),
     gitHubId,
     gitHubSecret,

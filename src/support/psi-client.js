@@ -10,8 +10,18 @@
  * governing permissions and limitations under the License.
  */
 
+import { isValidUrl } from '@adobe/spacecat-shared-utils';
+
 import { createUrl } from '@adobe/fetch';
 import { fetch } from './utils.js';
+
+/**
+ * The PSI strategies.
+ * @type {string}
+ */
+export const PSI_STRATEGY_MOBILE = 'mobile';
+export const PSI_STRATEGY_DESKTOP = 'desktop';
+export const PSI_STRATEGIES = [PSI_STRATEGY_MOBILE, PSI_STRATEGY_DESKTOP];
 
 /**
  * Creates a new PSI client. The client is used to run PSI audits. It can be configured
@@ -19,18 +29,17 @@ import { fetch } from './utils.js';
  *
  * @param {Object} config - The configuration object.
  * @param {string} config.apiKey - The PSI API key.
- * @param {string} config.baseUrl - The PSI API Base URL.
+ * @param {string} config.apiBaseUrl - The PSI API Base URL.
  * @param {Object} log - The logger.
- * @return {Object} - The PSI client.
  *
- * @constructor
+ *  @return {PSIClient} - The PSI client.
  */
 function PSIClient(config, log = console) {
-  const STRATEGY_MOBILE = 'mobile';
-  const STRATEGY_DESKTOP = 'desktop';
-  const PSI_STRATEGIES = [STRATEGY_MOBILE, STRATEGY_DESKTOP];
+  const { apiKey, apiBaseUrl } = config;
 
-  const { apiKey, baseUrl } = config;
+  if (!isValidUrl(apiBaseUrl)) {
+    throw new Error(`Invalid PSI API Base URL: ${apiBaseUrl}`);
+  }
 
   const formatURL = (input) => {
     const urlPattern = /^https?:\/\//i;
@@ -38,7 +47,7 @@ function PSIClient(config, log = console) {
   };
 
   const getPSIApiUrl = (siteUrl, strategyHint) => {
-    const strategy = PSI_STRATEGIES.includes(strategyHint) ? strategyHint : STRATEGY_MOBILE;
+    const strategy = PSI_STRATEGIES.includes(strategyHint) ? strategyHint : PSI_STRATEGY_MOBILE;
 
     const params = { url: formatURL(siteUrl), strategy };
     if (apiKey) {
@@ -49,7 +58,7 @@ function PSIClient(config, log = console) {
       params.append('category', category);
     }); */
 
-    return createUrl(baseUrl, params);
+    return createUrl(apiBaseUrl, params);
   };
 
   /**
@@ -98,8 +107,6 @@ function PSIClient(config, log = console) {
   };
 
   return {
-    STRATEGY_MOBILE,
-    STRATEGY_DESKTOP,
     formatURL,
     getPSIApiUrl,
     performPSICheck,
