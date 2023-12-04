@@ -9,6 +9,7 @@
     "test": "c8 mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",
+    "logs": "aws logs tail /aws/lambda/spacecat-services--audit-worker",
     "semantic-release": "semantic-release",
     "semantic-release-dry": "semantic-release --dry-run --no-ci --branches $CIRCLE_BRANCH",
     "build": "hedy -v --test-bundle",
@@ -58,7 +59,10 @@
     "@adobe/helix-shared-wrap": "2.0.0",
     "@adobe/helix-status": "10.0.10",
     "@adobe/helix-universal-logger": "3.0.11",
-    "@aws-sdk/client-sqs": "3.450.0"
+    "@adobe/spacecat-shared-data-access": "1.1.2",
+    "@adobe/spacecat-shared-utils": "1.2.0",
+    "@aws-sdk/client-sqs": "3.450.0",
+    "diff": "5.1.0"
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "2.0.3",

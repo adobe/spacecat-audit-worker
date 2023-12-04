@@ -13,11 +13,16 @@ import wrap from '@adobe/helix-shared-wrap';
 import { helixStatus } from '@adobe/helix-status';
 import { Response } from '@adobe/fetch';
 import secrets from '@adobe/helix-shared-secrets';
+import dataAccess from '@adobe/spacecat-shared-data-access';
+
 import sqs from './support/sqs.js';
 import cwv from './cwv/handler.js';
+import lhs from './lhs/handler.js';
 
 const HANDLERS = {
   cwv,
+  'lhs-mobile': lhs,
+  'lhs-desktop': lhs,
 };
 
 /**
@@ -87,6 +92,7 @@ async function run(message, context) {
 }
 
 export const main = wrap(run)
+  .with(dataAccess)
   .with(sqsEventAdapter)
   .with(sqs)
   .with(secrets)

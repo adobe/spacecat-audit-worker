@@ -67,9 +67,15 @@ Output message body format sent to `AUDIT_RESULTS_QUEUE` is:
 
 ## Required ENV Variables
 
-Currently, audit worker requires two env variables:
+Currently, audit worker requires a couple of env variables:
 
 ```plaintext
 AUDIT_RESULTS_QUEUE_URL=url of the queue to send audit results to
 RUM_DOMAIN_KEY=global domain key for the rum api
+PAGESPEED_API_BASE_URL = URL of the pagespeed api
+DYNAMO_TABLE_NAME_SITES = name of the dynamo table to store site data
+DYNAMO_TABLE_NAME_AUDITS = name of the dynamo table to store audit data
+DYNAMO_TABLE_NAME_LATEST_AUDITS = name of the dynamo table to store latest audit data
+DYNAMO_INDEX_NAME_ALL_SITES = name of the dynamo index to query all sites
+DYNAMO_INDEX_NAME_ALL_LATEST_AUDIT_SCORES = name of the dynamo index to query all latest audits by scores
 ```
