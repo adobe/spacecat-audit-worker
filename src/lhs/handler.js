@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { Response } from '@adobe/fetch';
 import { hasText, isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
 import ContentClient from '../support/content-client.js';
@@ -391,7 +392,7 @@ export default async function audit(message, context) {
 
     log.info(`Audit for ${type} completed in ${formattedElapsed} seconds`);
 
-    return new Response('', { status: 200 });
+    return new Response('', { status: 204 });
   } catch (e) {
     return respondWithError('Unexpected error occurred', log, e);
   }

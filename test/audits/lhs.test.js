@@ -114,7 +114,7 @@ describe('LHS Audit', () => {
 
     const response = await audit(auditQueueMessage, context);
 
-    expect(response.status).to.equal(200);
+    expect(response.status).to.equal(204);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
   });
 
@@ -127,7 +127,7 @@ describe('LHS Audit', () => {
 
     const response = await audit(auditQueueMessage, context);
 
-    expect(response.status).to.equal(200);
+    expect(response.status).to.equal(204);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
   });
 
@@ -139,7 +139,7 @@ describe('LHS Audit', () => {
     auditQueueMessage.type = 'lhs-desktop';
     const response = await audit(auditQueueMessage, context);
 
-    expect(response.status).to.equal(200);
+    expect(response.status).to.equal(204);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
   });
 
@@ -152,7 +152,7 @@ describe('LHS Audit', () => {
 
     const response = await audit(auditQueueMessage, context);
 
-    expect(response.status).to.equal(200);
+    expect(response.status).to.equal(204);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
   });
 
