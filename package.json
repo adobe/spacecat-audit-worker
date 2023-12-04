@@ -17,10 +17,6 @@
     "deploy-routes": "hedy --no-build -no-hints -l major",
     "deploy-ci": "hedy -v --deploy --test --pkgVersion=ci$CIRCLE_BUILD_NUM -l ci --cleanup-ci=24h",
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
-    "docs": "npm run docs:lint && npm run docs:build",
-    "docs:build": "npx @redocly/cli build-docs -o ./docs/index.html --config docs/openapi/redocly-config.yaml",
-    "docs:lint": "npx @redocly/cli lint --config docs/openapi/redocly-config.yaml",
-    "docs:serve": "npx @redocly/cli preview-docs --config docs/openapi/redocly-config.yaml",
     "prepare": "husky install"
   },
   "wsk": {
