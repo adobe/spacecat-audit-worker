@@ -238,8 +238,8 @@ async function processAudit(
 
   const markdownContext = await contentClient.fetchMarkdownDiff(
     baseURL,
-    latestAudit,
     lighthouseResult.finalUrl,
+    latestAudit,
   );
 
   const gitHubDiff = await githubClient.fetchGithubDiff(
