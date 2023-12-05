@@ -11,7 +11,6 @@
  */
 
 /* eslint-env mocha */
-/* eslint-disable no-unused-expressions */ // expect statements
 
 import chai from 'chai';
 import sinon from 'sinon';
@@ -34,7 +33,7 @@ describe('Index Tests', () => {
   beforeEach('setup', () => {
     messageBodyJson = {
       type: 'cwv',
-      url: 'adobe.com',
+      url: 'https://adobe.com',
       auditContext: {
         finalUrl: 'adobe.com',
       },
@@ -59,6 +58,11 @@ describe('Index Tests', () => {
         sendMessage: sandbox.stub().resolves(),
       },
     };
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+    sinon.restore();
   });
 
   it('fetch cwv for base url > process > send results', async () => {
@@ -93,6 +97,15 @@ describe('Index Tests', () => {
       .reply(200);
 
     const finalUrl = await getRUMUrl('http://space.cat');
+    expect(finalUrl).to.eql('space.cat');
+  });
+
+  it('getRUMUrl adds scheme to urls without a scheme', async () => {
+    nock('https://space.cat')
+      .get('/')
+      .reply(200);
+
+    const finalUrl = await getRUMUrl('space.cat');
     expect(finalUrl).to.eql('space.cat');
   });
 });
