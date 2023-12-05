@@ -283,7 +283,6 @@ async function processAudit(
  */
 function initServices(config, log = console) {
   const {
-    site,
     psiApiKey,
     psiApiBaseUrl,
     gitHubId,
@@ -294,11 +293,13 @@ function initServices(config, log = console) {
 
   const psiClient = PSIClient({ apiKey: psiApiKey, apiBaseUrl: psiApiBaseUrl }, log);
   const contentClient = ContentClient(log);
-  const githubClient = GithubClient({
-    baseUrl: site.getBaseURL(),
-    gitHubId,
-    gitHubSecret,
-  }, log);
+  const githubClient = GithubClient(
+    {
+      gitHubId,
+      gitHubSecret,
+    },
+    log,
+  );
 
   return {
     dataAccess,
@@ -368,7 +369,6 @@ export default async function audit(message, context) {
     }
 
     const services = initServices({
-      site,
       psiApiKey,
       psiApiBaseUrl,
       gitHubId,

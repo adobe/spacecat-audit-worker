@@ -21,7 +21,7 @@ const SECONDS_IN_A_DAY = 86400; // Number of seconds in a day
  * Creates a GitHub client.
  *
  * @param {object} config - The configuration object.
- * @param {string} config.baseUrl - The base URL of the GitHub API.
+ * @param {string} config.gitHubApiBaseUrl - The base URL of the GitHub API.
  * @param {string} config.gitHubId - The GitHub ID.
  * @param {string} config.gitHubSecret - The GitHub secret.
  * @param {object} log - The logger.
@@ -29,7 +29,14 @@ const SECONDS_IN_A_DAY = 86400; // Number of seconds in a day
  *
  * @return {GithubClient} - The GitHub client.
  */
-function GithubClient({ baseUrl, gitHubId, gitHubSecret }, log = console) {
+function GithubClient(
+  {
+    gitHubApiBaseUrl = 'https://api.github.com',
+    gitHubId,
+    gitHubSecret,
+  },
+  log = console,
+) {
   /**
    * Creates a URL for the GitHub API.
    *
@@ -47,7 +54,7 @@ function GithubClient({ baseUrl, gitHubId, gitHubSecret }, log = console) {
     const sinceParam = since ? `&since=${since.toISOString()}` : '';
     const untilParam = until ? `&until=${until.toISOString()}` : '';
 
-    return `${baseUrl}/repos/${githubOrg}${repoPart}${pathPart}?page=${page}&per_page=100${sinceParam}${untilParam}`;
+    return `${gitHubApiBaseUrl}/repos/${githubOrg}${repoPart}${pathPart}?page=${page}&per_page=100${sinceParam}${untilParam}`;
   };
 
   /**
