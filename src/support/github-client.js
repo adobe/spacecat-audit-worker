@@ -115,9 +115,19 @@ function GithubClient({ baseUrl, gitHubId, gitHubSecret }, log = console) {
         headers: {
           Authorization: authHeader,
         },
-      }).then((res) => res.json());
+      });
 
-      const commitSHAs = response.map((commit) => commit.sha);
+      let responseJson;
+      try {
+        const text = await response.text();
+        log.info(`Parsing GitHub response for site ${baseURL}: \n ${text}`);
+        responseJson = JSON.parse(text);
+      } catch (error) {
+        log.error(`Error parsing GitHub response for site ${baseURL}: ${error}`);
+        return '';
+      }
+
+      const commitSHAs = responseJson.map((commit) => commit.sha);
       let diffs = '';
       let totalSize = 0;
 

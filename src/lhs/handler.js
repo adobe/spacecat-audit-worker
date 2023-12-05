@@ -253,8 +253,8 @@ async function processAudit(
     site,
     latestAudit,
     lighthouseResult,
-    markdownContext,
     gitHubDiff,
+    markdownContext,
     fullAuditRef,
     strategy,
   );
