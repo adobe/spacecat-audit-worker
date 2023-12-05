@@ -62,7 +62,7 @@ describe('GithubClient', () => {
     });
 
     it('creates a valid Basic Auth header', () => {
-      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' });
       const header = client.createGithubAuthHeaderValue();
       expect(header).to.equal(`Basic ${Buffer.from('id:secret').toString('base64')}`);
     });
@@ -70,7 +70,7 @@ describe('GithubClient', () => {
 
   describe('fetchGithubDiff', () => {
     it('fetches diffs from GitHub', async () => {
-      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' });
       const audit = {
         time: '2023-06-16T00:00:00.000Z',
       };
@@ -100,7 +100,7 @@ describe('GithubClient', () => {
     });
 
     it('handles errors from GitHub API', async () => {
-      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' });
       nock('https://api.github.com').get('/repos/some-org/test/commits').query(true).replyWithError('Network Error');
 
       const audit = {
@@ -114,7 +114,7 @@ describe('GithubClient', () => {
     });
 
     it('handles unexpected data format from GitHub API', async () => {
-      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' });
       nock('https://api.github.com').get('/repos/some-org/test/commits').query(true).reply(200, null);
 
       const audit = {
@@ -128,7 +128,7 @@ describe('GithubClient', () => {
     });
 
     it('sets "since" to 24 hours before "until" if "lastAuditedAt" is not provided', async () => {
-      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' });
       const fixedFetchTime = '2023-06-16T00:00:00.000Z';
       const audit = {
         time: fixedFetchTime,
@@ -146,7 +146,7 @@ describe('GithubClient', () => {
 
     it('skips binary or too large diffs', async () => {
       const client = GithubClient(
-        { baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' },
+        { baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' },
         console,
       );
       const mockDiffs = [
@@ -179,7 +179,7 @@ describe('GithubClient', () => {
     });
 
     it('includes diffs that are not binary and within size limit', async () => {
-      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' });
       const mockDiffs = [
         { sha: 'commit1', data: 'Sample diff content' },
         { sha: 'commit2', data: 'Another valid diff content' },
@@ -206,7 +206,7 @@ describe('GithubClient', () => {
     });
 
     it('logs error.response.data when error has a response property', async () => {
-      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' });
 
       const errorWithResponse = {
         response: {
@@ -232,7 +232,7 @@ describe('GithubClient', () => {
     });
 
     it('logs the error directly when error does not have a response property', async () => {
-      const client = GithubClient({ baseUrl: 'https://api.github.com', githubId: 'id', githubSecret: 'secret' });
+      const client = GithubClient({ baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' });
       const audit = {
         time: '2023-06-16T00:00:00.000Z',
       };

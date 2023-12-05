@@ -24,7 +24,7 @@ export function extractAuditScores(categories) {
     performance: performance.score,
     seo: seo.score,
     accessibility: accessibility.score,
-    bestPractices: bestPractices.score,
+    'best-practices': bestPractices.score,
   };
 }
 

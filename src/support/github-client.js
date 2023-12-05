@@ -22,14 +22,14 @@ const SECONDS_IN_A_DAY = 86400; // Number of seconds in a day
  *
  * @param {object} config - The configuration object.
  * @param {string} config.baseUrl - The base URL of the GitHub API.
- * @param {string} config.githubId - The GitHub ID.
- * @param {string} config.githubSecret - The GitHub secret.
+ * @param {string} config.gitHubId - The GitHub ID.
+ * @param {string} config.gitHubSecret - The GitHub secret.
  * @param {object} log - The logger.
  * @param {object} log - The logger.
  *
  * @return {GithubClient} - The GitHub client.
  */
-function GithubClient({ baseUrl, githubId, githubSecret }, log = console) {
+function GithubClient({ baseUrl, gitHubId, gitHubSecret }, log = console) {
   /**
    * Creates a URL for the GitHub API.
    *
@@ -53,10 +53,10 @@ function GithubClient({ baseUrl, githubId, githubSecret }, log = console) {
    * @throws {Error} - Throws an error if GitHub credentials are not provided.
    */
   const createGithubAuthHeaderValue = () => {
-    if (!hasText(githubId) || !hasText(githubSecret)) {
+    if (!hasText(gitHubId) || !hasText(gitHubSecret)) {
       throw new Error('GitHub credentials not provided');
     }
-    return `Basic ${Buffer.from(`${githubId}:${githubSecret}`).toString('base64')}`;
+    return `Basic ${Buffer.from(`${gitHubId}:${gitHubSecret}`).toString('base64')}`;
   };
 
   /**

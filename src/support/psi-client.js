@@ -91,7 +91,7 @@ function PSIClient(config, log = console) {
    * @param {string} baseURL - The base URL to check.
    * @param {string} strategy - The strategy to use.
    *
-   * @return {Promise<{lighthouseResult: *, fullAuditRef: string}>}
+   * @return {Promise<{lighthouseResult: object, fullAuditRef: string}>}
    */
   const runAudit = async (baseURL, strategy) => {
     const strategyStartTime = process.hrtime();
