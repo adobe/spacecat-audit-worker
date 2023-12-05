@@ -37,13 +37,17 @@ function GithubClient({ baseUrl, gitHubId, gitHubSecret }, log = console) {
    * @param {string} repoName - The name of the repository (optional).
    * @param {string} path - Additional path (optional).
    * @param {number} page - The page number for pagination (optional).
+   * @param {Date} since - The start date-time for filtering commits (optional).
+   * @param {Date} until - The end date-time for filtering commits (optional).
    * @returns {string} The created GitHub API URL.
    */
-  const createGithubApiUrl = (githubOrg, repoName = '', path = '', page = 1) => {
+  const createGithubApiUrl = (githubOrg, repoName = '', path = '', page = 1, since = null, until = null) => {
     const repoPart = repoName ? `/${repoName}` : '';
     const pathPart = path ? `/${path}` : '';
+    const sinceParam = since ? `&since=${since.toISOString()}` : '';
+    const untilParam = until ? `&until=${until.toISOString()}` : '';
 
-    return `${baseUrl}/repos/${githubOrg}${repoPart}${pathPart}?page=${page}&per_page=100`;
+    return `${baseUrl}/repos/${githubOrg}${repoPart}${pathPart}?page=${page}&per_page=100${sinceParam}${untilParam}`;
   };
 
   /**
@@ -98,12 +102,14 @@ function GithubClient({ baseUrl, gitHubId, gitHubSecret }, log = console) {
         : new Date(until - SECONDS_IN_A_DAY * 1000); // 24 hours before until
       const repoPath = new URL(gitHubURL).pathname.slice(1); // Removes leading '/'
 
-      log.info(`Fetching diffs for domain ${baseURL} with repo ${repoPath} between ${since.toISOString()} and ${until.toISOString()}`);
+      log.info(`Fetching diffs for site ${baseURL} with repo ${repoPath} between ${since.toISOString()} and ${until.toISOString()}`);
 
       const [githubOrg, repoName] = repoPath.split('/');
 
       const authHeader = createGithubAuthHeaderValue();
-      const commitsUrl = createGithubApiUrl(githubOrg, repoName, 'commits');
+      const commitsUrl = createGithubApiUrl(githubOrg, repoName, 'commits', 1, since, until);
+
+      log.info(`Fetching commits for site ${baseURL} from ${commitsUrl}`);
 
       const response = await fetch(commitsUrl, {
         headers: {
