@@ -125,12 +125,10 @@ function GithubClient(
       });
 
       let responseJson;
-      try {
-        const text = await response.text();
-        log.info(`Parsing GitHub response for site ${baseURL}: \n ${text}`);
-        responseJson = JSON.parse(text);
-      } catch (error) {
-        log.error(`Error parsing GitHub response for site ${baseURL}: ${error}`);
+      if (response.status === 200) {
+        responseJson = await response.json();
+      } else {
+        log.error(`Error fetching GitHub diff data for site ${baseURL}: ${response.status} ${response.statusText}`);
         return '';
       }
 

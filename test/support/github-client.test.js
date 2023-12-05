@@ -110,7 +110,7 @@ describe('GithubClient', () => {
       nock('https://api.github.com')
         .get('/repos/some-org/test/commits')
         .query(true)
-        .reply(200, 'invalid-response');
+        .reply(405);
 
       const diffs = await client.fetchGithubDiff('example.com', audit.time, lastAuditedAt, gitHubURL);
       expect(diffs).to.equal('');
