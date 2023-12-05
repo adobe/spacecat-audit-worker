@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.1.1...v1.1.2) (2023-12-05)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/fetch to v4.1.1 ([#32](https://github.com/adobe-rnd/spacecat-audit-worker/issues/32)) ([9f010d8](https://github.com/adobe-rnd/spacecat-audit-worker/commit/9f010d8c5a12e7d05d827a6c4a659850a6497652))
+
 ## [1.1.1](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.1.0...v1.1.1) (2023-12-05)
 
 
