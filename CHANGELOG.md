@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.0.6...v1.1.0) (2023-12-05)
+
+
+### Features
+
+* use latest data access and getSiteByID ([#36](https://github.com/adobe-rnd/spacecat-audit-worker/issues/36)) ([4a8c53b](https://github.com/adobe-rnd/spacecat-audit-worker/commit/4a8c53b89f764bd5636c45353ea4ef4422077e55))
+
 ## [1.0.6](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.0.5...v1.0.6) (2023-12-05)
 
 
