@@ -50,7 +50,7 @@
     "reporter-options": "configFile=.mocha-multi.json"
   },
   "dependencies": {
-    "@adobe/fetch": "4.1.0",
+    "@adobe/fetch": "4.1.1",
     "@adobe/helix-shared-secrets": "2.1.2",
     "@adobe/helix-shared-wrap": "2.0.0",
     "@adobe/helix-status": "10.0.11",
