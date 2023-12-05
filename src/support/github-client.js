@@ -21,7 +21,7 @@ const SECONDS_IN_A_DAY = 86400; // Number of seconds in a day
  * Creates a GitHub client.
  *
  * @param {object} config - The configuration object.
- * @param {string} config.baseUrl - The base URL of the GitHub API.
+ * @param {string} config.gitHubApiBaseUrl - The base URL of the GitHub API.
  * @param {string} config.gitHubId - The GitHub ID.
  * @param {string} config.gitHubSecret - The GitHub secret.
  * @param {object} log - The logger.
@@ -29,7 +29,14 @@ const SECONDS_IN_A_DAY = 86400; // Number of seconds in a day
  *
  * @return {GithubClient} - The GitHub client.
  */
-function GithubClient({ baseUrl, gitHubId, gitHubSecret }, log = console) {
+function GithubClient(
+  {
+    gitHubApiBaseUrl = 'https://api.github.com',
+    gitHubId,
+    gitHubSecret,
+  },
+  log = console,
+) {
   /**
    * Creates a URL for the GitHub API.
    *
@@ -37,13 +44,17 @@ function GithubClient({ baseUrl, gitHubId, gitHubSecret }, log = console) {
    * @param {string} repoName - The name of the repository (optional).
    * @param {string} path - Additional path (optional).
    * @param {number} page - The page number for pagination (optional).
+   * @param {Date} since - The start date-time for filtering commits (optional).
+   * @param {Date} until - The end date-time for filtering commits (optional).
    * @returns {string} The created GitHub API URL.
    */
-  const createGithubApiUrl = (githubOrg, repoName = '', path = '', page = 1) => {
+  const createGithubApiUrl = (githubOrg, repoName = '', path = '', page = 1, since = null, until = null) => {
     const repoPart = repoName ? `/${repoName}` : '';
     const pathPart = path ? `/${path}` : '';
+    const sinceParam = since ? `&since=${since.toISOString()}` : '';
+    const untilParam = until ? `&until=${until.toISOString()}` : '';
 
-    return `${baseUrl}/repos/${githubOrg}${repoPart}${pathPart}?page=${page}&per_page=100`;
+    return `${gitHubApiBaseUrl}/repos/${githubOrg}${repoPart}${pathPart}?page=${page}&per_page=100${sinceParam}${untilParam}`;
   };
 
   /**
@@ -98,20 +109,30 @@ function GithubClient({ baseUrl, gitHubId, gitHubSecret }, log = console) {
         : new Date(until - SECONDS_IN_A_DAY * 1000); // 24 hours before until
       const repoPath = new URL(gitHubURL).pathname.slice(1); // Removes leading '/'
 
-      log.info(`Fetching diffs for domain ${baseURL} with repo ${repoPath} between ${since.toISOString()} and ${until.toISOString()}`);
+      log.info(`Fetching diffs for site ${baseURL} with repo ${repoPath} between ${since.toISOString()} and ${until.toISOString()}`);
 
       const [githubOrg, repoName] = repoPath.split('/');
 
       const authHeader = createGithubAuthHeaderValue();
-      const commitsUrl = createGithubApiUrl(githubOrg, repoName, 'commits');
+      const commitsUrl = createGithubApiUrl(githubOrg, repoName, 'commits', 1, since, until);
+
+      log.info(`Fetching commits for site ${baseURL} from ${commitsUrl}`);
 
       const response = await fetch(commitsUrl, {
         headers: {
           Authorization: authHeader,
         },
-      }).then((res) => res.json());
+      });
 
-      const commitSHAs = response.map((commit) => commit.sha);
+      let responseJson;
+      if (response.status === 200) {
+        responseJson = await response.json();
+      } else {
+        log.error(`Error fetching GitHub diff data for site ${baseURL}: ${response.status} ${response.statusText}`);
+        return '';
+      }
+
+      const commitSHAs = responseJson.map((commit) => commit.sha);
       let diffs = '';
       let totalSize = 0;
 

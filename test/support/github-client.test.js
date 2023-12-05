@@ -99,6 +99,23 @@ describe('GithubClient', () => {
       expect(diffs).to.equal('mocked-diff-data\nmocked-diff-data\n');
     });
 
+    it('handles invalid response from GitHub', async () => {
+      const client = GithubClient({ baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' });
+      const audit = {
+        time: '2023-06-16T00:00:00.000Z',
+      };
+      const lastAuditedAt = '2023-06-15T00:00:00.000Z';
+      const gitHubURL = 'https://github.com/some-org/test';
+
+      nock('https://api.github.com')
+        .get('/repos/some-org/test/commits')
+        .query(true)
+        .reply(405);
+
+      const diffs = await client.fetchGithubDiff('example.com', audit.time, lastAuditedAt, gitHubURL);
+      expect(diffs).to.equal('');
+    });
+
     it('handles errors from GitHub API', async () => {
       const client = GithubClient({ baseUrl: 'https://api.github.com', gitHubId: 'id', gitHubSecret: 'secret' });
       nock('https://api.github.com').get('/repos/some-org/test/commits').query(true).replyWithError('Network Error');
