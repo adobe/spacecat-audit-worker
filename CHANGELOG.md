@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.1.0...v1.1.1) (2023-12-05)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/helix-status to v10.0.11 ([#35](https://github.com/adobe-rnd/spacecat-audit-worker/issues/35)) ([e33aba5](https://github.com/adobe-rnd/spacecat-audit-worker/commit/e33aba5396ae6d7a49011fae77cc8fcc1a181cc4))
+
 # [1.1.0](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.0.6...v1.1.0) (2023-12-05)
 
 
