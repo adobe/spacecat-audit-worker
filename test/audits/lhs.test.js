@@ -146,7 +146,10 @@ describe('LHS Audit', () => {
   });
 
   it('should successfully perform an audit with latest audit', async () => {
-    mockDataAccess.getLatestAuditForSite.resolves({ getAuditedAt: () => '2021-01-01T00:00:00.000Z' });
+    mockDataAccess.getLatestAuditForSite.resolves({
+      getAuditedAt: () => '2021-01-01T00:00:00.000Z',
+      getAuditResult: () => ({}),
+    });
 
     nock('https://psi-audit-service.com', { encodedQueryParams: true })
       .get('/?url=https://adobe.com&strategy=mobile')

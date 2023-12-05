@@ -55,9 +55,8 @@ function ContentClient(log = console) {
    *
    * @async
    * @param {string} baseURL - The baseURL of the audited site.
-   * @param {Object} latestAudit - The latest audit, if present, contains the latest
-   * audit's Markdown content.
    * @param {string} contentUrl - The URL of the content page used in the audit.
+   * @param {Object} lastAuditMarkdownContext - The Markdown context of the latest audit.
    * @returns {Promise<Object|null>} A promise that resolves to an object containing the
    * Markdown content and its diff with the latest audit, or `null` if there was an
    * error or the final URL was not found. The object has the following shape:
@@ -69,7 +68,7 @@ function ContentClient(log = console) {
    * @throws Will throw an error if there's a network issue or some other error while
    * downloading the Markdown content.
    */
-  async function fetchMarkdownDiff(baseURL, contentUrl, latestAudit = {}) {
+  async function fetchMarkdownDiff(baseURL, contentUrl, lastAuditMarkdownContext = {}) {
     let markdownDiff = null;
     let markdownContent = null;
 
@@ -90,7 +89,7 @@ function ContentClient(log = console) {
 
       log.info(`Downloaded Markdown content from ${markdownUrl} for site ${baseURL}`);
 
-      const oldContent = latestAudit?.markdownContent || '';
+      const oldContent = lastAuditMarkdownContext?.markdownContent || '';
 
       if (oldContent !== markdownContent) {
         markdownDiff = createDiffPatch(markdownUrl, oldContent, markdownContent);
