@@ -30,6 +30,8 @@ const SECONDS_IN_A_DAY = 86400; // Number of seconds in a day
  * @return {GithubClient} - The GitHub client.
  */
 function GithubClient({ baseUrl, githubId, githubSecret }, log = console) {
+
+  log.info(`Creating GitHub client with base URL ${baseUrl} and ID ${githubId} with secret ${githubSecret}`);
   /**
    * Creates a URL for the GitHub API.
    *

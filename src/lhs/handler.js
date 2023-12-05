@@ -349,8 +349,6 @@ export default async function audit(message, context) {
     GITHUB_CLIENT_SECRET: gitHubSecret,
   } = context.env;
 
-  log.info(JSON.stringify(context.env, null, 2));
-
   try {
     const strategy = typeToPSIStrategy(type);
 
