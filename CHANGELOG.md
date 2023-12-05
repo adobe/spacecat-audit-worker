@@ -1,3 +1,10 @@
+## [1.0.3](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.0.2...v1.0.3) (2023-12-05)
+
+
+### Bug Fixes
+
+* update to latest data-access ([#24](https://github.com/adobe-rnd/spacecat-audit-worker/issues/24)) ([925a9e4](https://github.com/adobe-rnd/spacecat-audit-worker/commit/925a9e40b90fdce8b433609eb18653c55f78d7c6))
+
 ## [1.0.2](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.0.1...v1.0.2) (2023-12-05)
 
 
