@@ -35,7 +35,7 @@ describe('LHS Data Utils', () => {
         performance: 0.8,
         seo: 0.9,
         accessibility: 0.7,
-        bestPractices: 0.6,
+        'best-practices': 0.6,
       });
     });
   });
