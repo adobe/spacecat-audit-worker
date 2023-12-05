@@ -35,6 +35,7 @@ describe('LHS Audit', () => {
   const sandbox = sinon.createSandbox();
 
   const site = createSite({
+    id: 'site1',
     baseURL: 'https://adobe.com',
     imsOrgId: 'org123',
   });
@@ -62,6 +63,7 @@ describe('LHS Audit', () => {
   beforeEach(() => {
     mockDataAccess = {
       getSiteByBaseURL: sinon.stub().resolves(site),
+      getSiteByID: sinon.stub().resolves(site),
       getLatestAuditForSite: sinon.stub().resolves(null),
       addAudit: sinon.stub(),
     };
@@ -74,7 +76,7 @@ describe('LHS Audit', () => {
 
     auditQueueMessage = {
       type: 'lhs-mobile',
-      url: 'adobe.com',
+      url: 'site1',
       auditContext: {
         finalUrl: 'adobe.com',
       },
@@ -184,7 +186,7 @@ describe('LHS Audit', () => {
   });
 
   it('returns a 404 when site does not exist', async () => {
-    mockDataAccess.getSiteByBaseURL.resolves(null);
+    mockDataAccess.getSiteByID.resolves(null);
 
     const response = await audit(auditQueueMessage, context);
 
@@ -192,13 +194,13 @@ describe('LHS Audit', () => {
   });
 
   it('throws error when data access fails', async () => {
-    mockDataAccess.getSiteByBaseURL.rejects(new Error('Data Error'));
+    mockDataAccess.getSiteByID.rejects(new Error('Data Error'));
 
     const response = await audit(auditQueueMessage, context);
 
     expect(response.status).to.equal(500);
     expect(response.statusText).to.equal(
-      'LHS Audit Error: Unexpected error occurred: Error getting site with baseURL adobe.com: Data Error',
+      'LHS Audit Error: Unexpected error occurred: Error getting site site1: Data Error',
     );
   });
 
