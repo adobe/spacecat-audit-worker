@@ -145,21 +145,21 @@ const createSQSMessage = (auditContext, site, auditData) => ({
  *
  * @async
  * @param {Object} dataAccess - The data access object for database operations.
- * @param {string} url - The base URL of the site to fetch data for.
+ * @param {string} siteId - The siteId of the site to fetch data for.
  * @param {Object} log - The logging object.
  * @throws {Error} - Throws an error if the site data cannot be fetched.
  * @returns {Promise<Object|null>} - Returns the site object if found, otherwise null.
  */
-const retrieveSite = async (dataAccess, url, log) => {
+const retrieveSite = async (dataAccess, siteId, log) => {
   try {
-    const site = await dataAccess.getSiteByBaseURL(url);
+    const site = await dataAccess.getSiteByID(siteId);
     if (!isObject(site)) {
-      log.warn(`Site not found for baseURL: ${url}`);
+      log.warn(`Site not found for site: ${siteId}`);
       return null;
     }
     return site;
   } catch (e) {
-    throw new Error(`Error getting site with baseURL ${url}: ${e.message}`);
+    throw new Error(`Error getting site ${siteId}: ${e.message}`);
   }
 };
 
@@ -340,7 +340,7 @@ function initServices(config, log = console) {
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
 export default async function audit(message, context) {
-  const { type, url, auditContext } = message;
+  const { type, url: siteId, auditContext } = message;
   const { dataAccess, log, sqs } = context;
   const {
     PAGESPEED_API_BASE_URL: psiApiBaseUrl,
@@ -361,9 +361,9 @@ export default async function audit(message, context) {
       return respondWithError(`Invalid configuration: ${validationResults.join(', ')}`, log);
     }
 
-    log.info(`Received ${type} audit request for baseURL: ${url}`);
+    log.info(`Received ${type} audit request for siteId: ${siteId}`);
 
-    const site = await retrieveSite(dataAccess, url, log);
+    const site = await retrieveSite(dataAccess, siteId, log);
     if (!site) {
       return new Response('Site not found', { status: 404 });
     }
