@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.1.3...v1.1.4) (2023-12-06)
+
+
+### Bug Fixes
+
+* set audit isLive from site ([#41](https://github.com/adobe-rnd/spacecat-audit-worker/issues/41)) ([e86e1bb](https://github.com/adobe-rnd/spacecat-audit-worker/commit/e86e1bb88f4a1894c34396e0298664aceed021cf))
+
 ## [1.1.3](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.1.2...v1.1.3) (2023-12-06)
 
 
