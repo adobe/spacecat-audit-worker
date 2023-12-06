@@ -105,6 +105,7 @@ const createAuditData = (
     auditType: AUDIT_TYPES[strategy.toUpperCase()],
     auditedAt: new Date().toISOString(),
     fullAuditRef,
+    isLive: site.isLive(),
     auditResult: {
       finalUrl,
       gitHubDiff,
