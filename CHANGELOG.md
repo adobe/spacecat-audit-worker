@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.1.4...v1.1.5) (2023-12-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/helix-universal-logger to v3.0.13 ([#37](https://github.com/adobe-rnd/spacecat-audit-worker/issues/37)) ([d19cee2](https://github.com/adobe-rnd/spacecat-audit-worker/commit/d19cee223474b8a9de8380ddcb96ea4e1b229187))
+
 ## [1.1.4](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.1.3...v1.1.4) (2023-12-06)
 
 
