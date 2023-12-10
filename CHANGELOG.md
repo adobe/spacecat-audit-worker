@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.1.5...v1.2.0) (2023-12-10)
+
+
+### Features
+
+* use dynamic secrets path ([#43](https://github.com/adobe-rnd/spacecat-audit-worker/issues/43)) ([f2415f7](https://github.com/adobe-rnd/spacecat-audit-worker/commit/f2415f79ce40707c380fe7a483e7d920f1913bdd))
+
 ## [1.1.5](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.1.4...v1.1.5) (2023-12-07)
 
 
