@@ -14,6 +14,7 @@ import { helixStatus } from '@adobe/helix-status';
 import { Response } from '@adobe/fetch';
 import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
+import { resolveSecretsName } from '@adobe/spacecat-shared-utils';
 
 import sqs from './support/sqs.js';
 import cwv from './cwv/handler.js';
@@ -95,5 +96,5 @@ export const main = wrap(run)
   .with(dataAccess)
   .with(sqsEventAdapter)
   .with(sqs)
-  .with(secrets)
+  .with(secrets, { name: resolveSecretsName })
   .with(helixStatus);
