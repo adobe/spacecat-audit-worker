@@ -66,7 +66,7 @@ describe('Index Tests', () => {
       .get('/')
       .reply(200);
     nock('https://helix-pages.anywhere.run')
-      .get('/helix-services/run-query@v3/rum-dashboard')
+      .get('/helix-services/run-query@v3/rum-checkpoint-urls')
       .query({
         ...DOMAIN_REQUEST_DEFAULT_PARAMS,
         domainkey: context.env.RUM_DOMAIN_KEY,

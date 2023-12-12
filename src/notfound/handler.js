@@ -12,9 +12,10 @@
 
 import { createUrl, Response } from '@adobe/fetch';
 import {
-  DOMAIN_LIST_URL, DOMAIN_REQUEST_DEFAULT_PARAMS, fetch, getRUMUrl,
+  DOMAIN_REQUEST_DEFAULT_PARAMS, fetch, getRUMUrl,
 } from '../support/utils.js';
 
+export const CHECKPOINT_URL = 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-checkpoint-urls';
 export function filter404Data(data) {
   return data.url.toLowerCase() !== 'other'; // ignore the combined result
 }
@@ -54,7 +55,7 @@ export default async function audit404(message, context) {
     checkpoint: 404,
   };
 
-  const resp = await fetch(createUrl(DOMAIN_LIST_URL, params));
+  const resp = await fetch(createUrl(CHECKPOINT_URL, params));
   const respJson = await resp.json();
 
   const auditResult = process404Response(respJson);
