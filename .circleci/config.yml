@@ -2,10 +2,12 @@ version: 2.1
 executors:
   node18:
     docker:
-      - image: cimg/node:18.17
+      - image: cimg/node:18.18
+    working_directory: ~/repo
 
 orbs:
-  codecov: codecov/codecov@3.2.5
+  helix-post-deploy: adobe/helix-post-deploy@3.0.0
+  codecov: codecov/codecov@3.2.2
 
 commands:
   setup:
@@ -21,7 +23,6 @@ commands:
 jobs:
   build:
     executor: node18
-
     steps:
       - setup
       - run: mkdir junit
@@ -37,8 +38,52 @@ jobs:
       - store_artifacts:
           path: junit
 
+  semantic-release:
+    executor: node18
+    steps:
+      - setup
+      - run:
+          name: revert changes to package-lock.json
+          command: git checkout -- package-lock.json
+      - helix-post-deploy/config-env
+      - run:
+          name: Semantic Release
+          command: npm run semantic-release
+      - store_test_results:
+          path: junit
+
+  branch-deploy:
+    executor: node18
+    steps:
+      - setup
+      - run:
+          name: revert changes to package-lock.json
+          command: git checkout -- package-lock.json
+      - run:
+          name: Branch Deployment
+          command: npm run deploy-ci
+      - run:
+          name: Post-Deployment Integration Test
+          command: npm run test-postdeploy
+      - store_test_results:
+          path: junit
+
 workflows:
   version: 2
   build:
     jobs:
       - build
+      - branch-deploy:
+          context: Project Helix Tier3
+          requires:
+            - build
+          filters:
+            branches:
+              ignore: main
+      - semantic-release:
+          context: Project Helix Tier3
+          requires:
+            - build
+          filters:
+            branches:
+              only: main
