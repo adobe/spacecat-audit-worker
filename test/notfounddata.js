@@ -18,6 +18,10 @@ export const expectedAuditResult = [
     url: 'https://www.adobe.com/sea/acrobat/online/merge-pdf.html',
     pageviews: '8000',
   },
+  {
+    url: 'https://www.adobe.com/sea/acrobat/online/pdf-to-word.html',
+    pageviews: '700',
+  },
 ];
 export const notFoundData = {
   ':names': [

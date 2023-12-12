@@ -12,12 +12,11 @@
 
 import { createUrl, Response } from '@adobe/fetch';
 import {
-  DOMAIN_LIST_URL, DOMAIN_REQUEST_DEFAULT_PARAMS, fetch, getRUMUrl, PAGEVIEW_THRESHOLD,
+  DOMAIN_LIST_URL, DOMAIN_REQUEST_DEFAULT_PARAMS, fetch, getRUMUrl,
 } from '../support/utils.js';
 
 export function filter404Data(data) {
-  return data.views > PAGEVIEW_THRESHOLD // ignore the pages with low pageviews
-      && data.url.toLowerCase() !== 'other'; // ignore the combined result
+  return data.url.toLowerCase() !== 'other'; // ignore the combined result
 }
 /**
  * url param in run-query@v3/rum-dashboard works in a 'startsWith' fashion. url=domain.com returns
