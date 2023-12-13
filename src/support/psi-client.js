@@ -76,12 +76,39 @@ function PSIClient(config, log = console) {
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
+
       const { lighthouseResult } = await response.json();
 
       return { lighthouseResult, fullAuditRef: response.url };
     } catch (e) {
       log.error(`Error happened during PSI check: ${e}`);
       throw e;
+    }
+  };
+
+  /**
+   * Follows redirects for a given URL. If no redirect is detected, the original URL is returned.
+   * Otherwise, the final URL is returned. If an error happens, the original URL is returned.
+   * @param {string} url - The URL to check.
+   * @return {Promise<string>} - The final URL.
+   */
+  const followRedirects = async (url) => {
+    try {
+      const formattedURL = formatURL(url);
+
+      const response = await fetch(formattedURL);
+      const finalUrl = response.url;
+
+      /* c8 ignore next 3 */
+      if (!isValidUrl(finalUrl) || formattedURL === finalUrl) {
+        return formattedURL;
+      }
+
+      log.info(`Redirect detected from '${formattedURL}' to '${finalUrl}'`);
+      return finalUrl;
+    } catch (error) {
+      log.error(`Error happened while following redirects: ${error}. Falling back to original url: ${url}`);
+      return url;
     }
   };
 
@@ -95,18 +122,20 @@ function PSIClient(config, log = console) {
    */
   const runAudit = async (baseURL, strategy) => {
     const strategyStartTime = process.hrtime();
+    const finalUrl = await followRedirects(baseURL);
 
-    const psiResult = await performPSICheck(baseURL, strategy);
+    const psiResult = await performPSICheck(finalUrl, strategy);
 
     const strategyEndTime = process.hrtime(strategyStartTime);
     const strategyElapsedTime = (strategyEndTime[0] + strategyEndTime[1] / 1e9).toFixed(2);
 
-    log.info(`Audited ${baseURL} for ${strategy} strategy in ${strategyElapsedTime} seconds`);
+    log.info(`Audited ${finalUrl} for ${strategy} strategy in ${strategyElapsedTime} seconds`);
 
     return psiResult;
   };
 
   return {
+    followRedirects,
     formatURL,
     getPSIApiUrl,
     performPSICheck,
