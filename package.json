@@ -81,7 +81,7 @@
     "lint-staged": "14.0.1",
     "mocha": "10.2.0",
     "mocha-multi-reporters": "1.5.1",
-    "mocha-suppress-logs": "0.3.1",
+    "mocha-suppress-logs": "0.4.1",
     "nock": "13.3.3",
     "nodemon": "3.0.1",
     "semantic-release": "22.0.5",
