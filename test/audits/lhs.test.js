@@ -112,8 +112,9 @@ describe('LHS Audit', () => {
   });
 
   it('should successfully perform an audit for mobile strategy', async () => {
-    nock('https://psi-audit-service.com', { encodedQueryParams: true })
-      .get('/?url=https://adobe.com&strategy=mobile')
+    nock('https://adobe.com').get('/').reply(200);
+    nock('https://psi-audit-service.com')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
       .reply(200, psiResult);
 
     const response = await audit(auditQueueMessage, context);
@@ -123,8 +124,9 @@ describe('LHS Audit', () => {
   });
 
   it('should successfully perform an audit for mobile strategy with valid URL', async () => {
-    nock('https://psi-audit-service.com', { encodedQueryParams: true })
-      .get('/?url=https://adobe.com&strategy=mobile')
+    nock('https://adobe.com').get('/').reply(200);
+    nock('https://psi-audit-service.com')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
       .reply(200, psiResult);
 
     auditQueueMessage.url = 'https://adobe.com';
@@ -136,8 +138,9 @@ describe('LHS Audit', () => {
   });
 
   it('successfully performs an audit for desktop strategy', async () => {
-    nock('https://psi-audit-service.com', { encodedQueryParams: true })
-      .get('/?url=https://adobe.com&strategy=desktop')
+    nock('https://adobe.com').get('/').reply(200);
+    nock('https://psi-audit-service.com')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=desktop')
       .reply(200, psiResult);
 
     auditQueueMessage.type = 'lhs-desktop';
@@ -153,8 +156,9 @@ describe('LHS Audit', () => {
       getAuditResult: () => ({}),
     });
 
-    nock('https://psi-audit-service.com', { encodedQueryParams: true })
-      .get('/?url=https://adobe.com&strategy=mobile')
+    nock('https://adobe.com').get('/').reply(200);
+    nock('https://psi-audit-service.com')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
       .reply(200, psiResult);
 
     const response = await audit(auditQueueMessage, context);
@@ -173,8 +177,9 @@ describe('LHS Audit', () => {
   });
 
   it('throws error when psi api fetch fails', async () => {
-    nock('https://psi-audit-service.com', { encodedQueryParams: true })
-      .get('/?url=https://adobe.com&strategy=mobile')
+    nock('https://adobe.com').get('/').reply(200);
+    nock('https://psi-audit-service.com')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
       .reply(405, 'Method Not Allowed');
 
     const response = await audit(auditQueueMessage, context);
@@ -218,8 +223,9 @@ describe('LHS Audit', () => {
   });
 
   it('performs audit even when sqs message send fails', async () => {
-    nock('https://psi-audit-service.com', { encodedQueryParams: true })
-      .get('/?url=https://adobe.com&strategy=mobile')
+    nock('https://adobe.com').get('/').reply(200);
+    nock('https://psi-audit-service.com')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
       .reply(200, psiResult);
 
     context.sqs.sendMessage.rejects(new Error('SQS Error'));
