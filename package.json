@@ -77,7 +77,7 @@
     "eslint": "8.55.0",
     "esmock": "2.5.1",
     "husky": "8.0.3",
-    "junit-report-builder": "3.0.1",
+    "junit-report-builder": "3.1.0",
     "lint-staged": "14.0.1",
     "mocha": "10.2.0",
     "mocha-multi-reporters": "1.5.1",
