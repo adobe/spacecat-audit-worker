@@ -104,6 +104,13 @@ describe('PSIClient', () => {
 
   describe('runAudit', () => {
     it('performs and logs an audit', async () => {
+      // follow redirects request
+      nock('https://testsite.com')
+        .get('/')
+        .query(true)
+        .reply(200);
+
+      // psi api request
       nock('https://example.com')
         .get('/')
         .query(true)
@@ -112,13 +119,50 @@ describe('PSIClient', () => {
       const result = await client.runAudit('testsite.com', 'mobile');
       expect(result).to.deep.equal(
         {
-          fullAuditRef: 'https://example.com/?url=https%3A%2F%2Ftestsite.com&strategy=mobile&key=testApiKey',
+          fullAuditRef: 'https://example.com/?url=https%3A%2F%2Ftestsite.com%2F&strategy=mobile&key=testApiKey',
           lighthouseResult: {
             score: 0.8,
           },
         },
       );
       expect(logMock.info.called).to.be.true;
+    });
+  });
+
+  describe('followRedirects', () => {
+    afterEach(() => {
+      nock.cleanAll();
+    });
+
+    it('returns the same URL if there is no redirect', async () => {
+      const url = 'https://no-redirect.com';
+      nock(url)
+        .get('/')
+        .reply(200, undefined, { 'Content-Type': 'application/json' });
+
+      const result = await client.followRedirects(url);
+      expect(result).to.equal(`${url}/`);
+    });
+
+    it('returns the original URL on error', async () => {
+      const url = 'https://error.com';
+      nock(url)
+        .get('/')
+        .replyWithError('Network error');
+
+      const result = await client.followRedirects(url);
+      expect(result).to.equal(url);
+      expect(logMock.error.called).to.be.true;
+    });
+
+    it('returns the original URL when there is no redirect', async () => {
+      const url = 'https://no-redirect.com';
+      nock(url)
+        .get('/')
+        .reply(200, undefined, { 'Content-Type': 'application/json' });
+
+      const result = await client.followRedirects(url);
+      expect(result).to.equal(`${url}/`);
     });
   });
 });
