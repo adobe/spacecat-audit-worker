@@ -1,3 +1,10 @@
+## [1.2.3](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.2.2...v1.2.3) (2023-12-13)
+
+
+### Bug Fixes
+
+* add follow redirects logic ([#52](https://github.com/adobe-rnd/spacecat-audit-worker/issues/52)) ([8c3f600](https://github.com/adobe-rnd/spacecat-audit-worker/commit/8c3f600578bdb8ce77c605d5bdca1282c4e3e385))
+
 ## [1.2.2](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.2.1...v1.2.2) (2023-12-13)
 
 
