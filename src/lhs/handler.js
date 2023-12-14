@@ -90,7 +90,7 @@ const createAuditData = (
   latestAudit,
   lighthouseResult,
   gitHubDiff,
-  markdownContext,
+  contentLastModified,
   fullAuditRef,
   strategy,
 ) => {
@@ -113,7 +113,7 @@ const createAuditData = (
     auditResult: {
       finalUrl,
       gitHubDiff,
-      markdownContext,
+      contentLastModified,
       scores,
       thirdPartySummary,
       totalBlockingTime,
