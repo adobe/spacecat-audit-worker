@@ -10,10 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-import { createUrl, Response } from '@adobe/fetch';
+import { Response } from '@adobe/fetch';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import {
-  DOMAIN_LIST_URL, DOMAIN_REQUEST_DEFAULT_PARAMS, fetch, getRUMUrl, PAGEVIEW_THRESHOLD,
+  getRUMUrl,
 } from '../support/utils.js';
+
+const PAGEVIEW_THRESHOLD = 7000;
 
 export function filterRUMData(data) {
   return data.pageviews > PAGEVIEW_THRESHOLD // ignore the pages with low pageviews
@@ -28,8 +31,8 @@ export function filterRUMData(data) {
  * @returns finalUrl {Promise<string>}
  */
 
-function processRUMResponse(respJson) {
-  return respJson?.results?.data
+function processRUMResponse(data) {
+  return data
     .filter(filterRUMData)
     .map((row) => ({
       url: row.url,
@@ -44,24 +47,20 @@ export default async function auditCWV(message, context) {
   const { log, sqs } = context;
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
-    RUM_DOMAIN_KEY: domainkey,
   } = context.env;
 
   log.info(`Received audit req for domain: ${url}`);
 
+  const rumAPIClient = RUMAPIClient.createFrom(context);
   const finalUrl = await getRUMUrl(url);
   auditContext.finalUrl = finalUrl;
 
   const params = {
-    ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-    domainkey,
     url: finalUrl,
   };
 
-  const resp = await fetch(createUrl(DOMAIN_LIST_URL, params));
-  const respJson = await resp.json();
-
-  const auditResult = processRUMResponse(respJson);
+  const data = await rumAPIClient.getRUMDashboard(params);
+  const auditResult = processRUMResponse(data);
 
   await sqs.sendMessage(queueUrl, {
     type,

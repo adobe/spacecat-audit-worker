@@ -19,13 +19,19 @@ import sinonChai from 'sinon-chai';
 import { Request } from '@adobe/fetch';
 import nock from 'nock';
 import { main } from '../../src/index.js';
-import { DOMAIN_REQUEST_DEFAULT_PARAMS, getRUMUrl } from '../../src/support/utils.js';
+import { getRUMUrl } from '../../src/support/utils.js';
 import { notFoundData, expectedAuditResult } from '../notfounddata.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
 
 const sandbox = sinon.createSandbox();
+const DOMAIN_REQUEST_DEFAULT_PARAMS = {
+  interval: 7,
+  offset: 0,
+  limit: 101,
+};
+
 describe('Index Tests', () => {
   const request = new Request('https://space.cat');
   let context;

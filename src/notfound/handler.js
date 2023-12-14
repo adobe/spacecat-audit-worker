@@ -10,25 +10,18 @@
  * governing permissions and limitations under the License.
  */
 
-import { createUrl, Response } from '@adobe/fetch';
+import { Response } from '@adobe/fetch';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import {
-  DOMAIN_REQUEST_DEFAULT_PARAMS, fetch, getRUMUrl,
+  getRUMUrl,
 } from '../support/utils.js';
 
-export const CHECKPOINT_URL = 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-sources';
 export function filter404Data(data) {
   return data.url.toLowerCase() !== 'other' && !!data.source; // ignore the combined result and the 404s with no source
 }
-/**
- * url param in run-query@v3/rum-dashboard works in a 'startsWith' fashion. url=domain.com returns
- * an empty result whereas url=www.domain.com/ returns the desired result. To catch the redirects
- * to subdomains we issue a GET call to the domain, then use the final url after redirects
- * @param url
- * @returns finalUrl {Promise<string>}
- */
 
-function process404Response(respJson) {
-  return respJson?.results?.data
+function process404Response(data) {
+  return data
     .filter(filter404Data)
     .map((row) => ({
       url: row.url,
@@ -41,25 +34,20 @@ export default async function audit404(message, context) {
   const { log, sqs } = context;
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
-    RUM_DOMAIN_KEY: domainkey,
   } = context.env;
 
   log.info(`Received audit req for domain: ${url}`);
 
+  const rumAPIClient = RUMAPIClient.createFrom(context);
   const finalUrl = await getRUMUrl(url);
   auditContext.finalUrl = finalUrl;
 
   const params = {
-    ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-    domainkey,
     url: finalUrl,
-    checkpoint: 404,
   };
 
-  const resp = await fetch(createUrl(CHECKPOINT_URL, params));
-  const respJson = await resp.json();
-
-  const auditResult = process404Response(respJson);
+  const data = await rumAPIClient.get404Sources(params);
+  const auditResult = process404Response(data);
 
   await sqs.sendMessage(queueUrl, {
     type,
