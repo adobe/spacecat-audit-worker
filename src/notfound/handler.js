@@ -47,6 +47,7 @@ export default async function audit404(message, context) {
   };
 
   const data = await rumAPIClient.get404Sources(params);
+  log.info(data);
   const auditResult = process404Response(data);
 
   await sqs.sendMessage(queueUrl, {
