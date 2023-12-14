@@ -17,7 +17,7 @@ import {
 
 export const CHECKPOINT_URL = 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-checkpoint-urls';
 export function filter404Data(data) {
-  return data.url.toLowerCase() !== 'other'; // ignore the combined result
+  return data.url.toLowerCase() !== 'other' && !!data.source; // ignore the combined result and the 404s with no source
 }
 /**
  * url param in run-query@v3/rum-dashboard works in a 'startsWith' fashion. url=domain.com returns
@@ -33,6 +33,7 @@ function process404Response(respJson) {
     .map((row) => ({
       url: row.url,
       pageviews: row.views,
+      source: row.source,
     }));
 }
 export default async function audit404(message, context) {

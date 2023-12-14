@@ -13,14 +13,12 @@ export const expectedAuditResult = [
   {
     url: 'https://www.adobe.com/kr/acrobat/hub/how-to/how-to-convert-pdf-to-image.html',
     pageviews: '10000',
+    source: 'https://post.naver.com/viewer/postView.naver',
   },
   {
     url: 'https://www.adobe.com/sea/acrobat/online/merge-pdf.html',
     pageviews: '8000',
-  },
-  {
-    url: 'https://www.adobe.com/sea/acrobat/online/pdf-to-word.html',
-    pageviews: '700',
+    source: 'https://brandinside.asia/',
   },
 ];
 export const notFoundData = {

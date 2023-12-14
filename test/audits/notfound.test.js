@@ -61,7 +61,7 @@ describe('Index Tests', () => {
     };
   });
 
-  it('fetch cwv for base url > process > send results', async () => {
+  it('fetch 404s for base url > process > send results', async () => {
     nock('https://adobe.com')
       .get('/')
       .reply(200);
