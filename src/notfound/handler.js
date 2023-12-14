@@ -17,7 +17,7 @@ import {
 } from '../support/utils.js';
 
 export function filter404Data(data) {
-  return data.url.toLowerCase() !== 'other' && !!data.source; // ignore the combined result and the 404s with no source
+  return data.topurl.toLowerCase() !== 'other' && !!data.source; // ignore the combined result and the 404s with no source
 }
 
 function process404Response(data) {
@@ -47,7 +47,6 @@ export default async function audit404(message, context) {
   };
 
   const data = await rumAPIClient.get404Sources(params);
-  log.info(data);
   const auditResult = process404Response(data);
 
   await sqs.sendMessage(queueUrl, {
