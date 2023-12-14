@@ -79,7 +79,7 @@ const validateContext = (config) => {
  * @param {Object} latestAudit - The latest audit for the site.
  * @param {Object} lighthouseResult - The PageSpeed Insights data.
  * @param {object} gitHubDiff - The GitHub diff object.
- * @param {object} markdownContext - The markdown context object.
+ * @param {string} contentLastModified - The content last modified date in ISO format.
  * @param {string} fullAuditRef - The URL to the full audit results.
  * @param {string} strategy - The strategy of the audit.
  *
@@ -207,8 +207,8 @@ const sendMessageToSQS = async (sqs, queueUrl, message, log) => {
 };
 
 /**
- * Processes the audit by fetching site data,PSI data, markdown and code diff, creating audit data,
- * and sending a message to SQS.
+ * Processes the audit by fetching site data,PSI data, code diff and content last modified date
+ * creating audit data, and sending a message to SQS.
  *
  * @async
  * @param {Object} services - The services object containing the PSI client,
