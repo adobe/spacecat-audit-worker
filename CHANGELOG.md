@@ -1,3 +1,10 @@
+## [1.2.4](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.2.3...v1.2.4) (2023-12-14)
+
+
+### Bug Fixes
+
+* set x-source header for eaas ([#53](https://github.com/adobe-rnd/spacecat-audit-worker/issues/53)) ([1f92ea4](https://github.com/adobe-rnd/spacecat-audit-worker/commit/1f92ea41029f3b7c2475f95f8d79ffec20eed154))
+
 ## [1.2.3](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.2.2...v1.2.3) (2023-12-13)
 
 
