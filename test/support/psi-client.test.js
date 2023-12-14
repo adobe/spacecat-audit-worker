@@ -73,6 +73,7 @@ describe('PSIClient', () => {
     it('fetches PSI data successfully', async () => {
       nock('https://example.com')
         .get('/')
+        .matchHeader('x-source', 'spacecat')
         .query(true)
         .reply(200, { lighthouseResult: { score: 0.9 } });
 
