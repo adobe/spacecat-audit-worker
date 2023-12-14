@@ -36,27 +36,31 @@ export default async function audit404(message, context) {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
 
-  log.info(`Received audit req for domain: ${url}`);
+  try {
+    log.info(`Received audit req for domain: ${url}`);
 
-  const rumAPIClient = RUMAPIClient.createFrom(context);
-  const finalUrl = await getRUMUrl(url);
-  auditContext.finalUrl = finalUrl;
+    const rumAPIClient = RUMAPIClient.createFrom(context);
+    const finalUrl = await getRUMUrl(url);
+    auditContext.finalUrl = finalUrl;
 
-  const params = {
-    url: finalUrl,
-  };
+    const params = {
+      url: finalUrl,
+    };
 
-  const data = await rumAPIClient.get404Sources(params);
-  const auditResult = process404Response(data);
+    const data = await rumAPIClient.get404Sources(params);
+    const auditResult = process404Response(data);
 
-  await sqs.sendMessage(queueUrl, {
-    type,
-    url,
-    auditContext,
-    auditResult,
-  });
+    await sqs.sendMessage(queueUrl, {
+      type,
+      url,
+      auditContext,
+      auditResult,
+    });
 
-  log.info(`Successfully audited ${url} for ${type} type audit`);
+    log.info(`Successfully audited ${url} for ${type} type audit`);
 
-  return new Response('');
+    return new Response('', { status: 204 });
+  } catch (e) {
+    return new Response('Internal Server Error', { status: 500, statusText: e.message });
+  }
 }

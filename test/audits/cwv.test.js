@@ -19,7 +19,7 @@ import { Request } from '@adobe/fetch';
 import nock from 'nock';
 import { main } from '../../src/index.js';
 import { getRUMUrl } from '../../src/support/utils.js';
-import { expectedAuditResult, rumData } from '../rum-data.js';
+import { expectedAuditResult, rumData } from '../fixtures/rum-data.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
