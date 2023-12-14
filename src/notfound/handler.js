@@ -24,7 +24,7 @@ function process404Response(data) {
   return data
     .filter(filter404Data)
     .map((row) => ({
-      url: row.url,
+      url: row.topurl,
       pageviews: row.views,
       source: row.source,
     }));
