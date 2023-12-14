@@ -15,7 +15,7 @@ import {
   DOMAIN_REQUEST_DEFAULT_PARAMS, fetch, getRUMUrl,
 } from '../support/utils.js';
 
-export const CHECKPOINT_URL = 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-checkpoint-urls';
+export const CHECKPOINT_URL = 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-sources';
 export function filter404Data(data) {
   return data.url.toLowerCase() !== 'other' && !!data.source; // ignore the combined result and the 404s with no source
 }
