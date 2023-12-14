@@ -72,7 +72,7 @@ function PSIClient(config, log = console) {
   const performPSICheck = async (baseURL, strategy) => {
     try {
       const apiURL = getPSIApiUrl(baseURL, strategy);
-      const response = await fetch(apiURL);
+      const response = await fetch(apiURL, { headers: { 'x-source': 'spacecat' } });
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }

@@ -13,10 +13,16 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
+import nock from 'nock';
+import sinon from 'sinon';
+
+import { isIsoDate } from '@adobe/spacecat-shared-utils';
+
 import {
   extractAuditScores,
   extractTotalBlockingTime,
   extractThirdPartySummary,
+  getContentLastModified,
 } from '../../src/utils/lhs.js';
 
 describe('LHS Data Utils', () => {
@@ -95,6 +101,64 @@ describe('LHS Data Utils', () => {
       const summary = extractThirdPartySummary(psiAudit);
 
       expect(summary).to.be.an('array').that.is.empty;
+    });
+  });
+
+  describe('getContentLastModified', () => {
+    const lastModifiedDate = 'Tue, 05 Dec 2023 20:08:48 GMT';
+    const expectedDate = new Date(lastModifiedDate).toISOString();
+    let logSpy;
+
+    beforeEach(() => {
+      logSpy = { error: sinon.spy() };
+    });
+
+    afterEach(() => {
+      nock.cleanAll();
+    });
+
+    it('returns last modified date on successful fetch', async () => {
+      nock('https://www.site1.com')
+        .head('/')
+        .reply(200, '', { 'last-modified': lastModifiedDate });
+
+      const result = await getContentLastModified('https://www.site1.com', logSpy);
+
+      expect(result).to.equal(expectedDate);
+    });
+
+    it('returns current date when last modified date is not present', async () => {
+      nock('https://www.site2.com')
+        .head('/')
+        .reply(200, '', { 'last-modified': null });
+
+      const result = await getContentLastModified('https://www.site2.com', logSpy);
+
+      expect(result).to.not.equal(expectedDate);
+    });
+
+    it('returns current date and logs error on fetch failure', async () => {
+      nock('https://www.site3.com')
+        .head('/')
+        .replyWithError('Network error');
+
+      const result = await getContentLastModified('https://www.site3.com', logSpy);
+
+      expect(result).to.not.equal(expectedDate);
+      expect(isIsoDate(result)).to.be.true;
+      expect(logSpy.error.calledOnce).to.be.true;
+    });
+
+    it('returns current date and logs error on non-OK response', async () => {
+      nock('https://www.site4.com')
+        .head('/')
+        .reply(404);
+
+      const result = await getContentLastModified('https://www.site4.com', logSpy);
+
+      expect(result).to.not.equal(expectedDate);
+      expect(isIsoDate(result)).to.be.true;
+      expect(logSpy.error.calledOnce).to.be.true;
     });
   });
 });

@@ -1,3 +1,17 @@
+# [1.3.0](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.2.4...v1.3.0) (2023-12-14)
+
+
+### Features
+
+* remove markdown context, add last modified ([#56](https://github.com/adobe-rnd/spacecat-audit-worker/issues/56)) ([8b30cd4](https://github.com/adobe-rnd/spacecat-audit-worker/commit/8b30cd4b4560d06f93b90d3402d974b1101265f1))
+
+## [1.2.4](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.2.3...v1.2.4) (2023-12-14)
+
+
+### Bug Fixes
+
+* set x-source header for eaas ([#53](https://github.com/adobe-rnd/spacecat-audit-worker/issues/53)) ([1f92ea4](https://github.com/adobe-rnd/spacecat-audit-worker/commit/1f92ea41029f3b7c2475f95f8d79ffec20eed154))
+
 ## [1.2.3](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.2.2...v1.2.3) (2023-12-13)
 
 

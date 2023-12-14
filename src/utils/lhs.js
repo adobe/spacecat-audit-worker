@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { fetch } from '../support/utils.js';
+
 /**
  * Extracts audit scores from an audit.
  *
@@ -54,4 +56,31 @@ export function extractThirdPartySummary(psiAudit) {
       mainThreadTime: item.mainThreadTime,
       transferSize: item.transferSize,
     }));
+}
+
+/**
+ * Retrieves the last modified date of the content from a given URL. If the URL is not accessible,
+ * the function returns the current date in ISO format.
+ * @param {string} baseUrl - The base URL from which to fetch the content's last modified date.
+ * @param {Object} log - Logger object for error logging.
+ * @returns {Promise<string>} - A promise that resolves to the content's
+ * last modified date in ISO format.
+ */
+export async function getContentLastModified(baseUrl, log) {
+  let lastModified = new Date();
+  try {
+    const response = await fetch(baseUrl, { method: 'HEAD' });
+    if (response.ok) {
+      const headerValue = response.headers.get('last-modified');
+      if (headerValue && !Number.isNaN(new Date(headerValue).getTime())) {
+        lastModified = new Date(headerValue);
+      }
+    } else {
+      throw new Error(`HTTP error: ${response.status} ${response.statusText}`);
+    }
+  } catch (error) {
+    log.error(`Error fetching content last modified for ${baseUrl}: ${error.message}`);
+  }
+
+  return lastModified.toISOString();
 }

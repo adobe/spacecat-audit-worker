@@ -13,11 +13,15 @@
 import { Response } from '@adobe/fetch';
 import { hasText, isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
-import ContentClient from '../support/content-client.js';
 import GithubClient from '../support/github-client.js';
 import PSIClient, { PSI_STRATEGY_MOBILE, PSI_STRATEGY_DESKTOP } from '../support/psi-client.js';
 
-import { extractAuditScores, extractThirdPartySummary, extractTotalBlockingTime } from '../utils/lhs.js';
+import {
+  extractAuditScores,
+  extractThirdPartySummary,
+  extractTotalBlockingTime,
+  getContentLastModified,
+} from '../utils/lhs.js';
 
 const AUDIT_TYPE = 'lhs';
 const AUDIT_TYPES = {
@@ -75,7 +79,7 @@ const validateContext = (config) => {
  * @param {Object} latestAudit - The latest audit for the site.
  * @param {Object} lighthouseResult - The PageSpeed Insights data.
  * @param {object} gitHubDiff - The GitHub diff object.
- * @param {object} markdownContext - The markdown context object.
+ * @param {string} contentLastModified - The content last modified date in ISO format.
  * @param {string} fullAuditRef - The URL to the full audit results.
  * @param {string} strategy - The strategy of the audit.
  *
@@ -86,7 +90,7 @@ const createAuditData = (
   latestAudit,
   lighthouseResult,
   gitHubDiff,
-  markdownContext,
+  contentLastModified,
   fullAuditRef,
   strategy,
 ) => {
@@ -109,7 +113,7 @@ const createAuditData = (
     auditResult: {
       finalUrl,
       gitHubDiff,
-      markdownContext,
+      contentLastModified,
       scores,
       thirdPartySummary,
       totalBlockingTime,
@@ -203,8 +207,8 @@ const sendMessageToSQS = async (sqs, queueUrl, message, log) => {
 };
 
 /**
- * Processes the audit by fetching site data,PSI data, markdown and code diff, creating audit data,
- * and sending a message to SQS.
+ * Processes the audit by fetching site data,PSI data, code diff and content last modified date
+ * creating audit data, and sending a message to SQS.
  *
  * @async
  * @param {Object} services - The services object containing the PSI client,
@@ -226,7 +230,7 @@ async function processAudit(
   log = console,
 ) {
   const {
-    dataAccess, contentClient, githubClient, psiClient, sqs,
+    dataAccess, githubClient, psiClient, sqs,
   } = services;
 
   const baseURL = site.getBaseURL();
@@ -237,12 +241,6 @@ async function processAudit(
 
   const { lighthouseResult, fullAuditRef } = await psiClient.runAudit(baseURL, strategy);
 
-  const markdownContext = await contentClient.fetchMarkdownDiff(
-    baseURL,
-    lighthouseResult.finalUrl,
-    latestAudit?.getAuditResult()?.markdownContext,
-  );
-
   const gitHubDiff = await githubClient.fetchGithubDiff(
     baseURL,
     lighthouseResult.fetchTime,
@@ -250,12 +248,14 @@ async function processAudit(
     site.getGitHubURL(),
   );
 
+  const contentLastModified = await getContentLastModified(baseURL, log);
+
   const auditData = createAuditData(
     site,
     latestAudit,
     lighthouseResult,
     gitHubDiff,
-    markdownContext,
+    contentLastModified,
     fullAuditRef,
     strategy,
   );
@@ -293,7 +293,6 @@ function initServices(config, log = console) {
   } = config;
 
   const psiClient = PSIClient({ apiKey: psiApiKey, apiBaseUrl: psiApiBaseUrl }, log);
-  const contentClient = ContentClient(log);
   const githubClient = GithubClient(
     {
       gitHubId,
@@ -304,7 +303,6 @@ function initServices(config, log = console) {
 
   return {
     dataAccess,
-    contentClient,
     githubClient,
     psiClient,
     sqs,
