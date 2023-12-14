@@ -13,11 +13,15 @@
 import { Response } from '@adobe/fetch';
 import { hasText, isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
-import ContentClient from '../support/content-client.js';
 import GithubClient from '../support/github-client.js';
 import PSIClient, { PSI_STRATEGY_MOBILE, PSI_STRATEGY_DESKTOP } from '../support/psi-client.js';
 
-import { extractAuditScores, extractThirdPartySummary, extractTotalBlockingTime } from '../utils/lhs.js';
+import {
+  extractAuditScores,
+  extractThirdPartySummary,
+  extractTotalBlockingTime,
+  getContentLastModified,
+} from '../utils/lhs.js';
 
 const AUDIT_TYPE = 'lhs';
 const AUDIT_TYPES = {
@@ -226,7 +230,7 @@ async function processAudit(
   log = console,
 ) {
   const {
-    dataAccess, contentClient, githubClient, psiClient, sqs,
+    dataAccess, githubClient, psiClient, sqs,
   } = services;
 
   const baseURL = site.getBaseURL();
@@ -237,12 +241,6 @@ async function processAudit(
 
   const { lighthouseResult, fullAuditRef } = await psiClient.runAudit(baseURL, strategy);
 
-  const markdownContext = await contentClient.fetchMarkdownDiff(
-    baseURL,
-    lighthouseResult.finalUrl,
-    latestAudit?.getAuditResult()?.markdownContext,
-  );
-
   const gitHubDiff = await githubClient.fetchGithubDiff(
     baseURL,
     lighthouseResult.fetchTime,
@@ -250,12 +248,14 @@ async function processAudit(
     site.getGitHubURL(),
   );
 
+  const contentLastModified = await getContentLastModified(baseURL, log);
+
   const auditData = createAuditData(
     site,
     latestAudit,
     lighthouseResult,
     gitHubDiff,
-    markdownContext,
+    contentLastModified,
     fullAuditRef,
     strategy,
   );
@@ -293,7 +293,6 @@ function initServices(config, log = console) {
   } = config;
 
   const psiClient = PSIClient({ apiKey: psiApiKey, apiBaseUrl: psiApiBaseUrl }, log);
-  const contentClient = ContentClient(log);
   const githubClient = GithubClient(
     {
       gitHubId,
@@ -304,7 +303,6 @@ function initServices(config, log = console) {
 
   return {
     dataAccess,
-    contentClient,
     githubClient,
     psiClient,
     sqs,
