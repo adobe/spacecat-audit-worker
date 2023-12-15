@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.3.0...v1.3.1) (2023-12-15)
+
+
+### Bug Fixes
+
+* log and save lighthouse error ([#57](https://github.com/adobe-rnd/spacecat-audit-worker/issues/57)) ([fc08ab6](https://github.com/adobe-rnd/spacecat-audit-worker/commit/fc08ab64ff5860281899e740344620ac08b6e2c4))
+
 # [1.3.0](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.2.4...v1.3.0) (2023-12-14)
 
 
