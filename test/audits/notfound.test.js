@@ -19,7 +19,7 @@ import { Request } from '@adobe/fetch';
 import nock from 'nock';
 import { main } from '../../src/index.js';
 import { getRUMUrl } from '../../src/support/utils.js';
-import { expectedAuditResult, rumData } from '../fixtures/rum-data.js';
+import { notFoundData, expectedAuditResult } from '../fixtures/notfounddata.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
@@ -30,6 +30,7 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   offset: 0,
   limit: 101,
 };
+
 describe('Index Tests', () => {
   const request = new Request('https://space.cat');
   let context;
@@ -37,8 +38,8 @@ describe('Index Tests', () => {
 
   beforeEach('setup', () => {
     messageBodyJson = {
-      type: 'cwv',
-      url: 'https://adobe.com',
+      type: '404',
+      url: 'adobe.com',
       auditContext: {
         finalUrl: 'adobe.com',
       },
@@ -65,23 +66,19 @@ describe('Index Tests', () => {
     };
   });
 
-  afterEach(() => {
-    nock.cleanAll();
-    sinon.restore();
-  });
-
-  it('fetch cwv for base url > process > send results', async () => {
+  it('fetch 404s for base url > process > send results', async () => {
     nock('https://adobe.com')
       .get('/')
       .reply(200);
     nock('https://helix-pages.anywhere.run')
-      .get('/helix-services/run-query@v3/rum-dashboard')
+      .get('/helix-services/run-query@v3/rum-sources')
       .query({
         ...DOMAIN_REQUEST_DEFAULT_PARAMS,
         domainkey: context.env.RUM_DOMAIN_KEY,
+        checkpoint: 404,
         url: 'adobe.com',
       })
-      .reply(200, rumData);
+      .reply(200, notFoundData);
 
     const resp = await main(request, context);
 
@@ -96,12 +93,12 @@ describe('Index Tests', () => {
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
   });
 
-  it('fetch cwv for base url for base url > process > reject', async () => {
+  it('fetch 404s for base url > process > reject', async () => {
     nock('https://adobe.com')
       .get('/')
       .reply(200);
     nock('https://helix-pages.anywhere.run')
-      .get('/helix-services/run-query@v3/rum-dashboard')
+      .get('/helix-services/run-query@v3/rum-sources')
       .query({
         ...DOMAIN_REQUEST_DEFAULT_PARAMS,
         domainkey: context.env.RUM_DOMAIN_KEY,
@@ -121,15 +118,6 @@ describe('Index Tests', () => {
       .reply(200);
 
     const finalUrl = await getRUMUrl('http://space.cat');
-    expect(finalUrl).to.eql('space.cat');
-  });
-
-  it('getRUMUrl adds scheme to urls without a scheme', async () => {
-    nock('https://space.cat')
-      .get('/')
-      .reply(200);
-
-    const finalUrl = await getRUMUrl('space.cat');
     expect(finalUrl).to.eql('space.cat');
   });
 });

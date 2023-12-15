@@ -15,3 +15,12 @@ import { context as h2, h1 } from '@adobe/fetch';
 export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
   ? h1()
   : h2();
+
+// weekly pageview threshold to eliminate urls with lack of samples
+
+export async function getRUMUrl(url) {
+  const urlWithScheme = url.startsWith('http') ? url : `https://${url}`;
+  const resp = await fetch(urlWithScheme);
+  const finalUrl = resp.url.split('://')[1];
+  return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
+}

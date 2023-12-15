@@ -16,38 +16,26 @@ import {
   getRUMUrl,
 } from '../support/utils.js';
 
-const PAGEVIEW_THRESHOLD = 7000;
-
-export function filterRUMData(data) {
-  return data.pageviews > PAGEVIEW_THRESHOLD // ignore the pages with low pageviews
-      && data.url.toLowerCase() !== 'other'; // ignore the combined result
+export function filter404Data(data) {
+  return data.topurl.toLowerCase() !== 'other' && !!data.source; // ignore the combined result and the 404s with no source
 }
 
-/**
- * url param in run-query@v3/rum-dashboard works in a 'startsWith' fashion. url=domain.com returns
- * an empty result whereas url=www.domain.com/ returns the desired result. To catch the redirects
- * to subdomains we issue a GET call to the domain, then use the final url after redirects
- * @param url
- * @returns finalUrl {Promise<string>}
- */
-
-function processRUMResponse(data) {
+function process404Response(data) {
   return data
-    .filter(filterRUMData)
+    .filter(filter404Data)
     .map((row) => ({
-      url: row.url,
-      pageviews: row.pageviews,
-      avgcls: row.avgcls,
-      avginp: row.avginp,
-      avglcp: row.avglcp,
+      url: row.topurl,
+      pageviews: row.views,
+      source: row.source,
     }));
 }
-export default async function auditCWV(message, context) {
+export default async function audit404(message, context) {
   const { type, url, auditContext } = message;
   const { log, sqs } = context;
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
+
   try {
     log.info(`Received audit req for domain: ${url}`);
 
@@ -59,8 +47,8 @@ export default async function auditCWV(message, context) {
       url: finalUrl,
     };
 
-    const data = await rumAPIClient.getRUMDashboard(params);
-    const auditResult = processRUMResponse(data);
+    const data = await rumAPIClient.get404Sources(params);
+    const auditResult = process404Response(data);
 
     await sqs.sendMessage(queueUrl, {
       type,
@@ -70,6 +58,7 @@ export default async function auditCWV(message, context) {
     });
 
     log.info(`Successfully audited ${url} for ${type} type audit`);
+
     return noContent();
   } catch (e) {
     return internalServerError(`Internal server error: ${e.message}`);
