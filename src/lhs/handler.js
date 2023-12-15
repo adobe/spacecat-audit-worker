@@ -98,6 +98,7 @@ const createAuditData = (
     audits,
     categories,
     finalUrl,
+    runtimeError,
   } = lighthouseResult;
 
   const scores = extractAuditScores(categories);
@@ -117,6 +118,7 @@ const createAuditData = (
       scores,
       thirdPartySummary,
       totalBlockingTime,
+      runtimeError,
     },
   };
 };
@@ -234,12 +236,21 @@ async function processAudit(
   } = services;
 
   const baseURL = site.getBaseURL();
+  const auditType = AUDIT_TYPES[strategy.toUpperCase()];
+
   const latestAudit = await dataAccess.getLatestAuditForSite(
     site.getId(),
-    AUDIT_TYPES[strategy.toUpperCase()],
+    auditType,
   );
 
   const { lighthouseResult, fullAuditRef } = await psiClient.runAudit(baseURL, strategy);
+
+  if (isObject(lighthouseResult.runtimeError)) {
+    log.error(
+      `Audit error for site ${baseURL} with id ${site.getId()}: ${lighthouseResult.runtimeError.message}`,
+      { code: lighthouseResult.runtimeError.code, auditType, strategy },
+    );
+  }
 
   const gitHubDiff = await githubClient.fetchGithubDiff(
     baseURL,
