@@ -12,10 +12,16 @@
 
 /* eslint-env mocha */
 
-import { expect } from 'chai';
+import chai from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import sinon from 'sinon';
+
 import PSIClient from '../../src/support/psi-client.js';
+
+chai.use(chaiAsPromised);
+
+const { expect } = chai;
 
 describe('PSIClient', () => {
   let client;
@@ -127,6 +133,22 @@ describe('PSIClient', () => {
         },
       );
       expect(logMock.info.called).to.be.true;
+    });
+
+    it('throws an error if no lighthouse data is returned', async () => {
+      // follow redirects request
+      nock('https://testsite.com')
+        .get('/')
+        .query(true)
+        .reply(200);
+
+      // psi api request
+      nock('https://example.com')
+        .get('/')
+        .query(true)
+        .reply(200, {});
+
+      await expect(client.runAudit('testsite.com', 'mobile')).to.be.rejectedWith('Invalid PSI data');
     });
   });
 

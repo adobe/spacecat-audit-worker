@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isValidUrl } from '@adobe/spacecat-shared-utils';
+import { isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
 import { createUrl } from '@adobe/fetch';
 import { fetch } from './utils.js';
@@ -78,6 +78,10 @@ function PSIClient(config, log = console) {
       }
 
       const { lighthouseResult } = await response.json();
+
+      if (!isObject(lighthouseResult)) {
+        throw new Error('Invalid PSI data');
+      }
 
       return { lighthouseResult, fullAuditRef: response.url };
     } catch (e) {

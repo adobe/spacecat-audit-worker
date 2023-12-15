@@ -123,6 +123,21 @@ describe('LHS Audit', () => {
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
   });
 
+  it('skips saving audit on lighthouse error', async () => {
+    nock('https://adobe.com').get('/').reply(200);
+    nock('https://psi-audit-service.com')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
+      .reply(200, {
+        lighthouseResult: { runtimeError: { code: 'error-code', message: 'error-message' } },
+      });
+
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(204);
+    expect(mockLog.error).to.have.been.calledWith('Audit error for site https://adobe.com with id site1: error-message');
+    expect(mockDataAccess.addAudit).to.not.have.been.called;
+  });
+
   it('should successfully perform an audit for mobile strategy with valid URL', async () => {
     nock('https://adobe.com').get('/').reply(200);
     nock('https://psi-audit-service.com')
