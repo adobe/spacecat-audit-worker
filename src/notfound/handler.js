@@ -10,8 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { Response } from '@adobe/fetch';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
 import {
   getRUMUrl,
 } from '../support/utils.js';
@@ -59,8 +59,8 @@ export default async function audit404(message, context) {
 
     log.info(`Successfully audited ${url} for ${type} type audit`);
 
-    return new Response('', { status: 204 });
+    return noContent();
   } catch (e) {
-    return new Response('Internal Server Error', { status: 500, statusText: e.message });
+    return internalServerError(`Internal server error: ${e.message}`);
   }
 }

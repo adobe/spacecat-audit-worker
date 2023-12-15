@@ -10,8 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { Response } from '@adobe/fetch';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
 import {
   getRUMUrl,
 } from '../support/utils.js';
@@ -48,28 +48,30 @@ export default async function auditCWV(message, context) {
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
+  try {
+    log.info(`Received audit req for domain: ${url}`);
 
-  log.info(`Received audit req for domain: ${url}`);
+    const rumAPIClient = RUMAPIClient.createFrom(context);
+    const finalUrl = await getRUMUrl(url);
+    auditContext.finalUrl = finalUrl;
 
-  const rumAPIClient = RUMAPIClient.createFrom(context);
-  const finalUrl = await getRUMUrl(url);
-  auditContext.finalUrl = finalUrl;
+    const params = {
+      url: finalUrl,
+    };
 
-  const params = {
-    url: finalUrl,
-  };
+    const data = await rumAPIClient.getRUMDashboard(params);
+    const auditResult = processRUMResponse(data);
 
-  const data = await rumAPIClient.getRUMDashboard(params);
-  const auditResult = processRUMResponse(data);
+    await sqs.sendMessage(queueUrl, {
+      type,
+      url,
+      auditContext,
+      auditResult,
+    });
 
-  await sqs.sendMessage(queueUrl, {
-    type,
-    url,
-    auditContext,
-    auditResult,
-  });
-
-  log.info(`Successfully audited ${url} for ${type} type audit`);
-
-  return new Response('');
+    log.info(`Successfully audited ${url} for ${type} type audit`);
+    return noContent();
+  } catch (e) {
+    return internalServerError(`Internal server error: ${e.message}`);
+  }
 }

@@ -90,10 +90,29 @@ describe('Index Tests', () => {
       auditResult: expectedAuditResult,
     };
 
-    expect(resp.status).to.equal(200);
+    expect(resp.status).to.equal(204);
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+  });
+
+  it('fetch cwv for base url for base url > process > reject', async () => {
+    nock('https://adobe.com')
+      .get('/')
+      .reply(200);
+    nock('https://helix-pages.anywhere.run')
+      .get('/helix-services/run-query@v3/rum-dashboard')
+      .query({
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        domainkey: context.env.RUM_DOMAIN_KEY,
+        checkpoint: 404,
+        url: 'adobe.com',
+      })
+      .replyWithError('Bad request');
+
+    const resp = await main(request, context);
+
+    expect(resp.status).to.equal(500);
   });
 
   it('getRUMUrl do not add scheme to urls with a scheme already', async () => {
