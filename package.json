@@ -89,7 +89,7 @@
     "semantic-release": "22.0.5",
     "sinon": "17.0.1",
     "sinon-chai": "3.7.0",
-    "yaml": "2.3.2"
+    "yaml": "2.3.4"
   },
   "lint-staged": {
     "*.js": "eslint",
