@@ -100,7 +100,7 @@ const createAuditData = (
     audits,
     categories,
     finalUrl,
-    runtimeError,
+    runtimeError = {},
   } = lighthouseResult;
 
   const scores = extractAuditScores(categories);
