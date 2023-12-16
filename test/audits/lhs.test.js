@@ -34,11 +34,13 @@ describe('LHS Audit', () => {
 
   const sandbox = sinon.createSandbox();
 
-  const site = createSite({
+  const siteData = {
     id: 'site1',
     baseURL: 'https://adobe.com',
     imsOrgId: 'org123',
-  });
+  };
+
+  const site = createSite(siteData);
 
   const psiResult = {
     lighthouseResult: {
@@ -192,7 +194,8 @@ describe('LHS Audit', () => {
     const response = await audit(auditQueueMessage, context);
 
     expect(response.status).to.equal(500);
-    expect(response.statusText).to.equal('LHS Audit Error: Unexpected error occurred: Unsupported type. Supported types are lhs-mobile and lhs-desktop.');
+    expect(mockLog.error).to.have.been.calledOnce;
+    expect(mockLog.error).to.have.been.calledWith('LHS Audit Error: Unexpected error occurred: Unsupported type. Supported types are lhs-mobile and lhs-desktop.');
   });
 
   it('throws error when psi api fetch fails', async () => {
@@ -204,9 +207,9 @@ describe('LHS Audit', () => {
     const response = await audit(auditQueueMessage, context);
 
     expect(response.status).to.equal(500);
-    expect(response.statusText).to.equal(
-      'LHS Audit Error: Unexpected error occurred: HTTP error! Status: 405',
-    );
+    expect(mockLog.error).to.have.been.calledTwice;
+    expect(mockLog.error).to.have.been.calledWith('Error happened during PSI check: Error: HTTP error! Status: 405');
+    expect(mockLog.error).to.have.been.calledWith('LHS Audit Error: Unexpected error occurred: HTTP error! Status: 405');
   });
 
   it('returns a 404 when site does not exist', async () => {
@@ -217,15 +220,44 @@ describe('LHS Audit', () => {
     expect(response.status).to.equal(404);
   });
 
+  it('returns a 200 when site audits are disabled', async () => {
+    const siteWithDisabledAudits = createSite({
+      ...siteData,
+      auditConfig: { auditsDisabled: true },
+    });
+
+    mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
+
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(200);
+    expect(mockLog.info).to.have.been.calledTwice;
+    expect(mockLog.info).to.have.been.calledWith('Audits disabled for site site1');
+  });
+
+  it('returns a 200 when audits for type are disabled', async () => {
+    const siteWithDisabledAudits = createSite({
+      ...siteData,
+      auditConfig: { auditsDisabled: false, auditTypeConfigs: { 'lhs-mobile': { disabled: true } } },
+    });
+
+    mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
+
+    const response = await audit(auditQueueMessage, context);
+
+    expect(response.status).to.equal(200);
+    expect(mockLog.info).to.have.been.calledTwice;
+    expect(mockLog.info).to.have.been.calledWith('Audit type lhs-mobile disabled for site site1');
+  });
+
   it('throws error when data access fails', async () => {
     mockDataAccess.getSiteByID.rejects(new Error('Data Error'));
 
     const response = await audit(auditQueueMessage, context);
 
     expect(response.status).to.equal(500);
-    expect(response.statusText).to.equal(
-      'LHS Audit Error: Unexpected error occurred: Error getting site site1: Data Error',
-    );
+    expect(mockLog.error).to.have.been.calledOnce;
+    expect(mockLog.error).to.have.been.calledWith('LHS Audit Error: Unexpected error occurred: Error getting site site1: Data Error');
   });
 
   it('throws error when context is incomplete', async () => {
@@ -236,9 +268,8 @@ describe('LHS Audit', () => {
     const response = await audit(auditQueueMessage, context);
 
     expect(response.status).to.equal(500);
-    expect(response.statusText).to.equal(
-      'LHS Audit Error: Invalid configuration: Invalid dataAccess object, Invalid psiApiBaseUrl, Invalid queueUrl, Invalid sqs object',
-    );
+    expect(mockLog.error).to.have.been.calledOnce;
+    expect(mockLog.error).to.have.been.calledWith('LHS Audit Error: Invalid configuration: Invalid dataAccess object, Invalid psiApiBaseUrl, Invalid queueUrl, Invalid sqs object');
   });
 
   it('performs audit even when sqs message send fails', async () => {
