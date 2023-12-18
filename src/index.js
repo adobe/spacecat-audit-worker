@@ -59,6 +59,12 @@ function sqsEventAdapter(fn) {
   };
 }
 
+function getElapsedSeconds(startTime) {
+  const endTime = process.hrtime(startTime);
+  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+  return elapsedSeconds.toFixed(2);
+}
+
 /**
  * This is the main function
  * @param {object} message the message object received from SQS
@@ -78,13 +84,16 @@ async function run(message, context) {
     return new Response('', { status: 404 });
   }
 
-  const t0 = Date.now();
+  const startTime = process.hrtime();
 
   try {
-    return await handler(message, context);
+    const result = await handler(message, context);
+
+    log.info(`Audit for ${type} completed in ${getElapsedSeconds(startTime)} seconds`);
+
+    return result;
   } catch (e) {
-    const t1 = Date.now();
-    log.error(`handler exception after ${t1 - t0}ms`, e);
+    log.error(`Audit failed after ${getElapsedSeconds(startTime)} seconds`, e);
     return new Response('', {
       status: e.statusCode || 500,
       headers: {
