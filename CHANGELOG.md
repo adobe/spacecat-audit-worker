@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.0...v1.5.1) (2023-12-18)
+
+
+### Bug Fixes
+
+* standardized timing for coralogix graph ([#61](https://github.com/adobe-rnd/spacecat-audit-worker/issues/61)) ([38e32c3](https://github.com/adobe-rnd/spacecat-audit-worker/commit/38e32c3719f092944f1a1517604f6ac69e8a76c7))
+
 # [1.5.0](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.4.0...v1.5.0) (2023-12-18)
 
 
