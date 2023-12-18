@@ -10,7 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { Response } from '@adobe/fetch';
+import {
+  internalServerError, noContent, notFound, ok,
+} from '@adobe/spacecat-shared-http-utils';
 import { hasText, isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
 import GithubClient from '../support/github-client.js';
@@ -98,7 +100,7 @@ const createAuditData = (
     audits,
     categories,
     finalUrl,
-    runtimeError,
+    runtimeError = {},
   } = lighthouseResult;
 
   const scores = extractAuditScores(categories);
@@ -186,7 +188,7 @@ const respondWithError = (message, log, e) => {
   } else {
     log.error(finalMessage);
   }
-  return new Response('Internal Server Error', { status: 500, statusText: finalMessage });
+  return internalServerError('Internal Server Error');
 };
 
 /**
@@ -375,7 +377,18 @@ export default async function audit(message, context) {
 
     const site = await retrieveSite(dataAccess, siteId, log);
     if (!site) {
-      return new Response('Site not found', { status: 404 });
+      return notFound('Site not found');
+    }
+
+    const auditConfig = site.getAuditConfig();
+    if (auditConfig.auditsDisabled()) {
+      log.info(`Audits disabled for site ${siteId}`);
+      return ok();
+    }
+
+    if (auditConfig.getAuditTypeConfig(type)?.disabled()) {
+      log.info(`Audit type ${type} disabled for site ${siteId}`);
+      return ok();
     }
 
     const services = initServices({
@@ -402,7 +415,7 @@ export default async function audit(message, context) {
 
     log.info(`Audit for ${type} completed in ${formattedElapsed} seconds`);
 
-    return new Response('', { status: 204 });
+    return noContent();
   } catch (e) {
     return respondWithError('Unexpected error occurred', log, e);
   }
