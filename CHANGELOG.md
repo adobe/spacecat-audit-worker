@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.4.0...v1.5.0) (2023-12-18)
+
+
+### Features
+
+* respect audit config ([#58](https://github.com/adobe-rnd/spacecat-audit-worker/issues/58)) ([ab63932](https://github.com/adobe-rnd/spacecat-audit-worker/commit/ab63932edcc0fb23259544d0a06a9345fc1c81e1))
+
 # [1.4.0](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.3.1...v1.4.0) (2023-12-15)
 
 
