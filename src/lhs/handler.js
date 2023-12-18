@@ -413,7 +413,7 @@ export default async function audit(message, context) {
     const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
     const formattedElapsed = elapsedSeconds.toFixed(2);
 
-    log.info(`Audit for ${type} completed in ${formattedElapsed} seconds`);
+    log.info(`LHS Audit of type ${type} completed in ${formattedElapsed} seconds`);
 
     return noContent();
   } catch (e) {
