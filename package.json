@@ -59,7 +59,7 @@
     "@adobe/spacecat-shared-utils": "1.6.0",
     "@adobe/spacecat-shared-rum-api-client": "1.2.1",
     "@adobe/spacecat-shared-http-utils": "1.0.0",
-    "@aws-sdk/client-sqs": "3.474.0",
+    "@aws-sdk/client-sqs": "3.477.0",
     "diff": "5.1.0"
   },
   "devDependencies": {
