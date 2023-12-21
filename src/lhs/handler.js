@@ -132,7 +132,7 @@ const createAuditData = (
 const createSQSMessage = (auditContext, site, auditData) => ({
   type: auditData.auditType,
   url: site.getBaseURL(),
-  gitHubUrl: site.getGitHubURL(),
+  gitHubURL: site.getGitHubURL(),
   auditContext: {
     ...auditContext,
     finalUrl: auditData.auditResult.finalUrl,
