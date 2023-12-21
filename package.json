@@ -68,7 +68,7 @@
     "@adobe/helix-universal": "4.4.1",
     "@adobe/semantic-release-coralogix": "1.1.27",
     "@adobe/semantic-release-skms-cmr": "1.0.14",
-    "@redocly/cli": "1.5.0",
+    "@redocly/cli": "1.6.0",
     "@semantic-release/changelog": "6.0.3",
     "@semantic-release/exec": "6.0.3",
     "@semantic-release/git": "10.0.1",
