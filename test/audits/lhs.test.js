@@ -91,8 +91,6 @@ describe('LHS Audit', () => {
       env: {
         AUDIT_RESULTS_QUEUE_URL: 'some-queue-url',
         PAGESPEED_API_BASE_URL: 'https://psi-audit-service.com',
-        GITHUB_CLIENT_ID: 'some-github-id',
-        GITHUB_CLIENT_SECRET: 'some-github-secret',
       },
       invocation: {
         event: {
