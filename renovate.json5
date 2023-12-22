@@ -6,12 +6,6 @@
   packageRules: [
     {
       packageNames: [
-        'semantic-release'
-      ],
-      allowedVersions: '<20.0'
-    },
-    {
-      packageNames: [
         '@semantic-release/npm'
       ],
       allowedVersions: '<10.0'
