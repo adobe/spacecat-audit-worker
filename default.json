@@ -1,0 +1,53 @@
+{
+  "extends": [
+    "config:base",
+    ":semanticCommits",
+    ":autodetectPinVersions"
+  ],
+  "timezone": "Europe/Zurich",
+  "branchPrefix": "renovate-",
+  "packageRules": [
+    {
+      "packageNames": ["cimg/node"],
+      "allowedVersions": "<19"
+    },
+    {
+      "groupName": "adobe fixes",
+      "updateTypes": ["patch", "pin", "digest", "minor"],
+      "automerge": true,
+      "packagePatterns": ["^@adobe/"],
+      "schedule": ["at any time"]
+    },
+    {
+      "groupName": "adobe major",
+      "updateTypes": ["major"],
+      "packagePatterns": ["^@adobe/"],
+      "automerge": false,
+      "schedule": ["at any time"]
+    },
+    {
+      "groupName": "external fixes",
+      "updateTypes": ["patch", "pin", "digest", "minor"],
+      "automerge": true,
+      "schedule": ["after 2pm on Saturday"],
+      "packagePatterns": ["^.+"],
+      "excludePackagePatterns": ["^@adobe/"]
+    },
+    {
+      "groupName": "external major",
+      "updateTypes": ["major"],
+      "automerge": false,
+      "packagePatterns": ["^.+"],
+      "excludePackagePatterns": ["^@adobe/"],
+      "schedule": ["after 2pm on Monday"]
+    },
+    {
+      "datasources": ["orb"],
+      "updateTypes": ["patch", "minor"],
+      "automerge": true
+    }
+  ],
+  "encrypted": {
+    "npmToken": "wcFMA/xDdHCJBTolARAAg/vKPPPnapI0PdyGuBUdmim0Dtps/tPbUrPDTRgxWAt3WG7F+VgguNDtlkCjl9p6Rl0X3LfTEyZcK/1825S/hZ6zjXIfFbRdNeBH9RdS/M91lGETk2+WKAQAuTlYsMEdCg+XH8hwvGKCtbg17z1ahiAs6qXFvbSjKn6CG4pqxmYWsaDchOWsC8+JArctc9a3MihXKMot5py5GQvytYoCM9dmIm6Vs7GlSAq7MeJbkCMHtqq+HQZrO+6htk8wfkvd8/kHb5XizmDdnXvvGQXb8It0NIMy8PQObqgne3X9smp/PApkfngeAU2J5EDJxnefKGA7y+JlunpdBy0kSAiJ95Ncyu9xKgUb5Vn0XoywJKWxxIt6JENJ0zYzelxi2EvwchZ4l+2DbYnb24ZeflqXpnUikqIMpScWGx8pOIf2sjDffBjKgJBz8EXE8/4McHmRyHS2VNgoOaXy2P4CCnGnvZKXEzwnXzC5BE7ZiV4Mklw+ZUx9Q0hO8mjYX81e7B0nd8qgE6qraraNRlOlmLNpc6if7g0kOoFnyotGfZ68zo7bmMvrSKakfQRNfcnvH8yIwXZ48kapP33R6ZzcBicztsAqbdqvc3Szb2xMQakD6Vxq/N/+5EcYfA6MCagbeoXR/2umlkNulD0NWBnepFu7odH52cqTwPZ+Jt5ud7MBiebShwF3K763VxcmYPtY+UJ1Ky4/YblYGH6LXHHVNqOnVEFhklY4f4ejFthG+7Eb4L/mw8qMr/VwbhcaPbfp1Nfj6QulK+HdvkD8vauALqUjQ9QOi/wQ/XF1QsP6ucTPW3aX4FUxHRg7+Ou7lDbZ3T7R+/K2XiSzqfP4cHCEM3IVnyYEVSh/1xA+fw"
+  }
+}
