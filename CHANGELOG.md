@@ -1,3 +1,11 @@
+## [1.5.8](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.7...v1.5.8) (2024-01-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @aws-sdk/client-sqs to v3.484.0 ([#72](https://github.com/adobe-rnd/spacecat-audit-worker/issues/72)) ([528d4a1](https://github.com/adobe-rnd/spacecat-audit-worker/commit/528d4a1290e8408d2e524cb53c4c0b62346db1f2))
+* npm token renovate ([38719e3](https://github.com/adobe-rnd/spacecat-audit-worker/commit/38719e39275e50a1ccfa9fbb26c18ad00cda6de7))
+
 ## [1.5.7](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.6...v1.5.7) (2023-12-27)
 
 
