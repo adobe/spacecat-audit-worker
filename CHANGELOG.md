@@ -1,3 +1,10 @@
+## [1.5.12](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.11...v1.5.12) (2024-01-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/helix-shared-secrets to v2.2.2 ([#81](https://github.com/adobe-rnd/spacecat-audit-worker/issues/81)) ([d99d48a](https://github.com/adobe-rnd/spacecat-audit-worker/commit/d99d48a42ed1b51fefbb1f358196048d14296d05))
+
 ## [1.5.11](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.10...v1.5.11) (2024-01-13)
 
 
