@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@adobe/fetch": "4.1.1",
-    "@adobe/helix-shared-secrets": "2.2.1",
+    "@adobe/helix-shared-secrets": "2.2.2",
     "@adobe/helix-shared-wrap": "2.0.0",
     "@adobe/helix-status": "10.0.11",
     "@adobe/helix-universal-logger": "3.0.13",
