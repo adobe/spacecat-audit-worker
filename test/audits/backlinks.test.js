@@ -90,7 +90,7 @@ describe('Backlinks Tests', () => {
   beforeEach(() => {
     message = {
       type: 'backlinks',
-      url: 'test-site.',
+      url: 'test-site.com',
       auditContext: {
         finalUrl: 'final-url',
       },
@@ -127,7 +127,8 @@ describe('Backlinks Tests', () => {
     const response = await auditBrokenBacklinks(message, context);
     expect(response.status).to.equal(204);
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.log.info).to.have.been.calledWith('Successfully audited backlinks for test-site.');
+    expect(context.log.info).to.have.been.calledWith('Successfully audited test-site.com for'
+      + ' backlinks type audit');
   });
 
   it('should handle audit api errors gracefully', async () => {
