@@ -19,7 +19,7 @@ import { fetch } from '../support/utils.js';
 URI.preventInvalidHostname = true;
 
 function stripUrl(baseUrl) {
-  return baseUrl.startsWith('https://') ? baseUrl.slice(8) : baseUrl;
+  return baseUrl.startsWith('https://') ? baseUrl.slice(8) /* c8 ignore next */ : baseUrl;
 }
 
 /**
