@@ -137,18 +137,6 @@ describe('Apex audit', () => {
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedFailureMessage);
   });
 
-  it('apex audit successful when baseurl doesnt resolve with another error', async () => {
-    nock('https://some-domain.com')
-      .get('/')
-      .replyWithError({ code: 'ECONNRESET' });
-
-    const resp = await apexAudit(messageBodyJson, context);
-    expect(resp.status).to.equal(204);
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedSuccessMessage);
-  });
-
   it('apex audit successful when baseurl resolves', async () => {
     nock('https://some-domain.com')
       .get('/')

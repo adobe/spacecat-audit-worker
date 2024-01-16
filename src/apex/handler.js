@@ -49,11 +49,8 @@ async function probeUrlConnection(baseUrl, log) {
   try {
     await fetch(baseUrl); // no need for the return value just checking
   } catch (e) {
-    if (e.code === 'ECONNREFUSED') {
-      log.info(`HTTP call to apex ${baseUrl} fails with ECONNREFUSED`);
-      return false;
-    }
-    log.warn(`HTTP call to ${baseUrl} fails with unknown reason`, e);
+    log.info(`HTTP call to apex ${baseUrl} fails`);
+    return false;
   }
   return true;
 }
