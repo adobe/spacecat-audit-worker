@@ -49,7 +49,7 @@ async function probeUrlConnection(baseUrl, log) {
   try {
     await fetch(baseUrl); // no need for the return value just checking
   } catch (e) {
-    log.info(`HTTP call to apex ${baseUrl} fails`);
+    log.info(`HTTP call to apex ${baseUrl} fails`, e);
     return false;
   }
   return true;
