@@ -16,7 +16,7 @@ import {
 import { hasText, isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
 import PSIClient, { PSI_STRATEGY_MOBILE, PSI_STRATEGY_DESKTOP } from '../support/psi-client.js';
-
+import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import {
   extractAuditScores,
   extractThirdPartySummary,
@@ -143,31 +143,6 @@ const createSQSMessage = (auditContext, site, auditData) => ({
     scores: auditData.auditResult.scores,
   },
 });
-
-/**
- * Fetches site data based on the given base URL. If no site is found for the given
- * base URL, null is returned. Otherwise, the site object is returned. If an error
- * occurs while fetching the site, an error is thrown.
- *
- * @async
- * @param {Object} dataAccess - The data access object for database operations.
- * @param {string} siteId - The siteId of the site to fetch data for.
- * @param {Object} log - The logging object.
- * @throws {Error} - Throws an error if the site data cannot be fetched.
- * @returns {Promise<Object|null>} - Returns the site object if found, otherwise null.
- */
-const retrieveSite = async (dataAccess, siteId, log) => {
-  try {
-    const site = await dataAccess.getSiteByID(siteId);
-    if (!isObject(site)) {
-      log.warn(`Site not found for site: ${siteId}`);
-      return null;
-    }
-    return site;
-  } catch (e) {
-    throw new Error(`Error getting site ${siteId}: ${e.message}`);
-  }
-};
 
 /**
  * Responds with an error message and logs the error.
@@ -350,7 +325,7 @@ export default async function audit(message, context) {
 
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
 
-    const site = await retrieveSite(dataAccess, siteId, log);
+    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
     if (!site) {
       return notFound('Site not found');
     }
