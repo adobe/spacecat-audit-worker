@@ -30,7 +30,7 @@ function stripUrl(baseUrl) {
  */
 export function isApex(baseUrl) {
   try {
-    const uri = new URI(baseUrl).preventInvalidHostname(true);
+    const uri = new URI(baseUrl);
     return hasText(uri.domain()) && !hasText(uri.subdomain());
   } catch (e) {
     throw new Error(`Cannot parse baseURL: ${baseUrl}`);
