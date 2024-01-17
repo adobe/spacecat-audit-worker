@@ -12,6 +12,8 @@
 
 /* eslint-env mocha */
 
+import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
+
 import chai from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -27,8 +29,16 @@ describe('Backlinks Tests', () => {
   let message;
   let context;
   let mockLog;
+  let mockDataAccess;
 
   const sandbox = sinon.createSandbox();
+
+  const siteData = {
+    id: 'site1',
+    baseURL: 'https://adobe.com',
+  };
+
+  const site = createSite(siteData);
 
   const auditResult = {
     backlinks: [
@@ -46,12 +56,14 @@ describe('Backlinks Tests', () => {
   };
 
   beforeEach(() => {
+    mockDataAccess = {
+      getSiteByID: sinon.stub().resolves(site),
+      addAudit: sinon.stub(),
+    };
+
     message = {
-      type: 'backlinks',
-      url: 'test-site.com',
-      auditContext: {
-        finalUrl: 'final-url',
-      },
+      type: 'broken-backlinks',
+      url: 'site1',
     };
 
     mockLog = {
@@ -67,6 +79,7 @@ describe('Backlinks Tests', () => {
         AHREFS_API_KEY: 'ahrefs-token',
         AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
       },
+      dataAccess: mockDataAccess,
       sqs: {
         sendMessage: sandbox.stub().resolves(),
       },
@@ -82,11 +95,50 @@ describe('Backlinks Tests', () => {
     nock('https://ahrefs.com')
       .get(/.*/)
       .reply(200, auditResult);
+
     const response = await auditBrokenBacklinks(message, context);
+
     expect(response.status).to.equal(204);
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.log.info).to.have.been.calledWith('Successfully audited test-site.com for'
-      + ' backlinks type audit');
+    expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
+  });
+
+  it('returns a 404 when site does not exist', async () => {
+    mockDataAccess.getSiteByID.resolves(null);
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(404);
+  });
+
+  it('returns a 200 when site audits are disabled', async () => {
+    const siteWithDisabledAudits = createSite({
+      ...siteData,
+      auditConfig: { auditsDisabled: true },
+    });
+
+    mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(mockLog.info).to.have.been.calledTwice;
+    expect(mockLog.info).to.have.been.calledWith('Audits disabled for site site1');
+  });
+
+  it('returns a 200 when audits for type are disabled', async () => {
+    const siteWithDisabledAudits = createSite({
+      ...siteData,
+      auditConfig: { auditsDisabled: false, auditTypeConfigs: { 'broken-backlinks': { disabled: true } } },
+    });
+
+    mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(mockLog.info).to.have.been.calledWith('Audit type broken-backlinks disabled for site site1');
   });
 
   it('should handle audit api errors gracefully', async () => {
@@ -95,6 +147,7 @@ describe('Backlinks Tests', () => {
       .reply(500);
 
     const response = await auditBrokenBacklinks(message, context);
+
     expect(response.status).to.equal(500);
     expect(context.sqs.sendMessage).to.not.have.been.called;
   });

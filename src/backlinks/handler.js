@@ -10,34 +10,60 @@
  * governing permissions and limitations under the License.
  */
 
-import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
+import {
+  internalServerError, noContent, notFound, ok,
+} from '@adobe/spacecat-shared-http-utils';
 import AhrefsAPIClient from '../support/ahrefs-client.js';
+import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 export default async function auditBrokenBacklinks(message, context) {
-  const { type, url, auditContext } = message;
-  const { log, sqs } = context;
+  const { type, url: siteId, auditContext } = message;
+  const { dataAccess, log, sqs } = context;
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
 
   try {
-    log.info(`Received backlinks audit request for domain: ${url}`);
+    log.info(`Received ${type} audit request for siteId: ${siteId}`);
+
+    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
+    if (!site) {
+      return notFound('Site not found');
+    }
+
+    const auditConfig = site.getAuditConfig();
+    if (auditConfig.auditsDisabled()) {
+      log.info(`Audits disabled for site ${siteId}`);
+      return ok();
+    }
+
+    if (auditConfig.getAuditTypeConfig(type)?.disabled()) {
+      log.info(`Audit type ${type} disabled for site ${siteId}`);
+      return ok();
+    }
 
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const data = await ahrefsAPIClient.getBrokenBacklinks(url);
+    const data = await ahrefsAPIClient.getBrokenBacklinks(siteId);
 
     const auditResult = {
       brokenBacklinks: data.backlinks,
     };
+    const auditData = {
+      siteId: site.getId(),
+      auditedAt: new Date().toISOString(),
+      auditResult,
+    };
+
+    await dataAccess.addAudit(auditData);
 
     await sqs.sendMessage(queueUrl, {
       type,
-      url,
+      url: siteId,
       auditContext,
       auditResult,
     });
 
-    log.info(`Successfully audited ${url} for ${type} type audit`);
+    log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
   } catch (e) {
     return internalServerError(`Internal server error: ${e.message}`);
