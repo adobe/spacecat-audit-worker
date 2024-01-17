@@ -15,7 +15,7 @@ import { fetch } from './utils.js';
 
 export default class AhrefsAPIClient {
   static createFrom(context) {
-    const { AHREFS_API_BASEURL: apiBaseUrl, AHREFS_API_KEY: apiKey } = context.env;
+    const { AHREFS_API_BASE_URL: apiBaseUrl, AHREFS_API_KEY: apiKey } = context.env;
     return new AhrefsAPIClient({ apiBaseUrl, apiKey });
   }
 

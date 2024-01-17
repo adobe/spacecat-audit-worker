@@ -105,7 +105,7 @@ describe('Backlinks Tests', () => {
     context = {
       log: mockLog,
       env: {
-        AHREFS_API_BASEURL: 'https://ahrefs.com',
+        AHREFS_API_BASE_URL: 'https://ahrefs.com',
         AHREFS_API_KEY: 'ahrefs-token',
         AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
       },
