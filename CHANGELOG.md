@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.12...v1.6.0) (2024-01-17)
+
+
+### Features
+
+* apex audit ([#82](https://github.com/adobe-rnd/spacecat-audit-worker/issues/82)) ([2e79a37](https://github.com/adobe-rnd/spacecat-audit-worker/commit/2e79a37afbe170939d4460e3eb525f4f590f0a3a))
+
 ## [1.5.12](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.11...v1.5.12) (2024-01-15)
 
 
