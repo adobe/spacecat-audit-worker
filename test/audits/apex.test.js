@@ -17,7 +17,7 @@ import chai from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import apexAudit, { isApex } from '../../src/apex/handler.js';
+import apexAudit, { hasNonWWWSubdomain, toggleWWW } from '../../src/apex/handler.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
@@ -39,20 +39,8 @@ describe('Apex audit', () => {
   const siteWithApexDomain = createSite(siteData);
   const siteWithSubdomain = createSite({
     ...siteData,
-    baseURL: 'https://www.some-domain.com',
+    baseURL: 'https://subdomain.some-domain.com',
   });
-
-  const expectedFailureMessage = {
-    type: 'apex',
-    url: 'some-domain.com',
-    auditContext: {},
-    auditResult: { success: false },
-  };
-
-  const expectedSuccessMessage = {
-    ...expectedFailureMessage,
-    auditResult: { success: true },
-  };
 
   beforeEach('setup', () => {
     mockDataAccess = {
@@ -113,6 +101,10 @@ describe('Apex audit', () => {
       .get('/')
       .reply(200);
 
+    nock('https://www.some-domain.com')
+      .get('/')
+      .reply(200);
+
     const resp = await apexAudit(messageBodyJson, context);
     expect(resp.status).to.equal(500);
   });
@@ -126,19 +118,28 @@ describe('Apex audit', () => {
   });
 
   it('apex audit unsuccessful when baseurl doesnt resolve', async () => {
+    const expectedMessage = {
+      type: 'apex',
+      url: 'some-domain.com',
+      auditContext: {},
+      auditResult: [
+        {
+          url: 'https://some-domain.com',
+          success: false,
+        },
+        {
+          url: 'https://www.some-domain.com',
+          success: true,
+          status: 200,
+        },
+      ],
+    };
+
     nock('https://some-domain.com')
       .get('/')
-      .replyWithError({ code: 'ECONNREFUSED' });
+      .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
 
-    const resp = await apexAudit(messageBodyJson, context);
-    expect(resp.status).to.equal(204);
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedFailureMessage);
-  });
-
-  it('apex audit successful when baseurl resolves', async () => {
-    nock('https://some-domain.com')
+    nock('https://www.some-domain.com')
       .get('/')
       .reply(200);
 
@@ -146,35 +147,109 @@ describe('Apex audit', () => {
     expect(resp.status).to.equal(204);
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedSuccessMessage);
+      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+  });
+
+  it('unknown failures considered successfull', async () => {
+    const expectedMessage = {
+      type: 'apex',
+      url: 'some-domain.com',
+      auditContext: {},
+      auditResult: [
+        {
+          url: 'https://some-domain.com',
+          success: true,
+          status: 'unknown',
+        },
+        {
+          url: 'https://www.some-domain.com',
+          success: true,
+          status: 200,
+        },
+      ],
+    };
+
+    nock('https://some-domain.com')
+      .get('/')
+      .replyWithError({ code: 'UNKNOWN', syscall: 'unknown' });
+
+    nock('https://www.some-domain.com')
+      .get('/')
+      .reply(200);
+
+    const resp = await apexAudit(messageBodyJson, context);
+    expect(resp.status).to.equal(204);
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been
+      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+  });
+
+  it('apex audit successful when baseurl resolves', async () => {
+    const expectedMessage = {
+      type: 'apex',
+      url: 'some-domain.com',
+      auditContext: {},
+      auditResult: [
+        {
+          url: 'https://some-domain.com',
+          success: true,
+          status: 200,
+        },
+        {
+          url: 'https://www.some-domain.com',
+          success: true,
+          status: 200,
+        },
+      ],
+    };
+
+    nock('https://some-domain.com')
+      .get('/')
+      .reply(200);
+
+    nock('https://www.some-domain.com')
+      .get('/')
+      .reply(200);
+
+    const resp = await apexAudit(messageBodyJson, context);
+    expect(resp.status).to.equal(204);
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been
+      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
   });
 
   describe('apex domain validation', () => {
     it('urls with subdomains', () => {
-      expect(isApex('https://subdomain.domain.com')).to.equal(false);
-      expect(isApex('https://www.site.com')).to.equal(false);
-      expect(isApex('https://sub.domain.museum')).to.equal(false);
-      expect(isApex('https://sub.domain.com/path?query=123')).to.equal(false);
-      expect(isApex('https://sub.domain.com/')).to.equal(false);
-      expect(isApex('https://www.example.com/path/')).to.equal(false);
-      expect(isApex('https://sub.domain.com:3000')).to.equal(false);
-      expect(isApex('invalid-url^&*')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://subdomain.domain.com')).to.equal(true);
+      expect(hasNonWWWSubdomain('https://sub.domain.museum')).to.equal(true);
+      expect(hasNonWWWSubdomain('https://sub.domain.com/path?query=123')).to.equal(true);
+      expect(hasNonWWWSubdomain('https://sub.domain.com/')).to.equal(true);
+      expect(hasNonWWWSubdomain('https://sub.domain.com:3000')).to.equal(true);
     });
 
     it('urls with apex domains', () => {
-      expect(isApex('https://domain.com')).to.equal(true);
-      expect(isApex('https://example.co.uk')).to.equal(true);
-      expect(isApex('https://example.com.tr')).to.equal(true);
-      expect(isApex('https://example.com/somepath')).to.equal(true);
-      expect(isApex('https://domain.com/path?query=123')).to.equal(true);
-      expect(isApex('https://domain.com/')).to.equal(true);
-      expect(isApex('https://example.com/path/')).to.equal(true);
-      expect(isApex('https://domain.com:8000')).to.equal(true);
-      expect(isApex('https://example.site')).to.equal(true);
+      expect(hasNonWWWSubdomain('https://www.example.com/path/')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://www.site.com')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://domain.com')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://example.co.uk')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://example.com.tr')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://example.com/somepath')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://domain.com/path?query=123')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://domain.com/')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://example.com/path/')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://domain.com:8000')).to.equal(false);
+      expect(hasNonWWWSubdomain('https://example.site')).to.equal(false);
+      expect(hasNonWWWSubdomain('invalid-url^&*')).to.equal(false);
     });
 
     it('throws error when parse fails', () => {
-      expect(() => isApex('https://example,site')).to.throw('Cannot parse baseURL: https://example,site');
+      expect(() => hasNonWWWSubdomain('https://example,site')).to.throw('Cannot parse baseURL: https://example,site');
+    });
+
+    it('toggleWWW', () => {
+      expect(toggleWWW('https://www.example.com/path/')).to.equal('https://example.com/path/');
+      expect(toggleWWW('https://example.com/path/')).to.equal('https://www.example.com/path/');
+      expect(toggleWWW('https://subdomain.example.com/path/')).to.equal('https://subdomain.example.com/path/');
     });
   });
 });

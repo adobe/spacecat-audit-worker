@@ -23,18 +23,26 @@ function stripUrl(baseUrl) {
 }
 
 /**
- * Checks if a given URL contains an apex domain without a subdomain.
+ * Checks if a given URL contains a domain with a non-www subdomain.
  *
- * @param {string} baseUrl - The URL to check for the presence of an apex domain.
- * @returns {boolean} - Returns true if the baseUrl param contains an apex domain, otherwise false
+ * @param {string} baseUrl - The URL to check for the presence of a domain with a non-www subdomain.
+ * @returns {boolean} - Returns true if the baseUrl param contains a domain with a non-www
+ * subdomain, otherwise false
  */
-export function isApex(baseUrl) {
+export function hasNonWWWSubdomain(baseUrl) {
   try {
     const uri = new URI(baseUrl);
-    return hasText(uri.domain()) && !hasText(uri.subdomain());
+    return hasText(uri.domain()) && hasText(uri.subdomain()) && uri.subdomain() !== 'www';
   } catch (e) {
     throw new Error(`Cannot parse baseURL: ${baseUrl}`);
   }
+}
+
+export function toggleWWW(baseUrl) {
+  if (hasNonWWWSubdomain(baseUrl)) return baseUrl;
+  return baseUrl.startsWith('https://www')
+    ? baseUrl.replace('https://www.', 'https://')
+    : baseUrl.replace('https://', 'https://www.');
 }
 
 /**
@@ -46,37 +54,31 @@ export function isApex(baseUrl) {
  *                              and false if the connection fails with ECONNREFUSED.
  */
 async function probeUrlConnection(baseUrl, log) {
+  let resp;
   try {
-    await fetch(baseUrl); // no need for the return value just checking
+    resp = await fetch(baseUrl, { redirect: 'manual' });
   } catch (e) {
-    log.info(`HTTP call to apex ${baseUrl} fails`, e);
-    return false;
+    if (e.erroredSysCall === 'connect') {
+      log.info(`Request to ${baseUrl} fails due to a connection issue`, e);
+      return {
+        url: baseUrl,
+        success: false,
+      };
+    }
+    // failures for unknown reasons (ie bot detection) are not marked as 'failure' as intended
+    // such failures are logged as error to receive an alert about it for investigation
+    log.error(`Request to ${baseUrl} fails for an unknown reason`, e);
   }
-  return true;
+  return {
+    url: baseUrl,
+    success: true,
+    status: resp ? resp.status : 'unknown',
+  };
 }
 
 /**
- * The main function to handle audit requests. This function is invoked by the
- * SpaceCat runtime when a message is received on the audit request queue.
- * The message is expected to contain the following properties:
- * - type: The type of audit to perform.
- * - url: The base URL of the site to audit.
- * - auditContext: The audit context object containing information about the audit.
- * The context object is expected to contain the following properties:
- * - dataAccess: The data access object for database operations.
- * - log: The logging object.
- * - env: The environment variables.
- * - sqs: The SQS service object.
- * - message: The original message received from SQS.
- * The function performs the following steps:
- * - Determines the audit strategy based on the audit type.
- * - Validates the context object.
- * - Fetches site data.
- * - Fetches PSI data for the site and strategy.
- * - Creates audit data.
- * - Sends a message to SQS.
- * - Returns a 204 response.
- * If any step fails, an error is thrown and a 500 response is returned.
+ * Perform an audit to check if both www and non-www versions of a domain are accessible.
+ * If the site contains a subdomain, the audit is skipped for that specific subdomain.
  *
  * @async
  * @param {Object} message - The audit request message containing the type, URL, and audit context.
@@ -101,21 +103,21 @@ export default async function audit(message, context) {
 
     const baseURL = site.getBaseURL();
 
-    if (!isApex(baseURL)) {
+    if (hasNonWWWSubdomain(baseURL)) {
       log.info(`Url ${baseURL} already has a subdomain. No need to run apex audit.`);
       return noContent();
     }
 
-    const result = await probeUrlConnection(baseURL, log);
+    const urls = [baseURL, toggleWWW(baseURL)];
+    const results = await Promise.all(urls.map((_url) => probeUrlConnection(_url, log)));
+
     const url = stripUrl(baseURL);
 
     await sqs.sendMessage(queueUrl, {
       type,
       url,
       auditContext,
-      auditResult: {
-        success: result,
-      },
+      auditResult: results,
     });
 
     log.info(`Successfully audited ${url} for ${type} type audit`);
