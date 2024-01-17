@@ -69,9 +69,9 @@ export default class AhrefsAPIClient {
 
     const queryParams = {
       select: [
-        'title', 'url_from', 'domain_rating_source',
-        'traffic_domain', 'links_external', 'traffic', 'http_code_target',
-        'anchor', 'link_type', 'link_group_count',
+        'url_from',
+        'url_to',
+        'title',
       ].join(','),
       limit: 50,
       mode: 'prefix',
