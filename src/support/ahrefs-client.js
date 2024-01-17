@@ -30,7 +30,7 @@ export default class AhrefsAPIClient {
     this.apiKey = apiKey;
   }
 
-  async sendRequest(endpoint, queryParams) {
+  async sendRequest(endpoint, queryParams = {}) {
     const queryParamsKeys = Object.keys(queryParams);
     const queryString = queryParamsKeys.length > 0
       ? `?${queryParamsKeys
@@ -69,9 +69,9 @@ export default class AhrefsAPIClient {
 
     const queryParams = {
       select: [
+        'title',
         'url_from',
         'url_to',
-        'title',
       ].join(','),
       limit: 50,
       mode: 'prefix',
