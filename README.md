@@ -1,6 +1,6 @@
 # SpaceCat Audit Worker
 
-> SpaceCat Audit Worker for auditing edge delivery sites.
+> SpaceCat Audit Worker for auditing edge delivery sites
 
 ## Status
 [![codecov](https://img.shields.io/codecov/c/github/adobe-rnd/spacecat-audit-worker.svg)](https://codecov.io/gh/adobe-rnd/spacecat-audit-worker)
