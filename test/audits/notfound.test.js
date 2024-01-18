@@ -20,12 +20,11 @@ import { Request } from '@adobe/fetch';
 import nock from 'nock';
 import { main } from '../../src/index.js';
 import { getRUMUrl } from '../../src/support/utils.js';
-import { notFoundData, expectedAuditResult } from '../fixtures/notfounddata.js';
+import { notFoundData } from '../fixtures/notfounddata.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
 
-const sandbox = sinon.createSandbox();
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   interval: 7,
   offset: 0,
@@ -36,6 +35,7 @@ describe('Index Tests', () => {
   const request = new Request('https://space.cat');
   let context;
   let messageBodyJson;
+  let site;
 
   beforeEach('setup', () => {
     const siteData = {
@@ -43,7 +43,7 @@ describe('Index Tests', () => {
       baseURL: 'https://adobe.com',
     };
 
-    const site = createSite(siteData);
+    site = createSite(siteData);
     const mockDataAccess = {
       getSiteByBaseURL: sinon.stub().resolves(site),
       getSiteByID: sinon.stub().resolves(site),
@@ -62,7 +62,6 @@ describe('Index Tests', () => {
         region: 'us-east-1',
       },
       env: {
-        AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
         RUM_DOMAIN_KEY: 'domainkey',
       },
       invocation: {
@@ -73,9 +72,6 @@ describe('Index Tests', () => {
         },
       },
       dataAccess: mockDataAccess,
-      sqs: {
-        sendMessage: sandbox.stub().resolves(),
-      },
     };
   });
 
@@ -95,15 +91,8 @@ describe('Index Tests', () => {
 
     const resp = await main(request, context);
 
-    const expectedMessage = {
-      ...messageBodyJson,
-      auditResult: expectedAuditResult,
-    };
-
     expect(resp.status).to.equal(204);
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+    expect(context.dataAccess.addAudit).to.have.been.calledOnce;
   });
 
   it('fetch 404s for base url > process > notfound', async () => {

@@ -62,10 +62,7 @@ async function processAuditResult(
 }
 export default async function audit404(message, context) {
   const { type, url: siteId, auditContext } = message;
-  const { log, sqs, dataAccess } = context;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
+  const { log, dataAccess } = context;
 
   try {
     log.info(`Received audit req for domain: ${siteId}`);
@@ -85,13 +82,6 @@ export default async function audit404(message, context) {
     const data = await rumAPIClient.get404Sources(params);
     const auditResult = process404Response(data);
     await processAuditResult(dataAccess, site, auditContext, auditResult);
-
-    await sqs.sendMessage(queueUrl, {
-      type,
-      url: siteId,
-      auditContext,
-      auditResult,
-    });
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
 
