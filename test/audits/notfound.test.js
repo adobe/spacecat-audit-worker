@@ -14,6 +14,7 @@
 
 import chai from 'chai';
 import sinon from 'sinon';
+import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import sinonChai from 'sinon-chai';
 import { Request } from '@adobe/fetch';
 import nock from 'nock';
@@ -37,6 +38,17 @@ describe('Index Tests', () => {
   let messageBodyJson;
 
   beforeEach('setup', () => {
+    const siteData = {
+      id: 'site1',
+      baseURL: 'https://adobe.com',
+    };
+
+    const site = createSite(siteData);
+    const mockDataAccess = {
+      getSiteByBaseURL: sinon.stub().resolves(site),
+      getSiteByID: sinon.stub().resolves(site),
+      addAudit: sinon.stub(),
+    };
     messageBodyJson = {
       type: '404',
       url: 'adobe.com',
@@ -60,6 +72,7 @@ describe('Index Tests', () => {
           }],
         },
       },
+      dataAccess: mockDataAccess,
       sqs: {
         sendMessage: sandbox.stub().resolves(),
       },
@@ -91,6 +104,27 @@ describe('Index Tests', () => {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+  });
+
+  it('fetch 404s for base url > process > notfound', async () => {
+    nock('https://adobe.com')
+      .get('/')
+      .reply(200);
+    nock('https://helix-pages.anywhere.run')
+      .get('/helix-services/run-query@v3/rum-sources')
+      .query({
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        domainkey: context.env.RUM_DOMAIN_KEY,
+        checkpoint: 404,
+        url: 'adobe.com',
+      })
+      .replyWithError('Bad request');
+    const noSiteContext = { ...context };
+    noSiteContext.dataAccess.getSiteByID = sinon.stub().resolves(null);
+
+    const resp = await main(request, noSiteContext);
+
+    expect(resp.status).to.equal(404);
   });
 
   it('fetch 404s for base url > process > reject', async () => {
