@@ -37,7 +37,8 @@ export default class AhrefsAPIClient {
         .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(queryParams[key])}`)
         .join('&')}` : '';
 
-    const response = await fetch(`${this.apiBaseUrl}${endpoint}${queryString}`, {
+    const fullAuditRef = `${this.apiBaseUrl}${endpoint}${queryString}`;
+    const response = await fetch(fullAuditRef, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -50,7 +51,11 @@ export default class AhrefsAPIClient {
     }
 
     try {
-      return await response.json();
+      const result = await response.json();
+      return {
+        result,
+        fullAuditRef,
+      };
     } catch (e) {
       throw new Error(`Error parsing Ahrefs API response: ${e.message}`);
     }

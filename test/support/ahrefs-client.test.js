@@ -66,7 +66,10 @@ describe('AhrefsAPIClient', () => {
         .reply(200, brokenBacklinksResponse);
 
       const result = await client.sendRequest('/some-endpoint');
-      expect(result).to.deep.equal(brokenBacklinksResponse);
+      expect(result).to.deep.equal({
+        result: brokenBacklinksResponse,
+        fullAuditRef: 'https://example.com/some-endpoint',
+      });
     });
 
     it('throw error when API response is not ok', async () => {
@@ -114,7 +117,10 @@ describe('AhrefsAPIClient', () => {
         .reply(200, brokenBacklinksResponse);
 
       const result = await client.getBrokenBacklinks('test-site.com');
-      expect(result).to.deep.equal(brokenBacklinksResponse);
+      expect(result).to.deep.equal({
+        result: brokenBacklinksResponse,
+        fullAuditRef: 'https://example.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to&limit=50&mode=prefix&order_by=traffic_domain%3Adesc&target=test-site.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
+      });
     });
   });
 });

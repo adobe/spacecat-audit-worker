@@ -43,15 +43,18 @@ export default async function auditBrokenBacklinks(message, context) {
     }
 
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const data = await ahrefsAPIClient.getBrokenBacklinks(site.getBaseURL());
+    const { result, fullAuditRef } = await ahrefsAPIClient.getBrokenBacklinks(site.getBaseURL());
 
     const auditResult = {
-      brokenBacklinks: data.backlinks,
+      brokenBacklinks: result.backlinks,
     };
     const auditData = {
       siteId: site.getId(),
+      isLive: site.isLive(),
       auditedAt: new Date().toISOString(),
+      auditType: type,
       auditResult,
+      fullAuditRef,
     };
 
     await dataAccess.addAudit(auditData);
@@ -66,7 +69,7 @@ export default async function auditBrokenBacklinks(message, context) {
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
   } catch (e) {
-    log.error(`Failed with error: ${e.message}`, e);
+    log.error(`${type} type audit for ${siteId} failed with error: ${e.message}`, e);
     return internalServerError(`Internal server error: ${e.message}`);
   }
 }
