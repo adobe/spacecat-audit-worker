@@ -1,3 +1,38 @@
+# [1.6.0](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.12...v1.6.0) (2024-01-17)
+
+
+### Features
+
+* apex audit ([#82](https://github.com/adobe-rnd/spacecat-audit-worker/issues/82)) ([2e79a37](https://github.com/adobe-rnd/spacecat-audit-worker/commit/2e79a37afbe170939d4460e3eb525f4f590f0a3a))
+
+## [1.5.12](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.11...v1.5.12) (2024-01-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/helix-shared-secrets to v2.2.2 ([#81](https://github.com/adobe-rnd/spacecat-audit-worker/issues/81)) ([d99d48a](https://github.com/adobe-rnd/spacecat-audit-worker/commit/d99d48a42ed1b51fefbb1f358196048d14296d05))
+
+## [1.5.11](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.10...v1.5.11) (2024-01-13)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#79](https://github.com/adobe-rnd/spacecat-audit-worker/issues/79)) ([c9fb636](https://github.com/adobe-rnd/spacecat-audit-worker/commit/c9fb636fcbf450d22a3c89ea8fabcc2ad8f1d9d4))
+
+## [1.5.10](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.9...v1.5.10) (2024-01-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v1.3.1 ([#78](https://github.com/adobe-rnd/spacecat-audit-worker/issues/78)) ([0ebe31f](https://github.com/adobe-rnd/spacecat-audit-worker/commit/0ebe31fb8d6a8eae49f54769ec27f84801ecc0d0))
+
+## [1.5.9](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.8...v1.5.9) (2024-01-12)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#76](https://github.com/adobe-rnd/spacecat-audit-worker/issues/76)) ([27d5963](https://github.com/adobe-rnd/spacecat-audit-worker/commit/27d5963b4436207240fd33d1a63dca257fb001f4))
+
 ## [1.5.8](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.5.7...v1.5.8) (2024-01-11)
 
 
