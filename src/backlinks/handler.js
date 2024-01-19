@@ -45,7 +45,7 @@ export default async function auditBrokenBacklinks(message, context) {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     const { result, fullAuditRef } = await ahrefsAPIClient.getBrokenBacklinks(site.getBaseURL());
 
-    log.info(`Found ${result.backlinks.length} broken backlinks for siteId: ${siteId}`);
+    log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId}`);
 
     const auditResult = {
       brokenBacklinks: result.backlinks,
