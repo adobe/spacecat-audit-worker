@@ -95,6 +95,15 @@ describe('Index Tests', () => {
     expect(context.dataAccess.addAudit).to.have.been.calledOnce;
   });
 
+  it('fetch 404s for base url > process > reject', async () => {
+    const exceptionContext = { ...context };
+    exceptionContext.dataAccess.getSiteByBaseURL = sinon.stub().rejects('Exception data accesss');
+
+    const resp = await main(request, exceptionContext);
+
+    expect(resp.status).to.equal(500);
+  });
+
   it('fetch 404s for base url > process > notfound', async () => {
     nock('https://adobe.com')
       .get('/')
@@ -109,7 +118,7 @@ describe('Index Tests', () => {
       })
       .replyWithError('Bad request');
     const noSiteContext = { ...context };
-    noSiteContext.dataAccess.getSiteByID = sinon.stub().resolves(null);
+    noSiteContext.dataAccess.getSiteByBaseURL = sinon.stub().resolves(null);
 
     const resp = await main(request, noSiteContext);
 

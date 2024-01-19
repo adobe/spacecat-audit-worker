@@ -12,12 +12,12 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { retrieveSiteByURL } from '../utils/data-access.js';
 import {
   getRUMUrl,
 } from '../support/utils.js';
 
-const AUDIT_TYPE = '404';
+const AUDIT_TYPE = '404-report';
 
 export function filter404Data(data) {
   return data.topurl.toLowerCase() !== 'other' && !!data.source; // ignore the combined result and the 404s with no source
@@ -61,18 +61,18 @@ async function processAuditResult(
   await dataAccess.addAudit(auditData);
 }
 export default async function audit404(message, context) {
-  const { type, url: siteId, auditContext } = message;
+  const { type, url, auditContext } = message;
   const { log, dataAccess } = context;
 
   try {
-    log.info(`Received audit req for domain: ${siteId}`);
-    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
+    log.info(`Received audit req for domain: ${url}`);
+    const site = await retrieveSiteByURL(dataAccess, url, log);
     if (!site) {
       return notFound('Site not found');
     }
 
     const rumAPIClient = RUMAPIClient.createFrom(context);
-    const finalUrl = await getRUMUrl(siteId);
+    const finalUrl = await getRUMUrl(url);
     auditContext.finalUrl = finalUrl;
 
     const params = {
@@ -83,7 +83,7 @@ export default async function audit404(message, context) {
     const auditResult = process404Response(data);
     await processAuditResult(dataAccess, site, auditContext, auditResult);
 
-    log.info(`Successfully audited ${siteId} for ${type} type audit`);
+    log.info(`Successfully audited ${url} for ${type} type audit`);
 
     return noContent();
   } catch (e) {
