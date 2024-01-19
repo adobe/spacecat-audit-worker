@@ -35,10 +35,14 @@ describe('Backlinks Tests', () => {
 
   const siteData = {
     id: 'site1',
-    baseURL: 'https://adobe.com',
+    baseURL: 'https://bar.foo.com',
   };
 
   const site = createSite(siteData);
+  const site2 = createSite({
+    id: 'site2',
+    baseURL: 'https://foo.com',
+  });
 
   const auditResult = {
     backlinks: [
@@ -57,7 +61,10 @@ describe('Backlinks Tests', () => {
 
   beforeEach(() => {
     mockDataAccess = {
-      getSiteByID: sinon.stub().resolves(site),
+      getSiteByID: sinon.stub()
+        .withArgs('site1').resolves(site)
+        .withArgs('site2')
+        .resolves(site2),
       addAudit: sinon.stub(),
     };
 
@@ -104,6 +111,21 @@ describe('Backlinks Tests', () => {
     expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
   });
 
+  it('should successfully perform an audit to detect broken backlinks for both www and non www', async () => {
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .times(2)
+      .reply(200, auditResult);
+
+    const response = await auditBrokenBacklinks(message = {
+      type: 'broken-backlinks',
+      url: 'site2',
+    }, context);
+    expect(response.status).to.equal(204);
+    expect(mockDataAccess.addAudit).to.have.been.calledTwice;
+    expect(context.sqs.sendMessage).to.have.been.calledTwice;
+  });
+
   it('returns a 404 when site does not exist', async () => {
     mockDataAccess.getSiteByID.resolves(null);
 
@@ -148,7 +170,15 @@ describe('Backlinks Tests', () => {
 
     const response = await auditBrokenBacklinks(message, context);
 
-    expect(response.status).to.equal(500);
+    expect(response.status).to.equal(204);
     expect(context.sqs.sendMessage).to.not.have.been.called;
+  });
+
+  it('should handle errors gracefully', async () => {
+    mockDataAccess.getSiteByID.throws('some-error');
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(500);
   });
 });

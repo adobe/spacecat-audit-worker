@@ -15,6 +15,7 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import AhrefsAPIClient from '../support/ahrefs-client.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { toggleWWW } from '../apex/handler.js';
 
 export default async function auditBrokenBacklinks(message, context) {
   const { type, url: siteId, auditContext } = message;
@@ -43,31 +44,42 @@ export default async function auditBrokenBacklinks(message, context) {
     }
 
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const finalURL = `${site.getBaseURL().split('://')[0]}://www.${site.getBaseURL().split('://')[1]}`;
-    const { result, fullAuditRef } = await ahrefsAPIClient.getBrokenBacklinks(finalURL);
+    const urls = [...new Set([site.getBaseURL(), toggleWWW(site.getBaseURL())])];
 
-    log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId}`);
+    await Promise.all(urls.map(async (url) => {
+      try {
+        const {
+          result,
+          fullAuditRef,
+        } = await ahrefsAPIClient.getBrokenBacklinks(url);
 
-    const auditResult = {
-      brokenBacklinks: result.backlinks,
-    };
-    const auditData = {
-      siteId: site.getId(),
-      isLive: site.isLive(),
-      auditedAt: new Date().toISOString(),
-      auditType: type,
-      auditResult,
-      fullAuditRef,
-    };
+        log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${url}`);
 
-    await dataAccess.addAudit(auditData);
+        const auditResult = {
+          brokenBacklinks: result.backlinks,
+        };
+        const auditData = {
+          siteId: site.getId(),
+          isLive: site.isLive(),
+          auditedAt: new Date().toISOString(),
+          auditType: type,
+          auditResult,
+          fullAuditRef,
+        };
 
-    await sqs.sendMessage(queueUrl, {
-      type,
-      url: site.getBaseURL(),
-      auditContext,
-      auditResult,
-    });
+        await dataAccess.addAudit(auditData);
+
+        await sqs.sendMessage(queueUrl, {
+          type,
+          url,
+          auditContext,
+          auditResult,
+        });
+        log.info(`Successfully audited ${siteId} with url ${url} for ${type} type audit`);
+      } catch (e) {
+        log.error(`${type} type audit for ${siteId} with url ${url} failed with error: ${e.message}`, e);
+      }
+    }));
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
