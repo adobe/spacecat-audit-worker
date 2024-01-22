@@ -92,6 +92,7 @@ export default async function audit404(message, context) {
 
     return noContent();
   } catch (e) {
+    log.error(`Error for site: ${url}`);
     return internalServerError(`Internal server error: ${e.message}`);
   }
 }
