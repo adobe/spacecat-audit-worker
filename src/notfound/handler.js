@@ -60,9 +60,13 @@ async function processAuditResult(
     isLive: site.isLive(),
     auditResult: { ...result, finalUrl: auditContext.finalUrl },
   };
-
-  await dataAccess.addAudit(auditData);
-  log.info(`Successfully wrote ${AUDIT_TYPE} to audit table`);
+  try {
+    await dataAccess.addAudit(auditData);
+    log.info(`Successfully wrote ${AUDIT_TYPE} to audit table`);
+  } catch (e) {
+    log.error(`Error writing ${AUDIT_TYPE} to audit table: ${e.message}`);
+    throw e;
+  }
 }
 export default async function audit404(message, context) {
   const { type, url } = message;

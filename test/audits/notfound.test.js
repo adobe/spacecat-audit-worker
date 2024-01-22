@@ -75,6 +75,11 @@ describe('Index Tests', () => {
     };
   });
 
+  afterEach(() => {
+    nock.cleanAll();
+    sinon.restore();
+  });
+
   it('fetch 404s for base url > process > send results', async () => {
     nock('https://adobe.com')
       .get('/')
@@ -95,7 +100,7 @@ describe('Index Tests', () => {
     expect(context.dataAccess.addAudit).to.have.been.calledOnce;
   });
 
-  it('fetch 404s for base url > domain > reject', async () => {
+  it('fetch 404s for base url > site data access exception > reject', async () => {
     const exceptionContext = { ...context };
     exceptionContext.dataAccess.getSiteByBaseURL = sinon.stub().rejects('Exception data accesss');
 
@@ -140,6 +145,27 @@ describe('Index Tests', () => {
       .replyWithError('Bad request');
 
     const resp = await main(request, context);
+
+    expect(resp.status).to.equal(500);
+  });
+
+  it('fetch 404s for base url > audit data model exception > reject', async () => {
+    nock('https://adobe.com')
+      .get('/')
+      .reply(200);
+    nock('https://helix-pages.anywhere.run')
+      .get('/helix-services/run-query@v3/rum-sources')
+      .query({
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        domainkey: context.env.RUM_DOMAIN_KEY,
+        checkpoint: 404,
+        url: 'adobe.com',
+      })
+      .reply(200, notFoundData);
+    const auditFailContext = { ...context };
+    auditFailContext.dataAccess.addAudit = sinon.stub().rejects('Error adding audit');
+
+    const resp = await main(request, auditFailContext);
 
     expect(resp.status).to.equal(500);
   });
