@@ -17,7 +17,7 @@ import {
   getRUMUrl,
 } from '../support/utils.js';
 
-const AUDIT_TYPE = '404-report';
+const AUDIT_TYPE = '404';
 
 export function filter404Data(data) {
   return data.topurl.toLowerCase() !== 'other' && !!data.source; // ignore the combined result and the 404s with no source
