@@ -95,7 +95,7 @@ describe('Index Tests', () => {
     expect(context.dataAccess.addAudit).to.have.been.calledOnce;
   });
 
-  it('fetch 404s for base url > process > reject', async () => {
+  it('fetch 404s for base url > domain > reject', async () => {
     const exceptionContext = { ...context };
     exceptionContext.dataAccess.getSiteByBaseURL = sinon.stub().rejects('Exception data accesss');
 

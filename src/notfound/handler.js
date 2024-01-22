@@ -64,13 +64,13 @@ export default async function audit404(message, context) {
   const { type, url, auditContext } = message;
   const { log, dataAccess } = context;
 
-  const finalUrl = await getRUMUrl(url);
   try {
     log.info(`Received audit req for domain: ${url}`);
-    const site = await retrieveSiteByURL(dataAccess, finalUrl, log);
+    const site = await retrieveSiteByURL(dataAccess, url, log);
     if (!site) {
       return notFound('Site not found');
     }
+    const finalUrl = await getRUMUrl(url);
 
     const rumAPIClient = RUMAPIClient.createFrom(context);
     auditContext.finalUrl = finalUrl;
