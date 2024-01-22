@@ -65,7 +65,7 @@ async function processAuditResult(
   log.info(`Successfully wrote ${AUDIT_TYPE} to audit table`);
 }
 export default async function audit404(message, context) {
-  const { type, url, auditContext } = message;
+  const { type, url } = message;
   const { log, dataAccess } = context;
 
   try {
@@ -79,7 +79,6 @@ export default async function audit404(message, context) {
     const finalUrl = await getRUMUrl(url);
 
     const rumAPIClient = RUMAPIClient.createFrom(context);
-    auditContext.finalUrl = finalUrl;
 
     const params = {
       url: finalUrl,
@@ -87,13 +86,12 @@ export default async function audit404(message, context) {
 
     const data = await rumAPIClient.get404Sources(params);
     const auditResult = process404Response(data);
-    await processAuditResult(dataAccess, site, auditContext, auditResult, log);
+    await processAuditResult(dataAccess, site, { finalUrl }, auditResult, log);
 
     log.info(`Successfully audited ${url} for ${type} type audit`);
 
     return noContent();
   } catch (e) {
-    log.error(`Error for site: ${url} ${e.message}`);
     return internalServerError(`Internal server error: ${e.message}`);
   }
 }
