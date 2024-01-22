@@ -71,6 +71,7 @@ export default async function audit404(message, context) {
   try {
     log.info(`Received audit req for domain: ${url}`);
     const site = await retrieveSiteByURL(dataAccess, url, log);
+    log.info(`Retrieved site by url: ${url}`);
     if (!site) {
       log.error(`Site not found: ${url}`);
       return notFound('Site not found');
