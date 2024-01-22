@@ -72,6 +72,7 @@ export default async function audit404(message, context) {
     log.info(`Received audit req for domain: ${url}`);
     const site = await retrieveSiteByURL(dataAccess, url, log);
     if (!site) {
+      log.error(`Site not found: ${url}`);
       return notFound('Site not found');
     }
     const finalUrl = await getRUMUrl(url);
