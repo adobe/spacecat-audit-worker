@@ -62,6 +62,7 @@ async function processAuditResult(
   };
 
   await dataAccess.addAudit(auditData);
+  log.info(`Successfully wrote ${AUDIT_TYPE} to audit table`);
 }
 export default async function audit404(message, context) {
   const { type, url, auditContext } = message;
