@@ -42,6 +42,7 @@ function process404Response(data) {
  * @param {Object} site - The site which to audit.
  * @param {Object} auditContext - The audit context object containing information about the audit.
  * @param {Object} result - The result object containing audit result.
+ * @param {Object} log - The logger.
  * @throws {Error} - Throws an error if any step in the audit process fails.
  */
 async function processAuditResult(
@@ -49,7 +50,9 @@ async function processAuditResult(
   site,
   auditContext,
   result,
+  log,
 ) {
+  log.info(`Writing ${AUDIT_TYPE} to audit table`);
   const auditData = {
     siteId: site.getId(),
     auditType: AUDIT_TYPE,
@@ -81,7 +84,7 @@ export default async function audit404(message, context) {
 
     const data = await rumAPIClient.get404Sources(params);
     const auditResult = process404Response(data);
-    await processAuditResult(dataAccess, site, auditContext, auditResult);
+    await processAuditResult(dataAccess, site, auditContext, auditResult, log);
 
     log.info(`Successfully audited ${url} for ${type} type audit`);
 
