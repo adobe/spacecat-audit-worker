@@ -46,7 +46,7 @@ export default async function auditBrokenBacklinks(message, context) {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     const urls = [...new Set([site.getBaseURL(), toggleWWW(site.getBaseURL())])];
 
-    await Promise.all(urls.map(async (url) => {
+    const auditResult = await Promise.all(urls.map(async (url) => {
       try {
         const {
           result,
@@ -55,31 +55,37 @@ export default async function auditBrokenBacklinks(message, context) {
 
         log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${url}`);
 
-        const auditResult = {
+        return {
+          url,
           brokenBacklinks: result.backlinks,
-        };
-        const auditData = {
-          siteId: site.getId(),
-          isLive: site.isLive(),
-          auditedAt: new Date().toISOString(),
-          auditType: type,
-          auditResult,
           fullAuditRef,
         };
-
-        await dataAccess.addAudit(auditData);
-
-        await sqs.sendMessage(queueUrl, {
-          type,
-          url,
-          auditContext,
-          auditResult,
-        });
-        log.info(`Successfully audited ${siteId} with url ${url} for ${type} type audit`);
       } catch (e) {
         log.error(`${type} type audit for ${siteId} with url ${url} failed with error: ${e.message}`, e);
+        return {
+          url,
+          error: `${type} type audit for ${siteId} with url ${url} failed with error`,
+        };
       }
     }));
+
+    const auditData = {
+      siteId: site.getId(),
+      isLive: site.isLive(),
+      auditedAt: new Date().toISOString(),
+      auditType: type,
+      auditResult,
+      fullAuditRef: auditResult?.[0]?.fullAuditRef,
+    };
+
+    await dataAccess.addAudit(auditData);
+
+    await sqs.sendMessage(queueUrl, {
+      type,
+      url: site.getBaseURL(),
+      auditContext,
+      auditResult,
+    });
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();

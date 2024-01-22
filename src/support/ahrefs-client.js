@@ -80,7 +80,7 @@ export default class AhrefsAPIClient {
       ].join(','),
       limit: 50,
       mode: 'prefix',
-      order_by: 'traffic_domain:desc',
+      order_by: 'domain_rating_source:desc,traffic_domain:desc',
       target: url,
       output: 'json',
       where: JSON.stringify(filter),
