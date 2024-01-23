@@ -3,6 +3,14 @@
 
 ### Bug Fixes
 
+* **deps:** update adobe fixes ([#94](https://github.com/adobe-rnd/spacecat-audit-worker/issues/94)) ([4e67773](https://github.com/adobe-rnd/spacecat-audit-worker/commit/4e67773b1136c405c1661c580940f74fe1a85dc2))
+* update to node 20, deps ([#91](https://github.com/adobe-rnd/spacecat-audit-worker/issues/91)) ([0a95f46](https://github.com/adobe-rnd/spacecat-audit-worker/commit/0a95f466ccc77b9fef6f1aafc77f111e986a6301))
+
+## [1.6.6](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.6.5...v1.6.6) (2024-01-23)
+
+
+### Bug Fixes
+
 * update to node 20, deps ([#91](https://github.com/adobe-rnd/spacecat-audit-worker/issues/91)) ([0a95f46](https://github.com/adobe-rnd/spacecat-audit-worker/commit/0a95f466ccc77b9fef6f1aafc77f111e986a6301))
 
 ## [1.6.5](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.6.4...v1.6.5) (2024-01-22)
