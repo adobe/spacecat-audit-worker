@@ -12,12 +12,20 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
+import { createUrl } from '@adobe/fetch';
 import { retrieveSiteByURL } from '../utils/data-access.js';
 import {
   getRUMUrl,
 } from '../support/utils.js';
 
 const AUDIT_TYPE = '404';
+// TODO export from spacecat-shared-rum-api-client
+const RUM_SOURCES = 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-sources';
+export const RUM_DEFAULT_PARAMS = {
+  interval: 7,
+  offset: 0,
+  limit: 101,
+};
 
 export function filter404Data(data) {
   return data.topurl.toLowerCase() !== 'other' && !!data.source; // ignore the combined result and the 404s with no source
@@ -57,6 +65,7 @@ async function processAuditResult(
     siteId: site.getId(),
     auditType: AUDIT_TYPE,
     auditedAt: new Date().toISOString(),
+    fullAuditRef: createUrl(RUM_SOURCES, { ...RUM_DEFAULT_PARAMS, url: auditContext.finalUrl }),
     isLive: site.isLive(),
     auditResult: { ...result, finalUrl: auditContext.finalUrl },
   };
