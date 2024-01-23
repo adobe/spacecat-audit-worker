@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.6.7...v1.7.0) (2024-01-23)
+
+
+### Features
+
+* introduce audit for broken-backlinks (SITES-18417) ([#77](https://github.com/adobe/spacecat-audit-worker/issues/77)) ([034e5e8](https://github.com/adobe/spacecat-audit-worker/commit/034e5e8196d2eca8b5451af4b0299f3c2035d9f8)), closes [adobe/spacecat-audit-post-processor#37](https://github.com/adobe/spacecat-audit-post-processor/issues/37)
+
 ## [1.6.7](https://github.com/adobe-rnd/spacecat-audit-worker/compare/v1.6.6...v1.6.7) (2024-01-23)
 
 
