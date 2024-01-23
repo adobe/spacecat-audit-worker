@@ -31,7 +31,7 @@
     },
     "fastlyServiceId!important": "",
     "timeout": 900000,
-    "nodeVersion": 18
+    "nodeVersion": 20
   },
   "repository": {
     "type": "git",
@@ -68,6 +68,7 @@
     "@adobe/helix-deploy": "10.3.0",
     "@adobe/helix-universal": "4.4.1",
     "@adobe/semantic-release-coralogix": "1.1.27",
+    "@semantic-release/npm": "11.0.2",
     "@adobe/semantic-release-skms-cmr": "1.0.14",
     "@redocly/cli": "1.6.0",
     "@semantic-release/changelog": "6.0.3",
@@ -87,7 +88,7 @@
     "mocha-suppress-logs": "0.4.1",
     "nock": "13.5.0",
     "nodemon": "3.0.3",
-    "semantic-release": "22.0.12",
+    "semantic-release": "23.0.0",
     "sinon": "17.0.1",
     "sinon-chai": "3.7.0",
     "yaml": "2.3.4"
