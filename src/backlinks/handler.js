@@ -46,7 +46,7 @@ export default async function auditBrokenBacklinks(message, context) {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     const urls = [...new Set([site.getBaseURL(), toggleWWW(site.getBaseURL())])];
 
-    const auditResult = await Promise.all(urls.map(async (url) => {
+    const results = await Promise.all(urls.map(async (url) => {
       try {
         const {
           result,
@@ -69,13 +69,19 @@ export default async function auditBrokenBacklinks(message, context) {
       }
     }));
 
+    const auditResult = results.reduce((acc, item) => {
+      const { url, ...rest } = item;
+      acc[url] = rest;
+      return acc;
+    }, {});
+
     const auditData = {
       siteId: site.getId(),
       isLive: site.isLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
       auditResult,
-      fullAuditRef: auditResult?.[0]?.fullAuditRef,
+      fullAuditRef: results?.[0]?.fullAuditRef,
     };
 
     await dataAccess.addAudit(auditData);

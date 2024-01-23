@@ -130,18 +130,16 @@ describe('Backlinks Tests', () => {
       sinon.match({
         type: message.type,
         url: site2.getBaseURL(),
-        auditResult: [
-          {
-            url: 'https://foo.com',
+        auditResult: {
+          'https://foo.com': {
             brokenBacklinks: auditResult.backlinks,
             fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=https%3A%2F%2Ffoo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
           },
-          {
-            url: 'https://www.foo.com',
+          'https://www.foo.com': {
             brokenBacklinks: auditResult.backlinks,
             fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=https%3A%2F%2Fwww.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
           },
-        ],
+        },
       }),
     );
   });
@@ -200,12 +198,11 @@ describe('Backlinks Tests', () => {
       sinon.match({
         type: message.type,
         url: site.getBaseURL(),
-        auditResult: [
-          {
-            url: 'https://bar.foo.com',
+        auditResult: {
+          'https://bar.foo.com': {
             error: `broken-backlinks type audit for ${site.getId()} with url ${site.getBaseURL()} failed with error`,
           },
-        ],
+        },
       }),
     );
   });
