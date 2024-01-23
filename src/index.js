@@ -21,6 +21,7 @@ import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhs from './lhs/handler.js';
 import notfound from './notfound/handler.js';
+import backlinks from './backlinks/handler.js';
 
 const HANDLERS = {
   apex,
@@ -28,6 +29,7 @@ const HANDLERS = {
   'lhs-mobile': lhs,
   'lhs-desktop': lhs,
   404: notfound,
+  'broken-backlinks': backlinks,
 };
 
 /**

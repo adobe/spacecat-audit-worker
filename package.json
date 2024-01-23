@@ -35,14 +35,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/adobe-rnd/spacecat-audit-worker"
+    "url": "https://github.com/adobe/spacecat-audit-worker"
   },
   "author": "",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/adobe-rnd/spacecat-audit-worker/issues"
+    "url": "https://github.com/adobe/spacecat-audit-worker/issues"
   },
-  "homepage": "https://github.com/adobe-rnd/spacecat-audit-worker#readme",
+  "homepage": "https://github.com/adobe/spacecat-audit-worker#readme",
   "mocha": {
     "require": "test/setup-env.js",
     "recursive": "true",
