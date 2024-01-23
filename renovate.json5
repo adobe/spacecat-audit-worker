@@ -6,9 +6,15 @@
   packageRules: [
     {
       packageNames: [
-        '@semantic-release/npm'
+        'semantic-release'
       ],
-      allowedVersions: '<10.0'
+      allowedVersions: '>=23.0'
+    },
+    {
+      packageNames: [
+        'chai'
+      ],
+      allowedVersions: '<5.0.0'
     },
     {
       // https://github.com/iambumblehead/esmock/issues/260
