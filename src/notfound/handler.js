@@ -63,7 +63,7 @@ async function processAuditResult(
     auditedAt: new Date().toISOString(),
     fullAuditRef: rumAPIClient.create404URL({ url: auditContext.finalUrl }),
     isLive: site.isLive(),
-    auditResult: { ...result, finalUrl: auditContext.finalUrl },
+    auditResult: { result, finalUrl: auditContext.finalUrl },
   };
   try {
     log.info(`Saving audit ${JSON.stringify(auditData)}`);
