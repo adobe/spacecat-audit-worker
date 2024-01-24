@@ -52,7 +52,7 @@ export async function retrieveSiteByURL(dataAccess, url, log) {
   try {
     const site = await dataAccess.getSiteByBaseURL(url);
     if (!isObject(site)) {
-      log.warn(`Site not found for site: ${url}`);
+      log.warn(`Site not found for url: ${url}`);
       return null;
     }
     return site;
