@@ -46,21 +46,25 @@ function process404Response(data) {
  * creating audit data, and sending a message to SQS.
  *
  * @async
- * @param {Object} dataAccess - Object containing the functions supported by the data
+ * @param {Object} services - The services object containing the dataAccess and sqs service.
  * @param {Object} site - The site which to audit.
  * @param {Object} auditContext - The audit context object containing information about the audit.
+ * @param {Object} queueUrl - The SQS queue URL.
  * @param {Object} result - The result object containing audit result.
  * @param {Object} log - The logger.
  * @throws {Error} - Throws an error if any step in the audit process fails.
  */
 async function processAuditResult(
-  dataAccess,
+  services,
   site,
   auditContext,
+  queueUrl,
   result,
   log,
 ) {
-  log.info(`Writing ${AUDIT_TYPE} to audit table`);
+  const {
+    dataAccess, sqs,
+  } = services;
   const auditData = {
     siteId: site.getId(),
     auditType: AUDIT_TYPE,
@@ -70,8 +74,15 @@ async function processAuditResult(
     auditResult: { ...result, finalUrl: auditContext.finalUrl },
   };
   try {
+    log.info(`Saving audit ${JSON.stringify(auditData)}`);
     await dataAccess.addAudit(auditData);
-    log.info(`Successfully wrote ${AUDIT_TYPE} to audit table`);
+
+    await sqs.sendMessage(queueUrl, {
+      type: AUDIT_TYPE,
+      url: site.getBaseURL(),
+      auditContext,
+      auditResult: result,
+    });
   } catch (e) {
     log.error(`Error writing ${AUDIT_TYPE} to audit table: ${e.message}`);
     throw e;
@@ -80,6 +91,9 @@ async function processAuditResult(
 export default async function audit404(message, context) {
   const { type, url } = message;
   const { log, dataAccess } = context;
+  const {
+    AUDIT_RESULTS_QUEUE_URL: queueUrl,
+  } = context.env;
 
   try {
     log.info(`Received audit req for domain: ${url}`);
@@ -99,7 +113,7 @@ export default async function audit404(message, context) {
 
     const data = await rumAPIClient.get404Sources(params);
     const auditResult = process404Response(data);
-    await processAuditResult(dataAccess, site, { finalUrl }, auditResult, log);
+    await processAuditResult(context, site, { finalUrl }, queueUrl, auditResult, log);
 
     log.info(`Successfully audited ${url} for ${type} type audit`);
 

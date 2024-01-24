@@ -20,7 +20,7 @@ import { Request } from '@adobe/fetch';
 import nock from 'nock';
 import { main } from '../../src/index.js';
 import { getRUMUrl } from '../../src/support/utils.js';
-import { notFoundData } from '../fixtures/notfounddata.js';
+import { expectedAuditResult, notFoundData } from '../fixtures/notfounddata.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
@@ -51,7 +51,7 @@ describe('Index Tests', () => {
     };
     messageBodyJson = {
       type: '404',
-      url: 'adobe.com',
+      url: 'https://adobe.com',
       auditContext: {
         finalUrl: 'adobe.com',
       },
@@ -62,6 +62,7 @@ describe('Index Tests', () => {
         region: 'us-east-1',
       },
       env: {
+        AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
         RUM_DOMAIN_KEY: 'domainkey',
       },
       invocation: {
@@ -72,6 +73,9 @@ describe('Index Tests', () => {
         },
       },
       dataAccess: mockDataAccess,
+      sqs: {
+        sendMessage: sinon.stub().resolves(),
+      },
     };
   });
 
@@ -98,6 +102,15 @@ describe('Index Tests', () => {
 
     expect(resp.status).to.equal(204);
     expect(context.dataAccess.addAudit).to.have.been.calledOnce;
+    const expectedMessage = {
+      ...messageBodyJson,
+      auditResult: expectedAuditResult,
+    };
+
+    expect(resp.status).to.equal(204);
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been
+      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
   });
 
   it('fetch 404s for base url > site data access exception > reject', async () => {
