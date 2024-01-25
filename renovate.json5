@@ -15,12 +15,6 @@
         "chai"
       ],
       "allowedVersions": "<5.0.0"
-    },
-    {
-      "matchPackageNames": [
-        "esmock"
-      ],
-      "allowedVersions": "2.5.1"
     }
   ]
 }
