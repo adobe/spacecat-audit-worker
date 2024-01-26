@@ -88,4 +88,35 @@ export default class AhrefsAPIClient {
 
     return this.sendRequest('/site-explorer/broken-backlinks', queryParams);
   }
+
+  async getOrganicKeywords(url) {
+    const formatDate = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+
+      return `${year}-${month}-${day}`;
+    };
+    const today = new Date();
+
+    const queryParams = {
+      country: 'au',
+      limit: 15,
+      date: formatDate(today),
+      date_compared: formatDate(new Date(today.setMonth(today.getMonth() - 1))),
+      target: url,
+      output: 'json',
+      order_by: 'sum_traffic',
+      mode: 'prefix',
+      select: [
+        'keyword',
+        'best_position',
+        'best_position_prev',
+        'best_position_diff',
+        'sum_traffic',
+      ],
+    };
+
+    return this.sendRequest('/site-explorer/organic-keywords', queryParams);
+  }
 }
