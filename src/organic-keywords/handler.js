@@ -43,18 +43,15 @@ export default async function auditOrganicKeywords(message, context) {
     }
 
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const {
-      result,
-      fullAuditRef,
-    } = ahrefsAPIClient.getOrganicKeywords(site.getBaseURL(), auditContext);
+    const response = await ahrefsAPIClient.getOrganicKeywords(site.getBaseURL(), auditContext);
 
     const auditData = {
       siteId: site.getId(),
       isLive: site.isLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
-      auditResult: result,
-      fullAuditRef,
+      auditResult: response.result,
+      fullAuditRef: response.fullAuditRef,
     };
 
     await dataAccess.addAudit(auditData);
@@ -63,7 +60,10 @@ export default async function auditOrganicKeywords(message, context) {
       type,
       url: site.getBaseURL(),
       auditContext,
-      auditResult: result,
+      auditResult: {
+        keywords: response.result.keywords,
+        fullAuditRef: response.fullAuditRef,
+      },
     });
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
