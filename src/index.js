@@ -21,12 +21,14 @@ import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhs from './lhs/handler.js';
 import notfound from './notfound/handler.js';
+import cogs from './cogs/handler.js';
 
 const HANDLERS = {
   apex,
   cwv,
   'lhs-mobile': lhs,
   'lhs-desktop': lhs,
+  cogs,
   404: notfound,
 };
 

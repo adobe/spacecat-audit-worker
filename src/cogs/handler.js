@@ -9,11 +9,14 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import { CostExplorerClient, GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
+import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
 
-import AWSCostApiClient from '@adobe/spacecat-shared-aws-api-client';
-
-
-
+/**
+ * This function calculates the previous month's start and end date based on current date
+ * and return the start and end date in YYYY/MM/DD format like 2021/01/01 and 2021/01/31
+ * @returns {string,string} startDate
+ */
 function calculatePreviousMonthDate() {
   const date = new Date();
   let month = 1 + date.getMonth(); // as month starts from 0
@@ -22,48 +25,67 @@ function calculatePreviousMonthDate() {
   if (month === 1) { // if month is january then previous month will be december of previous year
     month = 12;
     year -= 1;
-  }
-  else {
+  } else {
     month -= 1;
   }
   const startDate = `${String(year).padStart(4, '0')}/${String(month).padStart(2, '0')}/01`;
   return { startDate, endDate };
 }
-const { startDate, endDate } = calculatePreviousMonthDate();
-const input = {
-  "TimePeriod": {
-    "End": endDate,
-    "Start": startDate
-  },
-  "Granularity": "MONTHLY",
-  "Filter": {
-    "Tags": {
-      "Key": 'Adobe.ArchPath',
-      "Values": ['EC.SpaceCat.Services'],
-      "MatchOptions": ['EQUALS']
-    }
-  },
-  "Metrics": [
-    "UnblendedCost"
-  ],
-  "GroupBy": [
-    {
-      "Key": "SERVICE",
-      "Type": "DIMENSION"
+
+/**
+ * This function builds the input for AWS Cost Explorer API
+ * @param {string} start start date in YYYY/MM/DD format like 2021/01/01
+ * @param {string} end end date in YYYY/MM/DD format like 2021/01/31
+ * @returns {Object} input
+ */
+function buildAWSInput(start, end) {
+  const startDate = start || calculatePreviousMonthDate().startDate;
+  const endDate = end || calculatePreviousMonthDate().endDate;
+  return {
+    TimePeriod: {
+      End: endDate,
+      Start: startDate,
     },
-    {
-      "Key": "Environment",
-      "Type": "TAG"
-    }
-  ]
-};
+    Granularity: 'MONTHLY',
+    Filter: {
+      Tags: {
+        Key: 'Adobe.ArchPath',
+        Values: ['EC.SpaceCat.Services'],
+        MatchOptions: ['EQUALS'],
+      },
+    },
+    Metrics: [
+      'UnblendedCost',
+    ],
+    GroupBy: [
+      {
+        Key: 'SERVICE',
+        Type: 'DIMENSION',
+      },
+      {
+        Key: 'Environment',
+        Type: 'TAG',
+      },
+    ],
+  };
+}
 
-const parseYearDate = (str) => {
+/**
+ * This function parses the date in YYYY/MM/DD format like 2021/01/01 and return the date in
+ * @param {string} date format like 2021-01-01
+ * @returns string like Jan-21
+ */
+const parseYearDate = (date) => {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const date = new Date(str);
-  return `${months[date.getMonth()]}-${date.getFullYear().toString().substring(2)}`;
+  const monthYear = new Date(date);
+  return `${months[monthYear.getMonth()]}-${monthYear.getFullYear().toString().substring(2)}`;
 };
 
+/**
+ * This function maps the AWS service name to the service name used in SpaceCat
+ * @param {string} service AWS service name
+ * @returns string like LAMBDA
+ */
 const serviceMap = (service) => {
   switch (service) {
     case 'AWS Lambda':
@@ -83,55 +105,67 @@ const serviceMap = (service) => {
   }
 };
 
-
 /**
- * url param in run-query@v3/rum-dashboard works in a 'startsWith' fashion. url=domain.com returns
- * an empty result whereas url=www.domain.com/ returns the desired result. To catch the redirects
- * to subdomains we issue a GET call to the domain, then use the final url after redirects
- * @param url
- * @returns finalUrl {Promise<string>}
+ * This function processes the response from AWS Cost Explorer API
+ * @param {Object} data response from AWS Cost Explorer API
+ * @returns {Object} results by month and Year wise.
  */
-
 function processAWSResponse(data) {
   if (data && data.ResultsByTime && data.ResultsByTime.length > 0) {
     let result;
-    data.ResultsByTime.forEach((result) => {
-      if (result.Groups && result.Groups.length > 0) {
+    data.ResultsByTime.forEach((r) => {
+      if (r.Groups && r.Groups.length > 0) {
         let granularity;
-        result.Groups.forEach((group) => {
+        r.Groups.forEach((group) => {
           const key = group.Keys[0];
           if (group.Metrics && group.Metrics.UnblendedCost) {
+            // eslint-disable-next-line max-len
             granularity[serviceMap(key)] = parseFloat(group.Metrics.UnblendedCost.Amount).toFixed(2);
           }
         });
-        result[parseYearDate(result.TimePeriod.Start)] = granularity;
+        result[parseYearDate(r.TimePeriod.Start)] = granularity;
       }
     });
     return result;
   }
+  return {};
 }
 export default async function auditCOGs(message, context) {
-  const { type, url, auditContext } = message;
+  const { type, startDate, endDate } = message;
   const { log, sqs } = context;
   const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
+    AWS_ACCESS_KEY_ID: awsAccessKeyId,
+    AWS_SECRET_ACCESS_KEY: awsSecretAccessKey2,
+    AWS_REGION: awsRegion,
   } = context.env;
   try {
-    log.info(`Received audit req for domain: ${url}`);
+    log.info(`Fetching Cost Usage for ${awsRegion} from ${startDate} to ${endDate}`);
 
-    const awsAPIClient = AWSCostApiClient.createFrom(context);
-    
-    const data = await awsAPIClient.getUsageCost(input);
-    const auditResult = processAWSResponse(data);
-
-    await sqs.sendMessage(queueUrl, {
-      type,
-      url,
-      auditContext,
-      auditResult,
+    const client = new CostExplorerClient({
+      region: awsRegion,
+      credentials: {
+        accessKeyId: awsAccessKeyId,
+        secretAccessKey: awsSecretAccessKey2,
+      },
     });
 
-    log.info(`Successfully audited ${url} for ${type} type audit`);
+    const command = new GetCostAndUsageCommand(buildAWSInput(startDate, endDate));
+    const response = await client.send(command);
+    const usageCost = processAWSResponse(response);
+    if (Object.keys(usageCost).length === 0) {
+      log.info(`No Cost Usage found for ${awsRegion} from ${startDate} to ${endDate}`);
+      return noContent();
+    }
+
+    usageCost.forEach(async (monthYear) => {
+      log.info(`Cost for ${monthYear} is ${usageCost[monthYear]}`);
+      await sqs.sendMessage(monthYear, {
+        type,
+        ...usageCost[monthYear],
+      });
+    });
+
+    log.info(`Successfully fetched Cost Usage for ${awsRegion} from ${startDate} to ${endDate}`);
     return noContent();
   } catch (e) {
     return internalServerError(`Internal server error: ${e.message}`);
