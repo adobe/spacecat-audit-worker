@@ -1,3 +1,10 @@
+## [1.7.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.7.5...v1.7.6) (2024-01-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v1.4.1 ([#104](https://github.com/adobe/spacecat-audit-worker/issues/104)) ([a240065](https://github.com/adobe/spacecat-audit-worker/commit/a240065eddf8fd2164b1a86c74c84778c18d7a66))
+
 ## [1.7.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.7.4...v1.7.5) (2024-01-26)
 
 
