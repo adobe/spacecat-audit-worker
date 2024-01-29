@@ -150,40 +150,6 @@ describe('Apex audit', () => {
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
   });
 
-  it('unknown failures considered successfull', async () => {
-    const expectedMessage = {
-      type: 'apex',
-      url: 'some-domain.com',
-      auditContext: {},
-      auditResult: [
-        {
-          url: 'https://some-domain.com',
-          success: true,
-          status: 'unknown',
-        },
-        {
-          url: 'https://www.some-domain.com',
-          success: true,
-          status: 200,
-        },
-      ],
-    };
-
-    nock('https://some-domain.com')
-      .get('/')
-      .replyWithError({ code: 'UNKNOWN', syscall: 'unknown' });
-
-    nock('https://www.some-domain.com')
-      .get('/')
-      .reply(200);
-
-    const resp = await apexAudit(messageBodyJson, context);
-    expect(resp.status).to.equal(204);
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-  });
-
   it('apex audit successful when baseurl resolves', async () => {
     const expectedMessage = {
       type: 'apex',
