@@ -58,21 +58,16 @@ async function probeUrlConnection(baseUrl, log) {
   try {
     resp = await fetch(baseUrl, { redirect: 'manual' });
   } catch (e) {
-    if (e.erroredSysCall === 'connect') {
-      log.info(`Request to ${baseUrl} fails due to a connection issue`, e);
-      return {
-        url: baseUrl,
-        success: false,
-      };
-    }
-    // failures for unknown reasons (ie bot detection) are not marked as 'failure' as intended
-    // such failures are logged as error to receive an alert about it for investigation
-    log.error(`Request to ${baseUrl} fails for an unknown reason`, e);
+    log.info(`Request to ${baseUrl} fails for an unknown reason. Code: ${e.code}`, e);
+    return {
+      url: baseUrl,
+      success: false,
+    };
   }
   return {
     url: baseUrl,
     success: true,
-    status: resp ? resp.status : 'unknown',
+    status: resp.status,
   };
 }
 
