@@ -113,6 +113,8 @@ export default async function audit(message, context) {
 
     const url = stripUrl(baseURL);
 
+    log.info(`Audit result for ${baseURL}:\n${JSON.stringify(results, null, 2)}`);
+
     await sqs.sendMessage(queueUrl, {
       type,
       url,
