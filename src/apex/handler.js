@@ -98,6 +98,7 @@ export default async function audit(message, context) {
 
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
     if (!site) {
+      log.error(`No site with siteId "${siteId}" exists.`);
       return notFound('Site not found');
     }
 
