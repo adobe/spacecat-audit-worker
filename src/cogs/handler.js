@@ -167,6 +167,7 @@ export default async function auditCOGs(message, context) {
     log.info(`Successfully fetched Cost Usage for ${awsRegion} from ${startDate} to ${endDate}`);
     return noContent();
   } catch (e) {
-    return internalServerError(`Internal server error: ${e.message}`);
+    log.error(JSON.stringify(e));
+    return internalServerError('Internal server error');
   }
 }
