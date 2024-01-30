@@ -100,7 +100,7 @@ export default class AhrefsAPIClient {
     const today = new Date();
 
     const queryParams = {
-      country: 'au',
+      country: 'us',
       limit: 15,
       date: formatDate(today),
       date_compared: formatDate(new Date(today.setMonth(today.getMonth() - 1))),

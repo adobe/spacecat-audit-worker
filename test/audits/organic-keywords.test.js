@@ -35,6 +35,13 @@ describe('Organic Keywords Tests', () => {
   const siteData = {
     id: 'foo',
     baseURL: 'https://foobar.com',
+    auditConfig: {
+      auditTypeConfigs: {
+        'organic-keywords': {
+          disabled: false,
+        },
+      },
+    },
   };
   const site = createSite(siteData);
 
@@ -68,6 +75,7 @@ describe('Organic Keywords Tests', () => {
     message = {
       type: 'organic-keywords',
       url: 'foo',
+      auditContext: 'context',
     };
 
     dataAccessMock = {
@@ -139,6 +147,8 @@ describe('Organic Keywords Tests', () => {
       .reply(200, auditResult);
 
     dataAccessMock.getSiteByID.resolves(site);
+    const today = new Date();
+    const monthAgo = new Date(new Date().setMonth(new Date().getMonth() - 1));
 
     const result = await auditOrganicKeywords(message, context);
 
@@ -147,14 +157,15 @@ describe('Organic Keywords Tests', () => {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been.calledWith(
       context.env.AUDIT_RESULTS_QUEUE_URL,
-      sinon.match({
+      {
         type: message.type,
         url: site.getBaseURL(),
+        auditContext: message.auditContext,
         auditResult: {
           keywords: auditResult.keywords,
-          fullAuditRef: 'https://ahrefs.com/site-explorer/organic-keywords?country=au&limit=15&date=2024-01-26&date_compared=2023-12-26&target=https%3A%2F%2Ffoobar.com&output=json&order_by=sum_traffic&mode=prefix&select=keyword%2Cbest_position%2Cbest_position_prev%2Cbest_position_diff%2Csum_traffic',
+          fullAuditRef: `https://ahrefs.com/site-explorer/organic-keywords?country=us&limit=15&date=${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}&date_compared=${monthAgo.getFullYear()}-${String(monthAgo.getMonth() + 1).padStart(2, '0')}-${String(monthAgo.getDate()).padStart(2, '0')}&target=https%3A%2F%2Ffoobar.com&output=json&order_by=sum_traffic&mode=prefix&select=keyword%2Cbest_position%2Cbest_position_prev%2Cbest_position_diff%2Csum_traffic`,
         },
-      }),
+      },
     );
   });
 
