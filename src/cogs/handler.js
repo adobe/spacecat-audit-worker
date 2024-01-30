@@ -133,30 +133,20 @@ function processAWSResponse(data) {
 export default async function auditCOGs(message, context) {
   const { type, startDate, endDate } = message;
   const { log, sqs } = context;
-  const {
-    AWS_ACCESS_KEY_ID: awsAccessKeyId,
-    AWS_SECRET_ACCESS_KEY: awsSecretAccessKey2,
-    AWS_REGION: awsRegion,
-  } = context.env;
+  log.info(`Fetching Cost Usage from ${startDate} to ${endDate}`);
+
+  const client = new CostExplorerClient();
+  const input = buildAWSInput(startDate, endDate);
+  const command = new GetCostAndUsageCommand(input);
+  const response = await client.send(command);
+  log.info(JSON.stringify(response));
+  log.info('testing');
+  const usageCost = processAWSResponse(response);
+  if (Object.keys(usageCost).length === 0) {
+    log.info(`No Cost Usage found from ${startDate} to ${endDate}`);
+    return noContent();
+  }
   try {
-    log.info(`Fetching Cost Usage for ${awsRegion} from ${startDate} to ${endDate}`);
-
-    const client = new CostExplorerClient({
-      region: awsRegion,
-      credentials: {
-        accessKeyId: awsAccessKeyId,
-        secretAccessKey: awsSecretAccessKey2,
-      },
-    });
-    const input = buildAWSInput(startDate, endDate);
-    const command = new GetCostAndUsageCommand(input);
-    const response = await client.send(command);
-    const usageCost = processAWSResponse(response);
-    if (Object.keys(usageCost).length === 0) {
-      log.info(`No Cost Usage found for ${awsRegion} from ${startDate} to ${endDate}`);
-      return noContent();
-    }
-
     Object.keys(usageCost).forEach(async (monthYear) => {
       await sqs.sendMessage(monthYear, {
         type,
@@ -164,7 +154,7 @@ export default async function auditCOGs(message, context) {
       });
     });
 
-    log.info(`Successfully fetched Cost Usage for ${awsRegion} from ${startDate} to ${endDate}`);
+    log.info(`Successfully fetched Cost Usage from ${startDate} to ${endDate}`);
     return noContent();
   } catch (e) {
     log.error(JSON.stringify(e));
