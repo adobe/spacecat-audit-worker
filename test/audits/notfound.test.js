@@ -26,7 +26,7 @@ chai.use(sinonChai);
 const { expect } = chai;
 
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
-  interval: 1,
+  interval: 7,
   offset: 0,
   limit: 101,
 };
