@@ -47,7 +47,8 @@ export default class AhrefsAPIClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Ahrefs API request failed with status: ${response.status}`);
+      const result = await response.json();
+      throw new Error(`Ahrefs API request failed with status: ${response.status}. Reason: ${result.error}`);
     }
 
     try {
