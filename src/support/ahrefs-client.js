@@ -30,7 +30,7 @@ export default class AhrefsAPIClient {
     this.apiKey = apiKey;
   }
 
-  async sendRequest(endpoint, queryParams = {}) {
+  async sendRequest(endpoint, log, queryParams = {}) {
     const queryParamsKeys = Object.keys(queryParams);
     const queryString = queryParamsKeys.length > 0
       ? `?${queryParamsKeys
@@ -38,6 +38,7 @@ export default class AhrefsAPIClient {
         .join('&')}` : '';
 
     const fullAuditRef = `${this.apiBaseUrl}${endpoint}${queryString}`;
+    log?.info(`AuditRef: ${fullAuditRef}`);
     const response = await fetch(fullAuditRef, {
       method: 'GET',
       headers: {
@@ -47,7 +48,8 @@ export default class AhrefsAPIClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Ahrefs API request failed with status: ${response.status}`);
+      const result = await response.json();
+      throw new Error(`Ahrefs API request failed with status: ${response.status}. Reason: ${result.error}`);
     }
 
     try {
@@ -61,7 +63,7 @@ export default class AhrefsAPIClient {
     }
   }
 
-  async getBrokenBacklinks(url) {
+  async getBrokenBacklinks(url, log) {
     const filter = {
       and: [
         { field: 'is_dofollow', is: ['eq', 1] },
@@ -86,6 +88,47 @@ export default class AhrefsAPIClient {
       where: JSON.stringify(filter),
     };
 
-    return this.sendRequest('/site-explorer/broken-backlinks', queryParams);
+    return this.sendRequest('/site-explorer/broken-backlinks', log, queryParams);
+  }
+
+  async getOrganicKeywords(site, log) {
+    const formatDate = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+
+      return `${year}-${month}-${day}`;
+    };
+    const today = new Date();
+
+    const config = site.getConfig();
+    const siteConfig = config?.alerts?.find((alert) => alert.type === 'organic-keywords') || {
+      country: 'us',
+      select: [
+        'keyword',
+        'best_position',
+        'best_position_prev',
+        'best_position_diff',
+        'sum_traffic',
+      ],
+      limit: 15,
+      order_by: 'sum_traffic',
+    };
+
+    const queryParams = {
+      country: siteConfig.country,
+      limit: siteConfig.limit,
+      date: formatDate(today),
+      date_compared: formatDate(new Date(today.setMonth(today.getMonth() - 1))),
+      target: site.getBaseURL(),
+      output: 'json',
+      order_by: siteConfig.order_by,
+      mode: 'prefix',
+      select: siteConfig.select,
+    };
+
+    log.info(`Sending request to Ahrefs API with query params: ${JSON.stringify(queryParams)}}`);
+
+    return this.sendRequest('/site-explorer/organic-keywords', log, queryParams);
   }
 }

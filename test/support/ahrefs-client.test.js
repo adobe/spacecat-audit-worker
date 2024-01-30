@@ -75,7 +75,7 @@ describe('AhrefsAPIClient', () => {
     it('throw error when API response is not ok', async () => {
       nock(config.apiBaseUrl)
         .get(/.*/)
-        .reply(400, 'Bad Request');
+        .reply(400, { error: 'Bad Request' });
 
       await expect(client.sendRequest('/some-endpoint')).to.be.rejectedWith('Ahrefs API request failed with status: 400');
     });

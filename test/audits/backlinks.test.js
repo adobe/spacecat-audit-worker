@@ -36,12 +36,26 @@ describe('Backlinks Tests', () => {
   const siteData = {
     id: 'site1',
     baseURL: 'https://bar.foo.com',
+    auditConfig: {
+      auditTypeConfigs: {
+        'broken-backlinks': {
+          disabled: false,
+        },
+      },
+    },
   };
 
   const site = createSite(siteData);
   const site2 = createSite({
     id: 'site2',
-    baseURL: 'https://foo.com',
+    baseURL: 'https://www.foo.com',
+    auditConfig: {
+      auditTypeConfigs: {
+        'broken-backlinks': {
+          disabled: false,
+        },
+      },
+    },
   });
 
   const auditResult = {

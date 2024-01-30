@@ -22,6 +22,7 @@ import cwv from './cwv/handler.js';
 import lhs from './lhs/handler.js';
 import notfound from './notfound/handler.js';
 import backlinks from './backlinks/handler.js';
+import organicKeywords from './organic-keywords/handler.js';
 
 const HANDLERS = {
   apex,
@@ -30,6 +31,7 @@ const HANDLERS = {
   'lhs-desktop': lhs,
   404: notfound,
   'broken-backlinks': backlinks,
+  'organic-keywords': organicKeywords,
 };
 
 /**
