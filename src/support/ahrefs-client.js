@@ -30,7 +30,7 @@ export default class AhrefsAPIClient {
     this.apiKey = apiKey;
   }
 
-  async sendRequest(endpoint, queryParams = {}) {
+  async sendRequest(endpoint, log, queryParams = {}) {
     const queryParamsKeys = Object.keys(queryParams);
     const queryString = queryParamsKeys.length > 0
       ? `?${queryParamsKeys
@@ -38,6 +38,7 @@ export default class AhrefsAPIClient {
         .join('&')}` : '';
 
     const fullAuditRef = `${this.apiBaseUrl}${endpoint}${queryString}`;
+    log?.info(`AuditRef: ${fullAuditRef}`);
     const response = await fetch(fullAuditRef, {
       method: 'GET',
       headers: {
@@ -62,7 +63,7 @@ export default class AhrefsAPIClient {
     }
   }
 
-  async getBrokenBacklinks(url) {
+  async getBrokenBacklinks(url, log) {
     const filter = {
       and: [
         { field: 'is_dofollow', is: ['eq', 1] },
@@ -87,7 +88,7 @@ export default class AhrefsAPIClient {
       where: JSON.stringify(filter),
     };
 
-    return this.sendRequest('/site-explorer/broken-backlinks', queryParams);
+    return this.sendRequest('/site-explorer/broken-backlinks', log, queryParams);
   }
 
   async getOrganicKeywords(site, log) {
@@ -128,6 +129,6 @@ export default class AhrefsAPIClient {
 
     log.info(`Sending request to Ahrefs API with query params: ${JSON.stringify(queryParams)}}`);
 
-    return this.sendRequest('/site-explorer/organic-keywords', queryParams);
+    return this.sendRequest('/site-explorer/organic-keywords', log, queryParams);
   }
 }
