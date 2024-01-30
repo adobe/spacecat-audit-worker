@@ -48,7 +48,7 @@ export default async function auditOrganicKeywords(message, context) {
     }
 
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const response = await ahrefsAPIClient.getOrganicKeywords(site, auditContext);
+    const response = await ahrefsAPIClient.getOrganicKeywords(site, log);
 
     const auditData = {
       siteId: site.getId(),

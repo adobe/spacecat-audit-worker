@@ -89,7 +89,7 @@ export default class AhrefsAPIClient {
     return this.sendRequest('/site-explorer/broken-backlinks', queryParams);
   }
 
-  async getOrganicKeywords(site) {
+  async getOrganicKeywords(site, log) {
     const formatDate = (date) => {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -124,6 +124,8 @@ export default class AhrefsAPIClient {
       mode: 'prefix',
       select: siteConfig.select,
     };
+
+    log.info(`Sending request to Ahrefs API with query params: ${JSON.stringify(queryParams)}}`);
 
     return this.sendRequest('/site-explorer/organic-keywords', queryParams);
   }
