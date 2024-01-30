@@ -37,13 +37,18 @@ export default async function auditOrganicKeywords(message, context) {
       return ok();
     }
 
+    if (!site.isLive()) {
+      log.info(`Site ${siteId} is not live`);
+      return ok();
+    }
+
     if (auditConfig.getAuditTypeConfig(type)?.disabled()) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
       return ok();
     }
 
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const response = await ahrefsAPIClient.getOrganicKeywords(site.getBaseURL(), auditContext);
+    const response = await ahrefsAPIClient.getOrganicKeywords(site, auditContext);
 
     const auditData = {
       siteId: site.getId(),

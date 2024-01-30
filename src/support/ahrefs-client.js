@@ -89,7 +89,7 @@ export default class AhrefsAPIClient {
     return this.sendRequest('/site-explorer/broken-backlinks', queryParams);
   }
 
-  async getOrganicKeywords(url) {
+  async getOrganicKeywords(site) {
     const formatDate = (date) => {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -99,15 +99,9 @@ export default class AhrefsAPIClient {
     };
     const today = new Date();
 
-    const queryParams = {
+    const config = site.getConfig();
+    const siteConfig = config?.alerts?.find((alert) => alert.type === 'organic-keywords') || {
       country: 'us',
-      limit: 15,
-      date: formatDate(today),
-      date_compared: formatDate(new Date(today.setMonth(today.getMonth() - 1))),
-      target: url,
-      output: 'json',
-      order_by: 'sum_traffic',
-      mode: 'prefix',
       select: [
         'keyword',
         'best_position',
@@ -115,6 +109,20 @@ export default class AhrefsAPIClient {
         'best_position_diff',
         'sum_traffic',
       ],
+      limit: 15,
+      order_by: 'sum_traffic',
+    };
+
+    const queryParams = {
+      country: siteConfig.country,
+      limit: siteConfig.limit,
+      date: formatDate(today),
+      date_compared: formatDate(new Date(today.setMonth(today.getMonth() - 1))),
+      target: site.getBaseURL(),
+      output: 'json',
+      order_by: siteConfig.order_by,
+      mode: 'prefix',
+      select: siteConfig.select,
     };
 
     return this.sendRequest('/site-explorer/organic-keywords', queryParams);

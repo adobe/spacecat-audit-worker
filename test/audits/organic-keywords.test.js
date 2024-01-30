@@ -35,6 +35,7 @@ describe('Organic Keywords Tests', () => {
   const siteData = {
     id: 'foo',
     baseURL: 'https://foobar.com',
+    isLive: true,
     auditConfig: {
       auditTypeConfigs: {
         'organic-keywords': {
@@ -127,6 +128,20 @@ describe('Organic Keywords Tests', () => {
     expect(context.log.info).to.have.been.calledWith('Audits disabled for site foo');
   });
 
+  it('should return 200 if site is not live', async () => {
+    const disabledSite = createSite({
+      ...siteData,
+      isLive: false,
+    });
+
+    dataAccessMock.getSiteByID.resolves(disabledSite);
+
+    const ressult = await auditOrganicKeywords(message, context);
+
+    expect(ressult.status).to.equal(200);
+    expect(context.log.info).to.have.been.calledWith('Site foo is not live');
+  });
+
   it('should return 200 if audit for organic keyword is disabled', async () => {
     const disabledSite = createSite({
       ...siteData,
@@ -141,7 +156,7 @@ describe('Organic Keywords Tests', () => {
     expect(context.log.info).to.have.been.calledWith('Audit type organic-keywords disabled for site foo');
   });
 
-  it('should successfully perform an audit to fetch top 15 organic keywords', async () => {
+  it('should successfully perform an audit with default config to fetch top 15 organic keywords', async () => {
     nock('https://ahrefs.com')
       .get(/.*/)
       .reply(200, auditResult);
@@ -164,6 +179,53 @@ describe('Organic Keywords Tests', () => {
         auditResult: {
           keywords: auditResult.keywords,
           fullAuditRef: `https://ahrefs.com/site-explorer/organic-keywords?country=us&limit=15&date=${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}&date_compared=${monthAgo.getFullYear()}-${String(monthAgo.getMonth() + 1).padStart(2, '0')}-${String(monthAgo.getDate()).padStart(2, '0')}&target=https%3A%2F%2Ffoobar.com&output=json&order_by=sum_traffic&mode=prefix&select=keyword%2Cbest_position%2Cbest_position_prev%2Cbest_position_diff%2Csum_traffic`,
+        },
+      },
+    );
+  });
+
+  it('should successfully perform an audit with specified config to fetch organic keywords', async () => {
+    const siteWithConfig = createSite({
+      ...siteData,
+      config: {
+        alerts: [
+          {
+            type: 'organic-keywords',
+            country: 'ch',
+            select: [
+              'keyword',
+              'keyword_difficulty',
+              'best_position_url',
+              'sum_paid_traffic',
+            ],
+            limit: 10,
+            order_by: 'sum_paid_traffic',
+          },
+        ],
+      },
+    });
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(200, auditResult);
+
+    dataAccessMock.getSiteByID.resolves(siteWithConfig);
+    const today = new Date();
+    const monthAgo = new Date(new Date().setMonth(new Date().getMonth() - 1));
+
+    const result = await auditOrganicKeywords(message, context);
+
+    expect(result.status).to.equal(204);
+    expect(dataAccessMock.addAudit).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been.calledWith(
+      context.env.AUDIT_RESULTS_QUEUE_URL,
+      {
+        type: message.type,
+        url: site.getBaseURL(),
+        auditContext: message.auditContext,
+        auditResult: {
+          keywords: auditResult.keywords,
+          fullAuditRef: `https://ahrefs.com/site-explorer/organic-keywords?country=ch&limit=10&date=${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}&date_compared=${monthAgo.getFullYear()}-${String(monthAgo.getMonth() + 1).padStart(2, '0')}-${String(monthAgo.getDate()).padStart(2, '0')}&target=https%3A%2F%2Ffoobar.com&output=json&order_by=sum_paid_traffic&mode=prefix&select=keyword%2Ckeyword_difficulty%2Cbest_position_url%2Csum_paid_traffic`,
         },
       },
     );
