@@ -112,10 +112,10 @@ const serviceMap = (service) => {
  */
 function processAWSResponse(data) {
   if (data && data.ResultsByTime && data.ResultsByTime.length > 0) {
-    let result;
+    const result = {};
     data.ResultsByTime.forEach((r) => {
       if (r.Groups && r.Groups.length > 0) {
-        let granularity;
+        const granularity = {};
         r.Groups.forEach((group) => {
           const key = group.Keys[0];
           if (group.Metrics && group.Metrics.UnblendedCost) {
@@ -148,8 +148,8 @@ export default async function auditCOGs(message, context) {
         secretAccessKey: awsSecretAccessKey2,
       },
     });
-
-    const command = new GetCostAndUsageCommand(buildAWSInput(startDate, endDate));
+    const input = buildAWSInput(startDate, endDate);
+    const command = new GetCostAndUsageCommand(input);
     const response = await client.send(command);
     const usageCost = processAWSResponse(response);
     if (Object.keys(usageCost).length === 0) {
@@ -157,8 +157,7 @@ export default async function auditCOGs(message, context) {
       return noContent();
     }
 
-    usageCost.forEach(async (monthYear) => {
-      log.info(`Cost for ${monthYear} is ${usageCost[monthYear]}`);
+    Object.keys(usageCost).forEach(async (monthYear) => {
       await sqs.sendMessage(monthYear, {
         type,
         ...usageCost[monthYear],
