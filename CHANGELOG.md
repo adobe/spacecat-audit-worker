@@ -1,3 +1,10 @@
+## [1.7.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.7.7...v1.7.8) (2024-01-29)
+
+
+### Bug Fixes
+
+* **apex:** consider unknown failures unsuccessful ([#108](https://github.com/adobe/spacecat-audit-worker/issues/108)) ([2b27be9](https://github.com/adobe/spacecat-audit-worker/commit/2b27be989db7ec06604cc4ffa8aa233d8e0f1b75))
+
 ## [1.7.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.7.6...v1.7.7) (2024-01-27)
 
 
