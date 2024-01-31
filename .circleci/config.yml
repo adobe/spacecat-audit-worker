@@ -1,13 +1,13 @@
 version: 2.1
 executors:
-  node18:
+  node-executor:
     docker:
-      - image: cimg/node:18.19
+      - image: cimg/node:20.11
     working_directory: ~/repo
 
 orbs:
   helix-post-deploy: adobe/helix-post-deploy@3.0.1
-  codecov: codecov/codecov@3.3.0
+  codecov: codecov/codecov@4.0.0
 
 commands:
   setup:
@@ -22,7 +22,7 @@ commands:
 
 jobs:
   build:
-    executor: node18
+    executor: node-executor
     steps:
       - setup
       - run: mkdir junit
@@ -39,7 +39,7 @@ jobs:
           path: junit
 
   semantic-release:
-    executor: node18
+    executor: node-executor
     steps:
       - setup
       - run:
@@ -53,7 +53,7 @@ jobs:
           path: junit
 
   branch-deploy:
-    executor: node18
+    executor: node-executor
     steps:
       - setup
       - run:

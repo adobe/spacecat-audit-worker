@@ -1,21 +1,20 @@
 {
-  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
-  extends: [
-    'local>adobe-rnd/spacecat-audit-worker'
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "local>adobe-rnd/spacecat-audit-worker"
   ],
-  packageRules: [
+  "packageRules": [
     {
-      packageNames: [
-        '@semantic-release/npm'
+      "matchPackageNames": [
+        "semantic-release"
       ],
-      allowedVersions: '<10.0'
+      "allowedVersions": ">=23.0"
     },
     {
-      // https://github.com/iambumblehead/esmock/issues/260
-      packageNames: [
-        'esmock'
+      "matchPackageNames": [
+        "chai"
       ],
-      allowedVersions: '2.5.1'
+      "allowedVersions": "<5.0.0"
     }
   ]
 }
