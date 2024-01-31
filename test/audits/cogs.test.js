@@ -45,6 +45,10 @@ describe('cogs handler test', () => {
       sqs: {
         sendMessage: sandbox.stub().resolves(),
       },
+      env: {
+        COGS_AWS_ACCESS_KEY: 'test',
+        COGS_AWS_SECRET_ACCESS_KEY: 'test',
+      },
     };
   });
   afterEach('clean', () => {

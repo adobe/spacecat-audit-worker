@@ -112,11 +112,23 @@ export default async function auditCOGs(message, context) {
   const { type, startDate, endDate } = message;
   const { log, sqs } = context;
   const { awsRegion } = context.runtime;
+  const {
+    COGS_AWS_ACCESS_KEY: cogsAwsAccessKey,
+    COGS_AWS_SECRET_ACCESS_KEY: cogsAwsSecretKey,
+  } = context.env;
 
   log.info(`Fetching Cost Usage from ${startDate} to ${endDate}`);
 
   try {
-    const client = new CostExplorerClient({ region: awsRegion });
+    const client = new CostExplorerClient(
+      {
+        region: awsRegion,
+        credentials: {
+          accessKeyId: cogsAwsAccessKey,
+          secretAccessKey: cogsAwsSecretKey,
+        },
+      },
+    );
     const input = buildAWSInput(startDate, endDate);
     const command = new GetCostAndUsageCommand(input);
     const response = await client.send(command);
