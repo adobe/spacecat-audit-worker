@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.7.8",
+  "version": "1.8.0",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -57,7 +57,7 @@
     "@adobe/helix-universal-logger": "3.0.13",
     "@adobe/spacecat-shared-data-access": "1.10.5",
     "@adobe/spacecat-shared-http-utils": "1.1.3",
-    "@adobe/spacecat-shared-rum-api-client": "1.4.1",
+    "@adobe/spacecat-shared-rum-api-client": "1.4.3",
     "@adobe/spacecat-shared-utils": "1.7.3",
     "@aws-sdk/client-cost-explorer": "3.499.0",
     "@aws-sdk/client-sqs": "3.501.0",
