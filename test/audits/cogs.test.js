@@ -25,7 +25,7 @@ const { expect } = chai;
 
 const sandbox = sinon.createSandbox();
 
-describe('cogs handler test', () => {
+describe('COGS handler test', () => {
   let context;
   let messageBodyJson;
   const COGS_RESULT_MONTH_YEAR = 'Dec-23';
@@ -49,34 +49,7 @@ describe('cogs handler test', () => {
     sandbox.restore();
   });
 
-  it('raise error, when missing startDate input', async () => {
-    delete messageBodyJson.startDate;
-    nock('https://ce.us-east-1.amazonaws.com')
-      .post('/')
-      .reply(400, { message: 'Start time  is invalid. Valid format is: yyyy-MM-dd' });
-    const result = await main(messageBodyJson, context);
-    expect(result.status).to.be.equal(500);
-  });
-  it('raise error, , when missing endDate input', async () => {
-    delete messageBodyJson.endDate;
-    nock('https://ce.us-east-1.amazonaws.com')
-      .post('/')
-      .reply(400, { message: 'End time  is invalid. Valid format is: yyyy-MM-dd' });
-    const result = await main(messageBodyJson, context);
-    expect(result.status).to.be.equal(500);
-  });
-  it('raise error, when both startDate and endDate are missing in input', async () => {
-    delete messageBodyJson.startDate;
-    delete messageBodyJson.endDate;
-    nock('https://ce.us-east-1.amazonaws.com')
-      .post('/')
-      .reply(400, { message: 'Time  is invalid. Valid format is: yyyy-MM-dd' });
-    const result = await main(messageBodyJson, context);
-    expect(result.status).to.be.equal(500);
-  });
   it('should pass on correct inputs', async () => {
-    messageBodyJson.startDate = '2023-12-01';
-    messageBodyJson.endDate = '2024-01-01';
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
       .reply(200, expectedCogsResult);
@@ -86,7 +59,7 @@ describe('cogs handler test', () => {
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(COGS_RESULT_MONTH_YEAR, expectedCOGSValue);
   });
-  it('test for new service data', async () => {
+  it('Should test for new service data', async () => {
     expectedCogsResult.ResultsByTime[0].Groups.push({
       Keys: [
         'AmazonNewService',
@@ -105,7 +78,7 @@ describe('cogs handler test', () => {
     const result = await main(messageBodyJson, context);
     expect(result.status).to.be.equal(204);
   });
-  it('test for empty group data set', async () => {
+  it('Should test for empty group data set', async () => {
     expectedCogsResult.ResultsByTime[0].Groups = [];
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
@@ -113,12 +86,37 @@ describe('cogs handler test', () => {
     const result = await main(messageBodyJson, context);
     expect(result.status).to.be.equal(404);
   });
-  it('test for empty data set', async () => {
+  it('Should test for empty data set', async () => {
     expectedCogsResult.ResultsByTime = [];
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
       .reply(200, expectedCogsResult);
     const result = await main(messageBodyJson, context);
     expect(result.status).to.be.equal(404);
+  });
+  it('Should fail, when missing startDate input', async () => {
+    delete messageBodyJson.startDate;
+    nock('https://ce.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(400, { message: 'Start time  is invalid. Valid format is: yyyy-MM-dd' });
+    const result = await main(messageBodyJson, context);
+    expect(result.status).to.be.equal(500);
+  });
+  it('Should fail, when missing endDate input', async () => {
+    delete messageBodyJson.endDate;
+    nock('https://ce.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(400, { message: 'End time  is invalid. Valid format is: yyyy-MM-dd' });
+    const result = await main(messageBodyJson, context);
+    expect(result.status).to.be.equal(500);
+  });
+  it('Should fail, when both startDate and endDate are missing in input', async () => {
+    delete messageBodyJson.startDate;
+    delete messageBodyJson.endDate;
+    nock('https://ce.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(400, { message: 'Time  is invalid. Valid format is: yyyy-MM-dd' });
+    const result = await main(messageBodyJson, context);
+    expect(result.status).to.be.equal(500);
   });
 });
