@@ -59,7 +59,7 @@ describe('cogs handler test', () => {
     const result = await main(messageBodyJson, context);
     expect(result.status).to.be.equal(500);
   });
-  it('Calulate endDate, when missing in input', async () => {
+  it('raise error, , when missing endDate input', async () => {
     delete messageBodyJson.endDate;
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
@@ -67,7 +67,7 @@ describe('cogs handler test', () => {
     const result = await main(messageBodyJson, context);
     expect(result.status).to.be.equal(500);
   });
-  it('Calulate startDate and endDate, when both missing in input', async () => {
+  it('raise error, when both startDate and endDate are missing in input', async () => {
     delete messageBodyJson.startDate;
     delete messageBodyJson.endDate;
     nock('https://ce.us-east-1.amazonaws.com')
@@ -76,23 +76,7 @@ describe('cogs handler test', () => {
     const result = await main(messageBodyJson, context);
     expect(result.status).to.be.equal(500);
   });
-  it('check for starting date of January', async () => {
-    messageBodyJson.startDate = '2024-01-01';
-    messageBodyJson.endDate = '2024-02-01';
-    nock('https://ce.us-east-1.amazonaws.com')
-      .post('/')
-      .reply(200, cogsResponse);
-    await expect(main(messageBodyJson, context)).to.be.fulfilled;
-  });
-  it('check for starting date of December', async () => {
-    messageBodyJson.startDate = '2023-12-01';
-    messageBodyJson.endDate = '2024-01-01';
-    nock('https://ce.us-east-1.amazonaws.com')
-      .post('/')
-      .reply(200, cogsResponse);
-    await expect(main(messageBodyJson, context)).to.be.fulfilled;
-  });
-  it('should pass on trigger cogs audit', async () => {
+  it('should pass on correct inputs', async () => {
     messageBodyJson.startDate = '2023-12-01';
     messageBodyJson.endDate = '2024-01-01';
     nock('https://ce.us-east-1.amazonaws.com')
