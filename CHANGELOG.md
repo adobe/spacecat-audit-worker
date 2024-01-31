@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.7.8...v1.8.0) (2024-01-31)
+
+
+### Features
+
+* store 404 result ([815e54e](https://github.com/adobe/spacecat-audit-worker/commit/815e54e4ae0595788aa3978ff24c903e57cefb82))
+
 ## [1.7.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.7.7...v1.7.8) (2024-01-29)
 
 
