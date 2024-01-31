@@ -16,8 +16,8 @@ import chai from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { createRequire } from 'module';
 import main from '../../src/cogs/handler.js';
+import { expectedCogsResult, expectedCOGSValue } from '../fixtures/cogs-data.js';
 
 chai.use(sinonChai);
 chai.use(chaiAsPromised);
@@ -28,10 +28,8 @@ const sandbox = sinon.createSandbox();
 describe('cogs handler test', () => {
   let context;
   let messageBodyJson;
-  let cogsResponse;
+  const COGS_RESULT_MONTH_YEAR = 'Dec-23';
   beforeEach('setup', () => {
-    const require = createRequire(import.meta.url);
-    cogsResponse = require('./cogs.json');
     messageBodyJson = {
       type: 'cogs',
       startDate: '2023-12-01',
@@ -81,11 +79,15 @@ describe('cogs handler test', () => {
     messageBodyJson.endDate = '2024-01-01';
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
-      .reply(200, cogsResponse);
-    await expect(main(messageBodyJson, context)).to.be.fulfilled;
+      .reply(200, expectedCogsResult);
+    const result = await main(messageBodyJson, context);
+    expect(result.status).to.be.equal(204);
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been
+      .calledWith(COGS_RESULT_MONTH_YEAR, expectedCOGSValue);
   });
   it('test for new service data', async () => {
-    cogsResponse.ResultsByTime[0].Groups.push({
+    expectedCogsResult.ResultsByTime[0].Groups.push({
       Keys: [
         'AmazonNewService',
         'Environment$',
@@ -99,21 +101,24 @@ describe('cogs handler test', () => {
     });
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
-      .reply(200, cogsResponse);
-    await expect(main(messageBodyJson, context)).to.be.fulfilled;
+      .reply(200, expectedCogsResult);
+    const result = await main(messageBodyJson, context);
+    expect(result.status).to.be.equal(204);
   });
   it('test for empty group data set', async () => {
-    cogsResponse.ResultsByTime[0].Groups = [];
+    expectedCogsResult.ResultsByTime[0].Groups = [];
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
-      .reply(200, cogsResponse);
-    await expect(main(messageBodyJson, context)).to.be.fulfilled;
+      .reply(200, expectedCogsResult);
+    const result = await main(messageBodyJson, context);
+    expect(result.status).to.be.equal(404);
   });
   it('test for empty data set', async () => {
-    cogsResponse.ResultsByTime = [];
+    expectedCogsResult.ResultsByTime = [];
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
-      .reply(200, cogsResponse);
-    await expect(main(messageBodyJson, context)).to.be.fulfilled;
+      .reply(200, expectedCogsResult);
+    const result = await main(messageBodyJson, context);
+    expect(result.status).to.be.equal(404);
   });
 });

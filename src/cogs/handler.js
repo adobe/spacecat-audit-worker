@@ -55,8 +55,8 @@ function buildAWSInput(startDate, endDate) {
  */
 const parseYearDate = (date) => {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const monthYear = new Date(date);
-  return `${months[monthYear.getMonth()]}-${monthYear.getFullYear().toString().substring(2)}`;
+  const yrMonth = date.split(/-/);
+  return `${months[yrMonth[1] - 1]}-${yrMonth[0].substring(2)}`;
 };
 
 /**
@@ -111,17 +111,16 @@ function processAWSResponse(data) {
 export default async function auditCOGs(message, context) {
   const { type, startDate, endDate } = message;
   const { log, sqs } = context;
-  const { awsRegion } = context.runtime;
+  const { region } = context.runtime;
   log.info(`Fetching Cost Usage from ${startDate} to ${endDate}`);
 
   try {
-    const client = new CostExplorerClient({ region: awsRegion });
+    const client = new CostExplorerClient({ region });
     const input = buildAWSInput(startDate, endDate);
     const command = new GetCostAndUsageCommand(input);
     const response = await client.send(command);
     const usageCost = processAWSResponse(response);
     if (Object.keys(usageCost).length === 0) {
-      log.info(`No Cost Usage found from ${startDate} to ${endDate}`);
       return notFound('No Cost Usage found');
     }
     Object.keys(usageCost).forEach(async (monthYear) => {
