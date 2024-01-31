@@ -10,37 +10,15 @@
  * governing permissions and limitations under the License.
  */
 import { CostExplorerClient, GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
-import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
-
-/**
- * This function calculates the previous month's start and end date based on current date
- * and return the start and end date in YYYY/MM/DD format like 2021/01/01 and 2021/01/31
- * @returns {string,string} startDate
- */
-function calculatePreviousMonthDate() {
-  const date = new Date();
-  let month = 1 + date.getMonth(); // as month starts from 0
-  let year = date.getFullYear();
-  const endDate = `${String(year).padStart(4, '0')}/${String(month).padStart(2, '0')}/01`;
-  if (month === 1) { // if month is january then previous month will be december of previous year
-    month = 12;
-    year -= 1;
-  } else {
-    month -= 1;
-  }
-  const startDate = `${String(year).padStart(4, '0')}/${String(month).padStart(2, '0')}/01`;
-  return { startDate, endDate };
-}
+import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
 
 /**
  * This function builds the input for AWS Cost Explorer API
- * @param {string} start start date in YYYY/MM/DD format like 2021/01/01
- * @param {string} end end date in YYYY/MM/DD format like 2021/01/31
+ * @param {string} startDate start date in YYYY/MM/DD format like 2021/01/01
+ * @param {string} endDate end date in YYYY/MM/DD format like 2021/01/31
  * @returns {Object} input
  */
-function buildAWSInput(start, end) {
-  const startDate = start || calculatePreviousMonthDate().startDate;
-  const endDate = end || calculatePreviousMonthDate().endDate;
+function buildAWSInput(startDate, endDate) {
   return {
     TimePeriod: {
       End: endDate,
@@ -133,20 +111,20 @@ function processAWSResponse(data) {
 export default async function auditCOGs(message, context) {
   const { type, startDate, endDate } = message;
   const { log, sqs } = context;
+  const { awsRegion } = context.runtime;
+
   log.info(`Fetching Cost Usage from ${startDate} to ${endDate}`);
 
-  const client = new CostExplorerClient();
-  const input = buildAWSInput(startDate, endDate);
-  const command = new GetCostAndUsageCommand(input);
-  const response = await client.send(command);
-  log.info(JSON.stringify(response));
-  log.info('testing');
-  const usageCost = processAWSResponse(response);
-  if (Object.keys(usageCost).length === 0) {
-    log.info(`No Cost Usage found from ${startDate} to ${endDate}`);
-    return noContent();
-  }
   try {
+    const client = new CostExplorerClient({ region: awsRegion });
+    const input = buildAWSInput(startDate, endDate);
+    const command = new GetCostAndUsageCommand(input);
+    const response = await client.send(command);
+    const usageCost = processAWSResponse(response);
+    if (Object.keys(usageCost).length === 0) {
+      log.info(`No Cost Usage found from ${startDate} to ${endDate}`);
+      return notFound('No Cost Usage found');
+    }
     Object.keys(usageCost).forEach(async (monthYear) => {
       await sqs.sendMessage(monthYear, {
         type,
@@ -157,7 +135,6 @@ export default async function auditCOGs(message, context) {
     log.info(`Successfully fetched Cost Usage from ${startDate} to ${endDate}`);
     return noContent();
   } catch (e) {
-    log.error(JSON.stringify(e));
-    return internalServerError('Internal server error');
+    return internalServerError(e.message);
   }
 }

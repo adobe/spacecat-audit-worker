@@ -16,7 +16,11 @@ import chai from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
+import { createRequire } from 'module';
 import main from '../../src/cogs/handler.js';
+
+const require = createRequire(import.meta.url);
+const cogsResponse = require('./cogs.json');
 
 chai.use(sinonChai);
 chai.use(chaiAsPromised);
@@ -47,19 +51,28 @@ describe('cogs handler test', () => {
     sandbox.restore();
   });
 
-  it('reject when missing or wrong startDate', async () => {
+  it('raise error, when missing startDate input', async () => {
     delete messageBodyJson.startDate;
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
-      .reply(400, 'ValidationException: Start time  is invalid. Valid format is: yyyy-MM-dd.');
+      .reply(400, { message: 'Start time  is invalid. Valid format is: yyyy-MM-dd' });
     const result = await main(messageBodyJson, context);
     expect(result.status).to.be.equal(500);
   });
-  it('reject when missing or wrong endDate', async () => {
+  it('Calulate endDate, when missing in input', async () => {
     delete messageBodyJson.endDate;
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
-      .reply(400, 'ValidationException: End time  is invalid. Valid format is: yyyy-MM-dd.');
+      .reply(400, { message: 'End time  is invalid. Valid format is: yyyy-MM-dd' });
+    const result = await main(messageBodyJson, context);
+    expect(result.status).to.be.equal(500);
+  });
+  it('Calulate startDate and endDate, when both missing in input', async () => {
+    delete messageBodyJson.startDate;
+    delete messageBodyJson.endDate;
+    nock('https://ce.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(400, { message: 'Time  is invalid. Valid format is: yyyy-MM-dd' });
     const result = await main(messageBodyJson, context);
     expect(result.status).to.be.equal(500);
   });
@@ -68,7 +81,7 @@ describe('cogs handler test', () => {
     messageBodyJson.endDate = '2024-02-01';
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
-      .reply(200, 'OK');
+      .reply(200, cogsResponse);
     await expect(main(messageBodyJson, context)).to.be.fulfilled;
   });
   it('check for starting date of December', async () => {
@@ -76,7 +89,7 @@ describe('cogs handler test', () => {
     messageBodyJson.endDate = '2024-01-01';
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
-      .reply(200, 'OK');
+      .reply(200, cogsResponse);
     await expect(main(messageBodyJson, context)).to.be.fulfilled;
   });
   it('should pass on trigger cogs audit', async () => {
@@ -84,7 +97,39 @@ describe('cogs handler test', () => {
     messageBodyJson.endDate = '2024-01-01';
     nock('https://ce.us-east-1.amazonaws.com')
       .post('/')
-      .reply(200, 'OK');
+      .reply(200, cogsResponse);
+    await expect(main(messageBodyJson, context)).to.be.fulfilled;
+  });
+  it('test for new service data', async () => {
+    cogsResponse.ResultsByTime[0].Groups.push({
+      Keys: [
+        'AmazonNewService',
+        'Environment$',
+      ],
+      Metrics: {
+        UnblendedCost: {
+          Amount: '0.049616647',
+          Unit: 'USD',
+        },
+      },
+    });
+    nock('https://ce.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, cogsResponse);
+    await expect(main(messageBodyJson, context)).to.be.fulfilled;
+  });
+  it('test for empty group data set', async () => {
+    cogsResponse.ResultsByTime[0].Groups = [];
+    nock('https://ce.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, cogsResponse);
+    await expect(main(messageBodyJson, context)).to.be.fulfilled;
+  });
+  it('test for empty data set', async () => {
+    cogsResponse.ResultsByTime = [];
+    nock('https://ce.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, cogsResponse);
     await expect(main(messageBodyJson, context)).to.be.fulfilled;
   });
 });

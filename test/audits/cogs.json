@@ -1,0 +1,99 @@
+{
+    "DimensionValueAttributes": [],
+    "GroupDefinitions": [
+     {
+      "Key": "SERVICE",
+      "Type": "DIMENSION"
+     },
+     {
+      "Key": "Environment",
+      "Type": "TAG"
+     }
+    ],
+    "NextPageToken": null,
+    "ResultsByTime": [
+     {
+      "Estimated": false,
+      "Groups": [
+       {
+        "Keys": [
+         "AWS Lambda",
+         "Environment$"
+        ],
+        "Metrics": {
+         "UnblendedCost": {
+          "Amount": "14.6732180628",
+          "Unit": "USD"
+         }
+        }
+       },
+       {
+        "Keys": [
+         "AWS Secrets Manager",
+         "Environment$"
+        ],
+        "Metrics": {
+         "UnblendedCost": {
+          "Amount": "0.093415",
+          "Unit": "USD"
+         }
+        }
+       },
+       {
+        "Keys": [
+         "Amazon DynamoDB",
+         "Environment$"
+        ],
+        "Metrics": {
+         "UnblendedCost": {
+          "Amount": "0.095706623",
+          "Unit": "USD"
+         }
+        }
+       },
+       {
+        "Keys": [
+         "Amazon Simple Queue Service",
+         "Environment$"
+        ],
+        "Metrics": {
+         "UnblendedCost": {
+          "Amount": "0.17150958",
+          "Unit": "USD"
+         }
+        }
+       },
+       {
+        "Keys": [
+         "Amazon Simple Storage Service",
+         "Environment$"
+        ],
+        "Metrics": {
+         "UnblendedCost": {
+          "Amount": "0.0007143178",
+          "Unit": "USD"
+         }
+        }
+       },
+       {
+        "Keys": [
+         "AmazonCloudWatch",
+         "Environment$"
+        ],
+        "Metrics": {
+         "UnblendedCost": {
+          "Amount": "0.049616647",
+          "Unit": "USD"
+         }
+        }
+       }
+      ],
+      "TimePeriod": {
+       "End": "2024-01-01",
+       "Start": "2023-12-01"
+      },
+      "Total": {}
+     }
+    ],
+    "ResultMetadata": {}
+   }
