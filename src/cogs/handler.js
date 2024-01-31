@@ -120,6 +120,7 @@ export default async function auditCOGs(message, context) {
     const input = buildAWSInput(startDate, endDate);
     const command = new GetCostAndUsageCommand(input);
     const response = await client.send(command);
+    log.info('AWS Cost Explorer API response', JSON.stringify(response));
     const usageCost = processAWSResponse(response);
     if (Object.keys(usageCost).length === 0) {
       log.info(`No Cost Usage found from ${startDate} to ${endDate}`);
