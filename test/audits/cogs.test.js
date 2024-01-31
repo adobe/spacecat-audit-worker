@@ -19,9 +19,6 @@ import nock from 'nock';
 import { createRequire } from 'module';
 import main from '../../src/cogs/handler.js';
 
-const require = createRequire(import.meta.url);
-const cogsResponse = require('./cogs.json');
-
 chai.use(sinonChai);
 chai.use(chaiAsPromised);
 const { expect } = chai;
@@ -31,7 +28,10 @@ const sandbox = sinon.createSandbox();
 describe('cogs handler test', () => {
   let context;
   let messageBodyJson;
+  let cogsResponse;
   beforeEach('setup', () => {
+    const require = createRequire(import.meta.url);
+    cogsResponse = require('./cogs.json');
     messageBodyJson = {
       type: 'cogs',
       startDate: '2023-12-01',
