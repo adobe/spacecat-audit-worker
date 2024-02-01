@@ -1,3 +1,10 @@
+## [1.8.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.0...v1.8.1) (2024-02-01)
+
+
+### Bug Fixes
+
+* run broken backlinks audit only for sites that are live ([#110](https://github.com/adobe/spacecat-audit-worker/issues/110)) ([d118813](https://github.com/adobe/spacecat-audit-worker/commit/d118813c5785fcd813ebff3e8a19c49ee6064d75))
+
 # [1.8.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.7.8...v1.8.0) (2024-01-31)
 
 
