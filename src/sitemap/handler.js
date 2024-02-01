@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-// eslint-disable-next-line import/no-extraneous-dependencies
 import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { fetch } from '../support/utils.js';
@@ -25,13 +24,27 @@ const ERROR_CODES = {
   FETCH_ERROR: 'ERR_FETCH_ERROR',
 };
 
-// Function to fetch content from a URL
+/**
+ * Fetches the content from a given URL.
+ *
+ * @async
+ * @param {string} targetUrl - The URL from which to fetch the content.
+ * @returns {Promise<string|null>} - A Promise that resolves to the content
+ * of the response as a string if the request was successful, otherwise null.
+ */
 async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl);
   return response.ok ? response.text() : null;
 }
 
-// Function to extract domain and protocol from URL
+/**
+ * Extracts the domain and protocol from a given URL.
+ *
+ * @param {string} inputUrl - The URL to extract domain and protocol from.
+ * @returns {{ domain: string, protocol: string }|null} - An object containing
+ * the domain and protocol if successfully extracted,
+ * or null if the URL is invalid.
+ */
 function extractDomainAndProtocol(inputUrl) {
   try {
     const parsedUrl = new URL(inputUrl);
@@ -41,7 +54,15 @@ function extractDomainAndProtocol(inputUrl) {
   }
 }
 
-// Function to check robots.txt and extract sitemap URL
+/**
+ * Checks the robots.txt file for a sitemap and returns the sitemap path if found.
+ *
+ * @async
+ * @param {string} protocol - The protocol (http or https) of the site.
+ * @param {string} domain - The domain of the site.
+ * @returns {Promise<{ path: string|null, reasons: string[] }>} - A Promise that resolves
+ * to an object containing the sitemap path and reasons for success or failure.
+ */
 async function checkRobotsForSitemap(protocol, domain) {
   const robotsUrl = `${protocol}//${domain}/robots.txt`;
   try {
@@ -55,7 +76,14 @@ async function checkRobotsForSitemap(protocol, domain) {
   }
 }
 
-// Function to check if sitemap exists and is likely valid XML
+/**
+ * Checks the validity and existence of a sitemap by fetching its content.
+ *
+ * @async
+ * @param {string} sitemapUrl - The URL of the sitemap to check.
+ * @returns {Promise<Object>} - A Promise that resolves to an object
+ * representing the result of the sitemap check.
+ */
 async function checkSitemap(sitemapUrl) {
   try {
     const sitemapContent = await fetchContent(sitemapUrl);
@@ -75,7 +103,15 @@ async function checkSitemap(sitemapUrl) {
   }
 }
 
-// Main function
+/**
+* Finds and validates the sitemap for a given URL by checking:
+* robots.txt, sitemap.xml, and sitemap_index.xml.
+*
+* @async
+* @param {string} inputUrl - The URL for which to find and validate the sitemap.
+* @returns {Promise<Object>} -A Promise that resolves to an object
+* representing the success and reasons for the sitemap search and validation.
+*/
 async function findSitemap(inputUrl) {
   const logMessages = [];
 
@@ -131,7 +167,7 @@ async function findSitemap(inputUrl) {
       reasons: logMessages,
     };
   } else {
-    // ideally, change from array of err messages to objects with the {item: url1, error: err1}
+    // optimization: change from array of err messages to objects with the {item: url1, error: err1}
     logMessages.push(...robotsResult.reasons.map((reason) => ({
       value: assumedSitemapUrl,
       error: reason,
@@ -160,6 +196,16 @@ async function findSitemap(inputUrl) {
   };
 }
 
+/**
+ * Performs an audit for a specified site based on the audit request message.
+ *
+ * @async
+ * @param {Object} message - The audit request message containing the type, URL, and audit context.
+ * @param {Object} context - The context object containing configurations, services,
+ * and environment variables.
+ * @returns {Promise<Response>} - A Promise that resolves to a response object
+ * indicating the result of the audit process.
+ */
 export default async function audit(message, context) {
   const { type, url: siteId, auditContext } = message;
   const { dataAccess, log, sqs } = context;
