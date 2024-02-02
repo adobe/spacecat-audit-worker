@@ -126,7 +126,8 @@ export default async function auditCOGs(message, context) {
     Object.keys(usageCost).forEach(async (monthYear) => {
       await sqs.sendMessage(monthYear, {
         type,
-        ...usageCost[monthYear],
+        monthYear,
+        usageCost: usageCost[monthYear],
       });
     });
 

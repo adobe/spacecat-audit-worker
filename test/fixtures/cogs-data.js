@@ -111,10 +111,13 @@ export const expectedCogsResult = {
 };
 export const expectedCOGSValue = {
   type: 'cogs',
-  LAMBDA: '14.67',
-  'SECRETS MANAGER': '0.09',
-  DYNAMODB: '0.10',
-  SQS: '0.17',
-  S3: '0.00',
-  CLOUDWATCH: '0.05',
+  monthYear: 'Dec-23',
+  usageCost: {
+    LAMBDA: '14.67',
+    'SECRETS MANAGER': '0.09',
+    DYNAMODB: '0.10',
+    SQS: '0.17',
+    S3: '0.00',
+    CLOUDWATCH: '0.05',
+  },
 };
