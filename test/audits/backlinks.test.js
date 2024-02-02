@@ -36,12 +36,14 @@ describe('Backlinks Tests', () => {
   const siteData = {
     id: 'site1',
     baseURL: 'https://bar.foo.com',
+    isLive: true,
   };
 
   const site = createSite(siteData);
   const site2 = createSite({
     id: 'site2',
     baseURL: 'https://foo.com',
+    isLive: true,
   });
 
   const auditResult = {
@@ -179,6 +181,20 @@ describe('Backlinks Tests', () => {
 
     expect(response.status).to.equal(200);
     expect(mockLog.info).to.have.been.calledWith('Audit type broken-backlinks disabled for site site1');
+  });
+
+  it('returns a 200 when site is not live', async () => {
+    const siteWithDisabledAudits = createSite({
+      ...siteData,
+      isLive: false,
+    });
+
+    mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(mockLog.info).to.have.been.calledWith('Site site1 is not live');
   });
 
   it('should handle audit api errors gracefully', async () => {

@@ -14,17 +14,17 @@
 
 import chai from 'chai';
 import sinon from 'sinon';
+import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import sinonChai from 'sinon-chai';
 import { Request } from '@adobe/fetch';
 import nock from 'nock';
 import { main } from '../../src/index.js';
 import { getRUMUrl } from '../../src/support/utils.js';
-import { notFoundData, expectedAuditResult } from '../fixtures/notfounddata.js';
+import { expectedAuditResult, notFoundData } from '../fixtures/notfounddata.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
 
-const sandbox = sinon.createSandbox();
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   interval: 7,
   offset: 0,
@@ -35,11 +35,23 @@ describe('Index Tests', () => {
   const request = new Request('https://space.cat');
   let context;
   let messageBodyJson;
+  let site;
 
   beforeEach('setup', () => {
+    const siteData = {
+      id: 'site1',
+      baseURL: 'https://adobe.com',
+    };
+
+    site = createSite(siteData);
+    const mockDataAccess = {
+      getSiteByBaseURL: sinon.stub().resolves(site),
+      getSiteByID: sinon.stub().resolves(site),
+      addAudit: sinon.stub(),
+    };
     messageBodyJson = {
       type: '404',
-      url: 'adobe.com',
+      url: 'https://adobe.com',
       auditContext: {
         finalUrl: 'adobe.com',
       },
@@ -60,10 +72,16 @@ describe('Index Tests', () => {
           }],
         },
       },
+      dataAccess: mockDataAccess,
       sqs: {
-        sendMessage: sandbox.stub().resolves(),
+        sendMessage: sinon.stub().resolves(),
       },
     };
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+    sinon.restore();
   });
 
   it('fetch 404s for base url > process > send results', async () => {
@@ -82,6 +100,8 @@ describe('Index Tests', () => {
 
     const resp = await main(request, context);
 
+    expect(resp.status).to.equal(204);
+    expect(context.dataAccess.addAudit).to.have.been.calledOnce;
     const expectedMessage = {
       ...messageBodyJson,
       auditResult: expectedAuditResult,
@@ -91,6 +111,36 @@ describe('Index Tests', () => {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+  });
+
+  it('fetch 404s for base url > site data access exception > reject', async () => {
+    const exceptionContext = { ...context };
+    exceptionContext.dataAccess.getSiteByBaseURL = sinon.stub().rejects('Exception data accesss');
+
+    const resp = await main(request, exceptionContext);
+
+    expect(resp.status).to.equal(500);
+  });
+
+  it('fetch 404s for base url > process > notfound', async () => {
+    nock('https://adobe.com')
+      .get('/')
+      .reply(200);
+    nock('https://helix-pages.anywhere.run')
+      .get('/helix-services/run-query@v3/rum-sources')
+      .query({
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        domainkey: context.env.RUM_DOMAIN_KEY,
+        checkpoint: 404,
+        url: 'adobe.com',
+      })
+      .replyWithError('Bad request');
+    const noSiteContext = { ...context };
+    noSiteContext.dataAccess.getSiteByBaseURL = sinon.stub().resolves(null);
+
+    const resp = await main(request, noSiteContext);
+
+    expect(resp.status).to.equal(404);
   });
 
   it('fetch 404s for base url > process > reject', async () => {
@@ -108,6 +158,27 @@ describe('Index Tests', () => {
       .replyWithError('Bad request');
 
     const resp = await main(request, context);
+
+    expect(resp.status).to.equal(500);
+  });
+
+  it('fetch 404s for base url > audit data model exception > reject', async () => {
+    nock('https://adobe.com')
+      .get('/')
+      .reply(200);
+    nock('https://helix-pages.anywhere.run')
+      .get('/helix-services/run-query@v3/rum-sources')
+      .query({
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        domainkey: context.env.RUM_DOMAIN_KEY,
+        checkpoint: 404,
+        url: 'adobe.com',
+      })
+      .reply(200, notFoundData);
+    const auditFailContext = { ...context };
+    auditFailContext.dataAccess.addAudit = sinon.stub().rejects('Error adding audit');
+
+    const resp = await main(request, auditFailContext);
 
     expect(resp.status).to.equal(500);
   });

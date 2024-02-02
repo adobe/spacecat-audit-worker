@@ -32,6 +32,11 @@ export default async function auditBrokenBacklinks(message, context) {
       return notFound('Site not found');
     }
 
+    if (!site.isLive()) {
+      log.info(`Site ${siteId} is not live`);
+      return ok();
+    }
+
     const auditConfig = site.getAuditConfig();
     if (auditConfig.auditsDisabled()) {
       log.info(`Audits disabled for site ${siteId}`);

@@ -11,10 +11,13 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
+import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
+import { retrieveSiteByURL } from '../utils/data-access.js';
 import {
   getRUMUrl,
 } from '../support/utils.js';
+
+const AUDIT_TYPE = '404';
 
 export function filter404Data(data) {
   return data.topurl.toLowerCase() !== 'other' && !!data.source; // ignore the combined result and the 404s with no source
@@ -29,19 +32,72 @@ function process404Response(data) {
       source: row.source,
     }));
 }
+
+/**
+ * Processes the audit by fetching site data,PSI data, code diff and content last modified date
+ * creating audit data, and sending a message to SQS.
+ *
+ * @async
+ * @param {Object} services - The services object containing the dataAccess and sqs service.
+ * @param {Object} site - The site which to audit.
+ * @param {Object} auditContext - The audit context object containing information about the audit.
+ * @param {Object} queueUrl - The SQS queue URL.
+ * @param {Object} result - The result object containing audit result.
+ * @param {Object} log - The logger.
+ * @throws {Error} - Throws an error if any step in the audit process fails.
+ */
+async function processAuditResult(
+  services,
+  site,
+  auditContext,
+  queueUrl,
+  result,
+  log,
+) {
+  const {
+    dataAccess, sqs, rumAPIClient,
+  } = services;
+  const auditData = {
+    siteId: site.getId(),
+    auditType: AUDIT_TYPE,
+    auditedAt: new Date().toISOString(),
+    fullAuditRef: rumAPIClient.create404URL({ url: auditContext.finalUrl }),
+    isLive: site.isLive(),
+    auditResult: { result, finalUrl: auditContext.finalUrl },
+  };
+  try {
+    log.info(`Saving audit ${JSON.stringify(auditData)}`);
+    await dataAccess.addAudit(auditData);
+
+    await sqs.sendMessage(queueUrl, {
+      type: AUDIT_TYPE,
+      url: site.getBaseURL(),
+      auditContext,
+      auditResult: result,
+    });
+  } catch (e) {
+    log.error(`Error writing ${AUDIT_TYPE} to audit table: ${e.message}`);
+    throw e;
+  }
+}
 export default async function audit404(message, context) {
-  const { type, url, auditContext } = message;
-  const { log, sqs } = context;
+  const { type, url } = message;
+  const { log, dataAccess } = context;
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
 
   try {
     log.info(`Received audit req for domain: ${url}`);
+    const site = await retrieveSiteByURL(dataAccess, url, log);
+    log.info(`Retrieved site by url: ${url}`);
+    if (!site) {
+      log.error(`Site not found: ${url}`);
+      return notFound('Site not found');
+    }
+    const finalUrl = await getRUMUrl(url);
 
     const rumAPIClient = RUMAPIClient.createFrom(context);
-    const finalUrl = await getRUMUrl(url);
-    auditContext.finalUrl = finalUrl;
 
     const params = {
       url: finalUrl,
@@ -49,13 +105,14 @@ export default async function audit404(message, context) {
 
     const data = await rumAPIClient.get404Sources(params);
     const auditResult = process404Response(data);
-
-    await sqs.sendMessage(queueUrl, {
-      type,
-      url,
-      auditContext,
+    await processAuditResult(
+      { ...context, rumAPIClient },
+      site,
+      { finalUrl },
+      queueUrl,
       auditResult,
-    });
+      log,
+    );
 
     log.info(`Successfully audited ${url} for ${type} type audit`);
 

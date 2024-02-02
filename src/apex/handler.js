@@ -58,21 +58,16 @@ async function probeUrlConnection(baseUrl, log) {
   try {
     resp = await fetch(baseUrl, { redirect: 'manual' });
   } catch (e) {
-    if (e.erroredSysCall === 'connect') {
-      log.info(`Request to ${baseUrl} fails due to a connection issue`, e);
-      return {
-        url: baseUrl,
-        success: false,
-      };
-    }
-    // failures for unknown reasons (ie bot detection) are not marked as 'failure' as intended
-    // such failures are logged as error to receive an alert about it for investigation
-    log.error(`Request to ${baseUrl} fails for an unknown reason`, e);
+    log.info(`Request to ${baseUrl} fails for an unknown reason. Code: ${e.code}`, e);
+    return {
+      url: baseUrl,
+      success: false,
+    };
   }
   return {
     url: baseUrl,
     success: true,
-    status: resp ? resp.status : 'unknown',
+    status: resp.status,
   };
 }
 
@@ -98,6 +93,7 @@ export default async function audit(message, context) {
 
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
     if (!site) {
+      log.error(`No site with siteId "${siteId}" exists.`);
       return notFound('Site not found');
     }
 
@@ -112,6 +108,8 @@ export default async function audit(message, context) {
     const results = await Promise.all(urls.map((_url) => probeUrlConnection(_url, log)));
 
     const url = stripUrl(baseURL);
+
+    log.info(`Audit result for ${baseURL}:\n${JSON.stringify(results, null, 2)}`);
 
     await sqs.sendMessage(queueUrl, {
       type,
