@@ -1,3 +1,10 @@
+## [1.8.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.1...v1.8.2) (2024-02-02)
+
+
+### Bug Fixes
+
+* set dev source for psi ([#117](https://github.com/adobe/spacecat-audit-worker/issues/117)) ([3537fda](https://github.com/adobe/spacecat-audit-worker/commit/3537fda2887a7892f2486e5d1038511bd2ba66fb))
+
 ## [1.8.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.0...v1.8.1) (2024-02-01)
 
 
