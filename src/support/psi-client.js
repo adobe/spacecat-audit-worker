@@ -35,7 +35,7 @@ export const PSI_STRATEGIES = [PSI_STRATEGY_MOBILE, PSI_STRATEGY_DESKTOP];
  *  @return {PSIClient} - The PSI client.
  */
 function PSIClient(config, log = console) {
-  const { apiKey, apiBaseUrl } = config;
+  const { apiKey, apiBaseUrl, environment } = config;
 
   if (!isValidUrl(apiBaseUrl)) {
     throw new Error(`Invalid PSI API Base URL: ${apiBaseUrl}`);
@@ -72,7 +72,8 @@ function PSIClient(config, log = console) {
   const performPSICheck = async (baseURL, strategy) => {
     try {
       const apiURL = getPSIApiUrl(baseURL, strategy);
-      const response = await fetch(apiURL, { headers: { 'x-source': 'spacecat' } });
+      const xSource = `spacecat-${environment}`;
+      const response = await fetch(apiURL, { headers: { 'x-source': xSource } });
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
