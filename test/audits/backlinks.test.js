@@ -40,11 +40,14 @@ describe('Backlinks Tests', () => {
   };
 
   const site = createSite(siteData);
+  site.updateAuditTypeConfig('broken-backlinks', { disabled: false });
+
   const site2 = createSite({
     id: 'site2',
     baseURL: 'https://foo.com',
     isLive: true,
   });
+  site2.updateAuditTypeConfig('broken-backlinks', { disabled: false });
 
   const auditResult = {
     backlinks: [
