@@ -28,7 +28,6 @@ const sandbox = sinon.createSandbox();
 describe('COGS handler test', () => {
   let context;
   let messageBodyJson;
-  const COGS_RESULT_MONTH_YEAR = 'Dec-23';
   beforeEach('setup', () => {
     messageBodyJson = {
       type: 'cogs',
@@ -39,6 +38,9 @@ describe('COGS handler test', () => {
       log: console,
       runtime: {
         region: 'us-east-1',
+      },
+      env: {
+        AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
       },
       sqs: {
         sendMessage: sandbox.stub().resolves(),
@@ -57,7 +59,7 @@ describe('COGS handler test', () => {
     expect(result.status).to.be.equal(204);
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
-      .calledWith(COGS_RESULT_MONTH_YEAR, expectedCOGSValue);
+      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedCOGSValue);
   });
   it('Should test for new service data', async () => {
     expectedCogsResult.ResultsByTime[0].Groups.push({

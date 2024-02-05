@@ -112,6 +112,9 @@ export default async function auditCOGs(message, context) {
   const { type, startDate, endDate } = message;
   const { log, sqs } = context;
   const { region } = context.runtime;
+  const {
+    AUDIT_RESULTS_QUEUE_URL: queueUrl,
+  } = context.env;
   log.info(`Fetching Cost Usage from ${startDate} to ${endDate}`);
 
   try {
@@ -124,7 +127,7 @@ export default async function auditCOGs(message, context) {
       return notFound('No Cost Usage found');
     }
     Object.keys(usageCost).forEach(async (monthYear) => {
-      await sqs.sendMessage(monthYear, {
+      await sqs.sendMessage(queueUrl, {
         type,
         monthYear,
         usageCost: usageCost[monthYear],
