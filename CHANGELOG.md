@@ -1,3 +1,31 @@
+## [1.8.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.3...v1.8.4) (2024-02-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/helix-shared-secrets to v2.2.4 ([#120](https://github.com/adobe/spacecat-audit-worker/issues/120)) ([e70a99f](https://github.com/adobe/spacecat-audit-worker/commit/e70a99ff34511f1e2e52d2adf14ff0bbafcde734))
+
+## [1.8.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.2...v1.8.3) (2024-02-03)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#118](https://github.com/adobe/spacecat-audit-worker/issues/118)) ([d12ae7c](https://github.com/adobe/spacecat-audit-worker/commit/d12ae7cc30d8b826b883af8a0262a06e3c884396))
+
+## [1.8.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.1...v1.8.2) (2024-02-02)
+
+
+### Bug Fixes
+
+* set dev source for psi ([#117](https://github.com/adobe/spacecat-audit-worker/issues/117)) ([3537fda](https://github.com/adobe/spacecat-audit-worker/commit/3537fda2887a7892f2486e5d1038511bd2ba66fb))
+
+## [1.8.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.0...v1.8.1) (2024-02-01)
+
+
+### Bug Fixes
+
+* run broken backlinks audit only for sites that are live ([#110](https://github.com/adobe/spacecat-audit-worker/issues/110)) ([d118813](https://github.com/adobe/spacecat-audit-worker/commit/d118813c5785fcd813ebff3e8a19c49ee6064d75))
+
 # [1.8.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.7.8...v1.8.0) (2024-01-31)
 
 
