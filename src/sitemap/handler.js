@@ -14,7 +14,7 @@ import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { extractDomainAndProtocol, fetch } from '../support/utils.js';
 
-const ERROR_CODES = {
+export const ERROR_CODES = {
   INVALID_URL: 'ERR_INVALID_URL',
   ROBOTS_NOT_FOUND: 'ERR_ROBOTS_NOT_FOUND',
   NO_SITEMAP_IN_ROBOTS: 'ERR_NO_SITEMAP_IN_ROBOTS',
@@ -32,7 +32,7 @@ const ERROR_CODES = {
  * @returns {Promise<string|null>} - A Promise that resolves to the content
  * of the response as a string if the request was successful, otherwise null.
  */
-async function fetchContent(targetUrl) {
+export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl);
   return response.ok ? response.text() : null;
 }
@@ -46,7 +46,7 @@ async function fetchContent(targetUrl) {
  * @returns {Promise<{ path: string|null, reasons: string[] }>} - A Promise that resolves
  * to an object containing the sitemap path and reasons for success or failure.
  */
-async function checkRobotsForSitemap(protocol, domain) {
+export async function checkRobotsForSitemap(protocol, domain) {
   const robotsUrl = `${protocol}//${domain}/robots.txt`;
   try {
     const robotsContent = await fetchContent(robotsUrl);
@@ -67,7 +67,7 @@ async function checkRobotsForSitemap(protocol, domain) {
  * @returns {Promise<Object>} - A Promise that resolves to an object
  * representing the result of the sitemap check.
  */
-async function checkSitemap(sitemapUrl) {
+export async function checkSitemap(sitemapUrl) {
   try {
     const sitemapContent = await fetchContent(sitemapUrl);
     if (!sitemapContent) {
@@ -95,12 +95,15 @@ async function checkSitemap(sitemapUrl) {
 * @returns {Promise<Object>} -A Promise that resolves to an object
 * representing the success and reasons for the sitemap search and validation.
 */
-async function findSitemap(inputUrl) {
+export async function findSitemap(inputUrl) {
   const logMessages = [];
 
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
-    logMessages.push(ERROR_CODES.INVALID_URL);
+    logMessages.push({
+      value: inputUrl,
+      error: ERROR_CODES.INVALID_URL,
+    });
     console.log(logMessages.join(' '));
     return {
       success: false,

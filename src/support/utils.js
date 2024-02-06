@@ -36,7 +36,10 @@ export async function getRUMUrl(url) {
 export function extractDomainAndProtocol(inputUrl) {
   try {
     const parsedUrl = new URL(inputUrl);
-    return { domain: parsedUrl.hostname, protocol: parsedUrl.protocol };
+    return {
+      protocol: parsedUrl.protocol.slice(0, -1),
+      domain: parsedUrl.hostname,
+    };
   } catch (error) {
     return null;
   }
