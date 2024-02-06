@@ -44,6 +44,25 @@ describe('AhrefsAPIClient', () => {
     ],
   };
 
+  const organicTrafficMetricsResponse = {
+    metrics: [
+      {
+        date: '2024-01-29T00:00:00Z',
+        org_traffic: 179364,
+        paid_traffic: 72,
+        org_cost: 11284251,
+        paid_cost: 2675,
+      },
+      {
+        date: '2024-02-05T00:00:00Z',
+        org_traffic: 176236,
+        paid_traffic: 52,
+        org_cost: 10797893,
+        paid_cost: 1724,
+      },
+    ],
+  };
+
   beforeEach(() => {
     client = new AhrefsAPIClient(config);
   });
@@ -120,6 +139,31 @@ describe('AhrefsAPIClient', () => {
       expect(result).to.deep.equal({
         result: brokenBacklinksResponse,
         fullAuditRef: 'https://example.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=test-site.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
+      });
+    });
+  });
+
+  describe('getOrganicTraffic', () => {
+    it('sends API request with appropriate endpoint query params', async () => {
+      const startDate = '2024-01-29';
+      const endDate = '2024-02-05';
+      nock(config.apiBaseUrl)
+        .get('/site-explorer/metrics-history')
+        .query({
+          mode: 'prefix',
+          target: 'test-site.com',
+          output: 'json',
+          date_from: startDate,
+          date_to: endDate,
+          history_grouping: 'weekly',
+          volume_mode: 'average',
+        })
+        .reply(200, organicTrafficMetricsResponse);
+
+      const result = await client.getOrganicTraffic('test-site.com', startDate, endDate);
+      expect(result).to.deep.equal({
+        result: organicTrafficMetricsResponse,
+        fullAuditRef: 'https://example.com/site-explorer/metrics-history?mode=prefix&target=test-site.com&output=json&date_from=2024-01-29&date_to=2024-02-05&history_grouping=weekly&volume_mode=average',
       });
     });
   });

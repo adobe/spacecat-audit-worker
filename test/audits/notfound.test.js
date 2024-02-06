@@ -84,8 +84,7 @@ describe('Index Tests', () => {
     sinon.restore();
   });
 
-  // TODO: see what's the issue post-workshop
-  xit('fetch 404s for base url > process > send results', async () => {
+  it('fetch 404s for base url > process > send results', async () => {
     nock('https://adobe.com')
       .get('/')
       .reply(200);

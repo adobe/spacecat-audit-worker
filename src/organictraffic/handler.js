@@ -53,18 +53,17 @@ export default async function auditOrganicTraffic(message, context) {
 
     const startDate = '2024-01-05';
     const endDate = '2024-02-05';
-    let metrics = [];
+    let auditResult = {};
     let fullAuditRef;
     try {
       const fullResult = await ahrefsAPIClient.getOrganicTraffic(url, startDate, endDate);
 
-      metrics = fullResult?.metrics;
+      auditResult.metrics = fullResult?.result.metrics;
       fullAuditRef = fullResult?.fullAuditRef;
-      log.info(`Found ${metrics?.length} weeks between ${startDate} and ${endDate} for siteId: ${siteId} and url ${url}`);
+      log.info(`Found ${auditResult.metrics?.length} weeks between ${startDate} and ${endDate} for siteId: ${siteId} and url ${url}`);
     } catch (e) {
       log.error(`${type} type audit for ${siteId} with url ${url} failed with error: ${e.message}`, e);
-      return {
-        url,
+      auditResult = {
         error: `${type} type audit for ${siteId} with url ${url} failed with error`,
       };
     }
@@ -74,7 +73,7 @@ export default async function auditOrganicTraffic(message, context) {
       isLive: site.isLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
-      auditResult: { metrics },
+      auditResult,
       fullAuditRef,
     };
 
@@ -84,7 +83,7 @@ export default async function auditOrganicTraffic(message, context) {
       type,
       url: site.getBaseURL(),
       auditContext,
-      auditResult: metrics,
+      auditResult,
     });
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
