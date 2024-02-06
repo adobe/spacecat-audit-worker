@@ -74,7 +74,7 @@ export default async function auditOrganicTraffic(message, context) {
       isLive: site.isLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
-      auditResult: metrics,
+      auditResult: { metrics },
       fullAuditRef,
     };
 
