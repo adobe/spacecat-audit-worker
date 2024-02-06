@@ -15,7 +15,14 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import AhrefsAPIClient from '../support/ahrefs-client.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { toggleWWW } from '../apex/handler.js';
+import { hasNonWWWSubdomain } from '../apex/handler.js';
+
+export function useWWWOrSubdomain(baseUrl) {
+  if (hasNonWWWSubdomain(baseUrl) || baseUrl.startsWith('https://www')) {
+    return baseUrl;
+  }
+  return baseUrl.replace('https://', 'https://www.');
+}
 
 export default async function auditOrganicTraffic(message, context) {
   const { type, url: siteId, auditContext } = message;
@@ -49,14 +56,15 @@ export default async function auditOrganicTraffic(message, context) {
     }
 
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const url = toggleWWW(site.getBaseURL());
+    const url = useWWWOrSubdomain(site.getBaseURL());
 
-    const startDate = '2024-01-05';
+    const startDate = '2024-01-29';
     const endDate = '2024-02-05';
     let auditResult = {};
     let fullAuditRef;
     try {
       const fullResult = await ahrefsAPIClient.getOrganicTraffic(url, startDate, endDate);
+      log.info(`Ahrefs result:\n${JSON.stringify(fullResult)}`);
 
       auditResult.metrics = fullResult?.result.metrics;
       fullAuditRef = fullResult?.fullAuditRef;
