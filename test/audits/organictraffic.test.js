@@ -36,18 +36,20 @@ describe('Organic Traffic Tests', () => {
   const siteData = {
     id: 'site1',
     baseURL: 'https://bar.foo.com',
-    isLive: true,
+    isLive: false,
   };
 
   const site = createSite(siteData);
   site.updateAuditTypeConfig('organic-traffic', { disabled: false });
+  site.toggleLive();
 
   const site2 = createSite({
     id: 'site2',
     baseURL: 'https://foo.com',
-    isLive: true,
+    isLive: false,
   });
   site2.updateAuditTypeConfig('organic-traffic', { disabled: false });
+  site2.toggleLive();
 
   const auditResult = {
     fullAuditRef: 'https://ahrefs.com/audit/123',
@@ -73,6 +75,7 @@ describe('Organic Traffic Tests', () => {
     mockDataAccess = {
       getSiteByID: sinon.stub(),
       addAudit: sinon.stub(),
+      getLatestAuditForSite: sinon.stub(),
     };
 
     message = {
@@ -107,6 +110,7 @@ describe('Organic Traffic Tests', () => {
 
   it('should successfully perform an audit to get organic traffic', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
+    mockDataAccess.getLatestAuditForSite = sinon.stub().resolves({ auditResult: { metrics: [{ date: '2024-01-29' }] } });
 
     nock('https://ahrefs.com')
       .get(/.*/)
@@ -133,7 +137,9 @@ describe('Organic Traffic Tests', () => {
       ...siteData,
       auditConfig: { auditsDisabled: true },
     });
+    siteWithDisabledAudits.toggleLive();
 
+    mockDataAccess.getLatestAuditForSite = sinon.stub().resolves({});
     mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
 
     const response = await auditOrganicTraffic(message, context);
@@ -148,7 +154,9 @@ describe('Organic Traffic Tests', () => {
       ...siteData,
       auditConfig: { auditsDisabled: false, auditTypeConfigs: { 'organic-traffic': { disabled: true } } },
     });
+    siteWithDisabledAudits.toggleLive();
 
+    mockDataAccess.getLatestAuditForSite = sinon.stub().resolves({});
     mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
 
     const response = await auditOrganicTraffic(message, context);
@@ -173,6 +181,7 @@ describe('Organic Traffic Tests', () => {
 
   it('should handle audit api errors gracefully', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
+    mockDataAccess.getLatestAuditForSite = sinon.stub().resolves({ auditResult: { metrics: [{ date: '2024-01-29' }] } });
 
     nock('https://ahrefs.com')
       .get(/.*/)
@@ -196,6 +205,7 @@ describe('Organic Traffic Tests', () => {
   });
 
   it('should handle errors gracefully', async () => {
+    mockDataAccess.getLatestAuditForSite = sinon.stub().resolves({});
     mockDataAccess.getSiteByID.throws('some-error');
 
     const response = await auditOrganicTraffic(message, context);

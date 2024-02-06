@@ -13,15 +13,37 @@
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
+import {
+  isArray,
+} from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '../support/ahrefs-client.js';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { retrieveLatestAuditOfTypeForSite, retrieveSiteBySiteId } from '../utils/data-access.js';
 import { hasNonWWWSubdomain } from '../apex/handler.js';
+import { formatDate } from '../support/utils.js';
 
-export function useWWWOrSubdomain(baseUrl) {
+function useWWWOrSubdomain(baseUrl) {
   if (hasNonWWWSubdomain(baseUrl) || baseUrl.startsWith('https://www')) {
     return baseUrl;
   }
   return baseUrl.replace('https://', 'https://www.');
+}
+
+function getPreviousMonday(currentDate) {
+  const day = currentDate.getDay();
+  const diff = currentDate.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is Sunday
+  const lastMonday = new Date(currentDate.setDate(diff));
+  return formatDate(lastMonday);
+}
+
+function getLatestDate(metrics) {
+  if (!isArray(metrics) || metrics.length === 0) {
+    return null;
+  }
+
+  return metrics.reduce((latest, metric) => {
+    const metricDate = new Date(metric.date);
+    return metricDate > latest ? metricDate : latest;
+  }, new Date(metrics[0].date));
 }
 
 export default async function auditOrganicTraffic(message, context) {
@@ -55,11 +77,20 @@ export default async function auditOrganicTraffic(message, context) {
       return ok();
     }
 
-    const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
+    const latestAudit = await retrieveLatestAuditOfTypeForSite(dataAccess, siteId, type, log);
+    const lastAuditDate = getLatestDate(latestAudit?.auditResult?.metrics);
+    const startDate = getPreviousMonday(new Date(lastAuditDate || site.getIsLiveToggledAt()));
+    const today = new Date();
+    const endDate = getPreviousMonday(today);
     const url = useWWWOrSubdomain(site.getBaseURL());
+    log.info(`Auditing ${type} for ${siteId} and url ${url} between ${startDate} and ${endDate}`);
+    if (startDate === endDate) {
+      log.info(`${siteId} already audited for ${type} type audit`);
+      return noContent();
+    }
 
-    const startDate = '2024-01-29';
-    const endDate = '2024-02-05';
+    const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
+
     let auditResult = {};
     let fullAuditRef;
     try {
