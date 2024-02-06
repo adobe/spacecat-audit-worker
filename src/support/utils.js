@@ -24,3 +24,20 @@ export async function getRUMUrl(url) {
   const finalUrl = resp.url.split('://')[1];
   return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
 }
+
+/**
+ * Extracts the domain and protocol from a given URL.
+ *
+ * @param {string} inputUrl - The URL to extract domain and protocol from.
+ * @returns {{ domain: string, protocol: string }|null} - An object containing
+ * the domain and protocol if successfully extracted,
+ * or null if the URL is invalid.
+ */
+export function extractDomainAndProtocol(inputUrl) {
+  try {
+    const parsedUrl = new URL(inputUrl);
+    return { domain: parsedUrl.hostname, protocol: parsedUrl.protocol };
+  } catch (error) {
+    return null;
+  }
+}

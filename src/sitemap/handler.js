@@ -12,7 +12,7 @@
 
 import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { fetch } from '../support/utils.js';
+import { extractDomainAndProtocol, fetch } from '../support/utils.js';
 
 const ERROR_CODES = {
   INVALID_URL: 'ERR_INVALID_URL',
@@ -35,23 +35,6 @@ const ERROR_CODES = {
 async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl);
   return response.ok ? response.text() : null;
-}
-
-/**
- * Extracts the domain and protocol from a given URL.
- *
- * @param {string} inputUrl - The URL to extract domain and protocol from.
- * @returns {{ domain: string, protocol: string }|null} - An object containing
- * the domain and protocol if successfully extracted,
- * or null if the URL is invalid.
- */
-function extractDomainAndProtocol(inputUrl) {
-  try {
-    const parsedUrl = new URL(inputUrl);
-    return { domain: parsedUrl.hostname, protocol: parsedUrl.protocol };
-  } catch (error) {
-    return null;
-  }
 }
 
 /**
