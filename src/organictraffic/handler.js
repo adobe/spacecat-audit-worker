@@ -64,11 +64,9 @@ export default async function auditOrganicTraffic(message, context) {
     let fullAuditRef;
     try {
       const fullResult = await ahrefsAPIClient.getOrganicTraffic(url, startDate, endDate);
-      log.info(`Ahrefs result:\n${JSON.stringify(fullResult)}`);
-
       auditResult.metrics = fullResult?.result.metrics;
       fullAuditRef = fullResult?.fullAuditRef;
-      log.info(`Found ${auditResult.metrics?.length} weeks between ${startDate} and ${endDate} for siteId: ${siteId} and url ${url}`);
+      log.info(`Found ${auditResult.metrics?.length} weeks between ${startDate} and ${endDate} for siteId: ${siteId} and url ${url}, full audit ref ${fullAuditRef}`);
     } catch (e) {
       log.error(`${type} type audit for ${siteId} with url ${url} failed with error: ${e.message}`, e);
       auditResult = {
