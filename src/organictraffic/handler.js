@@ -28,9 +28,10 @@ function useWWWOrSubdomain(baseUrl) {
   return baseUrl.replace('https://', 'https://www.');
 }
 
-function getPreviousMonday(currentDate) {
+function getPreviousWeekday(currentDate, weekday) {
   const day = currentDate.getDay();
-  const diff = currentDate.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is Sunday
+  const diff = currentDate.getDate() - day
+    + (day === 0 ? -6 : weekday); // adjust when day is Sunday
   const lastMonday = new Date(currentDate.setDate(diff));
   return formatDate(lastMonday);
 }
@@ -80,10 +81,10 @@ export default async function auditOrganicTraffic(message, context) {
     const latestAudit = await retrieveLatestAuditOfTypeForSite(dataAccess, siteId, type, log);
     const lastAuditDate = getLatestDate(latestAudit?.auditResult?.metrics);
     const today = new Date();
-    const startDate = getPreviousMonday(new Date(lastAuditDate
+    const startDate = getPreviousWeekday(new Date(lastAuditDate
       || site.getIsLiveToggledAt()
-      || new Date().setDate(today.getDate() - 7)));
-    const endDate = getPreviousMonday(today);
+      || new Date().setDate(today.getDate() - 7)), 1);
+    const endDate = getPreviousWeekday(today, 1);
     const url = useWWWOrSubdomain(site.getBaseURL());
     log.info(`Auditing ${type} for ${siteId} and url ${url} between ${startDate} and ${endDate}`);
     if (startDate === endDate) {
