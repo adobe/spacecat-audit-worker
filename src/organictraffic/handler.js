@@ -79,8 +79,10 @@ export default async function auditOrganicTraffic(message, context) {
 
     const latestAudit = await retrieveLatestAuditOfTypeForSite(dataAccess, siteId, type, log);
     const lastAuditDate = getLatestDate(latestAudit?.auditResult?.metrics);
-    const startDate = getPreviousMonday(new Date(lastAuditDate || site.getIsLiveToggledAt()));
     const today = new Date();
+    const startDate = getPreviousMonday(new Date(lastAuditDate
+      || site.getIsLiveToggledAt()
+      || today.setDate(today.getDate() - 7 * 4 * 6)));
     const endDate = getPreviousMonday(today);
     const url = useWWWOrSubdomain(site.getBaseURL());
     log.info(`Auditing ${type} for ${siteId} and url ${url} between ${startDate} and ${endDate}`);
