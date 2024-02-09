@@ -83,7 +83,7 @@ export default async function auditOrganicTraffic(message, context) {
     const today = new Date();
     const startDate = getPreviousWeekday(new Date(lastAuditDate
       || site.getIsLiveToggledAt()
-      || new Date().setDate(today.getDate() - 7)), 1);
+      || new Date().setDate(today.getDate() - 7 * 4 * 26)), 1);
     const endDate = getPreviousWeekday(today, 1);
     const url = useWWWOrSubdomain(site.getBaseURL());
     log.info(`Auditing ${type} for ${siteId} and url ${url} between ${startDate} and ${endDate}`);
