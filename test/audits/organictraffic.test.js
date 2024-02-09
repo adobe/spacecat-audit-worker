@@ -108,7 +108,7 @@ describe('Organic Traffic Tests', () => {
     sinon.restore();
   });
 
-  xit('should successfully perform an audit to get organic traffic', async () => {
+  it('should successfully perform an audit to get organic traffic', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
     mockDataAccess.getLatestAuditForSite = sinon.stub().resolves({ auditResult: { metrics: [{ date: '2024-01-29' }] } });
 
@@ -179,7 +179,7 @@ describe('Organic Traffic Tests', () => {
     expect(mockLog.info).to.have.been.calledWith('Site site1 is not live');
   });
 
-  xit('should handle audit api errors gracefully', async () => {
+  it('should handle audit api errors gracefully', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
     mockDataAccess.getLatestAuditForSite = sinon.stub().resolves({ auditResult: { metrics: [{ date: '2024-01-29' }] } });
 
