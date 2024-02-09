@@ -263,9 +263,17 @@ function initServices(config, log = console) {
     psiApiBaseUrl,
     sqs,
     dataAccess,
+    environment,
   } = config;
 
-  const psiClient = PSIClient({ apiKey: psiApiKey, apiBaseUrl: psiApiBaseUrl }, log);
+  const psiClient = PSIClient(
+    {
+      apiKey: psiApiKey,
+      apiBaseUrl: psiApiBaseUrl,
+      environment,
+    },
+    log,
+  );
 
   return {
     dataAccess,
@@ -346,6 +354,7 @@ export default async function audit(message, context) {
       psiApiBaseUrl,
       sqs,
       dataAccess,
+      environment: context.func.version === 'v1' ? 'prod' : 'dev',
     }, log);
 
     const startTime = process.hrtime();

@@ -29,6 +29,7 @@ describe('PSIClient', () => {
   const config = {
     apiKey: 'testApiKey',
     apiBaseUrl: 'https://example.com',
+    environment: 'dev',
   };
 
   beforeEach(() => {
@@ -79,7 +80,7 @@ describe('PSIClient', () => {
     it('fetches PSI data successfully', async () => {
       nock('https://example.com')
         .get('/')
-        .matchHeader('x-source', 'spacecat')
+        .matchHeader('x-source', 'spacecat-dev')
         .query(true)
         .reply(200, { lighthouseResult: { score: 0.9 } });
 

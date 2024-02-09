@@ -85,6 +85,9 @@ describe('LHS Audit', () => {
     };
     context = {
       log: mockLog,
+      func: {
+        version: 'ci',
+      },
       runtime: {
         region: 'us-east-1',
       },
@@ -276,6 +279,7 @@ describe('LHS Audit', () => {
       .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
       .reply(200, psiResult);
 
+    context.func.version = 'v1';
     context.sqs.sendMessage.rejects(new Error('SQS Error'));
 
     await audit(auditQueueMessage, context);
