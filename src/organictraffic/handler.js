@@ -79,11 +79,10 @@ export default async function auditOrganicTraffic(message, context) {
     }
 
     const latestAudit = await retrieveLatestAuditOfTypeForSite(dataAccess, siteId, type, log);
+    // eslint-disable-next-line no-unused-vars
     const lastAuditDate = getLatestDate(latestAudit?.auditResult?.metrics);
     const today = new Date();
-    const startDate = getPreviousWeekday(new Date(lastAuditDate
-      || site.getIsLiveToggledAt()
-      || new Date().setDate(today.getDate() - 7 * 4 * 26)), 1);
+    const startDate = getPreviousWeekday(new Date().setDate(today.getDate() - 7 * 4 * 26), 1);
     const endDate = getPreviousWeekday(today, 1);
     const url = useWWWOrSubdomain(site.getBaseURL());
     log.info(`Auditing ${type} for ${siteId} and url ${url} between ${startDate} and ${endDate}`);
