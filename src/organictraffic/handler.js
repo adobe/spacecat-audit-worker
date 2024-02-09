@@ -82,8 +82,7 @@ export default async function auditOrganicTraffic(message, context) {
     // eslint-disable-next-line no-unused-vars
     const lastAuditDate = getLatestDate(latestAudit?.auditResult?.metrics);
     const today = new Date();
-    const startDate = getPreviousWeekday(new Date(new Date()
-      .setDate(today.getDate() - 7 * 4 * 26)), 1);
+    const startDate = getPreviousWeekday(new Date('2023-08-07'), 1);
     const endDate = getPreviousWeekday(today, 1);
     const url = useWWWOrSubdomain(site.getBaseURL());
     log.info(`Auditing ${type} for ${siteId} and url ${url} between ${startDate} and ${endDate}`);
