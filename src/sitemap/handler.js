@@ -47,7 +47,7 @@ export async function fetchContent(targetUrl) {
  * to an object containing the sitemap path and reasons for success or failure.
  */
 export async function checkRobotsForSitemap(protocol, domain) {
-  const robotsUrl = `${protocol}//${domain}/robots.txt`;
+  const robotsUrl = `${protocol}://${domain}/robots.txt`;
   try {
     const robotsContent = await fetchContent(robotsUrl);
     const sitemapMatch = robotsContent.match(/Sitemap:\s*(.*)/i);
