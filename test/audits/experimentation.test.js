@@ -35,12 +35,13 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
 describe('Index Tests', () => {
   const request = new Request('https://space.cat');
   let context;
+  let mockLog;
   let message;
   let mockDataAccess;
 
   const siteData = {
-    id: 'bamboohr.com',
-    baseURL: 'https://www.bamboohr.com',
+    id: 'site-id-123',
+    baseURL: 'https://bamboohr.com',
     isLive: true,
   };
 
@@ -53,13 +54,18 @@ describe('Index Tests', () => {
     };
     message = {
       type: 'experimentation',
-      url: 'www.bamboohr.com',
+      url: 'bamboohr.com',
       auditContext: {
         finalUrl: 'www.bamboohr.com',
       },
     };
+    mockLog = {
+      info: sinon.spy(),
+      warn: sinon.spy(),
+      error: sinon.spy(),
+    };
     context = {
-      log: console,
+      log: mockLog,
       runtime: {
         region: 'us-east-1',
       },
@@ -87,7 +93,7 @@ describe('Index Tests', () => {
   });
 
   it('fetch experiment data for base url > process > send results', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('bamboohr.com').resolves(site);
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site-id-123').resolves(site);
     nock('https://bamboohr.com')
       .get('/')
       .reply(200);
@@ -96,13 +102,14 @@ describe('Index Tests', () => {
       .query({
         ...DOMAIN_REQUEST_DEFAULT_PARAMS,
         domainkey: context.env.RUM_DOMAIN_KEY,
-        url: 'www.bamboohr.com',
+        url: 'bamboohr.com',
       })
       .reply(200, rumData);
     const resp = await auditExperiments(message, context);
 
     const expectedMessage = {
       ...message,
+      url: 'https://bamboohr.com',
       auditResult: expectedAuditResult,
     };
     expect(resp.status).to.equal(204);
@@ -113,7 +120,8 @@ describe('Index Tests', () => {
   });
 
   it('fetch experiments for base url > process > reject', async () => {
-    nock('https://www.bamboohr.com')
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site-id-123').resolves(site);
+    nock('https://bamboohr.com')
       .get('/')
       .reply(200);
     nock('https://helix-pages.anywhere.run')
@@ -121,7 +129,7 @@ describe('Index Tests', () => {
       .query({
         ...DOMAIN_REQUEST_DEFAULT_PARAMS,
         domainkey: context.env.RUM_DOMAIN_KEY,
-        url: 'www.bamboohr.com',
+        url: 'bamboohr.com',
       })
       .replyWithError('Bad request');
 
@@ -146,5 +154,27 @@ describe('Index Tests', () => {
 
     const finalUrl = await getRUMUrl('space.cat');
     expect(finalUrl).to.eql('space.cat');
+  });
+
+  it('returns a 404 when site does not exist', async () => {
+    mockDataAccess.getSiteByID.resolves(null);
+
+    const response = await auditExperiments(message, context);
+
+    expect(response.status).to.equal(404);
+  });
+
+  it('returns a 200 when site is not live', async () => {
+    const siteWithDisabledAudits = createSite({
+      ...siteData,
+      isLive: false,
+    });
+
+    mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
+
+    const response = await auditExperiments(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(context.log.info).to.have.been.calledWith('Site bamboohr.com is not live');
   });
 });

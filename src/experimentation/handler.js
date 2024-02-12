@@ -76,6 +76,7 @@ export default async function auditExperiments(message, context) {
     };
     await dataAccess.addAudit(auditData);
     await sqs.sendMessage(queueUrl, {
+      url: site.getBaseURL(),
       type,
       auditContext,
       auditResult,
