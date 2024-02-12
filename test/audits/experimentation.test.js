@@ -12,12 +12,14 @@
 
 /* eslint-env mocha */
 
+import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
+
 import chai from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { Request } from '@adobe/fetch';
 import nock from 'nock';
-import { main } from '../../src/index.js';
+import auditExperiments from '../../src/experimentation/handler.js';
 import { getRUMUrl } from '../../src/support/utils.js';
 import { expectedAuditResult, rumData } from '../fixtures/experimentation-data.js';
 
@@ -33,14 +35,27 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
 describe('Index Tests', () => {
   const request = new Request('https://space.cat');
   let context;
-  let messageBodyJson;
+  let message;
+  let mockDataAccess;
+
+  const siteData = {
+    id: 'bamboohr.com',
+    baseURL: 'https://www.bamboohr.com',
+    isLive: true,
+  };
+
+  const site = createSite(siteData);
 
   beforeEach('setup', () => {
-    messageBodyJson = {
+    mockDataAccess = {
+      getSiteByID: sinon.stub(),
+      addAudit: sinon.stub(),
+    };
+    message = {
       type: 'experimentation',
-      url: 'https://bamboohr.com',
+      url: 'www.bamboohr.com',
       auditContext: {
-        finalUrl: 'bamboohr.com',
+        finalUrl: 'www.bamboohr.com',
       },
     };
     context = {
@@ -55,10 +70,11 @@ describe('Index Tests', () => {
       invocation: {
         event: {
           Records: [{
-            body: JSON.stringify(messageBodyJson),
+            body: JSON.stringify(message),
           }],
         },
       },
+      dataAccess: mockDataAccess,
       sqs: {
         sendMessage: sandbox.stub().resolves(),
       },
@@ -71,6 +87,7 @@ describe('Index Tests', () => {
   });
 
   it('fetch experiment data for base url > process > send results', async () => {
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('bamboohr.com').resolves(site);
     nock('https://bamboohr.com')
       .get('/')
       .reply(200);
@@ -79,25 +96,24 @@ describe('Index Tests', () => {
       .query({
         ...DOMAIN_REQUEST_DEFAULT_PARAMS,
         domainkey: context.env.RUM_DOMAIN_KEY,
-        url: 'bamboohr.com',
+        url: 'www.bamboohr.com',
       })
       .reply(200, rumData);
-
-    const resp = await main(request, context);
+    const resp = await auditExperiments(message, context);
 
     const expectedMessage = {
-      ...messageBodyJson,
+      ...message,
       auditResult: expectedAuditResult,
     };
-
     expect(resp.status).to.equal(204);
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
   });
 
-  it('fetch experiments for base url for base url > process > reject', async () => {
-    nock('https://bamboohr.com')
+  it('fetch experiments for base url > process > reject', async () => {
+    nock('https://www.bamboohr.com')
       .get('/')
       .reply(200);
     nock('https://helix-pages.anywhere.run')
@@ -105,11 +121,11 @@ describe('Index Tests', () => {
       .query({
         ...DOMAIN_REQUEST_DEFAULT_PARAMS,
         domainkey: context.env.RUM_DOMAIN_KEY,
-        url: 'bamboohr.com',
+        url: 'www.bamboohr.com',
       })
       .replyWithError('Bad request');
 
-    const resp = await main(request, context);
+    const resp = await auditExperiments(request, context);
 
     expect(resp.status).to.equal(500);
   });

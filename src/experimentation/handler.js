@@ -11,7 +11,10 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
+import {
+  internalServerError, noContent, notFound, ok,
+} from '@adobe/spacecat-shared-http-utils';
+import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import {
   getRUMUrl,
 } from '../support/utils.js';
@@ -38,18 +41,25 @@ function processRUMResponse(data) {
     }));
 }
 export default async function auditExperiments(message, context) {
-  const { type, url, auditContext } = message;
-  const { log, sqs } = context;
+  const { type, url: siteId, auditContext } = message;
+  const { dataAccess, log, sqs } = context;
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
   try {
-    log.info(`Received audit req for domain: ${url}`);
+    log.info(`Received audit request for siteId: ${siteId}`);
+    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
+    if (!site) {
+      return notFound('Site not found');
+    }
+    if (!site.isLive()) {
+      log.info(`Site ${siteId} is not live`);
+      return ok();
+    }
 
     const rumAPIClient = RUMAPIClient.createFrom(context);
-    const finalUrl = await getRUMUrl(url);
+    const finalUrl = await getRUMUrl(site.getBaseURL());
     auditContext.finalUrl = finalUrl;
-
     const params = {
       url: finalUrl,
     };
@@ -57,14 +67,20 @@ export default async function auditExperiments(message, context) {
     const data = await rumAPIClient.getExperimentationData(params);
     const auditResult = processRUMResponse(data);
 
+    const auditData = {
+      siteId: site.getId(),
+      isLive: site.isLive(),
+      auditedAt: new Date().toISOString(),
+      auditType: type,
+      auditResult,
+    };
+    await dataAccess.addAudit(auditData);
     await sqs.sendMessage(queueUrl, {
       type,
-      url,
       auditContext,
       auditResult,
     });
-
-    log.info(`Successfully audited ${url} for ${type} type audit`);
+    log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
   } catch (e) {
     return internalServerError(`Internal server error: ${e.message}`);
