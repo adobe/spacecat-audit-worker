@@ -130,6 +130,7 @@ export async function findSitemap(inputUrl) {
       return {
         success: true,
         reasons: logMessages,
+        paths: [robotsResult.path],
       };
     }
   } else {
@@ -140,7 +141,7 @@ export async function findSitemap(inputUrl) {
   }
 
   // Check /sitemap.xml
-  const assumedSitemapUrl = `${protocol}//${domain}/sitemap.xml`;
+  const assumedSitemapUrl = `${protocol}://${domain}/sitemap.xml`;
   const sitemapResult = await checkSitemap(assumedSitemapUrl);
   logMessages.push(...sitemapResult.reasons.map((reason) => ({
     value: assumedSitemapUrl,
@@ -151,6 +152,7 @@ export async function findSitemap(inputUrl) {
     return {
       success: true,
       reasons: logMessages,
+      paths: [assumedSitemapUrl],
     };
   } else {
     // optimization: change from array of err messages to objects with the {item: url1, error: err1}
@@ -161,7 +163,7 @@ export async function findSitemap(inputUrl) {
   }
 
   // Check /sitemap_index.xml
-  const sitemapIndexUrl = `${protocol}//${domain}/sitemap_index.xml`;
+  const sitemapIndexUrl = `${protocol}://${domain}/sitemap_index.xml`;
   const sitemapIndexResult = await checkSitemap(sitemapIndexUrl);
   logMessages.push(...sitemapIndexResult.reasons.map((reason) => ({
     value: assumedSitemapUrl,
@@ -172,6 +174,7 @@ export async function findSitemap(inputUrl) {
     return {
       success: true,
       reasons: logMessages,
+      paths: [sitemapIndexUrl],
     };
   }
 
