@@ -12,7 +12,8 @@
 
 import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { extractDomainAndProtocol, fetch } from '../support/utils.js';
+// eslint-disable-next-line import/no-cycle
+import { findSitemap, fetch } from '../support/utils.js';
 
 export const ERROR_CODES = {
   INVALID_URL: 'ERR_INVALID_URL',
@@ -87,105 +88,6 @@ export async function checkSitemap(sitemapUrl) {
 }
 
 /**
-* Finds and validates the sitemap for a given URL by checking:
-* robots.txt, sitemap.xml, and sitemap_index.xml.
-*
-* @async
-* @param {string} inputUrl - The URL for which to find and validate the sitemap.
-* @returns {Promise<Object>} -A Promise that resolves to an object
-* representing the success and reasons for the sitemap search and validation.
-*/
-export async function findSitemap(inputUrl) {
-  const logMessages = [];
-
-  const parsedUrl = extractDomainAndProtocol(inputUrl);
-  if (!parsedUrl) {
-    logMessages.push({
-      value: inputUrl,
-      error: ERROR_CODES.INVALID_URL,
-    });
-    console.log(logMessages.join(' '));
-    return {
-      success: false,
-      reasons: logMessages,
-    };
-  }
-
-  const { protocol, domain } = parsedUrl;
-
-  // Check sitemap from robots.txt
-  const robotsResult = await checkRobotsForSitemap(protocol, domain);
-  logMessages.push(...robotsResult.reasons.map((reason) => ({
-    value: parsedUrl,
-    error: reason,
-  })));
-  if (robotsResult.path) {
-    const sitemapResult = await checkSitemap(robotsResult.path);
-    logMessages.push(...sitemapResult.reasons.map((reason) => ({
-      value: robotsResult.path,
-      error: reason,
-    })));
-    if (sitemapResult.existsAndIsValid) {
-      console.log(logMessages.join(' '));
-      return {
-        success: true,
-        reasons: logMessages,
-        paths: [robotsResult.path],
-      };
-    }
-  } else {
-    logMessages.push(...robotsResult.reasons.map((reason) => ({
-      value: parsedUrl,
-      error: reason,
-    })));
-  }
-
-  // Check /sitemap.xml
-  const assumedSitemapUrl = `${protocol}://${domain}/sitemap.xml`;
-  const sitemapResult = await checkSitemap(assumedSitemapUrl);
-  logMessages.push(...sitemapResult.reasons.map((reason) => ({
-    value: assumedSitemapUrl,
-    error: reason,
-  })));
-  if (sitemapResult.existsAndIsValid) {
-    console.log(logMessages.join(' '));
-    return {
-      success: true,
-      reasons: logMessages,
-      paths: [assumedSitemapUrl],
-    };
-  } else {
-    // optimization: change from array of err messages to objects with the {item: url1, error: err1}
-    logMessages.push(...robotsResult.reasons.map((reason) => ({
-      value: assumedSitemapUrl,
-      error: reason,
-    })));
-  }
-
-  // Check /sitemap_index.xml
-  const sitemapIndexUrl = `${protocol}://${domain}/sitemap_index.xml`;
-  const sitemapIndexResult = await checkSitemap(sitemapIndexUrl);
-  logMessages.push(...sitemapIndexResult.reasons.map((reason) => ({
-    value: assumedSitemapUrl,
-    error: reason,
-  })));
-  if (sitemapIndexResult.existsAndIsValid) {
-    console.log(logMessages.join(' '));
-    return {
-      success: true,
-      reasons: logMessages,
-      paths: [sitemapIndexUrl],
-    };
-  }
-
-  console.log(logMessages.join(' '));
-  return {
-    success: false,
-    reasons: logMessages,
-  };
-}
-
-/**
  * Performs an audit for a specified site based on the audit request message.
  *
  * @async
@@ -195,6 +97,7 @@ export async function findSitemap(inputUrl) {
  * @returns {Promise<Response>} - A Promise that resolves to a response object
  * indicating the result of the audit process.
  */
+
 export default async function audit(message, context) {
   const { type, url: siteId, auditContext } = message;
   const { dataAccess, log, sqs } = context;
@@ -227,6 +130,6 @@ export default async function audit(message, context) {
 
     return noContent();
   } catch (e) {
-    return internalServerError('sitemap audit failed');
+    return internalServerError('Sitemap audit failed');
   }
 }
