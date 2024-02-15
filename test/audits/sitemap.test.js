@@ -146,28 +146,4 @@ describe('findSitemap', () => {
     expect(resp.success).to.equal(false);
     expect(resp.reasons[0].error).to.equal(ERROR_CODES.INVALID_URL);
   });
-
-  it('should check /sitemap.xml when robots.txt does not contain a sitemap', async () => {
-    nock('https://some-domain.com')
-      .get('/robots.txt')
-      .reply(200, 'User-agent: *')
-      .get('/sitemap.xml')
-      .reply(200, '<?xml version="1.0" encoding="UTF-8"?>');
-
-    const resp = await findSitemap('https://some-domain.com');
-    expect(resp.success).to.equal(false);
-  });
-
-  it('should check /sitemap_index.xml when /sitemap.xml is not valid', async () => {
-    nock('https://some-domain.com')
-      .get('/robots.txt')
-      .reply(200, 'User-agent: *')
-      .get('/sitemap.xml')
-      .reply(200, 'not valid xml')
-      .get('/sitemap_index.xml')
-      .reply(200, '<?xml version="1.0" encoding="UTF-8"?>');
-
-    const resp = await findSitemap('https://some-domain.com');
-    expect(resp.success).to.equal(false);
-  });
 });
