@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Adobe. All rights reserved.
+ * Copyright 2024 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,22 +10,22 @@
  * governing permissions and limitations under the License.
  */
 
-module.exports = {
-  root: true,
-  extends: [
-    '@adobe/helix',
-    'plugin:@typescript-eslint/recommended',
-  ],
-  plugins: [
-    'import',
-    '@typescript-eslint',
-  ],
-  overrides: [
-    {
-      files: ['*.test.js'],
-      rules: {
-        'no-unused-expressions': 'off',
-      },
-    },
-  ],
-};
+import { AuditBuilder } from '../common/audit-builder.js';
+
+function exampleAuditRunner(site, context) {
+  // business logic here
+  const { log } = context;
+
+  log.info(`Running audit for ${site.getBaseURL()}...`);
+
+  return {
+    fullAuditRef: site.getBaseURL(),
+    auditResult: {},
+  };
+}
+
+export default function exampleAuditHandler() {
+  return new AuditBuilder()
+    .withRunner(exampleAuditRunner)
+    .build();
+}

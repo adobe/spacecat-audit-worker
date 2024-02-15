@@ -10,17 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
 import URI from 'urijs';
 import { hasText } from '@adobe/spacecat-shared-utils';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { fetch } from '../support/utils.js';
+import { AuditBuilder } from '../common/audit-builder.js';
 
 URI.preventInvalidHostname = true;
-
-function stripUrl(baseUrl) {
-  return baseUrl.replace(/^(https?:\/\/)/, '');
-}
 
 /**
  * Checks if a given URL contains a domain with a non-www subdomain.
@@ -76,52 +71,28 @@ async function probeUrlConnection(baseUrl, log) {
  * If the site contains a subdomain, the audit is skipped for that specific subdomain.
  *
  * @async
- * @param {Object} message - The audit request message containing the type, URL, and audit context.
+ * @param {string} finalUrl - The URL to run audit against
  * @param {Object} context - The context object containing configurations, services,
  * and environment variables.
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
-export default async function audit(message, context) {
-  const { type, url: siteId, auditContext } = message;
-  const { dataAccess, log, sqs } = context;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
+export async function apexAuditRunner(finalUrl, context) {
+  const { log } = context;
 
-  try {
-    log.info(`Received ${type} audit request for siteId: ${siteId}`);
-
-    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    if (!site) {
-      log.error(`No site with siteId "${siteId}" exists.`);
-      return notFound('Site not found');
-    }
-
-    const baseURL = site.getBaseURL();
-
-    if (hasNonWWWSubdomain(baseURL)) {
-      log.info(`Url ${baseURL} already has a subdomain. No need to run apex audit.`);
-      return noContent();
-    }
-
-    const urls = [baseURL, toggleWWW(baseURL)];
-    const results = await Promise.all(urls.map((_url) => probeUrlConnection(_url, log)));
-
-    const url = stripUrl(baseURL);
-
-    log.info(`Audit result for ${baseURL}:\n${JSON.stringify(results, null, 2)}`);
-
-    await sqs.sendMessage(queueUrl, {
-      type,
-      url,
-      auditContext,
-      auditResult: results,
-    });
-
-    log.info(`Successfully audited ${url} for ${type} type audit`);
-
-    return noContent();
-  } catch (e) {
-    return internalServerError('Apex audit failed');
+  if (hasNonWWWSubdomain(finalUrl)) {
+    throw Error(`Url ${finalUrl} already has a subdomain. No need to run apex audit.`);
   }
+
+  const urls = [finalUrl, toggleWWW(finalUrl)];
+  const results = await Promise.all(urls.map((_url) => probeUrlConnection(_url, log)));
+
+  return {
+    auditResult: results,
+  };
+}
+
+export default function handler() {
+  return new AuditBuilder()
+    .withRunner(apexAuditRunner)
+    .build();
 }
