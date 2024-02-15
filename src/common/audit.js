@@ -59,6 +59,7 @@ export async function followRedirects(site) {
 
 export async function noopAuditStep() {
   // no-op
+  return {};
 }
 
 export class Audit {

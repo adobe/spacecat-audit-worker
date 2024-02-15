@@ -12,14 +12,14 @@
 
 import { AuditBuilder } from '../common/audit-builder.js';
 
-function exampleAuditRunner(site, context) {
+function exampleAuditRunner(finalUrl, context) {
   // business logic here
   const { log } = context;
 
-  log.info(`Running audit for ${site.getBaseURL()}...`);
+  log.info(`Running audit for ${finalUrl}...`);
 
   return {
-    fullAuditRef: site.getBaseURL(),
+    fullAuditRef: `ref to ${finalUrl}`,
     auditResult: {},
   };
 }
