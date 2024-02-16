@@ -65,17 +65,17 @@ export default async function auditExperiments(message, context) {
     };
 
     const data = await rumAPIClient.getExperimentationData(params);
-    const auditResult = processRUMResponse(data);
+    const auditResult = {
+      result: processRUMResponse(data),
+      finalUrl: auditContext.finalUrl,
+    };
 
     const auditData = {
       siteId: site.getId(),
       isLive: site.isLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
-      auditResult: {
-        result: auditResult,
-        finalUrl: auditContext.finalUrl,
-      },
+      auditResult,
       fullAuditRef: rumAPIClient.createExperimentationURL({ url: auditContext.finalUrl }),
     };
     await dataAccess.addAudit(auditData);
