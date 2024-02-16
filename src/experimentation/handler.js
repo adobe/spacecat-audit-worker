@@ -75,8 +75,8 @@ export default async function auditExperiments(message, context) {
       auditResult: {
         result: auditResult,
         finalUrl: auditContext.finalUrl,
-        fullAuditRef: rumAPIClient.createExperimentationURL({ url: auditContext.finalUrl }),
       },
+      fullAuditRef: rumAPIClient.createExperimentationURL({ url: auditContext.finalUrl }),
     };
     await dataAccess.addAudit(auditData);
     await sqs.sendMessage(queueUrl, {
