@@ -72,7 +72,10 @@ export default async function auditExperiments(message, context) {
       isLive: site.isLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
-      auditResult,
+      auditResult: {
+        result: auditResult,
+        finalUrl: auditContext.finalUrl,
+      },
     };
     await dataAccess.addAudit(auditData);
     await sqs.sendMessage(queueUrl, {
