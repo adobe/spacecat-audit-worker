@@ -23,6 +23,7 @@ import lhs from './lhs/handler.js';
 import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
 import backlinks from './backlinks/handler.js';
+import experimentation from './experimentation/handler.js';
 
 const HANDLERS = {
   apex,
@@ -32,6 +33,7 @@ const HANDLERS = {
   404: notfound,
   sitemap,
   'broken-backlinks': backlinks,
+  experimentation,
 };
 
 /**
