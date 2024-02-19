@@ -88,7 +88,7 @@ export default async function auditExperiments(message, context) {
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
   } catch (e) {
-    log.error(`Audit ${type}failed for ${siteId}`, e);
+    log.error(`Audit ${type} failed for ${siteId}`, e);
     return internalServerError(`Internal server error: ${e.message}`);
   }
 }
