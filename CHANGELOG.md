@@ -1,3 +1,10 @@
+## [1.8.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.15...v1.8.16) (2024-02-20)
+
+
+### Bug Fixes
+
+* save experiment audit result as object ([#139](https://github.com/adobe/spacecat-audit-worker/issues/139)) ([01927eb](https://github.com/adobe/spacecat-audit-worker/commit/01927eb1f187520f36900aec5e90a780af8b527b))
+
 ## [1.8.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.14...v1.8.15) (2024-02-18)
 
 
