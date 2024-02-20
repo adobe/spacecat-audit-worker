@@ -65,7 +65,10 @@ export default async function auditExperiments(message, context) {
     };
 
     const data = await rumAPIClient.getExperimentationData(params);
-    const auditResult = processRUMResponse(data);
+    const auditResult = {
+      result: processRUMResponse(data),
+      finalUrl: auditContext.finalUrl,
+    };
 
     const auditData = {
       siteId: site.getId(),
@@ -73,6 +76,7 @@ export default async function auditExperiments(message, context) {
       auditedAt: new Date().toISOString(),
       auditType: type,
       auditResult,
+      fullAuditRef: rumAPIClient.createExperimentationURL({ url: auditContext.finalUrl }),
     };
     await dataAccess.addAudit(auditData);
     await sqs.sendMessage(queueUrl, {
@@ -84,6 +88,7 @@ export default async function auditExperiments(message, context) {
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
   } catch (e) {
+    log.error(`Audit ${type} failed for ${siteId}`, e);
     return internalServerError(`Internal server error: ${e.message}`);
   }
 }
