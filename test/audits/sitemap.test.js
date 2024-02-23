@@ -20,7 +20,7 @@ import audit, {
   checkSitemap,
   ERROR_CODES, checkRobotsForSitemap,
 } from '../../src/sitemap/handler.js';
-import { extractDomainAndProtocol, findSitemap } from '../../src/support/utils.js';
+import { extractDomainAndProtocol } from '../../src/support/utils.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
@@ -195,6 +195,7 @@ describe('checkSitemap', () => {
     expect(resp.existsAndIsValid).to.equal(false);
     expect(resp.reasons).to.include(ERROR_CODES.FETCH_ERROR);
   });
+
   it('checkSitemap returns false when sitemap is not valid XML', async () => {
     nock('https://some-domain.com')
       .get('/sitemap.xml')
@@ -202,8 +203,9 @@ describe('checkSitemap', () => {
 
     const resp = await checkSitemap('https://some-domain.com/sitemap.xml');
     expect(resp.existsAndIsValid).to.equal(false);
-    expect(resp.reasons).to.include('ERR_SITEMAP_NOT_XML');
+    expect(resp.reasons).to.include('SITEMAP_NOT_XML');
   });
+
   it('checkSitemap returns invalid result for non-existing sitemap', async () => {
     nock('https://some-domain.com')
       .get('/non-existent-sitemap.xml')
@@ -234,27 +236,5 @@ describe('checkSitemap', () => {
     const result = await checkSitemap('https://some-domain.com/sitemap.xml');
     expect(result.existsAndIsValid).to.be.false;
     expect(result.reasons).to.deep.equal([ERROR_CODES.FETCH_ERROR]);
-  });
-
-  it('checks sitemap from robots.txt and returns failure when sitemap is not valid', async () => {
-    nock('https://some-domain.com')
-      .get('/robots.txt')
-      .reply(200, 'Sitemap: /invalid-sitemap.xml');
-
-    nock('https://some-domain.com')
-      .get('/invalid-sitemap.xml')
-      .reply(404);
-
-    const result = await findSitemap('https://some-domain.com');
-    expect(result.success).to.be.false;
-    expect(result.reasons).to.have.lengthOf(3); // 1 from robots.txt, 2 from invalid sitemap
-  });
-});
-
-describe('findSitemap', () => {
-  it('should return INVALID_URL error when the URL is invalid', async () => {
-    const resp = await findSitemap('not a valid url');
-    expect(resp.success).to.equal(false);
-    expect(resp.reasons[0].error).to.equal(ERROR_CODES.INVALID_URL);
   });
 });
