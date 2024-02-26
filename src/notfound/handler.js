@@ -12,6 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
+import { dateAfterDays } from '@adobe/spacecat-shared-utils';
 import { retrieveSiteByURL } from '../utils/data-access.js';
 import {
   getRUMUrl,
@@ -61,9 +62,9 @@ async function processAuditResult(
     siteId: site.getId(),
     auditType: AUDIT_TYPE,
     auditedAt: new Date().toISOString(),
-    fullAuditRef: rumAPIClient.create404URL({ url: auditContext.finalUrl }),
+    fullAuditRef: rumAPIClient.create404URL(auditContext),
     isLive: site.isLive(),
-    auditResult: { result, finalUrl: auditContext.finalUrl },
+    auditResult: { result, finalUrl: auditContext.url },
   };
   try {
     log.info(`Saving audit ${JSON.stringify(auditData)}`);
@@ -72,7 +73,7 @@ async function processAuditResult(
     await sqs.sendMessage(queueUrl, {
       type: AUDIT_TYPE,
       url: site.getBaseURL(),
-      auditContext,
+      auditContext: { finalUrl: auditContext.url },
       auditResult: result,
     });
   } catch (e) {
@@ -98,9 +99,13 @@ export default async function audit404(message, context) {
     const finalUrl = await getRUMUrl(url);
 
     const rumAPIClient = RUMAPIClient.createFrom(context);
+    const startDate = dateAfterDays(-7);
 
     const params = {
       url: finalUrl,
+      interval: -1,
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0],
     };
 
     const data = await rumAPIClient.get404Sources(params);
@@ -108,7 +113,7 @@ export default async function audit404(message, context) {
     await processAuditResult(
       { ...context, rumAPIClient },
       site,
-      { finalUrl },
+      params,
       queueUrl,
       auditResult,
       log,
