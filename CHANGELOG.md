@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.21...v1.9.0) (2024-02-27)
+
+
+### Features
+
+* change 404 query params ([7f566b4](https://github.com/adobe/spacecat-audit-worker/commit/7f566b462e83bfe9d28ad23c577428faeb1355ac))
+
 ## [1.8.21](https://github.com/adobe/spacecat-audit-worker/compare/v1.8.20...v1.8.21) (2024-02-26)
 
 
