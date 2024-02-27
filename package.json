@@ -58,7 +58,7 @@
     "@adobe/spacecat-shared-data-access": "1.18.1",
     "@adobe/spacecat-shared-http-utils": "1.1.3",
     "@adobe/spacecat-shared-rum-api-client": "1.6.4",
-    "@adobe/spacecat-shared-utils": "1.11.6",
+    "@adobe/spacecat-shared-utils": "1.12.1",
     "@aws-sdk/client-sqs": "3.521.0",
     "diff": "5.2.0",
     "urijs": "1.19.11"
