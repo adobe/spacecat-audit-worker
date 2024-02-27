@@ -13,9 +13,9 @@
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
+import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '../support/ahrefs-client.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { getRUMUrl } from '../support/utils.js';
 
 export default async function auditBrokenBacklinks(message, context) {
   const { type, url: siteId, auditContext = {} } = message;
@@ -51,7 +51,7 @@ export default async function auditBrokenBacklinks(message, context) {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
 
     try {
-      auditContext.finalUrl = await getRUMUrl(site.getBaseURL());
+      auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
     } catch (e) {
       log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
       return internalServerError(`Internal server error: ${e.message}`);
