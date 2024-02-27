@@ -22,6 +22,7 @@ import cwv from './cwv/handler.js';
 import lhs from './lhs/handler.js';
 import notfound from './notfound/handler.js';
 import backlinks from './backlinks/handler.js';
+import experimentation from './experimentation/handler.js';
 import organicTraffic from './organictraffic/handler.js';
 
 const HANDLERS = {
@@ -30,6 +31,7 @@ const HANDLERS = {
   'lhs-mobile': lhs,
   'lhs-desktop': lhs,
   404: notfound,
+  experimentation,
   'broken-backlinks': backlinks,
   'organic-traffic': organicTraffic,
 };
