@@ -1,3 +1,10 @@
+## [1.9.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.9.3...v1.9.4) (2024-02-28)
+
+
+### Bug Fixes
+
+* use only finalUrl for the broken backlinks audit ([#146](https://github.com/adobe/spacecat-audit-worker/issues/146)) ([2b40212](https://github.com/adobe/spacecat-audit-worker/commit/2b4021227cc9afb9bd55652eb37a150fa3b2e6fd))
+
 ## [1.9.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.9.2...v1.9.3) (2024-02-27)
 
 

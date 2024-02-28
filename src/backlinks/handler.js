@@ -13,12 +13,12 @@
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
+import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '../support/ahrefs-client.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { toggleWWW } from '../apex/handler.js';
 
 export default async function auditBrokenBacklinks(message, context) {
-  const { type, url: siteId, auditContext } = message;
+  const { type, url: siteId, auditContext = {} } = message;
   const { dataAccess, log, sqs } = context;
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
@@ -49,44 +49,42 @@ export default async function auditBrokenBacklinks(message, context) {
     }
 
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const urls = [...new Set([site.getBaseURL(), toggleWWW(site.getBaseURL())])];
 
-    const results = await Promise.all(urls.map(async (url) => {
-      try {
-        const {
-          result,
-          fullAuditRef,
-        } = await ahrefsAPIClient.getBrokenBacklinks(url);
+    try {
+      auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
+    } catch (e) {
+      log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
+      return internalServerError(`Internal server error: ${e.message}`);
+    }
 
-        log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${url}`);
+    let auditResult;
+    try {
+      const {
+        result,
+        fullAuditRef,
+      } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
+      log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
 
-        return {
-          url,
-          brokenBacklinks: result.backlinks,
-          fullAuditRef,
-        };
-      } catch (e) {
-        log.error(`${type} type audit for ${siteId} with url ${url} failed with error: ${e.message}`, e);
-        return {
-          url,
-          error: `${type} type audit for ${siteId} with url ${url} failed with error`,
-        };
-      }
-    }));
-
-    const auditResult = results.reduce((acc, item) => {
-      const { url, ...rest } = item;
-      acc[url] = rest;
-      return acc;
-    }, {});
+      auditResult = {
+        finalUrl: auditContext.finalUrl,
+        brokenBacklinks: result?.backlinks,
+        fullAuditRef,
+      };
+    } catch (e) {
+      log.error(`${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error: ${e.message}`, e);
+      auditResult = {
+        finalUrl: auditContext.finalUrl,
+        error: `${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error`,
+      };
+    }
 
     const auditData = {
       siteId: site.getId(),
       isLive: site.isLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
+      fullAuditRef: auditResult?.fullAuditRef,
       auditResult,
-      fullAuditRef: results?.[0]?.fullAuditRef,
     };
 
     await dataAccess.addAudit(auditData);
