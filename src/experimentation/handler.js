@@ -33,6 +33,8 @@ function processRUMResponse(data) {
       experiment: row.experiment,
       p_value: row.p_value,
       variant: row.variant,
+      variant_experimentation_events: row.variant_experimentation_events,
+      variant_conversion_events: row.variant_conversion_events,
       variant_experimentations: row.variant_experimentations,
       variant_conversions: row.variant_conversions,
       variant_conversion_rate: row.variant_conversion_rate,
