@@ -1,3 +1,10 @@
+## [1.9.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.9.5...v1.9.6) (2024-02-28)
+
+
+### Bug Fixes
+
+* including additional parameters for experimentation data ([#155](https://github.com/adobe/spacecat-audit-worker/issues/155)) ([a944504](https://github.com/adobe/spacecat-audit-worker/commit/a944504973d9b83d2784551ba7d7adc21d3943cc))
+
 ## [1.9.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.9.4...v1.9.5) (2024-02-28)
 
 
