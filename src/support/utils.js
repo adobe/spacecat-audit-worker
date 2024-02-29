@@ -64,9 +64,8 @@ export async function findSitemap(inputUrl) {
   if (!parsedUrl) {
     logMessages.push({
       value: inputUrl,
-      info: ERROR_CODES.INVALID_URL,
+      error: ERROR_CODES.INVALID_URL,
     });
-    console.log(logMessages.join(' '));
     return {
       success: false,
       reasons: logMessages,
@@ -75,7 +74,7 @@ export async function findSitemap(inputUrl) {
 
   const { protocol, domain } = parsedUrl;
 
-  // Check sitemap from robots.txt
+  // Check sitemap path in robots.txt
   const robotsResult = await checkRobotsForSitemap(protocol, domain);
   logMessages.push(...robotsResult.reasons.map((reason) => ({
     value: parsedUrl,
@@ -85,10 +84,9 @@ export async function findSitemap(inputUrl) {
     const sitemapResult = await checkSitemap(robotsResult.path);
     logMessages.push(...sitemapResult.reasons.map((reason) => ({
       value: robotsResult.path,
-      info: reason,
+      e: reason,
     })));
     if (sitemapResult.existsAndIsValid) {
-      console.log(logMessages.join(' '));
       return {
         success: true,
         reasons: logMessages,
@@ -98,41 +96,38 @@ export async function findSitemap(inputUrl) {
   } else {
     logMessages.push(...robotsResult.reasons.map((reason) => ({
       value: parsedUrl,
-      info: reason,
+      error: reason,
     })));
   }
 
-  // Check /sitemap.xml
+  // Check sitemap.xml
   const assumedSitemapUrl = `${protocol}://${domain}/sitemap.xml`;
   const sitemapResult = await checkSitemap(assumedSitemapUrl);
   logMessages.push(...sitemapResult.reasons.map((reason) => ({
     value: assumedSitemapUrl,
-    info: reason,
+    error: reason,
   })));
   if (sitemapResult.existsAndIsValid) {
-    console.log(logMessages.join(' '));
     return {
       success: true,
       reasons: logMessages,
       paths: [assumedSitemapUrl],
     };
   } else {
-    // optimization: change from array of err messages to objects with the {item: url1, error: err1}
     logMessages.push(...robotsResult.reasons.map((reason) => ({
       value: assumedSitemapUrl,
-      info: reason,
+      error: reason,
     })));
   }
 
-  // Check /sitemap_index.xml
+  // Check sitemap_index.xml
   const sitemapIndexUrl = `${protocol}://${domain}/sitemap_index.xml`;
   const sitemapIndexResult = await checkSitemap(sitemapIndexUrl);
   logMessages.push(...sitemapIndexResult.reasons.map((reason) => ({
     value: sitemapIndexUrl,
-    info: reason,
+    error: reason,
   })));
   if (sitemapIndexResult.existsAndIsValid) {
-    console.log(logMessages.join(' '));
     return {
       success: true,
       reasons: logMessages,
@@ -141,11 +136,10 @@ export async function findSitemap(inputUrl) {
   } else if (sitemapIndexResult.reasons.includes(ERROR_CODES.SITEMAP_NOT_FOUND)) {
     logMessages.push({
       value: sitemapIndexUrl,
-      info: ERROR_CODES.SITEMAP_INDEX_NOT_FOUND,
+      error: ERROR_CODES.SITEMAP_INDEX_NOT_FOUND,
     });
   }
 
-  console.log(logMessages.join(' '));
   return {
     success: false,
     reasons: logMessages,
