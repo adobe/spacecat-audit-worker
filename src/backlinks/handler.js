@@ -10,53 +10,96 @@
  * governing permissions and limitations under the License.
  */
 
+import {
+  internalServerError, noContent, notFound, ok,
+} from '@adobe/spacecat-shared-http-utils';
+import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '../support/ahrefs-client.js';
-import { toggleWWW } from '../apex/handler.js';
-import { AuditBuilder } from '../common/audit-builder.js';
+import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
-async function backlinkAuditRunner(finalUrl, context) {
-  const { log } = context;
+export default async function auditBrokenBacklinks(message, context) {
+  const { type, url: siteId, auditContext = {} } = message;
+  const { dataAccess, log, sqs } = context;
+  const {
+    AUDIT_RESULTS_QUEUE_URL: queueUrl,
+  } = context.env;
 
-  const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-  const urls = [...new Set([finalUrl, toggleWWW(finalUrl)])];
+  try {
+    log.info(`Received ${type} audit request for siteId: ${siteId}`);
 
-  const results = await Promise.all(urls.map(async (url) => {
+    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
+    if (!site) {
+      return notFound('Site not found');
+    }
+
+    if (!site.isLive()) {
+      log.info(`Site ${siteId} is not live`);
+      return ok();
+    }
+
+    const auditConfig = site.getAuditConfig();
+    if (auditConfig.auditsDisabled()) {
+      log.info(`Audits disabled for site ${siteId}`);
+      return ok();
+    }
+
+    if (auditConfig.getAuditTypeConfig(type)?.disabled()) {
+      log.info(`Audit type ${type} disabled for site ${siteId}`);
+      return ok();
+    }
+
+    const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
+
+    try {
+      auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
+    } catch (e) {
+      log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
+      return internalServerError(`Internal server error: ${e.message}`);
+    }
+
+    let auditResult;
     try {
       const {
         result,
         fullAuditRef,
-      } = await ahrefsAPIClient.getBrokenBacklinks(url);
+      } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
+      log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
 
-      log.info(`Found ${result?.backlinks?.length} broken backlinks for ${url}`);
-
-      return {
-        url,
-        brokenBacklinks: result.backlinks,
+      auditResult = {
+        finalUrl: auditContext.finalUrl,
+        brokenBacklinks: result?.backlinks,
         fullAuditRef,
       };
     } catch (e) {
-      log.error(`Broken backlinks audit for ${url} failed with error: ${e.message}`, e);
-      return {
-        url,
-        error: `Broken backlinks audit for ${url} failed with error`,
+      log.error(`${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error: ${e.message}`, e);
+      auditResult = {
+        finalUrl: auditContext.finalUrl,
+        error: `${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error`,
       };
     }
-  }));
 
-  const auditResult = results.reduce((acc, item) => {
-    const { url, ...rest } = item;
-    acc[url] = rest;
-    return acc;
-  }, {});
+    const auditData = {
+      siteId: site.getId(),
+      isLive: site.isLive(),
+      auditedAt: new Date().toISOString(),
+      auditType: type,
+      fullAuditRef: auditResult?.fullAuditRef,
+      auditResult,
+    };
 
-  return {
-    auditResult,
-    fullAuditRef: results?.[0]?.fullAuditRef,
-  };
-}
+    await dataAccess.addAudit(auditData);
 
-export default function handler() {
-  return new AuditBuilder()
-    .withRunner(backlinkAuditRunner)
-    .build();
+    await sqs.sendMessage(queueUrl, {
+      type,
+      url: site.getBaseURL(),
+      auditContext,
+      auditResult,
+    });
+
+    log.info(`Successfully audited ${siteId} for ${type} type audit`);
+    return noContent();
+  } catch (e) {
+    log.error(`${type} type audit for ${siteId} failed with error: ${e.message}`, e);
+    return internalServerError(`Internal server error: ${e.message}`);
+  }
 }
