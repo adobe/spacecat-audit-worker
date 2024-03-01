@@ -52,13 +52,17 @@ export async function checkRobotsForSitemap(protocol, domain) {
   const robotsUrl = `${protocol}://${domain}/robots.txt`;
   try {
     const robotsContent = await fetchContent(robotsUrl);
-    const sitemapMatch = robotsContent.match(/Sitemap:\s*(.*)/i);
-    return sitemapMatch && sitemapMatch[1]
-      ? { path: sitemapMatch[1].trim(), reasons: [] }
-      : { path: null, reasons: [ERROR_CODES.NO_SITEMAP_IN_ROBOTS] };
+    if (robotsContent !== null) {
+      const sitemapMatch = robotsContent.match(/Sitemap:\s*(.*)/i);
+      if (sitemapMatch && sitemapMatch[1]) {
+        return { path: sitemapMatch[1].trim(), reasons: [] };
+      }
+      return { path: null, reasons: [ERROR_CODES.NO_SITEMAP_IN_ROBOTS] };
+    }
   } catch (error) {
-    return { path: null, reasons: [ERROR_CODES.ROBOTS_NOT_FOUND] };
+    // ignore
   }
+  return { path: null, reasons: [ERROR_CODES.ROBOTS_NOT_FOUND] };
 }
 
 /**

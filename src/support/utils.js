@@ -76,37 +76,34 @@ export async function findSitemap(inputUrl) {
 
   // Check sitemap path in robots.txt
   const robotsResult = await checkRobotsForSitemap(protocol, domain);
-  logMessages.push(...robotsResult.reasons.map((reason) => ({
-    value: parsedUrl,
-    error: reason,
-  })));
-  if (robotsResult.path) {
-    const sitemapResult = await checkSitemap(robotsResult.path);
+  if (!robotsResult.path) {
+    logMessages.push(...robotsResult.reasons.map((reason) => ({
+      value: `${inputUrl}/robots.txt`,
+      error: reason,
+    })));
+  } else if (robotsResult.path.length > 2) {
+    let sitemapUrlFromRobots = robotsResult.path;
+    if (robotsResult.path[0] === '/' && robotsResult.path[1] !== '/') {
+      sitemapUrlFromRobots = `${protocol}://${domain}${sitemapUrlFromRobots}`;
+    }
+
+    const sitemapResult = await checkSitemap(sitemapUrlFromRobots);
     logMessages.push(...sitemapResult.reasons.map((reason) => ({
-      value: robotsResult.path,
+      value: sitemapUrlFromRobots,
       e: reason,
     })));
     if (sitemapResult.existsAndIsValid) {
       return {
         success: true,
         reasons: logMessages,
-        paths: [robotsResult.path],
+        paths: [sitemapUrlFromRobots],
       };
     }
-  } else {
-    logMessages.push(...robotsResult.reasons.map((reason) => ({
-      value: parsedUrl,
-      error: reason,
-    })));
   }
 
   // Check sitemap.xml
   const assumedSitemapUrl = `${protocol}://${domain}/sitemap.xml`;
   const sitemapResult = await checkSitemap(assumedSitemapUrl);
-  logMessages.push(...sitemapResult.reasons.map((reason) => ({
-    value: assumedSitemapUrl,
-    error: reason,
-  })));
   if (sitemapResult.existsAndIsValid) {
     return {
       success: true,
@@ -114,7 +111,7 @@ export async function findSitemap(inputUrl) {
       paths: [assumedSitemapUrl],
     };
   } else {
-    logMessages.push(...robotsResult.reasons.map((reason) => ({
+    logMessages.push(...sitemapResult.reasons.map((reason) => ({
       value: assumedSitemapUrl,
       error: reason,
     })));
