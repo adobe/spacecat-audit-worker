@@ -60,3 +60,16 @@ export async function retrieveSiteByURL(dataAccess, url, log) {
     throw new Error(`Error getting site ${url}: ${e.message}`);
   }
 }
+
+export async function retrieveLatestAuditOfTypeForSite(dataAccess, siteId, auditType, log) {
+  try {
+    const audit = await dataAccess.getLatestAuditForSite(siteId, auditType);
+    if (!isObject(audit)) {
+      log.warn(`Audit not found for site: ${siteId}`);
+      return null;
+    }
+    return audit;
+  } catch (e) {
+    throw new Error(`Error getting audit for site ${siteId}: ${e.message}`);
+  }
+}

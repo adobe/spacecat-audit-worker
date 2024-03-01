@@ -23,6 +23,7 @@ import lhs from './lhs/handler.js';
 import notfound from './notfound/handler.js';
 import backlinks from './backlinks/handler.js';
 import experimentation from './experimentation/handler.js';
+import organicTraffic from './organictraffic/handler.js';
 
 const HANDLERS = {
   apex,
@@ -30,8 +31,9 @@ const HANDLERS = {
   'lhs-mobile': lhs,
   'lhs-desktop': lhs,
   404: notfound,
-  'broken-backlinks': backlinks,
   experimentation,
+  'broken-backlinks': backlinks,
+  'organic-traffic': organicTraffic,
 };
 
 /**
