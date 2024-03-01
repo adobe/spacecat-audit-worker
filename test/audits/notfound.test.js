@@ -30,11 +30,22 @@ describe('Index Tests', () => {
   let context;
   let messageBodyJson;
   let site;
+  let sandbox;
+  before('setup', () => {
+    sandbox = sinon.createSandbox();
+    const mockDate = '2023-11-27T12:30:01.124Z';
+    sandbox.useFakeTimers({
+      now: new Date(mockDate).getTime(),
+    });
+  });
 
+  after('clean', () => {
+    sandbox.restore();
+  });
   beforeEach('setup', () => {
     const siteData = {
       id: 'site1',
-      baseURL: 'https://adobe.com',
+      baseURL: 'https://abc.com',
     };
 
     site = createSite(siteData);
@@ -45,9 +56,9 @@ describe('Index Tests', () => {
     };
     messageBodyJson = {
       type: '404',
-      url: 'https://adobe.com',
+      url: 'https://abc.com',
       auditContext: {
-        finalUrl: 'adobe.com',
+        finalUrl: 'abc.com',
       },
     };
     context = {
@@ -78,22 +89,27 @@ describe('Index Tests', () => {
   });
 
   it('fetch 404s for base url > process > send results', async () => {
-    nock('https://adobe.com')
+    nock('https://abc.com')
       .get('/')
       .reply(200);
     context.rumApiClient = {
-      get404Sources: async () => Promise.resolve(notFoundData.results.data),
-      create404URL: () => 'https://url.com',
+      get404Sources: sinon.stub().resolves(notFoundData.results.data),
+      create404URL: () => 'abc.com',
     };
     const resp = await main(request, context);
 
     expect(resp.status).to.equal(204);
+    expect(context.rumApiClient.get404Sources).calledWith({
+      url: 'abc.com',
+      interval: -1,
+      startdate: '2023-11-20',
+      enddate: '2023-11-27',
+    });
     expect(context.dataAccess.addAudit).to.have.been.calledOnce;
     const expectedMessage = {
       ...messageBodyJson,
       auditResult: expectedAuditResult,
     };
-
     expect(resp.status).to.equal(204);
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been

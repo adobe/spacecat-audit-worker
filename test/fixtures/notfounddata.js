@@ -11,12 +11,12 @@
  */
 export const expectedAuditResult = [
   {
-    url: 'https://www.adobe.com/kr/acrobat/hub/how-to/how-to-convert-pdf-to-image.html',
+    url: 'https://www.abc.com/kr/acrobat/hub/how-to/how-to-convert-pdf-to-image.html',
     pageviews: '10000',
     source: 'https://post.naver.com/viewer/postView.naver',
   },
   {
-    url: 'https://www.adobe.com/sea/acrobat/online/merge-pdf.html',
+    url: 'https://www.abc.com/sea/acrobat/online/merge-pdf.html',
     pageviews: '8000',
     source: 'https://brandinside.asia/',
   },
@@ -37,7 +37,7 @@ export const notFoundData = {
         ids: 7,
         views: '10000',
         actions: '10000',
-        topurl: 'https://www.adobe.com/kr/acrobat/hub/how-to/how-to-convert-pdf-to-image.html',
+        topurl: 'https://www.abc.com/kr/acrobat/hub/how-to/how-to-convert-pdf-to-image.html',
         checkpoint: '404',
         source: 'https://post.naver.com/viewer/postView.naver',
         actions_per_view: '1',
@@ -46,7 +46,7 @@ export const notFoundData = {
         ids: 4,
         views: '8000',
         actions: '8000',
-        topurl: 'https://www.adobe.com/sea/acrobat/online/merge-pdf.html',
+        topurl: 'https://www.abc.com/sea/acrobat/online/merge-pdf.html',
         checkpoint: '404',
         source: 'https://brandinside.asia/',
         actions_per_view: '1',
@@ -55,7 +55,7 @@ export const notFoundData = {
         ids: 9,
         views: '700',
         actions: '400',
-        topurl: 'https://www.adobe.com/sea/acrobat/online/pdf-to-word.html',
+        topurl: 'https://www.abc.com/sea/acrobat/online/pdf-to-word.html',
         checkpoint: '404',
         source: '',
         actions_per_view: '1',
@@ -64,7 +64,7 @@ export const notFoundData = {
         ids: 11,
         views: '100',
         actions: '100',
-        topurl: 'https://www.adobe.com/sea/acrobat/online/pdf-to-word22.html',
+        topurl: 'https://www.abc.com/sea/acrobat/online/pdf-to-word22.html',
         checkpoint: '404',
         source: 'https://www.abc.com/',
         actions_per_view: '1',
@@ -127,7 +127,7 @@ export const notFoundData = {
       },
       {
         name: 'url',
-        value: 'www.adobe.com',
+        value: 'www.abc.com',
         type: 'request parameter',
       },
       {

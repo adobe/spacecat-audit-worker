@@ -107,8 +107,8 @@ export default async function audit404(message, context) {
     const params = {
       url: finalUrl,
       interval: -1,
-      startDate: startDate.toISOString().split('T')[0],
-      endDate: new Date().toISOString().split('T')[0],
+      startdate: startDate.toISOString().split('T')[0],
+      enddate: new Date().toISOString().split('T')[0],
     };
 
     const data = await rumAPIClient.get404Sources(params);
