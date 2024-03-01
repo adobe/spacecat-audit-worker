@@ -25,22 +25,27 @@ import { expectedAuditResult, notFoundData } from '../fixtures/notfounddata.js';
 chai.use(sinonChai);
 const { expect } = chai;
 
-const DOMAIN_REQUEST_DEFAULT_PARAMS = {
-  interval: 7,
-  offset: 0,
-  limit: 101,
-};
-
 describe('Index Tests', () => {
   const request = new Request('https://space.cat');
   let context;
   let messageBodyJson;
   let site;
+  let sandbox;
+  before('setup', () => {
+    sandbox = sinon.createSandbox();
+    const mockDate = '2023-11-27T12:30:01.124Z';
+    sandbox.useFakeTimers({
+      now: new Date(mockDate).getTime(),
+    });
+  });
 
+  after('clean', () => {
+    sandbox.restore();
+  });
   beforeEach('setup', () => {
     const siteData = {
       id: 'site1',
-      baseURL: 'https://adobe.com',
+      baseURL: 'https://abc.com',
     };
 
     site = createSite(siteData);
@@ -51,9 +56,9 @@ describe('Index Tests', () => {
     };
     messageBodyJson = {
       type: '404',
-      url: 'https://adobe.com',
+      url: 'https://abc.com',
       auditContext: {
-        finalUrl: 'adobe.com',
+        finalUrl: 'abc.com',
       },
     };
     context = {
@@ -63,7 +68,6 @@ describe('Index Tests', () => {
       },
       env: {
         AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
-        RUM_DOMAIN_KEY: 'domainkey',
       },
       invocation: {
         event: {
@@ -85,28 +89,27 @@ describe('Index Tests', () => {
   });
 
   it('fetch 404s for base url > process > send results', async () => {
-    nock('https://adobe.com')
+    nock('https://abc.com')
       .get('/')
       .reply(200);
-    nock('https://helix-pages.anywhere.run')
-      .get('/helix-services/run-query@v3/rum-sources')
-      .query({
-        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-        domainkey: context.env.RUM_DOMAIN_KEY,
-        checkpoint: 404,
-        url: 'adobe.com',
-      })
-      .reply(200, notFoundData);
-
+    context.rumApiClient = {
+      get404Sources: sinon.stub().resolves(notFoundData.results.data),
+      create404URL: () => 'abc.com',
+    };
     const resp = await main(request, context);
 
     expect(resp.status).to.equal(204);
+    expect(context.rumApiClient.get404Sources).calledWith({
+      url: 'abc.com',
+      interval: -1,
+      startdate: '2023-11-20',
+      enddate: '2023-11-27',
+    });
     expect(context.dataAccess.addAudit).to.have.been.calledOnce;
     const expectedMessage = {
       ...messageBodyJson,
       auditResult: expectedAuditResult,
     };
-
     expect(resp.status).to.equal(204);
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
@@ -126,15 +129,6 @@ describe('Index Tests', () => {
     nock('https://adobe.com')
       .get('/')
       .reply(200);
-    nock('https://helix-pages.anywhere.run')
-      .get('/helix-services/run-query@v3/rum-sources')
-      .query({
-        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-        domainkey: context.env.RUM_DOMAIN_KEY,
-        checkpoint: 404,
-        url: 'adobe.com',
-      })
-      .replyWithError('Bad request');
     const noSiteContext = { ...context };
     noSiteContext.dataAccess.getSiteByBaseURL = sinon.stub().resolves(null);
 
@@ -147,16 +141,7 @@ describe('Index Tests', () => {
     nock('https://adobe.com')
       .get('/')
       .reply(200);
-    nock('https://helix-pages.anywhere.run')
-      .get('/helix-services/run-query@v3/rum-sources')
-      .query({
-        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-        domainkey: context.env.RUM_DOMAIN_KEY,
-        checkpoint: 404,
-        url: 'adobe.com',
-      })
-      .replyWithError('Bad request');
-
+    context.rumApiClient = { get404Sources: async () => Promise.reject(new Error('Error')) };
     const resp = await main(request, context);
 
     expect(resp.status).to.equal(500);
@@ -166,15 +151,10 @@ describe('Index Tests', () => {
     nock('https://adobe.com')
       .get('/')
       .reply(200);
-    nock('https://helix-pages.anywhere.run')
-      .get('/helix-services/run-query@v3/rum-sources')
-      .query({
-        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-        domainkey: context.env.RUM_DOMAIN_KEY,
-        checkpoint: 404,
-        url: 'adobe.com',
-      })
-      .reply(200, notFoundData);
+    context.rumApiClient = {
+      get404Sources: async () => Promise.resolve(notFoundData.results.data),
+      create404URL: () => 'https://url.com',
+    };
     const auditFailContext = { ...context };
     auditFailContext.dataAccess.addAudit = sinon.stub().rejects('Error adding audit');
 
