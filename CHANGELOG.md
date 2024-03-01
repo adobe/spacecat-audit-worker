@@ -1,3 +1,10 @@
+## [1.9.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.9.8...v1.9.9) (2024-03-01)
+
+
+### Bug Fixes
+
+* start date and end date params ([9959b47](https://github.com/adobe/spacecat-audit-worker/commit/9959b479057cc36f70a2db818c8e9083ebaa4087))
+
 ## [1.9.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.9.7...v1.9.8) (2024-02-29)
 
 
