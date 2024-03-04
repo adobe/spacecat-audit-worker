@@ -54,12 +54,12 @@ describe('Backlinks Tests', () => {
       {
         title: 'backlink title',
         url_from: 'https://from.com/from-1',
-        url_to: 'https://www.abcd.com/to-1',
+        url_to: 'https://foo.com/to-1',
       },
       {
         title: 'backlink title 2',
         url_from: 'https://from.com/from-2',
-        url_to: 'https://www.abcd.com/to-2',
+        url_to: 'https://foo.com/to-2',
       },
     ],
   };
@@ -93,6 +93,18 @@ describe('Backlinks Tests', () => {
         sendMessage: sandbox.stub().resolves(),
       },
     };
+
+    nock('https://foo.com')
+      .get('/to-1')
+      .reply(404);
+
+    nock('https://foo.com')
+      .get('/to-2')
+      .reply(301, undefined, { location: 'https://www.foo.com/to-2' });
+
+    nock('https://www.foo.com')
+      .get('/to-2')
+      .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
   });
 
   afterEach(() => {
@@ -135,9 +147,7 @@ describe('Backlinks Tests', () => {
   });
 
   it('should successfully perform an audit to detect broken backlinks and set finalUrl, for baseUrl redirecting to www domain', async () => {
-    const getSiteByIdStub = sinon.stub();
-    getSiteByIdStub.withArgs('site2').resolves(site2);
-    mockDataAccess.getSiteByID = getSiteByIdStub;
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
 
     nock(site2.getBaseURL())
       .get(/.*/)
@@ -176,37 +186,37 @@ describe('Backlinks Tests', () => {
     expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
   });
 
-  it('should filter out from audit result broken backlinks the ones that return ok (even after redirection)', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
+  it('should filter out from audit result broken backlinks the ones that return ok (even with redirection)', async () => {
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
 
     const fixedBacklinks = [
       {
         title: 'fixed backlink title',
-        url_from: 'https://from.com/fixed',
-        url_to: 'https://www.abcd.com/to-1',
+        url_from: 'https://from.com/from-1',
+        url_to: 'https://foo.com/fixed',
       },
       {
         title: 'fixed backlink title 2',
-        url_from: 'https://from.com/fixed-via-redirect',
-        url_to: 'https://www.abcd.com/to-2',
+        url_from: 'https://from.com/from-2',
+        url_to: 'https://foo.com/fixed-via-redirect',
       },
     ];
     const allBacklinks = auditResult.backlinks.concat(fixedBacklinks);
 
-    nock('https://from.com')
+    nock('https://foo.com')
       .get('/fixed')
       .reply(200);
 
-    nock('https://from.com')
+    nock('https://foo.com')
       .get('/fixed-via-redirect')
-      .reply(301, undefined, { location: 'https://www.from.com/fixed-via-redirect' });
+      .reply(301, undefined, { location: 'https://www.foo.com/fixed-via-redirect' });
 
-    nock('https://www.from.com')
+    nock('https://www.foo.com')
       .get('/fixed-via-redirect')
       .reply(200);
 
-    nock(site.getBaseURL())
-      .get(/.*/)
+    nock(site2.getBaseURL())
+      .get('/')
       .reply(200);
 
     nock('https://ahrefs.com')
@@ -215,25 +225,27 @@ describe('Backlinks Tests', () => {
 
     const expectedMessage = {
       type: message.type,
-      url: site.getBaseURL(),
+      url: site2.getBaseURL(),
       auditContext: {
-        finalUrl: 'bar.foo.com',
+        finalUrl: 'foo.com',
       },
       auditResult: {
-        finalUrl: 'bar.foo.com',
+        finalUrl: 'foo.com',
         brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=bar.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
+        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
       },
     };
 
-    const response = await auditBrokenBacklinks(message, context);
+    const response = await auditBrokenBacklinks({
+      url: site2.getId(), type: 'broken-backlinks',
+    }, context);
 
     expect(response.status).to.equal(204);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-    expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
+    expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
   });
 
   it('returns a 404 when site does not exist', async () => {
