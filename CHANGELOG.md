@@ -1,3 +1,10 @@
+## [1.10.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.0...v1.10.1) (2024-03-05)
+
+
+### Bug Fixes
+
+* broken backlinks filter backlinks returning ok ([#165](https://github.com/adobe/spacecat-audit-worker/issues/165)) ([4062ae0](https://github.com/adobe/spacecat-audit-worker/commit/4062ae010a14f4de2994cd445a9cac7884276cb2))
+
 # [1.10.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.9.11...v1.10.0) (2024-03-04)
 
 
