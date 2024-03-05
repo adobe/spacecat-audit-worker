@@ -52,14 +52,19 @@ describe('Backlinks Tests', () => {
   const auditResult = {
     backlinks: [
       {
-        title: 'backlink title',
+        title: 'backlink that returns 404',
         url_from: 'https://from.com/from-1',
-        url_to: 'https://foo.com/to-1',
+        url_to: 'https://foo.com/returns-404',
       },
       {
-        title: 'backlink title 2',
+        title: 'backlink that redirects to www and throw connection error',
         url_from: 'https://from.com/from-2',
-        url_to: 'https://foo.com/to-2',
+        url_to: 'https://foo.com/redirects-throws-error',
+      },
+      {
+        title: 'backlink that returns 429',
+        url_from: 'https://from.com/from-3',
+        url_to: 'https://foo.com/returns-429',
       },
     ],
   };
@@ -95,16 +100,20 @@ describe('Backlinks Tests', () => {
     };
 
     nock('https://foo.com')
-      .get('/to-1')
+      .get('/returns-404')
       .reply(404);
 
     nock('https://foo.com')
-      .get('/to-2')
-      .reply(301, undefined, { location: 'https://www.foo.com/to-2' });
+      .get('/redirects-throws-error')
+      .reply(301, undefined, { location: 'https://www.foo.com/redirects-throws-error' });
 
     nock('https://www.foo.com')
-      .get('/to-2')
+      .get('/redirects-throws-error')
       .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
+
+    nock('https://foo.com')
+      .get('/returns-429')
+      .reply(429);
   });
 
   afterEach(() => {
@@ -191,12 +200,12 @@ describe('Backlinks Tests', () => {
 
     const fixedBacklinks = [
       {
-        title: 'fixed backlink title',
+        title: 'fixed backlink',
         url_from: 'https://from.com/from-1',
         url_to: 'https://foo.com/fixed',
       },
       {
-        title: 'fixed backlink title 2',
+        title: 'fixed backlink via redirect',
         url_from: 'https://from.com/from-2',
         url_to: 'https://foo.com/fixed-via-redirect',
       },
@@ -245,6 +254,7 @@ describe('Backlinks Tests', () => {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+    expect(context.log.warn).to.have.been.calledWith('Backlink https://foo.com/returns-429 returned status 429');
     expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
   });
 

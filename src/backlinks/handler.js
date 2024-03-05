@@ -22,6 +22,10 @@ async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
     try {
       const response = await fetch(backlink.url_to);
+      if (!response.ok && response.status !== 404
+        && response.status >= 400 && response.status < 500) {
+        log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
+      }
       return !response.ok;
     } catch (error) {
       log.error(`Failed to check backlink ${backlink.url_to}: ${error}`);
