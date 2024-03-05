@@ -16,6 +16,26 @@ import {
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '../support/ahrefs-client.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { fetch } from '../support/utils.js';
+
+async function filterOutValidBacklinks(backlinks, log) {
+  const isStillBrokenBacklink = async (backlink) => {
+    try {
+      const response = await fetch(backlink.url_to);
+      if (!response.ok && response.status !== 404
+        && response.status >= 400 && response.status < 500) {
+        log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
+      }
+      return !response.ok;
+    } catch (error) {
+      log.error(`Failed to check backlink ${backlink.url_to}: ${error}`);
+      return true;
+    }
+  };
+
+  const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
+  return backlinks.filter((_, index) => backlinkStatuses[index]);
+}
 
 export default async function auditBrokenBacklinks(message, context) {
   const { type, url: siteId, auditContext = {} } = message;
@@ -65,9 +85,11 @@ export default async function auditBrokenBacklinks(message, context) {
       } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
       log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
 
+      const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
+
       auditResult = {
         finalUrl: auditContext.finalUrl,
-        brokenBacklinks: result?.backlinks,
+        brokenBacklinks,
         fullAuditRef,
       };
     } catch (e) {
