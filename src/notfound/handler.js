@@ -61,11 +61,14 @@ async function processAuditResult(
   const {
     dataAccess, sqs, rumAPIClient,
   } = services;
+  const fullAuditRef = rumAPIClient.create404URL(auditContext);
+  const fullAuditRefURL = new URL(fullAuditRef);
+  fullAuditRefURL.searchParams.delete('domainkey');
   const auditData = {
     siteId: site.getId(),
     auditType: AUDIT_TYPE,
     auditedAt: new Date().toISOString(),
-    fullAuditRef: rumAPIClient.create404URL(auditContext),
+    fullAuditRef: fullAuditRefURL.toString(),
     isLive: site.isLive(),
     auditResult: { result, finalUrl: auditContext.url },
   };

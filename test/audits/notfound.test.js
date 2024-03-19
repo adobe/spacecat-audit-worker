@@ -94,7 +94,7 @@ describe('Index Tests', () => {
       .reply(200);
     context.rumApiClient = {
       get404Sources: sinon.stub().resolves(notFoundData.results.data),
-      create404URL: () => 'abc.com',
+      create404URL: () => 'https://abc.com',
     };
     const resp = await main(request, context);
 

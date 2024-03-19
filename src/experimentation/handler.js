@@ -72,13 +72,17 @@ export default async function auditExperiments(message, context) {
       finalUrl: auditContext.finalUrl,
     };
 
+    const fullAuditRef = rumAPIClient.createExperimentationURL({ url: auditContext.finalUrl });
+    const fullAuditRefURL = new URL(fullAuditRef);
+    fullAuditRefURL.searchParams.delete('domainkey');
+
     const auditData = {
       siteId: site.getId(),
       isLive: site.isLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
       auditResult,
-      fullAuditRef: rumAPIClient.createExperimentationURL({ url: auditContext.finalUrl }),
+      fullAuditRef: fullAuditRefURL.toString(),
     };
     await dataAccess.addAudit(auditData);
     await sqs.sendMessage(queueUrl, {
