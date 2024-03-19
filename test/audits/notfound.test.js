@@ -31,17 +31,14 @@ describe('Index Tests', () => {
   let messageBodyJson;
   let site;
   let sandbox;
-  before('setup', () => {
+  before('setup', function () {
     sandbox = sinon.createSandbox();
     const mockDate = '2023-11-27T12:30:01.124Z';
-    sandbox.useFakeTimers({
+    this.clock = sandbox.useFakeTimers({
       now: new Date(mockDate).getTime(),
     });
   });
 
-  after('clean', () => {
-    sandbox.restore();
-  });
   beforeEach('setup', () => {
     const siteData = {
       id: 'site1',
@@ -81,6 +78,10 @@ describe('Index Tests', () => {
         sendMessage: sinon.stub().resolves(),
       },
     };
+  });
+
+  after('clean', function () {
+    this.clock.uninstall();
   });
 
   afterEach(() => {

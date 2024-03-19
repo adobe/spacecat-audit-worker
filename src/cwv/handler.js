@@ -12,9 +12,8 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
-import {
-  getRUMUrl,
-} from '../support/utils.js';
+import { composeAuditURL } from '@adobe/spacecat-shared-utils';
+import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 const PAGEVIEW_THRESHOLD = 7000;
 
@@ -43,16 +42,19 @@ function processRUMResponse(data) {
     }));
 }
 export default async function auditCWV(message, context) {
-  const { type, url, auditContext } = message;
-  const { log, sqs } = context;
+  const { type, url: siteId, auditContext = {} } = message;
+  const { dataAccess, log, sqs } = context;
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
   try {
+    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
+    const url = site.getBaseURL();
+
     log.info(`Received audit req for domain: ${url}`);
 
     const rumAPIClient = RUMAPIClient.createFrom(context);
-    const finalUrl = await getRUMUrl(url);
+    const finalUrl = await composeAuditURL(url);
     auditContext.finalUrl = finalUrl;
 
     const params = {
@@ -61,6 +63,18 @@ export default async function auditCWV(message, context) {
 
     const data = await rumAPIClient.getRUMDashboard(params);
     const auditResult = processRUMResponse(data);
+    const fullAuditRef = await rumAPIClient.createRUMURL(params);
+
+    const auditData = {
+      siteId: site.getId(),
+      isLive: site.isLive(),
+      auditedAt: new Date().toISOString(),
+      auditType: type,
+      fullAuditRef,
+      auditResult,
+    };
+
+    await dataAccess.addAudit(auditData);
 
     await sqs.sendMessage(queueUrl, {
       type,
