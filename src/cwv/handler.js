@@ -86,6 +86,7 @@ export default async function auditCWV(message, context) {
     log.info(`Successfully audited ${url} for ${type} type audit`);
     return noContent();
   } catch (e) {
+    log.info(`CWV audit failed for ${siteId} failed due to ${e.message}`);
     return internalServerError(`Internal server error: ${e.message}`);
   }
 }
