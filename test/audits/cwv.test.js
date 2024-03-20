@@ -124,7 +124,7 @@ describe('Index Tests', () => {
       isLive: false,
       auditedAt: mockDate,
       auditType: 'cwv',
-      fullAuditRef: 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-dashboard?domainkey=domainkey&interval=7&offset=0&limit=101&url=adobe.com',
+      fullAuditRef: 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-dashboard?interval=7&offset=0&limit=101&url=adobe.com&domainkey=',
       auditResult: expectedAuditResult,
     });
     expect(context.sqs.sendMessage).to.have.been.calledOnce;

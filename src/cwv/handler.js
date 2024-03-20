@@ -10,12 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import RUMAPIClient, { createRUMURL } from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
-const PAGEVIEW_THRESHOLD = 7000;
+const PAGEVIEW_THRESHOLD = 70000;
 
 export function filterRUMData(data) {
   return data.pageviews > PAGEVIEW_THRESHOLD // ignore the pages with low pageviews
@@ -36,9 +36,9 @@ function processRUMResponse(data) {
     .map((row) => ({
       url: row.url,
       pageviews: row.pageviews,
-      avgcls: row.avgcls,
-      avginp: row.avginp,
-      avglcp: row.avglcp,
+      CLS: row.avgcls,
+      INP: row.avginp,
+      LCP: row.avglcp,
     }));
 }
 export default async function auditCWV(message, context) {
@@ -63,7 +63,7 @@ export default async function auditCWV(message, context) {
 
     const data = await rumAPIClient.getRUMDashboard(params);
     const auditResult = processRUMResponse(data);
-    const fullAuditRef = await rumAPIClient.createRUMURL(params);
+    const fullAuditRef = createRUMURL({ ...params, domainkey: '' });
 
     const auditData = {
       siteId: site.getId(),
