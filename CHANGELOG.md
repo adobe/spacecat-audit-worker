@@ -1,3 +1,10 @@
+## [1.10.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.7...v1.10.8) (2024-03-20)
+
+
+### Bug Fixes
+
+* update rum api client ([6afb5fa](https://github.com/adobe/spacecat-audit-worker/commit/6afb5faab62e354b6ab68418d4475e5e75af5f6e))
+
 ## [1.10.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.6...v1.10.7) (2024-03-19)
 
 
