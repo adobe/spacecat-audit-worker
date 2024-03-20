@@ -1,3 +1,10 @@
+## [1.10.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.8...v1.10.9) (2024-03-20)
+
+
+### Bug Fixes
+
+* **cwv:** persist audits ([#180](https://github.com/adobe/spacecat-audit-worker/issues/180)) ([7487d31](https://github.com/adobe/spacecat-audit-worker/commit/7487d31686ca4a7aca9eeda4aeab5a1a59783689))
+
 ## [1.10.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.7...v1.10.8) (2024-03-20)
 
 

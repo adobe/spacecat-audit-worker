@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { Request } from '@adobe/fetch';
 import nock from 'nock';
+import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import { main } from '../../src/index.js';
 import { getRUMUrl } from '../../src/support/utils.js';
 import { expectedAuditResult, rumData } from '../fixtures/rum-data.js';
@@ -30,15 +31,35 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   offset: 0,
   limit: 101,
 };
+
+const mockDate = '2023-11-27T12:30:01.124Z';
 describe('Index Tests', () => {
   const request = new Request('https://space.cat');
+  let mockDataAccess;
   let context;
   let messageBodyJson;
+  let site;
+
+  before('init', function () {
+    this.clock = sandbox.useFakeTimers({
+      now: new Date(mockDate).getTime(),
+    });
+  });
 
   beforeEach('setup', () => {
+    site = createSite({
+      baseURL: 'https://adobe.com',
+    });
+
+    mockDataAccess = {
+      getSiteByID: sinon.stub(),
+      addAudit: sinon.stub(),
+    };
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site-id').resolves(site);
+
     messageBodyJson = {
       type: 'cwv',
-      url: 'https://adobe.com',
+      url: 'site-id',
       auditContext: {
         finalUrl: 'adobe.com',
       },
@@ -48,6 +69,7 @@ describe('Index Tests', () => {
       runtime: {
         region: 'us-east-1',
       },
+      dataAccess: mockDataAccess,
       env: {
         AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
         RUM_DOMAIN_KEY: 'domainkey',
@@ -63,6 +85,10 @@ describe('Index Tests', () => {
         sendMessage: sandbox.stub().resolves(),
       },
     };
+  });
+
+  after(function () {
+    this.clock.uninstall();
   });
 
   afterEach(() => {
@@ -87,10 +113,20 @@ describe('Index Tests', () => {
 
     const expectedMessage = {
       ...messageBodyJson,
+      url: site.getBaseURL(),
       auditResult: expectedAuditResult,
     };
 
     expect(resp.status).to.equal(204);
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+    expect(mockDataAccess.addAudit).to.have.been.calledWith({
+      siteId: site.getId(),
+      isLive: false,
+      auditedAt: mockDate,
+      auditType: 'cwv',
+      fullAuditRef: 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-dashboard?interval=7&offset=0&limit=101&url=adobe.com&domainkey=',
+      auditResult: expectedAuditResult,
+    });
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
