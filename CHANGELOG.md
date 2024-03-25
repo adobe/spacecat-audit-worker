@@ -1,3 +1,24 @@
+## [1.10.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.9...v1.10.10) (2024-03-23)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#186](https://github.com/adobe/spacecat-audit-worker/issues/186)) ([15d28f5](https://github.com/adobe/spacecat-audit-worker/commit/15d28f5befe59112ccb16893d1c8cc6a29ecd6bf))
+
+## [1.10.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.8...v1.10.9) (2024-03-20)
+
+
+### Bug Fixes
+
+* **cwv:** persist audits ([#180](https://github.com/adobe/spacecat-audit-worker/issues/180)) ([7487d31](https://github.com/adobe/spacecat-audit-worker/commit/7487d31686ca4a7aca9eeda4aeab5a1a59783689))
+
+## [1.10.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.7...v1.10.8) (2024-03-20)
+
+
+### Bug Fixes
+
+* update rum api client ([6afb5fa](https://github.com/adobe/spacecat-audit-worker/commit/6afb5faab62e354b6ab68418d4475e5e75af5f6e))
+
 ## [1.10.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.6...v1.10.7) (2024-03-19)
 
 
