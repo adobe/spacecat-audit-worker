@@ -126,7 +126,7 @@ export default async function audit(message, context) {
 
     await sqs.sendMessage(queueUrl, {
       type,
-      baseURL,
+      url: baseURL,
       auditContext,
       auditResult,
     });
