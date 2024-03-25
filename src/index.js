@@ -26,7 +26,7 @@ import backlinks from './backlinks/handler.js';
 import experimentation from './experimentation/handler.js';
 
 const HANDLERS = {
-  apex,
+  apex: apex.run,
   cwv,
   'lhs-mobile': lhs,
   'lhs-desktop': lhs,

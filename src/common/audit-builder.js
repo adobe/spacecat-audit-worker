@@ -66,6 +66,6 @@ export class AuditBuilder {
       this.runner,
       this.persister,
       this.messageSender,
-    ).run;
+    );
   }
 }

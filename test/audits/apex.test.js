@@ -11,130 +11,48 @@
  */
 
 /* eslint-env mocha */
-
-import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import chai from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import apexAudit, { hasNonWWWSubdomain, toggleWWW } from '../../src/apex/handler.js';
+import { apexAuditRunner, hasNonWWWSubdomain, toggleWWW } from '../../src/apex/handler.js';
 
 chai.use(sinonChai);
+chai.use(chaiAsPromised);
 const { expect } = chai;
 
 const sandbox = sinon.createSandbox();
 
 describe('Apex audit', () => {
   let context;
-  let messageBodyJson;
-  let mockDataAccess;
   let mockLog;
 
-  const siteData = {
-    id: 'site1',
-    baseURL: 'https://some-domain.com',
-    imsOrgId: 'org123',
-  };
-
-  const siteWithApexDomain = createSite(siteData);
-  const siteWithSubdomain = createSite({
-    ...siteData,
-    baseURL: 'https://subdomain.some-domain.com',
-  });
+  const urlWithApexDomain = 'https://some-domain.com';
+  const urlWithSubdomain = 'https://subdomain.some-domain.com';
 
   beforeEach('setup', () => {
-    mockDataAccess = {
-      getSiteByID: sinon.stub().resolves(siteWithApexDomain),
-    };
-
     mockLog = {
-      info: sinon.spy(),
-      warn: sinon.spy(),
-      error: sinon.spy(),
+      info: sandbox.spy(),
+      warn: sandbox.spy(),
+      error: sandbox.spy(),
     };
 
-    messageBodyJson = {
-      type: 'apex',
-      url: 'site-id',
-      auditContext: {},
-    };
-
-    context = {
-      log: mockLog,
-      runtime: {
-        region: 'us-east-1',
-      },
-      env: {
-        AUDIT_RESULTS_QUEUE_URL: 'some-queue-url',
-      },
-      invocation: {
-        event: {
-          Records: [{
-            body: JSON.stringify(messageBodyJson),
-          }],
-        },
-      },
-      dataAccess: mockDataAccess,
-      sqs: {
-        sendMessage: sandbox.stub().resolves(),
-      },
-    };
+    context = { log: mockLog };
   });
 
   afterEach(() => {
     nock.cleanAll();
-    sinon.restore();
-  });
-
-  it('apex audit returns 404 when site not found', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().resolves(null);
-
-    const resp = await apexAudit(messageBodyJson, context);
-    expect(resp.status).to.equal(404);
-    expect(context.sqs.sendMessage).to.have.callCount(0);
-  });
-
-  it('apex audit returns 500 when audit fails', async () => {
-    context.sqs = sinon.stub().rejects('wololo');
-
-    nock('https://some-domain.com')
-      .get('/')
-      .reply(200);
-
-    nock('https://www.some-domain.com')
-      .get('/')
-      .reply(200);
-
-    const resp = await apexAudit(messageBodyJson, context);
-    expect(resp.status).to.equal(500);
+    sandbox.restore();
   });
 
   it('apex audit does not run when baseUrl is not apex', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().resolves(siteWithSubdomain);
-
-    const resp = await apexAudit(messageBodyJson, context);
-    expect(resp.status).to.equal(204);
-    expect(context.sqs.sendMessage).to.have.callCount(0);
+    await expect(apexAuditRunner(urlWithSubdomain, context))
+      .to.be.rejectedWith('Url https://subdomain.some-domain.com already has a subdomain. No need to run apex audit.');
   });
 
   it('apex audit unsuccessful when baseurl doesnt resolve', async () => {
-    const expectedMessage = {
-      type: 'apex',
-      url: 'some-domain.com',
-      auditContext: {},
-      auditResult: [
-        {
-          url: 'https://some-domain.com',
-          success: false,
-        },
-        {
-          url: 'https://www.some-domain.com',
-          success: true,
-          status: 200,
-        },
-      ],
-    };
-
+    // Arrange
     nock('https://some-domain.com')
       .get('/')
       .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
@@ -143,32 +61,28 @@ describe('Apex audit', () => {
       .get('/')
       .reply(200);
 
-    const resp = await apexAudit(messageBodyJson, context);
-    expect(resp.status).to.equal(204);
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+    // Act
+    const result = await apexAuditRunner(urlWithApexDomain, context);
+
+    // Assert
+    const expectedAuditResult = [{
+      url: 'https://some-domain.com',
+      success: false,
+    }, {
+      url: 'https://www.some-domain.com',
+      success: true,
+      status: 200,
+    }];
+    const expectedFullAuditRef = 'https://some-domain.com';
+
+    expect(result).to.eql({
+      auditResult: expectedAuditResult,
+      fullAuditRef: expectedFullAuditRef,
+    });
   });
 
   it('apex audit successful when baseurl resolves', async () => {
-    const expectedMessage = {
-      type: 'apex',
-      url: 'some-domain.com',
-      auditContext: {},
-      auditResult: [
-        {
-          url: 'https://some-domain.com',
-          success: true,
-          status: 200,
-        },
-        {
-          url: 'https://www.some-domain.com',
-          success: true,
-          status: 200,
-        },
-      ],
-    };
-
+    // Arrange
     nock('https://some-domain.com')
       .get('/')
       .reply(200);
@@ -177,11 +91,25 @@ describe('Apex audit', () => {
       .get('/')
       .reply(200);
 
-    const resp = await apexAudit(messageBodyJson, context);
-    expect(resp.status).to.equal(204);
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+    // Act
+    const result = await apexAuditRunner(urlWithApexDomain, context);
+
+    // Assert
+    const expectedAuditResult = [{
+      url: 'https://some-domain.com',
+      success: true,
+      status: 200,
+    }, {
+      url: 'https://www.some-domain.com',
+      success: true,
+      status: 200,
+    }];
+    const expectedFullAuditRef = 'https://some-domain.com';
+
+    expect(result).to.eql({
+      auditResult: expectedAuditResult,
+      fullAuditRef: expectedFullAuditRef,
+    });
   });
 
   describe('apex domain validation', () => {

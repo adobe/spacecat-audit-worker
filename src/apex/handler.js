@@ -88,11 +88,10 @@ export async function apexAuditRunner(finalUrl, context) {
 
   return {
     auditResult: results,
+    fullAuditRef: finalUrl,
   };
 }
 
-export default function handler() {
-  return new AuditBuilder()
-    .withRunner(apexAuditRunner)
-    .build();
-}
+export default new AuditBuilder()
+  .withRunner(apexAuditRunner)
+  .build();

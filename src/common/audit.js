@@ -10,8 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { getRUMUrl } from '../support/utils.js';
 
 export async function defaultMessageSender(resultMessage, context) {
   const { sqs } = context;
@@ -54,7 +54,7 @@ export async function defaultUrlResolver(site) {
   return site.getBaseURL();
 }
 export async function followRedirects(site) {
-  return getRUMUrl(site.getBaseURL());
+  return composeAuditURL(site.getBaseURL());
 }
 
 export async function noopAuditStep() {
