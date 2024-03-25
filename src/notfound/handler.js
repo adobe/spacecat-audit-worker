@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import RUMAPIClient, { create404URL } from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
 import { dateAfterDays } from '@adobe/spacecat-shared-utils';
 import { retrieveSiteByURL } from '../utils/data-access.js';
@@ -59,13 +59,13 @@ async function processAuditResult(
   log,
 ) {
   const {
-    dataAccess, sqs, rumAPIClient,
+    dataAccess, sqs,
   } = services;
   const auditData = {
     siteId: site.getId(),
     auditType: AUDIT_TYPE,
     auditedAt: new Date().toISOString(),
-    fullAuditRef: rumAPIClient.create404URL(auditContext),
+    fullAuditRef: create404URL(auditContext),
     isLive: site.isLive(),
     auditResult: { result, finalUrl: auditContext.url },
   };
@@ -107,8 +107,8 @@ export default async function audit404(message, context) {
     const params = {
       url: finalUrl,
       interval: -1,
-      startDate: startDate.toISOString().split('T')[0],
-      endDate: new Date().toISOString().split('T')[0],
+      startdate: startDate.toISOString().split('T')[0],
+      enddate: new Date().toISOString().split('T')[0],
     };
 
     const data = await rumAPIClient.get404Sources(params);

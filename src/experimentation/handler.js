@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import RUMAPIClient, { createExperimentationURL } from '@adobe/spacecat-shared-rum-api-client';
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
@@ -78,7 +78,7 @@ export default async function auditExperiments(message, context) {
       auditedAt: new Date().toISOString(),
       auditType: type,
       auditResult,
-      fullAuditRef: rumAPIClient.createExperimentationURL({ url: auditContext.finalUrl }),
+      fullAuditRef: createExperimentationURL({ url: auditContext.finalUrl }),
     };
     await dataAccess.addAudit(auditData);
     await sqs.sendMessage(queueUrl, {
