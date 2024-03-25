@@ -31,12 +31,15 @@ export const ERROR_CODES = {
  *
  * @async
  * @param {string} targetUrl - The URL from which to fetch the content.
- * @returns {Promise<string|null>} - A Promise that resolves to the content
- * of the response as a string if the request was successful, otherwise null.
+ * @returns {Promise<{ payload: string, type: string }|null>} - Promise that resolves to the content
+ * of the response as a structure having the contents as the payload string
+ * and the content type as the type as string if the request was successful, otherwise null.
  */
 export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl);
-  return response.ok ? response.text() : null;
+  return response.ok
+    ? { payload: response.text(), type: response.headers.get('content-type') }
+    : null;
 }
 
 /**
@@ -53,7 +56,7 @@ export async function checkRobotsForSitemap(protocol, domain) {
   try {
     const robotsContent = await fetchContent(robotsUrl);
     if (robotsContent !== null) {
-      const sitemapMatch = robotsContent.match(/Sitemap:\s*(.*)/i);
+      const sitemapMatch = robotsContent.payload.match(/Sitemap:\s*(.*)/i);
       if (sitemapMatch && sitemapMatch[1]) {
         return { path: sitemapMatch[1].trim(), reasons: [] };
       }
@@ -63,6 +66,13 @@ export async function checkRobotsForSitemap(protocol, domain) {
     // ignore
   }
   return { path: null, reasons: [ERROR_CODES.ROBOTS_NOT_FOUND] };
+}
+
+export function isSitemapContentValid(sitemapContent) {
+  return sitemapContent.payload.trim().startsWith('<?xml')
+      || sitemapContent.type === 'application/xml'
+      || sitemapContent.type === 'text/xml'
+      || sitemapContent.type === 'plain/text';
 }
 
 /**
@@ -82,7 +92,7 @@ export async function checkSitemap(sitemapUrl) {
         reasons: [ERROR_CODES.SITEMAP_NOT_FOUND, ERROR_CODES.SITEMAP_EMPTY],
       };
     }
-    const isValidXml = sitemapContent.trim().startsWith('<?xml');
+    const isValidXml = isSitemapContentValid(sitemapContent);
     return {
       existsAndIsValid: isValidXml,
       reasons: isValidXml ? [] : [ERROR_CODES.SITEMAP_NOT_XML],

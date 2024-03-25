@@ -90,7 +90,7 @@ export async function findSitemap(inputUrl) {
     const sitemapResult = await checkSitemap(sitemapUrlFromRobots);
     logMessages.push(...sitemapResult.reasons.map((reason) => ({
       value: sitemapUrlFromRobots,
-      e: reason,
+      error: reason,
     })));
     if (sitemapResult.existsAndIsValid) {
       return {
