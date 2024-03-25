@@ -1,3 +1,10 @@
+## [1.10.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.10...v1.10.11) (2024-03-25)
+
+
+### Bug Fixes
+
+* url sitemap for post-processor ([#182](https://github.com/adobe/spacecat-audit-worker/issues/182)) ([4fbce06](https://github.com/adobe/spacecat-audit-worker/commit/4fbce06b48a8bbc861f924db367e5cac675c2aef))
+
 ## [1.10.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.9...v1.10.10) (2024-03-23)
 
 
