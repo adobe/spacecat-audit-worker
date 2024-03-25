@@ -385,3 +385,25 @@ describe('findSitemap', () => {
     expect(result.reasons).to.deep.equal([ERROR_CODES.NO_SITEMAP_IN_ROBOTS]);
   });
 });
+
+it('should call sqs.sendMessage with correct parameters', async () => {
+  const message = { type: 'audit', url: 'site-id', auditContext: {} };
+  const site = { getBaseURL: () => 'https://some-domain.adobe' };
+  const dataAccess = { getSiteByID: sinon.stub().resolves(site) };
+  const sqs = { sendMessage: sinon.stub().resolves() };
+  const context = {
+    log: { info: sinon.spy(), error: sinon.spy() },
+    env: { AUDIT_RESULTS_QUEUE_URL: 'some-queue-url' },
+    dataAccess,
+    sqs,
+  };
+
+  await audit(message, context);
+
+  expect(sqs.sendMessage.calledOnceWith('some-queue-url', {
+    type: 'audit',
+    url: 'https://some-domain.adobe',
+    auditContext: {},
+    auditResult: sinon.match.any,
+  })).to.be.true;
+});
