@@ -12,7 +12,19 @@
 
 module.exports = {
   root: true,
-  extends: '@adobe/helix',
+  parser: '@typescript-eslint/parser',
+  parserOptions: {
+    ecmaVersion: 2020,
+    sourceType: 'module',
+  },
+  extends: [
+    '@adobe/helix',
+    'plugin:@typescript-eslint/recommended',
+  ],
+  plugins: [
+    'import',
+    '@typescript-eslint',
+  ],
   overrides: [
     {
       files: ['*.test.js'],
