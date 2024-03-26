@@ -18,6 +18,7 @@ import nock from 'nock';
 import audit, {
   fetchContent,
   checkSitemap,
+  isSitemapContentValid,
   ERROR_CODES, checkRobotsForSitemap,
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol, findSitemap } from '../../src/support/utils.js';
@@ -406,4 +407,36 @@ it('should call sqs.sendMessage with correct parameters', async () => {
     auditContext: {},
     auditResult: sinon.match.any,
   })).to.be.true;
+});
+
+describe('isSitemapValid', () => {
+  it('should return true for valid sitemap content', () => {
+    const sitemapContent = { payload: '<?xml', type: 'application/xml' };
+    expect(isSitemapContentValid(sitemapContent)).to.be.true;
+  });
+  it('should return true for valid sitemap content', () => {
+    const sitemapContent = {
+      payload: '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n'
+          + '    <url><loc>https://www.adobe.com/</loc></url>\n'
+          + '      </urlset>',
+      type: 'application/xml',
+    };
+    expect(isSitemapContentValid(sitemapContent)).to.be.true;
+  });
+  it('should return true for valid sitemap content', () => {
+    const sitemapContent = {
+      payload: 'http://www.example.com/catalog?item=12&desc=vacation_hawaii\nhttps://www.example.com/catalog?item=11',
+      type: 'plain/text',
+    };
+    expect(isSitemapContentValid(sitemapContent)).to.be.true;
+  });
+  it('should return true for valid sitemap content', () => {
+    const sitemapContent = {
+      payload: '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n'
+          + '    <url><loc>https://www.adobe.com/</loc></url>\n'
+          + '      </urlset>',
+      type: 'text/xml',
+    };
+    expect(isSitemapContentValid(sitemapContent)).to.be.true;
+  });
 });
