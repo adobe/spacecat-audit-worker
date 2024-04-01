@@ -26,7 +26,7 @@ import backlinks from './backlinks/handler.js';
 import experimentation from './experimentation/handler.js';
 
 const HANDLERS = {
-  apex: apex.run,
+  apex,
   cwv,
   'lhs-mobile': lhs,
   'lhs-desktop': lhs,
@@ -95,7 +95,7 @@ async function run(message, context) {
   const startTime = process.hrtime();
 
   try {
-    const result = await handler(message, context);
+    const result = await (typeof handler.run === 'function' ? handler.run(message, context) : handler(message, context));
 
     log.info(`Audit for ${type} completed in ${getElapsedSeconds(startTime)} seconds`);
 

@@ -109,7 +109,7 @@ describe('Audit tests', () => {
         .get('/')
         .reply(301, undefined, { Location: `https://${finalUrl}/` });
 
-      nock('https://www.space.cat')
+      nock(`https://${finalUrl}`)
         .get('/')
         .reply(200, 'Success');
 
@@ -129,9 +129,10 @@ describe('Audit tests', () => {
       expect(() => new AuditBuilder().build()).to.throw('"runner" must be a function');
     });
 
-    it('audit run fails when error', async () => {
+    it('audit run fails when an underlying audit step throws an error', async () => {
+      const dummyRummer = () => 123;
       const audit = new AuditBuilder()
-        .withRunner(() => 123)
+        .withRunner(dummyRummer)
         .build();
 
       await expect(audit.run(message, context))
@@ -150,7 +151,7 @@ describe('Audit tests', () => {
         .build();
 
       await expect(audit.run(message, context))
-        .to.be.rejectedWith(`${message.type} audit failed for site ${message.url}. Reason: Audits are disabled for the site: ${site.getId()}`);
+        .to.be.rejectedWith(`${message.type} audit failed for site ${message.url}. Reason: ${message.type} audits are disabled for the site: ${site.getId()}`);
     });
 
     it('audit runs as expected', async () => {
@@ -167,7 +168,7 @@ describe('Audit tests', () => {
 
       const fullAuditRef = 'hebele';
       const dummyRunner = (url, _context) => ({
-        auditResult: typeof url === 'string' && typeof _context === 'object' ? 42 : null,
+        auditResult: typeof url === 'string' && typeof _context === 'object' ? { metric: 42 } : null,
         fullAuditRef,
       });
 
@@ -189,7 +190,7 @@ describe('Audit tests', () => {
         isLive: site.isLive(),
         auditedAt: mockDate,
         auditType: message.type,
-        auditResult: 42,
+        auditResult: { metric: 42 },
         fullAuditRef,
       });
 
@@ -197,7 +198,7 @@ describe('Audit tests', () => {
         type: message.type,
         url: 'https://space.cat',
         auditContext: { someField: 431, finalUrl: 'space.cat' },
-        auditResult: 42,
+        auditResult: { metric: 42 },
       };
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);

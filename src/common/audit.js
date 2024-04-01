@@ -47,7 +47,7 @@ export async function noopUrlResolver(site) {
 async function assertAuditsDisabled(type, site, dataAccess) {
   const org = await dataAccess.getOrganizationByID(site.getOrganizationId());
   if (isAuditsDisabled(site, org, type)) {
-    throw new Error(`Audits are disabled for the site: ${site.getId()}`);
+    throw new Error(`${type} audits are disabled for the site: ${site.getId()}`);
   }
 }
 
