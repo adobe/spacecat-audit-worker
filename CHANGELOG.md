@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.11.0...v1.12.0) (2024-04-01)
+
+
+### Features
+
+* reusable audits ([#136](https://github.com/adobe/spacecat-audit-worker/issues/136)) ([d43ca14](https://github.com/adobe/spacecat-audit-worker/commit/d43ca141ea2405b23f5c093aa0a27abe52adcd4f))
+
 # [1.11.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.10.12...v1.11.0) (2024-04-01)
 
 
