@@ -141,6 +141,7 @@ const createSQSMessage = (auditContext, site, auditData) => ({
     siteId: site.getId(),
     finalUrl: auditData.auditResult.finalUrl,
     scores: auditData.auditResult.scores,
+    fullAuditRef: auditData.fullAuditRef,
   },
 });
 
