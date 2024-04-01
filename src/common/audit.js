@@ -15,7 +15,7 @@ import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 export async function defaultMessageSender(resultMessage, context) {
   const { sqs } = context;
-  const { AUDIT_RESULTS_QUEUE_URL: queueUrl } = context;
+  const { AUDIT_RESULTS_QUEUE_URL: queueUrl } = context.env;
 
   await sqs.sendMessage(queueUrl, resultMessage);
 }
@@ -25,41 +25,23 @@ export async function defaultPersister(auditData, context) {
   await dataAccess.addAudit(auditData);
 }
 
-export async function defaultSiteProvider(message, lambdaContext) {
-  const { type, url: siteId } = message;
-  const { log, dataAccess } = lambdaContext;
+export async function defaultSiteProvider(siteId, context) {
+  const { log, dataAccess } = context;
 
   const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
   if (!site) {
-    throw Error('Site not found');
-  }
-
-  if (!site.isLive()) {
-    throw Error(`Site ${siteId} is not live`);
-  }
-
-  const auditConfig = site.getAuditConfig();
-  if (auditConfig.auditsDisabled()) {
-    throw Error(`Audits disabled for site ${siteId}`);
-  }
-
-  if (auditConfig.getAuditTypeConfig(type)?.disabled()) {
-    throw Error(`Audit type ${type} disabled for site ${siteId}`);
+    throw Error(`Site with id ${siteId} not found`);
   }
 
   return site;
 }
 
 export async function defaultUrlResolver(site) {
-  return site.getBaseURL();
-}
-export async function followRedirects(site) {
   return composeAuditURL(site.getBaseURL());
 }
 
-export async function noopAuditStep() {
-  // no-op
-  return {};
+export async function noopUrlResolver(site) {
+  return site.getBaseURL();
 }
 
 export class Audit {
@@ -72,34 +54,45 @@ export class Audit {
   }
 
   async run(message, context) {
-    const { type, url: siteId, auditContext } = message;
-
-    const site = await this.siteProvider(siteId, context);
-    const finalUrl = this.urlResolver(site);
-
-    // run the audit business logic
-    const { auditResult, fullAuditRef } = this.runner(finalUrl, context);
-
-    const auditData = {
-      siteId: site.getId(),
-      isLive: site.isLive(),
-      auditedAt: new Date().toISOString(),
-      auditType: type,
-      auditResult,
-      fullAuditRef,
-    };
-
-    await this.persister(auditData, context);
-
-    auditContext.finalUrl = finalUrl;
-
-    const resultMessage = {
+    const {
       type,
-      url: site.getBaseURL(),
-      auditContext,
-      auditResult,
-    };
+      url: siteId,
+      auditContext = {},
+    } = message;
 
-    await this.messageSender(resultMessage, context);
+    try {
+      const site = await this.siteProvider(siteId, context);
+      const finalUrl = await this.urlResolver(site);
+
+      // run the audit business logic
+      const {
+        auditResult,
+        fullAuditRef,
+      } = await this.runner(finalUrl, context);
+
+      const auditData = {
+        siteId: site.getId(),
+        isLive: site.isLive(),
+        auditedAt: new Date().toISOString(),
+        auditType: type,
+        auditResult,
+        fullAuditRef,
+      };
+
+      await this.persister(auditData, context);
+
+      auditContext.finalUrl = finalUrl;
+
+      const resultMessage = {
+        type,
+        url: site.getBaseURL(),
+        auditContext,
+        auditResult,
+      };
+
+      await this.messageSender(resultMessage, context);
+    } catch (e) {
+      throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`);
+    }
   }
 }

@@ -17,28 +17,25 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { apexAuditRunner, hasNonWWWSubdomain, toggleWWW } from '../../src/apex/handler.js';
+import { MockContextBuilder } from '../shared.js';
 
 chai.use(sinonChai);
 chai.use(chaiAsPromised);
 const { expect } = chai;
 
+const message = {
+  type: 'apex',
+  url: 'site-id',
+};
 const sandbox = sinon.createSandbox();
 
 describe('Apex audit', () => {
   let context;
-  let mockLog;
-
-  const urlWithApexDomain = 'https://some-domain.com';
-  const urlWithSubdomain = 'https://subdomain.some-domain.com';
 
   beforeEach('setup', () => {
-    mockLog = {
-      info: sandbox.spy(),
-      warn: sandbox.spy(),
-      error: sandbox.spy(),
-    };
-
-    context = { log: mockLog };
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .build(message);
   });
 
   afterEach(() => {
@@ -47,68 +44,69 @@ describe('Apex audit', () => {
   });
 
   it('apex audit does not run when baseUrl is not apex', async () => {
-    await expect(apexAuditRunner(urlWithSubdomain, context))
-      .to.be.rejectedWith('Url https://subdomain.some-domain.com already has a subdomain. No need to run apex audit.');
+    const url = 'https://subdomain.some-domain.com';
+    await expect(apexAuditRunner(url, context))
+      .to.be.rejectedWith(`Url ${url} already has a subdomain. No need to run apex audit.`);
   });
 
   it('apex audit unsuccessful when baseurl doesnt resolve', async () => {
     // Arrange
-    nock('https://some-domain.com')
+    nock('https://spacecat.com')
       .get('/')
       .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
 
-    nock('https://www.some-domain.com')
+    nock('https://www.spacecat.com')
       .get('/')
       .reply(200);
 
     // Act
-    const result = await apexAuditRunner(urlWithApexDomain, context);
+    const url = 'https://spacecat.com';
+    const result = await apexAuditRunner(url, context);
 
     // Assert
     const expectedAuditResult = [{
-      url: 'https://some-domain.com',
+      url: 'https://spacecat.com',
       success: false,
     }, {
-      url: 'https://www.some-domain.com',
+      url: 'https://www.spacecat.com',
       success: true,
       status: 200,
     }];
-    const expectedFullAuditRef = 'https://some-domain.com';
 
     expect(result).to.eql({
       auditResult: expectedAuditResult,
-      fullAuditRef: expectedFullAuditRef,
+      fullAuditRef: url,
     });
   });
 
   it('apex audit successful when baseurl resolves', async () => {
     // Arrange
-    nock('https://some-domain.com')
+    nock('https://spacecat.com')
       .get('/')
       .reply(200);
 
-    nock('https://www.some-domain.com')
+    nock('https://www.spacecat.com')
       .get('/')
       .reply(200);
 
     // Act
-    const result = await apexAuditRunner(urlWithApexDomain, context);
+    const url = 'https://spacecat.com';
+    const result = await apexAuditRunner(url, context);
 
     // Assert
     const expectedAuditResult = [{
-      url: 'https://some-domain.com',
+      url: 'https://spacecat.com',
       success: true,
       status: 200,
     }, {
-      url: 'https://www.some-domain.com',
+      url: 'https://www.spacecat.com',
       success: true,
       status: 200,
     }];
-    const expectedFullAuditRef = 'https://some-domain.com';
 
     expect(result).to.eql({
       auditResult: expectedAuditResult,
-      fullAuditRef: expectedFullAuditRef,
+      fullAuditRef: url,
     });
   });
 

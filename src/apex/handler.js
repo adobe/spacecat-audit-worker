@@ -14,6 +14,7 @@ import URI from 'urijs';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import { fetch } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { noopUrlResolver } from '../common/audit.js';
 
 URI.preventInvalidHostname = true;
 
@@ -71,27 +72,28 @@ async function probeUrlConnection(baseUrl, log) {
  * If the site contains a subdomain, the audit is skipped for that specific subdomain.
  *
  * @async
- * @param {string} finalUrl - The URL to run audit against
+ * @param {string} baseURL - The URL to run audit against
  * @param {Object} context - The context object containing configurations, services,
  * and environment variables.
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
-export async function apexAuditRunner(finalUrl, context) {
+export async function apexAuditRunner(baseURL, context) {
   const { log } = context;
 
-  if (hasNonWWWSubdomain(finalUrl)) {
-    throw Error(`Url ${finalUrl} already has a subdomain. No need to run apex audit.`);
+  if (hasNonWWWSubdomain(baseURL)) {
+    throw Error(`Url ${baseURL} already has a subdomain. No need to run apex audit.`);
   }
 
-  const urls = [finalUrl, toggleWWW(finalUrl)];
+  const urls = [baseURL, toggleWWW(baseURL)];
   const results = await Promise.all(urls.map((_url) => probeUrlConnection(_url, log)));
 
   return {
     auditResult: results,
-    fullAuditRef: finalUrl,
+    fullAuditRef: baseURL,
   };
 }
 
 export default new AuditBuilder()
+  .withUrlResolver(noopUrlResolver)
   .withRunner(apexAuditRunner)
   .build();

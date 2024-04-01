@@ -79,3 +79,53 @@ DYNAMO_TABLE_NAME_LATEST_AUDITS = name of the dynamo table to store latest audit
 DYNAMO_INDEX_NAME_ALL_SITES = name of the dynamo index to query all sites
 DYNAMO_INDEX_NAME_ALL_LATEST_AUDIT_SCORES = name of the dynamo index to query all latest audits by scores
 ```
+
+
+## How to create a new Audit
+
+In the context of SpaceCat, an audit is usually an inspection which run against a `url`. When given a `url`, we conduct various inspections on the corresponding website.
+
+To create a new audit, you'll need to create an audit handler function. This function should accept a `url` and a `context` (see [HelixUniversal](https://github.com/adobe/helix-universal/blob/main/src/adapter.d.ts#L120) ) object as parameters, and it should return an `auditResult` along with `fullAuditRef`. Here's an example:
+
+```js
+export async function auditRunner(url, context) {
+  
+  // your audit log goes here...
+
+  return {
+    auditResult: results,
+    fullAuditRef: baseURL,
+  };
+}
+
+export default new AuditBuilder()
+  .withRunner(auditRunner)
+  .build();
+
+```
+
+All audits share common components, such as persisting audit results to a database or sending them to SQS for downstream components to consume. These common functionalities are managed by default functions. However, if desired, you can override them as follows:
+
+```js
+export async function auditRunner(url, context) {
+  
+  // your audit log goes here...
+
+  return {
+    auditResult: results,
+    fullAuditRef: baseURL,
+  };
+}
+
+export async function differentUrlResolver(site) {
+  // logic to override to default behavior of the audit step
+  
+  return 'url';
+}
+
+export default new AuditBuilder()
+  .withUrlResolver(differentUrlResolver)
+  .withRunner(auditRunner)
+  .build();
+
+```
