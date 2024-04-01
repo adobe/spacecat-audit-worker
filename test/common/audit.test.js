@@ -17,6 +17,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
+import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
 import {
   defaultMessageSender,
   defaultPersister,
@@ -37,15 +38,19 @@ const message = {
   auditContext: { someField: 431 },
 };
 const mockDate = '2023-03-12T15:24:51.231Z';
-const site = createSite({ baseURL });
 const sandbox = sinon.createSandbox();
 describe('Audit tests', () => {
   let context;
+  let site;
+  let org;
 
   beforeEach('setup', () => {
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .build(message);
+
+    org = createOrganization({ name: 'some-org' });
+    site = createSite({ baseURL, organization: org.getId() });
   });
 
   before('setup', function () {
@@ -61,7 +66,6 @@ describe('Audit tests', () => {
   describe('default components', () => {
     it('default site provider throws error when site is not found', async () => {
       context.dataAccess.getSiteByID.withArgs(message.url).resolves(null);
-
       await expect(defaultSiteProvider(message.url, context))
         .to.be.rejectedWith(`Site with id ${message.url} not found`);
     });
@@ -134,10 +138,26 @@ describe('Audit tests', () => {
         .to.be.rejectedWith(`${message.type} audit failed for site ${message.url}. Reason: Site with id ${message.url} not found`);
     });
 
+    it('audit run fails when audit is disabled', async () => {
+      org.setAllAuditsDisabled(true);
+      const queueUrl = 'some-queue-url';
+      context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
+      context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
+      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
+
+      const audit = new AuditBuilder()
+        .withRunner(() => 123)
+        .build();
+
+      await expect(audit.run(message, context))
+        .to.be.rejectedWith(`${message.type} audit failed for site ${message.url}. Reason: Audits are disabled for the site: ${site.getId()}`);
+    });
+
     it('audit runs as expected', async () => {
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
+      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
       context.dataAccess.addAudit.resolves();
       context.sqs.sendMessage.resolves();
 

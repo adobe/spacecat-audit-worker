@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, isAuditsDisabled } from '@adobe/spacecat-shared-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 export async function defaultMessageSender(resultMessage, context) {
@@ -30,7 +30,7 @@ export async function defaultSiteProvider(siteId, context) {
 
   const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
   if (!site) {
-    throw Error(`Site with id ${siteId} not found`);
+    throw new Error(`Site with id ${siteId} not found`);
   }
 
   return site;
@@ -42,6 +42,13 @@ export async function defaultUrlResolver(site) {
 
 export async function noopUrlResolver(site) {
   return site.getBaseURL();
+}
+
+async function assertAuditsDisabled(type, site, dataAccess) {
+  const org = await dataAccess.getOrganizationByID(site.getOrganizationId());
+  if (isAuditsDisabled(site, org, type)) {
+    throw new Error(`Audits are disabled for the site: ${site.getId()}`);
+  }
 }
 
 export class Audit {
@@ -59,9 +66,13 @@ export class Audit {
       url: siteId,
       auditContext = {},
     } = message;
+    const { dataAccess } = context;
 
     try {
       const site = await this.siteProvider(siteId, context);
+
+      await assertAuditsDisabled(type, site, dataAccess);
+
       const finalUrl = await this.urlResolver(site);
 
       // run the audit business logic

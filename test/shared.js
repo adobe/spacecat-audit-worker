@@ -30,6 +30,7 @@ export class MockContextBuilder {
 
     const mockDataAccess = {
       getSiteByID: this.sandbox.stub(),
+      getOrganizationByID: this.sandbox.stub(),
       addAudit: this.sandbox.stub(),
     };
 
