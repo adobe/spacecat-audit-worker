@@ -95,7 +95,7 @@ async function run(message, context) {
   const startTime = process.hrtime();
 
   try {
-    const result = await handler(message, context);
+    const result = await (typeof handler.run === 'function' ? handler.run(message, context) : handler(message, context));
 
     log.info(`Audit for ${type} completed in ${getElapsedSeconds(startTime)} seconds`);
 

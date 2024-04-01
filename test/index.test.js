@@ -74,6 +74,13 @@ describe('Index Tests', () => {
     expect(errorSpy).to.have.been.calledWith('no such audit type: unknown-type');
   });
 
+  it('rejects when a new type audit fails', async () => {
+    messageBodyJson.type = 'apex';
+    context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+    const resp = await main(request, context);
+    expect(resp.status).to.equal(500);
+  });
+
   it('fails when missing required env variables', async () => {
     const resp = await main(request, context);
 
