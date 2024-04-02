@@ -11,6 +11,7 @@
  */
 
 import { composeAuditURL, isAuditsDisabled } from '@adobe/spacecat-shared-utils';
+import { ok } from '@adobe/spacecat-shared-http-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 export async function defaultMessageSender(resultMessage, context) {
@@ -102,6 +103,7 @@ export class Audit {
       };
 
       await this.messageSender(resultMessage, context);
+      return ok();
     } catch (e) {
       throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`);
     }
