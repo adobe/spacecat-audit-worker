@@ -181,9 +181,11 @@ describe('Audit tests', () => {
         .withMessageSender(defaultMessageSender)
         .build();
 
-      await audit.run(message, context);
+      const resp = await audit.run(message, context);
 
       // Assert
+      expect(resp.status).to.equal(200);
+
       expect(context.dataAccess.addAudit).to.have.been.calledOnce;
       expect(context.dataAccess.addAudit).to.have.been.calledWith({
         siteId: site.getId(),
