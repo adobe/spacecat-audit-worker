@@ -24,6 +24,7 @@ import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
 import backlinks from './backlinks/handler.js';
 import experimentation from './experimentation/handler.js';
+import hebele from './hebele/hebele.js';
 
 const HANDLERS = {
   apex,
@@ -34,6 +35,7 @@ const HANDLERS = {
   sitemap,
   'broken-backlinks': backlinks,
   experimentation,
+  hebele,
 };
 
 /**
