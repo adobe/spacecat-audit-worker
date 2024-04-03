@@ -40,6 +40,8 @@ async function handler(url, context) {
 
   const json = await resp.json();
 
+  console.log(json);
+
   const auditResult = {
     scores: {
       CLS: json.record.metrics.cumulative_layout_shift.percentiles.p75,
