@@ -53,7 +53,7 @@ async function handler(url, context) {
   };
 
   const slackClient = BaseSlackClient.createFrom(context, SLACK_TARGETS.WORKSPACE_INTERNAL);
-  slackClient.fileUpload({
+  await slackClient.fileUpload({
     channel_id: slackChannel,
     file: generateCSVFile([auditResult.scores]),
     filename: `crux-report-for-${url}.csv`,
