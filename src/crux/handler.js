@@ -11,7 +11,7 @@
  */
 
 import { generateCSVFile, prependSchema } from '@adobe/spacecat-shared-utils';
-import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
+import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
 import { fetch } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 
@@ -52,7 +52,7 @@ async function handler(url, context) {
     },
   };
 
-  const slackClient = BaseSlackClient.createFrom(context);
+  const slackClient = BaseSlackClient.createFrom(context, SLACK_TARGETS.WORKSPACE_INTERNAL);
   slackClient.fileUpload({
     channel_id: slackChannel,
     file: generateCSVFile([auditResult.scores]),
