@@ -42,9 +42,9 @@ async function handler(url, context) {
 
   const auditResult = {
     scores: {
-      CLS: json.metrics.cumulative_layout_shift.percentiles.p75,
-      LCP: json.metrics.largest_contentful_paint.percentiles.p75,
-      INP: json.metrics.interaction_to_next_paint.percentiles.p75,
+      CLS: json.record.metrics.cumulative_layout_shift.percentiles.p75,
+      LCP: json.record.metrics.largest_contentful_paint.percentiles.p75,
+      INP: json.record.metrics.interaction_to_next_paint.percentiles.p75,
     },
   };
 
