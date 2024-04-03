@@ -54,6 +54,4 @@ async function handler(url, context) {
   };
 }
 
-export default new AuditBuilder()
-  .withUrlResolver((site) => site.getGitHubURL())
-  .withRunner(handler).build();
+export default new AuditBuilder().withRunner(handler).build();
