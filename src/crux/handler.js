@@ -10,12 +10,16 @@
  * governing permissions and limitations under the License.
  */
 
-import { prependSchema } from '@adobe/spacecat-shared-utils';
+import { generateCSVFile, prependSchema } from '@adobe/spacecat-shared-utils';
+import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
 import { fetch } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 
 async function handler(url, context) {
-  const { GOOGLE_CLOUD_API_KEY: cruxApiKey } = context.env;
+  const {
+    GOOGLE_CLOUD_API_KEY: cruxApiKey,
+    SLACK_REPORT_CHANNEL_INTERNAL: slackChannel,
+  } = context.env;
 
   const CRUX_URL = `https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${cruxApiKey}`;
   const headers = {
@@ -40,8 +44,6 @@ async function handler(url, context) {
 
   const json = await resp.json();
 
-  console.log(json);
-
   const auditResult = {
     scores: {
       CLS: json.record.metrics.cumulative_layout_shift.percentiles.p75,
@@ -49,6 +51,15 @@ async function handler(url, context) {
       INP: json.record.metrics.interaction_to_next_paint.percentiles.p75,
     },
   };
+
+  const slackClient = BaseSlackClient.createFrom(context);
+  slackClient.fileUpload({
+    channel_id: slackChannel,
+    file: generateCSVFile([auditResult.scores]),
+    filename: `crux-report-for-${url}.csv`,
+    initial_comment: `CRUX data for ${url}`,
+    unfurl_links: false,
+  });
 
   return {
     auditResult,
