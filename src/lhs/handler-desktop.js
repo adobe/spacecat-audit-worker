@@ -16,4 +16,6 @@ import createLHSAuditRunner from './lib.js';
 
 export default new AuditBuilder()
   .withRunner(createLHSAuditRunner(PSI_STRATEGY_DESKTOP))
+  // default impl strips slash, which is incorrect
+  .withUrlResolver((site) => site.getBaseURL())
   .build();
