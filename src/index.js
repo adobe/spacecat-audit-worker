@@ -19,7 +19,8 @@ import { resolveSecretsName } from '@adobe/spacecat-shared-utils';
 import sqs from './support/sqs.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
-import lhs from './lhs/handler.js';
+import lhsDesktop from './lhs/handler-desktop.js';
+import lhsMobile from './lhs/handler-mobile.js';
 import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
 import backlinks from './backlinks/handler.js';
@@ -28,8 +29,8 @@ import experimentation from './experimentation/handler.js';
 const HANDLERS = {
   apex,
   cwv,
-  'lhs-mobile': lhs,
-  'lhs-desktop': lhs,
+  'lhs-mobile': lhsMobile,
+  'lhs-desktop': lhsDesktop,
   404: notfound,
   sitemap,
   'broken-backlinks': backlinks,

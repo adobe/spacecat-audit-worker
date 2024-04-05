@@ -12,35 +12,51 @@
 
 /* eslint-env mocha */
 
-import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
-
 import chai from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 
-import audit from '../../src/lhs/handler.js';
+import { isIsoDate } from '@adobe/spacecat-shared-utils';
+import createLHSAuditRunner, {
+  extractAuditScores,
+  extractThirdPartySummary,
+  extractTotalBlockingTime,
+  getContentLastModified,
+} from '../../src/lhs/lib.js';
+import { MockContextBuilder } from '../shared.js';
 
 const { expect } = chai;
 chai.use(sinonChai);
 chai.use(chaiAsPromised);
 
+const message = {
+  type: 'lhs-mobile',
+  url: 'site-id',
+};
+
+function assertAuditData(auditData) {
+  expect(auditData).to.be.an('object');
+  expect(auditData.auditResult).to.be.an('object');
+  expect(auditData.auditResult.finalUrl).to.equal('https://adobe.com/');
+  expect(isIsoDate(auditData.auditResult.contentLastModified)).to.be.true;
+  expect(auditData.auditResult.thirdPartySummary).to.be.an('array').with.lengthOf(0);
+  expect(auditData.auditResult.totalBlockingTime).to.be.null;
+  expect(auditData.auditResult.scores).to.deep.equal({
+    performance: 0.5,
+    accessibility: 0.5,
+    'best-practices': 0.5,
+    seo: 0.5,
+  });
+}
+
 describe('LHS Audit', () => {
   let context;
-  let auditQueueMessage;
-  let mockDataAccess;
-  let mockLog;
+  let mobileAuditRunner;
+  let desktopAuditRunner;
 
   const sandbox = sinon.createSandbox();
-
-  const siteData = {
-    id: 'site1',
-    baseURL: 'https://adobe.com',
-    imsOrgId: 'org123',
-  };
-
-  const site = createSite(siteData);
 
   const psiResult = {
     lighthouseResult: {
@@ -63,50 +79,24 @@ describe('LHS Audit', () => {
   };
 
   beforeEach(() => {
-    mockDataAccess = {
-      getSiteByBaseURL: sinon.stub().resolves(site),
-      getSiteByID: sinon.stub().resolves(site),
-      getLatestAuditForSite: sinon.stub().resolves(null),
-      addAudit: sinon.stub(),
-    };
-
-    mockLog = {
-      info: sinon.spy(),
-      warn: sinon.spy(),
-      error: sinon.spy(),
-    };
-
-    auditQueueMessage = {
-      type: 'lhs-mobile',
-      url: 'site1',
-      auditContext: {
-        finalUrl: 'adobe.com',
-      },
-    };
-    context = {
-      log: mockLog,
-      func: {
-        version: 'ci',
-      },
-      runtime: {
-        region: 'us-east-1',
-      },
-      env: {
-        AUDIT_RESULTS_QUEUE_URL: 'some-queue-url',
-        PAGESPEED_API_BASE_URL: 'https://psi-audit-service.com',
-      },
-      invocation: {
-        event: {
-          Records: [{
-            body: JSON.stringify(auditQueueMessage),
-          }],
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        env: {
+          AUDIT_RESULTS_QUEUE_URL: 'some-queue-url',
+          PAGESPEED_API_BASE_URL: 'https://psi-audit-service.com',
         },
-      },
-      dataAccess: mockDataAccess,
-      sqs: {
-        sendMessage: sandbox.stub().resolves(),
-      },
-    };
+        func: {
+          version: 'v1',
+        },
+      })
+      .build(message);
+
+    mobileAuditRunner = createLHSAuditRunner('mobile');
+    desktopAuditRunner = createLHSAuditRunner('desktop');
+
+    nock('https://adobe.com').get('/').reply(200);
+    nock('https://adobe.com').head('/').reply(200);
   });
 
   afterEach(() => {
@@ -115,15 +105,12 @@ describe('LHS Audit', () => {
   });
 
   it('should successfully perform an audit for mobile strategy', async () => {
-    nock('https://adobe.com').get('/').reply(200);
     nock('https://psi-audit-service.com')
       .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
       .reply(200, psiResult);
 
-    const response = await audit(auditQueueMessage, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+    const auditData = await mobileAuditRunner('https://adobe.com/', context);
+    assertAuditData(auditData);
   });
 
   it('logs and saves error on lighthouse error', async () => {
@@ -132,71 +119,30 @@ describe('LHS Audit', () => {
     };
     errorPSIResult.lighthouseResult.runtimeError = { code: 'error-code', message: 'error-message' };
 
-    nock('https://adobe.com').get('/').reply(200);
     nock('https://psi-audit-service.com')
       .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
       .reply(200, errorPSIResult);
 
-    const response = await audit(auditQueueMessage, context);
+    const auditData = await mobileAuditRunner('https://adobe.com/', context);
 
-    expect(response.status).to.equal(204);
-    expect(mockLog.error).to.have.been.calledWith('Audit error for site https://adobe.com with id site1: error-message');
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(mockDataAccess.addAudit.firstCall.firstArg.auditResult.runtimeError).to.be.an('object');
+    expect(context.log.error).to.have.been.calledWith(
+      'Audit error for site https://adobe.com/: error-message',
+      { code: 'error-code', strategy: 'mobile' },
+    );
+    expect(auditData.auditResult.runtimeError).to.be.an('object');
   });
 
-  it('should successfully perform an audit for mobile strategy with valid URL', async () => {
-    nock('https://adobe.com').get('/').reply(200);
-    nock('https://psi-audit-service.com')
-      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
-      .reply(200, psiResult);
+  it('successfully performs an audit for desktop strategy on dev', async () => {
+    context.func = {
+      version: 'ci',
+    };
 
-    auditQueueMessage.url = 'https://adobe.com';
-
-    const response = await audit(auditQueueMessage, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-  });
-
-  it('successfully performs an audit for desktop strategy', async () => {
-    nock('https://adobe.com').get('/').reply(200);
     nock('https://psi-audit-service.com')
       .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=desktop')
       .reply(200, psiResult);
 
-    auditQueueMessage.type = 'lhs-desktop';
-    const response = await audit(auditQueueMessage, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-  });
-
-  it('should successfully perform an audit with latest audit', async () => {
-    mockDataAccess.getLatestAuditForSite.resolves({
-      getAuditedAt: () => '2021-01-01T00:00:00.000Z',
-      getAuditResult: () => ({}),
-    });
-
-    nock('https://adobe.com').get('/').reply(200);
-    nock('https://psi-audit-service.com')
-      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
-      .reply(200, psiResult);
-
-    const response = await audit(auditQueueMessage, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-  });
-
-  it('throws error for an audit of unknown type', async () => {
-    auditQueueMessage.type = 'unknown-type';
-
-    const response = await audit(auditQueueMessage, context);
-
-    expect(response.status).to.equal(500);
-    expect(mockLog.error).to.have.been.calledOnce;
-    expect(mockLog.error).to.have.been.calledWith('LHS Audit Error: Unexpected error occurred: Unsupported type. Supported types are lhs-mobile and lhs-desktop.');
+    const auditData = await desktopAuditRunner('https://adobe.com/', context);
+    assertAuditData(auditData);
   });
 
   it('throws error when psi api fetch fails', async () => {
@@ -205,93 +151,152 @@ describe('LHS Audit', () => {
       .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
       .reply(405, 'Method Not Allowed');
 
-    const response = await audit(auditQueueMessage, context);
-
-    expect(response.status).to.equal(500);
-    expect(mockLog.error).to.have.been.calledTwice;
-    expect(mockLog.error).to.have.been.calledWith('Error happened during PSI check: Error: HTTP error! Status: 405');
-    expect(mockLog.error).to.have.been.calledWith('LHS Audit Error: Unexpected error occurred: HTTP error! Status: 405');
-  });
-
-  it('returns a 404 when site does not exist', async () => {
-    mockDataAccess.getSiteByID.resolves(null);
-
-    const response = await audit(auditQueueMessage, context);
-
-    expect(response.status).to.equal(404);
-  });
-
-  it('returns a 200 when site audits are disabled', async () => {
-    const siteWithDisabledAudits = createSite({
-      ...siteData,
-      auditConfig: { auditsDisabled: true },
-    });
-
-    mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
-
-    const response = await audit(auditQueueMessage, context);
-
-    expect(response.status).to.equal(200);
-    expect(mockLog.info).to.have.been.calledTwice;
-    expect(mockLog.info).to.have.been.calledWith('Audits disabled for site site1');
-  });
-
-  it('returns a 200 when audits for type are disabled', async () => {
-    const siteWithDisabledAudits = createSite({
-      ...siteData,
-      auditConfig: { auditsDisabled: false, auditTypeConfigs: { 'lhs-mobile': { disabled: true } } },
-    });
-
-    mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
-
-    const response = await audit(auditQueueMessage, context);
-
-    expect(response.status).to.equal(200);
-    expect(mockLog.info).to.have.been.calledTwice;
-    expect(mockLog.info).to.have.been.calledWith('Audit type lhs-mobile disabled for site site1');
-  });
-
-  it('throws error when data access fails', async () => {
-    mockDataAccess.getSiteByID.rejects(new Error('Data Error'));
-
-    const response = await audit(auditQueueMessage, context);
-
-    expect(response.status).to.equal(500);
-    expect(mockLog.error).to.have.been.calledOnce;
-    expect(mockLog.error).to.have.been.calledWith('LHS Audit Error: Unexpected error occurred: Error getting site site1: Data Error');
+    await expect(mobileAuditRunner('https://adobe.com/', context))
+      .to.be.rejectedWith('HTTP error! Status: 405');
   });
 
   it('throws error when context is incomplete', async () => {
-    delete context.dataAccess;
-    delete context.sqs;
     context.env = {};
 
-    const response = await audit(auditQueueMessage, context);
+    await expect(mobileAuditRunner('https://adobe.com/', context))
+      .to.be.rejectedWith('Invalid PageSpeed API base URL');
+  });
+});
 
-    expect(response.status).to.equal(500);
-    expect(mockLog.error).to.have.been.calledOnce;
-    expect(mockLog.error).to.have.been.calledWith('LHS Audit Error: Invalid configuration: Invalid dataAccess object, Invalid psiApiBaseUrl, Invalid queueUrl, Invalid sqs object');
+describe('LHS Data Utils', () => {
+  describe('extractAuditScores', () => {
+    it('extracts audit scores correctly', () => {
+      const categories = {
+        performance: { score: 0.8 },
+        seo: { score: 0.9 },
+        accessibility: { score: 0.7 },
+        'best-practices': { score: 0.6 },
+      };
+
+      const scores = extractAuditScores(categories);
+
+      expect(scores).to.deep.equal({
+        performance: 0.8,
+        seo: 0.9,
+        accessibility: 0.7,
+        'best-practices': 0.6,
+      });
+    });
   });
 
-  it('performs audit even when sqs message send fails', async () => {
-    nock('https://adobe.com').get('/').reply(200);
-    nock('https://psi-audit-service.com')
-      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
-      .reply(200, psiResult);
+  describe('extractTotalBlockingTime', () => {
+    it('extracts total blocking time if present', () => {
+      const psiAudit = {
+        'total-blocking-time': { numericValue: 1234 },
+      };
 
-    context.func.version = 'v1';
-    context.sqs.sendMessage.rejects(new Error('SQS Error'));
+      const tbt = extractTotalBlockingTime(psiAudit);
 
-    await audit(auditQueueMessage, context);
+      expect(tbt).to.equal(1234);
+    });
 
-    expect(mockLog.error).to.have.been.calledWith(
-      'Error while sending audit result to queue',
-      sinon.match.instanceOf(Error),
-    );
+    it('returns null if total blocking time is absent', () => {
+      const psiAudit = {};
 
-    expect(mockLog.error).to.have.been.calledWith(
-      'LHS Audit Error: Unexpected error occurred: Failed to send message to SQS: SQS Error',
-      sinon.match.instanceOf(Error),
-    );
+      const tbt = extractTotalBlockingTime(psiAudit);
+
+      expect(tbt).to.be.null;
+    });
+  });
+
+  describe('extractThirdPartySummary', () => {
+    it('extracts third party summary correctly', () => {
+      const psiAudit = {
+        'third-party-summary': {
+          details: {
+            items: [
+              {
+                entity: 'ExampleEntity',
+                blockingTime: 200,
+                mainThreadTime: 1000,
+                transferSize: 1024,
+              },
+            ],
+          },
+        },
+      };
+
+      const summary = extractThirdPartySummary(psiAudit);
+
+      expect(summary).to.deep.equal([
+        {
+          entity: 'ExampleEntity',
+          blockingTime: 200,
+          mainThreadTime: 1000,
+          transferSize: 1024,
+        },
+      ]);
+    });
+
+    it('returns an empty array if third party summary details are absent', () => {
+      const psiAudit = {};
+
+      const summary = extractThirdPartySummary(psiAudit);
+
+      expect(summary).to.be.an('array').that.is.empty;
+    });
+  });
+
+  describe('getContentLastModified', () => {
+    const lastModifiedDate = 'Tue, 05 Dec 2023 20:08:48 GMT';
+    const expectedDate = new Date(lastModifiedDate).toISOString();
+    let logSpy;
+
+    beforeEach(() => {
+      logSpy = { error: sinon.spy() };
+    });
+
+    afterEach(() => {
+      nock.cleanAll();
+    });
+
+    it('returns last modified date on successful fetch', async () => {
+      nock('https://www.site1.com')
+        .head('/')
+        .reply(200, '', { 'last-modified': lastModifiedDate });
+
+      const result = await getContentLastModified('https://www.site1.com', logSpy);
+
+      expect(result).to.equal(expectedDate);
+    });
+
+    it('returns current date when last modified date is not present', async () => {
+      nock('https://www.site2.com')
+        .head('/')
+        .reply(200, '', { 'last-modified': null });
+
+      const result = await getContentLastModified('https://www.site2.com', logSpy);
+
+      expect(result).to.not.equal(expectedDate);
+    });
+
+    it('returns current date and logs error on fetch failure', async () => {
+      nock('https://www.site3.com')
+        .head('/')
+        .replyWithError('Network error');
+
+      const result = await getContentLastModified('https://www.site3.com', logSpy);
+
+      expect(result).to.not.equal(expectedDate);
+      expect(isIsoDate(result)).to.be.true;
+      expect(logSpy.error.calledOnce).to.be.true;
+    });
+
+    it('returns current date and logs error on non-OK response', async () => {
+      nock('https://www.site4.com')
+        .head('/')
+        .reply(404);
+
+      const result = await getContentLastModified('https://www.site4.com', logSpy);
+
+      expect(result).to.not.equal(expectedDate);
+      expect(isIsoDate(result)).to.be.true;
+      expect(logSpy.error.calledOnce).to.be.true;
+    });
   });
 });
