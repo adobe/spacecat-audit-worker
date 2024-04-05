@@ -101,7 +101,7 @@ function PSIClient(config, log = console) {
     try {
       const formattedURL = formatURL(url);
 
-      const response = await fetch(formattedURL);
+      const response = await fetch(formattedURL, { redirect: 'follow' });
       const finalUrl = response.url;
 
       /* c8 ignore next 3 */
@@ -135,6 +135,8 @@ function PSIClient(config, log = console) {
     const strategyElapsedTime = (strategyEndTime[0] + strategyEndTime[1] / 1e9).toFixed(2);
 
     log.info(`Audited ${finalUrl} for ${strategy} strategy in ${strategyElapsedTime} seconds`);
+
+    psiResult.finalUrl = finalUrl;
 
     return psiResult;
   };
