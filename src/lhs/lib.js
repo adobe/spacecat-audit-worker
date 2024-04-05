@@ -64,15 +64,15 @@ export function extractThirdPartySummary(psiAudit) {
 /**
  * Retrieves the last modified date of the content from a given URL. If the URL is not accessible,
  * the function returns the current date in ISO format.
- * @param {string} baseUrl - The base URL from which to fetch the content's last modified date.
+ * @param {string} finalURL - The URL from which to fetch the content's last modified date.
  * @param {Object} log - Logger object for error logging.
  * @returns {Promise<string>} - A promise that resolves to the content's
  * last modified date in ISO format.
  */
-export async function getContentLastModified(baseUrl, log) {
+export async function getContentLastModified(finalURL, log) {
   let lastModified = new Date();
   try {
-    const response = await fetch(baseUrl, { method: 'HEAD' });
+    const response = await fetch(finalURL, { method: 'HEAD' });
     if (response.ok) {
       const headerValue = response.headers.get('last-modified');
       if (headerValue && !Number.isNaN(new Date(headerValue).getTime())) {
@@ -82,7 +82,7 @@ export async function getContentLastModified(baseUrl, log) {
       throw new Error(`HTTP error: ${response.status} ${response.statusText}`);
     }
   } catch (error) {
-    log.error(`Error fetching content last modified for ${baseUrl}: ${error.message}`);
+    log.error(`Error fetching content last modified for ${finalURL}: ${error.message}`);
   }
 
   return lastModified.toISOString();
@@ -133,7 +133,7 @@ const createAuditData = (
  * @async
  * @param {Object} services - The services object containing the PSI client,
  * content client, and more.
- * @param {String} finalURL - The final URL to audit.
+ * @param {String} baseURL - The final URL to audit.
  * @param {Object} auditContext - The audit context object containing information about the audit.
  * @param {string} strategy - The strategy of the audit.
  * @param {Object} log - The logging object.
@@ -143,23 +143,23 @@ const createAuditData = (
  */
 async function processAudit(
   services,
-  finalURL,
+  baseURL,
   auditContext,
   strategy,
   log = console,
 ) {
   const { psiClient } = services;
 
-  const { lighthouseResult, fullAuditRef } = await psiClient.runAudit(finalURL, strategy);
+  const { lighthouseResult, fullAuditRef, finalUrl } = await psiClient.runAudit(baseURL, strategy);
 
   if (isObject(lighthouseResult.runtimeError)) {
     log.error(
-      `Audit error for site ${finalURL}: ${lighthouseResult.runtimeError.message}`,
+      `Audit error for site ${baseURL}: ${lighthouseResult.runtimeError.message}`,
       { code: lighthouseResult.runtimeError.code, strategy },
     );
   }
 
-  const contentLastModified = await getContentLastModified(finalURL, log);
+  const contentLastModified = await getContentLastModified(finalUrl, log);
 
   return createAuditData(
     lighthouseResult,
@@ -231,12 +231,12 @@ function initServices(config, log = console) {
  * If any step fails, an error is thrown and a 500 response is returned.
  *
  * @async
- * @param {String} finalURL - The final URL to audit.
+ * @param {String} baseURL - The final URL to audit.
  * @param {String} strategy - The strategy of the audit.
  * @param {Object} context - The context object containing configurations, services,
  * and environment variables.
  */
-async function lhsAuditRunner(finalURL, strategy, context) {
+async function lhsAuditRunner(baseURL, strategy, context) {
   const { dataAccess, log, sqs } = context;
   const {
     PAGESPEED_API_BASE_URL: psiApiBaseUrl,
@@ -247,7 +247,7 @@ async function lhsAuditRunner(finalURL, strategy, context) {
     throw new Error('Invalid PageSpeed API base URL');
   }
 
-  log.info(`Received ${strategy} audit request for: ${finalURL}`);
+  log.info(`Received ${strategy} audit request for: ${baseURL}`);
 
   const services = initServices({
     psiApiKey,
@@ -260,7 +260,7 @@ async function lhsAuditRunner(finalURL, strategy, context) {
   const startTime = process.hrtime();
   const auditData = await processAudit(
     services,
-    finalURL,
+    baseURL,
     context,
     strategy,
     log,
@@ -269,7 +269,7 @@ async function lhsAuditRunner(finalURL, strategy, context) {
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`LHS Audit of type ${strategy} completed in ${formattedElapsed} seconds`);
+  log.info(`LHS Audit of type ${strategy} completed in ${formattedElapsed} seconds for ${baseURL}`);
 
   return auditData;
 }

@@ -127,6 +127,7 @@ describe('PSIClient', () => {
       const result = await client.runAudit('testsite.com', 'mobile');
       expect(result).to.deep.equal(
         {
+          finalUrl: 'https://testsite.com/',
           fullAuditRef: 'https://example.com/?url=https%3A%2F%2Ftestsite.com%2F&strategy=mobile&key=testApiKey',
           lighthouseResult: {
             score: 0.8,

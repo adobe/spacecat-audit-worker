@@ -136,6 +136,8 @@ function PSIClient(config, log = console) {
 
     log.info(`Audited ${finalUrl} for ${strategy} strategy in ${strategyElapsedTime} seconds`);
 
+    psiResult.finalUrl = finalUrl;
+
     return psiResult;
   };
 
