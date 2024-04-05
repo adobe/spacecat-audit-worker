@@ -35,28 +35,3 @@ export async function retrieveSiteBySiteId(dataAccess, siteId, log) {
     throw new Error(`Error getting site ${siteId}: ${e.message}`);
   }
 }
-
-/**
- * Fetches site data based on the given base URL. If no site is found for the given
- * base URL, null is returned. Otherwise, the site object is returned. If an error
- * occurs while fetching the site, an error is thrown.
- *
- * @async
- * @param {Object} dataAccess - The data access object for database operations.
- * @param {string} url - The url of the site to fetch data for.
- * @param {Object} log - The logging object.
- * @throws {Error} - Throws an error if the site data cannot be fetched.
- * @returns {Promise<Object|null>} - Returns the site object if found, otherwise null.
- */
-export async function retrieveSiteByURL(dataAccess, url, log) {
-  try {
-    const site = await dataAccess.getSiteByBaseURL(url);
-    if (!isObject(site)) {
-      log.warn(`Site not found for url: ${url}`);
-      return null;
-    }
-    return site;
-  } catch (e) {
-    throw new Error(`Error getting site ${url}: ${e.message}`);
-  }
-}

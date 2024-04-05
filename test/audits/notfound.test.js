@@ -119,7 +119,7 @@ describe('Index Tests', () => {
 
   it('fetch 404s for base url > site data access exception > reject', async () => {
     const exceptionContext = { ...context };
-    exceptionContext.dataAccess.getSiteByBaseURL = sinon.stub().rejects('Exception data accesss');
+    exceptionContext.dataAccess.getSiteByID = sinon.stub().rejects('Exception data accesss');
 
     const resp = await main(request, exceptionContext);
 
@@ -131,7 +131,7 @@ describe('Index Tests', () => {
       .get('/')
       .reply(200);
     const noSiteContext = { ...context };
-    noSiteContext.dataAccess.getSiteByBaseURL = sinon.stub().resolves(null);
+    noSiteContext.dataAccess.getSiteByID = sinon.stub().resolves(null);
 
     const resp = await main(request, noSiteContext);
 
