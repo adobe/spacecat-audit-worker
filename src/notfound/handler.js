@@ -37,7 +37,7 @@ function process404Response(data) {
     }));
 }
 
-async function audit404(baseURL, context) {
+export async function audit404Runner(baseURL, context) {
   const { log } = context;
 
   log.info(`Received audit req for domain: ${baseURL}`);
@@ -64,5 +64,5 @@ async function audit404(baseURL, context) {
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .withRunner(audit404)
+  .withRunner(audit404Runner)
   .build();
