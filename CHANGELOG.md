@@ -1,3 +1,10 @@
+## [1.12.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.0...v1.12.1) (2024-04-02)
+
+
+### Bug Fixes
+
+* audit run returns expected format ([#196](https://github.com/adobe/spacecat-audit-worker/issues/196)) ([a11d96d](https://github.com/adobe/spacecat-audit-worker/commit/a11d96d7b05679517afd347d05e8d0ce8aed6369))
+
 # [1.12.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.11.0...v1.12.0) (2024-04-01)
 
 
