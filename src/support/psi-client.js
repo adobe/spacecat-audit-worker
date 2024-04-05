@@ -101,7 +101,7 @@ function PSIClient(config, log = console) {
     try {
       const formattedURL = formatURL(url);
 
-      const response = await fetch(formattedURL);
+      const response = await fetch(formattedURL, { redirect: 'follow' });
       const finalUrl = response.url;
 
       /* c8 ignore next 3 */
