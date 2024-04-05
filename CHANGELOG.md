@@ -1,3 +1,10 @@
+## [1.12.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.1...v1.12.2) (2024-04-05)
+
+
+### Bug Fixes
+
+* migrate lhs to audit-builder ([#200](https://github.com/adobe/spacecat-audit-worker/issues/200)) ([e78c358](https://github.com/adobe/spacecat-audit-worker/commit/e78c358377c004b39272e68c01187a7efe7d46de))
+
 ## [1.12.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.0...v1.12.1) (2024-04-02)
 
 
