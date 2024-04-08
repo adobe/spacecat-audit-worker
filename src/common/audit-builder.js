@@ -13,6 +13,7 @@
 import {
   Audit,
   defaultSiteProvider,
+  defaultOrgProvider,
   defaultMessageSender,
   defaultPersister,
   defaultUrlResolver,
@@ -21,6 +22,7 @@ import {
 export class AuditBuilder {
   constructor() {
     this.siteProvider = defaultSiteProvider;
+    this.orgProvider = defaultOrgProvider;
     this.urlResolver = defaultUrlResolver;
     this.persister = defaultPersister;
     this.messageSender = defaultMessageSender;
@@ -62,6 +64,7 @@ export class AuditBuilder {
 
     return new Audit(
       this.siteProvider,
+      this.orgProvider,
       this.urlResolver,
       this.runner,
       this.persister,
