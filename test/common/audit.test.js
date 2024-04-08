@@ -19,7 +19,7 @@ import nock from 'nock';
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
 import {
-  defaultMessageSender,
+  defaultMessageSender, defaultOrgProvider,
   defaultPersister,
   defaultSiteProvider,
   defaultUrlResolver, noopUrlResolver,
@@ -50,7 +50,7 @@ describe('Audit tests', () => {
       .build(message);
 
     org = createOrganization({ name: 'some-org' });
-    site = createSite({ baseURL, organization: org.getId() });
+    site = createSite({ baseURL, organizationId: org.getId() });
   });
 
   before('setup', function () {
@@ -77,6 +77,21 @@ describe('Audit tests', () => {
       expect(result.getBaseURL()).to.equal(baseURL);
 
       expect(context.dataAccess.getSiteByID).to.have.been.calledOnce;
+    });
+
+    it('default org provider throws error when org is not found', async () => {
+      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(null);
+      await expect(defaultOrgProvider(site.getOrganizationId(), context))
+        .to.be.rejectedWith(`Org with id ${site.getOrganizationId()} not found`);
+    });
+
+    it('default org provider returns org', async () => {
+      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
+
+      const result = await defaultOrgProvider(site.getOrganizationId(), context);
+      expect(result.getId()).to.equal(site.getOrganizationId());
+
+      expect(context.dataAccess.getOrganizationByID).to.have.been.calledOnce;
     });
 
     it('default persister saves the audit result to data access', async () => {
