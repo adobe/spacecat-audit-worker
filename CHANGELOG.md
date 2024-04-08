@@ -1,3 +1,10 @@
+## [1.12.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.3...v1.12.4) (2024-04-08)
+
+
+### Bug Fixes
+
+* check org for every audit ([#209](https://github.com/adobe/spacecat-audit-worker/issues/209)) ([4105b52](https://github.com/adobe/spacecat-audit-worker/commit/4105b52692134c5a2043c8fba051755df3c080aa))
+
 ## [1.12.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.2...v1.12.3) (2024-04-06)
 
 
