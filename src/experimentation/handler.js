@@ -61,16 +61,7 @@ export async function experimentationAuditRunner(baseURL, context) {
   return auditData;
 }
 
-/**
- * Creates an Experimentation audit runner function.
- *
- * @returns {function(*, *): Promise<Object>} - Returns the Experimentation audit runner function.
- */
-export function createExperimentationAuditRunner() {
-  return async (finalURL, context) => experimentationAuditRunner(finalURL, context);
-}
-
 export default new AuditBuilder()
-  .withRunner(createExperimentationAuditRunner())
+  .withRunner((finalURL, context) => experimentationAuditRunner(finalURL, context))
   .withUrlResolver((site) => site.getBaseURL())
   .build();
