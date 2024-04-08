@@ -206,4 +206,57 @@ describe('Audit tests', () => {
       expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);
     });
   });
+
+  it('audit runs as expected when receiving siteId instead of message ', async () => {
+    const queueUrl = 'some-queue-url';
+    context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
+    context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
+    context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
+    context.dataAccess.addAudit.resolves();
+    context.sqs.sendMessage.resolves();
+
+    nock(baseURL)
+      .get('/')
+      .reply(200);
+
+    const fullAuditRef = 'hebele';
+    const dummyRunner = (url, _context) => ({
+      auditResult: typeof url === 'string' && typeof _context === 'object' ? { metric: 42 } : null,
+      fullAuditRef,
+    });
+
+    // Act
+    const audit = new AuditBuilder()
+      .withSiteProvider(defaultSiteProvider)
+      .withUrlResolver(defaultUrlResolver)
+      .withRunner(dummyRunner)
+      .withPersister(defaultPersister)
+      .withMessageSender(defaultMessageSender)
+      .build();
+
+    const siteIdMessage = { siteId: message.url, type: message.type };
+    const resp = await audit.run(siteIdMessage, context);
+
+    // Assert
+    expect(resp.status).to.equal(200);
+
+    expect(context.dataAccess.addAudit).to.have.been.calledOnce;
+    expect(context.dataAccess.addAudit).to.have.been.calledWith({
+      siteId: site.getId(),
+      isLive: site.isLive(),
+      auditedAt: mockDate,
+      auditType: message.type,
+      auditResult: { metric: 42 },
+      fullAuditRef,
+    });
+
+    const expectedMessage = {
+      type: message.type,
+      url: 'https://space.cat',
+      auditContext: { finalUrl: 'space.cat' },
+      auditResult: { metric: 42 },
+    };
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);
+  });
 });
