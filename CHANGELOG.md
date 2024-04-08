@@ -1,3 +1,10 @@
+## [1.12.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.4...v1.12.5) (2024-04-08)
+
+
+### Bug Fixes
+
+* update to AuditBuilder ([fc3b776](https://github.com/adobe/spacecat-audit-worker/commit/fc3b7767892f54d18bc011432755acff6d56cfd5))
+
 ## [1.12.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.3...v1.12.4) (2024-04-08)
 
 
