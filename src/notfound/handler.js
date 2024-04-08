@@ -11,12 +11,12 @@
  */
 
 import RUMAPIClient, { create404URL } from '@adobe/spacecat-shared-rum-api-client';
-import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
 import { dateAfterDays } from '@adobe/spacecat-shared-utils';
-import { retrieveSiteByURL } from '../utils/data-access.js';
 import {
   getRUMUrl,
 } from '../support/utils.js';
+import { AuditBuilder } from '../common/audit-builder.js';
+import { noopUrlResolver } from '../common/audit.js';
 
 const AUDIT_TYPE = '404';
 const PAGEVIEW_THRESHOLD = 100;
@@ -37,95 +37,32 @@ function process404Response(data) {
     }));
 }
 
-/**
- * Processes the audit by fetching site data,PSI data, code diff and content last modified date
- * creating audit data, and sending a message to SQS.
- *
- * @async
- * @param {Object} services - The services object containing the dataAccess and sqs service.
- * @param {Object} site - The site which to audit.
- * @param {Object} auditContext - The audit context object containing information about the audit.
- * @param {Object} queueUrl - The SQS queue URL.
- * @param {Object} result - The result object containing audit result.
- * @param {Object} log - The logger.
- * @throws {Error} - Throws an error if any step in the audit process fails.
- */
-async function processAuditResult(
-  services,
-  site,
-  auditContext,
-  queueUrl,
-  result,
-  log,
-) {
-  const {
-    dataAccess, sqs,
-  } = services;
-  const auditData = {
-    siteId: site.getId(),
-    auditType: AUDIT_TYPE,
-    auditedAt: new Date().toISOString(),
-    fullAuditRef: create404URL(auditContext),
-    isLive: site.isLive(),
-    auditResult: { result, finalUrl: auditContext.url },
+export async function audit404Runner(baseURL, context) {
+  const { log } = context;
+
+  log.info(`Received audit req for domain: ${baseURL}`);
+  const finalUrl = await getRUMUrl(baseURL);
+
+  const rumAPIClient = RUMAPIClient.createFrom(context);
+  const startDate = dateAfterDays(-7);
+
+  const params = {
+    url: finalUrl,
+    interval: -1,
+    startdate: startDate.toISOString().split('T')[0],
+    enddate: new Date().toISOString().split('T')[0],
   };
-  try {
-    log.info(`Saving audit ${JSON.stringify(auditData)}`);
-    await dataAccess.addAudit(auditData);
 
-    await sqs.sendMessage(queueUrl, {
-      type: AUDIT_TYPE,
-      url: site.getBaseURL(),
-      auditContext: { finalUrl: auditContext.url },
-      auditResult: result,
-    });
-  } catch (e) {
-    log.error(`Error writing ${AUDIT_TYPE} to audit table: ${e.message}`);
-    throw e;
-  }
+  const data = await rumAPIClient.get404Sources(params);
+  const auditResult = process404Response(data);
+  const fullAuditRef = create404URL(params);
+
+  log.info(`Successfully audited ${baseURL} for ${AUDIT_TYPE} type audit`);
+
+  return { auditResult, fullAuditRef };
 }
-export default async function audit404(message, context) {
-  const { type, url } = message;
-  const { log, dataAccess } = context;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
 
-  try {
-    log.info(`Received audit req for domain: ${url}`);
-    const site = await retrieveSiteByURL(dataAccess, url, log);
-    log.info(`Retrieved site by url: ${url}`);
-    if (!site) {
-      log.error(`Site not found: ${url}`);
-      return notFound('Site not found');
-    }
-    const finalUrl = await getRUMUrl(url);
-
-    const rumAPIClient = RUMAPIClient.createFrom(context);
-    const startDate = dateAfterDays(-7);
-
-    const params = {
-      url: finalUrl,
-      interval: -1,
-      startdate: startDate.toISOString().split('T')[0],
-      enddate: new Date().toISOString().split('T')[0],
-    };
-
-    const data = await rumAPIClient.get404Sources(params);
-    const auditResult = process404Response(data);
-    await processAuditResult(
-      { ...context, rumAPIClient },
-      site,
-      params,
-      queueUrl,
-      auditResult,
-      log,
-    );
-
-    log.info(`Successfully audited ${url} for ${type} type audit`);
-
-    return noContent();
-  } catch (e) {
-    return internalServerError(`Internal server error: ${e.message}`);
-  }
-}
+export default new AuditBuilder()
+  .withUrlResolver(noopUrlResolver)
+  .withRunner(audit404Runner)
+  .build();

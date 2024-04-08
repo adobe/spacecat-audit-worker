@@ -75,9 +75,9 @@ export class Audit {
   async run(message, context) {
     const {
       type,
-      url: siteId,
       auditContext = {},
     } = message;
+    const siteId = message.url || message.siteId;
 
     try {
       const site = await this.siteProvider(siteId, context);
