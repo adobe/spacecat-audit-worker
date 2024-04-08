@@ -37,6 +37,17 @@ export async function defaultSiteProvider(siteId, context) {
   return site;
 }
 
+export async function defaultOrgProvider(orgId, context) {
+  const { dataAccess } = context;
+
+  const org = await dataAccess.getOrganizationByID(orgId);
+  if (!org) {
+    throw new Error(`Org with id ${orgId} not found`);
+  }
+
+  return org;
+}
+
 export async function defaultUrlResolver(site) {
   return composeAuditURL(site.getBaseURL());
 }
@@ -45,16 +56,16 @@ export async function noopUrlResolver(site) {
   return site.getBaseURL();
 }
 
-async function assertAuditsDisabled(type, site, dataAccess) {
-  const org = await dataAccess.getOrganizationByID(site.getOrganizationId());
+async function assertAuditsDisabled(type, site, org) {
   if (isAuditsDisabled(site, org, type)) {
     throw new Error(`${type} audits are disabled for the site: ${site.getId()}`);
   }
 }
 
 export class Audit {
-  constructor(siteProvider, urlResolver, runner, persister, messageSender) {
+  constructor(siteProvider, orgProvider, urlResolver, runner, persister, messageSender) {
     this.siteProvider = siteProvider;
+    this.orgProvider = orgProvider;
     this.urlResolver = urlResolver;
     this.runner = runner;
     this.persister = persister;
@@ -67,12 +78,12 @@ export class Audit {
       url: siteId,
       auditContext = {},
     } = message;
-    const { dataAccess } = context;
 
     try {
       const site = await this.siteProvider(siteId, context);
+      const org = await this.orgProvider(site.getOrganizationId(), context);
 
-      await assertAuditsDisabled(type, site, dataAccess);
+      await assertAuditsDisabled(type, site, org);
 
       const finalUrl = await this.urlResolver(site);
 
