@@ -62,6 +62,6 @@ export async function experimentationAuditRunner(baseURL, context) {
 }
 
 export default new AuditBuilder()
-  .withRunner((finalURL, context) => experimentationAuditRunner(finalURL, context))
+  .withRunner(experimentationAuditRunner)
   .withUrlResolver((site) => site.getBaseURL())
   .build();
