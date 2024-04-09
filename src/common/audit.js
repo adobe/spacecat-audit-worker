@@ -56,12 +56,6 @@ export async function noopUrlResolver(site) {
   return site.getBaseURL();
 }
 
-async function assertAuditsDisabled(type, site, org) {
-  if (isAuditsDisabled(site, org, type)) {
-    throw new Error(`${type} audits are disabled for the site: ${site.getId()}`);
-  }
-}
-
 export class Audit {
   constructor(siteProvider, orgProvider, urlResolver, runner, persister, messageSender) {
     this.siteProvider = siteProvider;
@@ -73,6 +67,7 @@ export class Audit {
   }
 
   async run(message, context) {
+    const { log } = context;
     const {
       type,
       auditContext = {},
@@ -83,7 +78,10 @@ export class Audit {
       const site = await this.siteProvider(siteId, context);
       const org = await this.orgProvider(site.getOrganizationId(), context);
 
-      await assertAuditsDisabled(type, site, org);
+      if (isAuditsDisabled(site, org, type)) {
+        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
+        return ok();
+      }
 
       const finalUrl = await this.urlResolver(site);
 
