@@ -9,23 +9,9 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
 import RUMAPIClient, { createExperimentationURL } from '@adobe/spacecat-shared-rum-api-client';
-import {
-  internalServerError, noContent, notFound, ok,
-} from '@adobe/spacecat-shared-http-utils';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import {
-  getRUMUrl,
-} from '../support/utils.js';
-
-/**
- * url param in run-query@v3/rum-dashboard works in a 'startsWith' fashion. url=domain.com returns
- * an empty result whereas url=www.domain.com/ returns the desired result. To catch the redirects
- * to subdomains we issue a GET call to the domain, then use the final url after redirects
- * @param url
- * @returns finalUrl {Promise<string>}
- */
+import { AuditBuilder } from '../common/audit-builder.js';
+import { getRUMUrl } from '../support/utils.js';
 
 function processRUMResponse(data) {
   return data
@@ -42,55 +28,40 @@ function processRUMResponse(data) {
       time95: row.time95,
     }));
 }
-export default async function auditExperiments(message, context) {
-  const { type, url: siteId, auditContext } = message;
-  const { dataAccess, log, sqs } = context;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
-  try {
-    log.info(`Received audit request for siteId: ${siteId}`);
-    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    if (!site) {
-      return notFound('Site not found');
-    }
-    if (!site.isLive()) {
-      log.info(`Site ${siteId} is not live`);
-      return ok();
-    }
 
-    const rumAPIClient = RUMAPIClient.createFrom(context);
-    const finalUrl = await getRUMUrl(site.getBaseURL());
-    auditContext.finalUrl = finalUrl;
-    const params = {
-      url: finalUrl,
-    };
+async function processAudit(baseURL, context) {
+  const rumAPIClient = RUMAPIClient.createFrom(context);
+  const finalUrl = await getRUMUrl(baseURL);
+  const params = {
+    url: finalUrl,
+  };
 
-    const data = await rumAPIClient.getExperimentationData(params);
-    const auditResult = {
-      result: processRUMResponse(data),
-      finalUrl: auditContext.finalUrl,
-    };
-
-    const auditData = {
-      siteId: site.getId(),
-      isLive: site.isLive(),
-      auditedAt: new Date().toISOString(),
-      auditType: type,
-      auditResult,
-      fullAuditRef: createExperimentationURL({ url: auditContext.finalUrl }),
-    };
-    await dataAccess.addAudit(auditData);
-    await sqs.sendMessage(queueUrl, {
-      url: site.getBaseURL(),
-      type,
-      auditContext,
-      auditResult,
-    });
-    log.info(`Successfully audited ${siteId} for ${type} type audit`);
-    return noContent();
-  } catch (e) {
-    log.error(`Audit ${type} failed for ${siteId}`, e);
-    return internalServerError(`Internal server error: ${e.message}`);
-  }
+  const data = await rumAPIClient.getExperimentationData(params);
+  return {
+    auditResult: processRUMResponse(data),
+    fullAuditRef: createExperimentationURL({ url: finalUrl }),
+  };
 }
+
+export async function experimentationAuditRunner(baseURL, context) {
+  const { log } = context;
+  log.info(`Received Experimentation audit request for ${baseURL}`);
+  const startTime = process.hrtime();
+
+  const auditData = await processAudit(
+    baseURL,
+    context,
+  );
+
+  const endTime = process.hrtime(startTime);
+  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+  const formattedElapsed = elapsedSeconds.toFixed(2);
+
+  log.info(`Experimentation Audit completed in ${formattedElapsed} seconds for ${baseURL}`);
+  return auditData;
+}
+
+export default new AuditBuilder()
+  .withRunner(experimentationAuditRunner)
+  .withUrlResolver((site) => site.getBaseURL())
+  .build();

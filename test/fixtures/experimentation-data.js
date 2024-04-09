@@ -9,10 +9,9 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
-export const expectedAuditResult = {
-  finalUrl: 'bamboohr.com',
-  result: [
+export const expectedAuditData = {
+  fullAuditRef: 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-experiments?interval=7&offset=0&limit=101&url=bamboohr.com',
+  auditResult: [
     {
       experiment: '24-101c-lp-enhanced-applicant-tracking-system',
       p_value: 0.5000000005,
