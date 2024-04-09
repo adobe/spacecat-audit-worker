@@ -154,7 +154,7 @@ describe('Audit tests', () => {
         .to.be.rejectedWith(`${message.type} audit failed for site ${message.url}. Reason: Site with id ${message.url} not found`);
     });
 
-    it('audit run fails when audit is disabled', async () => {
+    it('audit run skips when audit is disabled', async () => {
       org.setAllAuditsDisabled(true);
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
@@ -165,8 +165,10 @@ describe('Audit tests', () => {
         .withRunner(() => 123)
         .build();
 
-      await expect(audit.run(message, context))
-        .to.be.rejectedWith(`${message.type} audit failed for site ${message.url}. Reason: ${message.type} audits are disabled for the site: ${site.getId()}`);
+      const resp = await audit.run(message, context);
+
+      expect(resp.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
     });
 
     it('audit runs as expected', async () => {

@@ -1,3 +1,10 @@
+## [1.12.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.5...v1.12.6) (2024-04-09)
+
+
+### Bug Fixes
+
+* skip when audit is disabled ([#214](https://github.com/adobe/spacecat-audit-worker/issues/214)) ([a13636c](https://github.com/adobe/spacecat-audit-worker/commit/a13636cfb910f98c3e97446ceb764480b91aa4a7))
+
 ## [1.12.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.4...v1.12.5) (2024-04-08)
 
 
