@@ -21,20 +21,20 @@ export default class AhrefsAPIClient {
     return new AhrefsAPIClient({ apiBaseUrl, apiKey }, fetch);
   }
 
-  constructor(config, httpClient, log = console) {
+  constructor(config, fetchAPI, log = console) {
     const { apiKey, apiBaseUrl } = config;
 
     if (!isValidUrl(apiBaseUrl)) {
       throw new Error(`Invalid Ahrefs API Base URL: ${apiBaseUrl}`);
     }
 
-    if (typeof httpClient !== 'function') {
-      throw Error('"fetch" must be a function');
+    if (typeof fetchAPI !== 'function') {
+      throw Error('"fetchAPI" must be a function');
     }
 
     this.apiBaseUrl = apiBaseUrl;
     this.apiKey = apiKey;
-    this.httpClient = httpClient;
+    this.fetchAPI = fetchAPI;
     this.log = log;
   }
 
@@ -46,7 +46,7 @@ export default class AhrefsAPIClient {
         .join('&')}` : '';
 
     const fullAuditRef = `${this.apiBaseUrl}${endpoint}${queryString}`;
-    const response = await this.httpClient(fullAuditRef, {
+    const response = await this.fetchAPI(fullAuditRef, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

@@ -84,7 +84,7 @@ describe('AhrefsAPIClient', () => {
     });
 
     it('throws error when fetch is not a function', () => {
-      expect(() => new AhrefsAPIClient(config, 'fetch')).to.throw('"fetch" must be a function');
+      expect(() => new AhrefsAPIClient(config, 'fetch')).to.throw('"fetchAPI" must be a function');
     });
   });
 
