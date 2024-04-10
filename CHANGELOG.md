@@ -1,3 +1,10 @@
+## [1.12.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.7...v1.12.8) (2024-04-10)
+
+
+### Bug Fixes
+
+* add upper limit to broken backlinks, log costs ([#215](https://github.com/adobe/spacecat-audit-worker/issues/215)) ([a44b160](https://github.com/adobe/spacecat-audit-worker/commit/a44b1609fab2beea1f068a72e6357e01bd1da75f))
+
 ## [1.12.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.6...v1.12.7) (2024-04-09)
 
 
