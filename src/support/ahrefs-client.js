@@ -13,21 +13,29 @@
 import { isValidUrl } from '@adobe/spacecat-shared-utils';
 import { fetch } from './utils.js';
 
+const getLimit = (limit, upperLimit) => Math.min(limit, upperLimit);
+
 export default class AhrefsAPIClient {
   static createFrom(context) {
     const { AHREFS_API_BASE_URL: apiBaseUrl, AHREFS_API_KEY: apiKey } = context.env;
-    return new AhrefsAPIClient({ apiBaseUrl, apiKey });
+    return new AhrefsAPIClient({ apiBaseUrl, apiKey }, fetch);
   }
 
-  constructor(config) {
+  constructor(config, httpClient, log = console) {
     const { apiKey, apiBaseUrl } = config;
 
     if (!isValidUrl(apiBaseUrl)) {
       throw new Error(`Invalid Ahrefs API Base URL: ${apiBaseUrl}`);
     }
 
+    if (typeof httpClient !== 'function') {
+      throw Error('"fetch" must be a function');
+    }
+
     this.apiBaseUrl = apiBaseUrl;
     this.apiKey = apiKey;
+    this.httpClient = httpClient;
+    this.log = log;
   }
 
   async sendRequest(endpoint, queryParams = {}) {
@@ -38,7 +46,7 @@ export default class AhrefsAPIClient {
         .join('&')}` : '';
 
     const fullAuditRef = `${this.apiBaseUrl}${endpoint}${queryString}`;
-    const response = await fetch(fullAuditRef, {
+    const response = await this.httpClient(fullAuditRef, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -46,7 +54,12 @@ export default class AhrefsAPIClient {
       },
     });
 
+    this.log.info(`Ahrefs API ${endpoint} response has number of rows: ${response.headers.get('x-api-rows')}, 
+      cost per row: ${response.headers.get('x-api-units-cost-row')},
+      total cost: ${response.headers.get('x-api-units-cost-total-actual')}`);
+
     if (!response.ok) {
+      this.log.error(`Ahrefs API request failed with status: ${response.status}`);
       throw new Error(`Ahrefs API request failed with status: ${response.status}`);
     }
 
@@ -57,11 +70,12 @@ export default class AhrefsAPIClient {
         fullAuditRef,
       };
     } catch (e) {
+      this.log.error(`Error parsing Ahrefs API response: ${e.message}`);
       throw new Error(`Error parsing Ahrefs API response: ${e.message}`);
     }
   }
 
-  async getBrokenBacklinks(url) {
+  async getBrokenBacklinks(url, limit = 50) {
     const filter = {
       and: [
         { field: 'is_dofollow', is: ['eq', 1] },
@@ -78,7 +92,7 @@ export default class AhrefsAPIClient {
         'url_from',
         'url_to',
       ].join(','),
-      limit: 50,
+      limit: getLimit(limit, 100),
       mode: 'prefix',
       order_by: 'domain_rating_source:desc,traffic_domain:desc',
       target: url,
@@ -87,5 +101,60 @@ export default class AhrefsAPIClient {
     };
 
     return this.sendRequest('/site-explorer/broken-backlinks', queryParams);
+  }
+
+  async getTopPages(url, limit = 200) {
+    const MONTH_IN_MS = 30 * 24 * 60 * 60 * 1000;
+
+    const filter = {
+      and: [
+        { field: 'sum_traffic', is: ['gt', 0] },
+      ],
+    };
+
+    const queryParams = {
+      select: [
+        'url',
+        'sum_traffic',
+      ].join(','),
+      where: JSON.stringify(filter),
+      order_by: 'sum_traffic_merged',
+      date: new Date().toISOString().split('T')[0],
+      date_compared: new Date(Date.now() - MONTH_IN_MS).toISOString().split('T')[0],
+      target: url,
+      limit: getLimit(limit, 2000),
+      mode: 'prefix',
+      output: 'json',
+    };
+
+    return this.sendRequest('/site-explorer/top-pages', queryParams);
+  }
+
+  async getBacklinks(url, limit = 200) {
+    const filter = {
+      and: [
+        { field: 'is_dofollow', is: ['eq', 1] },
+        { field: 'is_content', is: ['eq', 1] },
+        { field: 'domain_rating_source', is: ['gte', 29.5] },
+        { field: 'traffic_domain', is: ['gte', 500] },
+        { field: 'links_external', is: ['lte', 300] },
+      ],
+    };
+
+    const queryParams = {
+      select: [
+        'title',
+        'url_from',
+        'url_to',
+      ].join(','),
+      where: JSON.stringify(filter),
+      order_by: 'domain_rating_source:desc,traffic_domain:desc',
+      target: url,
+      limit: getLimit(limit, 1000),
+      mode: 'prefix',
+      output: 'json',
+    };
+
+    return this.sendRequest('/site-explorer/all-backlinks', queryParams);
   }
 }

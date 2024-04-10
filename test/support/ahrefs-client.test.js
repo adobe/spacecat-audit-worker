@@ -18,6 +18,7 @@ import nock from 'nock';
 import sinon from 'sinon';
 
 import AhrefsAPIClient from '../../src/support/ahrefs-client.js';
+import { fetch } from '../../src/support/utils.js';
 
 chai.use(chaiAsPromised);
 const { expect } = chai;
@@ -45,7 +46,7 @@ describe('AhrefsAPIClient', () => {
   };
 
   beforeEach(() => {
-    client = new AhrefsAPIClient(config);
+    client = new AhrefsAPIClient(config, fetch);
   });
 
   afterEach(() => {
@@ -56,6 +57,10 @@ describe('AhrefsAPIClient', () => {
   describe('constructor', () => {
     it('throws error when api base url is missing', () => {
       expect(() => new AhrefsAPIClient({})).to.throw('Invalid Ahrefs API Base URL: undefined');
+    });
+
+    it('throws error when fetch is not a function', () => {
+      expect(() => new AhrefsAPIClient(config, 'fetch')).to.throw('"fetch" must be a function');
     });
   });
 
