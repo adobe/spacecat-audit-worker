@@ -13,13 +13,15 @@
 import { isValidUrl } from '@adobe/spacecat-shared-utils';
 import { fetch } from './utils.js';
 
+const getLimit = (limit, upperLimit) => Math.min(limit, upperLimit);
+
 export default class AhrefsAPIClient {
   static createFrom(context) {
     const { AHREFS_API_BASE_URL: apiBaseUrl, AHREFS_API_KEY: apiKey } = context.env;
-    return new AhrefsAPIClient({ apiBaseUrl, apiKey });
+    return new AhrefsAPIClient({ apiBaseUrl, apiKey }, context.log);
   }
 
-  constructor(config) {
+  constructor(config, log = console) {
     const { apiKey, apiBaseUrl } = config;
 
     if (!isValidUrl(apiBaseUrl)) {
@@ -28,6 +30,7 @@ export default class AhrefsAPIClient {
 
     this.apiBaseUrl = apiBaseUrl;
     this.apiKey = apiKey;
+    this.log = log;
   }
 
   async sendRequest(endpoint, queryParams = {}) {
@@ -46,7 +49,12 @@ export default class AhrefsAPIClient {
       },
     });
 
+    this.log.info(`Ahrefs API ${endpoint} response has number of rows: ${response.headers.get('x-api-rows')}, 
+      cost per row: ${response.headers.get('x-api-units-cost-row')},
+      total cost: ${response.headers.get('x-api-units-cost-total-actual')}`);
+
     if (!response.ok) {
+      this.log.error(`Ahrefs API request failed with status: ${response.status}`);
       throw new Error(`Ahrefs API request failed with status: ${response.status}`);
     }
 
@@ -57,11 +65,12 @@ export default class AhrefsAPIClient {
         fullAuditRef,
       };
     } catch (e) {
+      this.log.error(`Error parsing Ahrefs API response: ${e.message}`);
       throw new Error(`Error parsing Ahrefs API response: ${e.message}`);
     }
   }
 
-  async getBrokenBacklinks(url) {
+  async getBrokenBacklinks(url, limit = 50) {
     const filter = {
       and: [
         { field: 'is_dofollow', is: ['eq', 1] },
@@ -78,7 +87,7 @@ export default class AhrefsAPIClient {
         'url_from',
         'url_to',
       ].join(','),
-      limit: 50,
+      limit: getLimit(limit, 100),
       mode: 'prefix',
       order_by: 'domain_rating_source:desc,traffic_domain:desc',
       target: url,
