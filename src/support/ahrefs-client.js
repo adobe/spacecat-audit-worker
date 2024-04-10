@@ -104,8 +104,6 @@ export default class AhrefsAPIClient {
   }
 
   async getTopPages(url, limit = 200) {
-    const MONTH_IN_MS = 30 * 24 * 60 * 60 * 1000;
-
     const filter = {
       and: [
         { field: 'sum_traffic', is: ['gt', 0] },
@@ -117,14 +115,13 @@ export default class AhrefsAPIClient {
         'url',
         'sum_traffic',
       ].join(','),
-      where: JSON.stringify(filter),
       order_by: 'sum_traffic_merged',
       date: new Date().toISOString().split('T')[0],
-      date_compared: new Date(Date.now() - MONTH_IN_MS).toISOString().split('T')[0],
       target: url,
       limit: getLimit(limit, 2000),
       mode: 'prefix',
       output: 'json',
+      where: JSON.stringify(filter),
     };
 
     return this.sendRequest('/site-explorer/top-pages', queryParams);
@@ -147,12 +144,12 @@ export default class AhrefsAPIClient {
         'url_from',
         'url_to',
       ].join(','),
-      where: JSON.stringify(filter),
       order_by: 'domain_rating_source:desc,traffic_domain:desc',
       target: url,
       limit: getLimit(limit, 1000),
       mode: 'prefix',
       output: 'json',
+      where: JSON.stringify(filter),
     };
 
     return this.sendRequest('/site-explorer/all-backlinks', queryParams);
