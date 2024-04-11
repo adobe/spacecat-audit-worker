@@ -18,7 +18,7 @@ const getLimit = (limit, upperLimit) => Math.min(limit, upperLimit);
 export default class AhrefsAPIClient {
   static createFrom(context) {
     const { AHREFS_API_BASE_URL: apiBaseUrl, AHREFS_API_KEY: apiKey } = context.env;
-    return new AhrefsAPIClient({ apiBaseUrl, apiKey }, fetch);
+    return new AhrefsAPIClient({ apiBaseUrl, apiKey }, fetch, context.log);
   }
 
   constructor(config, fetchAPI, log = console) {

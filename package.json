@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.12.7",
+  "version": "1.12.9",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -50,16 +50,16 @@
     "reporter-options": "configFile=.mocha-multi.json"
   },
   "dependencies": {
-    "@adobe/fetch": "4.1.1",
+    "@adobe/fetch": "4.1.2",
     "@adobe/helix-shared-secrets": "2.2.5",
     "@adobe/helix-shared-wrap": "2.0.1",
     "@adobe/helix-status": "10.0.11",
     "@adobe/helix-universal": "4.5.0",
     "@adobe/helix-universal-logger": "3.0.13",
     "@adobe/spacecat-shared-data-access": "1.21.1",
-    "@adobe/spacecat-shared-http-utils": "1.1.3",
-    "@adobe/spacecat-shared-rum-api-client": "1.6.10",
-    "@adobe/spacecat-shared-utils": "1.14.2",
+    "@adobe/spacecat-shared-http-utils": "1.1.4",
+    "@adobe/spacecat-shared-rum-api-client": "1.6.11",
+    "@adobe/spacecat-shared-utils": "1.14.3",
     "@aws-sdk/client-sqs": "3.549.0",
     "diff": "5.2.0",
     "urijs": "1.19.11"
