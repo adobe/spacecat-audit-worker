@@ -1,3 +1,10 @@
+## [1.12.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.11...v1.12.12) (2024-04-13)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#222](https://github.com/adobe/spacecat-audit-worker/issues/222)) ([569b36c](https://github.com/adobe/spacecat-audit-worker/commit/569b36c372932df4a03b9510dd4825b95b7e250a))
+
 ## [1.12.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.10...v1.12.11) (2024-04-12)
 
 
