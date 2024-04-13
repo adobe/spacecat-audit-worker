@@ -60,7 +60,7 @@
     "@adobe/spacecat-shared-http-utils": "1.1.4",
     "@adobe/spacecat-shared-rum-api-client": "1.6.12",
     "@adobe/spacecat-shared-utils": "1.14.3",
-    "@aws-sdk/client-sqs": "3.549.0",
+    "@aws-sdk/client-sqs": "3.554.0",
     "diff": "5.2.0",
     "urijs": "1.19.11"
   },
@@ -75,8 +75,8 @@
     "@semantic-release/exec": "6.0.3",
     "@semantic-release/git": "10.0.1",
     "@semantic-release/npm": "12.0.0",
-    "@typescript-eslint/eslint-plugin": "7.5.0",
-    "@typescript-eslint/parser": "7.5.0",
+    "@typescript-eslint/eslint-plugin": "7.6.0",
+    "@typescript-eslint/parser": "7.6.0",
     "c8": "9.1.0",
     "chai": "4.4.1",
     "chai-as-promised": "7.1.1",
@@ -90,10 +90,10 @@
     "mocha-suppress-logs": "0.5.1",
     "nock": "13.5.4",
     "nodemon": "3.1.0",
-    "semantic-release": "23.0.7",
+    "semantic-release": "23.0.8",
     "sinon": "17.0.1",
     "sinon-chai": "3.7.0",
-    "typescript": "5.4.4",
+    "typescript": "5.4.5",
     "yaml": "2.4.1"
   },
   "lint-staged": {
