@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.12...v1.13.0) (2024-04-15)
+
+
+### Features
+
+* top pages and backlinks from ahrefs ([#216](https://github.com/adobe/spacecat-audit-worker/issues/216)) ([0007c94](https://github.com/adobe/spacecat-audit-worker/commit/0007c946bd17a3196078930568722dc822187acf))
+
 ## [1.12.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.12.11...v1.12.12) (2024-04-13)
 
 
