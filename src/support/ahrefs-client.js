@@ -18,18 +18,23 @@ const getLimit = (limit, upperLimit) => Math.min(limit, upperLimit);
 export default class AhrefsAPIClient {
   static createFrom(context) {
     const { AHREFS_API_BASE_URL: apiBaseUrl, AHREFS_API_KEY: apiKey } = context.env;
-    return new AhrefsAPIClient({ apiBaseUrl, apiKey }, context.log);
+    return new AhrefsAPIClient({ apiBaseUrl, apiKey }, fetch, context.log);
   }
 
-  constructor(config, log = console) {
+  constructor(config, fetchAPI, log = console) {
     const { apiKey, apiBaseUrl } = config;
 
     if (!isValidUrl(apiBaseUrl)) {
       throw new Error(`Invalid Ahrefs API Base URL: ${apiBaseUrl}`);
     }
 
+    if (typeof fetchAPI !== 'function') {
+      throw Error('"fetchAPI" must be a function');
+    }
+
     this.apiBaseUrl = apiBaseUrl;
     this.apiKey = apiKey;
+    this.fetchAPI = fetchAPI;
     this.log = log;
   }
 
@@ -41,7 +46,7 @@ export default class AhrefsAPIClient {
         .join('&')}` : '';
 
     const fullAuditRef = `${this.apiBaseUrl}${endpoint}${queryString}`;
-    const response = await fetch(fullAuditRef, {
+    const response = await this.fetchAPI(fullAuditRef, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -96,5 +101,57 @@ export default class AhrefsAPIClient {
     };
 
     return this.sendRequest('/site-explorer/broken-backlinks', queryParams);
+  }
+
+  async getTopPages(url, limit = 200) {
+    const filter = {
+      and: [
+        { field: 'sum_traffic', is: ['gt', 0] },
+      ],
+    };
+
+    const queryParams = {
+      select: [
+        'url',
+        'sum_traffic',
+      ].join(','),
+      order_by: 'sum_traffic_merged',
+      date: new Date().toISOString().split('T')[0],
+      target: url,
+      limit: getLimit(limit, 2000),
+      mode: 'prefix',
+      output: 'json',
+      where: JSON.stringify(filter),
+    };
+
+    return this.sendRequest('/site-explorer/top-pages', queryParams);
+  }
+
+  async getBacklinks(url, limit = 200) {
+    const filter = {
+      and: [
+        { field: 'is_dofollow', is: ['eq', 1] },
+        { field: 'is_content', is: ['eq', 1] },
+        { field: 'domain_rating_source', is: ['gte', 29.5] },
+        { field: 'traffic_domain', is: ['gte', 500] },
+        { field: 'links_external', is: ['lte', 300] },
+      ],
+    };
+
+    const queryParams = {
+      select: [
+        'title',
+        'url_from',
+        'url_to',
+      ].join(','),
+      order_by: 'domain_rating_source:desc,traffic_domain:desc',
+      target: url,
+      limit: getLimit(limit, 1000),
+      mode: 'prefix',
+      output: 'json',
+      where: JSON.stringify(filter),
+    };
+
+    return this.sendRequest('/site-explorer/all-backlinks', queryParams);
   }
 }
