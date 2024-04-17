@@ -58,7 +58,7 @@
     "@adobe/helix-universal-logger": "3.0.15",
     "@adobe/spacecat-shared-data-access": "1.21.2",
     "@adobe/spacecat-shared-http-utils": "1.1.4",
-    "@adobe/spacecat-shared-rum-api-client": "1.7.1",
+    "@adobe/spacecat-shared-rum-api-client": "1.7.2",
     "@adobe/spacecat-shared-utils": "1.14.5",
     "@aws-sdk/client-sqs": "3.554.0",
     "diff": "5.2.0",
