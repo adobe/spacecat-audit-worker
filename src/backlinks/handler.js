@@ -18,7 +18,7 @@ import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { fetch } from '../support/utils.js';
 
-async function filterOutValidBacklinks(backlinks, log) {
+export async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
     try {
       const response = await fetch(backlink.url_to);
