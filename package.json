@@ -59,6 +59,7 @@
     "@adobe/spacecat-shared-data-access": "1.21.2",
     "@adobe/spacecat-shared-http-utils": "1.1.4",
     "@adobe/spacecat-shared-rum-api-client": "1.8.0",
+    "@adobe/spacecat-shared-ahrefs-client": "1.0.0",
     "@adobe/spacecat-shared-utils": "1.14.5",
     "@aws-sdk/client-sqs": "3.556.0",
     "diff": "5.2.0",
