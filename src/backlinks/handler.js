@@ -14,7 +14,7 @@ import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
-import AhrefsAPIClient from '../support/ahrefs-client.js';
+import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { fetch } from '../support/utils.js';
 
