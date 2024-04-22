@@ -1,3 +1,10 @@
+## [1.13.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.13.4...v1.13.5) (2024-04-22)
+
+
+### Bug Fixes
+
+* include fullAuditRef in the result message ([6dc61e6](https://github.com/adobe/spacecat-audit-worker/commit/6dc61e6d5432ff9ee9a8a2589c648771625700af))
+
 ## [1.13.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.13.3...v1.13.4) (2024-04-20)
 
 

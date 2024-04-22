@@ -216,7 +216,7 @@ describe('Audit tests', () => {
       const expectedMessage = {
         type: message.type,
         url: 'https://space.cat',
-        auditContext: { someField: 431, finalUrl: 'space.cat' },
+        auditContext: { someField: 431, finalUrl: 'space.cat', fullAuditRef },
         auditResult: { metric: 42 },
       };
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
@@ -270,7 +270,7 @@ describe('Audit tests', () => {
     const expectedMessage = {
       type: message.type,
       url: 'https://space.cat',
-      auditContext: { finalUrl: 'space.cat' },
+      auditContext: { finalUrl: 'space.cat', fullAuditRef },
       auditResult: { metric: 42 },
     };
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
