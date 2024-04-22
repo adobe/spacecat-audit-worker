@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.13.5...v1.14.0) (2024-04-22)
+
+
+### Features
+
+* Calculate conversions for customer domain ([#232](https://github.com/adobe/spacecat-audit-worker/issues/232)) ([3459550](https://github.com/adobe/spacecat-audit-worker/commit/34595508e056bf4ed173fb78938060055241a0ba))
+
 ## [1.13.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.13.4...v1.13.5) (2024-04-22)
 
 
