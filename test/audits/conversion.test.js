@@ -76,4 +76,18 @@ describe('Conversion Audit', () => {
     const auditData = await conversionAuditRunner('https://www.spacecat.com', context);
     expect(auditData).to.deep.equal(expectedConversionData);
   });
+
+  it('rum-dashboard and rum-sources api is called with correct arguments', async () => {
+    nock('https://www.spacecat.com')
+      .get('/')
+      .reply(200);
+    context.rumApiClient = {
+      getConversionData: sinon.stub().resolves(rumSourcesData.results.data),
+      getRUMDashboard: sinon.stub().resolves(rumDashboardData.results.data),
+    };
+    const auditData = await conversionAuditRunner('https://www.spacecat.com', context);
+    expect(context.rumApiClient.getConversionData).calledWith({ url: 'www.spacecat.com' });
+    expect(context.rumApiClient.getRUMDashboard).calledWith({ url: 'www.spacecat.com' });
+    expect(auditData).to.deep.equal(expectedConversionData);
+  });
 });

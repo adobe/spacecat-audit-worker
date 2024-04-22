@@ -15,16 +15,16 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMUrl } from '../support/utils.js';
 
 function processRUMResponse(rumSourcesData, rumDashboardData) {
-  const conversionData = rumSourcesData.map((obj1) => {
+  const conversionData = rumSourcesData.map((rumSourcesObj) => {
     // Find the matching object in the second array based on URL
-    const matchingObj = rumDashboardData.find((obj2) => obj2.url === obj1.url);
+    const matchingObj = rumDashboardData.find((rumDbObj) => rumDbObj.url === rumSourcesObj.url);
     // If a matching object is found, return a new object with pageviews property
     if (matchingObj) {
       // create a new object with pageviews property
-      return { ...obj1, pageviews: matchingObj.pageviews };
+      return { ...rumSourcesObj, pageviews: matchingObj.pageviews };
     }
     // If no matching object is found, return the original object
-    return obj1;
+    return rumSourcesObj;
   });
 
   return conversionData;
@@ -38,7 +38,6 @@ async function processAudit(baseURL, context) {
   };
   const rumSourcesData = await rumAPIClient.getConversionData(params);
   const rumDashboardData = await rumAPIClient.getRUMDashboard(params);
-
   return {
     auditResult: processRUMResponse(rumSourcesData, rumDashboardData),
     fullAuditRef: createConversionURL({ url: finalUrl }),
@@ -49,12 +48,10 @@ export async function conversionAuditRunner(baseURL, context) {
   const { log } = context;
   log.info(`Received Conversion audit request for ${baseURL}`);
   const startTime = process.hrtime();
-
   const auditData = await processAudit(
     baseURL,
     context,
   );
-
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
