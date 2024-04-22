@@ -103,6 +103,7 @@ export class Audit {
       await this.persister(auditData, context);
 
       auditContext.finalUrl = finalUrl;
+      auditContext.fullAuditRef = fullAuditRef;
 
       const resultMessage = {
         type,
