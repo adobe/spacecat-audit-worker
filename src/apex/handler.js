@@ -12,6 +12,7 @@
 
 import URI from 'urijs';
 import { hasText } from '@adobe/spacecat-shared-utils';
+// eslint-disable-next-line import/no-cycle
 import { fetch } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
