@@ -22,7 +22,7 @@ export const ERROR_CODES = {
   SITEMAP_NOT_FOUND: 'SITEMAP_NOT_FOUND',
   SITEMAP_INDEX_NOT_FOUND: 'SITEMAP_INDEX_NOT_FOUND',
   SITEMAP_EMPTY: 'SITEMAP_EMPTY',
-  SITEMAP_NOT_XML: 'SITEMAP_NOT_XML',
+  SITEMAP_FORMAT: 'INVALID_SITEMAP_FORMAT',
   FETCH_ERROR: 'FETCH_ERROR',
 };
 
@@ -31,12 +31,15 @@ export const ERROR_CODES = {
  *
  * @async
  * @param {string} targetUrl - The URL from which to fetch the content.
- * @returns {Promise<string|null>} - A Promise that resolves to the content
- * of the response as a string if the request was successful, otherwise null.
+ * @returns {Promise<{ payload: string, type: string }|null>} - Promise that resolves to the content
+ * of the response as a structure having the contents as the payload string
+ * and the content type as the type as string if the request was successful, otherwise null.
  */
 export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl);
-  return response.ok ? response.text() : null;
+  return response.ok
+    ? { payload: response.text(), type: response.headers.get('content-type') }
+    : null;
 }
 
 /**
@@ -50,19 +53,29 @@ export async function fetchContent(targetUrl) {
  */
 export async function checkRobotsForSitemap(protocol, domain) {
   const robotsUrl = `${protocol}://${domain}/robots.txt`;
+  const sitemapPaths = [];
   try {
     const robotsContent = await fetchContent(robotsUrl);
     if (robotsContent !== null) {
-      const sitemapMatch = robotsContent.match(/Sitemap:\s*(.*)/i);
-      if (sitemapMatch && sitemapMatch[1]) {
-        return { path: sitemapMatch[1].trim(), reasons: [] };
+      const sitemapMatches = robotsContent.payload.matchAll(/Sitemap:\s*(.*)/gi);
+      for (const match of sitemapMatches) {
+        sitemapPaths.push(match[1].trim());
       }
-      return { path: null, reasons: [ERROR_CODES.NO_SITEMAP_IN_ROBOTS] };
     }
   } catch (error) {
     // ignore
   }
-  return { path: null, reasons: [ERROR_CODES.ROBOTS_NOT_FOUND] };
+  return {
+    paths: sitemapPaths,
+    reasons: sitemapPaths.length ? [] : [ERROR_CODES.NO_SITEMAP_IN_ROBOTS],
+  };
+}
+
+export function isSitemapContentValid(sitemapContent) {
+  return sitemapContent.payload.trim().startsWith('<?xml')
+      || sitemapContent.type === 'application/xml'
+      || sitemapContent.type === 'text/xml'
+      || sitemapContent.type === 'plain/text';
 }
 
 /**
@@ -82,10 +95,13 @@ export async function checkSitemap(sitemapUrl) {
         reasons: [ERROR_CODES.SITEMAP_NOT_FOUND, ERROR_CODES.SITEMAP_EMPTY],
       };
     }
-    const isValidXml = sitemapContent.trim().startsWith('<?xml');
+    const isValidFormat = isSitemapContentValid(sitemapContent);
+    const isSitemapIndex = isValidFormat && sitemapContent.payload.indexOf('</sitemapindex>') > 0;
+    const isText = isValidFormat && sitemapContent.type === 'plain/text';
     return {
-      existsAndIsValid: isValidXml,
-      reasons: isValidXml ? [] : [ERROR_CODES.SITEMAP_NOT_XML],
+      existsAndIsValid: isValidFormat,
+      reasons: isValidFormat ? [] : [ERROR_CODES.SITEMAP_FORMAT],
+      details: { sitemapContent, isText, isSitemapIndex },
     };
   } catch (error) {
     return { existsAndIsValid: false, reasons: [ERROR_CODES.FETCH_ERROR] };
