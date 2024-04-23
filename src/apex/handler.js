@@ -14,8 +14,6 @@ import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared
 import URI from 'urijs';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-// eslint-disable-next-line import/no-cycle
-import { fetch } from '../support/utils.js';
 
 URI.preventInvalidHostname = true;
 
