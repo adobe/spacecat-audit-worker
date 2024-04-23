@@ -12,6 +12,8 @@
 import { context as h2, h1 } from '@adobe/fetch';
 // eslint-disable-next-line import/no-cycle
 import { checkRobotsForSitemap, checkSitemap, ERROR_CODES } from '../sitemap/handler.js';
+// eslint-disable-next-line import/no-cycle
+import { toggleWWW } from '../apex/handler.js';
 
 /* c8 ignore next 3 */
 export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
@@ -48,13 +50,17 @@ export function extractDomainAndProtocol(inputUrl) {
 }
 
 /**
- * Finds and validates the sitemap for a given URL by checking:
- * robots.txt, sitemap.xml, and sitemap_index.xml.
+ * This function is used to find the sitemap of a given URL.
+ * It first extracts the domain and protocol from the input URL.
+ * If the URL is invalid, it returns an error message.
+ * If the URL is valid, it checks the sitemap path in the robots.txt file.
+ * Then toggles the input URL with www and filters the sitemap URLs.
+ * It then gets the base URL pages from the sitemaps.
+ * The extracted paths response length > 0, it returns the success status, log messages, and paths.
+ * The extracted paths response length < 0, log messages and returns the failure status and reasons.
  *
- * @async
- * @param {string} inputUrl - The URL for which to find and validate the sitemap.
- * @returns {Promise<Object>} -A Promise that resolves to an object
- * representing the success and reasons for the sitemap search and validation.
+ * @param {string} inputUrl - The URL for which to find and validate the sitemap
+ * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
  */
 
 export async function findSitemap(inputUrl) {
@@ -74,71 +80,168 @@ export async function findSitemap(inputUrl) {
 
   const { protocol, domain } = parsedUrl;
 
-  // Check sitemap path in robots.txt
   const robotsResult = await checkRobotsForSitemap(protocol, domain);
-  if (!robotsResult.path) {
-    logMessages.push(...robotsResult.reasons.map((reason) => ({
-      value: `${inputUrl}/robots.txt`,
-      error: reason,
-    })));
-  } else if (robotsResult.path.length > 2) {
-    let sitemapUrlFromRobots = robotsResult.path;
-    if (robotsResult.path[0] === '/' && robotsResult.path[1] !== '/') {
-      sitemapUrlFromRobots = `${protocol}://${domain}${sitemapUrlFromRobots}`;
-    }
+  // todo: add log messages if robots txt doesn't exist or not having sitemaps
 
-    const sitemapResult = await checkSitemap(sitemapUrlFromRobots);
-    logMessages.push(...sitemapResult.reasons.map((reason) => ({
-      value: sitemapUrlFromRobots,
-      error: reason,
-    })));
-    if (sitemapResult.existsAndIsValid) {
-      return {
-        success: true,
-        reasons: logMessages,
-        paths: [sitemapUrlFromRobots],
-      };
-    }
-  }
+  const inputUrlToggledWww = toggleWWW(inputUrl);
+  const sitemapUrls = robotsResult.paths.filter((path) => path.startsWith(inputUrl)
+      || path.startsWith(inputUrlToggledWww));
 
-  // Check sitemap.xml
-  const assumedSitemapUrl = `${protocol}://${domain}/sitemap.xml`;
-  const sitemapResult = await checkSitemap(assumedSitemapUrl);
-  if (sitemapResult.existsAndIsValid) {
+  // eslint-disable-next-line no-use-before-define
+  const extractedPathsResponse = getBaseUrlPagesFromSitemaps(inputUrl, sitemapUrls);
+
+  if (extractedPathsResponse.length() > 0) {
+    // todo: with this map of sitemap to list of URLs that have the prefix of the baseURL,
+    //  go on an filter out / check out the 200 entries from the top pages
     return {
       success: true,
       reasons: logMessages,
-      paths: [assumedSitemapUrl],
+      paths: extractedPathsResponse.result,
     };
   } else {
-    logMessages.push(...sitemapResult.reasons.map((reason) => ({
-      value: assumedSitemapUrl,
-      error: reason,
-    })));
-  }
-
-  // Check sitemap_index.xml
-  const sitemapIndexUrl = `${protocol}://${domain}/sitemap_index.xml`;
-  const sitemapIndexResult = await checkSitemap(sitemapIndexUrl);
-  logMessages.push(...sitemapIndexResult.reasons.map((reason) => ({
-    value: sitemapIndexUrl,
-    error: reason,
-  })));
-  if (sitemapIndexResult.existsAndIsValid) {
+    for (const logEntry of extractedPathsResponse.reasons) {
+      logMessages.push(logEntry);
+    }
     return {
-      success: true,
+      success: false,
       reasons: logMessages,
-      paths: [sitemapIndexUrl],
     };
-  } else if (sitemapIndexResult.reasons.includes(ERROR_CODES.SITEMAP_NOT_FOUND)) {
-    logMessages.push({
-      value: sitemapIndexUrl,
-      error: ERROR_CODES.SITEMAP_INDEX_NOT_FOUND,
-    });
+  }
+}
+
+export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
+  const response = {
+    results: {},
+    reasons: [],
+  };
+
+  const baseUrlVariant = toggleWWW(baseUrl);
+
+  // eslint-disable-next-line max-len
+  const contentsCache = {};
+  const matchingUrls = [];
+
+  for (const url of urls) {
+    if (contentsCache[url] !== undefined) {
+      break; // already saw that URL
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    const urlData = await checkSitemap(url);
+    contentsCache[url] = urlData;
+
+    if (urlData.existsAndIsValid) {
+      if (urlData?.details?.isSitemapIndex) {
+        // eslint-disable-next-line no-use-before-define
+        const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
+        for (const extractedSitemapUrl of extractedSitemaps) {
+          if (contentsCache[extractedSitemapUrl] !== undefined) {
+            break; // already saw that URL
+          }
+
+          // eslint-disable-next-line no-shadow,no-await-in-loop
+          const urlData = await checkSitemap(extractedSitemapUrl);
+          contentsCache[extractedSitemapUrl] = urlData;
+
+          if (urlData.existsAndIsValid) {
+            if (extractedSitemapUrl.startsWith(baseUrl)
+                || extractedSitemapUrl.startsWith(baseUrlVariant)) { // covered step 3 here
+              matchingUrls.push(extractedSitemapUrl);
+            }
+          }
+        }
+      } else {
+        // eslint-disable-next-line no-lonely-if
+        if (url.startsWith(baseUrl) || url.startsWith(baseUrlVariant)) { // covered step 3 here
+          matchingUrls.push(url);
+        }
+      }
+    }
   }
 
-  return {
-    success: false,
-    reasons: logMessages,
-  };
+  if (matchingUrls.length === 1) {
+    // eslint-disable-next-line max-len,no-use-before-define
+    const pages = getBaseUrlPagesFromSitemapContents(baseUrl, contentsCache[matchingUrls[0]].details);
+    if (pages > 0) {
+      response[matchingUrls[0]] = pages;
+    }
+  } else if (matchingUrls.length > 1) {
+    let shortestPathCounter = -1;
+    let shortestPathSitemapUrls = [];
+
+    for (const url of matchingUrls) {
+      const currentCounter = url.split('/').length;
+      if (shortestPathCounter > currentCounter) {
+        shortestPathSitemapUrls = [url];
+        shortestPathCounter = currentCounter;
+      } else if (shortestPathCounter === currentCounter) {
+        shortestPathSitemapUrls.push(url);
+      } else if (shortestPathCounter === -1) {
+        shortestPathCounter = currentCounter;
+        shortestPathSitemapUrls.push(url);
+      }
+    }
+
+    // eslint-disable-next-line guard-for-in,no-restricted-syntax
+    for (const url in shortestPathSitemapUrls) {
+      // eslint-disable-next-line no-use-before-define
+      const pages = getBaseUrlPagesFromSitemapContents(baseUrl, contentsCache[url].details);
+      if (pages > 0) {
+        response[url] = pages;
+      }
+    }
+  } else { // todo delete this
+  }
+
+  return response;
+}
+
+export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
+  const baseUrlVariant = toggleWWW(baseUrl);
+  const pages = [];
+
+  if (sitemapDetails.isText) {
+    const text = sitemapDetails.sitemapContent.payload;
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const content = line.trim();
+      if (content.length > 0 && (content.startsWith(baseUrl)
+          || content.startsWith(baseUrlVariant))) {
+        pages.push(content);
+      }
+    }
+  } else {
+    // eslint-disable-next-line no-use-before-define
+    const sitemapPages = getPagesFromSitemap(sitemapDetails.sitemapContent);
+    for (const url of sitemapPages) {
+      if (url.startsWith(baseUrl) || url.startsWith(baseUrlVariant)) {
+        pages.push(url);
+      }
+    }
+  }
+  return pages;
+}
+
+export function extractTagLocValues(content, tagName) {
+  // eslint-disable-next-line no-undef
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(content.payload, content.type);
+  const urls = [];
+  const sitemaps = xmlDoc.getElementsByTagName(tagName);
+  for (let i = 0; i < sitemaps.length; i += 1) {
+    const loc = sitemaps[i].getElementsByTagName('loc')[0];
+    if (loc) {
+      urls.push(loc.textContent);
+    }
+  }
+  return urls;
+}
+
+// todo check with various sitemap XML structures to check if a simple `>https://(.*)<` regex could be used instead
+export function getPagesFromSitemap(content) {
+  return extractTagLocValues(content, 'url');
+}
+
+export function getSitemapUrlsFromSitemapIndex(content) {
+  return extractTagLocValues(content, 'sitemap');
 }

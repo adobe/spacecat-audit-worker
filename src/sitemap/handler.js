@@ -22,7 +22,7 @@ export const ERROR_CODES = {
   SITEMAP_NOT_FOUND: 'SITEMAP_NOT_FOUND',
   SITEMAP_INDEX_NOT_FOUND: 'SITEMAP_INDEX_NOT_FOUND',
   SITEMAP_EMPTY: 'SITEMAP_EMPTY',
-  SITEMAP_NOT_XML: 'SITEMAP_NOT_XML',
+  SITEMAP_FORMAT: 'INVALID_SITEMAP_FORMAT',
   FETCH_ERROR: 'FETCH_ERROR',
 };
 
@@ -53,19 +53,22 @@ export async function fetchContent(targetUrl) {
  */
 export async function checkRobotsForSitemap(protocol, domain) {
   const robotsUrl = `${protocol}://${domain}/robots.txt`;
+  const sitemapPaths = [];
   try {
     const robotsContent = await fetchContent(robotsUrl);
     if (robotsContent !== null) {
-      const sitemapMatch = robotsContent.payload.match(/Sitemap:\s*(.*)/i);
-      if (sitemapMatch && sitemapMatch[1]) {
-        return { path: sitemapMatch[1].trim(), reasons: [] };
+      const sitemapMatches = robotsContent.payload.matchAll(/Sitemap:\s*(.*)/gi);
+      for (const match of sitemapMatches) {
+        sitemapPaths.push(match[1].trim());
       }
-      return { path: null, reasons: [ERROR_CODES.NO_SITEMAP_IN_ROBOTS] };
     }
   } catch (error) {
     // ignore
   }
-  return { path: null, reasons: [ERROR_CODES.ROBOTS_NOT_FOUND] };
+  return {
+    paths: sitemapPaths,
+    reasons: sitemapPaths.length ? [] : [ERROR_CODES.NO_SITEMAP_IN_ROBOTS],
+  };
 }
 
 export function isSitemapContentValid(sitemapContent) {
@@ -92,10 +95,13 @@ export async function checkSitemap(sitemapUrl) {
         reasons: [ERROR_CODES.SITEMAP_NOT_FOUND, ERROR_CODES.SITEMAP_EMPTY],
       };
     }
-    const isValidXml = isSitemapContentValid(sitemapContent);
+    const isValidFormat = isSitemapContentValid(sitemapContent);
+    const isSitemapIndex = isValidFormat && sitemapContent.payload.indexOf('</sitemapindex>') > 0;
+    const isText = isValidFormat && sitemapContent.type === 'plain/text';
     return {
-      existsAndIsValid: isValidXml,
-      reasons: isValidXml ? [] : [ERROR_CODES.SITEMAP_NOT_XML],
+      existsAndIsValid: isValidFormat,
+      reasons: isValidFormat ? [] : [ERROR_CODES.SITEMAP_FORMAT],
+      details: { sitemapContent, isText, isSitemapIndex },
     };
   } catch (error) {
     return { existsAndIsValid: false, reasons: [ERROR_CODES.FETCH_ERROR] };
