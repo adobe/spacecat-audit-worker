@@ -23,6 +23,7 @@ const PAGEVIEW_THRESHOLD = 100;
 
 export function filter404Data(data) {
   return data.views > PAGEVIEW_THRESHOLD
+      && !!data.url
       && data.url.toLowerCase() !== 'other'
       && data.source_count > 0;
 }
