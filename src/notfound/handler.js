@@ -23,17 +23,18 @@ const PAGEVIEW_THRESHOLD = 100;
 
 export function filter404Data(data) {
   return data.views > PAGEVIEW_THRESHOLD
-      && data.topurl.toLowerCase() !== 'other'
-      && !!data.source;
+      && !!data.url
+      && data.url.toLowerCase() !== 'other'
+      && data.source_count > 0;
 }
 
 function process404Response(data) {
   return data
     .filter(filter404Data)
     .map((row) => ({
-      url: row.topurl,
+      url: row.url,
       pageviews: row.views,
-      source: row.source,
+      sources: row.all_sources.filter((source) => !!source),
     }));
 }
 
