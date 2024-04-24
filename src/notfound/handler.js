@@ -31,7 +31,7 @@ function process404Response(data) {
   return data
     .filter(filter404Data)
     .map((row) => ({
-      url: data.url,
+      url: row.url,
       pageviews: row.views,
       sources: row.all_sources,
     }));
