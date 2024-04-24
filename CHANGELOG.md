@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.14.0...v1.15.0) (2024-04-24)
+
+
+### Features
+
+* use latest 404 api endpoint ([dfe2971](https://github.com/adobe/spacecat-audit-worker/commit/dfe29712f6e794e057c60b4227e6882271e411f3))
+
 # [1.14.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.13.5...v1.14.0) (2024-04-22)
 
 
