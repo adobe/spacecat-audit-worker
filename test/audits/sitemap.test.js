@@ -16,16 +16,18 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import audit, {
-  fetchContent,
   checkSitemap,
+  checkRobotsForSitemap,
+  fetchContent,
   isSitemapContentValid,
-  ERROR_CODES, checkRobotsForSitemap,
+  ERROR_CODES,
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol, findSitemap } from '../../src/support/utils.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
 sinon.createSandbox();
+
 describe('Sitemap Handler', () => {
   let context;
   let mockDataAccess;
@@ -243,7 +245,7 @@ describe('checkSitemap', () => {
     );
   });
 
-  it('checkSitemap returns invalid result for non-XML content', async () => {
+  it('checkSitemap returns SITEMAP_FORMAT error for non-XML content', async () => {
     nock('https://some-domain.adobe')
       .get('/invalid-sitemap.xml')
       .reply(200, 'This is not XML content');
@@ -419,7 +421,8 @@ describe('isSitemapValid', () => {
     const sitemapContent = { payload: '<?xml', type: 'application/xml' };
     expect(isSitemapContentValid(sitemapContent)).to.be.true;
   });
-  it('should return true for valid sitemap content', () => {
+
+  it('should return true for valid sitemap content when xml', () => {
     const sitemapContent = {
       payload: '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n'
           + '    <url><loc>https://www.adobe.com/</loc></url>\n'
@@ -429,7 +432,7 @@ describe('isSitemapValid', () => {
     expect(isSitemapContentValid(sitemapContent)).to.be.true;
   });
 
-  it('should return true for valid sitemap content', () => {
+  it('should return true for valid sitemap content when plain/txt', () => {
     const sitemapContent = {
       payload: 'http://www.example.com/catalog?item=12&desc=vacation_hawaii\nhttps://www.example.com/catalog?item=11',
       type: 'plain/text',

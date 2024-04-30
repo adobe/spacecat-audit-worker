@@ -50,6 +50,9 @@ export async function fetchContent(targetUrl) {
  * @param {string} domain - The domain of the site.
  * @returns {Promise<{ path: string|null, reasons: string[] }>} - A Promise that resolves
  * to an object containing the sitemap path and reasons for success or failure.
+ * The object has the following properties:
+ * - paths: An array of strings representing the sitemap paths found in the robots.txt file.
+ * - reasons: An array of strings representing the reasons for not finding any sitemap paths.
  */
 export async function checkRobotsForSitemap(protocol, domain) {
   const robotsUrl = `${protocol}://${domain}/robots.txt`;
@@ -83,9 +86,17 @@ export function isSitemapContentValid(sitemapContent) {
  *
  * @async
  * @param {string} sitemapUrl - The URL of the sitemap to check.
- * @returns {Promise<Object>} - A Promise that resolves to an object
- * representing the result of the sitemap check.
+ * @returns {Promise<Object>} - A Promise that resolves to an object representing the result check.
+ * The object has the following properties:
+ * - existsAndIsValid: A boolean indicating whether the sitemap exists and is in a valid format.
+ * - reasons: An array of strings representing the reasons for the sitemap's errors.
+ * - details: An object with details about sitemap.Is only present if the sitemap exists and valid.
+ *   The details object has the following properties:
+ *   - sitemapContent: The content of the sitemap.
+ *   - isText: A boolean indicating whether the sitemap content is plain text.
+ *   - isSitemapIndex: A boolean indicating whether the sitemap is an index of other sitemaps.
  */
+
 export async function checkSitemap(sitemapUrl) {
   try {
     const sitemapContent = await fetchContent(sitemapUrl);

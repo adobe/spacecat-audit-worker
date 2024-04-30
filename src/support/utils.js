@@ -91,7 +91,7 @@ export async function findSitemap(inputUrl) {
   // eslint-disable-next-line no-use-before-define
   const extractedPathsResponse = getBaseUrlPagesFromSitemaps(inputUrl, sitemapUrls);
 
-  if (extractedPathsResponse.length() > 0) {
+  if (extractedPathsResponse.length > 0) {
     // todo: with this map of sitemap to list of URLs that have the prefix of the baseURL,
     //  go on an filter out / check out the 200 entries from the top pages
     return {
@@ -110,6 +110,55 @@ export async function findSitemap(inputUrl) {
   }
 }
 
+// todo: Check sitemap.xml - bring it back in case robots.txt doesnt exist
+// const assumedSitemapUrl = `${protocol}://${domain}/sitemap.xml`;
+// const sitemapResult = await checkSitemap(assumedSitemapUrl);
+// if (sitemapResult.existsAndIsValid) {
+//   return {
+//     success: true,
+//     reasons: logMessages,
+//     paths: [assumedSitemapUrl],
+//   };
+// } else {
+//   logMessages.push(...sitemapResult.reasons.map((reason) => ({
+//     value: assumedSitemapUrl,
+//     error: reason,
+//   })));
+// }
+
+// todo: Check sitemap_index.xml - bring it back in case robots.txt doesnt exist
+// const sitemapIndexUrl = `${protocol}://${domain}/sitemap_index.xml`;
+// const sitemapIndexResult = await checkSitemap(sitemapIndexUrl);
+// logMessages.push(...sitemapIndexResult.reasons.map((reason) => ({
+//   value: sitemapIndexUrl,
+//   error: reason,
+// })));
+// if (sitemapIndexResult.existsAndIsValid) {
+//   return {
+//     success: true,
+//     reasons: logMessages,
+//     paths: [sitemapIndexUrl],
+//   };
+// } else if (sitemapIndexResult.reasons.includes(ERROR_CODES.SITEMAP_NOT_FOUND)) {
+//   logMessages.push({
+//     value: sitemapIndexUrl,
+//     error: ERROR_CODES.SITEMAP_INDEX_NOT_FOUND,
+//   });
+// }
+
+// SCENARIOS - to remove
+// for (const sitemapUrl of sitemapUrls) {
+// 1. naive scenario: assume all are sitemaps (not sitemap indexes),
+// we first pass through them and check if base URL matches
+
+// 2. if keep simplest (shortest) sitemap entry from matches based on "/" and then on char sizes
+// test: base URL https://adobe.com, entries: [https://adobe.com/sitemap.xml, https://adobe.com/en/sitemap.xml]
+
+// 3. no matches => use apex toggleWWW method and strip / add www. to baseURL then retry
+// do this only for baseURL, not to sitemapUrls
+// test: base URL https://adobe.com/en/insights, entries: [https://www.adobe.com/sitemap.xml,
+// https://www.adobe.com/en/insights/sitemap.xml]
+
 export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   const response = {
     results: {},
@@ -118,7 +167,6 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
 
   const baseUrlVariant = toggleWWW(baseUrl);
 
-  // eslint-disable-next-line max-len
   const contentsCache = {};
   const matchingUrls = [];
 
@@ -167,19 +215,34 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
       response[matchingUrls[0]] = pages;
     }
   } else if (matchingUrls.length > 1) {
+    // step 2 (get closest sitemap to given baseURL)
+    // todo in tests, take into account that there could be two pages for the same base url:
+    // edge-case test:
+    //   baseUrl: https://ust.com/en/insights,
+    //   sitemaps: [
+    //     https://ust.com/en/insights/sitemap-1.xml,
+    //     https://ust.com/en/insights/sitemap-2.xml
+    //   ] --- both valid !!
     let shortestPathCounter = -1;
     let shortestPathSitemapUrls = [];
 
-    for (const url of matchingUrls) {
+    // eslint-disable-next-line guard-for-in,no-restricted-syntax
+    for (const url in matchingUrls) {
       const currentCounter = url.split('/').length;
-      if (shortestPathCounter > currentCounter) {
+      if (shortestPathCounter === -1) {
+        shortestPathCounter = currentCounter;
+        shortestPathSitemapUrls.push(url);
+      } else if (shortestPathCounter > currentCounter) {
         shortestPathSitemapUrls = [url];
         shortestPathCounter = currentCounter;
       } else if (shortestPathCounter === currentCounter) {
         shortestPathSitemapUrls.push(url);
-      } else if (shortestPathCounter === -1) {
-        shortestPathCounter = currentCounter;
-        shortestPathSitemapUrls.push(url);
+        // edge-case test:
+        //   baseUrl: https://ust.com/en/insights,
+        //   sitemaps: [
+        //     https://ust.com/en/insights/bla/abc/edf/sitemap.xml,
+        //     https://ust.com/en/insights/bla/abc/xyz/sitemap.xml
+        //   ] ==> both will be picked up ==> // todo check: is it ok?
       }
     }
 
@@ -191,7 +254,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
         response[url] = pages;
       }
     }
-  } else { // todo delete this
+  } else { // todo delete this when finish testing and refactoring for recursive methods
   }
 
   return response;
