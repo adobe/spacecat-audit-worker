@@ -79,8 +79,8 @@ export function extractDomainAndProtocol(inputUrl) {
   }
 }
 
-function extractUrlsFromSitemap(content, tagName) {
-  const dom = new JSDOM(content, { contentType: 'text/xml' });
+export function extractUrlsFromSitemap(content, tagName) {
+  const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
 
   const elements = document.getElementsByTagName(tagName);

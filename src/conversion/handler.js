@@ -44,6 +44,12 @@ async function processAudit(baseURL, context) {
   };
 }
 
+/**
+ *
+ * @param baseURL
+ * @param context
+ * @returns {Promise<{fullAuditRef: *, auditResult: *}>}
+ */
 export async function conversionAuditRunner(baseURL, context) {
   const { log } = context;
   log.info(`Received Conversion audit request for ${baseURL}`);

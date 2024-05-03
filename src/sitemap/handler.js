@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import {
   extractDomainAndProtocol,
   fetch,
@@ -19,11 +17,13 @@ import {
   getSitemapUrlsFromSitemapIndex,
   toggleWWW,
 } from '../support/utils.js';
+import { AuditBuilder } from '../common/audit-builder.js';
 
 export const ERROR_CODES = {
   INVALID_URL: 'INVALID_URL',
   ROBOTS_NOT_FOUND: 'ROBOTS_TXT_NOT_FOUND',
   NO_SITEMAP_IN_ROBOTS: 'NO_SITEMAP_IN_ROBOTS_TXT',
+  NO_PATHS_IN_SITEMAP: 'NO_PATHS_IN_SITEMAP',
   SITEMAP_NOT_FOUND: 'SITEMAP_NOT_FOUND',
   SITEMAP_INDEX_NOT_FOUND: 'SITEMAP_INDEX_NOT_FOUND',
   SITEMAP_EMPTY: 'SITEMAP_EMPTY',
@@ -266,11 +266,11 @@ export async function findSitemap(inputUrl) {
   try {
     const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
 
-    if (extractedPaths.length > 0) {
+    if (Object.entries(extractedPaths).length > 0) {
       logMessages.push({ value: 'Sitemaps found and validated successfully.' });
       return { success: true, reasons: logMessages, paths: extractedPaths };
     } else {
-      logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.SITEMAP_NOT_FOUND });
+      logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
       return { success: false, reasons: logMessages };
     }
   } catch (error) {
@@ -283,45 +283,29 @@ export async function findSitemap(inputUrl) {
  * Performs an audit for a specified site based on the audit request message.
  *
  * @async
- * @param {Object} message - The audit request message containing the type, URL, and audit context.
- * @param {Object} context - The context object containing configurations, services,
- * and environment variables.
- * @returns {Promise<Response>} - A Promise that resolves to a response object
- * indicating the result of the audit process.
+ * @param {string} baseURL - The URL to run the audit against.
+ * @param {Object} context - The lambda context object.
+ * @returns {Promise<{fullAuditRef: string, auditResult: Object}>}
  */
+export async function sitemapAuditRunner(baseURL, context) {
+  const { log } = context;
+  log.info(`Received sitemap audit request for ${baseURL}`);
+  const startTime = process.hrtime();
+  const auditResult = await findSitemap(baseURL);
 
-export default async function audit(message, context) {
-  const { type, url: siteId, auditContext } = message;
-  const { dataAccess, log, sqs } = context;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
+  const endTime = process.hrtime(startTime);
+  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+  const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  try {
-    log.info(`Received ${type} audit request for siteId: ${siteId}`);
+  log.info(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
 
-    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    if (!site) {
-      log.error(`No site with siteId "${siteId}" exists.`);
-      return notFound('Site not found');
-    }
-
-    const baseURL = site.getBaseURL();
-    const auditResult = await findSitemap(baseURL);
-
-    log.info(`Audit result for ${baseURL}:\n${JSON.stringify(auditResult, null, 2)}`);
-
-    await sqs.sendMessage(queueUrl, {
-      type,
-      url: baseURL,
-      auditContext,
-      auditResult,
-    });
-
-    log.info(`Successfully audited ${baseURL} for ${type} type audit`);
-
-    return noContent();
-  } catch (e) {
-    return internalServerError('Sitemap audit failed');
-  }
+  return {
+    fullAuditRef: baseURL,
+    auditResult,
+  };
 }
+
+export default new AuditBuilder()
+  .withRunner(sitemapAuditRunner)
+  .withUrlResolver((site) => site.getBaseURL())
+  .build();

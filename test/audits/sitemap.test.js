@@ -15,121 +15,153 @@ import chai from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import audit, {
+import chaiAsPromised from 'chai-as-promised';
+import {
   checkSitemap,
-  fetchContent,
   ERROR_CODES,
   findSitemap,
   isSitemapContentValid,
-  checkRobotsForSitemap,
+  checkRobotsForSitemap, sitemapAuditRunner,
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
+import { MockContextBuilder } from '../shared.js';
 
 chai.use(sinonChai);
+chai.use(chaiAsPromised);
 const { expect } = chai;
-sinon.createSandbox();
+const sandbox = sinon.createSandbox();
 
-describe('Sitemap Handler', () => {
+describe('Sitemap Audit', () => {
   let context;
-  let mockDataAccess;
-  let messageBodyJson;
+  const url = 'https://some-domain.adobe';
+  const message = {
+    type: 'sitemap',
+    url: 'site-id',
+    auditContext: {},
+  };
+  const sampleSitemap = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    + `<url> <loc>${url}/foo</loc></url>\n`
+    + `<url> <loc>${url}/bar</loc></url>\n`
+    + '</urlset>';
+
+  const sampleSitemapTwo = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    + `<url> <loc>${url}/baz</loc></url>\n`
+    + `<url> <loc>${url}/cux</loc></url>\n`
+    + '</urlset>';
 
   beforeEach('setup', () => {
-    const siteObj = {
-      id: 'site1',
-      baseURL: 'https://some-domain.adobe',
-      imsOrgId: 'org123',
-    };
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .build(message);
 
-    mockDataAccess = {
-      getSiteByID: sinon.stub().resolves({
-        ...siteObj,
-        getBaseURL: () => siteObj.baseURL,
-      }),
-    };
-
-    messageBodyJson = {
-      type: 'audit',
-      url: 'site-id',
-      auditContext: {},
-    };
-
-    context = {
-      log: {
-        info: sinon.spy(),
-        warn: sinon.spy(),
-        error: sinon.spy(),
-      },
-      runtime: { region: 'us-east-1' },
-      env: { AUDIT_RESULTS_QUEUE_URL: 'some-queue-url' },
-      invocation: {
-        event: {
-          Records: [{
-            body: JSON.stringify(messageBodyJson),
-          }],
-        },
-      },
-      dataAccess: mockDataAccess,
-      sqs: { sendMessage: sinon.stub().resolves() },
-    };
+    nock(url)
+      .get('/sitemap_foo.xml')
+      .reply(200, sampleSitemap);
+    nock(url)
+      .get('/sitemap_bar.xml')
+      .reply(200, sampleSitemapTwo);
   });
 
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
+    sandbox.restore();
+  });
+
+  it('runs successfully for sitemaps extracted from robots.txt', async () => {
+    nock(url)
+      .get('/robots.txt')
+      .reply(200, `Sitemap: ${url}/sitemap_foo.xml\nSitemap: ${url}/sitemap_bar.xml`);
+
+    const result = await sitemapAuditRunner(url, context);
+    expect(result).to.eql({
+      auditResult: {
+        success: true,
+        paths: {
+          [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
+          [`${url}/sitemap_bar.xml`]: [`${url}/baz`, `${url}/cux`],
+        },
+        reasons: [{
+          value: 'Sitemaps found and validated successfully.',
+        }],
+      },
+      fullAuditRef: url,
+    });
+  });
+
+  it('runs successfully for sitemap extracted from robots.txt through sitemap index', async () => {
+    nock(url)
+      .get('/robots.txt')
+      .reply(200, `Sitemap: ${url}/sitemap_index.xml`);
+    nock(url)
+      .get('/sitemap_index.xml')
+      .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
+          + '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+          + `<sitemap><loc>${url}/sitemap_foo.xml</loc></sitemap>\n`
+          + `<sitemap><loc>${url}/sitemap_bar.xml</loc></sitemap>\n`
+          + '</sitemapindex>');
+    const result = await sitemapAuditRunner(url, context);
+    expect(result).to.eql({
+      auditResult: {
+        success: true,
+        paths: {
+          [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
+          [`${url}/sitemap_bar.xml`]: [`${url}/baz`, `${url}/cux`],
+        },
+        reasons: [{
+          value: 'Sitemaps found and validated successfully.',
+        }],
+      },
+      fullAuditRef: url,
+    });
+  });
+
+  it('runs successfully for text sitemap extracted from robots.txt', async () => {
+    nock(url)
+      .get('/robots.txt')
+      .reply(200, `Sitemap: ${url}/sitemap_foo.txt\nSitemap: ${url}/sitemap_bar.txt`);
+
+    nock(url)
+      .get('/sitemap_foo.txt')
+      .reply(200, `${url}/foo\n${url}/bar`, { 'content-type': 'text/plain' });
+    nock(url)
+      .get('/sitemap_bar.txt')
+      .reply(200, `${url}/baz\n${url}/cux`, { 'content-type': 'text/plain' });
+
+    const result = await sitemapAuditRunner(url, context);
+    expect(result).to.eql({
+      auditResult: {
+        success: true,
+        paths: {
+          [`${url}/sitemap_foo.txt`]: [`${url}/foo`, `${url}/bar`],
+          [`${url}/sitemap_bar.txt`]: [`${url}/baz`, `${url}/cux`],
+        },
+        reasons: [{
+          value: 'Sitemaps found and validated successfully.',
+        }],
+      },
+      fullAuditRef: url,
+    });
   });
 
   it('sitemap audit returns 404 when site not found', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().resolves(null);
-
-    const resp = await audit(messageBodyJson, context);
-    expect(resp.status).to.equal(404);
-    expect(context.sqs.sendMessage).to.have.callCount(0);
-  });
-
-  it('sitemap audit returns 500 when audit fails', async () => {
-    context.sqs = sinon.stub().rejects('wololo');
-
-    nock('https://some-domain.adobe')
-      .get('/')
-      .reply(200);
-
-    nock('https://www.some-domain.adobe')
-      .get('/')
-      .reply(200);
-
-    const resp = await audit(messageBodyJson, context);
-    expect(resp.status).to.equal(500);
-  });
-
-  // it('sitemap ', async () => {
-  //   context.sqs = { sendMessage: sinon.stub().resolves() };
-  //
-  //   nock('https://some-domain.adobe')
-  //     .get('/robots.txt')
-  //     .reply(200, '');
-  //
-  //   nock('https://some-domain.adobe')
-  //     .get('/sitemap.xml')
-  //     .reply(404);
-  //
-  //   const resp = await audit(messageBodyJson, context);
-  //   expect(resp.status).to.equal(204);
-  // });
-
-  it('fetchContent returns null when response is not ok', async () => {
-    nock('https://some-domain.adobe')
-      .get('/sitemap.xml')
+    nock(url)
+      .get('/robots.txt')
       .reply(404);
 
-    const resp = await fetchContent('https://some-domain.adobe/sitemap.xml');
-    expect(resp).to.equal(null);
-  });
-
-  it('returns not found when site does not exist', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().resolves(null);
-    const resp = await audit({ type: 'sitemap', url: 'site-id', auditContext: {} }, context);
-    expect(resp.status).to.equal(404);
+    const result = await sitemapAuditRunner(url, context);
+    expect(result).to.eql({
+      auditResult: {
+        success: false,
+        reasons: [{
+          error: ERROR_CODES.FETCH_ERROR,
+          value: `Error fetching or processing robots.txt: Failed to fetch content from ${url}/robots.txt. Status: 404`,
+        }],
+      },
+      fullAuditRef: url,
+    });
   });
 });
 
