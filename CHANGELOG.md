@@ -1,3 +1,45 @@
+## [1.15.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.4...v1.15.5) (2024-04-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.22.1 ([#244](https://github.com/adobe/spacecat-audit-worker/issues/244)) ([d10d3e4](https://github.com/adobe/spacecat-audit-worker/commit/d10d3e4d5fd2fab4c5c1243fcfdd88c368f48973))
+
+## [1.15.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.3...v1.15.4) (2024-04-29)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#243](https://github.com/adobe/spacecat-audit-worker/issues/243)) ([116d40d](https://github.com/adobe/spacecat-audit-worker/commit/116d40d8d5c834ac8ecd77023c40f7b22ae30a6e))
+
+## [1.15.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.2...v1.15.3) (2024-04-27)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#241](https://github.com/adobe/spacecat-audit-worker/issues/241)) ([6728390](https://github.com/adobe/spacecat-audit-worker/commit/6728390f2ea601e4dee6d2a3cbb5ac305d7b274b))
+
+## [1.15.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.1...v1.15.2) (2024-04-25)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#240](https://github.com/adobe/spacecat-audit-worker/issues/240)) ([e67cddb](https://github.com/adobe/spacecat-audit-worker/commit/e67cddbd525cd7d21a0c51d7627498fe575f7126))
+
+## [1.15.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.0...v1.15.1) (2024-04-24)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-ahrefs-client to v1.0.1 ([#239](https://github.com/adobe/spacecat-audit-worker/issues/239)) ([99b1da7](https://github.com/adobe/spacecat-audit-worker/commit/99b1da7b4365b44c0043c4c05f8145e003c803a2))
+
+# [1.15.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.14.0...v1.15.0) (2024-04-24)
+
+
+### Features
+
+* use latest 404 api endpoint ([dfe2971](https://github.com/adobe/spacecat-audit-worker/commit/dfe29712f6e794e057c60b4227e6882271e411f3))
+
 # [1.14.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.13.5...v1.14.0) (2024-04-22)
 
 
