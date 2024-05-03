@@ -17,12 +17,13 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import audit, {
   checkSitemap,
-  checkRobotsForSitemap,
   fetchContent,
-  isSitemapContentValid,
   ERROR_CODES,
+  findSitemap,
+  isSitemapContentValid,
+  checkRobotsForSitemap,
 } from '../../src/sitemap/handler.js';
-import { extractDomainAndProtocol, findSitemap } from '../../src/support/utils.js';
+import { extractDomainAndProtocol } from '../../src/support/utils.js';
 
 chai.use(sinonChai);
 const { expect } = chai;

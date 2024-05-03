@@ -56,13 +56,14 @@
     "@adobe/helix-status": "10.0.12",
     "@adobe/helix-universal": "4.5.2",
     "@adobe/helix-universal-logger": "3.0.15",
+    "@adobe/spacecat-shared-ahrefs-client": "1.0.0",
     "@adobe/spacecat-shared-data-access": "1.21.2",
     "@adobe/spacecat-shared-http-utils": "1.1.4",
     "@adobe/spacecat-shared-rum-api-client": "1.8.0",
-    "@adobe/spacecat-shared-ahrefs-client": "1.0.0",
     "@adobe/spacecat-shared-utils": "1.14.5",
     "@aws-sdk/client-sqs": "3.556.0",
     "diff": "5.2.0",
+    "jsdom": "24.0.0",
     "urijs": "1.19.11"
   },
   "devDependencies": {
