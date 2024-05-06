@@ -146,19 +146,68 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  it('sitemap audit returns 404 when site not found', async () => {
+  it('runs successfully for common sitemap url when robots.txt is not available', async () => {
     nock(url)
       .get('/robots.txt')
+      .reply(404);
+
+    nock(url)
+      .head('/sitemap_index.xml')
+      .reply(404);
+
+    nock(url)
+      .head('/sitemap.xml')
+      .reply(200);
+
+    nock(url)
+      .get('/sitemap.xml')
+      .reply(200, sampleSitemap);
+
+    const result = await sitemapAuditRunner(url, context);
+    expect(result).to.eql({
+      auditResult: {
+        success: true,
+        paths: {
+          [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
+        },
+        reasons: [
+          {
+            error: ERROR_CODES.FETCH_ERROR,
+            value: `Error fetching or processing robots.txt: Failed to fetch content from ${url}/robots.txt. Status: 404`,
+          },
+          {
+            value: 'Sitemaps found and validated successfully.',
+          },
+        ],
+      },
+      fullAuditRef: url,
+    });
+  });
+
+  it('should return 404 when site not found', async () => {
+    nock(url)
+      .persist()
+      .head(() => true)
+      .reply(404);
+
+    nock(url)
+      .get(() => true)
       .reply(404);
 
     const result = await sitemapAuditRunner(url, context);
     expect(result).to.eql({
       auditResult: {
         success: false,
-        reasons: [{
-          error: ERROR_CODES.FETCH_ERROR,
-          value: `Error fetching or processing robots.txt: Failed to fetch content from ${url}/robots.txt. Status: 404`,
-        }],
+        reasons: [
+          {
+            error: ERROR_CODES.FETCH_ERROR,
+            value: `Error fetching or processing robots.txt: Failed to fetch content from ${url}/robots.txt. Status: 404`,
+          },
+          {
+            error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+            value: `No sitemap found in robots.txt or common paths for ${url}`,
+          },
+        ],
       },
       fullAuditRef: url,
     });

@@ -19,17 +19,18 @@ import {
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 
-export const ERROR_CODES = {
+export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID_URL',
   ROBOTS_NOT_FOUND: 'ROBOTS_TXT_NOT_FOUND',
   NO_SITEMAP_IN_ROBOTS: 'NO_SITEMAP_IN_ROBOTS_TXT',
+  NO_SITEMAP_FOUND: 'NO_SITEMAP_FOUND',
   NO_PATHS_IN_SITEMAP: 'NO_PATHS_IN_SITEMAP',
   SITEMAP_NOT_FOUND: 'SITEMAP_NOT_FOUND',
   SITEMAP_INDEX_NOT_FOUND: 'SITEMAP_INDEX_NOT_FOUND',
   SITEMAP_EMPTY: 'SITEMAP_EMPTY',
   SITEMAP_FORMAT: 'INVALID_SITEMAP_FORMAT',
   FETCH_ERROR: 'FETCH_ERROR',
-};
+});
 
 /**
  * Fetches the content from a given URL.
@@ -85,7 +86,7 @@ export function isSitemapContentValid(sitemapContent) {
   return sitemapContent.payload.trim().startsWith('<?xml')
       || sitemapContent.type === 'application/xml'
       || sitemapContent.type === 'text/xml'
-      || sitemapContent.type === 'plain/text';
+      || sitemapContent.type === 'text/plain';
 }
 
 /**
@@ -141,7 +142,7 @@ export async function checkSitemap(sitemapUrl) {
  */
 async function checkCommonSitemapUrls(urls) {
   const fetchPromises = urls.map(async (url) => {
-    const response = await fetch(url);
+    const response = await fetch(url, { method: 'HEAD' });
     return response.ok ? url : null;
   });
   const results = await Promise.all(fetchPromises);
@@ -207,7 +208,6 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
 
   return response;
 }
-
 /**
  * This function is used to find the sitemap of a given URL.
  * It first extracts the domain and protocol from the input URL.
@@ -243,18 +243,19 @@ export async function findSitemap(inputUrl) {
     const robotsResult = await checkRobotsForSitemap(protocol, domain);
     if (robotsResult.paths.length) {
       sitemapUrls = robotsResult.paths;
-    } else {
-      // Fallback to common sitemap URLs if none are found in robots.txt
-      const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
-      sitemapUrls = await checkCommonSitemapUrls(commonSitemapUrls);
-      if (!sitemapUrls.length) {
-        logMessages.push({ value: `No sitemap found in robots.txt or common paths for ${domain}`, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
-        return { success: false, reasons: logMessages };
-      }
     }
   } catch (error) {
     logMessages.push({ value: `Error fetching or processing robots.txt: ${error.message}`, error: ERROR_CODES.FETCH_ERROR });
-    return { success: false, reasons: logMessages };
+    // Don't return failure yet, try the fallback URLs
+  }
+
+  if (!sitemapUrls.length) {
+    const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
+    sitemapUrls = await checkCommonSitemapUrls(commonSitemapUrls);
+    if (!sitemapUrls.length) {
+      logMessages.push({ value: `No sitemap found in robots.txt or common paths for ${protocol}://${domain}`, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
+      return { success: false, reasons: logMessages };
+    }
   }
 
   const inputUrlToggledWww = toggleWWW(inputUrl);
@@ -263,6 +264,7 @@ export async function findSitemap(inputUrl) {
   const filteredSitemapUrls = sitemapUrls.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
+
   try {
     const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
 
