@@ -108,12 +108,6 @@ export function isSitemapContentValid(sitemapContent) {
 export async function checkSitemap(sitemapUrl) {
   try {
     const sitemapContent = await fetchContent(sitemapUrl);
-    if (!sitemapContent) {
-      return {
-        existsAndIsValid: false,
-        reasons: [ERROR_CODES.SITEMAP_NOT_FOUND, ERROR_CODES.SITEMAP_EMPTY],
-      };
-    }
     const isValidFormat = isSitemapContentValid(sitemapContent);
     const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
     const isText = isValidFormat && sitemapContent.type === 'text/plain';
@@ -131,7 +125,16 @@ export async function checkSitemap(sitemapUrl) {
       details: { sitemapContent, isText, isSitemapIndex },
     };
   } catch (error) {
-    return { existsAndIsValid: false, reasons: [ERROR_CODES.FETCH_ERROR] };
+    if (error.message.includes('404')) {
+      return {
+        existsAndIsValid: false,
+        reasons: [ERROR_CODES.SITEMAP_NOT_FOUND],
+      };
+    }
+    return {
+      existsAndIsValid: false,
+      reasons: [ERROR_CODES.FETCH_ERROR],
+    };
   }
 }
 
@@ -154,15 +157,10 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   const contentsCache = {};
 
   // Prepare all promises for checking each sitemap URL.
-  const checkPromises = urls.map((url) => {
-    if (!contentsCache[url]) {
-      return checkSitemap(url).then((urlData) => {
-        contentsCache[url] = urlData;
-        return { url, urlData };
-      });
-    }
-    // If already in cache, skip it.
-    return null;
+  const checkPromises = urls.map(async (url) => {
+    const urlData = await checkSitemap(url);
+    contentsCache[url] = urlData;
+    return { url, urlData };
   }).filter((promise) => promise !== null);
 
   // Execute all checks concurrently.
@@ -265,18 +263,13 @@ export async function findSitemap(inputUrl) {
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
 
-  try {
-    const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
 
-    if (Object.entries(extractedPaths).length > 0) {
-      logMessages.push({ value: 'Sitemaps found and validated successfully.' });
-      return { success: true, reasons: logMessages, paths: extractedPaths };
-    } else {
-      logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
-      return { success: false, reasons: logMessages };
-    }
-  } catch (error) {
-    logMessages.push({ value: `Error validating sitemap content: ${error.message}`, error: ERROR_CODES.SITEMAP_FORMAT });
+  if (Object.entries(extractedPaths).length > 0) {
+    logMessages.push({ value: 'Sitemaps found and validated successfully.' });
+    return { success: true, reasons: logMessages, paths: extractedPaths };
+  } else {
+    logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
     return { success: false, reasons: logMessages };
   }
 }
