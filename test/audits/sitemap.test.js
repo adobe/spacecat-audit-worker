@@ -323,7 +323,7 @@ describe('Sitemap Audit', () => {
       expect(resp.reasons).to.include(ERROR_CODES.FETCH_ERROR);
     });
 
-    it('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid', async () => {
+    it('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
       nock(url)
         .get('/sitemap.xml')
         .reply(200, 'Not valid XML');
@@ -382,6 +382,19 @@ describe('Sitemap Audit', () => {
       expect(result).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${protocol}://www.${domain}/foo`, `${protocol}://www.${domain}/bar`],
       });
+    });
+
+    it('should return nothing when sitemap does not contain urls', async () => {
+      nock(url)
+        .get('/sitemap.xml')
+        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
+          + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+          + '<url></url>\n'
+          + '<url></url>\n'
+          + '</urlset>');
+
+      const resp = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`]);
+      expect(resp).to.deep.equal({});
     });
   });
 
