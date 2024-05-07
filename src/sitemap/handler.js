@@ -262,11 +262,12 @@ export async function findSitemap(inputUrl, context) {
   const filteredSitemapUrls = sitemapUrls.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
-
+  const useToggledWww = filteredSitemapUrls.some((url) => url.startsWith(inputUrlToggledWww));
   const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
 
   const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-  const { result } = await ahrefsAPIClient.getTopPages(inputUrl, 200);
+  const targetUrl = useToggledWww ? inputUrlToggledWww : inputUrl;
+  const { result } = await ahrefsAPIClient.getTopPages(targetUrl, 200);
   const topPagesUrl = result?.pages?.map((page) => page.url) || [];
 
   const filteredExtractedPaths = Object.fromEntries(
