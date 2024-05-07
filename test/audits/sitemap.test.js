@@ -139,6 +139,7 @@ describe('Sitemap Audit', () => {
           }],
         },
         fullAuditRef: url,
+        url,
       });
     });
 
@@ -162,6 +163,7 @@ describe('Sitemap Audit', () => {
           }],
         },
         fullAuditRef: url,
+        url,
       });
     });
 
@@ -185,6 +187,7 @@ describe('Sitemap Audit', () => {
           }],
         },
         fullAuditRef: url,
+        url,
       });
     });
 
@@ -208,6 +211,7 @@ describe('Sitemap Audit', () => {
           }],
         },
         fullAuditRef: url,
+        url,
       });
     });
 
@@ -236,6 +240,7 @@ describe('Sitemap Audit', () => {
           }],
         },
         fullAuditRef: url,
+        url,
       });
     });
 
@@ -274,6 +279,7 @@ describe('Sitemap Audit', () => {
           ],
         },
         fullAuditRef: url,
+        url,
       });
     });
 
@@ -303,6 +309,7 @@ describe('Sitemap Audit', () => {
           ],
         },
         fullAuditRef: url,
+        url,
       });
     });
   });
