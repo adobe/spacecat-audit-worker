@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.15.5",
+  "version": "1.15.7",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -56,19 +56,19 @@
     "@adobe/helix-status": "10.0.12",
     "@adobe/helix-universal": "4.5.2",
     "@adobe/helix-universal-logger": "3.0.15",
-    "@adobe/spacecat-shared-data-access": "1.22.1",
-    "@adobe/spacecat-shared-http-utils": "1.1.4",
+    "@adobe/spacecat-shared-data-access": "1.23.0",
+    "@adobe/spacecat-shared-http-utils": "1.2.1",
     "@adobe/spacecat-shared-rum-api-client": "1.8.1",
     "@adobe/spacecat-shared-ahrefs-client": "1.1.0",
     "@adobe/spacecat-shared-utils": "1.14.6",
-    "@aws-sdk/client-sqs": "3.564.0",
+    "@aws-sdk/client-sqs": "3.569.0",
     "diff": "5.2.0",
     "jsdom": "24.0.0",
     "urijs": "1.19.11"
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "2.0.6",
-    "@adobe/helix-deploy": "11.0.24",
+    "@adobe/helix-deploy": "11.0.25",
     "@adobe/helix-universal": "4.5.2",
     "@adobe/semantic-release-coralogix": "1.1.28",
     "@adobe/semantic-release-skms-cmr": "1.0.15",
@@ -77,8 +77,8 @@
     "@semantic-release/exec": "6.0.3",
     "@semantic-release/git": "10.0.1",
     "@semantic-release/npm": "12.0.0",
-    "@typescript-eslint/eslint-plugin": "7.7.1",
-    "@typescript-eslint/parser": "7.7.1",
+    "@typescript-eslint/eslint-plugin": "7.8.0",
+    "@typescript-eslint/parser": "7.8.0",
     "c8": "9.1.0",
     "chai": "4.4.1",
     "chai-as-promised": "7.1.1",
@@ -96,7 +96,7 @@
     "sinon": "17.0.1",
     "sinon-chai": "3.7.0",
     "typescript": "5.4.5",
-    "yaml": "2.4.1"
+    "yaml": "2.4.2"
   },
   "lint-staged": {
     "*.js": "eslint",
