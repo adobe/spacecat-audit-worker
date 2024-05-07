@@ -137,6 +137,7 @@ describe('Sitemap Audit', () => {
           reasons: [{
             value: 'Sitemaps found and validated successfully.',
           }],
+          url,
         },
         fullAuditRef: url,
         url,
@@ -161,6 +162,7 @@ describe('Sitemap Audit', () => {
           reasons: [{
             value: 'Sitemaps found and validated successfully.',
           }],
+          url,
         },
         fullAuditRef: url,
         url,
@@ -185,6 +187,7 @@ describe('Sitemap Audit', () => {
           reasons: [{
             value: 'Sitemaps found and validated successfully.',
           }],
+          url,
         },
         fullAuditRef: url,
         url,
@@ -209,6 +212,7 @@ describe('Sitemap Audit', () => {
           reasons: [{
             value: 'Sitemaps found and validated successfully.',
           }],
+          url,
         },
         fullAuditRef: url,
         url,
@@ -238,6 +242,7 @@ describe('Sitemap Audit', () => {
           reasons: [{
             value: 'Sitemaps found and validated successfully.',
           }],
+          url,
         },
         fullAuditRef: url,
         url,
@@ -277,6 +282,7 @@ describe('Sitemap Audit', () => {
               value: 'Sitemaps found and validated successfully.',
             },
           ],
+          url,
         },
         fullAuditRef: url,
         url,

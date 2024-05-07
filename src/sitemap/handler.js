@@ -279,10 +279,12 @@ export async function findSitemap(inputUrl, context) {
 
   if (Object.entries(filteredExtractedPaths).length > 0) {
     logMessages.push({ value: 'Sitemaps found and validated successfully.' });
-    return { success: true, reasons: logMessages, paths: filteredExtractedPaths };
+    return {
+      success: true, reasons: logMessages, paths: filteredExtractedPaths, url: inputUrl,
+    };
   } else {
     logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
-    return { success: false, reasons: logMessages };
+    return { success: false, reasons: logMessages, url: inputUrl };
   }
 }
 
