@@ -16,6 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import chaiAsPromised from 'chai-as-promised';
+import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import {
   checkSitemap,
   ERROR_CODES,
@@ -65,6 +66,11 @@ describe('Sitemap Audit', () => {
     + `<sitemap><loc>${url}/sitemap_bar.xml</loc></sitemap>\n`
     + '</sitemapindex>';
 
+  let topPagesResponse;
+
+  let getTopPagesStub;
+  let createFromStub;
+
   beforeEach('setup', () => {
     context = new MockContextBuilder()
       .withSandbox(sandbox)
@@ -76,16 +82,92 @@ describe('Sitemap Audit', () => {
     nock(url)
       .get('/sitemap_bar.xml')
       .reply(200, sampleSitemapTwo);
+
+    topPagesResponse = {
+      result: {
+        pages: [
+          {
+            url: `${url}/foo`,
+            sum_traffic: 100,
+          },
+          {
+            url: `${url}/bar`,
+            sum_traffic: 200,
+          },
+          {
+            url: `${url}/baz`,
+            sum_traffic: 300,
+          },
+          {
+            url: `${url}/cux`,
+            sum_traffic: 400,
+          },
+        ],
+      },
+    };
+
+    getTopPagesStub = sinon.stub(AhrefsAPIClient.prototype, 'getTopPages').resolves(topPagesResponse);
+    createFromStub = sinon.stub(AhrefsAPIClient, 'createFrom').returns({
+      getTopPages: getTopPagesStub,
+    });
   });
 
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
+    createFromStub.restore();
+    getTopPagesStub.restore();
     sandbox.restore();
   });
 
   describe('sitemapAuditRunner', () => {
     it('runs successfully for sitemaps extracted from robots.txt', async () => {
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, `Sitemap: ${url}/sitemap_foo.xml\nSitemap: ${url}/sitemap_bar.xml`);
+
+      const result = await sitemapAuditRunner(url, context);
+      expect(result).to.eql({
+        auditResult: {
+          success: true,
+          paths: {
+            [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
+            [`${url}/sitemap_bar.xml`]: [`${url}/baz`, `${url}/cux`],
+          },
+          reasons: [{
+            value: 'Sitemaps found and validated successfully.',
+          }],
+        },
+        fullAuditRef: url,
+      });
+    });
+
+    it('runs successfully and filters pages by ahrefs top pages', async () => {
+      delete topPagesResponse.result.pages[0];
+      delete topPagesResponse.result.pages[3];
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, `Sitemap: ${url}/sitemap_foo.xml\nSitemap: ${url}/sitemap_bar.xml`);
+
+      const result = await sitemapAuditRunner(url, context);
+      expect(result).to.eql({
+        auditResult: {
+          success: true,
+          paths: {
+            [`${url}/sitemap_foo.xml`]: [`${url}/bar`],
+            [`${url}/sitemap_bar.xml`]: [`${url}/baz`],
+          },
+          reasons: [{
+            value: 'Sitemaps found and validated successfully.',
+          }],
+        },
+        fullAuditRef: url,
+      });
+    });
+
+    it('runs successfully and does not filters pages by ahrefs top pages when there is no response', async () => {
+      delete topPagesResponse.result.pages;
+
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap_foo.xml\nSitemap: ${url}/sitemap_bar.xml`);
@@ -481,6 +563,9 @@ describe('Sitemap Audit', () => {
       nock(url)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrlsWWW);
+
+      topPagesResponse.result.pages[0].url = `${protocol}://www.${domain}/foo`;
+      topPagesResponse.result.pages[1].url = `${protocol}://www.${domain}/bar`;
 
       const result = await findSitemap(`${protocol}://www.${domain}`);
       expect(result.success).to.equal(true);

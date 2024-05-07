@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import {
   extractDomainAndProtocol,
   fetch,
@@ -217,10 +218,11 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
  * The extracted paths response length < 0, log messages and returns the failure status and reasons.
  *
  * @param {string} inputUrl - The URL for which to find and validate the sitemap
+ * @param {UniversalContext} context - The Lambda context object
  * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
  */
 
-export async function findSitemap(inputUrl) {
+export async function findSitemap(inputUrl, context) {
   const logMessages = [];
 
   const parsedUrl = extractDomainAndProtocol(inputUrl);
@@ -257,17 +259,26 @@ export async function findSitemap(inputUrl) {
   }
 
   const inputUrlToggledWww = toggleWWW(inputUrl);
-  // todo: with this map of sitemap to list of URLs that have the prefix of the baseURL,
-  //  go on an filter out / check out the 200 entries from the top pages
   const filteredSitemapUrls = sitemapUrls.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
 
   const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
 
-  if (Object.entries(extractedPaths).length > 0) {
+  const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
+  const { result } = await ahrefsAPIClient.getTopPages(inputUrl, 200);
+  const topPagesUrl = result?.pages?.map((page) => page.url) || [];
+
+  const filteredExtractedPaths = Object.fromEntries(
+    Object.entries(extractedPaths).map(([sitemap, urls]) => [
+      sitemap,
+      topPagesUrl.length > 0 ? urls.filter((url) => topPagesUrl.includes(url)) : urls,
+    ]),
+  );
+
+  if (Object.entries(filteredExtractedPaths).length > 0) {
     logMessages.push({ value: 'Sitemaps found and validated successfully.' });
-    return { success: true, reasons: logMessages, paths: extractedPaths };
+    return { success: true, reasons: logMessages, paths: filteredExtractedPaths };
   } else {
     logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
     return { success: false, reasons: logMessages };
@@ -286,7 +297,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
   log.info(`Received sitemap audit request for ${baseURL}`);
   const startTime = process.hrtime();
-  const auditResult = await findSitemap(baseURL);
+  const auditResult = await findSitemap(baseURL, context);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
