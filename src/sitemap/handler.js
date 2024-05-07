@@ -309,6 +309,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   return {
     fullAuditRef: baseURL,
     auditResult,
+    url: baseURL,
   };
 }
 
