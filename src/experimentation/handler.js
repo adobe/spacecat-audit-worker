@@ -31,12 +31,19 @@ function processRUMResponse(data) {
 
 async function processAudit(baseURL, context) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const finalUrl = await getRUMUrl(baseURL);
-  const params = {
+  let finalUrl = await getRUMUrl(baseURL);
+  let params = {
     url: finalUrl,
   };
 
-  const data = await rumAPIClient.getExperimentationData(params);
+  let data = await rumAPIClient.getExperimentationData(params);
+  if (data.length === 0 && !finalUrl.toLowerCase().startsWith('www')) {
+    finalUrl = 'www.'.concat(finalUrl);
+    params = {
+      url: finalUrl,
+    };
+    data = await rumAPIClient.getExperimentationData(params);
+  }
   return {
     auditResult: processRUMResponse(data),
     fullAuditRef: createExperimentationURL({ url: finalUrl }),
