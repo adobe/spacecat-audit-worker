@@ -1,3 +1,10 @@
+## [1.15.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.7...v1.15.8) (2024-05-08)
+
+
+### Bug Fixes
+
+* Changes for websites that do not redirect non www url to www url ([#248](https://github.com/adobe/spacecat-audit-worker/issues/248)) ([088ad72](https://github.com/adobe/spacecat-audit-worker/commit/088ad72b57cc5c2ea43fecac0f1ea6f0f6779763))
+
 ## [1.15.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.6...v1.15.7) (2024-05-04)
 
 
