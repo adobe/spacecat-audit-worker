@@ -9,6 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import URI from 'urijs';
+import { hasText } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient, { createExperimentationURL } from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMUrl } from '../support/utils.js';
@@ -29,14 +31,30 @@ function processRUMResponse(data) {
     }));
 }
 
+export function hasNonWWWSubdomain(baseUrl) {
+  try {
+    const uri = new URI(baseUrl);
+    return hasText(uri.domain()) && hasText(uri.subdomain()) && uri.subdomain() !== 'www';
+  } catch (e) {
+    throw new Error(`Cannot parse baseURL: ${baseUrl}`);
+  }
+}
+
 async function processAudit(baseURL, context) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const finalUrl = await getRUMUrl(baseURL);
-  const params = {
+  let finalUrl = await getRUMUrl(baseURL);
+  let params = {
     url: finalUrl,
   };
 
-  const data = await rumAPIClient.getExperimentationData(params);
+  let data = await rumAPIClient.getExperimentationData(params);
+  if (data.length === 0 && !hasNonWWWSubdomain(baseURL) && !finalUrl.toLowerCase().startsWith('www')) {
+    finalUrl = `www.${finalUrl}`;
+    params = {
+      url: finalUrl,
+    };
+    data = await rumAPIClient.getExperimentationData(params);
+  }
   return {
     auditResult: processRUMResponse(data),
     fullAuditRef: createExperimentationURL({ url: finalUrl }),
