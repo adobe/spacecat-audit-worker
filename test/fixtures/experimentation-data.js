@@ -165,6 +165,11 @@ export const expectedAuditDataVariant2 = {
   ],
 };
 
+export const expectedAuditDataVariant3 = {
+  fullAuditRef: 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-experiments?interval=7&offset=0&limit=101&url=subdomain.spacecat.com',
+  auditResult: [],
+};
+
 export const rumData = {
   ':names': [
     'results',
