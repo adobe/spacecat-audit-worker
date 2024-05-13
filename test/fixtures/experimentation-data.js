@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-export const expectedAuditData = {
+export const expectedAuditDataVariant1 = {
   fullAuditRef: 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-experiments?interval=7&offset=0&limit=101&url=bamboohr.com',
   auditResult: [
     {
@@ -85,6 +85,89 @@ export const expectedAuditData = {
       time95: '2024-02-07 19:00:09+00',
     },
   ],
+};
+
+export const expectedAuditDataVariant2 = {
+  fullAuditRef: 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-experiments?interval=7&offset=0&limit=101&url=www.spacecat.com',
+  auditResult: [
+    {
+      experiment: '24-101c-lp-enhanced-applicant-tracking-system',
+      p_value: 0.5000000005,
+      variant: 'challenger-2',
+      variant_experimentation_events: 13,
+      variant_conversion_events: 3,
+      variant_experimentations: '1300',
+      variant_conversions: '300',
+      variant_conversion_rate: '0.230769231',
+      time5: '2024-02-01 17:00:19+00',
+      time95: '2024-02-07 20:00:55+00',
+    },
+    {
+      experiment: '24-101c-lp-enhanced-applicant-tracking-system',
+      p_value: 0.5000000005,
+      variant: 'challenger-1',
+      variant_experimentation_events: 11,
+      variant_conversion_events: 3,
+      variant_experimentations: '1100',
+      variant_conversions: '300',
+      variant_conversion_rate: '0.272727273',
+      time5: '2024-02-01 00:00:08+00',
+      time95: '2024-02-07 23:00:58+00',
+    },
+    {
+      experiment: '24-101a-lp-enhanced-onboarding',
+      p_value: 0.5000000005,
+      variant: 'challenger-1',
+      variant_experimentation_events: 23,
+      variant_conversion_events: 8,
+      variant_experimentations: '2300',
+      variant_conversions: '800',
+      variant_conversion_rate: '0.347826087',
+      time5: '2024-02-01 13:00:04+00',
+      time95: '2024-02-07 21:00:08+00',
+    },
+    {
+      experiment: '24-101a-lp-enhanced-onboarding',
+      p_value: 0.5000000005,
+      variant: 'challenger-2',
+      variant_experimentation_events: 31,
+      variant_conversion_events: 3,
+      variant_experimentations: '3100',
+      variant_conversions: '300',
+      variant_conversion_rate: '0.096774194',
+      time5: '2024-02-01 15:00:13+00',
+      time95: '2024-02-07 20:00:18+00',
+    },
+    {
+      experiment: '2-21-free-trial-cp-delay-load',
+      p_value: 0.3431751933689274,
+      variant: 'challenger-1',
+      variant_experimentation_events: 24,
+      variant_conversion_events: 20,
+      variant_experimentations: '2400',
+      variant_conversions: '2000',
+      variant_conversion_rate: '0.833333333',
+      time5: '2024-02-01 00:00:08+00',
+      time95: '2024-02-07 23:00:12+00',
+    },
+    {
+      experiment: '2-21-free-trial-cp-delay-load',
+      p_value: 0.47701597063430096,
+      variant: 'challenger-2',
+      variant_experimentation_events: 24,
+      variant_conversion_events: 13,
+      variant_experimentations: '2400',
+      variant_conversions: '1300',
+      variant_conversion_rate: '0.541666667',
+      time5: '2024-02-01 18:00:00+00',
+      time95: '2024-02-07 19:00:09+00',
+    },
+  ],
+};
+
+export const expectedAuditDataVariant3 = {
+  fullAuditRef: 'https://helix-pages.anywhere.run/helix-services/run-query@v3/rum-experiments?interval=7&offset=0&limit=101&url=subdomain.spacecat.com',
+  auditResult: [],
 };
 
 export const rumData = {
@@ -280,6 +363,99 @@ export const rumData = {
       {
         name: 'url',
         value: 'www.bamboohr.com',
+        type: 'request parameter',
+      },
+      {
+        name: 'interval',
+        value: 7,
+        type: 'request parameter',
+      },
+      {
+        name: 'offset',
+        value: 0,
+        type: 'request parameter',
+      },
+      {
+        name: 'startdate',
+        value: '-',
+        type: 'request parameter',
+      },
+      {
+        name: 'enddate',
+        value: '-',
+        type: 'request parameter',
+      },
+      {
+        name: 'timezone',
+        value: 'UTC',
+        type: 'request parameter',
+      },
+      {
+        name: 'experiment',
+        value: '-',
+        type: 'request parameter',
+      },
+      {
+        name: 'conversioncheckpoint',
+        value: 'click',
+        type: 'request parameter',
+      },
+      {
+        name: 'sources',
+        value: '-',
+        type: 'request parameter',
+      },
+      {
+        name: 'targets',
+        value: '-',
+        type: 'request parameter',
+      },
+      {
+        name: 'threshold',
+        value: '500',
+        type: 'request parameter',
+      },
+      {
+        name: 'limit',
+        value: null,
+        type: 'request parameter',
+      },
+    ],
+  },
+};
+
+export const rumDataEmpty = {
+  ':names': [
+    'results',
+    'meta',
+  ],
+  ':type': 'multi-sheet',
+  ':version': 3,
+  results: {
+    limit: 1,
+    offset: 0,
+    total: 0,
+    data: [],
+    columns: [],
+  },
+  meta: {
+    limit: 13,
+    offset: 0,
+    total: 13,
+    columns: [
+      'name',
+      'value',
+      'type',
+    ],
+    data: [
+      {
+        name: 'description',
+        value: 'Using Helix RUM data, get a report of conversion rates of experiment variants compared to control, including p value.',
+        type: 'query description',
+      },
+      {
+        name: 'url',
+        value: 'maidenform.com',
         type: 'request parameter',
       },
       {

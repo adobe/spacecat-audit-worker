@@ -15,8 +15,14 @@ import chai from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { experimentationAuditRunner } from '../../src/experimentation/handler.js';
-import { expectedAuditData, rumData } from '../fixtures/experimentation-data.js';
+import { experimentationAuditRunner, hasNonWWWSubdomain } from '../../src/experimentation/handler.js';
+import {
+  expectedAuditDataVariant1,
+  expectedAuditDataVariant2,
+  expectedAuditDataVariant3,
+  rumData,
+  rumDataEmpty,
+} from '../fixtures/experimentation-data.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
@@ -62,6 +68,50 @@ describe('Experimentation Audit', () => {
       })
       .reply(200, rumData);
     const auditData = await experimentationAuditRunner('https://bamboohr.com', context);
-    expect(auditData).to.deep.equal(expectedAuditData);
+    expect(auditData).to.deep.equal(expectedAuditDataVariant1);
+  });
+
+  it('fetch experiment data for base url > process > sends zero results', async () => {
+    nock('https://spacecat.com')
+      .get('/')
+      .reply(200);
+    nock('https://helix-pages.anywhere.run')
+      .get('/helix-services/run-query@v3/rum-experiments')
+      .query({
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        domainkey: context.env.RUM_DOMAIN_KEY,
+        url: 'spacecat.com',
+      })
+      .reply(200, rumDataEmpty);
+    nock('https://helix-pages.anywhere.run')
+      .get('/helix-services/run-query@v3/rum-experiments')
+      .query({
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        domainkey: context.env.RUM_DOMAIN_KEY,
+        url: 'www.spacecat.com',
+      })
+      .reply(200, rumData);
+    const auditData = await experimentationAuditRunner('https://spacecat.com', context);
+    expect(auditData).to.deep.equal(expectedAuditDataVariant2);
+  });
+
+  it('fetch experiment data for base url > process > sends zero results', async () => {
+    nock('https://subdomain.spacecat.com')
+      .get('/')
+      .reply(200);
+    nock('https://helix-pages.anywhere.run')
+      .get('/helix-services/run-query@v3/rum-experiments')
+      .query({
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        domainkey: context.env.RUM_DOMAIN_KEY,
+        url: 'subdomain.spacecat.com',
+      })
+      .reply(200, rumDataEmpty);
+    const auditData = await experimentationAuditRunner('https://subdomain.spacecat.com', context);
+    expect(auditData).to.deep.equal(expectedAuditDataVariant3);
+  });
+
+  it('throws error when parse fails', () => {
+    expect(() => hasNonWWWSubdomain('https://spacecat,com')).to.throw('Cannot parse baseURL: https://spacecat,com');
   });
 });

@@ -1,3 +1,31 @@
+## [1.15.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.9...v1.15.10) (2024-05-11)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#251](https://github.com/adobe/spacecat-audit-worker/issues/251)) ([4f6926a](https://github.com/adobe/spacecat-audit-worker/commit/4f6926a2b1b38523aa1589c188b906ef92b57e5d))
+
+## [1.15.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.8...v1.15.9) (2024-05-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-ahrefs-client to v1.2.0 ([#250](https://github.com/adobe/spacecat-audit-worker/issues/250)) ([87b4369](https://github.com/adobe/spacecat-audit-worker/commit/87b4369dfe5099419bc8233ab99db3c5d5479b7e))
+
+## [1.15.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.7...v1.15.8) (2024-05-08)
+
+
+### Bug Fixes
+
+* Changes for websites that do not redirect non www url to www url ([#248](https://github.com/adobe/spacecat-audit-worker/issues/248)) ([088ad72](https://github.com/adobe/spacecat-audit-worker/commit/088ad72b57cc5c2ea43fecac0f1ea6f0f6779763))
+
+## [1.15.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.7...v1.15.8) (2024-05-08)
+
+
+### Bug Fixes
+
+* Changes for websites that do not redirect non www url to www url ([#248](https://github.com/adobe/spacecat-audit-worker/issues/248)) ([088ad72](https://github.com/adobe/spacecat-audit-worker/commit/088ad72b57cc5c2ea43fecac0f1ea6f0f6779763))
+
 ## [1.15.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.6...v1.15.7) (2024-05-04)
 
 
