@@ -360,7 +360,7 @@ describe('Sitemap Audit', () => {
     it('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
       nock(url)
         .get('/sitemap.xml')
-        .reply(200, 'Not valid XML');
+        .reply(200, 'Not valid XML', { 'content-type': 'invalid' });
 
       const resp = await checkSitemap(`${url}/sitemap.xml`);
       expect(resp.existsAndIsValid).to.equal(false);

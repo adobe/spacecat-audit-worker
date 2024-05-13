@@ -32,6 +32,13 @@ export const ERROR_CODES = Object.freeze({
   FETCH_ERROR: 'FETCH_ERROR',
 });
 
+const VALID_MIME_TYPES = Object.freeze([
+  'application/xml',
+  'text/xml',
+  'text/html',
+  'text/plain',
+]);
+
 /**
  * Fetches the content from a given URL.
  *
@@ -84,9 +91,7 @@ export async function checkRobotsForSitemap(protocol, domain) {
 
 export function isSitemapContentValid(sitemapContent) {
   return sitemapContent.payload.trim().startsWith('<?xml')
-      || sitemapContent.type === 'application/xml'
-      || sitemapContent.type === 'text/xml'
-      || sitemapContent.type === 'text/plain';
+      || VALID_MIME_TYPES.some((type) => sitemapContent.type.includes(type));
 }
 
 /**
