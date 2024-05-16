@@ -116,3 +116,8 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
 export function getSitemapUrlsFromSitemapIndex(content) {
   return extractUrlsFromSitemap(content, 'sitemap');
 }
+
+export function getUrlWithoutPath(url) {
+  const urlObj = new URL(url);
+  return `${urlObj.protocol}//${urlObj.host}`;
+}

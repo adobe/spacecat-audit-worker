@@ -10,11 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
+import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import {
   extractDomainAndProtocol,
   fetch,
   getBaseUrlPagesFromSitemapContents,
   getSitemapUrlsFromSitemapIndex,
+  getUrlWithoutPath,
   toggleWWW,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -307,5 +309,6 @@ export async function sitemapAuditRunner(baseURL, context) {
 
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
-  .withUrlResolver((site) => site.getBaseURL())
+  .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
+    .then((url) => (getUrlWithoutPath(url))))
   .build();
