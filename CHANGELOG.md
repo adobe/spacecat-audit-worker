@@ -1,3 +1,10 @@
+## [1.15.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.11...v1.15.12) (2024-05-17)
+
+
+### Bug Fixes
+
+* decrease cwv pageview threshold to 35k ([466de19](https://github.com/adobe/spacecat-audit-worker/commit/466de194e239b3efdacee55ade071753acb798f8))
+
 ## [1.15.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.10...v1.15.11) (2024-05-15)
 
 

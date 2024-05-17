@@ -15,7 +15,7 @@ import { internalServerError, noContent } from '@adobe/spacecat-shared-http-util
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
-const PAGEVIEW_THRESHOLD = 70000;
+const PAGEVIEW_THRESHOLD = 35000;
 
 export function filterRUMData(data) {
   return data.pageviews > PAGEVIEW_THRESHOLD // ignore the pages with low pageviews
