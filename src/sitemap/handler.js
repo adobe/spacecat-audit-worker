@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
   extractDomainAndProtocol,
   fetch,
@@ -111,7 +111,6 @@ export function isSitemapContentValid(sitemapContent) {
  *   - isText: A boolean indicating whether the sitemap content is plain text.
  *   - isSitemapIndex: A boolean indicating whether the sitemap is an index of other sitemaps.
  */
-
 export async function checkSitemap(sitemapUrl) {
   try {
     const sitemapContent = await fetchContent(sitemapUrl);
@@ -226,7 +225,6 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
  * @param {string} inputUrl - The URL for which to find and validate the sitemap
  * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
  */
-
 export async function findSitemap(inputUrl) {
   const logMessages = [];
 
@@ -310,5 +308,5 @@ export async function sitemapAuditRunner(baseURL, context) {
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
-    .then((url) => (getUrlWithoutPath(url))))
+    .then((url) => prependSchema(getUrlWithoutPath(url))))
   .build();
