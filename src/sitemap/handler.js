@@ -308,5 +308,5 @@ export async function sitemapAuditRunner(baseURL, context) {
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
-    .then((url) => prependSchema(getUrlWithoutPath(url))))
+    .then((url) => (getUrlWithoutPath(prependSchema(url)))))
   .build();
