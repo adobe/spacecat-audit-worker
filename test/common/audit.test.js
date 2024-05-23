@@ -18,6 +18,7 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
+import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
   defaultMessageSender, defaultOrgProvider,
   defaultPersister,
@@ -26,6 +27,7 @@ import {
 } from '../../src/common/audit.js';
 import { AuditBuilder } from '../../src/common/audit-builder.js';
 import { MockContextBuilder } from '../shared.js';
+import { getUrlWithoutPath } from '../../src/support/utils.js';
 
 chai.use(sinonChai);
 chai.use(chaiAsPromised);
@@ -152,6 +154,24 @@ describe('Audit tests', () => {
 
       await expect(audit.run(message, context))
         .to.be.rejectedWith(`${message.type} audit failed for site ${message.url}. Reason: Site with id ${message.url} not found`);
+    });
+
+    it('should follow redirection and return final URL', async () => {
+      nock('https://spacekitty.cat')
+        .get('/blog')
+        .reply(301, undefined, { Location: 'https://www.spacekitty.cat/blog' });
+
+      nock('https://www.spacekitty.cat')
+        .get('/blog')
+        .reply(200, () => 'hello world', {});
+
+      const testsite = createSite({ baseURL: 'https://spacekitty.cat/blog', organizationId: org.getId() });
+      const initialBaseURL = testsite.getBaseURL();
+      const auditURL = await composeAuditURL(initialBaseURL);
+      const urlWithSchema = prependSchema(auditURL);
+      const finalURL = getUrlWithoutPath(urlWithSchema);
+
+      expect(finalURL).to.equal('https://www.spacekitty.cat');
     });
 
     it('audit run skips when audit is disabled', async () => {
