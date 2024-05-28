@@ -78,7 +78,13 @@ export function extractDomainAndProtocol(inputUrl) {
     return null;
   }
 }
-
+/**
+ * Extracts URLs from a sitemap XML content based on a specified tag name.
+ *
+ * @param {Object} content - The content of the sitemap.
+ * @param {string} tagName - The name of the tag to extract URLs from.
+ * @returns {Array<string>} An array of URLs extracted from the sitemap.
+ */
 export function extractUrlsFromSitemap(content, tagName) {
   const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
@@ -112,7 +118,13 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
     return filterPages(sitemapPages);
   }
 }
-
+/**
+ * Extracts sitemap URLs from a sitemap index XML content.
+ *
+ * @param {Object} content - The content of the sitemap index.
+ * @param {string} content.payload - The XML content of the sitemap index as a string.
+ * @returns {Array<string>} An array of sitemap URLs extracted from the sitemap index.
+ */
 export function getSitemapUrlsFromSitemapIndex(content) {
   return extractUrlsFromSitemap(content, 'sitemap');
 }
