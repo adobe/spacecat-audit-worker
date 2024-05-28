@@ -172,7 +172,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
     const urlData = await checkSitemap(url);
     contentsCache[url] = urlData;
     return { url, urlData };
-  }).filter((promise) => promise !== null);
+  });
 
   // Execute all checks concurrently.
   const results = await Promise.all(checkPromises);
