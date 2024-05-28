@@ -45,10 +45,12 @@ async function processAudit(baseURL, context) {
 }
 
 /**
+ * This function is responsible for running the conversion audit.
+ * It logs the start and end of the audit, calculates the elapsed time, and returns the audit data.
  *
- * @param baseURL
- * @param context
- * @returns {Promise<{fullAuditRef: *, auditResult: *}>}
+ * @param {string} baseURL - The base URL for the audit.
+ * @param {object} context - The context object, which includes the log object for logging.
+ * @returns {Promise<object>} - Returns a promise that resolves with the audit data.
  */
 export async function conversionAuditRunner(baseURL, context) {
   const { log } = context;
