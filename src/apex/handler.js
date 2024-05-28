@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-// eslint-disable-next-line import/no-cycle
 import { fetch, hasNonWWWSubdomain, toggleWWW } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
