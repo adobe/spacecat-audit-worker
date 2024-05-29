@@ -128,25 +128,16 @@ export async function checkSitemap(sitemapUrl) {
         reasons: [ERROR_CODES.SITEMAP_FORMAT],
       };
     }
-    if (isSitemapIndex) {
-      return {
-        existsAndIsValid: true,
-        reasons: [],
-        details: { sitemapContent, isText, isSitemapIndex },
-      };
-    }
     return {
       existsAndIsValid: true,
       reasons: [],
-      details: { sitemapContent, isText, isSitemapIndex: false },
+      details: { sitemapContent, isText, isSitemapIndex },
     };
   } catch (error) {
     if (error.message.includes('404')) {
-      const isSitemapIndex = sitemapUrl.endsWith('sitemap_index.xml');
       return {
         existsAndIsValid: false,
-        reasons: [isSitemapIndex
-          ? ERROR_CODES.SITEMAP_INDEX_NOT_FOUND : ERROR_CODES.SITEMAP_NOT_FOUND],
+        reasons: [ERROR_CODES.SITEMAP_NOT_FOUND],
       };
     }
     return {
