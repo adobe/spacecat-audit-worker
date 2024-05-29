@@ -84,7 +84,7 @@ describe('PSIClient', () => {
         .query(true)
         .reply(200, { lighthouseResult: { score: 0.9 } });
 
-      const result = await client.performPSICheck('testsite.com', 'mobile');
+      const result = await client.performPSICheck('testsite.com', 'mobile', undefined);
       expect(result).to.deep.equal(
         {
           fullAuditRef: 'https://example.com/?url=https%3A%2F%2Ftestsite.com&strategy=mobile&key=testApiKey',
@@ -124,11 +124,11 @@ describe('PSIClient', () => {
         .query(true)
         .reply(200, { lighthouseResult: { score: 0.8 } });
 
-      const result = await client.runAudit('testsite.com', 'mobile');
+      const result = await client.runAudit('testsite.com', 'mobile', '1234');
       expect(result).to.deep.equal(
         {
           finalUrl: 'https://testsite.com/',
-          fullAuditRef: 'https://example.com/?url=https%3A%2F%2Ftestsite.com%2F&strategy=mobile&key=testApiKey',
+          fullAuditRef: 'https://example.com/?url=https%3A%2F%2Ftestsite.com%2F&strategy=mobile&serviceId=1234&key=testApiKey',
           lighthouseResult: {
             score: 0.8,
           },

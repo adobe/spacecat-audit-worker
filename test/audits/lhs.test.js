@@ -79,9 +79,17 @@ describe('LHS Audit', () => {
   };
 
   beforeEach(() => {
+    const mockDataAccess = {
+      getSiteByID: () => ({
+        getId: () => 'some-site-id',
+      }),
+      getOrganizationByID: sandbox.stub(),
+      addAudit: sandbox.stub(),
+    };
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
+        dataAccess: mockDataAccess,
         env: {
           AUDIT_RESULTS_QUEUE_URL: 'some-queue-url',
           PAGESPEED_API_BASE_URL: 'https://psi-audit-service.com',
@@ -106,7 +114,7 @@ describe('LHS Audit', () => {
 
   it('should successfully perform an audit for mobile strategy', async () => {
     nock('https://psi-audit-service.com')
-      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile&serviceId=some-site-id')
       .reply(200, psiResult);
 
     const auditData = await mobileAuditRunner('https://adobe.com/', context);
@@ -120,7 +128,7 @@ describe('LHS Audit', () => {
     errorPSIResult.lighthouseResult.runtimeError = { code: 'error-code', message: 'error-message' };
 
     nock('https://psi-audit-service.com')
-      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile&serviceId=some-site-id')
       .reply(200, errorPSIResult);
 
     const auditData = await mobileAuditRunner('https://adobe.com/', context);
@@ -138,7 +146,7 @@ describe('LHS Audit', () => {
     };
 
     nock('https://psi-audit-service.com')
-      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=desktop')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=desktop&serviceId=some-site-id')
       .reply(200, psiResult);
 
     const auditData = await desktopAuditRunner('https://adobe.com/', context);
@@ -148,7 +156,7 @@ describe('LHS Audit', () => {
   it('throws error when psi api fetch fails', async () => {
     nock('https://adobe.com').get('/').reply(200);
     nock('https://psi-audit-service.com')
-      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile')
+      .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile&serviceId=some-site-id')
       .reply(405, 'Method Not Allowed');
 
     await expect(mobileAuditRunner('https://adobe.com/', context))

@@ -14,6 +14,7 @@ import { isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
 import PSIClient from '../support/psi-client.js';
 import { fetch } from '../support/utils.js';
+import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 /**
  * Extracts audit scores from an audit.
@@ -148,9 +149,15 @@ async function processAudit(
   strategy,
   log = console,
 ) {
-  const { psiClient } = services;
+  const { dataAccess, psiClient } = services;
 
-  const { lighthouseResult, fullAuditRef, finalUrl } = await psiClient.runAudit(baseURL, strategy);
+  const site = await retrieveSiteBySiteId(dataAccess, baseURL, log);
+
+  const { lighthouseResult, fullAuditRef, finalUrl } = await psiClient.runAudit(
+    baseURL,
+    strategy,
+    site.getId(),
+  );
 
   if (isObject(lighthouseResult.runtimeError)) {
     log.error(

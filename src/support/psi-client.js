@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
+import { hasText, isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
 import { createUrl } from '@adobe/fetch';
 import { fetch } from './utils.js';
@@ -46,10 +46,15 @@ function PSIClient(config, log = console) {
     return urlPattern.test(input) ? input.replace(/^http:/i, 'https:') : `https://${input}`;
   };
 
-  const getPSIApiUrl = (siteUrl, strategyHint) => {
+  const getPSIApiUrl = (siteUrl, strategyHint, serviceId) => {
     const strategy = PSI_STRATEGIES.includes(strategyHint) ? strategyHint : PSI_STRATEGY_MOBILE;
 
-    const params = { url: formatURL(siteUrl), strategy };
+    const serviceIdParam = {};
+    if (hasText(serviceId)) {
+      serviceIdParam.serviceId = serviceId;
+    }
+
+    const params = { url: formatURL(siteUrl), strategy, ...serviceIdParam };
     if (apiKey) {
       params.key = apiKey;
     }
@@ -66,12 +71,12 @@ function PSIClient(config, log = console) {
    *
    * @param {string} baseURL - The base URL to check.
    * @param {string} strategy - The strategy to use.
-   *
+   * @param {string} serviceId - The service ID.
    * @return {Promise<{lighthouseResult: *, fullAuditRef: string}>}
    */
-  const performPSICheck = async (baseURL, strategy) => {
+  const performPSICheck = async (baseURL, strategy, serviceId) => {
     try {
-      const apiURL = getPSIApiUrl(baseURL, strategy);
+      const apiURL = getPSIApiUrl(baseURL, strategy, serviceId);
       const xSource = `spacecat-${environment}`;
       const response = await fetch(apiURL, { headers: { 'x-source': xSource } });
       if (!response.ok) {
@@ -122,14 +127,14 @@ function PSIClient(config, log = console) {
    *
    * @param {string} baseURL - The base URL to check.
    * @param {string} strategy - The strategy to use.
-   *
+   * @param {string} serviceId - The service ID.
    * @return {Promise<{lighthouseResult: object, fullAuditRef: string}>}
    */
-  const runAudit = async (baseURL, strategy) => {
+  const runAudit = async (baseURL, strategy, serviceId) => {
     const strategyStartTime = process.hrtime();
     const finalUrl = await followRedirects(baseURL);
 
-    const psiResult = await performPSICheck(finalUrl, strategy);
+    const psiResult = await performPSICheck(finalUrl, strategy, serviceId);
 
     const strategyEndTime = process.hrtime(strategyStartTime);
     const strategyElapsedTime = (strategyEndTime[0] + strategyEndTime[1] / 1e9).toFixed(2);
