@@ -142,9 +142,11 @@ export async function checkSitemap(sitemapUrl) {
     };
   } catch (error) {
     if (error.message.includes('404')) {
+      const isSitemapIndex = sitemapUrl.endsWith('sitemap_index.xml');
       return {
         existsAndIsValid: false,
-        reasons: [ERROR_CODES.SITEMAP_NOT_FOUND],
+        reasons: [isSitemapIndex
+          ? ERROR_CODES.SITEMAP_INDEX_NOT_FOUND : ERROR_CODES.SITEMAP_NOT_FOUND],
       };
     }
     return {

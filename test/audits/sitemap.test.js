@@ -347,6 +347,16 @@ describe('Sitemap Audit', () => {
       expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_NOT_FOUND);
     });
 
+    it('should return SITEMAP_INDEX_NOT_FOUND when the sitemap_index does not exist', async () => {
+      nock(url)
+        .get('/sitemap_index.xml')
+        .reply(404);
+
+      const resp = await checkSitemap(`${url}/sitemap_index.xml`);
+      expect(resp.existsAndIsValid).to.equal(false);
+      expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_INDEX_NOT_FOUND);
+    });
+
     it('should return FETCH_ERROR when there is a network error', async () => {
       nock(url)
         .get('/sitemap.xml')
