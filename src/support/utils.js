@@ -78,6 +78,7 @@ export function extractDomainAndProtocol(inputUrl) {
     return null;
   }
 }
+
 /**
  * Extracts URLs from a sitemap XML content based on a specified tag name.
  *
@@ -85,7 +86,7 @@ export function extractDomainAndProtocol(inputUrl) {
  * @param {string} tagName - The name of the tag to extract URLs from.
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
-export function extractUrlsFromSitemap(content, tagName) {
+export function extractUrlsFromSitemap(content, tagName = 'url') {
   const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
 
@@ -97,10 +98,17 @@ export function extractUrlsFromSitemap(content, tagName) {
   }).filter((url) => url !== null);
 }
 
-export function getPagesFromSitemap(content) {
-  return extractUrlsFromSitemap(content, 'url');
-}
-
+/**
+ * Filters pages from a sitemap that start with the given base URL or its www variant.
+ *
+ * @param {string} baseUrl - The base URL to match against the URLs in the sitemap.
+ * @param {Object} sitemapDetails - An object containing details about the sitemap.
+ * @param {boolean} sitemapDetails.isText - A flag indicating if the sitemap content is plain text.
+ * @param {Object} sitemapDetails.sitemapContent - The sitemap content object.
+ * @param {string} sitemapDetails.sitemapContent.payload - The actual content of the sitemap.
+ *
+ * @returns {string[]} URLs from the sitemap that start with the base URL or its www variant.
+ */
 export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
   const baseUrlVariant = toggleWWW(baseUrl);
 
@@ -113,11 +121,12 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
 
     return filterPages(lines.filter((line) => line.length > 0));
   } else {
-    const sitemapPages = getPagesFromSitemap(sitemapDetails.sitemapContent);
+    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
 
     return filterPages(sitemapPages);
   }
 }
+
 /**
  * Extracts sitemap URLs from a sitemap index XML content.
  *
