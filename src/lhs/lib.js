@@ -14,7 +14,6 @@ import { isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
 
 import PSIClient from '../support/psi-client.js';
 import { fetch } from '../support/utils.js';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 /**
  * Extracts audit scores from an audit.
@@ -135,6 +134,7 @@ const createAuditData = (
  * @param {Object} services - The services object containing the PSI client,
  * content client, and more.
  * @param {String} baseURL - The final URL to audit.
+ * @param {Object} site - The site object containing information about the site.
  * @param {Object} auditContext - The audit context object containing information about the audit.
  * @param {string} strategy - The strategy of the audit.
  * @param {Object} log - The logging object.
@@ -145,13 +145,12 @@ const createAuditData = (
 async function processAudit(
   services,
   baseURL,
+  site,
   auditContext,
   strategy,
   log = console,
 ) {
-  const { dataAccess, psiClient } = services;
-
-  const site = await retrieveSiteBySiteId(dataAccess, baseURL, log);
+  const { psiClient } = services;
 
   const { lighthouseResult, fullAuditRef, finalUrl } = await psiClient.runAudit(
     baseURL,
@@ -241,9 +240,10 @@ function initServices(config, log = console) {
  * @param {String} baseURL - The final URL to audit.
  * @param {String} strategy - The strategy of the audit.
  * @param {Object} context - The context object containing configurations, services,
+ * @param {Object} site - The site object containing information about the site.
  * and environment variables.
  */
-async function lhsAuditRunner(baseURL, strategy, context) {
+async function lhsAuditRunner(baseURL, strategy, context, site) {
   const { dataAccess, log, sqs } = context;
   const {
     PAGESPEED_API_BASE_URL: psiApiBaseUrl,
@@ -268,6 +268,7 @@ async function lhsAuditRunner(baseURL, strategy, context) {
   const auditData = await processAudit(
     services,
     baseURL,
+    site,
     context,
     strategy,
     log,
@@ -289,5 +290,5 @@ async function lhsAuditRunner(baseURL, strategy, context) {
  * @returns {function(*, *): Promise<Object>} - Returns the LHS audit runner function.
  */
 export default function createLHSAuditRunner(strategy) {
-  return async (finalURL, context) => lhsAuditRunner(finalURL, strategy, context);
+  return async (finalURL, context, site) => lhsAuditRunner(finalURL, strategy, context, site);
 }
