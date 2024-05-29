@@ -1,3 +1,10 @@
+## [1.15.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.16...v1.15.17) (2024-05-29)
+
+
+### Bug Fixes
+
+* add serviceId to LHSaaS call ([#263](https://github.com/adobe/spacecat-audit-worker/issues/263)) ([24f6b87](https://github.com/adobe/spacecat-audit-worker/commit/24f6b87ba31ea5c8a0708eb5e5ea9e944c12b998))
+
 ## [1.15.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.15...v1.15.16) (2024-05-25)
 
 
