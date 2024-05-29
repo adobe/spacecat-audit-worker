@@ -128,11 +128,17 @@ export async function checkSitemap(sitemapUrl) {
         reasons: [ERROR_CODES.SITEMAP_FORMAT],
       };
     }
-
+    if (isSitemapIndex) {
+      return {
+        existsAndIsValid: true,
+        reasons: [],
+        details: { sitemapContent, isText, isSitemapIndex },
+      };
+    }
     return {
       existsAndIsValid: true,
       reasons: [],
-      details: { sitemapContent, isText, isSitemapIndex },
+      details: { sitemapContent, isText, isSitemapIndex: false },
     };
   } catch (error) {
     if (error.message.includes('404')) {
@@ -162,6 +168,14 @@ async function checkCommonSitemapUrls(urls) {
   return results.filter((url) => url !== null);
 }
 
+/**
+ * Retrieves the base URL pages from the given sitemaps.
+ *
+ * @async
+ * @param {string} baseUrl - The base URL to find pages for.
+ * @param {string[]} urls - The list of sitemap URLs to check.
+ * @returns {Promise<Object>} - Resolves to an object mapping sitemap URLs to arrays of page URLs.
+ */
 export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   const baseUrlVariant = toggleWWW(baseUrl);
   const contentsCache = {};
