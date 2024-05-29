@@ -127,7 +127,11 @@ function PSIClient(config, log = console) {
    *
    * @param {string} baseURL - The base URL to check.
    * @param {string} strategy - The strategy to use.
-   * @param {string} serviceId - The service ID.
+   * @param {string} [serviceId] - Optional service ID.
+   * If provided, it will be included in the audit URL and be recorded by the PSI
+   * service as its service ID. This can be leveraged to retrieve reports by service ID on
+   * the external PSI service. In the context of SpaceCat, this is used to correlate the
+   * site id with the PSI audit.
    * @return {Promise<{lighthouseResult: object, fullAuditRef: string}>}
    */
   const runAudit = async (baseURL, strategy, serviceId) => {
