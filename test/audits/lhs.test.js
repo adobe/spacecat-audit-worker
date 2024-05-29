@@ -56,6 +56,10 @@ describe('LHS Audit', () => {
   let mobileAuditRunner;
   let desktopAuditRunner;
 
+  const site = {
+    getId: () => 'some-site-id',
+  };
+
   const sandbox = sinon.createSandbox();
 
   const psiResult = {
@@ -79,17 +83,9 @@ describe('LHS Audit', () => {
   };
 
   beforeEach(() => {
-    const mockDataAccess = {
-      getSiteByID: () => ({
-        getId: () => 'some-site-id',
-      }),
-      getOrganizationByID: sandbox.stub(),
-      addAudit: sandbox.stub(),
-    };
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
-        dataAccess: mockDataAccess,
         env: {
           AUDIT_RESULTS_QUEUE_URL: 'some-queue-url',
           PAGESPEED_API_BASE_URL: 'https://psi-audit-service.com',
@@ -117,7 +113,7 @@ describe('LHS Audit', () => {
       .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile&serviceId=some-site-id')
       .reply(200, psiResult);
 
-    const auditData = await mobileAuditRunner('https://adobe.com/', context);
+    const auditData = await mobileAuditRunner('https://adobe.com/', context, site);
     assertAuditData(auditData);
   });
 
@@ -131,7 +127,7 @@ describe('LHS Audit', () => {
       .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile&serviceId=some-site-id')
       .reply(200, errorPSIResult);
 
-    const auditData = await mobileAuditRunner('https://adobe.com/', context);
+    const auditData = await mobileAuditRunner('https://adobe.com/', context, site);
 
     expect(context.log.error).to.have.been.calledWith(
       'Audit error for site https://adobe.com/: error-message',
@@ -149,7 +145,7 @@ describe('LHS Audit', () => {
       .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=desktop&serviceId=some-site-id')
       .reply(200, psiResult);
 
-    const auditData = await desktopAuditRunner('https://adobe.com/', context);
+    const auditData = await desktopAuditRunner('https://adobe.com/', context, site);
     assertAuditData(auditData);
   });
 
@@ -159,14 +155,14 @@ describe('LHS Audit', () => {
       .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile&serviceId=some-site-id')
       .reply(405, 'Method Not Allowed');
 
-    await expect(mobileAuditRunner('https://adobe.com/', context))
+    await expect(mobileAuditRunner('https://adobe.com/', context, site))
       .to.be.rejectedWith('HTTP error! Status: 405');
   });
 
   it('throws error when context is incomplete', async () => {
     context.env = {};
 
-    await expect(mobileAuditRunner('https://adobe.com/', context))
+    await expect(mobileAuditRunner('https://adobe.com/', context, site))
       .to.be.rejectedWith('Invalid PageSpeed API base URL');
   });
 });

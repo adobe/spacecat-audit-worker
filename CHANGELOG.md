@@ -1,3 +1,10 @@
+## [1.15.18](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.17...v1.15.18) (2024-05-29)
+
+
+### Bug Fixes
+
+* pass site to runners ([#264](https://github.com/adobe/spacecat-audit-worker/issues/264)) ([e9c8638](https://github.com/adobe/spacecat-audit-worker/commit/e9c8638bf04ac77e4f696b18afe91989582185e4))
+
 ## [1.15.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.16...v1.15.17) (2024-05-29)
 
 
