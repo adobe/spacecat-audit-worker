@@ -89,7 +89,7 @@ export class Audit {
       const {
         auditResult,
         fullAuditRef,
-      } = await this.runner(finalUrl, context);
+      } = await this.runner(finalUrl, context, site);
 
       const auditData = {
         siteId: site.getId(),
