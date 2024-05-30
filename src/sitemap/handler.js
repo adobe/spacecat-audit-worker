@@ -23,12 +23,9 @@ import { AuditBuilder } from '../common/audit-builder.js';
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID_URL',
-  ROBOTS_NOT_FOUND: 'ROBOTS_TXT_NOT_FOUND',
   NO_SITEMAP_IN_ROBOTS: 'NO_SITEMAP_IN_ROBOTS_TXT',
-  NO_SITEMAP_FOUND: 'NO_SITEMAP_FOUND',
   NO_PATHS_IN_SITEMAP: 'NO_PATHS_IN_SITEMAP',
   SITEMAP_NOT_FOUND: 'SITEMAP_NOT_FOUND',
-  SITEMAP_INDEX_NOT_FOUND: 'SITEMAP_INDEX_NOT_FOUND',
   SITEMAP_EMPTY: 'SITEMAP_EMPTY',
   SITEMAP_FORMAT: 'INVALID_SITEMAP_FORMAT',
   FETCH_ERROR: 'FETCH_ERROR',
@@ -209,7 +206,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
     if (!contentsCache[matchingUrl]) {
       contentsCache[matchingUrl] = await checkSitemap(matchingUrl);
     }
-    const pages = await getBaseUrlPagesFromSitemapContents(
+    const pages = getBaseUrlPagesFromSitemapContents(
       baseUrl,
       contentsCache[matchingUrl].details,
     );
