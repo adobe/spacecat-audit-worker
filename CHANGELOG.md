@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.19...v1.16.0) (2024-05-30)
+
+
+### Features
+
+* sitemap detection ([#238](https://github.com/adobe/spacecat-audit-worker/issues/238)) ([8a35bc6](https://github.com/adobe/spacecat-audit-worker/commit/8a35bc60dffde3d70abfa23d12cf328877890fe9))
+
 ## [1.15.19](https://github.com/adobe/spacecat-audit-worker/compare/v1.15.18...v1.15.19) (2024-05-29)
 
 
