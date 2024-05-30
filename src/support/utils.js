@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Adobe. All rights reserved.
+ * Copyright 2024 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -9,9 +9,13 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
 import { context as h2, h1 } from '@adobe/fetch';
-// eslint-disable-next-line import/no-cycle
-import { checkRobotsForSitemap, checkSitemap, ERROR_CODES } from '../sitemap/handler.js';
+import { hasText } from '@adobe/spacecat-shared-utils';
+import URI from 'urijs';
+import { JSDOM } from 'jsdom';
+
+URI.preventInvalidHostname = true;
 
 /* c8 ignore next 3 */
 export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
@@ -25,6 +29,34 @@ export async function getRUMUrl(url) {
   const resp = await fetch(urlWithScheme);
   const finalUrl = resp.url.split('://')[1];
   return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
+}
+
+/**
+ * Checks if a given URL contains a domain with a non-www subdomain.
+ *
+ * @param {string} baseUrl - The URL to check for the presence of a domain with a non-www subdomain.
+ * @returns {boolean} - Returns true if the baseUrl param contains a domain with a non-www
+ * subdomain, otherwise false
+ */
+export function hasNonWWWSubdomain(baseUrl) {
+  try {
+    const uri = new URI(baseUrl);
+    return hasText(uri.domain()) && hasText(uri.subdomain()) && uri.subdomain() !== 'www';
+  } catch (e) {
+    throw new Error(`Cannot parse baseURL: ${baseUrl}`);
+  }
+}
+
+/**
+ * Toggles the www subdomain in a given URL.
+ * @param {string} baseUrl - The URL to toggle the www subdomain in.
+ * @returns {string} - The URL with the www subdomain toggled.
+ */
+export function toggleWWW(baseUrl) {
+  if (hasNonWWWSubdomain(baseUrl)) return baseUrl;
+  return baseUrl.startsWith('https://www')
+    ? baseUrl.replace('https://www.', 'https://')
+    : baseUrl.replace('https://', 'https://www.');
 }
 
 /**
@@ -48,97 +80,65 @@ export function extractDomainAndProtocol(inputUrl) {
 }
 
 /**
- * Finds and validates the sitemap for a given URL by checking:
- * robots.txt, sitemap.xml, and sitemap_index.xml.
+ * Extracts URLs from a sitemap XML content based on a specified tag name.
  *
- * @async
- * @param {string} inputUrl - The URL for which to find and validate the sitemap.
- * @returns {Promise<Object>} -A Promise that resolves to an object
- * representing the success and reasons for the sitemap search and validation.
+ * @param {Object} content - The content of the sitemap.
+ * @param {string} tagName - The name of the tag to extract URLs from.
+ * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
+export function extractUrlsFromSitemap(content, tagName = 'url') {
+  const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
+  const { document } = dom.window;
 
-export async function findSitemap(inputUrl) {
-  const logMessages = [];
+  const elements = document.getElementsByTagName(tagName);
+  // Filter out any nulls if 'loc' element is missing
+  return Array.from(elements).map((element) => {
+    const loc = element.getElementsByTagName('loc')[0];
+    return loc ? loc.textContent : null;
+  }).filter((url) => url !== null);
+}
 
-  const parsedUrl = extractDomainAndProtocol(inputUrl);
-  if (!parsedUrl) {
-    logMessages.push({
-      value: inputUrl,
-      error: ERROR_CODES.INVALID_URL,
-    });
-    return {
-      success: false,
-      reasons: logMessages,
-    };
-  }
+/**
+ * Filters pages from a sitemap that start with the given base URL or its www variant.
+ *
+ * @param {string} baseUrl - The base URL to match against the URLs in the sitemap.
+ * @param {Object} sitemapDetails - An object containing details about the sitemap.
+ * @param {boolean} sitemapDetails.isText - A flag indicating if the sitemap content is plain text.
+ * @param {Object} sitemapDetails.sitemapContent - The sitemap content object.
+ * @param {string} sitemapDetails.sitemapContent.payload - The actual content of the sitemap.
+ *
+ * @returns {string[]} URLs from the sitemap that start with the base URL or its www variant.
+ */
+export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
+  const baseUrlVariant = toggleWWW(baseUrl);
 
-  const { protocol, domain } = parsedUrl;
+  const filterPages = (pages) => pages.filter(
+    (url) => url.startsWith(baseUrl) || url.startsWith(baseUrlVariant),
+  );
 
-  // Check sitemap path in robots.txt
-  const robotsResult = await checkRobotsForSitemap(protocol, domain);
-  if (!robotsResult.path) {
-    logMessages.push(...robotsResult.reasons.map((reason) => ({
-      value: `${inputUrl}/robots.txt`,
-      error: reason,
-    })));
-  } else if (robotsResult.path.length > 2) {
-    let sitemapUrlFromRobots = robotsResult.path;
-    if (robotsResult.path[0] === '/' && robotsResult.path[1] !== '/') {
-      sitemapUrlFromRobots = `${protocol}://${domain}${sitemapUrlFromRobots}`;
-    }
+  if (sitemapDetails.isText) {
+    const lines = sitemapDetails.sitemapContent.payload.split('\n').map((line) => line.trim());
 
-    const sitemapResult = await checkSitemap(sitemapUrlFromRobots);
-    logMessages.push(...sitemapResult.reasons.map((reason) => ({
-      value: sitemapUrlFromRobots,
-      e: reason,
-    })));
-    if (sitemapResult.existsAndIsValid) {
-      return {
-        success: true,
-        reasons: logMessages,
-        paths: [sitemapUrlFromRobots],
-      };
-    }
-  }
-
-  // Check sitemap.xml
-  const assumedSitemapUrl = `${protocol}://${domain}/sitemap.xml`;
-  const sitemapResult = await checkSitemap(assumedSitemapUrl);
-  if (sitemapResult.existsAndIsValid) {
-    return {
-      success: true,
-      reasons: logMessages,
-      paths: [assumedSitemapUrl],
-    };
+    return filterPages(lines.filter((line) => line.length > 0));
   } else {
-    logMessages.push(...sitemapResult.reasons.map((reason) => ({
-      value: assumedSitemapUrl,
-      error: reason,
-    })));
-  }
+    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
 
-  // Check sitemap_index.xml
-  const sitemapIndexUrl = `${protocol}://${domain}/sitemap_index.xml`;
-  const sitemapIndexResult = await checkSitemap(sitemapIndexUrl);
-  logMessages.push(...sitemapIndexResult.reasons.map((reason) => ({
-    value: sitemapIndexUrl,
-    error: reason,
-  })));
-  if (sitemapIndexResult.existsAndIsValid) {
-    return {
-      success: true,
-      reasons: logMessages,
-      paths: [sitemapIndexUrl],
-    };
-  } else if (sitemapIndexResult.reasons.includes(ERROR_CODES.SITEMAP_NOT_FOUND)) {
-    logMessages.push({
-      value: sitemapIndexUrl,
-      error: ERROR_CODES.SITEMAP_INDEX_NOT_FOUND,
-    });
+    return filterPages(sitemapPages);
   }
+}
 
-  return {
-    success: false,
-    reasons: logMessages,
-  };
+/**
+ * Extracts sitemap URLs from a sitemap index XML content.
+ *
+ * @param {Object} content - The content of the sitemap index.
+ * @param {string} content.payload - The XML content of the sitemap index as a string.
+ * @returns {Array<string>} An array of sitemap URLs extracted from the sitemap index.
+ */
+export function getSitemapUrlsFromSitemapIndex(content) {
+  return extractUrlsFromSitemap(content, 'sitemap');
+}
+
+export function getUrlWithoutPath(url) {
+  const urlObj = new URL(url);
+  return `${urlObj.protocol}//${urlObj.host}`;
 }

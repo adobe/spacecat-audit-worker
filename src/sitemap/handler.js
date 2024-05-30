@@ -10,59 +10,92 @@
  * governing permissions and limitations under the License.
  */
 
-import { internalServerError, noContent, notFound } from '@adobe/spacecat-shared-http-utils';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
-// eslint-disable-next-line import/no-cycle
-import { findSitemap, fetch } from '../support/utils.js';
+import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
+import {
+  extractDomainAndProtocol,
+  fetch,
+  getBaseUrlPagesFromSitemapContents,
+  getSitemapUrlsFromSitemapIndex,
+  getUrlWithoutPath,
+  toggleWWW,
+} from '../support/utils.js';
+import { AuditBuilder } from '../common/audit-builder.js';
 
-export const ERROR_CODES = {
+export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID_URL',
-  ROBOTS_NOT_FOUND: 'ROBOTS_TXT_NOT_FOUND',
   NO_SITEMAP_IN_ROBOTS: 'NO_SITEMAP_IN_ROBOTS_TXT',
+  NO_PATHS_IN_SITEMAP: 'NO_PATHS_IN_SITEMAP',
   SITEMAP_NOT_FOUND: 'SITEMAP_NOT_FOUND',
-  SITEMAP_INDEX_NOT_FOUND: 'SITEMAP_INDEX_NOT_FOUND',
   SITEMAP_EMPTY: 'SITEMAP_EMPTY',
-  SITEMAP_NOT_XML: 'SITEMAP_NOT_XML',
+  SITEMAP_FORMAT: 'INVALID_SITEMAP_FORMAT',
   FETCH_ERROR: 'FETCH_ERROR',
-};
+});
+
+const VALID_MIME_TYPES = Object.freeze([
+  'application/xml',
+  'text/xml',
+  'text/html',
+  'text/plain',
+]);
 
 /**
  * Fetches the content from a given URL.
  *
  * @async
  * @param {string} targetUrl - The URL from which to fetch the content.
- * @returns {Promise<string|null>} - A Promise that resolves to the content
- * of the response as a string if the request was successful, otherwise null.
+ * @returns {Promise<{
+ *    payload: string,
+ *    type: string
+ * } | null>} - A promise that resolves to the content.
+ * of the response as a structure having the contents as the payload string
+ * and the content type as the type string if the request was successful, otherwise null.
+ * @throws {Error} If the fetch operation fails or the response status is not OK.
  */
 export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl);
-  return response.ok ? response.text() : null;
+  if (!response.ok) {
+    throw new Error(`Failed to fetch content from ${targetUrl}. Status: ${response.status}`);
+  }
+  return { payload: await response.text(), type: response.headers.get('content-type') };
 }
 
 /**
- * Checks the robots.txt file for a sitemap and returns the sitemap path if found.
+ * Checks the robots.txt file for a sitemap and returns the sitemap paths if found.
  *
  * @async
  * @param {string} protocol - The protocol (http or https) of the site.
  * @param {string} domain - The domain of the site.
- * @returns {Promise<{ path: string|null, reasons: string[] }>} - A Promise that resolves
- * to an object containing the sitemap path and reasons for success or failure.
+ * @returns {Promise<{ paths: string[], reasons: string[] }>} - A Promise that resolves
+ * to an object containing the sitemap paths and reasons for success or failure.
+ * The object has the following properties:
+ * - paths: An array of strings representing the sitemap paths found in the robots.txt file.
+ * - reasons: An array of strings representing the reasons for not finding any sitemap paths.
+ * @throws {Error} If the fetch operation fails or the response status is not OK.
  */
 export async function checkRobotsForSitemap(protocol, domain) {
   const robotsUrl = `${protocol}://${domain}/robots.txt`;
-  try {
-    const robotsContent = await fetchContent(robotsUrl);
-    if (robotsContent !== null) {
-      const sitemapMatch = robotsContent.match(/Sitemap:\s*(.*)/i);
-      if (sitemapMatch && sitemapMatch[1]) {
-        return { path: sitemapMatch[1].trim(), reasons: [] };
-      }
-      return { path: null, reasons: [ERROR_CODES.NO_SITEMAP_IN_ROBOTS] };
+  const sitemapPaths = [];
+  const robotsContent = await fetchContent(robotsUrl);
+  if (robotsContent !== null) {
+    const sitemapMatches = robotsContent.payload.matchAll(/Sitemap:\s*(.*)/gi);
+    for (const match of sitemapMatches) {
+      sitemapPaths.push(match[1].trim());
     }
-  } catch (error) {
-    // ignore
   }
-  return { path: null, reasons: [ERROR_CODES.ROBOTS_NOT_FOUND] };
+  return {
+    paths: sitemapPaths,
+    reasons: sitemapPaths.length ? [] : [ERROR_CODES.NO_SITEMAP_IN_ROBOTS],
+  };
+}
+/**
+ * Checks if the sitemap content is valid.
+ *
+ * @param {{ payload: string, type: string }} sitemapContent - The sitemap content to validate.
+ * @returns {boolean} - True if the sitemap content is valid, otherwise false.
+ */
+export function isSitemapContentValid(sitemapContent) {
+  return sitemapContent.payload.trim().startsWith('<?xml')
+      || VALID_MIME_TYPES.some((type) => sitemapContent.type.includes(type));
 }
 
 /**
@@ -70,25 +103,187 @@ export async function checkRobotsForSitemap(protocol, domain) {
  *
  * @async
  * @param {string} sitemapUrl - The URL of the sitemap to check.
- * @returns {Promise<Object>} - A Promise that resolves to an object
- * representing the result of the sitemap check.
+ * @returns {Promise<Object>} - A Promise that resolves to an object representing the result check.
+ * The object has the following properties:
+ * - existsAndIsValid: A boolean indicating whether the sitemap exists and is in a valid format.
+ * - reasons: An array of strings representing the reasons for the sitemap's errors.
+ * - details: An object with details about sitemap.Is only present if the sitemap exists and valid.
+ *   The details object has the following properties:
+ *   - sitemapContent: The content of the sitemap.
+ *   - isText: A boolean indicating whether the sitemap content is plain text.
+ *   - isSitemapIndex: A boolean indicating whether the sitemap is an index of other sitemaps.
  */
 export async function checkSitemap(sitemapUrl) {
   try {
     const sitemapContent = await fetchContent(sitemapUrl);
-    if (!sitemapContent) {
+    const isValidFormat = isSitemapContentValid(sitemapContent);
+    const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
+    const isText = isValidFormat && sitemapContent.type === 'text/plain';
+
+    if (!isValidFormat) {
       return {
         existsAndIsValid: false,
-        reasons: [ERROR_CODES.SITEMAP_NOT_FOUND, ERROR_CODES.SITEMAP_EMPTY],
+        reasons: [ERROR_CODES.SITEMAP_FORMAT],
       };
     }
-    const isValidXml = sitemapContent.trim().startsWith('<?xml');
     return {
-      existsAndIsValid: isValidXml,
-      reasons: isValidXml ? [] : [ERROR_CODES.SITEMAP_NOT_XML],
+      existsAndIsValid: true,
+      reasons: [],
+      details: { sitemapContent, isText, isSitemapIndex },
     };
   } catch (error) {
-    return { existsAndIsValid: false, reasons: [ERROR_CODES.FETCH_ERROR] };
+    if (error.message.includes('404')) {
+      return {
+        existsAndIsValid: false,
+        reasons: [ERROR_CODES.SITEMAP_NOT_FOUND],
+      };
+    }
+    return {
+      existsAndIsValid: false,
+      reasons: [ERROR_CODES.FETCH_ERROR],
+    };
+  }
+}
+
+/**
+ * Checks for common sitemap URLs and returns any that exist.
+ * @param {Array<string>} urls - Array of URLs to check.
+ * @returns {Promise<Array<string>>} - List of sitemap URLs that exist.
+ */
+async function checkCommonSitemapUrls(urls) {
+  const fetchPromises = urls.map(async (url) => {
+    const response = await fetch(url, { method: 'HEAD' });
+    return response.ok ? url : null;
+  });
+  const results = await Promise.all(fetchPromises);
+  return results.filter((url) => url !== null);
+}
+
+/**
+ * Retrieves the base URL pages from the given sitemaps.
+ *
+ * @async
+ * @param {string} baseUrl - The base URL to find pages for.
+ * @param {string[]} urls - The list of sitemap URLs to check.
+ * @returns {Promise<Object>} - Resolves to an object mapping sitemap URLs to arrays of page URLs.
+ */
+export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
+  const baseUrlVariant = toggleWWW(baseUrl);
+  const contentsCache = {};
+
+  // Prepare all promises for checking each sitemap URL.
+  const checkPromises = urls.map(async (url) => {
+    const urlData = await checkSitemap(url);
+    contentsCache[url] = urlData;
+    return { url, urlData };
+  });
+
+  // Execute all checks concurrently.
+  const results = await Promise.all(checkPromises);
+  const matchingUrls = [];
+
+  // Process each result.
+  results.forEach(({ url, urlData }) => {
+    if (urlData.existsAndIsValid) {
+      if (urlData.details.isSitemapIndex) {
+        // Handle sitemap index by extracting more URLs and recursively check them
+        const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
+        extractedSitemaps.forEach((extractedSitemapUrl) => {
+          if (!contentsCache[extractedSitemapUrl]) {
+            matchingUrls.push(extractedSitemapUrl);
+          }
+        });
+      } else if (url.startsWith(baseUrl) || url.startsWith(baseUrlVariant)) {
+        matchingUrls.push(url);
+      }
+    }
+  });
+
+  // Further process matching URLs if necessary
+  const response = {};
+  const pagesPromises = matchingUrls.map(async (matchingUrl) => {
+    // Check if further detailed checks are needed or directly use cached data
+    if (!contentsCache[matchingUrl]) {
+      contentsCache[matchingUrl] = await checkSitemap(matchingUrl);
+    }
+    const pages = getBaseUrlPagesFromSitemapContents(
+      baseUrl,
+      contentsCache[matchingUrl].details,
+    );
+
+    if (pages.length > 0) {
+      response[matchingUrl] = pages;
+    }
+  });
+
+  // Wait for all pages promises to resolve
+  await Promise.all(pagesPromises);
+
+  return response;
+}
+/**
+ * This function is used to find the sitemap of a given URL.
+ * It first extracts the domain and protocol from the input URL.
+ * If the URL is invalid, it returns an error message.
+ * If the URL is valid, it checks the sitemap path in the robots.txt file.
+ * Then toggles the input URL with www and filters the sitemap URLs.
+ * It then gets the base URL pages from the sitemaps.
+ * The extracted paths response length > 0, it returns the success status, log messages, and paths.
+ * The extracted paths response length < 0, log messages and returns the failure status and reasons.
+ *
+ * @param {string} inputUrl - The URL for which to find and validate the sitemap
+ * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
+ */
+export async function findSitemap(inputUrl) {
+  const logMessages = [];
+
+  const parsedUrl = extractDomainAndProtocol(inputUrl);
+  if (!parsedUrl) {
+    logMessages.push({
+      value: inputUrl,
+      error: ERROR_CODES.INVALID_URL,
+    });
+    return {
+      success: false,
+      reasons: logMessages,
+    };
+  }
+
+  const { protocol, domain } = parsedUrl;
+  let sitemapUrls = [];
+  try {
+    const robotsResult = await checkRobotsForSitemap(protocol, domain);
+    if (robotsResult.paths.length) {
+      sitemapUrls = robotsResult.paths;
+    }
+  } catch (error) {
+    logMessages.push({ value: `Error fetching or processing robots.txt: ${error.message}`, error: ERROR_CODES.FETCH_ERROR });
+    // Don't return failure yet, try the fallback URLs
+  }
+
+  if (!sitemapUrls.length) {
+    const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
+    sitemapUrls = await checkCommonSitemapUrls(commonSitemapUrls);
+    if (!sitemapUrls.length) {
+      logMessages.push({ value: `No sitemap found in robots.txt or common paths for ${protocol}://${domain}`, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
+      return { success: false, reasons: logMessages };
+    }
+  }
+
+  const inputUrlToggledWww = toggleWWW(inputUrl);
+  const filteredSitemapUrls = sitemapUrls.filter(
+    (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
+  );
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
+
+  if (Object.entries(extractedPaths).length > 0) {
+    logMessages.push({ value: 'Sitemaps found and validated successfully.' });
+    return {
+      success: true, reasons: logMessages, paths: extractedPaths, url: inputUrl,
+    };
+  } else {
+    logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
+    return { success: false, reasons: logMessages, url: inputUrl };
   }
 }
 
@@ -96,45 +291,31 @@ export async function checkSitemap(sitemapUrl) {
  * Performs an audit for a specified site based on the audit request message.
  *
  * @async
- * @param {Object} message - The audit request message containing the type, URL, and audit context.
- * @param {Object} context - The context object containing configurations, services,
- * and environment variables.
- * @returns {Promise<Response>} - A Promise that resolves to a response object
- * indicating the result of the audit process.
+ * @param {string} baseURL - The URL to run the audit against.
+ * @param {Object} context - The lambda context object.
+ * @returns {Promise<{fullAuditRef: string, auditResult: Object}>}
  */
+export async function sitemapAuditRunner(baseURL, context) {
+  const { log } = context;
+  log.info(`Received sitemap audit request for ${baseURL}`);
+  const startTime = process.hrtime();
+  const auditResult = await findSitemap(baseURL);
 
-export default async function audit(message, context) {
-  const { type, url: siteId, auditContext } = message;
-  const { dataAccess, log, sqs } = context;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
+  const endTime = process.hrtime(startTime);
+  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+  const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  try {
-    log.info(`Received ${type} audit request for siteId: ${siteId}`);
+  log.info(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
 
-    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    if (!site) {
-      log.error(`No site with siteId "${siteId}" exists.`);
-      return notFound('Site not found');
-    }
-
-    const baseURL = site.getBaseURL();
-    const auditResult = await findSitemap(baseURL);
-
-    log.info(`Audit result for ${baseURL}:\n${JSON.stringify(auditResult, null, 2)}`);
-
-    await sqs.sendMessage(queueUrl, {
-      type,
-      url: baseURL,
-      auditContext,
-      auditResult,
-    });
-
-    log.info(`Successfully audited ${baseURL} for ${type} type audit`);
-
-    return noContent();
-  } catch (e) {
-    return internalServerError('Sitemap audit failed');
-  }
+  return {
+    fullAuditRef: baseURL,
+    auditResult,
+    url: baseURL,
+  };
 }
+
+export default new AuditBuilder()
+  .withRunner(sitemapAuditRunner)
+  .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
+    .then((url) => (getUrlWithoutPath(prependSchema(url)))))
+  .build();

@@ -16,8 +16,9 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { apexAuditRunner, hasNonWWWSubdomain, toggleWWW } from '../../src/apex/handler.js';
+import { apexAuditRunner } from '../../src/apex/handler.js';
 import { MockContextBuilder } from '../shared.js';
+import { hasNonWWWSubdomain, toggleWWW } from '../../src/support/utils.js';
 
 chai.use(sinonChai);
 chai.use(chaiAsPromised);

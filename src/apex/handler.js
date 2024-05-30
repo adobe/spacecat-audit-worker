@@ -10,36 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import URI from 'urijs';
-import { hasText } from '@adobe/spacecat-shared-utils';
-import { fetch } from '../support/utils.js';
+import { fetch, hasNonWWWSubdomain, toggleWWW } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
-
-URI.preventInvalidHostname = true;
-
-/**
- * Checks if a given URL contains a domain with a non-www subdomain.
- *
- * @param {string} baseUrl - The URL to check for the presence of a domain with a non-www subdomain.
- * @returns {boolean} - Returns true if the baseUrl param contains a domain with a non-www
- * subdomain, otherwise false
- */
-export function hasNonWWWSubdomain(baseUrl) {
-  try {
-    const uri = new URI(baseUrl);
-    return hasText(uri.domain()) && hasText(uri.subdomain()) && uri.subdomain() !== 'www';
-  } catch (e) {
-    throw new Error(`Cannot parse baseURL: ${baseUrl}`);
-  }
-}
-
-export function toggleWWW(baseUrl) {
-  if (hasNonWWWSubdomain(baseUrl)) return baseUrl;
-  return baseUrl.startsWith('https://www')
-    ? baseUrl.replace('https://www.', 'https://')
-    : baseUrl.replace('https://', 'https://www.');
-}
 
 /**
  * Probes the connection to a given URL using the fetch API

@@ -63,6 +63,7 @@
     "@adobe/spacecat-shared-utils": "1.15.3",
     "@aws-sdk/client-sqs": "3.583.0",
     "diff": "5.2.0",
+    "jsdom": "24.0.0",
     "urijs": "1.19.11"
   },
   "devDependencies": {
