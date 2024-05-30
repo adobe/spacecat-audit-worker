@@ -276,6 +276,20 @@ export async function findSitemap(inputUrl) {
   );
   const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
 
+  // check if URLs from each sitemap exist and remove entries if none exist
+  if (Object.entries(extractedPaths).length > 0) {
+    const extractedSitemapUrlEntries = Object.keys(extractedPaths);
+    for (const s of extractedSitemapUrlEntries) {
+      // eslint-disable-next-line no-await-in-loop
+      const existingPages = await checkCommonSitemapUrls(extractedSitemapUrlEntries[s]);
+      if (existingPages.length === 0) {
+        delete extractedPaths[s];
+      } else {
+        extractedPaths[s] = existingPages;
+      }
+    }
+  }
+
   if (Object.entries(extractedPaths).length > 0) {
     logMessages.push({ value: 'Sitemaps found and validated successfully.' });
     return {
