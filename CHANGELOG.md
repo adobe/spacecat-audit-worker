@@ -1,3 +1,10 @@
+## [1.16.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.16.2...v1.16.3) (2024-06-05)
+
+
+### Bug Fixes
+
+* expose traffic_domain in the broken backlinks audit data (SITES-22464) ([#271](https://github.com/adobe/spacecat-audit-worker/issues/271)) ([181bf41](https://github.com/adobe/spacecat-audit-worker/commit/181bf419b1bba6b310089f79b410111561ed4eb3)), closes [adobe/spacecat-shared#251](https://github.com/adobe/spacecat-shared/issues/251)
+
 ## [1.16.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.16.1...v1.16.2) (2024-06-02)
 
 
