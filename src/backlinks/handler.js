@@ -10,13 +10,14 @@
  * governing permissions and limitations under the License.
  */
 
+import { S3Client } from '@aws-sdk/client-s3';
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { fetch } from '../support/utils.js';
+import { extractKeywordsFromUrl, fetch, getStoredMetrics } from '../support/utils.js';
 
 export async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
@@ -86,6 +87,35 @@ export default async function auditBrokenBacklinks(message, context) {
       log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
 
       const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
+
+      const s3Client = new S3Client(context);
+      const keywords = await getStoredMetrics(s3Client, { siteId, source: 'ahrefs', metric: 'organic-keywords' }, context);
+
+      for (const backlink of brokenBacklinks) {
+        log.info(`trying to find redirect for: ${backlink.url_to}`);
+        const extractedKeywords = extractKeywordsFromUrl(backlink.url_to);
+        let filteredData = keywords.filter(
+          (entry) => extractedKeywords.some((k) => entry.keyword.includes(k)),
+        );
+
+        // try again and split extracted keywords that have multiple words
+        if (filteredData.length === 0) {
+          const splitKeywords = extractedKeywords.map((keyword) => keyword.split(' ')).flat();
+          filteredData = keywords.filter(
+            (entry) => splitKeywords.some((k) => entry.keyword.includes(k)),
+          );
+        }
+
+        // sort by traffic
+        filteredData.sort((a, b) => b.traffic - a.traffic);
+
+        if (filteredData.length > 0) {
+          log.info(`found ${filteredData.length} keywords for backlink ${backlink.url_to}`);
+          backlink.url_suggested = filteredData[0].url;
+        } else {
+          log.info(`could not find suggested URL for backlink ${backlink.url_to} with keywords ${extractedKeywords.join(', ')}`);
+        }
+      }
 
       auditResult = {
         finalUrl: auditContext.finalUrl,

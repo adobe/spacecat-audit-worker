@@ -14,6 +14,7 @@ import { context as h2, h1 } from '@adobe/fetch';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 
 URI.preventInvalidHostname = true;
 
@@ -141,4 +142,61 @@ export function getSitemapUrlsFromSitemapIndex(content) {
 export function getUrlWithoutPath(url) {
   const urlObj = new URL(url);
   return `${urlObj.protocol}//${urlObj.host}`;
+}
+
+/**
+ * Extracts keywords from a given URL.
+ * @param {string} url - The URL to extract keywords from.
+ * @returns {string[]|*[]} - An array of keywords extracted from the URL.
+ */
+export const extractKeywordsFromUrl = (url) => {
+  try {
+    const urlObjc = new URL(url);
+    const path = urlObjc.pathname;
+
+    const segments = path.split('/').filter((segment) => segment.length > 0);
+
+    // Remove file extensions from the last segment if present
+    if (segments.length > 0) {
+      const lastSegment = segments[segments.length - 1];
+      segments[segments.length - 1] = lastSegment.replace(/\.[^/.]+$/, '');
+    }
+    return segments.map((segment) => segment.replace(/-/g, ' '));
+  } catch (error) {
+    console.error('Invalid URL:', error);
+    return [];
+  }
+};
+
+/**
+ * TODO: remove again, copied from importer
+ * @param s3Client
+ * @param config
+ * @param context
+ * @returns {Promise<any|*[]>}
+ */
+export async function getStoredMetrics(s3Client, config, context) {
+  function createFilePath({ siteId, source, metric }) {
+    return `metrics/${siteId}/${source}/${metric}.json`;
+  }
+  const { log } = context;
+
+  const filePath = createFilePath(config);
+
+  const command = new GetObjectCommand({
+    Bucket: context.env.S3_BUCKET_NAME,
+    Key: filePath,
+  });
+
+  try {
+    const response = await s3Client.send(command);
+    const content = await response.Body?.transformToString();
+    const metrics = JSON.parse(content);
+    log.info(`Successfully retrieved ${metrics.length} metrics from ${filePath}`);
+
+    return metrics;
+  } catch (e) {
+    log.error(`Failed to retrieve metrics from ${filePath}, error: ${e.message}`);
+    return [];
+  }
 }
