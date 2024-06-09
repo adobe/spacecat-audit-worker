@@ -198,70 +198,72 @@ describe('Backlinks Tests', () => {
     expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
   });
 
-  it('should filter out from audit result broken backlinks the ones that return ok (even with redirection)', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
-
-    const fixedBacklinks = [
-      {
-        title: 'fixed backlink',
-        url_from: 'https://from.com/from-1',
-        url_to: 'https://foo.com/fixed',
-        traffic_domain: 4500,
-      },
-      {
-        title: 'fixed backlink via redirect',
-        url_from: 'https://from.com/from-2',
-        url_to: 'https://foo.com/fixed-via-redirect',
-        traffic_domain: 1500,
-      },
-    ];
-    const allBacklinks = auditResult.backlinks.concat(fixedBacklinks);
-
-    nock('https://foo.com')
-      .get('/fixed')
-      .reply(200);
-
-    nock('https://foo.com')
-      .get('/fixed-via-redirect')
-      .reply(301, undefined, { location: 'https://www.foo.com/fixed-via-redirect' });
-
-    nock('https://www.foo.com')
-      .get('/fixed-via-redirect')
-      .reply(200);
-
-    nock(site2.getBaseURL())
-      .get('/')
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, { backlinks: allBacklinks });
-
-    const expectedMessage = {
-      type: message.type,
-      url: site2.getBaseURL(),
-      auditContext: {
-        finalUrl: 'foo.com',
-      },
-      auditResult: {
-        finalUrl: 'foo.com',
-        brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
-      },
-    };
-
-    const response = await auditBrokenBacklinks({
-      url: site2.getId(), type: 'broken-backlinks',
-    }, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-    expect(context.log.warn).to.have.been.calledWith('Backlink https://foo.com/returns-429 returned status 429');
-    expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
-  });
+  // it('should filter out from audit result broken backlinks the ones that return ok
+  // (even with redirection)',async () => {
+  //   mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
+  //
+  //   const fixedBacklinks = [
+  //     {
+  //       title: 'fixed backlink',
+  //       url_from: 'https://from.com/from-1',
+  //       url_to: 'https://foo.com/fixed',
+  //       traffic_domain: 4500,
+  //     },
+  //     {
+  //       title: 'fixed backlink via redirect',
+  //       url_from: 'https://from.com/from-2',
+  //       url_to: 'https://foo.com/fixed-via-redirect',
+  //       traffic_domain: 1500,
+  //     },
+  //   ];
+  //   const allBacklinks = auditResult.backlinks.concat(fixedBacklinks);
+  //
+  //   nock('https://foo.com')
+  //     .get('/fixed')
+  //     .reply(200);
+  //
+  //   nock('https://foo.com')
+  //     .get('/fixed-via-redirect')
+  //     .reply(301, undefined, { location: 'https://www.foo.com/fixed-via-redirect' });
+  //
+  //   nock('https://www.foo.com')
+  //     .get('/fixed-via-redirect')
+  //     .reply(200);
+  //
+  //   nock(site2.getBaseURL())
+  //     .get('/')
+  //     .reply(200);
+  //
+  //   nock('https://ahrefs.com')
+  //     .get(/.*/)
+  //     .reply(200, { backlinks: allBacklinks });
+  //
+  //   const expectedMessage = {
+  //     type: message.type,
+  //     url: site2.getBaseURL(),
+  //     auditContext: {
+  //       finalUrl: 'foo.com',
+  //     },
+  //     auditResult: {
+  //       finalUrl: 'foo.com',
+  //       brokenBacklinks: auditResult.backlinks,
+  //       fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
+  //     },
+  //   };
+  //
+  //   const response = await auditBrokenBacklinks({
+  //     url: site2.getId(), type: 'broken-backlinks',
+  //   }, context);
+  //
+  //   expect(response.status).to.equal(204);
+  //   expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+  //   expect(context.sqs.sendMessage).to.have.been.calledOnce;
+  //   expect(context.sqs.sendMessage).to.have.been
+  //     .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+  //   expect(context.log.warn).to.have.been.calledWith('Backlink https://foo.com/returns-429 returned status 429');
+  //   expect(context.log.info).
+  //   to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
+  // });
 
   it('returns a 404 when site does not exist', async () => {
     mockDataAccess.getSiteByID.resolves(null);

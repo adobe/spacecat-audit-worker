@@ -86,7 +86,8 @@ export default async function auditBrokenBacklinks(message, context) {
       } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
       log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
 
-      const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
+      // const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
+      const brokenBacklinks = result?.backlinks;
 
       const s3Client = new S3Client(context);
       const keywords = await getStoredMetrics(s3Client, { siteId, source: 'ahrefs', metric: 'organic-keywords' }, context);
