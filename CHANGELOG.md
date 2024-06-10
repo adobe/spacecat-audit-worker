@@ -1,3 +1,10 @@
+# [1.17.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.16.5...v1.17.0) (2024-06-10)
+
+
+### Features
+
+* audit post processors ([#278](https://github.com/adobe/spacecat-audit-worker/issues/278)) ([7060643](https://github.com/adobe/spacecat-audit-worker/commit/7060643538a92d674e09d7dc9b17615d5da860cd))
+
 ## [1.16.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.16.4...v1.16.5) (2024-06-08)
 
 
