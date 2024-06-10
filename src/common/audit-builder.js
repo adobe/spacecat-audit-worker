@@ -17,6 +17,7 @@ import {
   defaultMessageSender,
   defaultPersister,
   defaultUrlResolver,
+  defaultPostProcessors,
 } from './audit.js';
 
 export class AuditBuilder {
@@ -26,6 +27,7 @@ export class AuditBuilder {
     this.urlResolver = defaultUrlResolver;
     this.persister = defaultPersister;
     this.messageSender = defaultMessageSender;
+    this.postProcessors = defaultPostProcessors;
   }
 
   // message > site
@@ -57,6 +59,11 @@ export class AuditBuilder {
     return this;
   }
 
+  withPostProcessors(postprocessors) {
+    this.postProcessors = postprocessors;
+    return this;
+  }
+
   build() {
     if (typeof this.runner !== 'function') {
       throw Error('"runner" must be a function');
@@ -69,6 +76,7 @@ export class AuditBuilder {
       this.runner,
       this.persister,
       this.messageSender,
+      this.postProcessors,
     );
   }
 }

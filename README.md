@@ -90,7 +90,7 @@ To create a new audit, you'll need to create an audit handler function. This fun
 ```js
 export async function auditRunner(url, context) {
   
-  // your audit log goes here...
+  // your audit logic goes here...
 
   return {
     auditResult: results,
@@ -104,12 +104,14 @@ export default new AuditBuilder()
 
 ```
 
+### How to customize audit steps
+
 All audits share common components, such as persisting audit results to a database or sending them to SQS for downstream components to consume. These common functionalities are managed by default functions. However, if desired, you can override them as follows:
 
 ```js
 export async function auditRunner(url, context) {
   
-  // your audit log goes here...
+  // your audit logic goes here...
 
   return {
     auditResult: results,
@@ -126,6 +128,69 @@ export async function differentUrlResolver(site) {
 export default new AuditBuilder()
   .withUrlResolver(differentUrlResolver)
   .withRunner(auditRunner)
+  .build();
+
+```
+
+### How to prevent audit result to sent to SQS queue
+
+Using a noop messageSender, audit results might not be sent to the audit results SQS queue:
+
+```js
+export async function auditRunner(url, context) {
+  
+  // your audit logic goes here...
+
+  return {
+    auditResult: results,
+    fullAuditRef: baseURL,
+  };
+}
+
+export default new AuditBuilder()
+  .withRunner(auditRunner)
+  .withMessageSender(() => {}) // no-op message sender
+  .build();
+
+```
+
+### How to add a custom post processor
+
+You can add a post-processing step for your audit using `AuditBuilder`'s `withPostProcessors` function. The list of post-processing functions will be executed sequentially after the audit run.
+
+Post-processor functions take two params: `auditUrl` and `auditData` as following. `auditData` object contains following properties:
+
+```
+auditData = {
+  siteId: string,
+  isLive: boolean,
+  auditedAt: string,
+  auditType: string,
+  auditResult: object,
+  fullAuditRef: string,
+};
+```
+
+Here's the full example:
+
+```js
+export async function auditRunner(url, context) {
+  
+  // your audit logic goes here...
+
+  return {
+    auditResult: results,
+    fullAuditRef: baseURL,
+  };
+}
+
+async function postProcessor(auditUrl, auditData) {
+  // your post-processing logic goes here
+}
+
+export default new AuditBuilder()
+  .withRunner(auditRunner)
+  .withPostProcessors([ postProcessor ]) // you can submit multiple post processors
   .build();
 
 ```
