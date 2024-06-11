@@ -16,20 +16,43 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
+import { AbortController, AbortError } from '@adobe/fetch';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { enhanceBacklinksWithFixes, fetch, getStoredMetrics } from '../support/utils.js';
 
+const TIMEOUT = 3000;
+
 export async function filterOutValidBacklinks(backlinks, log) {
+  const fetchWithTimeout = async (url, timeout) => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const id = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, { signal });
+      clearTimeout(id);
+      return response;
+    } catch (error) {
+      if (error instanceof AbortError) {
+        log.warn(`Request to ${url} timed out after ${timeout}ms`);
+        return { ok: false, status: 408 };
+      }
+    } finally {
+      clearTimeout(id);
+    }
+    return { ok: false, status: 500 };
+  };
+
   const isStillBrokenBacklink = async (backlink) => {
     try {
-      const response = await fetch(backlink.url_to);
+      const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
       if (!response.ok && response.status !== 404
         && response.status >= 400 && response.status < 500) {
         log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
       }
       return !response.ok;
     } catch (error) {
-      log.error(`Failed to check backlink ${backlink.url_to}: ${error}`);
+      log.error(`Failed to check backlink ${backlink.url_to}: ${error.message || error}`);
       return true;
     }
   };
@@ -86,8 +109,7 @@ export default async function auditBrokenBacklinks(message, context) {
       } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
       log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
 
-      // const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
-      const brokenBacklinks = result?.backlinks;
+      const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
 
       const s3Client = new S3Client(context);
       const keywords = await getStoredMetrics(s3Client, { siteId, source: 'ahrefs', metric: 'organic-keywords' }, context);
