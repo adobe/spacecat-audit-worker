@@ -1,3 +1,24 @@
+## [1.17.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.17.1...v1.17.2) (2024-06-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-ahrefs-client to v1.2.6 ([#281](https://github.com/adobe/spacecat-audit-worker/issues/281)) ([e568f21](https://github.com/adobe/spacecat-audit-worker/commit/e568f21c4f0449c13521f4e26e29d95f7ecdc159))
+
+## [1.17.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.17.0...v1.17.1) (2024-06-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.26.1 ([#280](https://github.com/adobe/spacecat-audit-worker/issues/280)) ([b25816d](https://github.com/adobe/spacecat-audit-worker/commit/b25816df308ff8e0ba6dc7b5e11e8b4ccd34f906))
+
+# [1.17.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.16.5...v1.17.0) (2024-06-10)
+
+
+### Features
+
+* audit post processors ([#278](https://github.com/adobe/spacecat-audit-worker/issues/278)) ([7060643](https://github.com/adobe/spacecat-audit-worker/commit/7060643538a92d674e09d7dc9b17615d5da860cd))
+
 ## [1.16.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.16.4...v1.16.5) (2024-06-08)
 
 
