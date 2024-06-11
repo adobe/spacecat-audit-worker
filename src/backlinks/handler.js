@@ -40,7 +40,7 @@ export async function filterOutValidBacklinks(backlinks, log) {
     } finally {
       clearTimeout(id);
     }
-    return { ok: false, status: 500 };
+    return null;
   };
 
   const isStillBrokenBacklink = async (backlink) => {
@@ -52,7 +52,7 @@ export async function filterOutValidBacklinks(backlinks, log) {
       }
       return !response.ok;
     } catch (error) {
-      log.error(`Failed to check backlink ${backlink.url_to}: ${error.message || error}`);
+      log.error(`Failed to check backlink ${backlink.url_to}: ${error.message}`);
       return true;
     }
   };

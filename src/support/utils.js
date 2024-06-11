@@ -261,11 +261,11 @@ export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
 };
 
 /**
- * TODO: remove again, copied from importer
- * @param s3Client
- * @param config
- * @param context
- * @returns {Promise<any|*[]>}
+ * Retrieves metrics stored in S3.
+ * @param s3Client - S3 client
+ * @param config - configuration object, containing siteId, source and metric
+ * @param context - context object
+ * @returns {Promise<Array>} - an array of metrics
  */
 export async function getStoredMetrics(s3Client, config, context) {
   function createFilePath({ siteId, source, metric }) {
