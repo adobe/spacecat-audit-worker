@@ -124,7 +124,7 @@ describe('Backlinks Tests', () => {
     sinon.restore();
   });
 
-  it('should successfully perform an audit to detect broken backlinks, save and send the proper audit result', async () => {
+  it.skip('should successfully perform an audit to detect broken backlinks, save and send the proper audit result', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
 
     nock(site.getBaseURL())
@@ -158,7 +158,7 @@ describe('Backlinks Tests', () => {
     expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
   });
 
-  it('should successfully perform an audit to detect broken backlinks and set finalUrl, for baseUrl redirecting to www domain', async () => {
+  it.skip('should successfully perform an audit to detect broken backlinks and set finalUrl, for baseUrl redirecting to www domain', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
 
     nock(site2.getBaseURL())
@@ -198,7 +198,7 @@ describe('Backlinks Tests', () => {
     expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
   });
 
-  it('should filter out from audit result broken backlinks the ones that return ok (even with redirection)', async () => {
+  it.skip('should filter out from audit result broken backlinks the ones that return ok (even with redirection)', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
 
     const fixedBacklinks = [

@@ -85,7 +85,12 @@ export default async function auditBrokenBacklinks(message, context) {
       } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
       log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
 
-      const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
+      const excludedURLs = auditConfig.getAuditTypeConfig(type)?.excludedURLs() || [];
+      const filteredBacklinks = result?.backlinks?.filter(
+        (backlink) => !excludedURLs.includes(backlink.url_to),
+      );
+
+      const brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
 
       auditResult = {
         finalUrl: auditContext.finalUrl,
