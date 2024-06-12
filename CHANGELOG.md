@@ -1,3 +1,10 @@
+# [1.18.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.17.2...v1.18.0) (2024-06-12)
+
+
+### Features
+
+* rum-api-client v2 with customer specific domain key support ([#282](https://github.com/adobe/spacecat-audit-worker/issues/282)) ([d34c6cf](https://github.com/adobe/spacecat-audit-worker/commit/d34c6cf75427d214aaf7e8fcebc11e4accbe2316))
+
 ## [1.17.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.17.1...v1.17.2) (2024-06-11)
 
 
