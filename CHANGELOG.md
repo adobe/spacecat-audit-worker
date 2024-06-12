@@ -1,3 +1,10 @@
+## [1.17.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.17.1...v1.17.2) (2024-06-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-ahrefs-client to v1.2.6 ([#281](https://github.com/adobe/spacecat-audit-worker/issues/281)) ([e568f21](https://github.com/adobe/spacecat-audit-worker/commit/e568f21c4f0449c13521f4e26e29d95f7ecdc159))
+
 ## [1.17.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.17.0...v1.17.1) (2024-06-11)
 
 
