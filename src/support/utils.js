@@ -256,7 +256,6 @@ export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
 
     result.push(newBacklink);
   }
-
   return result;
 };
 
