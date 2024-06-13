@@ -15,7 +15,11 @@ import { fetch } from '../support/utils.js';
 
 async function runner(auditUrl, context) {
   const { log } = context;
-  const response = await fetch(auditUrl);
+
+  const urlWithScheme = `https://${auditUrl}`;
+
+  log.info(`Running the audit against: ${urlWithScheme}`);
+  const response = await fetch(urlWithScheme);
 
   const headers = response.headers.plain();
 
