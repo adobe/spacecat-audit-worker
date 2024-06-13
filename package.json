@@ -58,7 +58,7 @@
     "@adobe/helix-universal-logger": "3.0.18",
     "@adobe/spacecat-shared-data-access": "1.28.0",
     "@adobe/spacecat-shared-http-utils": "1.3.4",
-    "@adobe/spacecat-shared-rum-api-client": "2.0.3",
+    "@adobe/spacecat-shared-rum-api-client": "https://gitpkg.now.sh/adobe/spacecat-shared/packages/spacecat-shared-rum-api-client?rum-bundler-experiment",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-ahrefs-client": "1.2.6",
     "@adobe/spacecat-shared-utils": "1.15.8",

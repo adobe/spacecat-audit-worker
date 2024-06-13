@@ -9,10 +9,10 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import RUMAPIClient, { GRANULARITY } from '@adobe/spacecat-shared-rum-api-client';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getRUMUrl, getRUMDomainkey } from '../support/utils.js';
+import { getRUMDomainkey } from '../support/utils.js';
 
 const SPACECAT_RUM_API_ENDPOINT = 'https://spacecat.experiencecloud.live/api/v1/rum';
 const DAYS = 7;
@@ -100,38 +100,38 @@ async function processExperimentRUMData(experimentData) {
   return experimentData;
 }
 
-async function processAudit(baseURL, context) {
+async function processAudit(auditURL, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const finalUrl = await getRUMUrl(baseURL);
-  const domainkey = getRUMDomainkey(finalUrl, context);
+  const domainkey = getRUMDomainkey(site.getBaseURL(), context);
   const options = {
-    domain: finalUrl,
+    domain: auditURL,
     domainkey,
     interval: DAYS,
-    granularity: GRANULARITY.HOURLY,
+    granularity: 'hourly',
   };
   const experimentData = await rumAPIClient.query('experiment', options);
   return {
     auditResult: processExperimentRUMData(experimentData),
-    fullAuditRef: getEssExperimentationURL(finalUrl),
+    fullAuditRef: getEssExperimentationURL(auditURL),
   };
 }
 
-export async function essExperimentationAuditRunner(baseURL, context) {
+export async function essExperimentationAuditRunner(auditUrl, context, site) {
   const { log } = context;
-  log.info(`Received ESS Experimentation audit request for ${baseURL}`);
+  log.info(`Received ESS Experimentation audit request for ${auditUrl}`);
   const startTime = process.hrtime();
 
   const auditData = await processAudit(
-    baseURL,
+    auditUrl,
     context,
+    site,
   );
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`ESS Experimentation Audit completed in ${formattedElapsed} seconds for ${baseURL}`);
+  log.info(`ESS Experimentation Audit completed in ${formattedElapsed} seconds for ${auditUrl}`);
   return auditData;
 }
 
