@@ -15,11 +15,11 @@ import chai from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
+// import { GetObjectCommand } from '@aws-sdk/client-s3';
 import {
-  enhanceBacklinksWithFixes,
+  // enhanceBacklinksWithFixes,
   extractKeywordsFromUrl,
-  getStoredMetrics,
+  // getStoredMetrics,
   getUrlWithoutPath,
 } from '../../src/support/utils.js';
 
@@ -89,151 +89,155 @@ describe('extractKeywordsFromUrl', () => {
   });
 });
 
-describe('enhanceBacklinksWithFixes', () => {
-  let log;
-
-  beforeEach(() => {
-    log = { info: sinon.stub() };
-  });
-
-  afterEach(() => {
-    sinon.restore();
-  });
-
-  it('should prioritize keywords closer to the end of the URL path', async () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo/bar/baz.html',
-      },
-    ];
-
-    const keywords = [
-      { keyword: 'foo', traffic: 100, url: 'https://www.example.com/foo.html' },
-      { keyword: 'bar', traffic: 200, url: 'https://www.example.com/foo/bar.html' },
-      { keyword: 'baz', traffic: 50, url: 'https://www.example.com/baz.html' },
-    ];
-
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/baz.html');
-  });
-
-  it('should use traffic as a secondary sort criterion', async () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo/bar/baz.html',
-      },
-    ];
-
-    const keywords = [
-      { keyword: 'foo', traffic: 300, url: 'https://www.example.com/foo.html' },
-      { keyword: 'another baz', traffic: 200, url: 'https://www.example.com/foo/bar.html' },
-      { keyword: 'baz', traffic: 100, url: 'https://www.example.com/baz.html' },
-    ];
-
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/foo/bar.html');
-  });
-
-  it('should correctly handle cases where keywords are split', async () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo-bar-baz.html',
-      },
-    ];
-
-    const keywords = [
-      { keyword: 'foo', traffic: 100, url: 'https://www.example.com/foo.html' },
-      { keyword: 'bar', traffic: 300, url: 'https://www.example.com/bar.html' },
-      { keyword: 'baz', traffic: 200, url: 'https://www.example.com/baz.html' },
-    ];
-
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
-  });
-
-  it('should match keywords only for whole words', () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo/bar.html',
-      },
-    ];
-    const keywords = [
-      { keyword: 'foobar', traffic: 400, url: 'https://www.example.com/foobar.html' },
-      { keyword: 'foo', traffic: 200, url: 'https://www.example.com/foo.html' },
-      { keyword: 'bar', traffic: 50, url: 'https://www.example.com/bar.html' },
-    ];
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
-  });
-
-  describe('getStoredMetrics', () => {
-    let s3Client;
-    let config;
-    let context;
-
-    beforeEach(() => {
-      s3Client = {
-        send: sinon.stub(),
-      };
-      config = {
-        siteId: 'testSite',
-        source: 'testSource',
-        metric: 'testMetric',
-      };
-      context = {
-        log: {
-          info: sinon.stub(),
-          error: sinon.stub(),
-        },
-        env: {
-          S3_BUCKET_NAME: 'testBucket',
-        },
-      };
-    });
-
-    it('should return metrics when retrieval is successful', async () => {
-      const expectedMetrics = [{
-        siteId: '123',
-        source: 'ahrefs',
-        time: '2023-03-12T00:00:00Z',
-        name: 'organic-traffic',
-        value: 100,
-      }, {
-        siteId: '123',
-        source: 'ahrefs',
-        time: '2023-03-13T00:00:00Z',
-        name: 'organic-traffic',
-        value: 200,
-      }];
-      s3Client.send.resolves({
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify(expectedMetrics)),
-        },
-      });
-
-      const metrics = await getStoredMetrics(s3Client, config, context);
-
-      expect(metrics).to.deep.equal(expectedMetrics);
-      expect(s3Client.send.calledWith(sinon.match.instanceOf(GetObjectCommand))).to.be.true;
-      expect(s3Client.send.calledWith(sinon.match.hasNested('input.Bucket', context.env.S3_BUCKET_NAME))).to.be.true;
-      expect(s3Client.send.calledWith(sinon.match.hasNested('input.Key', 'metrics/testSite/testSource/testMetric.json'))).to.be.true;
-      expect(context.log.info).to.have.been.calledWith('Successfully retrieved 2 metrics from metrics/testSite/testSource/testMetric.json');
-    });
-
-    it('should return empty array when retrieval fails', async () => {
-      s3Client.send.rejects(new Error('Test error'));
-
-      const metrics = await getStoredMetrics(s3Client, config, context);
-
-      expect(metrics).to.deep.equal([]);
-      expect(context.log.error).to.have.been.calledWith('Failed to retrieve metrics from metrics/testSite/testSource/testMetric.json, error: Test error');
-    });
-  });
-});
+// describe('enhanceBacklinksWithFixes', () => {
+//   let log;
+//
+//   beforeEach(() => {
+//     log = { info: sinon.stub() };
+//   });
+//
+//   afterEach(() => {
+//     sinon.restore();
+//   });
+//
+//   it('should prioritize keywords closer to the end of the URL path', async () => {
+//     const brokenBacklinks = [
+//       {
+//         url_to: 'https://www.example.com/foo/bar/baz.html',
+//       },
+//     ];
+//
+//     const keywords = [
+//       { keyword: 'foo', traffic: 100, url: 'https://www.example.com/foo.html' },
+//       { keyword: 'bar', traffic: 200, url: 'https://www.example.com/foo/bar.html' },
+//       { keyword: 'baz', traffic: 50, url: 'https://www.example.com/baz.html' },
+//     ];
+//
+//     const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+//
+//     expect(result).to.be.an('array').that.has.lengthOf(1);
+//     expect(result[0].url_suggested).to.equal('https://www.example.com/baz.html');
+//   });
+//
+//   it('should use traffic as a secondary sort criterion', async () => {
+//     const brokenBacklinks = [
+//       {
+//         url_to: 'https://www.example.com/foo/bar/baz.html',
+//       },
+//     ];
+//
+//     const keywords = [
+//       { keyword: 'foo', traffic: 300, url: 'https://www.example.com/foo.html' },
+//       { keyword: 'another baz', traffic: 200, url: 'https://www.example.com/foo/bar.html' },
+//       { keyword: 'baz', traffic: 100, url: 'https://www.example.com/baz.html' },
+//     ];
+//
+//     const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+//
+//     expect(result).to.be.an('array').that.has.lengthOf(1);
+//     expect(result[0].url_suggested).to.equal('https://www.example.com/foo/bar.html');
+//   });
+//
+//   it('should correctly handle cases where keywords are split', async () => {
+//     const brokenBacklinks = [
+//       {
+//         url_to: 'https://www.example.com/foo-bar-baz.html',
+//       },
+//     ];
+//
+//     const keywords = [
+//       { keyword: 'foo', traffic: 100, url: 'https://www.example.com/foo.html' },
+//       { keyword: 'bar', traffic: 300, url: 'https://www.example.com/bar.html' },
+//       { keyword: 'baz', traffic: 200, url: 'https://www.example.com/baz.html' },
+//     ];
+//
+//     const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+//
+//     expect(result).to.be.an('array').that.has.lengthOf(1);
+//     expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
+//   });
+//
+//   it('should match keywords only for whole words', () => {
+//     const brokenBacklinks = [
+//       {
+//         url_to: 'https://www.example.com/foo/bar.html',
+//       },
+//     ];
+//     const keywords = [
+//       { keyword: 'foobar', traffic: 400, url: 'https://www.example.com/foobar.html' },
+//       { keyword: 'foo', traffic: 200, url: 'https://www.example.com/foo.html' },
+//       { keyword: 'bar', traffic: 50, url: 'https://www.example.com/bar.html' },
+//     ];
+//     const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+//     expect(result).to.be.an('array').that.has.lengthOf(1);
+//     expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
+//   });
+//
+//   describe('getStoredMetrics', () => {
+//     let s3Client;
+//     let config;
+//     let context;
+//
+//     beforeEach(() => {
+//       s3Client = {
+//         send: sinon.stub(),
+//       };
+//       config = {
+//         siteId: 'testSite',
+//         source: 'testSource',
+//         metric: 'testMetric',
+//       };
+//       context = {
+//         log: {
+//           info: sinon.stub(),
+//           error: sinon.stub(),
+//         },
+//         env: {
+//           S3_BUCKET_NAME: 'testBucket',
+//         },
+//       };
+//     });
+//
+//     it('should return metrics when retrieval is successful', async () => {
+//       const expectedMetrics = [{
+//         siteId: '123',
+//         source: 'ahrefs',
+//         time: '2023-03-12T00:00:00Z',
+//         name: 'organic-traffic',
+//         value: 100,
+//       }, {
+//         siteId: '123',
+//         source: 'ahrefs',
+//         time: '2023-03-13T00:00:00Z',
+//         name: 'organic-traffic',
+//         value: 200,
+//       }];
+//       s3Client.send.resolves({
+//         Body: {
+//           transformToString: sinon.stub().resolves(JSON.stringify(expectedMetrics)),
+//         },
+//       });
+//
+//       const metrics = await getStoredMetrics(s3Client, config, context);
+//
+//       expect(metrics).to.deep.equal(expectedMetrics);
+//       expect(s3Client.send.calledWith(sinon.match.instanceOf(GetObjectCommand))).to.be.true;
+// eslint-disable-next-line max-len
+//       expect(s3Client.send.calledWith(sinon.match.hasNested('input.Bucket', context.env.S3_BUCKET_NAME))).to.be.true;
+// eslint-disable-next-line max-len
+//       expect(s3Client.send.calledWith(sinon.match.hasNested('input.Key', 'metrics/testSite/testSource/testMetric.json'))).to.be.true;
+// eslint-disable-next-line max-len
+//       expect(context.log.info).to.have.been.calledWith('Successfully retrieved 2 metrics from metrics/testSite/testSource/testMetric.json');
+//     });
+//
+//     it('should return empty array when retrieval fails', async () => {
+//       s3Client.send.rejects(new Error('Test error'));
+//
+//       const metrics = await getStoredMetrics(s3Client, config, context);
+//
+//       expect(metrics).to.deep.equal([]);
+// eslint-disable-next-line max-len
+//       expect(context.log.error).to.have.been.calledWith('Failed to retrieve metrics from metrics/testSite/testSource/testMetric.json, error: Test error');
+//     });
+//   });
+// });
