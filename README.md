@@ -80,6 +80,10 @@ DYNAMO_INDEX_NAME_ALL_SITES = name of the dynamo index to query all sites
 DYNAMO_INDEX_NAME_ALL_LATEST_AUDIT_SCORES = name of the dynamo index to query all latest audits by scores
 ```
 
+## Audit Worker Flow
+
+![SpaceCat (Star Catalogue) - Audit Flow](https://github.com/adobe/spacecat-audit-worker/assets/1171225/78632887-3edf-4aee-b28a-4cecc3c28fc8)
+
 
 ## How to create a new Audit
 
