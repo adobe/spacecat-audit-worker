@@ -11,9 +11,10 @@
  */
 
 import { context as h2, h1 } from '@adobe/fetch';
-import { hasText } from '@adobe/spacecat-shared-utils';
+import { hasText, resolveCustomerSecretsName } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
+import { loadSecrets } from '@adobe/helix-shared-secrets';
 
 URI.preventInvalidHostname = true;
 
@@ -141,4 +142,22 @@ export function getSitemapUrlsFromSitemapIndex(content) {
 export function getUrlWithoutPath(url) {
   const urlObj = new URL(url);
   return `${urlObj.protocol}//${urlObj.host}`;
+}
+
+/**
+ * Retrieves the RUM domain key for the specified base URL from the customer secrets.
+ *
+ * @param {string} baseURL - The base URL for which the RUM domain key is to be retrieved.
+ * @param {UniversalContext} context - Helix Universal Context. See https://github.com/adobe/helix-universal/blob/main/src/adapter.d.ts#L120
+ * @param {Object} [opts={}] - Optional parameters for loading secrets. See: https://github.com/adobe/helix-shared/blob/main/packages/helix-shared-secrets/src/secrets-wrapper.d.ts#L18
+ * @returns {Promise<string>} - A promise that resolves to the RUM domain key.
+ * @throws {Error} Throws an error if no domain key is found for the specified base URL.
+ */
+export async function getRUMDomainkey(baseURL, context, opts = {}) {
+  const customerSecretName = resolveCustomerSecretsName(baseURL, context);
+  const secrets = await loadSecrets(context, { ...opts, name: customerSecretName });
+  if (!hasText(secrets?.RUM_DOMAIN_KEY)) {
+    throw new Error(`No domainkey found for ${baseURL}`);
+  }
+  return secrets.RUM_DOMAIN_KEY;
 }
