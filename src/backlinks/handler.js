@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { S3Client } from '@aws-sdk/client-s3';
+// import { S3Client } from '@aws-sdk/client-s3';
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
@@ -18,7 +18,7 @@ import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { enhanceBacklinksWithFixes, fetch, getStoredMetrics } from '../support/utils.js';
+import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
 
 const TIMEOUT = 3000;
 
@@ -111,8 +111,11 @@ export default async function auditBrokenBacklinks(message, context) {
 
       const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
 
-      const s3Client = new S3Client(context);
-      const keywords = await getStoredMetrics(s3Client, { siteId, source: 'ahrefs', metric: 'organic-keywords' }, context);
+      // const s3Client = new S3Client(context);
+      // const keywords = await getStoredMetrics
+      // (s3Client, { siteId, source: 'ahrefs', metric: 'organic-keywords' }, context);
+      const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
+      const keywords = topPages.map((page) => page.topKeyword);
 
       const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
 
