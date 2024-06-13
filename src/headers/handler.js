@@ -13,10 +13,13 @@
 import { AuditBuilder } from '../common/audit-builder.js';
 import { fetch } from '../support/utils.js';
 
-async function runner(auditUrl) {
+async function runner(auditUrl, context) {
+  const { log } = context;
   const response = await fetch(auditUrl);
 
   const headers = response.headers.plain();
+
+  log.info(`Headers for ${auditUrl} are, ${JSON.stringify(headers)}`);
 
   return {
     auditResult: headers,
