@@ -10,23 +10,24 @@
  * governing permissions and limitations under the License.
  */
 
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client-v1';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { fetch } from '../support/utils.js';
 
 async function runner(auditUrl, context) {
   const { log } = context;
 
-  const urlWithScheme = `https://${auditUrl}`;
+  const rumAPIClient = RUMAPIClient.createFrom(context);
 
-  log.info(`Running the audit against: ${urlWithScheme}`);
-  const response = await fetch(urlWithScheme);
+  const params = {
+    url: auditUrl,
+    interval: 7,
+  };
+  const result = await rumAPIClient.getRUMDashboard(params);
 
-  const headers = response.headers.plain();
-
-  log.info(`Headers for ${auditUrl} are, ${JSON.stringify(headers)}`);
+  log.info(`RUM result for ${auditUrl} is, ${JSON.stringify(result)}`);
 
   return {
-    auditResult: headers,
+    auditResult: result,
     fullAuditRef: auditUrl,
   };
 }
