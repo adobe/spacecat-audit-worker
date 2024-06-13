@@ -213,7 +213,7 @@ export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
       const matchingKeyword = extractedKeywords.find(
         (keywordObj) => {
           const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          return regex.test(entry.keyword);
+          return regex.test(entry);
         },
       );
       if (matchingKeyword) {
