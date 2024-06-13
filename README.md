@@ -85,9 +85,25 @@ DYNAMO_INDEX_NAME_ALL_LATEST_AUDIT_SCORES = name of the dynamo index to query al
 ![SpaceCat (Star Catalogue) - Audit Flow](https://github.com/adobe/spacecat-audit-worker/assets/1171225/78632887-3edf-4aee-b28a-4cecc3c28fc8)
 
 
-## How to create a new Audit
+## What is a Spacecat Audit
 
-In the context of SpaceCat, an audit is usually an inspection which run against a `url`. When given a `url`, we conduct various inspections on the corresponding website.
+A Spacecat audit is an operation designed for various purposes, including inspection, data collection, verification, and more, all performed on a given `URL`.
+
+Spacecat audits run periodically: weekly, daily, and even hourly. By default, the results of these audits are automatically stored in DynamoDB and sent to the `audit-results-queue`. The results can then be queried by type via [the Spacecat API](https://opensource.adobe.com/spacecat-api-service/#tag/audit).
+
+## Audit Steps
+
+A Spacecat audit consists of seven steps, six of which are provided by default. The only step that typically changes between different audits is the core runner, which contains the business logic.
+
+1. **Site Provider**: This step reads the message with `siteId` information and retrieves the site object from the database. By default, the `defaultSiteProvider` reads the site object from the Star Catalogue. This step can be overridden.
+1. **Org Provider**: This step retrieves the organization information from the Star Catalogue. This step can be overridden.
+1. **URL Resolver**: This step calculates which URL to run the audit against. By default, the `defaultUrlResolver` sends an HTTP request to the site's `baseURL` and returns the `finalURL` after following the redirects. This step can be overridden.
+1. **Runner**: The core function that contains the audit's business logic. **No default runner is provided**. The runner should return an object with `auditResult`, which holds the audit result, and `fullAuditRef`, a string that holds a reference (often a URL) to the audit.
+1. **Persister**: The core function that stores the `auditResult`, `fullAuditRef`, and the audit metadata. By default, the `defaultPersister` stores the information back in the Star Catalogue.
+1. **Message Sender**: The core function that sends the audit result to a downstream component via a message (queue, email, HTTP). By default, the `defaultMessageSender` sends the audit result to the `audit-results-queue` in Spacecat.
+1. **Post Processors**: A list of post-processing functions that further process the audit result for various reasons. By default, no post processor is provided. These should be added only if needed.
+
+## How to create a new Audit
 
 To create a new audit, you'll need to create an audit handler function. This function should accept a `url` and a `context` (see [HelixUniversal](https://github.com/adobe/helix-universal/blob/main/src/adapter.d.ts#L120) ) object as parameters, and it should return an `auditResult` along with `fullAuditRef`. Here's an example:
 
