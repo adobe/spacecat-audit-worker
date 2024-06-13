@@ -26,6 +26,7 @@ import sitemap from './sitemap/handler.js';
 import backlinks from './backlinks/handler.js';
 import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
+import essexperimentation from './ess-experimentation/handler.js';
 
 const HANDLERS = {
   apex,
@@ -37,6 +38,7 @@ const HANDLERS = {
   'broken-backlinks': backlinks,
   experimentation,
   conversion,
+  essexperimentation,
 };
 
 /**
