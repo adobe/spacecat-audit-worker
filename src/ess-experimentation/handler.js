@@ -102,7 +102,7 @@ async function processExperimentRUMData(experimentData) {
 
 async function processAudit(auditURL, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = getRUMDomainkey(site.getBaseURL(), context);
+  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: auditURL,
     domainkey,
@@ -137,5 +137,4 @@ export async function essExperimentationAuditRunner(auditUrl, context, site) {
 
 export default new AuditBuilder()
   .withRunner(essExperimentationAuditRunner)
-  .withUrlResolver((site) => site.getBaseURL())
   .build();
