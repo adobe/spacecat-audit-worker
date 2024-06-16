@@ -38,7 +38,7 @@ const HANDLERS = {
   'broken-backlinks': backlinks,
   experimentation,
   conversion,
-  essexperimentation,
+  'experimentation-ess-monthly': essexperimentation,
 };
 
 /**

@@ -20,7 +20,7 @@ const EXPERIMENT_PLUGIN_OPTIONS = {
   experimentsQueryParameter: 'experiment',
 };
 const SPACECAT_RUM_API_ENDPOINT = 'https://spacecat.experiencecloud.live/api/v1/rum';
-const DAYS = 7;
+const DAYS = 30;
 const METRIC_CHECKPOINTS = ['click', 'convert', 'formsubmit'];
 
 let log = console;
