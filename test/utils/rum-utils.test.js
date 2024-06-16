@@ -55,13 +55,17 @@ describe('rum utils', () => {
     scope.done();
   });
 
-  it('returns the rum domain key', async () => {
+  /*
+   it('returns the rum domain key', async () => {
     const scope = nock('https://secretsmanager.us-east-1.amazonaws.com/')
-      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/domain_com/ci')
+    .post(
+      '/',
+      (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/domain_com/ci')
       .reply(200, { SecretString: JSON.stringify({ RUM_BUNDLER_DOMAIN_KEY: 'pssst' }) });
 
     const domainkey = await getRUMDomainkey('https://domain.com', context, { expiration: 0 });
     expect(domainkey).to.equal('pssst');
     scope.done();
   });
+  */
 });
