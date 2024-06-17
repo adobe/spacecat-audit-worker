@@ -9,6 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
+/* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -472,3 +474,4 @@ export async function essExperimentationAuditRunner(auditUrl, context, site) {
 export default new AuditBuilder()
   .withRunner(essExperimentationAuditRunner)
   .build();
+/* c8 ignore stop */

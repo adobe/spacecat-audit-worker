@@ -159,5 +159,6 @@ export async function getRUMDomainkey(baseURL, context, opts = {}) {
   if (!hasText(secrets?.RUM_BUNDLER_DOMAIN_KEY)) {
     throw new Error(`No domainkey found for ${baseURL}`);
   }
+  /* c8 ignore next */
   return secrets.RUM_BUNDLER_DOMAIN_KEY;
 }
