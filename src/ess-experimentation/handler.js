@@ -377,7 +377,7 @@ async function convertToExperimentsSchema(experimentInsights) {
         const variantName = expVariant.name;
         // eslint-disable-next-line
         const variant = getObjectByProperty(variants, 'name', variantName);
-        const views = variant ? variant.views + expVariant.views : expVariant.views;
+        const views = variant ? (variant.views || 0) + expVariant.views : expVariant.views;
         const metrics = variant?.metrics || [];
         for (const metricCheckPoint of METRIC_CHECKPOINTS) {
           for (const selector of Object.keys(expVariant[metricCheckPoint])) {
@@ -402,6 +402,9 @@ async function convertToExperimentsSchema(experimentInsights) {
             url,
             metrics,
           });
+        } else if (variant && !variant.metrics) {
+          variant.metrics = metrics;
+          variant.views = views;
         }
       }
       const existingExperiment = getObjectByProperty(experiments, 'id', id);
