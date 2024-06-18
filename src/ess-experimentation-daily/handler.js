@@ -18,7 +18,7 @@ const DAYS = 1;
 
 let log = console;
 
-export async function essExperimentationAuditRunner(auditUrl, context, site) {
+export async function essExperimentationDailyAuditRunner(auditUrl, context, site) {
   log = context.log;
   log.info(`Received ESS Experimentation Daily audit request for ${auditUrl}`);
   const startTime = process.hrtime();
@@ -43,6 +43,6 @@ export async function essExperimentationAuditRunner(auditUrl, context, site) {
 }
 
 export default new AuditBuilder()
-  .withRunner(essExperimentationAuditRunner)
+  .withRunner(essExperimentationDailyAuditRunner)
   .build();
 /* c8 ignore stop */
