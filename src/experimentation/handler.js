@@ -11,7 +11,7 @@
  */
 import URI from 'urijs';
 import { hasText } from '@adobe/spacecat-shared-utils';
-import RUMAPIClient, { createExperimentationURL } from '@adobe/spacecat-shared-rum-api-client';
+import RUMAPIClient, { createExperimentationURL } from '@adobe/spacecat-shared-rum-api-client-v1';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMUrl } from '../support/utils.js';
 

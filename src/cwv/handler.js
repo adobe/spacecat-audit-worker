@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient, { createRUMURL } from '@adobe/spacecat-shared-rum-api-client';
+import RUMAPIClient, { createRUMURL } from '@adobe/spacecat-shared-rum-api-client-v1';
 import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
