@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-// import { S3Client } from '@aws-sdk/client-s3';
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
@@ -111,11 +110,12 @@ export default async function auditBrokenBacklinks(message, context) {
 
       const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
 
-      // const s3Client = new S3Client(context);
-      // const keywords = await getStoredMetrics
-      // (s3Client, { siteId, source: 'ahrefs', metric: 'organic-keywords' }, context);
       const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-      const keywords = topPages.map((page) => page.topKeyword);
+      const keywords = topPages.map(
+        (page) => (
+          { url: page.getURL(), keyword: page.getTopKeyword(), traffic: page.getTraffic() }
+        ),
+      );
 
       const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
 

@@ -213,7 +213,7 @@ export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
       const matchingKeyword = extractedKeywords.find(
         (keywordObj) => {
           const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          return regex.test(entry);
+          return regex.test(entry.keyword);
         },
       );
       if (matchingKeyword) {
@@ -230,7 +230,7 @@ export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
       splitKeywords.forEach((keywordObj) => {
         keywords.forEach((entry) => {
           const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          if (regex.test(entry)) {
+          if (regex.test(entry.keyword)) {
             matchedData.push({ ...entry, rank: keywordObj.rank });
           }
         });
