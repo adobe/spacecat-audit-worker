@@ -31,7 +31,7 @@ describe('rum utils', () => {
         AWS_SECRET_ACCESS_KEY: 'some-secret-key',
         AWS_SESSION_TOKEN: 'some-secret-token',
       },
-      runtime: { name: 'aws-lambda' },
+      runtime: { name: 'aws-lambda', region: 'us-east-1' },
       func: { package: 'spacecat-services', version: 'ci', name: 'test' },
     };
     processEnvCopy = { ...process.env };
@@ -49,23 +49,23 @@ describe('rum utils', () => {
   it('throws error when domain key does not exist', async () => {
     const scope = nock('https://secretsmanager.us-east-1.amazonaws.com/')
       .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/some_domain_com/ci')
-      .reply(200, { SecretString: JSON.stringify({ }) });
+      .replyWithError('Some error');
 
-    await expect(getRUMDomainkey('https://some-domain.com', context, { expiration: 0 })).to.be.rejectedWith('No domainkey found for https://some-domain.com');
+    await expect(getRUMDomainkey('https://some-domain.com', context)).to.be.rejectedWith('Error retrieving the domain key for https://some-domain.com. Error: Some error');
     scope.done();
   });
 
-  /*
-   it('returns the rum domain key', async () => {
+  it('retrieves the domain key', async () => {
     const scope = nock('https://secretsmanager.us-east-1.amazonaws.com/')
-    .post(
-      '/',
-      (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/domain_com/ci')
-      .reply(200, { SecretString: JSON.stringify({ RUM_BUNDLER_DOMAIN_KEY: 'pssst' }) });
+      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/some_domain_com/ci')
+      .reply(200, {
+        SecretString: JSON.stringify({
+          RUM_DOMAIN_KEY: '42',
+        }),
+      });
 
-    const domainkey = await getRUMDomainkey('https://domain.com', context, { expiration: 0 });
-    expect(domainkey).to.equal('pssst');
+    const rumDomainkey = await getRUMDomainkey('https://some-domain.com', context);
+    expect(rumDomainkey).to.equal('42');
     scope.done();
   });
-  */
 });
