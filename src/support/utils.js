@@ -14,7 +14,6 @@ import { context as h2, h1 } from '@adobe/fetch';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
 
 URI.preventInvalidHostname = true;
 
@@ -258,36 +257,3 @@ export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
   }
   return result;
 };
-
-/**
- * Retrieves metrics stored in S3.
- * @param s3Client - S3 client
- * @param config - configuration object, containing siteId, source and metric
- * @param context - context object
- * @returns {Promise<Array>} - an array of metrics
- */
-export async function getStoredMetrics(s3Client, config, context) {
-  function createFilePath({ siteId, source, metric }) {
-    return `metrics/${siteId}/${source}/${metric}.json`;
-  }
-  const { log } = context;
-
-  const filePath = createFilePath(config);
-
-  const command = new GetObjectCommand({
-    Bucket: context.env.S3_BUCKET_NAME,
-    Key: filePath,
-  });
-
-  try {
-    const response = await s3Client.send(command);
-    const content = await response.Body?.transformToString();
-    const metrics = JSON.parse(content);
-    log.info(`Successfully retrieved ${metrics.length} metrics from ${filePath}`);
-
-    return metrics;
-  } catch (e) {
-    log.error(`Failed to retrieve metrics from ${filePath}, error: ${e.message}`);
-    return [];
-  }
-}
