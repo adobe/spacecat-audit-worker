@@ -1,3 +1,10 @@
+## [1.18.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.4...v1.18.5) (2024-06-18)
+
+
+### Bug Fixes
+
+* customer secret retrieval ([#293](https://github.com/adobe/spacecat-audit-worker/issues/293)) ([0e96e26](https://github.com/adobe/spacecat-audit-worker/commit/0e96e26c983dd3968bc58ec8a3e0e0c3b76ee8b6))
+
 ## [1.18.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.3...v1.18.4) (2024-06-18)
 
 
