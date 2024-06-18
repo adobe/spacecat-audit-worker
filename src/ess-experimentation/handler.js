@@ -14,6 +14,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { getRUMDomainkey } from '../support/utils.js';
 
 const EXPERIMENT_PLUGIN_OPTIONS = {
   experimentsRoot: '/experiments',
@@ -426,9 +427,9 @@ async function processExperimentRUMData(experimentInsights) {
   return experimentData;
 }
 
-async function processAudit(auditURL, context) {
+async function processAudit(auditURL, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = context.env.RUM_BUNDLER_DOMAIN_KEY;
+  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: auditURL,
     domainkey,
