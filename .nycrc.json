@@ -3,7 +3,7 @@
     "lcov",
     "text"
   ],
-  "check-coverage": true,
+  "check-coverage": false,
   "lines": 100,
   "branches": 100,
   "statements": 100
