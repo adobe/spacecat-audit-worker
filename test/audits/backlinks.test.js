@@ -39,43 +39,14 @@ describe('Backlinks Tests', () => {
     isLive: true,
   };
 
-  // todo use this
-  // const site = createSite(siteData);
-  // todo not this
-  const site = {
-    ...createSite(siteData),
-    getAuditConfig: sinon.stub().returns({
-      auditsDisabled: sinon.stub().returns(false),
-      getAuditTypeConfig: sinon.stub().withArgs('broken-backlinks').returns({
-        disabled: sinon.stub().returns(false),
-        getExcludedURLs: sinon.stub().returns([]),
-      }),
-    }),
-  };
-
+  const site = createSite(siteData);
   site.updateAuditTypeConfig('broken-backlinks', { disabled: false });
 
-  // todo use this
-  // const site2 = createSite({
-  //     id: 'site2',
-  //     baseURL: 'https://foo.com',
-  //     isLive: true,
-  //   });
-  // todo not this
-  const site2 = {
-    ...createSite({
-      id: 'site2',
-      baseURL: 'https://foo.com',
-      isLive: true,
-    }),
-    getAuditConfig: sinon.stub().returns({
-      auditsDisabled: sinon.stub().returns(false),
-      getAuditTypeConfig: sinon.stub().withArgs('broken-backlinks').returns({
-        disabled: sinon.stub().returns(false),
-        getExcludedURLs: sinon.stub().returns([]),
-      }),
-    }),
-  };
+  const site2 = createSite({
+    id: 'site2',
+    baseURL: 'https://foo.com',
+    isLive: true,
+  });
   site2.updateAuditTypeConfig('broken-backlinks', { disabled: false });
 
   const auditResult = {
@@ -156,41 +127,18 @@ describe('Backlinks Tests', () => {
   it('should filter out excluded URLs and include valid backlinks', async () => {
     const excludedUrl = 'https://foo.com/returns-404';
 
-    // todo use this after updating the package
-    // const siteWithExcludedUrls = createSite({
-    //   ...siteData,
-    //   auditConfig: {
-    //     auditsDisabled: false,
-    //     auditTypeConfigs: {
-    //       'broken-backlinks': {
-    //         disabled: false,
-    //         excludedURLs: [excludedUrl],
-    //       },
-    //     },
-    //   },
-    // });
-    // todo delete this
-    const siteWithExcludedUrls = {
-      ...createSite({
-        ...siteData,
-        auditConfig: {
-          auditsDisabled: false,
-          auditTypeConfigs: {
-            'broken-backlinks': {
-              disabled: false,
-              excludedURLs: [excludedUrl],
-            },
+    const siteWithExcludedUrls = createSite({
+      ...siteData,
+      auditConfig: {
+        auditsDisabled: false,
+        auditTypeConfigs: {
+          'broken-backlinks': {
+            disabled: false,
+            excludedURLs: [excludedUrl],
           },
         },
-      }),
-      getAuditConfig: sinon.stub().returns({
-        auditsDisabled: sinon.stub().returns(false),
-        getAuditTypeConfig: sinon.stub().withArgs('broken-backlinks').returns({
-          disabled: sinon.stub().returns(false),
-          getExcludedURLs: sinon.stub().returns([excludedUrl]),
-        }),
-      }),
-    };
+      },
+    });
 
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(siteWithExcludedUrls);
 
