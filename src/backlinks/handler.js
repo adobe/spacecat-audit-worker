@@ -115,13 +115,13 @@ export default async function auditBrokenBacklinks(message, context) {
     };
 
     await dataAccess.addAudit(auditData);
-
-    await sqs.sendMessage(queueUrl, {
+    const data = {
       type,
       url: site.getBaseURL(),
       auditContext,
       auditResult,
-    });
+    };
+    await sqs.sendMessage(queueUrl, data);
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
