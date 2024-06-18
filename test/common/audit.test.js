@@ -191,13 +191,17 @@ describe('Audit tests', () => {
       expect(context.log.warn).to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
     });
 
-    it('audit runs as expected', async () => {
+    it('audit runs as expected with post processors', async () => {
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
       context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
       context.dataAccess.addAudit.resolves();
       context.sqs.sendMessage.resolves();
+
+      const postProcessors = [
+        sandbox.stub().resolves(), sandbox.stub().resolves(),
+      ];
 
       nock(baseURL)
         .get('/')
@@ -216,6 +220,7 @@ describe('Audit tests', () => {
         .withRunner(dummyRunner)
         .withPersister(defaultPersister)
         .withMessageSender(defaultMessageSender)
+        .withPostProcessors(postProcessors)
         .build();
 
       const resp = await audit.run(message, context);
@@ -224,23 +229,27 @@ describe('Audit tests', () => {
       expect(resp.status).to.equal(200);
 
       expect(context.dataAccess.addAudit).to.have.been.calledOnce;
-      expect(context.dataAccess.addAudit).to.have.been.calledWith({
+      const auditData = {
         siteId: site.getId(),
         isLive: site.isLive(),
         auditedAt: mockDate,
         auditType: message.type,
         auditResult: { metric: 42 },
         fullAuditRef,
-      });
+      };
+      expect(context.dataAccess.addAudit).to.have.been.calledWith(auditData);
 
+      const finalUrl = 'space.cat';
       const expectedMessage = {
         type: message.type,
         url: 'https://space.cat',
-        auditContext: { someField: 431, finalUrl: 'space.cat', fullAuditRef },
+        auditContext: { someField: 431, finalUrl, fullAuditRef },
         auditResult: { metric: 42 },
       };
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);
+      expect(postProcessors[0]).to.have.been.calledWith(finalUrl, auditData);
+      expect(postProcessors[1]).to.have.been.calledWith(finalUrl, auditData);
     });
   });
 

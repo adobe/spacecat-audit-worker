@@ -56,14 +56,25 @@ export async function noopUrlResolver(site) {
   return site.getBaseURL();
 }
 
+export const defaultPostProcessors = [];
+
 export class Audit {
-  constructor(siteProvider, orgProvider, urlResolver, runner, persister, messageSender) {
+  constructor(
+    siteProvider,
+    orgProvider,
+    urlResolver,
+    runner,
+    persister,
+    messageSender,
+    postProcessors,
+  ) {
     this.siteProvider = siteProvider;
     this.orgProvider = orgProvider;
     this.urlResolver = urlResolver;
     this.runner = runner;
     this.persister = persister;
     this.messageSender = messageSender;
+    this.postProcessors = postProcessors;
   }
 
   async run(message, context) {
@@ -113,6 +124,12 @@ export class Audit {
       };
 
       await this.messageSender(resultMessage, context);
+
+      for (const postProcessor of this.postProcessors) {
+        // eslint-disable-next-line no-await-in-loop
+        await postProcessor(finalUrl, auditData);
+      }
+
       return ok();
     } catch (e) {
       throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`);

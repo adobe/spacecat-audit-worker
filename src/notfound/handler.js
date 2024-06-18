@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient, { create404URL } from '@adobe/spacecat-shared-rum-api-client';
+import RUMAPIClient, { create404URL } from '@adobe/spacecat-shared-rum-api-client-v1';
 import { dateAfterDays } from '@adobe/spacecat-shared-utils';
 import {
   getRUMUrl,
