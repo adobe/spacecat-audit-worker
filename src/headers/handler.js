@@ -14,12 +14,17 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
 
 async function runner(auditUrl, context, site) {
+  const { log } = context;
+
   const key = await getRUMDomainkey(site.getBaseURL(), context);
 
+  const auditResult = {
+    key,
+  };
+
+  log.info(`Audit result: ${JSON.stringify(auditResult)}`);
   return {
-    auditResult: {
-      key,
-    },
+    auditResult,
     fullAuditRef: auditUrl,
   };
 }
