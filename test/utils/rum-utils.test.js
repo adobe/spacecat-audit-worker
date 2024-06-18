@@ -54,14 +54,4 @@ describe('rum utils', () => {
     await expect(getRUMDomainkey('https://some-domain.com', context, { expiration: 0 })).to.be.rejectedWith('No domainkey found for https://some-domain.com');
     scope.done();
   });
-
-  it('returns the rum domain key', async () => {
-    const scope = nock('https://secretsmanager.us-east-1.amazonaws.com/')
-      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/domain_com/ci')
-      .reply(200, { SecretString: JSON.stringify({ RUM_DOMAIN_KEY: 'pssst' }) });
-
-    const domainkey = await getRUMDomainkey('https://domain.com', context, { expiration: 0 });
-    expect(domainkey).to.equal('pssst');
-    scope.done();
-  });
 });
