@@ -427,36 +427,37 @@ async function processExperimentRUMData(experimentInsights) {
   return experimentData;
 }
 
-async function processAudit(auditURL, context, site) {
+export async function processAudit(auditURL, context, site, days) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: auditURL,
     domainkey,
-    interval: DAYS,
+    interval: days,
     granularity: 'hourly',
   };
   const experimentData = await rumAPIClient.query('experiment', options);
-  log.info(`Experiment Insighsts: ${JSON.stringify(experimentData, null, 2)}`);
+  log.info(`Experiment Insighsts for ${DAYS} day(s): ${JSON.stringify(experimentData, null, 2)}`);
   return processExperimentRUMData(experimentData);
 }
 
 export async function essExperimentationAuditRunner(auditUrl, context, site) {
   log = context.log;
-  log.info(`Received ESS Experimentation audit request for ${auditUrl}`);
+  log.info(`Received ESS Experimentation Monthly audit request for ${auditUrl}`);
   const startTime = process.hrtime();
 
   const auditData = await processAudit(
     auditUrl,
     context,
     site,
+    DAYS,
   );
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`ESS Experimentation Audit completed in ${formattedElapsed} seconds for ${auditUrl}`);
+  log.info(`ESS Experimentation Monthly Audit completed in ${formattedElapsed} seconds for ${auditUrl}`);
 
   return {
     auditResult: auditData,
