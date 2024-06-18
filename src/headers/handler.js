@@ -14,7 +14,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
 
 async function runner(auditUrl, context, site) {
-  const key = await getRUMDomainkey(site.getBaseURL());
+  const key = await getRUMDomainkey(site.getBaseURL(), context);
 
   return {
     auditResult: {
