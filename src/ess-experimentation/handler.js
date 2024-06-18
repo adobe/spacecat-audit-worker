@@ -21,15 +21,10 @@ const EXPERIMENT_PLUGIN_OPTIONS = {
   experimentsMetaTag: 'experiment',
   experimentsQueryParameter: 'experiment',
 };
-const SPACECAT_RUM_API_ENDPOINT = 'https://spacecat.experiencecloud.live/api/v1/rum';
 const DAYS = 30;
 const METRIC_CHECKPOINTS = ['click', 'convert', 'formsubmit'];
 
 let log = console;
-
-function getEssExperimentationURL(url) {
-  return `${SPACECAT_RUM_API_ENDPOINT}/experiments?domain=${url}&interval=30&granularity=hourly`;
-}
 
 /**
  * Retrieves the content of metadata tags.
@@ -150,7 +145,6 @@ function parseExperimentConfig(json) {
     config.variantNames = variantNames;
     return config;
   } catch (e) {
-    // eslint-disable-next-line no-console
     log.error('error parsing experiment config:', e, json);
   }
   return null;
@@ -246,7 +240,6 @@ async function getConfigForFullExperiment(experimentId, url, pluginOptions, doc)
     const { origin } = new URL(url);
     const resp = await fetch(`${origin}${path}`);
     if (!resp.ok) {
-      // eslint-disable-next-line no-console
       log.error('error loading experiment config:', resp);
       return null;
     }
@@ -262,7 +255,6 @@ async function getConfigForFullExperiment(experimentId, url, pluginOptions, doc)
     config.status = getMetadata(`${pluginOptions.experimentsMetaTag}-status`, doc) || config.status;
     return config;
   } catch (e) {
-    // eslint-disable-next-line no-console
     log.error(`error loading experiment manifest: ${path}`, e);
   }
   return null;
@@ -467,7 +459,7 @@ export async function essExperimentationAuditRunner(auditUrl, context, site) {
 
   return {
     auditResult: auditData,
-    fullAuditRef: getEssExperimentationURL(auditUrl),
+    fullAuditRef: auditUrl,
   };
 }
 
