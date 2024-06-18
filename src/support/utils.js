@@ -156,8 +156,8 @@ export function getUrlWithoutPath(url) {
 export async function getRUMDomainkey(baseURL, context, opts = {}) {
   const customerSecretName = resolveCustomerSecretsName(baseURL, context);
   const secrets = await loadSecrets(context, { ...opts, name: customerSecretName });
-  if (!hasText(secrets?.RUM_DOMAIN_KEY)) {
+  if (!hasText(secrets?.RUM_BUNDLER_DOMAINKEY)) {
     throw new Error(`No domainkey found for ${baseURL}`);
   }
-  return secrets.RUM_DOMAIN_KEY;
+  return secrets.RUM_BUNDLER_DOMAINKEY;
 }
