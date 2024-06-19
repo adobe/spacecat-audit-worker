@@ -1,3 +1,17 @@
+## [1.18.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.5...v1.18.6) (2024-06-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.29.2 ([#294](https://github.com/adobe/spacecat-audit-worker/issues/294)) ([bcf43ef](https://github.com/adobe/spacecat-audit-worker/commit/bcf43ef8b698d5a0a2aa37180115a0f92aaea678))
+
+## [1.18.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.4...v1.18.5) (2024-06-18)
+
+
+### Bug Fixes
+
+* customer secret retrieval ([#293](https://github.com/adobe/spacecat-audit-worker/issues/293)) ([0e96e26](https://github.com/adobe/spacecat-audit-worker/commit/0e96e26c983dd3968bc58ec8a3e0e0c3b76ee8b6))
+
 ## [1.18.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.3...v1.18.4) (2024-06-18)
 
 
