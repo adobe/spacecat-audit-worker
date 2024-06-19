@@ -340,6 +340,7 @@ function mergeData(experiment, experimentMetadata, url) {
       if (experimentVariant) {
         experimentVariant.url = `${origin}${variant.url}`;
         experimentVariant.split = variant.split;
+        experimentVariant.label = variant.label;
       }
     }
   }
