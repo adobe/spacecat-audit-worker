@@ -437,7 +437,6 @@ export async function processAudit(auditURL, context, site, days) {
     granularity: 'hourly',
   };
   const experimentData = await rumAPIClient.query('experiment', options);
-  log.info(`Experiment Insighsts for ${days} day(s): ${JSON.stringify(experimentData, null, 2)}`);
   return processExperimentRUMData(experimentData);
 }
 
