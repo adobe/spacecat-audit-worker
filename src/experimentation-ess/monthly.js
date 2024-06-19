@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Adobe. All rights reserved.
+ * Copyright 2024 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -12,15 +12,15 @@
 
 /* c8 ignore start */
 import { AuditBuilder } from '../common/audit-builder.js';
-import { processAudit } from '../ess-experimentation-monthly/handler.js';
+import { processAudit } from './common.js';
 
-const DAYS = 1;
+const DAYS = 30;
 
 let log = console;
 
-export async function essExperimentationDailyAuditRunner(auditUrl, context, site) {
+export async function essExperimentationMonthlyAuditRunner(auditUrl, context, site) {
   log = context.log;
-  log.info(`Received ESS Experimentation Daily audit request for ${auditUrl}`);
+  log.info(`Received ESS Experimentation Monthly audit request for ${auditUrl}`);
   const startTime = process.hrtime();
 
   const auditData = await processAudit(
@@ -34,7 +34,7 @@ export async function essExperimentationDailyAuditRunner(auditUrl, context, site
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`ESS Experimentation Daily Audit completed in ${formattedElapsed} seconds for ${auditUrl}`);
+  log.info(`ESS Experimentation Monthly Audit completed in ${formattedElapsed} seconds for ${auditUrl}`);
 
   return {
     auditResult: auditData,
@@ -43,6 +43,6 @@ export async function essExperimentationDailyAuditRunner(auditUrl, context, site
 }
 
 export default new AuditBuilder()
-  .withRunner(essExperimentationDailyAuditRunner)
+  .withRunner(essExperimentationMonthlyAuditRunner)
   .build();
 /* c8 ignore stop */
