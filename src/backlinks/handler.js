@@ -15,20 +15,43 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
+import { AbortController, AbortError } from '@adobe/fetch';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { fetch } from '../support/utils.js';
+import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
+
+const TIMEOUT = 3000;
 
 export async function filterOutValidBacklinks(backlinks, log) {
+  const fetchWithTimeout = async (url, timeout) => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const id = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, { signal });
+      clearTimeout(id);
+      return response;
+    } catch (error) {
+      if (error instanceof AbortError) {
+        log.warn(`Request to ${url} timed out after ${timeout}ms`);
+        return { ok: false, status: 408 };
+      }
+    } finally {
+      clearTimeout(id);
+    }
+    return null;
+  };
+
   const isStillBrokenBacklink = async (backlink) => {
     try {
-      const response = await fetch(backlink.url_to);
+      const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
       if (!response.ok && response.status !== 404
         && response.status >= 400 && response.status < 500) {
         log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
       }
       return !response.ok;
     } catch (error) {
-      log.error(`Failed to check backlink ${backlink.url_to}: ${error}`);
+      log.error(`Failed to check backlink ${backlink.url_to}: ${error.message}`);
       return true;
     }
   };
@@ -87,9 +110,18 @@ export default async function auditBrokenBacklinks(message, context) {
 
       const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
 
+      const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
+      const keywords = topPages.map(
+        (page) => (
+          { url: page.getURL(), keyword: page.getTopKeyword(), traffic: page.getTraffic() }
+        ),
+      );
+
+      const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+
       auditResult = {
         finalUrl: auditContext.finalUrl,
-        brokenBacklinks,
+        brokenBacklinks: enhancedBacklinks,
         fullAuditRef,
       };
     } catch (e) {
