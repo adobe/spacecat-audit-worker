@@ -1,3 +1,10 @@
+# [1.20.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.19.0...v1.20.0) (2024-06-20)
+
+
+### Features
+
+* opt-out broken backlinks ([#285](https://github.com/adobe/spacecat-audit-worker/issues/285)) ([3fbca1a](https://github.com/adobe/spacecat-audit-worker/commit/3fbca1a764bcc3b3e64f39afb0a58517e731e57e))
+
 # [1.19.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.6...v1.19.0) (2024-06-19)
 
 
