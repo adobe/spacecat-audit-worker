@@ -14,7 +14,7 @@ import { context as h2, h1 } from '@adobe/fetch';
 import { hasText, resolveCustomerSecretsName } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
-import { loadSecrets } from '@adobe/helix-shared-secrets';
+import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 
 URI.preventInvalidHostname = true;
 
@@ -149,15 +149,136 @@ export function getUrlWithoutPath(url) {
  *
  * @param {string} baseURL - The base URL for which the RUM domain key is to be retrieved.
  * @param {UniversalContext} context - Helix Universal Context. See https://github.com/adobe/helix-universal/blob/main/src/adapter.d.ts#L120
- * @param {Object} [opts={}] - Optional parameters for loading secrets. See: https://github.com/adobe/helix-shared/blob/main/packages/helix-shared-secrets/src/secrets-wrapper.d.ts#L18
  * @returns {Promise<string>} - A promise that resolves to the RUM domain key.
  * @throws {Error} Throws an error if no domain key is found for the specified base URL.
  */
-export async function getRUMDomainkey(baseURL, context, opts = {}) {
+export async function getRUMDomainkey(baseURL, context) {
   const customerSecretName = resolveCustomerSecretsName(baseURL, context);
-  const secrets = await loadSecrets(context, { ...opts, name: customerSecretName });
-  if (!hasText(secrets?.RUM_DOMAIN_KEY)) {
-    throw new Error(`No domainkey found for ${baseURL}`);
+  const { runtime } = context;
+
+  try {
+    const client = new SecretsManagerClient({ region: runtime.region });
+    const command = new GetSecretValueCommand({
+      SecretId: customerSecretName,
+    });
+    const response = await client.send(command);
+    return JSON.parse(response.SecretString)?.RUM_DOMAIN_KEY;
+  } catch (error) {
+    throw new Error(`Error retrieving the domain key for ${baseURL}. Error: ${error.message}`);
   }
-  return secrets.RUM_DOMAIN_KEY;
 }
+
+/**
+ * Extracts keywords from a given URL's path segments.
+ *
+ * This function takes a URL as input and processes its pathname to extract
+ * keywords. Each segment of the path is treated as a keyword, and segments
+ * are ranked based on their position in the path. The keyword closer to the
+ * end of the path has a higher rank. File extensions, if present, are removed
+ * from the last segment.
+ *
+ * @param {string} url - The URL from which to extract keywords.
+ * @param {Object} log - The logger object for logging messages.
+ * @returns {Array<{keyword: string, rank: number}>} An array of objects, each containing
+ * the keyword and its rank. The rank is determined by the position of the segment
+ * in the URL path, with higher ranks for segments closer to the end.
+ *
+ * @example
+ * // Returns [{ keyword: 'foo', rank: 2 }, { keyword: 'bar', rank: 1 }]
+ * extractKeywordsFromUrl('http://www.example.com/foo/bar');
+ *
+ * @example
+ * // Returns [{ keyword: 'foo bar', rank: 2 }, { keyword: 'baz', rank: 1 }]
+ * extractKeywordsFromUrl('http://www.example.com/foo-bar/baz.html');
+ */
+export const extractKeywordsFromUrl = (url, log) => {
+  try {
+    const urlObjc = new URL(url);
+    const path = urlObjc.pathname;
+
+    const segments = path.split('/').filter((segment) => segment.length > 0);
+
+    // Remove file extensions from the last segment if present
+    if (segments.length > 0) {
+      const lastSegment = segments[segments.length - 1];
+      segments[segments.length - 1] = lastSegment.replace(/\.[^/.]+$/, '');
+    }
+
+    // Map segments to an array of objects with segment and rank
+    return segments.map((segment, index) => ({
+      keyword: segment.replace(/-/g, ' '),
+      rank: segments.length - index, // Rank: higher for segments closer to the end
+    }));
+  } catch (error) {
+    log.error('Invalid URL:', error);
+    return [];
+  }
+};
+
+/**
+ * Processes broken backlinks to find suggested URLs based on keywords.
+ *
+ * @param {Array} brokenBacklinks - The array of broken backlink objects to process.
+ * @param {Array} keywords - The array of keyword objects to match against.
+ * @param {Object} log - The logger object for logging messages.
+ * @returns {Array} A new array of backlink objects with suggested URLs added.
+ */
+export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
+  const result = [];
+
+  for (const backlink of brokenBacklinks) {
+    log.info(`trying to find redirect for: ${backlink.url_to}`);
+    const extractedKeywords = extractKeywordsFromUrl(backlink.url_to, log);
+
+    const matchedData = [];
+
+    // Match keywords and include rank in the matched data
+    keywords.forEach((entry) => {
+      const matchingKeyword = extractedKeywords.find(
+        (keywordObj) => {
+          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
+          return regex.test(entry.keyword);
+        },
+      );
+      if (matchingKeyword) {
+        matchedData.push({ ...entry, rank: matchingKeyword.rank });
+      }
+    });
+
+    // Try again with split keywords if no matches found
+    if (matchedData.length === 0) {
+      const splitKeywords = extractedKeywords
+        .map((keywordObj) => keywordObj.keyword.split(' ').map((k) => ({ keyword: k, rank: keywordObj.rank })))
+        .flat();
+
+      splitKeywords.forEach((keywordObj) => {
+        keywords.forEach((entry) => {
+          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
+          if (regex.test(entry.keyword)) {
+            matchedData.push({ ...entry, rank: keywordObj.rank });
+          }
+        });
+      });
+    }
+
+    // Sort by rank and then by traffic
+    matchedData.sort((a, b) => {
+      if (b.rank === a.rank) {
+        return b.traffic - a.traffic; // Higher traffic ranks first
+      }
+      return a.rank - b.rank; // Higher rank ranks first (1 is highest)
+    });
+
+    const newBacklink = { ...backlink };
+
+    if (matchedData.length > 0) {
+      log.info(`found ${matchedData.length} keywords for backlink ${backlink.url_to}`);
+      newBacklink.url_suggested = matchedData[0].url;
+    } else {
+      log.info(`could not find suggested URL for backlink ${backlink.url_to} with keywords ${extractedKeywords.map((k) => k.keyword).join(', ')}`);
+    }
+
+    result.push(newBacklink);
+  }
+  return result;
+};

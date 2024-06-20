@@ -1,3 +1,38 @@
+# [1.19.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.6...v1.19.0) (2024-06-19)
+
+
+### Features
+
+* introduce auto suggest for broken backlinks ([#277](https://github.com/adobe/spacecat-audit-worker/issues/277)) ([3170f75](https://github.com/adobe/spacecat-audit-worker/commit/3170f75b36a67170435b8413ab9683ae051a1e11))
+
+## [1.18.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.5...v1.18.6) (2024-06-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.29.2 ([#294](https://github.com/adobe/spacecat-audit-worker/issues/294)) ([bcf43ef](https://github.com/adobe/spacecat-audit-worker/commit/bcf43ef8b698d5a0a2aa37180115a0f92aaea678))
+
+## [1.18.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.4...v1.18.5) (2024-06-18)
+
+
+### Bug Fixes
+
+* customer secret retrieval ([#293](https://github.com/adobe/spacecat-audit-worker/issues/293)) ([0e96e26](https://github.com/adobe/spacecat-audit-worker/commit/0e96e26c983dd3968bc58ec8a3e0e0c3b76ee8b6))
+
+## [1.18.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.3...v1.18.4) (2024-06-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.15.10 ([#292](https://github.com/adobe/spacecat-audit-worker/issues/292)) ([ecf0561](https://github.com/adobe/spacecat-audit-worker/commit/ecf05617f765cb86205544102e6d8fe02fd82ba4))
+
+## [1.18.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.2...v1.18.3) (2024-06-18)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#289](https://github.com/adobe/spacecat-audit-worker/issues/289)) ([9d54932](https://github.com/adobe/spacecat-audit-worker/commit/9d549327c3f5e6e5ffc290028ad69f9ac4c8fecf))
+
 ## [1.18.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.1...v1.18.2) (2024-06-13)
 
 
