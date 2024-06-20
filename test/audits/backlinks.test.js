@@ -152,7 +152,6 @@ describe('Backlinks Tests', function () {
       .delay(10000)
       .reply(200);
   });
-
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
@@ -160,6 +159,7 @@ describe('Backlinks Tests', function () {
 
   it('should filter out excluded URLs and include valid backlinks', async () => {
     const excludedUrl = 'https://foo.com/returns-404';
+    mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
 
     const siteWithExcludedUrls = createSite({
       ...siteData,
@@ -212,6 +212,13 @@ describe('Backlinks Tests', function () {
           url_from: 'https://from.com/from-3',
           url_to: 'https://foo.com/returns-429',
           domain_traffic: 1000,
+          url_suggested: 'https://bar.foo.com/bar.html',
+        },
+        {
+          title: 'backlink that times out',
+          url_from: 'https://from.com/from-4',
+          url_to: 'https://foo.com/times-out',
+          domain_traffic: 500,
         },
         {
           title: 'backlink that is not excluded',
