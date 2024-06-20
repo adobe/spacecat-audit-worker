@@ -1,3 +1,10 @@
+# [1.21.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.20.0...v1.21.0) (2024-06-20)
+
+
+### Features
+
+* experimentation-ess  audit ([#286](https://github.com/adobe/spacecat-audit-worker/issues/286)) ([0b5e378](https://github.com/adobe/spacecat-audit-worker/commit/0b5e37839f6ec34b8764687bd0560e27585c03f0))
+
 # [1.20.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.19.0...v1.20.0) (2024-06-20)
 
 
