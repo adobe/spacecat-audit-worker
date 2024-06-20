@@ -286,11 +286,11 @@ async function getExperimentMetaDataFromExperimentPage(url, id) {
         EXPERIMENT_PLUGIN_OPTIONS,
         doc,
       ) : await getConfigForFullExperiment(experimentId, url, EXPERIMENT_PLUGIN_OPTIONS, doc);
-    const experimentStartDate = getMetadata('experiment-start-date', doc);
-    const experimentEndDate = getMetadata('experiment-end-date', doc);
-    const conversionEventName = getMetadata('experiment-conversion-event-name', doc);
-    const conversionEventValue = getMetadata('experiment-conversion-event-value', doc);
-    const experimentType = getMetadata('experiment-type', doc);
+    const experimentStartDate = getMetadata('experiment-start-date', doc) || '';
+    const experimentEndDate = getMetadata('experiment-end-date', doc) || '';
+    const conversionEventName = getMetadata('experiment-conversion-event-name', doc) || '';
+    const conversionEventValue = getMetadata('experiment-conversion-event-value', doc) || '';
+    const experimentType = getMetadata('experiment-type', doc) || '';
     const updatedVariants = [];
     for (const variant of Object.keys(experimentConfig.variants)) {
       const variantConfig = experimentConfig.variants[variant];
