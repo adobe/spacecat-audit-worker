@@ -108,7 +108,12 @@ export default async function auditBrokenBacklinks(message, context) {
       } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
       log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
 
-      const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
+      const excludedURLs = auditConfig.getAuditTypeConfig(type)?.getExcludedURLs();
+      const filteredBacklinks = result?.backlinks?.filter(
+        (backlink) => !excludedURLs.includes(backlink.url_to),
+      );
+
+      const brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
 
       const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
       const keywords = topPages.map(
@@ -142,13 +147,13 @@ export default async function auditBrokenBacklinks(message, context) {
     };
 
     await dataAccess.addAudit(auditData);
-
-    await sqs.sendMessage(queueUrl, {
+    const data = {
       type,
       url: site.getBaseURL(),
       auditContext,
       auditResult,
-    });
+    };
+    await sqs.sendMessage(queueUrl, data);
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
