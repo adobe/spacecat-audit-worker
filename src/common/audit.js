@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL, isAuditsDisabled } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
@@ -78,7 +78,7 @@ export class Audit {
   }
 
   async run(message, context) {
-    const { log } = context;
+    const { log, dataAccess } = context;
     const {
       type,
       auditContext = {},
@@ -87,13 +87,16 @@ export class Audit {
 
     try {
       const site = await this.siteProvider(siteId, context);
-      const org = await this.orgProvider(site.getOrganizationId(), context);
-
-      if (isAuditsDisabled(site, org, type)) {
+      // const org = await this.orgProvider(site.getOrganizationId(), context);
+      const configuration = await dataAccess.getConfiguration();
+      if (!configuration.isHandlerEnabledForSite(type, site)) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();
       }
-
+      /* if (isAuditsDisabled(site, org, type)) {
+        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
+        return ok();
+      } */
       const finalUrl = await this.urlResolver(site);
 
       // run the audit business logic
@@ -101,7 +104,6 @@ export class Audit {
         auditResult,
         fullAuditRef,
       } = await this.runner(finalUrl, context, site);
-
       const auditData = {
         siteId: site.getId(),
         isLive: site.isLive(),
@@ -110,9 +112,7 @@ export class Audit {
         auditResult,
         fullAuditRef,
       };
-
       await this.persister(auditData, context);
-
       auditContext.finalUrl = finalUrl;
       auditContext.fullAuditRef = fullAuditRef;
 

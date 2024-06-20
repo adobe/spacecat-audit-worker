@@ -51,25 +51,23 @@ export default async function auditBrokenBacklinks(message, context) {
     if (!site) {
       return notFound('Site not found');
     }
-
     if (!site.isLive()) {
       log.info(`Site ${siteId} is not live`);
       return ok();
     }
-
-    const auditConfig = site.getAuditConfig();
-    if (auditConfig.auditsDisabled()) {
-      log.info(`Audits disabled for site ${siteId}`);
-      return ok();
-    }
-
-    if (auditConfig.getAuditTypeConfig(type)?.disabled()) {
+    const configuration = await dataAccess.getConfiguration();
+    // const isAuditEnabled = configuration.isHandlerEnabledForSite(type, site);
+    // const auditConfig = site.getAuditConfig();
+    if (!configuration.isHandlerEnabledForSite(type, site)) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
       return ok();
     }
+    /* if (auditConfig.getAuditTypeConfig(type)?.disabled()) {
+      log.info(`Audit type ${type} disabled for site ${siteId}`);
+      return ok();
+    } */
 
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-
     try {
       auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
     } catch (e) {

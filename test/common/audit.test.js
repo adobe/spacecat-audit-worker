@@ -18,6 +18,7 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
+import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
 import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
   defaultMessageSender, defaultOrgProvider,
@@ -45,6 +46,7 @@ describe('Audit tests', () => {
   let context;
   let site;
   let org;
+  let configuration;
 
   beforeEach('setup', () => {
     context = new MockContextBuilder()
@@ -53,6 +55,22 @@ describe('Audit tests', () => {
 
     org = createOrganization({ name: 'some-org' });
     site = createSite({ baseURL, organizationId: org.getId() });
+    const configurationData = {
+      version: '1.0',
+      queues: {},
+      handlers: {
+        dummy: {
+          enabled: {
+            sites: ['site-id', 'space.cat', site.getId()],
+            orgs: ['some-org', 'org2', org.getId()],
+          },
+          enabledByDefault: false,
+          dependencies: [],
+        },
+      },
+      jobs: [],
+    };
+    configuration = createConfiguration(configurationData);
   });
 
   before('setup', function () {
@@ -175,11 +193,14 @@ describe('Audit tests', () => {
     });
 
     it('audit run skips when audit is disabled', async () => {
-      org.setAllAuditsDisabled(true);
+      // org.setAllAuditsDisabled(true);
+      configuration.disableHandlerForSite('dummy', { getId: () => site.getId(), getOrganizationId: () => org.getId() });
+      configuration.disableHandlerForOrg('dummy', org);
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
       context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
+      context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
 
       const audit = new AuditBuilder()
         .withRunner(() => 123)
@@ -196,6 +217,7 @@ describe('Audit tests', () => {
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
       context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
+      context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
       context.dataAccess.addAudit.resolves();
       context.sqs.sendMessage.resolves();
 
@@ -258,6 +280,7 @@ describe('Audit tests', () => {
     context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
     context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
     context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
+    context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
     context.dataAccess.addAudit.resolves();
     context.sqs.sendMessage.resolves();
 
