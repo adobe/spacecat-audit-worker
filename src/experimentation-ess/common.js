@@ -303,6 +303,7 @@ async function getExperimentMetaDataFromExperimentPage(url, id) {
     }
     data = {
       id,
+      label: experimentConfig.label || '',
       type: experimentType,
       url,
       status: experimentConfig.status,
