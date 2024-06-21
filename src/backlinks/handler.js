@@ -69,32 +69,25 @@ export default async function auditBrokenBacklinks(message, context) {
 
   try {
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
-    console.log(`Received ${type} audit request for siteId: ${siteId}`);
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    console.log(`Site: ${!site}`);
     if (!site) {
-      console.log('Site not found');
       return notFound('Site not found');
     }
-    console.log(`Site.islive: ${!site.isLive()}`);
     if (!site.isLive()) {
       log.info(`Site ${siteId} is not live`);
       return ok();
     }
     const configuration = await dataAccess.getConfiguration();
-    console.log(`Configuration: ${JSON.stringify(configuration)}`);
     // const isAuditEnabled = configuration.isHandlerEnabledForSite(type, site);
     // const auditConfig = site.getAuditConfig();
     if (!configuration.isHandlerEnabledForSite(type, site)) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
       return ok();
     }
-    console.log('Here1');
     /* if (auditConfig.getAuditTypeConfig(type)?.disabled()) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
       return ok();
     } */
-
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     try {
       auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
@@ -102,7 +95,6 @@ export default async function auditBrokenBacklinks(message, context) {
       log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
       return internalServerError(`Internal server error: ${e.message}`);
     }
-    console.log('Here2');
     let auditResult;
     try {
       const {
@@ -110,21 +102,20 @@ export default async function auditBrokenBacklinks(message, context) {
         fullAuditRef,
       } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
       log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
-      console.log(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
-      const brokenBacklinks = await filterOutValidBacklinks(result?.backlinks, log);
-      console.log(`${JSON.stringify(brokenBacklinks)}`);
-      console.log('Here3');
+      const excludedURLs = site.getConfig().getExcludedURLs(type);
+      // const excludedURLs = auditConfig.getAuditTypeConfig(type)?.getExcludedURLs();
+      const filteredBacklinks = result?.backlinks?.filter(
+        (backlink) => !excludedURLs?.includes(backlink.url_to),
+      );
+      const brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
+
       const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-      console.log(`Top pages: ${JSON.stringify(topPages)}`);
       const keywords = topPages.map(
         (page) => (
           { url: page.getURL(), keyword: page.getTopKeyword(), traffic: page.getTraffic() }
         ),
       );
-      console.log('Here3.1');
       const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-      console.log('Here3.2');
-      console.log(`auditContext.finalUrl: ${auditContext.finalUrl}`);
       auditResult = {
         finalUrl: auditContext.finalUrl,
         brokenBacklinks: enhancedBacklinks,
@@ -137,7 +128,6 @@ export default async function auditBrokenBacklinks(message, context) {
         error: `${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error`,
       };
     }
-    console.log('Here4');
     const auditData = {
       siteId: site.getId(),
       isLive: site.isLive(),
@@ -148,14 +138,14 @@ export default async function auditBrokenBacklinks(message, context) {
     };
 
     await dataAccess.addAudit(auditData);
-
-    await sqs.sendMessage(queueUrl, {
+    const data = {
       type,
       url: site.getBaseURL(),
       auditContext,
       auditResult,
-    });
-    console.log('Here5');
+    };
+    await sqs.sendMessage(queueUrl, data);
+
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
   } catch (e) {

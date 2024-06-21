@@ -1,3 +1,24 @@
+## [1.21.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.0...v1.21.1) (2024-06-20)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#296](https://github.com/adobe/spacecat-audit-worker/issues/296)) ([3bed8d7](https://github.com/adobe/spacecat-audit-worker/commit/3bed8d7384aa1dbef1a57ff001f3c4852b9628f4))
+
+# [1.21.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.20.0...v1.21.0) (2024-06-20)
+
+
+### Features
+
+* experimentation-ess  audit ([#286](https://github.com/adobe/spacecat-audit-worker/issues/286)) ([0b5e378](https://github.com/adobe/spacecat-audit-worker/commit/0b5e37839f6ec34b8764687bd0560e27585c03f0))
+
+# [1.20.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.19.0...v1.20.0) (2024-06-20)
+
+
+### Features
+
+* opt-out broken backlinks ([#285](https://github.com/adobe/spacecat-audit-worker/issues/285)) ([3fbca1a](https://github.com/adobe/spacecat-audit-worker/commit/3fbca1a764bcc3b3e64f39afb0a58517e731e57e))
+
 # [1.19.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.18.6...v1.19.0) (2024-06-19)
 
 

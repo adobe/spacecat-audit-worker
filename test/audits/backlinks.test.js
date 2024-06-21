@@ -129,6 +129,76 @@ describe('Backlinks Tests', function () {
     ],
   };
 
+  const excludedUrl = 'https://foo.com/returns-404';
+
+  const siteWithExcludedUrls = createSite({
+    ...siteData,
+    config: {
+      slack: {
+        workspace: 'my-workspace',
+        channel: 'general',
+        invitedUserCount: 10,
+      },
+      handlers: {
+        404: {
+          mentions: {
+            slack: ['user1', 'user2'],
+            email: ['user1@example.com'],
+          },
+          excludedURLs: [excludedUrl],
+        },
+        'broken-backlinks': {
+          mentions: {
+            slack: ['user3'],
+            email: ['user2@example.com'],
+          },
+          excludedURLs: [excludedUrl],
+        },
+      },
+    },
+  });
+
+  const expectedAuditResult = {
+    finalUrl: 'https://bar.foo.com',
+    brokenBacklinks: [
+      {
+        title: 'backlink that redirects to www and throw connection error',
+        url_from: 'https://from.com/from-2',
+        url_to: 'https://foo.com/redirects-throws-error',
+        domain_traffic: 2000,
+      },
+      {
+        title: 'backlink that returns 429',
+        url_from: 'https://from.com/from-3',
+        url_to: 'https://foo.com/returns-429',
+        domain_traffic: 1000,
+        url_suggested: 'https://bar.foo.com/bar.html',
+      },
+      {
+        title: 'backlink that times out',
+        url_from: 'https://from.com/from-4',
+        url_to: 'https://foo.com/times-out',
+        domain_traffic: 500,
+      },
+      {
+        title: 'backlink that is not excluded',
+        url_from: 'https://from.com/from-not-excluded',
+        url_to: 'https://foo.com/not-excluded',
+        domain_traffic: 5000,
+      },
+    ],
+    fullAuditRef: sinon.match.string,
+  };
+
+  const backlinksNotExcluded = [
+    {
+      title: 'backlink that is not excluded',
+      url_from: 'https://from.com/from-not-excluded',
+      url_to: 'https://foo.com/not-excluded',
+      domain_traffic: 5000,
+    },
+  ];
+
   beforeEach(() => {
     mockDataAccess = {
       getSiteByID: sinon.stub(),
@@ -182,10 +252,42 @@ describe('Backlinks Tests', function () {
       .delay(10000)
       .reply(200);
   });
-
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
+  });
+
+  it('should filter out excluded URLs and include valid backlinks', async () => {
+    mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(siteWithExcludedUrls);
+    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+
+    nock(siteWithExcludedUrls.getBaseURL())
+      .get(/.*/)
+      .reply(200);
+
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(200, { backlinks: auditResult.backlinks.concat(backlinksNotExcluded) });
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(204);
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been.calledWith(
+      context.env.AUDIT_RESULTS_QUEUE_URL,
+      sinon.match({
+        type: message.type,
+        url: siteWithExcludedUrls.getBaseURL(),
+        auditContext: sinon.match.any,
+        auditResult: sinon.match({
+          finalUrl: 'bar.foo.com',
+          brokenBacklinks: expectedAuditResult.brokenBacklinks,
+          fullAuditRef: sinon.match.string,
+        }),
+      }),
+    );
   });
 
   it('should successfully perform an audit to detect broken backlinks, save and send the proper audit result', async () => {
