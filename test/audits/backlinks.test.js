@@ -227,6 +227,7 @@ describe('Backlinks Tests', function () {
   it('should successfully perform an audit to detect broken backlinks based on keywords from top pages', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
     mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
+    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
 
     nock(site.getBaseURL())
       .get(/.*/)
