@@ -216,6 +216,117 @@ export const extractKeywordsFromUrl = (url, log) => {
 };
 
 /**
+ * Computes the Levenshtein distance between two strings.
+ *
+ * @param {string} str1 - The first string.
+ * @param {string} str2 - The second string.
+ * @returns {number} The Levenshtein distance between the two strings.
+ */
+const levenshteinDistance = (str1, str2) => {
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const dp = Array.from({ length: len1 + 1 }, () => Array(len2 + 1).fill(0));
+
+  for (let i = 0; i <= len1; i += 1) {
+    dp[i][0] = i;
+  }
+  for (let j = 0; j <= len2; j += 1) {
+    dp[0][j] = j;
+  }
+  for (let i = 1; i <= len1; i += 1) {
+    for (let j = 1; j <= len2; j += 1) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = Math.min(
+          dp[i - 1][j] + 1, // deletion
+          dp[i][j - 1] + 1, // insertion
+          dp[i - 1][j - 1] + 1, // substitution
+        );
+      }
+    }
+  }
+  return dp[len1][len2];
+};
+
+// export const findBestMatch = (brokenUrl, sitemapPaths) => {
+//   const brokenKeywords = extractKeywordsFromUrl(brokenUrl, console);
+//   // let bestMatch = null;
+//   // let smallestDistance = Infinity;
+//
+//   sitemapPaths.forEach((page) => {
+//     const path = new URL(page);
+//     const sitemapKeyword = extractKeywordsFromUrl(path, console);
+//     // const distance = levenshteinDistance(brokenPathname, path);
+//     // if (distance < smallestDistance) {
+//     //   smallestDistance = distance;
+//     //   bestMatch = page;
+//     // }
+//     const splitKeywords = sitemapKeyword
+//           .map((keywordObj) => keywordObj.keyword.split(' ')
+//           .map((k) => ({ keyword: k, rank: keywordObj.rank })))
+//           .flat();
+//     brokenKeywords.forEach((word) => {
+//       splitKeywords.forEach((sitemapWord) => {
+//         if (sitemapWord.keyword.includes(word.keyword)) {
+//           bestMatch = sitemapWord.keyword;
+//         }
+//       });
+//     });
+//   });
+
+/**
+ * Computes the Longest Common Subsequence (LCS) length between two arrays of tokens.
+ *
+ * @param {Array<string>} str1 - The first array of tokens.
+ * @param {Array<string>} str2 - The second array of tokens.
+ * @returns {number} The length of the longest common subsequence between the two arrays.
+ *
+ * @complexity
+ * Time complexity: O(len1 * len2)
+ * Space complexity: O(len1 * len2)
+ */
+export const lcs = (str1, str2) => {
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const dp = Array.from({ length: len1 + 1 }, () => Array(len2 + 1).fill(0));
+
+  for (let i = 1; i <= len1; i += 1) {
+    for (let j = 1; j <= len2; j += 1) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+  return dp[len1][len2];
+};
+
+/**
+ * Finds the best matching URL based on Levenshtein distance.
+ *
+ * @param {string} brokenPathname - The broken URL pathname.
+ * @param {Array<{ url: string }>} topPages - Array of objects containing top page URLs.
+ * @returns {string} The best matching URL.
+ */
+const findBestMatch = (brokenPathname, topPages) => {
+  let bestMatch = null;
+  let smallestDistance = Infinity;
+
+  topPages.forEach((page) => {
+    const pagePathname = new URL(page).pathname;
+    const distance = levenshteinDistance(brokenPathname, pagePathname);
+    if (distance < smallestDistance) {
+      smallestDistance = distance;
+      bestMatch = page;
+    }
+  });
+
+  return bestMatch;
+};
+
+/**
  * Processes broken backlinks to find suggested URLs based on keywords.
  *
  * @param {Array} brokenBacklinks - The array of broken backlink objects to process.
@@ -223,60 +334,67 @@ export const extractKeywordsFromUrl = (url, log) => {
  * @param {Object} log - The logger object for logging messages.
  * @returns {Array} A new array of backlink objects with suggested URLs added.
  */
-export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
+export const enhanceBacklinksWithFixes = async (brokenBacklinks, sitemap, log) => {
   const result = [];
+  const combinedPaths = Object.values(sitemap.paths).reduce((acc, curr) => acc.concat(curr), []);
 
   for (const backlink of brokenBacklinks) {
     log.info(`trying to find redirect for: ${backlink.url_to}`);
-    const extractedKeywords = extractKeywordsFromUrl(backlink.url_to, log);
-
-    const matchedData = [];
-
-    // Match keywords and include rank in the matched data
-    keywords.forEach((entry) => {
-      const matchingKeyword = extractedKeywords.find(
-        (keywordObj) => {
-          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          return regex.test(entry.keyword);
-        },
-      );
-      if (matchingKeyword) {
-        matchedData.push({ ...entry, rank: matchingKeyword.rank });
-      }
-    });
-
-    // Try again with split keywords if no matches found
-    if (matchedData.length === 0) {
-      const splitKeywords = extractedKeywords
-        .map((keywordObj) => keywordObj.keyword.split(' ').map((k) => ({ keyword: k, rank: keywordObj.rank })))
-        .flat();
-
-      splitKeywords.forEach((keywordObj) => {
-        keywords.forEach((entry) => {
-          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          if (regex.test(entry.keyword)) {
-            matchedData.push({ ...entry, rank: keywordObj.rank });
-          }
-        });
-      });
-    }
-
-    // Sort by rank and then by traffic
-    matchedData.sort((a, b) => {
-      if (b.rank === a.rank) {
-        return b.traffic - a.traffic; // Higher traffic ranks first
-      }
-      return a.rank - b.rank; // Higher rank ranks first (1 is highest)
-    });
+    const brokenUrlPath = new URL(backlink.url_to).pathname;
+    const bestMatch = findBestMatch(brokenUrlPath, combinedPaths);
+    log.info(`found best match: ${bestMatch}`);
+    // const extractedKeywords = extractKeywordsFromUrl(backlink.url_to, log);
+    //
+    // const matchedData = [];
+    //
+    // // Match keywords and include rank in the matched data
+    // keywords.forEach((entry) => {
+    //   const matchingKeyword = extractedKeywords.find(
+    //     (keywordObj) => {
+    //       const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
+    //       return regex.test(entry.keyword);
+    //     },
+    //   );
+    //   if (matchingKeyword) {
+    //     matchedData.push({ ...entry, rank: matchingKeyword.rank });
+    //   }
+    // });
+    //
+    // // Try again with split keywords if no matches found
+    // if (matchedData.length === 0) {
+    //   const splitKeywords = extractedKeywords
+    //     .map((keywordObj) => keywordObj.keyword.split(' ')
+    //     .map((k) => ({ keyword: k, rank: keywordObj.rank })))
+    //     .flat();
+    //
+    //   splitKeywords.forEach((keywordObj) => {
+    //     keywords.forEach((entry) => {
+    //       const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
+    //       if (regex.test(entry.keyword)) {
+    //         matchedData.push({ ...entry, rank: keywordObj.rank });
+    //       }
+    //     });
+    //   });
+    // }
+    //
+    // // Sort by rank and then by traffic
+    // matchedData.sort((a, b) => {
+    //   if (b.rank === a.rank) {
+    //     return b.traffic - a.traffic; // Higher traffic ranks first
+    //   }
+    //   return a.rank - b.rank; // Higher rank ranks first (1 is highest)
+    // });
 
     const newBacklink = { ...backlink };
+    newBacklink.url_suggested = bestMatch;
 
-    if (matchedData.length > 0) {
-      log.info(`found ${matchedData.length} keywords for backlink ${backlink.url_to}`);
-      newBacklink.url_suggested = matchedData[0].url;
-    } else {
-      log.info(`could not find suggested URL for backlink ${backlink.url_to} with keywords ${extractedKeywords.map((k) => k.keyword).join(', ')}`);
-    }
+    // if (matchedData.length > 0) {
+    //   log.info(`found ${matchedData.length} keywords for backlink ${backlink.url_to}`);
+    //   newBacklink.url_suggested = matchedData[0].url;
+    // } else {
+    //   log.info(`could not find suggested URL for backlink ${backlink.url_to}
+    //   with keywords ${extractedKeywords.map((k) => k.keyword).join(', ')}`);
+    // }
 
     result.push(newBacklink);
   }
