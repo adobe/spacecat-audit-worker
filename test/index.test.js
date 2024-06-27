@@ -61,7 +61,7 @@ describe('Index Tests', () => {
     const resp = await main(request, context);
 
     expect(resp.status).to.equal(400);
-    expect(resp.headers.plain()['x-error']).to.equal('Event does not contain a valid message body');
+    expect(resp.headers.get('x-error')).to.equal('Event does not contain a valid message body');
   });
 
   it('rejects when a message received with unknown type audit', async () => {
