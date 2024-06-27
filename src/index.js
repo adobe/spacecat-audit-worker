@@ -28,6 +28,7 @@ import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
 import essExperimentationMonthly from './experimentation-ess/monthly.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
+import mismatch from './mismatch/handler.js';
 
 const HANDLERS = {
   apex,
@@ -41,6 +42,7 @@ const HANDLERS = {
   conversion,
   'experimentation-ess-monthly': essExperimentationMonthly,
   'experimentation-ess-daily': essExperimentationDaily,
+  mismatch,
 };
 
 function getElapsedSeconds(startTime) {
