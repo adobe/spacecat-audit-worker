@@ -1,3 +1,10 @@
+## [1.21.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.3...v1.21.4) (2024-06-27)
+
+
+### Bug Fixes
+
+* use shared sqsEventAdapter ([#304](https://github.com/adobe/spacecat-audit-worker/issues/304)) ([85c8320](https://github.com/adobe/spacecat-audit-worker/commit/85c8320ff1a600bbf2a618201dba34e0db3460d1))
+
 ## [1.21.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.2...v1.21.3) (2024-06-27)
 
 
