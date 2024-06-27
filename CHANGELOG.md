@@ -1,3 +1,10 @@
+## [1.21.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.2...v1.21.3) (2024-06-27)
+
+
+### Bug Fixes
+
+* Aggregation logic for the variants is wrong in the report ([#302](https://github.com/adobe/spacecat-audit-worker/issues/302)) ([a678f29](https://github.com/adobe/spacecat-audit-worker/commit/a678f29693ce516378c12a30178e6ee0c90948ef))
+
 ## [1.21.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.1...v1.21.2) (2024-06-22)
 
 
