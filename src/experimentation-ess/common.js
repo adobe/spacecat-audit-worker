@@ -372,7 +372,7 @@ async function convertToExperimentsSchema(experimentInsights) {
       for (const expVariant of exp.variants) {
         const variantName = expVariant.name;
         const variant = getObjectByProperty(variants, 'name', variantName);
-        const { views } = expVariant;
+        const { views, interactionsCount } = expVariant;
         if (variant && (variant.views >= expVariant.views)) {
           // we already have this variant, and it has more views than the new one, so we skip it
           // eslint-disable-next-line no-continue
@@ -399,6 +399,7 @@ async function convertToExperimentsSchema(experimentInsights) {
           variants.push({
             name: variantName,
             views,
+            interactionsCount,
             url,
             metrics,
           });
@@ -406,6 +407,7 @@ async function convertToExperimentsSchema(experimentInsights) {
           // override the variant with the new data
           variant.metrics = metrics;
           variant.views = views;
+          variant.interactionsCount = interactionsCount;
           variant.url = url;
         }
       }
