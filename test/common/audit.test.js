@@ -193,7 +193,6 @@ describe('Audit tests', () => {
     });
 
     it('audit run skips when audit is disabled', async () => {
-      // org.setAllAuditsDisabled(true);
       configuration.disableHandlerForSite('dummy', { getId: () => site.getId(), getOrganizationId: () => org.getId() });
       configuration.disableHandlerForOrg('dummy', org);
       const queueUrl = 'some-queue-url';

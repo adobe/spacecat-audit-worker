@@ -63,8 +63,6 @@ describe('Backlinks Tests', function () {
 
   const configuration = createConfiguration(configurationData);
 
-  // site.updateAuditTypeConfig('broken-backlinks', { disabled: false });
-
   const siteTopPage = createSiteTopPage({
     siteId: site.getId(),
     url: `${site.getBaseURL()}/foo.html`,
@@ -90,7 +88,6 @@ describe('Backlinks Tests', function () {
     baseURL: 'https://foo.com',
     isLive: true,
   });
-  // site2.updateAuditTypeConfig('broken-backlinks', { disabled: false });
 
   const site3 = createSite({
     id: 'site3',

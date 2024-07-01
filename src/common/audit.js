@@ -87,16 +87,11 @@ export class Audit {
 
     try {
       const site = await this.siteProvider(siteId, context);
-      // const org = await this.orgProvider(site.getOrganizationId(), context);
       const configuration = await dataAccess.getConfiguration();
       if (!configuration.isHandlerEnabledForSite(type, site)) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();
       }
-      /* if (isAuditsDisabled(site, org, type)) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
-        return ok();
-      } */
       const finalUrl = await this.urlResolver(site);
 
       // run the audit business logic

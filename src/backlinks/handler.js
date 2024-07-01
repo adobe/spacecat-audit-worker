@@ -78,16 +78,10 @@ export default async function auditBrokenBacklinks(message, context) {
       return ok();
     }
     const configuration = await dataAccess.getConfiguration();
-    // const isAuditEnabled = configuration.isHandlerEnabledForSite(type, site);
-    // const auditConfig = site.getAuditConfig();
     if (!configuration.isHandlerEnabledForSite(type, site)) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
       return ok();
     }
-    /* if (auditConfig.getAuditTypeConfig(type)?.disabled()) {
-      log.info(`Audit type ${type} disabled for site ${siteId}`);
-      return ok();
-    } */
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     try {
       auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
