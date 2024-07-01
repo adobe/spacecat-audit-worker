@@ -276,7 +276,7 @@ async function getExperimentMetaDataFromExperimentPage(url, id) {
       return data;
     }
     const variants = getMetadata('instant-experiment', doc)
-    || getMetadata(`${EXPERIMENT_PLUGIN_OPTIONS.experimentsMetaTag}-variants`, doc);
+      || getMetadata(`${EXPERIMENT_PLUGIN_OPTIONS.experimentsMetaTag}-variants`, doc);
 
     const experimentConfig = variants
       ? await getConfigForInstantExperiment(
@@ -371,10 +371,14 @@ async function convertToExperimentsSchema(experimentInsights) {
       const variants = experiment?.variants || [];
       for (const expVariant of exp.variants) {
         const variantName = expVariant.name;
-        // eslint-disable-next-line
         const variant = getObjectByProperty(variants, 'name', variantName);
-        const views = variant ? (variant.views || 0) + expVariant.views : expVariant.views;
-        const metrics = variant?.metrics || [];
+        const { views } = expVariant;
+        if (variant && (variant.views >= expVariant.views)) {
+          // we already have this variant, and it has more views than the new one, so we skip it
+          // eslint-disable-next-line no-continue
+          continue;
+        }
+        const metrics = [];
         for (const metricCheckPoint of METRIC_CHECKPOINTS) {
           for (const selector of Object.keys(expVariant[metricCheckPoint])) {
             const existingMetric = metrics.find(
@@ -398,9 +402,11 @@ async function convertToExperimentsSchema(experimentInsights) {
             url,
             metrics,
           });
-        } else if (variant && !variant.metrics) {
+        } else {
+          // override the variant with the new data
           variant.metrics = metrics;
           variant.views = views;
+          variant.url = url;
         }
       }
       const existingExperiment = getObjectByProperty(experiments, 'id', id);
@@ -421,6 +427,7 @@ async function convertToExperimentsSchema(experimentInsights) {
 }
 
 async function processExperimentRUMData(experimentInsights) {
+  log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
   const experimentData = await convertToExperimentsSchema(experimentInsights);
   for (const experiment of experimentData) {
     addPValues(experiment);
