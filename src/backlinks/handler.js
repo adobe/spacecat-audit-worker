@@ -75,6 +75,7 @@ async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks) {
     const { Payload, LogResult } = await client.send(command);
     const result = Buffer.from(Payload).toString();
     console.log(`Result: ${JSON.stringify(result)}`);
+    console.log(`LogResult: ${JSON.stringify(LogResult)}`);
     const logs = Buffer.from(LogResult, 'base64').toString();
 
     return { result, logs };
@@ -86,6 +87,7 @@ async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks) {
   };
 
   try {
+    console.log(`Calling genai with payload: ${JSON.stringify(payload)}`);
     const { result } = await invoke('spacecat-services--genai', payload);
 
     return result;
