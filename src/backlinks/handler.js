@@ -91,10 +91,7 @@ async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
 
 export default async function auditBrokenBacklinks(message, context) {
   const { type, url: siteId, auditContext = {} } = message;
-  const { dataAccess, log, sqs } = context;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
+  const { dataAccess, log } = context;
 
   try {
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
@@ -183,15 +180,16 @@ export default async function auditBrokenBacklinks(message, context) {
       auditResult,
     };
 
-    await dataAccess.addAudit(auditData);
-    const data = {
-      type,
-      url: site.getBaseURL(),
-      auditContext,
-      auditResult,
-    };
-    await sqs.sendMessage(queueUrl, data);
-
+    // await dataAccess.addAudit(auditData);
+    // const data = {
+    //   type,
+    //   url: site.getBaseURL(),
+    //   auditContext,
+    //   auditResult,
+    // };
+    // await sqs.sendMessage(queueUrl, data);
+    //
+    log.info(`auditData ${JSON.stringify(auditData)}`);
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
   } catch (e) {
