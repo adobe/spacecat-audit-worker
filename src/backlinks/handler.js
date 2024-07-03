@@ -19,7 +19,6 @@ import { AbortController, AbortError } from '@adobe/fetch';
 import { InvokeCommand, LambdaClient, LogType } from '@aws-sdk/client-lambda';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 // import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
-import { findSitemap } from '../sitemap/handler.js';
 
 const TIMEOUT = 3000;
 
@@ -62,7 +61,7 @@ export async function filterOutValidBacklinks(backlinks, log) {
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
-async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
+async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks) {
   const invoke = async (funcName, payload) => {
     const client = new LambdaClient({
       region: 'us-east-1',
@@ -84,12 +83,16 @@ async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
   const payload = {
     siteId,
     brokenBacklinks,
-    sitemapUrls,
   };
 
-  const { result } = await invoke('spacecat-services--genai', payload);
+  try {
+    const { result } = await invoke('spacecat-services--genai', payload);
 
-  return result;
+    return result;
+  } catch (error) {
+    console.error(error);
+    return { error };
+  }
 }
 
 export default async function auditBrokenBacklinks(message, context) {
@@ -129,11 +132,6 @@ export default async function auditBrokenBacklinks(message, context) {
       return internalServerError(`Internal server error: ${e.message}`);
     }
 
-    const baseUrl = site.getBaseURL();
-    const { paths } = await findSitemap(baseUrl);
-
-    log.info(`Found ${paths.length} sitemaps for siteId: ${siteId} and url ${baseUrl}`);
-
     let auditResult;
     try {
       const {
@@ -157,7 +155,7 @@ export default async function auditBrokenBacklinks(message, context) {
       // );
 
       // const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-      const enhancedBacklinks = enhanceBacklinksWithGenAI(siteId, brokenBacklinks, paths);
+      const enhancedBacklinks = enhanceBacklinksWithGenAI(siteId, brokenBacklinks);
 
       log.info(`Enhanced backlinks: ${JSON.stringify(enhancedBacklinks)}`);
 
