@@ -82,6 +82,7 @@ async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks) {
   };
 
   const payload = {
+    type: 'broken-backlinks',
     siteId,
     brokenBacklinks,
   };
