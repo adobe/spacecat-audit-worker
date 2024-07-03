@@ -64,7 +64,9 @@ export async function filterOutValidBacklinks(backlinks, log) {
 
 async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
   const invoke = async (funcName, payload) => {
-    const client = new LambdaClient({});
+    const client = new LambdaClient({
+      region: 'us-east-1',
+    });
     const command = new InvokeCommand({
       FunctionName: funcName,
       Payload: JSON.stringify(payload),
@@ -73,6 +75,7 @@ async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
 
     const { Payload, LogResult } = await client.send(command);
     const result = Buffer.from(Payload).toString();
+    console.log(`Result: ${JSON.stringify(result)}`);
     const logs = Buffer.from(LogResult, 'base64').toString();
 
     return { result, logs };
