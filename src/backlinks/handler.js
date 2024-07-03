@@ -157,7 +157,7 @@ export default async function auditBrokenBacklinks(message, context) {
       // );
 
       // const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-      const enhancedBacklinks = enhanceBacklinksWithGenAI(siteId, brokenBacklinks);
+      const enhancedBacklinks = await enhanceBacklinksWithGenAI(siteId, brokenBacklinks);
 
       log.info(`Enhanced backlinks: ${JSON.stringify(enhancedBacklinks)}`);
 
