@@ -62,6 +62,7 @@
     "@adobe/spacecat-shared-rum-api-client": "2.1.0",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.16.0",
+    "@aws-sdk/client-lambda": "^3.609.0",
     "@aws-sdk/client-secrets-manager": "3.599.0",
     "@aws-sdk/client-sqs": "3.598.0",
     "diff": "5.2.0",

@@ -1,2 +1,4 @@
 .vscode/*
 coverage/*
+test/support/utils.test.js
+src/support/utils.js

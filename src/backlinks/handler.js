@@ -16,8 +16,10 @@ import {
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
+import { InvokeCommand, LambdaClient, LogType } from '@aws-sdk/client-lambda';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
+// import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
+import { findSitemap } from '../sitemap/handler.js';
 
 const TIMEOUT = 3000;
 
@@ -60,6 +62,33 @@ export async function filterOutValidBacklinks(backlinks, log) {
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
+async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
+  const invoke = async (funcName, payload) => {
+    const client = new LambdaClient({});
+    const command = new InvokeCommand({
+      FunctionName: funcName,
+      Payload: JSON.stringify(payload),
+      LogType: LogType.Tail,
+    });
+
+    const { Payload, LogResult } = await client.send(command);
+    const result = Buffer.from(Payload).toString();
+    const logs = Buffer.from(LogResult, 'base64').toString();
+
+    return { result, logs };
+  };
+
+  const payload = {
+    siteId,
+    brokenBacklinks,
+    sitemapUrls,
+  };
+
+  const { result } = await invoke('spacecat-services--genai', payload);
+
+  return result;
+}
+
 export default async function auditBrokenBacklinks(message, context) {
   const { type, url: siteId, auditContext = {} } = message;
   const { dataAccess, log, sqs } = context;
@@ -100,6 +129,11 @@ export default async function auditBrokenBacklinks(message, context) {
       return internalServerError(`Internal server error: ${e.message}`);
     }
 
+    const baseUrl = site.getBaseURL();
+    const { paths } = await findSitemap(baseUrl);
+
+    log.info(`Found ${paths.length} sitemaps for siteId: ${siteId} and url ${baseUrl}`);
+
     let auditResult;
     try {
       const {
@@ -115,18 +149,21 @@ export default async function auditBrokenBacklinks(message, context) {
 
       const brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
 
-      const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-      const keywords = topPages.map(
-        (page) => (
-          { url: page.getURL(), keyword: page.getTopKeyword(), traffic: page.getTraffic() }
-        ),
-      );
+      // const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
+      // const keywords = topPages.map(
+      //   (page) => (
+      //     { url: page.getURL(), keyword: page.getTopKeyword(), traffic: page.getTraffic() }
+      //   ),
+      // );
 
-      const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+      // const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+      const enhancedBacklinks = enhanceBacklinksWithGenAI(siteId, brokenBacklinks, paths);
+
+      log.info(`Enhanced backlinks: ${JSON.stringify(enhancedBacklinks)}`);
 
       auditResult = {
         finalUrl: auditContext.finalUrl,
-        brokenBacklinks: enhancedBacklinks,
+        brokenBacklinks,
         fullAuditRef,
       };
     } catch (e) {
