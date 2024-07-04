@@ -18,6 +18,7 @@ import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { InvokeCommand, LambdaClient, LogType } from '@aws-sdk/client-lambda';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { findSitemap } from '../sitemap/handler.js';
 // import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
 
 const TIMEOUT = 3000;
@@ -61,7 +62,7 @@ export async function filterOutValidBacklinks(backlinks, log) {
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
-async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks) {
+async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
   const invoke = async (funcName, payload) => {
     const client = new LambdaClient({
       region: 'us-east-1',
@@ -85,6 +86,7 @@ async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks) {
     type: 'broken-backlinks',
     siteId,
     brokenBacklinks,
+    sitemapUrls,
   };
 
   try {
@@ -149,6 +151,9 @@ export default async function auditBrokenBacklinks(message, context) {
       );
 
       const brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
+      const baseUrl = site.getBaseURL();
+      const sitemaps = await findSitemap(baseUrl);
+      const sitemapUrls = Object.values(sitemaps.paths).reduce((acc, curr) => acc.concat(curr), []);
 
       // const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
       // const keywords = topPages.map(
@@ -158,7 +163,8 @@ export default async function auditBrokenBacklinks(message, context) {
       // );
 
       // const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-      const enhancedBacklinks = await enhanceBacklinksWithGenAI(siteId, brokenBacklinks);
+      // eslint-disable-next-line max-len
+      const enhancedBacklinks = await enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls);
 
       log.info(`Enhanced backlinks: ${JSON.stringify(enhancedBacklinks)}`);
 
