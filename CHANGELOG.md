@@ -1,3 +1,17 @@
+## [1.21.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.11...v1.21.12) (2024-07-08)
+
+
+### Bug Fixes
+
+* Click count is artificially inflating the conversion rate ([#308](https://github.com/adobe/spacecat-audit-worker/issues/308)) ([7ef7761](https://github.com/adobe/spacecat-audit-worker/commit/7ef7761fdc81fa8023a4cc0f657c06460d795d9f))
+
+## [1.21.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.10...v1.21.11) (2024-07-08)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#317](https://github.com/adobe/spacecat-audit-worker/issues/317)) ([ba1b2a5](https://github.com/adobe/spacecat-audit-worker/commit/ba1b2a51d52282c6bdef8ee3ea0ee2e8aade8cc1))
+
 ## [1.21.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.9...v1.21.10) (2024-07-06)
 
 
