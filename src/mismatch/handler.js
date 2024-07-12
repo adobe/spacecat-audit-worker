@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client-v1';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client-22690-variant-data';
 import { AuditBuilder } from '../common/audit-builder.js';
 
 async function runner(auditUrl, context) {
@@ -18,11 +18,13 @@ async function runner(auditUrl, context) {
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
 
-  const params = {
-    url: auditUrl,
-    interval: 7,
+  const options = {
+    domain: auditUrl,
+    domainkey,
+    interval: diffArrays,
+    granularity: 'hourly',
   };
-  const result = await rumAPIClient.getRUMDashboard(params);
+  const result = await rumAPIClient.query('variant', options);
 
   log.info(`RUM result for ${auditUrl} is, ${JSON.stringify(result)}`);
 
