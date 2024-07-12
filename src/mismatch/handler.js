@@ -12,6 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client-22690-variant-data';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { getRUMDomainkey } from '../support/utils.js';
 
 async function runner(auditUrl, context) {
   const { log } = context;
