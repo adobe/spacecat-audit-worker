@@ -127,7 +127,7 @@ export class Audit {
 
       for (const postProcessor of this.postProcessors) {
         // eslint-disable-next-line no-await-in-loop
-        await postProcessor(finalUrl, auditData);
+        await postProcessor(finalUrl, auditData, context);
       }
 
       return ok();

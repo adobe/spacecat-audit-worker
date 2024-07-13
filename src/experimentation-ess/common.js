@@ -451,4 +451,15 @@ export async function processAudit(auditURL, context, site, days) {
   return processExperimentRUMData(experimentData);
 }
 
+export async function postProcessor(auditUrl, auditData, context) {
+  const { dataAccess } = context;
+  log = context.log;
+  // iterate array auditData.auditResult
+  for (const experiment of auditData.auditResult) {
+    // eslint-disable-next-line no-await-in-loop
+    await dataAccess.upsertExperiment(experiment);
+  }
+  log.info(`Experiments data for site ${auditData.siteId} has been upserted`);
+}
+
 /* c8 ignore stop */

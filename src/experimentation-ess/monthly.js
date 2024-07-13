@@ -12,7 +12,7 @@
 
 /* c8 ignore start */
 import { AuditBuilder } from '../common/audit-builder.js';
-import { processAudit } from './common.js';
+import { processAudit, postProcessor } from './common.js';
 
 const DAYS = 30;
 
@@ -44,5 +44,6 @@ export async function essExperimentationMonthlyAuditRunner(auditUrl, context, si
 
 export default new AuditBuilder()
   .withRunner(essExperimentationMonthlyAuditRunner)
+  .withPostProcessors([postProcessor])
   .build();
 /* c8 ignore stop */
