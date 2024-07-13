@@ -22,7 +22,7 @@ async function runner(auditUrl, context, site) {
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
 
   const options = {
-    domain: `www.${auditUrl}`,
+    domain: auditUrl,
     domainkey,
     granularity: 'hourly',
     interval: 10,
