@@ -368,6 +368,8 @@ async function convertToExperimentsSchema(experimentInsights) {
       // eslint-disable-next-line
       const experimentMetadataFromPage = await getExperimentMetaDataFromExperimentPage(url, id);
       const experiment = mergeData(getObjectByProperty(experiments, 'id', id), experimentMetadataFromPage, url) || {};
+      experiment.startDate = experiment.startDate || exp.inferredStartDate;
+      experiment.endDate = experiment.endDate || exp.inferredEndDate;
       const variants = experiment?.variants || [];
       for (const expVariant of exp.variants) {
         const variantName = expVariant.name;
@@ -463,12 +465,28 @@ export async function postProcessor(auditUrl, auditData, context) {
       url: experiment.url,
       status: experiment.status,
       type: experiment.type,
-      startDate: experiment.startDate,
-      endDate: experiment.endDate,
       variants: experiment.variants,
       conversionEventName: experiment.conversionEventName,
       conversionEventValue: experiment.conversionEventValue,
     };
+    // eslint-disable-next-line no-await-in-loop
+    const existingExperiment = await dataAccess.getExperiment(
+      auditData.siteId,
+      experiment.id,
+      experiment.url,
+    );
+    if (existingExperiment) {
+      if (new Date(existingExperiment.startDate) < new Date(experiment.startDate)) {
+        experimentData.startDate = existingExperiment.startDate;
+      } else {
+        experimentData.startDate = experiment.startDate;
+      }
+      if (new Date(existingExperiment.endDate) > new Date(experiment.endDate)) {
+        experimentData.endDate = existingExperiment.endDate;
+      } else {
+        experimentData.endDate = experiment.endDate;
+      }
+    }
     // eslint-disable-next-line no-await-in-loop
     await dataAccess.upsertExperiment(experimentData);
   }
