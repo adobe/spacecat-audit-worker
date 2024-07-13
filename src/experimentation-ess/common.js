@@ -456,8 +456,21 @@ export async function postProcessor(auditUrl, auditData, context) {
   log = context.log;
   // iterate array auditData.auditResult
   for (const experiment of auditData.auditResult) {
+    const experimentData = {
+      siteId: auditData.siteId,
+      experimentId: experiment.id,
+      name: experiment.label,
+      url: experiment.url,
+      status: experiment.status,
+      type: experiment.type,
+      startDate: experiment.startDate,
+      endDate: experiment.endDate,
+      variants: experiment.variants,
+      conversionEventName: experiment.conversionEventName,
+      conversionEventValue: experiment.conversionEventValue,
+    };
     // eslint-disable-next-line no-await-in-loop
-    await dataAccess.upsertExperiment(experiment);
+    await dataAccess.upsertExperiment(experimentData);
   }
   log.info(`Experiments data for site ${auditData.siteId} has been upserted`);
 }
