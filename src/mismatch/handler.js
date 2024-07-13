@@ -12,15 +12,18 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { getRUMDomainkey } from '../support/utils.js';
 
-async function runner(auditUrl, context) {
+async function runner(auditUrl, context, site) {
   const { log } = context;
+  log.info(`Received mismatch audit request for ${auditUrl}`);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
+  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
 
   const options = {
-    domain: auditUrl,
-    domainkey: context,
+    domain: `www.${auditUrl}`,
+    domainkey,
     granularity: 'hourly',
     interval: 10,
   };
