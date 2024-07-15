@@ -45,5 +45,8 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
 export default new AuditBuilder()
   .withRunner(essExperimentationAllAuditRunner)
   .withPostProcessors([postProcessor])
+  .withPersister(() => true)
+  .withMessageSender(() => true)
   .build();
+
 /* c8 ignore stop */
