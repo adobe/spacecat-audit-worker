@@ -1,3 +1,52 @@
+## [1.21.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.14...v1.21.15) (2024-07-13)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#321](https://github.com/adobe/spacecat-audit-worker/issues/321)) ([49d19a2](https://github.com/adobe/spacecat-audit-worker/commit/49d19a2f01ddee49d5d4fcb1fb1f117d05c984e7))
+
+## [1.21.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.13...v1.21.14) (2024-07-12)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#319](https://github.com/adobe/spacecat-audit-worker/issues/319)) ([1e9786d](https://github.com/adobe/spacecat-audit-worker/commit/1e9786d9a9b96f54ad52dd62cd145d8b5934cdbc))
+
+## [1.21.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.12...v1.21.13) (2024-07-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.35.0 ([#318](https://github.com/adobe/spacecat-audit-worker/issues/318)) ([d2ab224](https://github.com/adobe/spacecat-audit-worker/commit/d2ab224fda68111148d5808ec244275ee5a1f284))
+
+## [1.21.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.11...v1.21.12) (2024-07-08)
+
+
+### Bug Fixes
+
+* Click count is artificially inflating the conversion rate ([#308](https://github.com/adobe/spacecat-audit-worker/issues/308)) ([7ef7761](https://github.com/adobe/spacecat-audit-worker/commit/7ef7761fdc81fa8023a4cc0f657c06460d795d9f))
+
+## [1.21.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.10...v1.21.11) (2024-07-08)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#317](https://github.com/adobe/spacecat-audit-worker/issues/317)) ([ba1b2a5](https://github.com/adobe/spacecat-audit-worker/commit/ba1b2a51d52282c6bdef8ee3ea0ee2e8aade8cc1))
+
+## [1.21.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.9...v1.21.10) (2024-07-06)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#314](https://github.com/adobe/spacecat-audit-worker/issues/314)) ([d262205](https://github.com/adobe/spacecat-audit-worker/commit/d262205686366eac37fbd18493b07f2f5ca966cf))
+
+## [1.21.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.8...v1.21.9) (2024-07-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.18.1 ([#313](https://github.com/adobe/spacecat-audit-worker/issues/313)) ([5006a43](https://github.com/adobe/spacecat-audit-worker/commit/5006a4340e5461734c4686dd41c1059852c75719))
+
 ## [1.21.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.7...v1.21.8) (2024-07-03)
 
 
