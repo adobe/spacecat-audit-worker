@@ -62,8 +62,10 @@
     "@adobe/spacecat-shared-rum-api-client": "https://gitpkg.now.sh/adobe/spacecat-shared/packages/spacecat-shared-rum-api-client?f471c83f82304fe4259c944fd561fe2cb3e40774",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.18.3",
+    "@aws-sdk/client-lambda": "3.614.0",
     "@aws-sdk/client-secrets-manager": "3.614.0",
     "@aws-sdk/client-sqs": "3.614.0",
+    "@aws-sdk/credential-provider-node": "3.614.0",
     "diff": "5.2.0",
     "jsdom": "24.1.0",
     "urijs": "1.19.11"

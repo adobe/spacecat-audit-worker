@@ -13,6 +13,8 @@
 /* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { JSDOM } from 'jsdom';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { getRUMDomainkey } from '../support/utils.js';
 
 const EXPERIMENT_PLUGIN_OPTIONS = {
@@ -23,6 +25,7 @@ const EXPERIMENT_PLUGIN_OPTIONS = {
 };
 
 const METRIC_CHECKPOINTS = ['click', 'convert', 'formsubmit'];
+const SPACECAT_STATISTICS_SERVICE_ARN = 'arn:aws:lambda:us-east-1:282898975672:function:spacecat-services--statistics-service';
 
 let log = console;
 
@@ -348,11 +351,49 @@ function mergeData(experiment, experimentMetadata, url) {
   return experiment;
 }
 
-function addPValues(experiment) {
-  for (const variant of experiment.variants) {
-    variant.p_value = 'coming soon';
+async function invokeLambdaFunction(payload) {
+  const lambdaClient = new LambdaClient({
+    region: 'us-east-1',
+    credentials: defaultProvider(),
+  });
+  const invokeParams = {
+    FunctionName: SPACECAT_STATISTICS_SERVICE_ARN,
+    InvocationType: 'RequestResponse',
+    Payload: JSON.stringify(payload),
+  };
+
+  const response = await lambdaClient.send(new InvokeCommand(invokeParams));
+  return JSON.parse(new TextDecoder().decode(response.Payload));
+}
+
+async function addPValues(experimentData) {
+  const lambdaPayload = {
+    rumData: {},
+  };
+  for (const experiment of experimentData) {
+    lambdaPayload.rumData[experiment.id] = {};
+    for (const variant of experiment.variants) {
+      lambdaPayload.rumData[experiment.id][variant.name] = {
+        views: variant.views,
+        clicks: variant.metrics.find((m) => (m.type === 'click' && m.selector === '*'))?.value || 0,
+      };
+    }
   }
-  return experiment;
+  log.info('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
+  const lambdaResult = await invokeLambdaFunction(lambdaPayload);
+  for (const experiment of experimentData) {
+    const stats = lambdaResult[experiment.id];
+    if (!stats.error) {
+      for (const variant of experiment.variants) {
+        const variantStats = stats[variant.name];
+        if (variantStats) {
+          variant.p_value = variantStats.p_value;
+          variant.power = variantStats.power;
+          variant.statsig = variantStats.statsig;
+        }
+      }
+    }
+  }
 }
 
 function getObjectByProperty(array, name, value) {
@@ -433,9 +474,7 @@ async function convertToExperimentsSchema(experimentInsights) {
 async function processExperimentRUMData(experimentInsights) {
   log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
   const experimentData = await convertToExperimentsSchema(experimentInsights);
-  for (const experiment of experimentData) {
-    addPValues(experiment);
-  }
+  await addPValues(experimentData);
   return experimentData;
 }
 
