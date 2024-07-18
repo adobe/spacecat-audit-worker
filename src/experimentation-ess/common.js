@@ -352,6 +352,7 @@ function mergeData(experiment, experimentMetadata, url) {
 }
 
 async function invokeLambdaFunction(payload) {
+  log.info('Executing lambda function ');
   const lambdaClient = new LambdaClient({
     region: 'us-east-1',
     credentials: defaultProvider(),
