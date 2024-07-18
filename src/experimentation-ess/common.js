@@ -374,10 +374,11 @@ async function addPValues(experimentData) {
   };
   for (const experiment of experimentData) {
     lambdaPayload.rumData[experiment.id] = {};
+    const metric = experiment.conversionEventName || 'click';
     for (const variant of experiment.variants) {
       lambdaPayload.rumData[experiment.id][variant.name] = {
         views: variant.views,
-        clicks: variant.metrics.find((m) => (m.type === 'click' && m.selector === '*'))?.value || 0,
+        metrics: variant.metrics.find((m) => (m.type === metric && m.selector === '*'))?.value || 0,
       };
     }
   }
@@ -385,12 +386,13 @@ async function addPValues(experimentData) {
   let lambdaResult;
   try {
     lambdaResult = await invokeLambdaFunction(lambdaPayload);
+    lambdaResult = lambdaResult.body;
   } catch (error) {
     log.error('Error invoking lambda function: ', error);
   }
   log.info('Lambda Result json: ', JSON.stringify(lambdaResult, null, 2));
   for (const experiment of experimentData) {
-    log.info(`Trying to update p-values for experiment ${experiment.id}`);
+    log.info(`Trying to update p-values for experiment ${experiment.id} with variants ${experiment.variants}`);
     const stats = lambdaResult[experiment.id];
     if (stats && !stats.error) {
       for (const variant of experiment.variants) {
