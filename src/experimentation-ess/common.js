@@ -391,7 +391,7 @@ async function addPValues(experimentData) {
   log.info('Lambda Result json: ', JSON.stringify(lambdaResult, null, 2));
   for (const experiment of experimentData) {
     const stats = lambdaResult[experiment.id];
-    if (!stats.error) {
+    if (stats && !stats.error) {
       for (const variant of experiment.variants) {
         const variantStats = stats[variant.name];
         if (variantStats) {
@@ -400,6 +400,8 @@ async function addPValues(experimentData) {
           variant.statsig = variantStats.statsig;
         }
       }
+    } else {
+      log.error(`Error calculating p-values: ${stats} for experiment ${experiment.id}`);
     }
   }
 }
