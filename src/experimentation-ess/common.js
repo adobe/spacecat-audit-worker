@@ -380,7 +380,12 @@ async function addPValues(experimentData) {
     }
   }
   log.info('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
-  const lambdaResult = await invokeLambdaFunction(lambdaPayload);
+  let lambdaResult;
+  try {
+    lambdaResult = await invokeLambdaFunction(lambdaPayload);
+  } catch (error) {
+    log.error('Error invoking lambda function: ', error);
+  }
   for (const experiment of experimentData) {
     const stats = lambdaResult[experiment.id];
     if (!stats.error) {
