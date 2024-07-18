@@ -362,8 +362,9 @@ async function invokeLambdaFunction(payload) {
     InvocationType: 'RequestResponse',
     Payload: JSON.stringify(payload),
   };
-
+  log.info('Invoke Params: ', JSON.stringify(invokeParams, null, 2));
   const response = await lambdaClient.send(new InvokeCommand(invokeParams));
+  log.info('Lambda Response: ', response);
   return JSON.parse(new TextDecoder().decode(response.Payload));
 }
 
