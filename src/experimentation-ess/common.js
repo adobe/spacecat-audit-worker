@@ -388,6 +388,7 @@ async function addPValues(experimentData) {
   } catch (error) {
     log.error('Error invoking lambda function: ', error);
   }
+  log.info('Lambda Result json: ', JSON.stringify(lambdaResult, null, 2));
   for (const experiment of experimentData) {
     const stats = lambdaResult[experiment.id];
     if (!stats.error) {
