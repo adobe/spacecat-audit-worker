@@ -390,6 +390,7 @@ async function addPValues(experimentData) {
   }
   log.info('Lambda Result json: ', JSON.stringify(lambdaResult, null, 2));
   for (const experiment of experimentData) {
+    log.info(`Trying to update p-values for experiment ${experiment.id}`);
     const stats = lambdaResult[experiment.id];
     if (stats && !stats.error) {
       for (const variant of experiment.variants) {
@@ -398,6 +399,7 @@ async function addPValues(experimentData) {
           variant.p_value = variantStats.p_value;
           variant.power = variantStats.power;
           variant.statsig = variantStats.statsig;
+          log.info(`Updated p-values for variant ${variant.name} in experiment ${experiment.id}`);
         }
       }
     } else {
