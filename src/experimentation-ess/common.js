@@ -378,7 +378,7 @@ async function addPValues(experimentData) {
     for (const variant of experiment.variants) {
       lambdaPayload.rumData[experiment.id][variant.name] = {
         views: variant.views,
-        metrics: variant.metrics.find((m) => (m.type === metric && m.selector === '*'))?.value || 0,
+        metrics: variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.value || 0,
       };
     }
   }
