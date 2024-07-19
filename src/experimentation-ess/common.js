@@ -370,13 +370,17 @@ async function invokeLambdaFunction(payload) {
 
 async function addPValues(experimentData) {
   const lambdaPayload = {
-    rumData: {},
+    type: 'statsig',
+    payload: {
+      rumData: {
+      },
+    },
   };
   for (const experiment of experimentData) {
-    lambdaPayload.rumData[experiment.id] = {};
+    lambdaPayload.payload.rumData[experiment.id] = {};
     const metric = experiment.conversionEventName || 'click';
     for (const variant of experiment.variants) {
-      lambdaPayload.rumData[experiment.id][variant.name] = {
+      lambdaPayload.payload.rumData[experiment.id][variant.name] = {
         views: variant.views,
         metrics: variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.value || 0,
       };
