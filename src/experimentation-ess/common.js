@@ -509,6 +509,7 @@ async function processExperimentRUMData(experimentInsights) {
 
 export async function processAudit(auditURL, context, site, days) {
   log = context.log;
+  log.info(`Processing ESS Experimentation audit for ${auditURL}`);
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
