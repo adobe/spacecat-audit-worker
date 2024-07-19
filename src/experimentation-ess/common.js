@@ -386,7 +386,7 @@ async function addPValues(experimentData) {
   let lambdaResult;
   try {
     lambdaResult = await invokeLambdaFunction(lambdaPayload);
-    lambdaResult = lambdaResult.body;
+    lambdaResult = typeof (lambdaResult.body) === 'string' ? JSON.parse(lambdaResult.body) : lambdaResult.body;
   } catch (error) {
     log.error('Error invoking lambda function: ', error);
   }
@@ -403,7 +403,7 @@ async function addPValues(experimentData) {
         if (variantStats) {
           variant.p_value = variantStats.p_value;
           variant.power = variantStats.power;
-          variant.statsig = variantStats.statsig;
+          variant.statsig = (variantStats.statsig).toLowerCase() === 'true';
           log.info(`Updated p-values for variant ${variant.name} in experiment ${experiment.id}`);
         }
       }
