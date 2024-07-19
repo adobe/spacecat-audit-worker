@@ -386,6 +386,7 @@ async function addPValues(experimentData) {
   let lambdaResult;
   try {
     const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
+    log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
     const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
     lambdaResult = lambdaResponseBody.result;
   } catch (error) {
