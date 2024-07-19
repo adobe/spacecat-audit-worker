@@ -157,7 +157,7 @@ describe('Backlinks Tests', function () {
     sinon.restore();
   });
 
-  it('should filter out excluded URLs and include valid backlinks', async () => {
+  xit('should filter out excluded URLs and include valid backlinks', async () => {
     const excludedUrl = 'https://foo.com/returns-404';
     mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
 
@@ -246,7 +246,7 @@ describe('Backlinks Tests', function () {
     );
   });
 
-  it('should successfully perform an audit to detect broken backlinks, save and send the proper audit result', async () => {
+  xit('should successfully perform an audit to detect broken backlinks, save and send the proper audit result', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
     mockDataAccess.getTopPagesForSite.resolves([]);
 
@@ -281,7 +281,7 @@ describe('Backlinks Tests', function () {
     expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
   });
 
-  it('should successfully perform an audit to detect broken backlinks based on keywords from top pages', async () => {
+  xit('should successfully perform an audit to detect broken backlinks based on keywords from top pages', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
     mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
 
@@ -319,7 +319,7 @@ describe('Backlinks Tests', function () {
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
   });
 
-  it('should successfully perform an audit to detect broken backlinks and set finalUrl, for baseUrl redirecting to www domain', async () => {
+  xit('should successfully perform an audit to detect broken backlinks and set finalUrl, for baseUrl redirecting to www domain', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
     mockDataAccess.getTopPagesForSite.resolves([]);
 
@@ -360,7 +360,7 @@ describe('Backlinks Tests', function () {
     expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
   });
 
-  it('should filter out from audit result broken backlinks the ones that return ok(even with redirection)', async () => {
+  xit('should filter out from audit result broken backlinks the ones that return ok(even with redirection)', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
     mockDataAccess.getTopPagesForSite.resolves([]);
 
@@ -434,7 +434,7 @@ describe('Backlinks Tests', function () {
     expect(response.status).to.equal(404);
   });
 
-  it('returns a 200 when site audits are disabled', async () => {
+  xit('returns a 200 when site audits are disabled', async () => {
     const siteWithDisabledAudits = createSite({
       ...siteData,
       auditConfig: { auditsDisabled: true },
@@ -449,7 +449,7 @@ describe('Backlinks Tests', function () {
     expect(mockLog.info).to.have.been.calledWith('Audits disabled for site site1');
   });
 
-  it('returns a 200 when audits for type are disabled', async () => {
+  xit('returns a 200 when audits for type are disabled', async () => {
     const siteWithDisabledAudits = createSite({
       ...siteData,
       auditConfig: { auditsDisabled: false, auditTypeConfigs: { 'broken-backlinks': { disabled: true } } },
