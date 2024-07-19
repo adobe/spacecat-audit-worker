@@ -518,6 +518,7 @@ export async function processAudit(auditURL, context, site, days) {
     interval: days,
     granularity: 'hourly',
   };
+  log.info(`Querying RUM data for ${auditURL}`);
   const experimentData = await rumAPIClient.query('experiment', options);
   return processExperimentRUMData(experimentData);
 }
