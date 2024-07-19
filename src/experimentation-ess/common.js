@@ -385,10 +385,15 @@ async function addPValues(experimentData) {
   log.info('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
   let lambdaResult;
   try {
-    lambdaResult = await invokeLambdaFunction(lambdaPayload);
-    lambdaResult = typeof (lambdaResult.body) === 'string' ? JSON.parse(lambdaResult.body) : lambdaResult.body;
+    const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
+    const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
+    lambdaResult = lambdaResponseBody.result;
   } catch (error) {
     log.error('Error invoking lambda function: ', error);
+  }
+  if (!lambdaResult) {
+    log.error('Error calculating p-values: No result from lambda function');
+    return;
   }
   log.info('Lambda Result json: ', JSON.stringify(lambdaResult, null, 2));
   for (const experiment of experimentData) {
