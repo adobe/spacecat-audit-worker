@@ -171,7 +171,7 @@ function getConfigForInstantExperiment(
   const config = {
     label: `Instant Experiment: ${experimentId}`,
     audiences: audience ? audience.split(',').map(toClassName) : [],
-    status: getMetadata(`${pluginOptions.experimentsMetaTag}-status`, doc) || 'Active',
+    status: getMetadata(`${pluginOptions.experimentsMetaTag}-status`, doc) || 'ACTIVE',
     startDate: getMetadata(`${pluginOptions.experimentsMetaTag}-start-date`, doc),
     endDate: getMetadata(`${pluginOptions.experimentsMetaTag}-end-date`, doc),
     id: experimentId,
@@ -428,6 +428,13 @@ async function convertToExperimentsSchema(experimentInsights) {
       const experiment = mergeData(getObjectByProperty(experiments, 'id', id), experimentMetadataFromPage, url) || {};
       experiment.startDate = experiment.startDate || exp.inferredStartDate;
       experiment.endDate = experiment.endDate || exp.inferredEndDate;
+      if (!experiment.status) {
+        if (experiment.endDate && new Date(experiment.endDate) < new Date()) {
+          experiment.status = 'COMPLETE';
+        } else if (experiment.startDate && new Date(experiment.startDate) > new Date()) {
+          experiment.status = 'ACTIVE';
+        }
+      }
       const variants = experiment?.variants || [];
       for (const expVariant of exp.variants) {
         const variantName = expVariant.name;

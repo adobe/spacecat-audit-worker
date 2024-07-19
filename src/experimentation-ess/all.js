@@ -18,17 +18,50 @@ const DAYS = 180;
 
 let log = console;
 
+async function persistOnlyMetadata(auditData, context) {
+  // persists only the audit metadata
+  const { dataAccess } = context;
+  await dataAccess.addAudit({
+    ...auditData,
+    auditResult: [], // deliberately overrides the result
+  });
+}
+
 export async function essExperimentationAllAuditRunner(auditUrl, context, site) {
   log = context.log;
+  const { dataAccess } = context;
   log.info(`Received ESS Experimentation All audit request for ${auditUrl}`);
   const startTime = process.hrtime();
 
+  const latestAudit = await dataAccess.getLatestAuditForSite(site, 'experimentation-ess-all');
+  const experiments = await dataAccess.getExperiments(site);
+  const activeExperiments = experiments.filter((experiment) => (
+    experiment.getStatus() && experiment.getStatus().toLowerCase() === 'active' && experiment.getStartDate() !== null));
+  let days;
+  if (latestAudit === null) {
+    // experiment-ess-all audit has never been run before
+    days = DAYS;
+  } else if (experiments.length === 0 || activeExperiments.length === 0) {
+    // no experiments/active experiments found in previous audit,
+    // so we can run the audit since the last audit
+    days = Math.ceil((Date.now() - new Date(latestAudit.getAuditedAt()).getTime())
+     / (1000 * 60 * 60 * 24));
+  } else {
+    // experiments found, so run the audit since the oldest active experiment's start date
+    const oldestExperiment = activeExperiments.reduce((a, b) => (
+      a.getStartDate() < b.getStartDate() ? a : b));
+    days = Math.ceil((Date.now() - new Date(oldestExperiment.getStartDate()).getTime())
+    / (1000 * 60 * 60 * 24));
+  }
+  log.info(`ESS Experimentation All Audit will run for ${days} days`);
   const auditData = await processAudit(
     auditUrl,
     context,
     site,
-    DAYS,
+    days,
   );
+
+  log.info(`ESS Experimentation All Audit data size: ${JSON.stringify(auditData).length}`);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
@@ -45,7 +78,7 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
 export default new AuditBuilder()
   .withRunner(essExperimentationAllAuditRunner)
   .withPostProcessors([postProcessor])
-  .withPersister(() => true)
+  .withPersister(persistOnlyMetadata)
   .withMessageSender(() => true)
   .build();
 
