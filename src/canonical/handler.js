@@ -64,10 +64,11 @@ async function validateCanonicalTag(url, log) {
     const { head } = dom.window.document;
     const canonicalLinks = head.querySelectorAll('link[rel="canonical"]');
     const checks = [];
+    let canonicalUrl = null;
 
     if (canonicalLinks.length === 0) {
       checks.push({ check: Check.CANONICAL_TAG_EXISTS, error: ErrorCode.CANONICAL_TAG_NOT_FOUND });
-      return checks;
+      return { canonicalUrl, checks };
     }
 
     if (canonicalLinks.length > 1) {
@@ -77,6 +78,8 @@ async function validateCanonicalTag(url, log) {
     canonicalLinks.forEach((canonicalLink) => {
       if (!canonicalLink.href) {
         checks.push({ check: Check.CANONICAL_TAG_NONEMPTY, error: ErrorCode.CANONICAL_TAG_EMPTY });
+      } else {
+        canonicalUrl = canonicalLink.href;
       }
 
       if (canonicalLink.closest('head') === null) {
@@ -87,10 +90,13 @@ async function validateCanonicalTag(url, log) {
       }
     });
 
-    return checks;
+    return { canonicalUrl, checks };
   } catch (error) {
     log.error(`Error validating canonical tag for ${url}: ${error.message}`);
-    return [{ check: Check.CANONICAL_TAG_EXISTS, error: error.message }];
+    return {
+      canonicalUrl: null,
+      checks: [{ check: Check.CANONICAL_TAG_EXISTS, error: error.message }],
+    };
   }
 }
 
@@ -102,11 +108,23 @@ function validateCanonicalInSitemap(pageLinks, canonicalUrl) {
   return { check: Check.CANONICAL_URL_IN_SITEMAP, error: ErrorCode.CANONICAL_URL_NOT_IN_SITEMAP };
 }
 
-// Function to validate canonical URL contents
-async function validateCanonicalUrlContents(canonicalUrl, log) {
+// Function to validate canonical URL contents recursively
+async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedUrls = new Set()) {
+  if (visitedUrls.has(canonicalUrl)) {
+    log.error(`Detected a redirect loop for canonical URL ${canonicalUrl}`);
+    return { check: Check.CANONICAL_URL_NO_REDIRECT, error: ErrorCode.CANONICAL_URL_REDIRECT };
+  }
+
+  visitedUrls.add(canonicalUrl);
+
   try {
     const response = await fetch(canonicalUrl);
+    const finalUrl = response.url;
+
     if (response.status === 200) {
+      if (canonicalUrl !== finalUrl) {
+        return await validateCanonicalUrlContentsRecursive(finalUrl, log, visitedUrls);
+      }
       return { check: Check.CANONICAL_URL_PAGE_EXISTS, success: true };
     }
     return { check: Check.CANONICAL_URL_PAGE_EXISTS, error: ErrorCode.CANONICAL_URL_NOT_FOUND };
@@ -154,7 +172,7 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
 }
 
 // Main function to perform the audit
-export default async function auditCanonicalTags(siteId, context) {
+export default async function auditCanonical(siteId, context) {
   const { log } = context;
   const topPages = await getTopPagesForSite(siteId, context, log);
 
@@ -170,17 +188,14 @@ export default async function auditCanonicalTags(siteId, context) {
     const { url } = page;
     const checks = [];
 
-    const canonicalTagChecks = await validateCanonicalTag(url, log);
+    const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
     checks.push(...canonicalTagChecks);
 
-    if (!canonicalTagChecks.some((check) => check.error)) {
-      const { canonicalUrl } = canonicalTagChecks.find(
-        (check) => check.check === Check.CANONICAL_TAG_EXISTS,
-      );
+    if (canonicalUrl && !canonicalTagChecks.some((check) => check.error)) {
       const sitemapCheck = validateCanonicalInSitemap(aggregatedPageLinks, canonicalUrl);
       checks.push(sitemapCheck);
 
-      const urlContentCheck = await validateCanonicalUrlContents(canonicalUrl, log);
+      const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
       checks.push(urlContentCheck);
 
       const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, context.baseUrl);
@@ -191,5 +206,14 @@ export default async function auditCanonicalTags(siteId, context) {
   });
 
   const auditResultsArray = await Promise.all(auditPromises);
-  return Object.assign({}, ...auditResultsArray);
+  const auditResults = auditResultsArray.reduce((acc, result) => {
+    const [url, checks] = Object.entries(result)[0];
+    acc[url] = checks;
+    return acc;
+  }, {});
+
+  return {
+    domain: context.baseUrl,
+    results: auditResults,
+  };
 }
