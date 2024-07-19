@@ -80,6 +80,7 @@ export default async function auditBrokenBacklinks(message, context) {
       return ok();
     }
 
+    /*
     const auditConfig = site.getAuditConfig();
     if (auditConfig.auditsDisabled()) {
       log.info(`Audits disabled for site ${siteId}`);
@@ -90,6 +91,7 @@ export default async function auditBrokenBacklinks(message, context) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
       return ok();
     }
+    */
 
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
 
@@ -108,7 +110,7 @@ export default async function auditBrokenBacklinks(message, context) {
       } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
       log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
 
-      const excludedURLs = auditConfig.getAuditTypeConfig(type)?.getExcludedURLs();
+      const excludedURLs = []; // auditConfig.getAuditTypeConfig(type)?.getExcludedURLs();
       const filteredBacklinks = result?.backlinks?.filter(
         (backlink) => !excludedURLs.includes(backlink.url_to),
       );
