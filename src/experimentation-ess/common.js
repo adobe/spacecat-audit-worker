@@ -574,8 +574,8 @@ export async function postProcessor(auditUrl, auditData, context) {
         experimentData.url = existingExperiment.url;
       }
       // don't update the experiment control split if it's already set
-      const controlVariant = experimentData.variants.find((v) => v.name === 'control');
-      const existingControlVariant = existingExperiment.variants.find((v) => v.name === 'control');
+      const controlVariant = experimentData.variants?.find((v) => v.name === 'control');
+      const existingControlVariant = existingExperiment.variants?.find((v) => v.name === 'control');
       if (existingControlVariant && controlVariant && existingControlVariant.split) {
         controlVariant.split = existingControlVariant.split;
       }
