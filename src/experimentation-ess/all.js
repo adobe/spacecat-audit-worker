@@ -30,11 +30,12 @@ async function persistOnlyMetadata(auditData, context) {
 export async function essExperimentationAllAuditRunner(auditUrl, context, site) {
   log = context.log;
   const { dataAccess } = context;
+  const siteId = site.getSiteId();
   log.info(`Received ESS Experimentation All audit request for ${auditUrl}`);
   const startTime = process.hrtime();
 
-  const latestAudit = await dataAccess.getLatestAuditForSite(site, 'experimentation-ess-all');
-  const experiments = await dataAccess.getExperiments(site);
+  const latestAudit = await dataAccess.getLatestAuditForSite(siteId, 'experimentation-ess-all');
+  const experiments = await dataAccess.getExperiments(siteId);
   const activeExperiments = experiments.filter((experiment) => (
     experiment.getStatus() && experiment.getStatus().toLowerCase() === 'active' && experiment.getStartDate() !== null));
   let days;
