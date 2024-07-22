@@ -493,6 +493,7 @@ async function convertToExperimentsSchema(experimentInsights) {
       if (!existingExperiment) {
         const experimentUrl = controlUrl || url;
         experiments.push({
+          ...experiment,
           id,
           url: experimentUrl,
           variants,
