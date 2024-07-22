@@ -546,11 +546,16 @@ export async function postProcessor(auditUrl, auditData, context) {
       conversionEventValue: experiment.conversionEventValue,
     };
     // eslint-disable-next-line no-await-in-loop
-    const existingExperiment = await dataAccess.getExperiment(
-      auditData.siteId,
-      experiment.id,
-      experiment.url,
-    );
+    const existingExperiments = await dataAccess.getExperiments(auditData.siteId, experiment.id);
+    let existingExperiment;
+    if (existingExperiments) {
+      if (existingExperiments.length === 1) {
+        [existingExperiment] = existingExperiments;
+      } else {
+        log.error(`Multiple experiments found for experimentId ${experiment.id}`);
+        existingExperiment = existingExperiments.find((e) => e.url === experiment.url);
+      }
+    }
     if (existingExperiment) {
       if (new Date(existingExperiment.startDate) < new Date(experiment.startDate)) {
         experimentData.startDate = existingExperiment.startDate;
@@ -561,6 +566,16 @@ export async function postProcessor(auditUrl, auditData, context) {
         experimentData.endDate = existingExperiment.endDate;
       } else {
         experimentData.endDate = experiment.endDate;
+      }
+      // don't update the experiment url if it's already set
+      if (existingExperiment.url) {
+        experimentData.url = existingExperiment.url;
+      }
+      // don't update the experiment control split if it's already set
+      const controlVariant = experimentData.variants.find((v) => v.name === 'control');
+      const existingControlVariant = existingExperiment.variants.find((v) => v.name === 'control');
+      if (existingControlVariant && controlVariant && existingControlVariant.split) {
+        controlVariant.split = existingControlVariant.split;
       }
     }
     // eslint-disable-next-line no-await-in-loop
