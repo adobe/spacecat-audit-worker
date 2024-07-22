@@ -27,7 +27,7 @@ async function runner(auditUrl, context, site) {
     granularity: 'hourly',
     interval: 30,
   };
-  log.info(`Audit options: ${options}`);
+  log.info(`Mismatch audit options: ${options}`);
 
   const result = await rumAPIClient.query('variant', options);
 
