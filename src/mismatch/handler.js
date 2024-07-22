@@ -25,7 +25,7 @@ async function runner(auditUrl, context, site) {
     domain: auditUrl,
     domainkey,
     granularity: 'hourly',
-    interval: 10,
+    interval: 30,
   };
 
   const result = await rumAPIClient.query('variant', options);
