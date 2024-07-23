@@ -19,7 +19,6 @@ import { AbortController, AbortError } from '@adobe/fetch';
 import { InvokeCommand, LambdaClient, LogType } from '@aws-sdk/client-lambda';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { findSitemap } from '../sitemap/handler.js';
-// import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
 
 const TIMEOUT = 3000;
 
@@ -62,10 +61,13 @@ export async function filterOutValidBacklinks(backlinks, log) {
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
-async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
+async function enhanceBacklinksWithGenAI(config) {
+  const {
+    siteId, brokenBacklinks, sitemapUrls, region, statisticsService, log,
+  } = config;
   const invoke = async (funcName, payload) => {
     const client = new LambdaClient({
-      region: 'us-east-1',
+      region,
     });
     const command = new InvokeCommand({
       FunctionName: funcName,
@@ -75,8 +77,6 @@ async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
 
     const { Payload, LogResult } = await client.send(command);
     const result = Buffer.from(Payload).toString();
-    console.log(`Result: ${JSON.stringify(result)}`);
-    console.log(`LogResult: ${JSON.stringify(LogResult)}`);
     const logs = Buffer.from(LogResult, 'base64').toString();
 
     return { result, logs };
@@ -90,12 +90,11 @@ async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
   };
 
   try {
-    console.log(`Calling genai with payload: ${JSON.stringify(payload)}`);
-    const { result } = await invoke('spacecat-services--genai', payload);
+    const { result } = await invoke(statisticsService, payload);
 
     return result;
   } catch (error) {
-    console.error(error);
+    log.error(error);
     return { error };
   }
 }
@@ -103,6 +102,7 @@ async function enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls) {
 export default async function auditBrokenBacklinks(message, context) {
   const { type, url: siteId, auditContext = {} } = message;
   const { dataAccess, log } = context;
+  const { AWS_REGION: region, STATISTICS_SERVICE_LAMBDA: statisticsService } = context.env;
 
   try {
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
@@ -154,17 +154,12 @@ export default async function auditBrokenBacklinks(message, context) {
       const baseUrl = site.getBaseURL();
       const sitemaps = await findSitemap(baseUrl);
       const sitemapUrls = Object.values(sitemaps.paths).reduce((acc, curr) => acc.concat(curr), []);
+      // Limit the number of sitemap URLs to 1000 for now
+      sitemapUrls.length = Math.min(sitemapUrls.length, 1000);
 
-      // const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-      // const keywords = topPages.map(
-      //   (page) => (
-      //     { url: page.getURL(), keyword: page.getTopKeyword(), traffic: page.getTraffic() }
-      //   ),
-      // );
-
-      // const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-      // eslint-disable-next-line max-len
-      const enhancedBacklinks = await enhanceBacklinksWithGenAI(siteId, brokenBacklinks, sitemapUrls);
+      const enhancedBacklinks = await enhanceBacklinksWithGenAI({
+        siteId, brokenBacklinks, sitemapUrls, region, statisticsService, log,
+      });
 
       log.info(`Enhanced backlinks: ${JSON.stringify(enhancedBacklinks)}`);
 
