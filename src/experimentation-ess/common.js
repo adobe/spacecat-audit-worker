@@ -544,7 +544,7 @@ export async function postProcessor(auditUrl, auditData, context) {
       if (existingExperiments.length === 1) {
         [existingExperiment] = existingExperiments;
       } else if (existingExperiments.length > 1) {
-        log.error(`Multiple experiments found for experimentId ${experiment.id}`);
+        log.info(`Multiple experiments found for experimentId ${experiment.id}`);
         existingExperiment = existingExperiments.find((e) => e.url === experiment.url);
       }
     }
