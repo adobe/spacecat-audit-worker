@@ -410,7 +410,7 @@ async function addPValues(experimentData) {
       for (const variant of experiment.variants) {
         log.info(`Updating p-values for variant ${variant.name} in experiment ${experiment.id}`);
         const variantStats = stats[variant.name];
-        if (variantStats && !variantStats.error) {
+        if (variantStats && !variantStats.error && !Number.isNaN(variantStats.p_value)) {
           variant.p_value = variantStats.p_value;
           variant.power = variantStats.power;
           variant.statsig = (variantStats.statsig).toLowerCase() === 'true';
