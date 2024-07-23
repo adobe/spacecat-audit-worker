@@ -26,7 +26,6 @@ import sitemap from './sitemap/handler.js';
 import backlinks from './backlinks/handler.js';
 import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
-import essExperimentationMonthly from './experimentation-ess/monthly.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
 
@@ -40,7 +39,6 @@ const HANDLERS = {
   'broken-backlinks': backlinks,
   experimentation,
   conversion,
-  'experimentation-ess-monthly': essExperimentationMonthly,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
 };
