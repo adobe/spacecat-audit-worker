@@ -352,7 +352,6 @@ function mergeData(experiment, experimentMetadata, url) {
 }
 
 async function invokeLambdaFunction(payload) {
-  log.info('Executing lambda function ');
   const lambdaClient = new LambdaClient({
     region: 'us-east-1',
     credentials: defaultProvider(),
@@ -362,9 +361,7 @@ async function invokeLambdaFunction(payload) {
     InvocationType: 'RequestResponse',
     Payload: JSON.stringify(payload),
   };
-  log.info('Invoke Params: ', JSON.stringify(invokeParams, null, 2));
   const response = await lambdaClient.send(new InvokeCommand(invokeParams));
-  log.info('Lambda Response: ', response);
   return JSON.parse(new TextDecoder().decode(response.Payload));
 }
 
@@ -400,21 +397,15 @@ async function addPValues(experimentData) {
     log.error('Error calculating p-values: No result from lambda function');
     return;
   }
-  log.info('Lambda Result json: ', JSON.stringify(lambdaResult, null, 2));
   for (const experiment of experimentData) {
-    log.info(`Trying to update p-values for experiment ${experiment.id} with variants ${experiment.variants}`);
     const stats = lambdaResult[experiment.id];
-    log.info(`Stats for experiment ${experiment.id}: ${stats}`);
     if (stats && !stats.error) {
-      log.info(`Stats for experiment ${experiment.id}: ${JSON.stringify(stats, null, 2)}`);
       for (const variant of experiment.variants) {
-        log.info(`Updating p-values for variant ${variant.name} in experiment ${experiment.id}`);
         const variantStats = stats[variant.name];
         if (variantStats && !variantStats.error && !Number.isNaN(variantStats.p_value)) {
           variant.p_value = variantStats.p_value;
           variant.power = variantStats.power;
           variant.statsig = (variantStats.statsig).toLowerCase() === 'true';
-          log.info(`Updated p-values for variant ${variant.name} in experiment ${experiment.id}`);
         }
       }
     } else {
@@ -524,7 +515,6 @@ export async function processAudit(auditURL, context, site, days) {
     interval: days,
     granularity: 'hourly',
   };
-  log.info(`Querying RUM data for ${auditURL}`);
   const experimentData = await rumAPIClient.query('experiment', options);
   return processExperimentRUMData(experimentData);
 }
