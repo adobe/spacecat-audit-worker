@@ -19,7 +19,8 @@ const DAYS = 180;
 let log = console;
 
 async function persistOnlyMetadata(auditData, context) {
-  // persists only the audit metadata
+  // persists only the audit metadata, as the
+  // whole audit result will be bigger than the allowed size in dynamo
   const { dataAccess } = context;
   await dataAccess.addAudit({
     ...auditData,
@@ -36,24 +37,6 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
 
   const latestAudit = await dataAccess.getLatestAuditForSite(siteId, 'experimentation-ess-all');
   const experiments = await dataAccess.getExperiments(siteId);
-  // temp fix
-  const experimentsMockData = experiments.map((experiment) => ({
-    siteId: experiment.getSiteId(),
-    experimentId: experiment.getExperimentId(),
-    name: experiment.getName(),
-    url: experiment.getUrl(),
-    type: experiment.getType(),
-    status: experiment.getStatus(),
-    startDate: experiment.getStartDate(),
-    endDate: experiment.getEndDate(),
-    variants: experiment.getVariants(),
-    updatedAt: experiment.getUpdatedAt(),
-    updatedBy: experiment.getUpdatedBy(),
-    conversionEventName: experiment.getConversionEventName(),
-    conversionEventValue: experiment.getConversionEventValue(),
-  }));
-  log.info('All Experiments size :', JSON.stringify(experimentsMockData).length);
-  log.info('All Experiments mock data from table:', JSON.stringify(experimentsMockData, null, 2));
   const activeExperiments = experiments.filter((experiment) => (
     experiment.getStatus() && experiment.getStatus().toLowerCase() === 'active' && experiment.getStartDate() !== null));
   let days;

@@ -88,8 +88,7 @@ export class Audit {
     try {
       const site = await this.siteProvider(siteId, context);
       const org = await this.orgProvider(site.getOrganizationId(), context);
-      const bypass = ['36e4848b-d6e5-4350-a7f9-610e78325966'];
-      if (!bypass.includes(siteId) && isAuditsDisabled(site, org, type)) {
+      if (isAuditsDisabled(site, org, type)) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();
       }
