@@ -31,7 +31,6 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
   log = context.log;
   const { dataAccess } = context;
   const siteId = site.getId();
-  log.info(`Site Id: ${siteId}`);
   log.info(`Received ESS Experimentation All audit request for ${auditUrl}`);
   const startTime = process.hrtime();
 
@@ -53,6 +52,7 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
     conversionEventName: experiment.getConversionEventName(),
     conversionEventValue: experiment.getConversionEventValue(),
   }));
+  log.info('All Experiments size :', JSON.stringify(experimentsMockData).length);
   log.info('All Experiments mock data from table:', JSON.stringify(experimentsMockData, null, 2));
   const activeExperiments = experiments.filter((experiment) => (
     experiment.getStatus() && experiment.getStatus().toLowerCase() === 'active' && experiment.getStartDate() !== null));
