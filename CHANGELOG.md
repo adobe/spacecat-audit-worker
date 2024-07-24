@@ -1,3 +1,15 @@
+# [1.22.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.17...v1.22.0) (2024-07-24)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#327](https://github.com/adobe/spacecat-audit-worker/issues/327)) ([9920a2a](https://github.com/adobe/spacecat-audit-worker/commit/9920a2a9ba491a4acd95750df23b126d14be97c1))
+
+
+### Features
+
+* changes to accomodate new config data model ([07585df](https://github.com/adobe/spacecat-audit-worker/commit/07585dfec3a3e2171d5efe9bc11f65ae4eb429a4))
+
 ## [1.21.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.16...v1.21.17) (2024-07-19)
 
 
