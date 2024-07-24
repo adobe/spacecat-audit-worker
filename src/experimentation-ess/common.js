@@ -503,7 +503,6 @@ async function convertToExperimentsSchema(experimentInsights) {
 
 async function processExperimentRUMData(experimentInsights, context) {
   const lambdaARN = context.env.SPACECAT_STATISTICS_LAMBDA_ARN;
-  log.info('Lambda ARN: ', lambdaARN);
   log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
   const experimentData = await convertToExperimentsSchema(experimentInsights);
   await addPValues(experimentData, lambdaARN);
