@@ -1,3 +1,10 @@
+## [1.22.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.2...v1.22.3) (2024-07-24)
+
+
+### Bug Fixes
+
+* trigger deploy ([4435ac1](https://github.com/adobe/spacecat-audit-worker/commit/4435ac12b762386c28c1b9170fc071307218c0d0))
+
 ## [1.22.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.1...v1.22.2) (2024-07-24)
 
 
