@@ -1,3 +1,10 @@
+## [1.22.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.1...v1.22.2) (2024-07-24)
+
+
+### Bug Fixes
+
+* experiment audit persists using post handler ([#320](https://github.com/adobe/spacecat-audit-worker/issues/320)) ([633b003](https://github.com/adobe/spacecat-audit-worker/commit/633b0036cc5d11c2c4b56d2c523f532bf0e071f0))
+
 ## [1.22.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.0...v1.22.1) (2024-07-24)
 
 
