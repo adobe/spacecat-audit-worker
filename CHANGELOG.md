@@ -1,3 +1,36 @@
+## [1.22.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.0...v1.22.1) (2024-07-24)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#329](https://github.com/adobe/spacecat-audit-worker/issues/329)) ([e621b4e](https://github.com/adobe/spacecat-audit-worker/commit/e621b4e908e99cc18ddf2862dd61a9803dcbd8eb))
+
+# [1.22.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.17...v1.22.0) (2024-07-24)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#327](https://github.com/adobe/spacecat-audit-worker/issues/327)) ([9920a2a](https://github.com/adobe/spacecat-audit-worker/commit/9920a2a9ba491a4acd95750df23b126d14be97c1))
+
+
+### Features
+
+* changes to accomodate new config data model ([07585df](https://github.com/adobe/spacecat-audit-worker/commit/07585dfec3a3e2171d5efe9bc11f65ae4eb429a4))
+
+## [1.21.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.16...v1.21.17) (2024-07-19)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.4.0 ([#325](https://github.com/adobe/spacecat-audit-worker/issues/325)) ([3b0de1e](https://github.com/adobe/spacecat-audit-worker/commit/3b0de1e4d954093fe038917f28f47537df3239ee))
+
+## [1.21.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.15...v1.21.16) (2024-07-16)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.36.0 ([#323](https://github.com/adobe/spacecat-audit-worker/issues/323)) ([eba4e99](https://github.com/adobe/spacecat-audit-worker/commit/eba4e99cf99f58d5bb26d10a15bbf4026350d9eb))
+
 ## [1.21.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.21.14...v1.21.15) (2024-07-13)
 
 

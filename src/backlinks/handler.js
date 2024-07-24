@@ -69,37 +69,26 @@ export default async function auditBrokenBacklinks(message, context) {
 
   try {
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
-
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
     if (!site) {
       return notFound('Site not found');
     }
-
     if (!site.isLive()) {
       log.info(`Site ${siteId} is not live`);
       return ok();
     }
-
-    const auditConfig = site.getAuditConfig();
-    if (auditConfig.auditsDisabled()) {
-      log.info(`Audits disabled for site ${siteId}`);
-      return ok();
-    }
-
-    if (auditConfig.getAuditTypeConfig(type)?.disabled()) {
+    const configuration = await dataAccess.getConfiguration();
+    if (!configuration.isHandlerEnabledForSite(type, site)) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
       return ok();
     }
-
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-
     try {
       auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
     } catch (e) {
       log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
       return internalServerError(`Internal server error: ${e.message}`);
     }
-
     let auditResult;
     try {
       const {
@@ -107,12 +96,10 @@ export default async function auditBrokenBacklinks(message, context) {
         fullAuditRef,
       } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
       log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
-
-      const excludedURLs = auditConfig.getAuditTypeConfig(type)?.getExcludedURLs();
+      const excludedURLs = site.getConfig().getExcludedURLs(type);
       const filteredBacklinks = result?.backlinks?.filter(
-        (backlink) => !excludedURLs.includes(backlink.url_to),
+        (backlink) => !excludedURLs?.includes(backlink.url_to),
       );
-
       const brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
 
       const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
@@ -121,9 +108,7 @@ export default async function auditBrokenBacklinks(message, context) {
           { url: page.getURL(), keyword: page.getTopKeyword(), traffic: page.getTraffic() }
         ),
       );
-
       const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-
       auditResult = {
         finalUrl: auditContext.finalUrl,
         brokenBacklinks: enhancedBacklinks,
@@ -136,7 +121,6 @@ export default async function auditBrokenBacklinks(message, context) {
         error: `${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error`,
       };
     }
-
     const auditData = {
       siteId: site.getId(),
       isLive: site.isLive(),
