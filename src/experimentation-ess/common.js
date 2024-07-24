@@ -309,7 +309,7 @@ async function getExperimentMetaDataFromExperimentPage(url, id) {
       label: experimentConfig.label || '',
       type: experimentType,
       url,
-      status: experimentConfig.status,
+      status: experimentConfig.status?.toUpperCase(),
       startDate: experimentStartDate,
       endDate: experimentEndDate,
       conversionEventName,
@@ -424,8 +424,13 @@ async function convertToExperimentsSchema(experimentInsights) {
     const urlInsights = experimentInsights[url];
     for (const exp of urlInsights) {
       const id = exp.experiment;
-      // eslint-disable-next-line
-      const experimentMetadataFromPage = await getExperimentMetaDataFromExperimentPage(url, id);
+      let experimentMetadataFromPage;
+      try {
+        // eslint-disable-next-line
+        experimentMetadataFromPage = await getExperimentMetaDataFromExperimentPage(url, id);
+      } catch (e) {
+        log.error(`Error fetching experiment [${id}] metadata at url ${url}: ${e}`);
+      }
       const experiment = mergeData(getObjectByProperty(experiments, 'id', id), experimentMetadataFromPage, url) || {};
       experiment.startDate = experiment.startDate || exp.inferredStartDate;
       experiment.endDate = experiment.endDate || exp.inferredEndDate;
