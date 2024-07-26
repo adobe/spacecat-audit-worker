@@ -418,6 +418,18 @@ function getObjectByProperty(array, name, value) {
   return array.find((e) => e[name] === value);
 }
 
+/**
+ * returns the date n days ago
+ * @param {number} days
+ * @returns {Date} the date n days ago
+ */
+function getDate(days) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
 async function convertToExperimentsSchema(experimentInsights) {
   const experiments = [];
   for (const url of Object.keys(experimentInsights)) {
@@ -433,11 +445,19 @@ async function convertToExperimentsSchema(experimentInsights) {
       }
       const experiment = mergeData(getObjectByProperty(experiments, 'id', id), experimentMetadataFromPage, url) || {};
       experiment.startDate = experiment.startDate || exp.inferredStartDate;
-      experiment.endDate = experiment.endDate || exp.inferredEndDate;
+      const yesterday = getDate(1);
+      const inferredEndDate = new Date(exp.inferredEndDate);
+      inferredEndDate.setHours(0, 0, 0, 0);
+      if (inferredEndDate >= yesterday) {
+        // found RUM data yesterday, so endDate should be either in the metadata or null
+        experiment.endDate = experiment.endDate || null;
+      } else {
+        experiment.endDate = experiment.endDate || exp.inferredEndDate;
+      }
       if (!experiment.status) {
         if (experiment.endDate && new Date(experiment.endDate) < new Date()) {
           experiment.status = 'COMPLETE';
-        } else if (experiment.startDate && new Date(experiment.startDate) > new Date()) {
+        } else if (experiment.startDate && new Date(experiment.startDate) <= new Date()) {
           experiment.status = 'ACTIVE';
         }
       }
