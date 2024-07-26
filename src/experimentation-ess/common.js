@@ -579,7 +579,8 @@ export async function postProcessor(auditUrl, auditData, context) {
       } else {
         experimentData.startDate = experiment.startDate;
       }
-      if (new Date(existingExperiment.endDate) > new Date(experiment.endDate)) {
+      if (experiment.endDate && new Date(existingExperiment.endDate)
+        > new Date(experiment.endDate)) {
         experimentData.endDate = existingExperiment.endDate;
       } else {
         experimentData.endDate = experiment.endDate;
