@@ -13,6 +13,8 @@
 /* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { JSDOM } from 'jsdom';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { getRUMDomainkey } from '../support/utils.js';
 
 const EXPERIMENT_PLUGIN_OPTIONS = {
@@ -23,6 +25,7 @@ const EXPERIMENT_PLUGIN_OPTIONS = {
 };
 
 const METRIC_CHECKPOINTS = ['click', 'convert', 'formsubmit'];
+const SPACECAT_STATISTICS_SERVICE_ARN = 'arn:aws:lambda:us-east-1:282898975672:function:spacecat-services--statistics-service';
 
 let log = console;
 
@@ -168,7 +171,7 @@ function getConfigForInstantExperiment(
   const config = {
     label: `Instant Experiment: ${experimentId}`,
     audiences: audience ? audience.split(',').map(toClassName) : [],
-    status: getMetadata(`${pluginOptions.experimentsMetaTag}-status`, doc) || 'Active',
+    status: getMetadata(`${pluginOptions.experimentsMetaTag}-status`, doc) || 'ACTIVE',
     startDate: getMetadata(`${pluginOptions.experimentsMetaTag}-start-date`, doc),
     endDate: getMetadata(`${pluginOptions.experimentsMetaTag}-end-date`, doc),
     id: experimentId,
@@ -306,7 +309,7 @@ async function getExperimentMetaDataFromExperimentPage(url, id) {
       label: experimentConfig.label || '',
       type: experimentType,
       url,
-      status: experimentConfig.status,
+      status: experimentConfig.status?.toUpperCase(),
       startDate: experimentStartDate,
       endDate: experimentEndDate,
       conversionEventName,
@@ -348,11 +351,67 @@ function mergeData(experiment, experimentMetadata, url) {
   return experiment;
 }
 
-function addPValues(experiment) {
-  for (const variant of experiment.variants) {
-    variant.p_value = 'coming soon';
+async function invokeLambdaFunction(payload) {
+  const lambdaClient = new LambdaClient({
+    region: 'us-east-1',
+    credentials: defaultProvider(),
+  });
+  const invokeParams = {
+    FunctionName: SPACECAT_STATISTICS_SERVICE_ARN,
+    InvocationType: 'RequestResponse',
+    Payload: JSON.stringify(payload),
+  };
+  const response = await lambdaClient.send(new InvokeCommand(invokeParams));
+  return JSON.parse(new TextDecoder().decode(response.Payload));
+}
+
+async function addPValues(experimentData) {
+  const lambdaPayload = {
+    type: 'statsig',
+    payload: {
+      rumData: {
+      },
+    },
+  };
+  for (const experiment of experimentData) {
+    lambdaPayload.payload.rumData[experiment.id] = {};
+    const metric = experiment.conversionEventName || 'click';
+    for (const variant of experiment.variants) {
+      lambdaPayload.payload.rumData[experiment.id][variant.name] = {
+        views: variant.views,
+        metrics: variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.value || 0,
+      };
+    }
   }
-  return experiment;
+  log.info('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
+  let lambdaResult;
+  try {
+    const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
+    log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
+    const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
+    lambdaResult = lambdaResponseBody.result;
+  } catch (error) {
+    log.error('Error invoking lambda function: ', error);
+  }
+  if (!lambdaResult) {
+    log.error('Error calculating p-values: No result from lambda function');
+    return;
+  }
+  for (const experiment of experimentData) {
+    const stats = lambdaResult[experiment.id];
+    if (stats && !stats.error) {
+      for (const variant of experiment.variants) {
+        const variantStats = stats[variant.name];
+        if (variantStats && !variantStats.error && !Number.isNaN(variantStats.p_value)) {
+          variant.p_value = variantStats.p_value;
+          variant.power = variantStats.power;
+          variant.statsig = (variantStats.statsig).toLowerCase() === 'true';
+        }
+      }
+    } else {
+      log.error(`Error calculating p-values: ${stats} for experiment ${experiment.id}`);
+    }
+  }
 }
 
 function getObjectByProperty(array, name, value) {
@@ -365,9 +424,23 @@ async function convertToExperimentsSchema(experimentInsights) {
     const urlInsights = experimentInsights[url];
     for (const exp of urlInsights) {
       const id = exp.experiment;
-      // eslint-disable-next-line
-      const experimentMetadataFromPage = await getExperimentMetaDataFromExperimentPage(url, id);
+      let experimentMetadataFromPage;
+      try {
+        // eslint-disable-next-line
+        experimentMetadataFromPage = await getExperimentMetaDataFromExperimentPage(url, id);
+      } catch (e) {
+        log.error(`Error fetching experiment [${id}] metadata at url ${url}: ${e}`);
+      }
       const experiment = mergeData(getObjectByProperty(experiments, 'id', id), experimentMetadataFromPage, url) || {};
+      experiment.startDate = experiment.startDate || exp.inferredStartDate;
+      experiment.endDate = experiment.endDate || exp.inferredEndDate;
+      if (!experiment.status) {
+        if (experiment.endDate && new Date(experiment.endDate) < new Date()) {
+          experiment.status = 'COMPLETE';
+        } else if (experiment.startDate && new Date(experiment.startDate) > new Date()) {
+          experiment.status = 'ACTIVE';
+        }
+      }
       const variants = experiment?.variants || [];
       for (const expVariant of exp.variants) {
         const variantName = expVariant.name;
@@ -416,6 +489,7 @@ async function convertToExperimentsSchema(experimentInsights) {
       if (!existingExperiment) {
         const experimentUrl = controlUrl || url;
         experiments.push({
+          ...experiment,
           id,
           url: experimentUrl,
           variants,
@@ -431,14 +505,13 @@ async function convertToExperimentsSchema(experimentInsights) {
 async function processExperimentRUMData(experimentInsights) {
   log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
   const experimentData = await convertToExperimentsSchema(experimentInsights);
-  for (const experiment of experimentData) {
-    addPValues(experiment);
-  }
+  await addPValues(experimentData);
   return experimentData;
 }
 
 export async function processAudit(auditURL, context, site, days) {
   log = context.log;
+  log.info(`Processing ESS Experimentation audit for ${auditURL}`);
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
@@ -449,6 +522,63 @@ export async function processAudit(auditURL, context, site, days) {
   };
   const experimentData = await rumAPIClient.query('experiment', options);
   return processExperimentRUMData(experimentData);
+}
+
+export async function postProcessor(auditUrl, auditData, context) {
+  const { dataAccess } = context;
+  log = context.log;
+  // iterate array auditData.auditResult
+  for (const experiment of auditData.auditResult) {
+    const experimentData = {
+      siteId: auditData.siteId,
+      experimentId: experiment.id,
+      name: experiment.label,
+      url: experiment.url,
+      startDate: experiment.startDate,
+      endDate: experiment.endDate,
+      status: experiment.status,
+      type: experiment.type,
+      variants: experiment.variants,
+      conversionEventName: experiment.conversionEventName,
+      conversionEventValue: experiment.conversionEventValue,
+    };
+    // eslint-disable-next-line no-await-in-loop
+    const existingExperiments = await dataAccess.getExperiments(auditData.siteId, experiment.id);
+    let existingExperiment;
+    if (existingExperiments) {
+      if (existingExperiments.length === 1) {
+        [existingExperiment] = existingExperiments;
+      } else if (existingExperiments.length > 1) {
+        log.info(`Multiple experiments found for experimentId ${experiment.id}`);
+        existingExperiment = existingExperiments.find((e) => e.url === experiment.url);
+      }
+    }
+    if (existingExperiment) {
+      if (new Date(existingExperiment.startDate) < new Date(experiment.startDate)) {
+        experimentData.startDate = existingExperiment.startDate;
+      } else {
+        experimentData.startDate = experiment.startDate;
+      }
+      if (new Date(existingExperiment.endDate) > new Date(experiment.endDate)) {
+        experimentData.endDate = existingExperiment.endDate;
+      } else {
+        experimentData.endDate = experiment.endDate;
+      }
+      // don't update the experiment url if it's already set
+      if (existingExperiment.url) {
+        experimentData.url = existingExperiment.url;
+      }
+      // don't update the experiment control split if it's already set
+      const controlVariant = experimentData.variants?.find((v) => v.name === 'control');
+      const existingControlVariant = existingExperiment.variants?.find((v) => v.name === 'control');
+      if (existingControlVariant && controlVariant && existingControlVariant.split) {
+        controlVariant.split = existingControlVariant.split;
+      }
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await dataAccess.upsertExperiment(experimentData);
+  }
+  log.info(`Experiments data for site ${auditData.siteId} has been upserted`);
 }
 
 /* c8 ignore stop */
