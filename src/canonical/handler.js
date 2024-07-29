@@ -89,15 +89,15 @@ const unknowError = 'Unspecified error';
 /**
  * Retrieves the top pages for a given site.
  *
- * @param {string} url - The URL of the site to retrieve the top pages for.
+ * @param {string} siteId - The ID of the site to retrieve the top pages for.
  * @param {Object} context - The context object containing necessary information.
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
  */
-async function getTopPagesForSite(url, context, log) {
+async function getTopPagesForSite(siteId, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const topPagesResponse = await ahrefsAPIClient.getTopPages(url, 200);
+    const topPagesResponse = await ahrefsAPIClient.getTopPages(siteId, 200);
 
     const topPages = topPagesResponse.result;
 
@@ -108,7 +108,7 @@ async function getTopPagesForSite(url, context, log) {
 
     return topPages;
   } catch (error) {
-    log.error(`Error retrieving top pages for site ${url}: ${error.message}`);
+    log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
     return [];
   }
 }
@@ -304,53 +304,69 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
 /**
  * Audits the canonical URLs for a given site.
  *
- * @param {string} siteId - The ID of the site to audit.
+ * @param message
  * @param {Object} context - The context object containing necessary information.
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Object>} An object containing the audit results.
  */
-export default async function auditCanonical(siteId, context) {
+export default async function auditCanonical(message, context) {
+  const { type, url: siteId } = message;
   const { log } = context;
-  const topPages = await getTopPagesForSite(siteId, context, log);
 
-  if (topPages.length === 0) {
-    return {};
-  }
+  log.info(`Received ${type} audit request for siteId: ${siteId}`);
 
-  const aggregatedPageLinks = await getBaseUrlPagesFromSitemaps(
-    context.baseUrl,
-    topPages.map((page) => page.url),
-  );
-  const auditPromises = topPages.map(async (page) => {
-    const { url } = page;
-    const checks = [];
+  try {
+    const topPages = await getTopPagesForSite(siteId, context, log);
 
-    const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
-    checks.push(...canonicalTagChecks);
-
-    if (canonicalUrl && !canonicalTagChecks.some((check) => check.error)) {
-      const sitemapCheck = validateCanonicalInSitemap(aggregatedPageLinks, canonicalUrl);
-      checks.push(sitemapCheck);
-
-      const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
-      checks.push(urlContentCheck);
-
-      const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, context.baseUrl);
-      checks.push(...urlFormatChecks);
+    if (topPages.length === 0) {
+      log.info('No top pages found, ending audit.');
+      return {};
     }
 
-    return { [url]: checks };
-  });
+    const aggregatedPageLinks = await getBaseUrlPagesFromSitemaps(
+      context.baseUrl,
+      topPages.map((page) => page.url),
+    );
 
-  const auditResultsArray = await Promise.all(auditPromises);
-  const auditResults = auditResultsArray.reduce((acc, result) => {
-    const [url, checks] = Object.entries(result)[0];
-    acc[url] = checks;
-    return acc;
-  }, {});
+    const auditPromises = topPages.map(async (page) => {
+      const { url } = page;
+      const checks = [];
 
-  return {
-    domain: context.baseUrl,
-    results: auditResults,
-  };
+      const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
+      checks.push(...canonicalTagChecks);
+
+      if (canonicalUrl && !canonicalTagChecks.some((check) => check.error)) {
+        const sitemapCheck = validateCanonicalInSitemap(aggregatedPageLinks, canonicalUrl);
+        checks.push(sitemapCheck);
+
+        const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
+        checks.push(urlContentCheck);
+
+        const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, context.baseUrl);
+        checks.push(...urlFormatChecks);
+      }
+
+      return { [url]: checks };
+    });
+
+    const auditResultsArray = await Promise.all(auditPromises);
+    const auditResults = auditResultsArray.reduce((acc, result) => {
+      const [url, checks] = Object.entries(result)[0];
+      acc[url] = checks;
+      return acc;
+    }, {});
+
+    log.info(`Successfully completed ${type} audit for siteId: ${siteId}`);
+
+    return {
+      domain: context.baseUrl,
+      results: auditResults,
+    };
+  } catch (error) {
+    log.error(`${type} audit for siteId ${siteId} failed with error: ${error.message}`, error);
+    return {
+      domain: context.baseUrl,
+      error: `Audit failed with error: ${error.message}`,
+    };
+  }
 }
