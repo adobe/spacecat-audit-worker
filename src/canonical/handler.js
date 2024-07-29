@@ -95,13 +95,22 @@ const unknowError = 'Unspecified error';
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
  */
 async function getTopPagesForSite(siteId, context, log) {
-  const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-  const topPages = await ahrefsAPIClient.getTopPages(siteId, 200);
-  if (!topPages || topPages.length === 0) {
-    log.info('No top pages found');
+  try {
+    const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
+    const topPagesResponse = await ahrefsAPIClient.getTopPages(siteId, 200);
+
+    const topPages = topPagesResponse.result;
+
+    if (!topPages || topPages.length === 0) {
+      log.info('No top pages found');
+      return [];
+    }
+
+    return topPages;
+  } catch (error) {
+    log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
     return [];
   }
-  return topPages;
 }
 
 /**
