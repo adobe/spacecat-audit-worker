@@ -89,15 +89,15 @@ const unknowError = 'Unspecified error';
 /**
  * Retrieves the top pages for a given site.
  *
- * @param {string} siteId - The ID of the site to retrieve the top pages for.
+ * @param {string} url - The URL of the site to retrieve the top pages for.
  * @param {Object} context - The context object containing necessary information.
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
  */
-async function getTopPagesForSite(siteId, context, log) {
+async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const topPagesResponse = await ahrefsAPIClient.getTopPages(siteId, 200);
+    const topPagesResponse = await ahrefsAPIClient.getTopPages(url, 200);
 
     const topPages = topPagesResponse.result;
 
@@ -108,7 +108,7 @@ async function getTopPagesForSite(siteId, context, log) {
 
     return topPages;
   } catch (error) {
-    log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
+    log.error(`Error retrieving top pages for site ${url}: ${error.message}`);
     return [];
   }
 }
