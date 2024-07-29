@@ -14,6 +14,7 @@ import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { JSDOM } from 'jsdom';
 import { fetch } from '../support/utils.js';
 import { getBaseUrlPagesFromSitemaps } from '../sitemap/handler.js';
+import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 // Enums for checks and errors
 const ChecksAndErrors = Object.freeze({
@@ -311,11 +312,14 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
  */
 export default async function auditCanonical(message, context) {
   const { type, url: siteId } = message;
-  const { log } = context;
+  const { dataAccess, log } = context;
 
   log.info(`Received ${type} audit request for siteId: ${siteId}`);
 
   try {
+    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
+    const siteUrl = site.getBaseURL();
+
     const topPages = await getTopPagesForSite(siteId, context, log);
 
     if (topPages.length === 0) {
@@ -324,7 +328,7 @@ export default async function auditCanonical(message, context) {
     }
 
     const aggregatedPageLinks = await getBaseUrlPagesFromSitemaps(
-      context.baseUrl,
+      siteUrl,
       topPages.map((page) => page.url),
     );
 
@@ -342,7 +346,7 @@ export default async function auditCanonical(message, context) {
         const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
         checks.push(urlContentCheck);
 
-        const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, context.baseUrl);
+        const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, siteUrl);
         checks.push(...urlFormatChecks);
       }
 
@@ -359,13 +363,12 @@ export default async function auditCanonical(message, context) {
     log.info(`Successfully completed ${type} audit for siteId: ${siteId}`);
 
     return {
-      domain: context.baseUrl,
+      domain: siteUrl,
       results: auditResults,
     };
   } catch (error) {
     log.error(`${type} audit for siteId ${siteId} failed with error: ${error.message}`, error);
     return {
-      domain: context.baseUrl,
       error: `Audit failed with error: ${error.message}`,
     };
   }
