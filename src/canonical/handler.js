@@ -104,7 +104,8 @@ async function getTopPagesForSite(url, context, log) {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     const topPagesResponse = await ahrefsAPIClient.getTopPages(url, 200);
 
-    const topPages = topPagesResponse.result;
+    log.info('Received top pages response:', topPagesResponse);
+    const topPages = topPagesResponse.pages;
 
     if (!topPages || topPages.length === 0) {
       log.info('No top pages found');
