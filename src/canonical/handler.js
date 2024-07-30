@@ -104,15 +104,16 @@ async function getTopPagesForSite(url, context, log) {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     const topPagesResponse = await ahrefsAPIClient.getTopPages(url, 200);
 
-    log.info('Received top pages response:', topPagesResponse);
+    log.info('Received top pages response:', JSON.stringify(topPagesResponse, null, 2));
     const topPages = topPagesResponse.pages;
 
-    if (!topPages || topPages.length === 0) {
-      log.info('No top pages found');
+    if (Array.isArray(topPages) && topPages.length > 0) {
+      log.info(`Found ${topPages.length} top pages`);
+      return topPages;
+    } else {
+      log.info('No top pages found or "pages" is not an array');
       return [];
     }
-
-    return topPages;
   } catch (error) {
     log.error(`Error retrieving top pages for site ${url}: ${error.message}`);
     return [];
