@@ -435,12 +435,13 @@ function getDate(days) {
  * @param {*} experiments
  */
 function updateExperimentMetadata(experiments) {
-  const yesterday = getDate(1);
+  // get the date 2 days ago to account for timezones
+  const yesterday = getDate(2);
   for (const experiment of experiments) {
     experiment.startDate = experiment.startDate || experiment.inferredStartDate;
-    const inferredDndDate = new Date(experiment.inferredEndDate);
-    inferredDndDate.setHours(0, 0, 0, 0);
-    if (inferredDndDate >= yesterday) {
+    const inferredEndDate = new Date(experiment.inferredEndDate);
+    inferredEndDate.setHours(0, 0, 0, 0);
+    if (inferredEndDate >= yesterday) {
       // found RUM data yesterday, so endDate should be either in the metadata or null
       experiment.endDate = experiment.endDate || null;
     } else {
