@@ -94,31 +94,26 @@ const unknowError = 'Unspecified error';
 /**
  * Retrieves the top pages for a given site.
  *
- * @param {string} siteId - The ID of the site to retrieve the top pages for.
+ * @param {string} url - The page of the site to retrieve the top pages for.
  * @param {Object} context - The context object containing necessary information.
+ * @param log
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
  */
 async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const topPagesResponse = await ahrefsAPIClient.getTopPages(url, 200);
+    const { result } = await ahrefsAPIClient.getTopPages(url, 200);
 
-    log.info('Received top pages response:', JSON.stringify(topPagesResponse, null, 2));
+    log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
-    if (topPagesResponse && topPagesResponse.result && topPagesResponse.result.pages) {
-      const topPages = topPagesResponse.result.pages;
-
-      if (Array.isArray(topPages) && topPages.length > 0) {
-        const topPagesUrls = topPages.map((page) => page.url);
-        log.info(`Found ${topPagesUrls.length} top pages`);
-        return topPagesUrls;
-      } else {
-        log.info('No top pages found or "pages" is not an array');
-        return [];
-      }
+    const topPages = result?.pages || [];
+    if (topPages.length > 0) {
+      const topPagesUrls = topPages.map((page) => page.url);
+      log.info(`Found ${topPagesUrls.length} top pages`);
+      return topPagesUrls;
     } else {
-      log.info('No pages property found in the top pages response');
+      log.info('No top pages found');
       return [];
     }
   } catch (error) {
@@ -134,6 +129,16 @@ async function getTopPagesForSite(url, context, log) {
  * @returns {Promise<Object>} An object containing the canonical URL and an array of checks.
  */
 async function validateCanonicalTag(url, log) {
+  if (!url) {
+    log.error('URL is undefined or null');
+    return {
+      canonicalUrl: null,
+      checks: [{
+        check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
+        error: 'URL is undefined or null',
+      }],
+    };
+  }
   try {
     const response = await fetch(url);
     const html = await response.text();
@@ -363,7 +368,8 @@ export default async function auditCanonical(message, context) {
     );
 
     const auditPromises = topPages.map(async (page) => {
-      const { url } = page;
+      const { url } = page.url;
+      log.info(`Validating canonical tag for URL: ${url}`); // Log the URL being validated
       const checks = [];
 
       const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
