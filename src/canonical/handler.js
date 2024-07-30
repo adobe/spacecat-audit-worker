@@ -105,13 +105,20 @@ async function getTopPagesForSite(url, context, log) {
     const topPagesResponse = await ahrefsAPIClient.getTopPages(url, 200);
 
     log.info('Received top pages response:', JSON.stringify(topPagesResponse, null, 2));
-    const topPages = topPagesResponse.pages;
 
-    if (Array.isArray(topPages) && topPages.length > 0) {
-      log.info(`Found ${topPages.length} top pages`);
-      return topPages;
+    if (topPagesResponse && topPagesResponse.pages) {
+      const topPages = topPagesResponse.pages;
+
+      if (Array.isArray(topPages) && topPages.length > 0) {
+        const topPagesUrls = topPages.map((page) => page.url);
+        log.info(`Found ${topPagesUrls.length} top pages`);
+        return topPagesUrls;
+      } else {
+        log.info('No top pages found or "pages" is not an array');
+        return [];
+      }
     } else {
-      log.info('No top pages found or "pages" is not an array');
+      log.info('No pages property found in the top pages response');
       return [];
     }
   } catch (error) {
@@ -119,7 +126,6 @@ async function getTopPagesForSite(url, context, log) {
     return [];
   }
 }
-
 /**
  * Validates the canonical tag of a given URL.
  *
