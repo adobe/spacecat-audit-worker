@@ -445,11 +445,12 @@ function updateExperimentMetadata(experiments) {
       // found RUM data yesterday, so endDate should be either in the metadata or null
       experiment.endDate = experiment.endDate || null;
     } else {
-      experiment.endDate = experiment.endDate || experiment.inferredEndDate;
+      experiment.endDate = experiment.endDate
+      || (experiment.status === 'ACTIVE' ? null : experiment.inferredEndDate);
     }
     if (!experiment.status) {
       if (experiment.endDate && new Date(experiment.endDate) < new Date()) {
-        experiment.status = 'COMPLETE';
+        experiment.status = 'INACTIVE';
       } else if (experiment.startDate && new Date(experiment.startDate) <= new Date()) {
         experiment.status = 'ACTIVE';
       }
