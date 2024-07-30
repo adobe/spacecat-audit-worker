@@ -168,7 +168,16 @@ async function validateCanonicalTag(url, log) {
           error: ChecksAndErrors.CANONICAL_TAG_NONEMPTY.error,
         });
       } else {
-        canonicalUrl = canonicalLink.href;
+        try {
+          canonicalUrl = new URL(canonicalLink.href, url).toString();
+        } catch (error) {
+          log.error(`Invalid canonical URL found: ${canonicalLink.href} on page ${url}`);
+          checks.push({
+            check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
+            error: 'invalid-canonical-url',
+            explanation: `The canonical URL ${canonicalLink.href} is invalid.`,
+          });
+        }
       }
 
       if (canonicalLink.closest('head') === null) {
@@ -181,7 +190,7 @@ async function validateCanonicalTag(url, log) {
 
     return { canonicalUrl, checks };
   } catch (error) {
-    log.error(`Error validating canonical tag for ${ChecksAndErrors.CANONICAL_TAG_EXISTS.check} ${url}: ${error.message}`);
+    log.error(`Error validating canonical tag for ${url}: ${error.message}`);
     return {
       canonicalUrl: null,
       checks: [{
