@@ -430,6 +430,32 @@ function getDate(days) {
   return date;
 }
 
+/**
+ * Updates the experiment start, end dates and status based on the inferred dates
+ * @param {*} experiments
+ */
+function updateExperimentMetadata(experiments) {
+  const yesterday = getDate(1);
+  for (const experiment of experiments) {
+    experiment.startDate = experiment.startDate || experiment.inferredStartDate;
+    const inferredDndDate = new Date(experiment.inferredEndDate);
+    inferredDndDate.setHours(0, 0, 0, 0);
+    if (inferredDndDate >= yesterday) {
+      // found RUM data yesterday, so endDate should be either in the metadata or null
+      experiment.endDate = experiment.endDate || null;
+    } else {
+      experiment.endDate = experiment.endDate || experiment.inferredEndDate;
+    }
+    if (!experiment.status) {
+      if (experiment.endDate && new Date(experiment.endDate) < new Date()) {
+        experiment.status = 'COMPLETE';
+      } else if (experiment.startDate && new Date(experiment.startDate) <= new Date()) {
+        experiment.status = 'ACTIVE';
+      }
+    }
+  }
+}
+
 async function convertToExperimentsSchema(experimentInsights) {
   const experiments = [];
   for (const url of Object.keys(experimentInsights)) {
@@ -444,22 +470,13 @@ async function convertToExperimentsSchema(experimentInsights) {
         log.error(`Error fetching experiment [${id}] metadata at url ${url}: ${e}`);
       }
       const experiment = mergeData(getObjectByProperty(experiments, 'id', id), experimentMetadataFromPage, url) || {};
-      experiment.startDate = experiment.startDate || exp.inferredStartDate;
-      const yesterday = getDate(1);
-      const inferredEndDate = new Date(exp.inferredEndDate);
-      inferredEndDate.setHours(0, 0, 0, 0);
-      if (inferredEndDate >= yesterday) {
-        // found RUM data yesterday, so endDate should be either in the metadata or null
-        experiment.endDate = experiment.endDate || null;
-      } else {
-        experiment.endDate = experiment.endDate || exp.inferredEndDate;
+      if (!experiment.inferredStartDate
+        || new Date(exp.inferredStartDate) < new Date(experiment.inferredStartDate)) {
+        experiment.inferredStartDate = exp.inferredStartDate;
       }
-      if (!experiment.status) {
-        if (experiment.endDate && new Date(experiment.endDate) < new Date()) {
-          experiment.status = 'COMPLETE';
-        } else if (experiment.startDate && new Date(experiment.startDate) <= new Date()) {
-          experiment.status = 'ACTIVE';
-        }
+      if (!experiment.inferredEndDate
+        || new Date(exp.inferredEndDate) > new Date(experiment.inferredEndDate)) {
+        experiment.inferredEndDate = exp.inferredEndDate;
       }
       const variants = experiment?.variants || [];
       for (const expVariant of exp.variants) {
@@ -519,6 +536,7 @@ async function convertToExperimentsSchema(experimentInsights) {
       }
     }
   }
+  updateExperimentMetadata(experiments);
   return experiments;
 }
 
