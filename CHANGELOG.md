@@ -1,3 +1,10 @@
+## [1.22.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.7...v1.22.8) (2024-07-30)
+
+
+### Bug Fixes
+
+* incorrect experiment end date showing the experiment status incorrectly ([#333](https://github.com/adobe/spacecat-audit-worker/issues/333)) ([b497a9d](https://github.com/adobe/spacecat-audit-worker/commit/b497a9d206592c4695e3b90455b0b1e708ada7f8))
+
 ## [1.22.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.6...v1.22.7) (2024-07-30)
 
 
