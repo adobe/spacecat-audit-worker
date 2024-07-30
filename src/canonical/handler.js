@@ -21,67 +21,71 @@ const ChecksAndErrors = Object.freeze({
   CANONICAL_TAG_EXISTS: {
     check: 'canonical-tag-exists',
     error: 'canonical-tag-not-found',
-    explanation: 'Canonical tag is missing.',
+    explanation: 'The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.',
   },
   CANONICAL_TAG_ONCE: {
     check: 'canonical-tag-once',
     error: 'multiple-canonical-tags',
-    explanation: 'Multiple canonical tags found.',
+    explanation: 'Multiple canonical tags detected, which confuses search engines and can dilute page authority.',
   },
   CANONICAL_TAG_NONEMPTY: {
     check: 'canonical-tag-nonempty',
     error: 'canonical-tag-empty',
-    explanation: 'Canonical tag is empty.',
+    explanation: 'The canonical tag is empty. It should point to the preferred version of the page to avoid content duplication.',
   },
   CANONICAL_TAG_IN_HEAD: {
     check: 'canonical-tag-in-head',
     error: 'canonical-tag-not-in-head',
-    explanation: 'Canonical tag is not in the head section.',
+    explanation: 'The canonical tag must be placed in the head section of the HTML document to ensure it is recognized by search engines.',
   },
   CANONICAL_URL_IN_SITEMAP: {
     check: 'canonical-url-in-sitemap',
     error: 'canonical-url-not-in-sitemap',
-    explanation: 'Canonical URL is not present in the sitemap.',
+    explanation: 'The canonical URL should be included in the sitemap to facilitate its discovery by search engines, improving indexing.',
   },
   CANONICAL_URL_4XX: {
     check: 'canonical-url-4xx',
-    error: 'canonical-url-4xx',
-    explanation: 'Canonical URL returns a 4xx status code.',
+    error: 'canonical-url-4xx-error',
+    explanation: 'The canonical URL returns a 4xx error, indicating it is inaccessible, which can harm SEO visibility.',
   },
   CANONICAL_URL_3XX: {
     check: 'canonical-url-3xx',
-    error: 'canonical-url-3xx',
-    explanation: 'Canonical URL returns a 3xx status code.',
+    error: 'canonical-url-3xx-redirect',
+    explanation: 'The canonical URL returns a 3xx redirect, which may lead to confusion for search engines and dilute page authority.',
   },
   CANONICAL_URL_5XX: {
     check: 'canonical-url-5xx',
-    error: 'canonical-url-5xx',
-    explanation: 'Canonical URL returns a 5xx status code.',
+    error: 'canonical-url-5xx-error',
+    explanation: 'The canonical URL returns a 5xx server error, indicating it is temporarily or permanently unavailable, affecting SEO performance.',
   },
   CANONICAL_URL_NO_REDIRECT: {
     check: 'canonical-url-no-redirect',
     error: 'canonical-url-redirect',
-    explanation: 'Canonical URL should not be a redirect.',
+    explanation: 'The canonical URL should be a direct link without redirects to ensure search engines recognize the intended page.',
   },
   CANONICAL_URL_ABSOLUTE: {
     check: 'canonical-url-absolute',
     error: 'canonical-url-not-absolute',
-    explanation: 'Relative path not allowed. An absolute URL eliminates any ambiguity about the page’s location.',
+    explanation: 'Canonical URLs must be absolute to avoid ambiguity in URL resolution and ensure proper indexing by search engines.',
   },
   CANONICAL_URL_SAME_DOMAIN: {
     check: 'canonical-url-same-domain',
     error: 'canonical-url-different-domain',
-    explanation: 'Canonical URL domain differs from the sitemap domain.',
+    explanation: 'The canonical URL should match the domain of the page to avoid signaling to search engines that the content is duplicated elsewhere.',
   },
   CANONICAL_URL_SAME_PROTOCOL: {
     check: 'canonical-url-same-protocol',
     error: 'canonical-url-different-protocol',
-    explanation: 'Canonical URL protocol differs from the sitemap protocol.',
+    explanation: 'The canonical URL must use the same protocol (HTTP or HTTPS) as the page to maintain consistency and avoid indexing issues.',
   },
   CANONICAL_URL_LOWERCASED: {
     check: 'canonical-url-lowercased',
     error: 'canonical-url-not-lowercased',
-    explanation: 'Canonical URL is not in lowercase.',
+    explanation: 'Canonical URLs should be in lowercase to prevent duplicate content issues since URLs are case-sensitive.',
+  },
+  TOPPAGES: {
+    check: 'top-pages',
+    error: 'no-top-pages-found',
   },
 });
 
@@ -95,10 +99,10 @@ const unknowError = 'Unspecified error';
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
  */
-async function getTopPagesForSite(siteId, context, log) {
+async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const topPagesResponse = await ahrefsAPIClient.getTopPages(siteId, 200);
+    const topPagesResponse = await ahrefsAPIClient.getTopPages(url, 200);
 
     const topPages = topPagesResponse.result;
 
@@ -109,7 +113,7 @@ async function getTopPagesForSite(siteId, context, log) {
 
     return topPages;
   } catch (error) {
-    log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
+    log.error(`Error retrieving top pages for site ${url}: ${error.message}`);
     return [];
   }
 }
@@ -315,16 +319,25 @@ export default async function auditCanonical(message, context) {
   const { dataAccess, log } = context;
 
   log.info(`Received ${type} audit request for siteId: ${siteId}`);
+  let auditSuccess = true;
 
   try {
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
     const siteUrl = site.getBaseURL();
 
-    const topPages = await getTopPagesForSite(siteId, context, log);
+    const topPages = await getTopPagesForSite(siteUrl, context, log);
+    // const topPages = await dataAccess.getTopPagesForSite(siteId, context, log);
 
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
-      return {};
+      return {
+        domain: siteUrl,
+        results: [{
+          check: ChecksAndErrors.TOPPAGES.check,
+          error: ChecksAndErrors.TOPPAGES.error,
+        }],
+        success: false,
+      };
     }
 
     const aggregatedPageLinks = await getBaseUrlPagesFromSitemaps(
@@ -350,6 +363,10 @@ export default async function auditCanonical(message, context) {
         checks.push(...urlFormatChecks);
       }
 
+      if (checks.some((check) => check.error)) {
+        auditSuccess = false;
+      }
+
       return { [url]: checks };
     });
 
@@ -365,11 +382,13 @@ export default async function auditCanonical(message, context) {
     return {
       domain: siteUrl,
       results: auditResults,
+      success: auditSuccess,
     };
   } catch (error) {
     log.error(`${type} audit for siteId ${siteId} failed with error: ${error.message}`, error);
     return {
       error: `Audit failed with error: ${error.message}`,
+      success: false,
     };
   }
 }
