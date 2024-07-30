@@ -106,8 +106,8 @@ async function getTopPagesForSite(url, context, log) {
 
     log.info('Received top pages response:', JSON.stringify(topPagesResponse, null, 2));
 
-    if (topPagesResponse && topPagesResponse.pages) {
-      const topPages = topPagesResponse.pages;
+    if (topPagesResponse && topPagesResponse.result && topPagesResponse.result.pages) {
+      const topPages = topPagesResponse.result.pages;
 
       if (Array.isArray(topPages) && topPages.length > 0) {
         const topPagesUrls = topPages.map((page) => page.url);
