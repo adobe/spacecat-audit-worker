@@ -142,6 +142,7 @@ async function validateCanonicalTag(url, log) {
   try {
     const response = await fetch(url);
     const html = await response.text();
+    log.info(`Fetched HTML for ${url}: ${html.substring(0, 1000)}...`); // Log the first 1000 characters of the HTML
     const dom = new JSDOM(html);
     const { head } = dom.window.document;
     const canonicalLinks = head.querySelectorAll('link[rel="canonical"]');
@@ -174,13 +175,13 @@ async function validateCanonicalTag(url, log) {
         });
       } else {
         try {
-          canonicalUrl = new URL(canonicalLink.href, url).toString();
+          canonicalUrl = new URL(canonicalLink.getAttribute('href'), url).toString();
         } catch (error) {
-          log.error(`Invalid canonical URL found: ${canonicalLink.href} on page ${url}`);
+          log.error(`Invalid canonical URL found: ${canonicalLink.getAttribute('href')} on page ${url}`);
           checks.push({
             check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
             error: 'invalid-canonical-url',
-            explanation: `The canonical URL ${canonicalLink.href} is invalid.`,
+            explanation: `The canonical URL ${canonicalLink.getAttribute('href')} is invalid.`,
           });
         }
       }
