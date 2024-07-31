@@ -109,7 +109,7 @@ async function getTopPagesForSite(url, context, log) {
 
     const topPages = result?.pages || [];
     if (topPages.length > 0) {
-      const topPagesUrls = topPages.map((page) => page.url);
+      const topPagesUrls = topPages.map((page) => ({ url: page.url }));
       log.info(`Found ${topPagesUrls.length} top pages`);
       return topPagesUrls;
     } else {
@@ -369,7 +369,7 @@ export default async function auditCanonical(message, context) {
 
     const auditPromises = topPages.map(async (page) => {
       const { url } = page.url;
-      log.info(`Validating canonical tag for URL: ${url}`); // Log the URL being validated
+      log.info(`Validating canonical tag for URL: ${url}`);
       const checks = [];
 
       const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
