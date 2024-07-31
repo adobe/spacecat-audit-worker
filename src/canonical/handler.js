@@ -107,7 +107,7 @@ async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
 
-    const { result } = await ahrefsAPIClient.getTopPages(url, 200);
+    const { result } = await ahrefsAPIClient.getTopPages(url, 5);
 
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
@@ -224,15 +224,15 @@ async function validateCanonicalTag(url, log) {
  * @param {string} canonicalUrl - The canonical URL to validate.
  * @returns {Object} An object containing the check result and any error if the check failed.
  */
-function validateCanonicalInSitemap(pageLinks, canonicalUrl) {
-  if (pageLinks.includes(canonicalUrl)) {
-    return { check: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.check, success: true };
-  }
-  return {
-    check: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.check,
-    error: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.error,
-  };
-}
+// function validateCanonicalInSitemap(pageLinks, canonicalUrl) {
+//   if (pageLinks.includes(canonicalUrl)) {
+//     return { check: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.check, success: true };
+//   }
+//   return {
+//     check: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.check,
+//     error: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.error,
+//   };
+// }
 
 /**
  * Recursively validates the contents of a canonical URL.
@@ -398,8 +398,8 @@ export async function canonicalAuditRunner(input, context) {
           allPages.push(...pages);
         }
 
-        const sitemapCheck = validateCanonicalInSitemap(allPages, canonicalUrl);
-        checks.push(sitemapCheck);
+        // const sitemapCheck = validateCanonicalInSitemap(allPages, canonicalUrl);
+        // checks.push(sitemapCheck);
 
         const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
         checks.push(urlContentCheck);
