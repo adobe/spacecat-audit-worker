@@ -14,7 +14,8 @@ import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { JSDOM } from 'jsdom';
 import { fetch } from '../support/utils.js';
 import { getBaseUrlPagesFromSitemaps } from '../sitemap/handler.js';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { AuditBuilder } from '../common/audit-builder.js';
+import { noopUrlResolver } from '../common/audit.js';
 
 // Enums for checks and errors
 const ChecksAndErrors = Object.freeze({
@@ -103,6 +104,7 @@ const unknowError = 'Unspecified error';
 async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
+
     const { result } = await ahrefsAPIClient.getTopPages(url, 200);
 
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
@@ -142,7 +144,6 @@ async function validateCanonicalTag(url, log) {
   try {
     const response = await fetch(url);
     const html = await response.text();
-    log.info(`Fetched HTML for ${url}: ${html.substring(0, 1000)}...`); // Log the first 1000 characters of the HTML
     const dom = new JSDOM(html);
     const { head } = dom.window.document;
     const canonicalLinks = head.querySelectorAll('link[rel="canonical"]');
@@ -332,29 +333,21 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
 /**
  * Audits the canonical URLs for a given site.
  *
- * @param message
+ * @param {string} baseURL
  * @param {Object} context - The context object containing necessary information.
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Object>} An object containing the audit results.
  */
-export default async function auditCanonical(message, context) {
-  const { type, url: siteId } = message;
-  const { dataAccess, log } = context;
-
-  log.info(`Received ${type} audit request for siteId: ${siteId}`);
+export async function canonicalAuditRunner(baseURL, context) {
+  const { log } = context;
   let auditSuccess = true;
 
   try {
-    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    const siteUrl = site.getBaseURL();
-
-    const topPages = await getTopPagesForSite(siteUrl, context, log);
-    // const topPages = await dataAccess.getTopPagesForSite(siteId, context, log);
-
+    const topPages = await getTopPagesForSite(baseURL, context, log);
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
       return {
-        domain: siteUrl,
+        domain: baseURL,
         results: [{
           check: ChecksAndErrors.TOPPAGES.check,
           error: ChecksAndErrors.TOPPAGES.error,
@@ -364,7 +357,7 @@ export default async function auditCanonical(message, context) {
     }
 
     const aggregatedPageLinks = await getBaseUrlPagesFromSitemaps(
-      siteUrl,
+      baseURL,
       topPages.map((page) => page.url),
     );
 
@@ -377,13 +370,19 @@ export default async function auditCanonical(message, context) {
       checks.push(...canonicalTagChecks);
 
       if (canonicalUrl && !canonicalTagChecks.some((check) => check.error)) {
-        const sitemapCheck = validateCanonicalInSitemap(aggregatedPageLinks, canonicalUrl);
+        const allPages = [];
+        const setsOfPages = Object.values(aggregatedPageLinks);
+        for (const pages of setsOfPages) {
+          allPages.push(...pages);
+        }
+
+        const sitemapCheck = validateCanonicalInSitemap(allPages, canonicalUrl);
         checks.push(sitemapCheck);
 
         const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
         checks.push(urlContentCheck);
 
-        const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, siteUrl);
+        const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, baseURL);
         checks.push(...urlFormatChecks);
       }
 
@@ -401,18 +400,24 @@ export default async function auditCanonical(message, context) {
       return acc;
     }, {});
 
-    log.info(`Successfully completed ${type} audit for siteId: ${siteId}`);
+    log.info(`Successfully completed canonical audit for site: ${baseURL}`);
 
     return {
-      domain: siteUrl,
+      domain: baseURL,
       results: auditResults,
       success: auditSuccess,
     };
   } catch (error) {
-    log.error(`${type} audit for siteId ${siteId} failed with error: ${error.message}`, error);
+    // log.error(`canonical audit for site ${baseURL} failed with error: ${error.message}`, error);
+    log.error(`canonical audit for site ${baseURL} failed with error: ${error.message} ${JSON.stringify(error)}`, error);
     return {
       error: `Audit failed with error: ${error.message}`,
       success: false,
     };
   }
 }
+
+export default new AuditBuilder()
+  .withUrlResolver(noopUrlResolver)
+  .withRunner(canonicalAuditRunner)
+  .build();
