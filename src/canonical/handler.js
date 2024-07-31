@@ -144,11 +144,15 @@ async function validateCanonicalTag(url, log) {
     };
   }
   try {
+    log.info(`Fetching URL: ${url}`);
     const response = await fetch(url);
     const html = await response.text();
+    log.info(`Fetched HTML content for URL: ${url}`);
     const dom = new JSDOM(html);
+    log.info(`Parsed DOM for URL: ${url}`);
     const { head } = dom.window.document;
     const canonicalLinks = head.querySelectorAll('link[rel="canonical"]');
+    log.info(`Found canonical links: ${JSON.stringify(canonicalLinks)}`);
     const checks = [];
     let canonicalUrl = null;
 
@@ -157,22 +161,27 @@ async function validateCanonicalTag(url, log) {
         check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
         error: ChecksAndErrors.CANONICAL_TAG_EXISTS.error,
       });
+      log.info(`No canonical tag found for URL: ${url}`);
     } else if (canonicalLinks.length > 1) {
       checks.push({
         check: ChecksAndErrors.CANONICAL_TAG_ONCE.check,
         error: ChecksAndErrors.CANONICAL_TAG_ONCE.error,
       });
+      log.info(`Multiple canonical tags found for URL: ${url}`);
     } else {
       const canonicalLink = canonicalLinks[0];
+      log.info(`Canonical link element: ${JSON.stringify(canonicalLink.outerHTML)}`);
       const href = canonicalLink.getAttribute('href');
       if (!href) {
         checks.push({
           check: ChecksAndErrors.CANONICAL_TAG_NONEMPTY.check,
           error: ChecksAndErrors.CANONICAL_TAG_NONEMPTY.error,
         });
+        log.info(`Empty canonical tag found for URL: ${url}`);
       } else {
         try {
           canonicalUrl = new URL(href, url).toString();
+          log.info(`Valid canonical URL resolved: ${canonicalUrl}`);
         } catch (error) {
           log.error(`Invalid canonical URL found: ${href} on page ${url}`);
           checks.push({
@@ -188,9 +197,11 @@ async function validateCanonicalTag(url, log) {
           check: ChecksAndErrors.CANONICAL_TAG_IN_HEAD.check,
           error: ChecksAndErrors.CANONICAL_TAG_IN_HEAD.error,
         });
+        log.info(`Canonical tag is not in the head section for URL: ${url}`);
       }
     }
 
+    log.info(`Validation checks for URL: ${url}, Checks: ${JSON.stringify(checks)}`);
     return { canonicalUrl, checks };
   } catch (error) {
     log.error(`Error validating canonical tag for ${url}: ${error.message}`);
@@ -337,7 +348,7 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
  */
 export async function canonicalAuditRunner(input, context) {
   const { log, dataAccess } = context;
-
+  log.info(`Starting canonical audit with input: ${JSON.stringify(input)}`);
   // temporary, to check what input it gets
   let baseURL = input;
   if (!baseURL.startsWith('https://')) {
@@ -346,10 +357,12 @@ export async function canonicalAuditRunner(input, context) {
       return notFound('Site not found');
     }
     baseURL = site.getBaseURL();
+    log.info(`Retrieved base URL: ${baseURL} for site ID: ${input}`);
   }
 
   try {
     const topPages = await getTopPagesForSite(baseURL, context, log);
+    log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
       return {
@@ -366,6 +379,7 @@ export async function canonicalAuditRunner(input, context) {
       baseURL,
       topPages.map((page) => page.url),
     );
+    log.info(`Aggregated page links from sitemaps for baseURL ${baseURL}: ${JSON.stringify(aggregatedPageLinks)}`);
 
     const auditPromises = topPages.map(async (page) => {
       const { url } = page.url;
@@ -391,7 +405,7 @@ export async function canonicalAuditRunner(input, context) {
         const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, baseURL);
         checks.push(...urlFormatChecks);
       }
-
+      log.info(`Checks for URL ${url}: ${JSON.stringify(checks)}`);
       return { [url]: checks };
     });
 
@@ -403,6 +417,7 @@ export async function canonicalAuditRunner(input, context) {
     }, {});
 
     log.info(`Successfully completed canonical audit for site: ${baseURL}`);
+    log.info(`Audit results: ${JSON.stringify(auditResults)}`);
 
     return {
       fullAuditRef: baseURL,
