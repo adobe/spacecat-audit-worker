@@ -148,7 +148,13 @@ async function validateCanonicalTag(url, log) {
     const response = await fetch(url);
     const html = await response.text();
     log.info(`Fetched HTML content for URL: ${url}`);
-    const dom = new JSDOM(html);
+    // Sanitize HTML content to avoid parsing errors
+    const sanitizedHtml = html.replace(/<(\w+)([^>]*)>/g, (match, tagName, attributes) => {
+      const sanitizedAttributes = attributes.replace(/(\w+)=["']?([^"'\s]*)["']?/g, (attrMatch, attrName, attrValue) => (attrValue ? `${attrName}="${attrValue}"` : `${attrName}=""`));
+      return `<${tagName}${sanitizedAttributes}>`;
+    });
+
+    const dom = new JSDOM(sanitizedHtml);
     log.info(`Parsed DOM for URL: ${url}`);
     const { head } = dom.window.document;
     const canonicalLinks = head.querySelectorAll('link[rel="canonical"]');
@@ -359,7 +365,6 @@ export async function canonicalAuditRunner(input, context) {
     baseURL = site.getBaseURL();
     log.info(`Retrieved base URL: ${baseURL} for site ID: ${input}`);
   }
-
   try {
     const topPages = await getTopPagesForSite(baseURL, context, log);
     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
