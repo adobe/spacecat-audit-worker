@@ -92,7 +92,7 @@ const ChecksAndErrors = Object.freeze({
   },
 });
 
-const unknowError = 'Unspecified error';
+// const unknowError = 'Unspecified error';
 
 /**
  * Retrieves the top pages for a given site.
@@ -152,50 +152,44 @@ async function validateCanonicalTag(url, log) {
     const checks = [];
     let canonicalUrl = null;
 
-    // Check if canonical links are present
     if (canonicalLinks.length === 0) {
       checks.push({
         check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
         error: ChecksAndErrors.CANONICAL_TAG_EXISTS.error,
       });
-      return { canonicalUrl, checks };
-    }
-
-    // Check for multiple canonical links and non-empty href
-    if (canonicalLinks.length > 1) {
+    } else if (canonicalLinks.length > 1) {
       checks.push({
         check: ChecksAndErrors.CANONICAL_TAG_ONCE.check,
         error: ChecksAndErrors.CANONICAL_TAG_ONCE.error,
       });
-      return { canonicalUrl, checks };
-    }
-
-    canonicalLinks.forEach((canonicalLink) => {
-      if (!canonicalLink.href) {
+    } else {
+      const canonicalLink = canonicalLinks[0];
+      const href = canonicalLink.getAttribute('href');
+      if (!href) {
         checks.push({
           check: ChecksAndErrors.CANONICAL_TAG_NONEMPTY.check,
           error: ChecksAndErrors.CANONICAL_TAG_NONEMPTY.error,
         });
       } else {
         try {
-          canonicalUrl = new URL(canonicalLink.getAttribute('href'), url).toString();
+          canonicalUrl = new URL(href, url).toString();
         } catch (error) {
-          log.error(`Invalid canonical URL found: ${canonicalLink.getAttribute('href')} on page ${url}`);
+          log.error(`Invalid canonical URL found: ${href} on page ${url}`);
           checks.push({
             check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
             error: 'invalid-canonical-url',
-            explanation: `The canonical URL ${canonicalLink.getAttribute('href')} is invalid.`,
+            explanation: `The canonical URL ${href} is invalid.`,
           });
         }
       }
 
-      if (canonicalLink.closest('head') === null) {
+      if (!canonicalLink.closest('head')) {
         checks.push({
           check: ChecksAndErrors.CANONICAL_TAG_IN_HEAD.check,
           error: ChecksAndErrors.CANONICAL_TAG_IN_HEAD.error,
         });
       }
-    });
+    }
 
     return { canonicalUrl, checks };
   } catch (error) {
@@ -204,7 +198,8 @@ async function validateCanonicalTag(url, log) {
       canonicalUrl: null,
       checks: [{
         check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
-        error: unknowError,
+        error: 'Error fetching or parsing HTML document',
+        explanation: error.message,
       }],
     };
   }
