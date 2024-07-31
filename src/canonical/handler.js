@@ -134,43 +134,60 @@ async function getTopPagesForSite(url, context, log) {
  */
 async function validateCanonicalTag(url, log) {
   if (!url) {
-    log.error('URL is undefined or null');
+    const errorMessage = 'URL is undefined or null';
+    log.error(errorMessage);
     return {
       canonicalUrl: null,
       checks: [{
         check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
-        error: 'URL is undefined or null',
+        error: errorMessage,
       }],
     };
   }
+
   try {
     log.info(`Fetching URL: ${url}`);
     const response = await fetch(url);
     const html = await response.text();
     log.info(`Fetched HTML content for URL: ${url}`);
+
     const dom = new JSDOM(html);
     log.info(`Parsed DOM for URL: ${url}`);
+
     const { head } = dom.window.document;
     const canonicalLinks = head.querySelectorAll('link[rel="canonical"]');
-    log.info(`Found canonical links: ${JSON.stringify(canonicalLinks)}`);
+
+    // Initialize checks array and canonicalUrl variable
     const checks = [];
     let canonicalUrl = null;
 
+    // Log presence or absence of canonical tags
     if (canonicalLinks.length === 0) {
       checks.push({
         check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
         error: ChecksAndErrors.CANONICAL_TAG_EXISTS.error,
       });
       log.info(`No canonical tag found for URL: ${url}`);
-    } else if (canonicalLinks.length > 1) {
+    } else {
+      // Log the success of canonical tag existence
+      checks.push({
+        check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
+        success: true,
+      });
+      log.info(`Canonical tag exists for URL: ${url}`);
+    }
+
+    // Handle multiple canonical tags
+    if (canonicalLinks.length > 1) {
       checks.push({
         check: ChecksAndErrors.CANONICAL_TAG_ONCE.check,
         error: ChecksAndErrors.CANONICAL_TAG_ONCE.error,
       });
       log.info(`Multiple canonical tags found for URL: ${url}`);
-    } else {
+    } else if (canonicalLinks.length === 1) {
       const canonicalLink = canonicalLinks[0];
       log.info(`Canonical link element: ${JSON.stringify(canonicalLink.outerHTML)}`);
+
       const href = canonicalLink.getAttribute('href');
       if (!href) {
         checks.push({
@@ -181,30 +198,42 @@ async function validateCanonicalTag(url, log) {
       } else {
         try {
           canonicalUrl = new URL(href, url).toString();
+          checks.push({
+            check: ChecksAndErrors.CANONICAL_TAG_NONEMPTY.check,
+            success: true,
+          });
           log.info(`Valid canonical URL resolved: ${canonicalUrl}`);
         } catch (error) {
-          log.error(`Invalid canonical URL found: ${href} on page ${url}`);
           checks.push({
-            check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
+            check: ChecksAndErrors.CANONICAL_TAG_NONEMPTY.check,
             error: 'invalid-canonical-url',
             explanation: `The canonical URL ${href} is invalid.`,
           });
+          log.error(`Invalid canonical URL found: ${href} on page ${url}`);
         }
       }
 
+      // Check if canonical link is in the head section
       if (!canonicalLink.closest('head')) {
         checks.push({
           check: ChecksAndErrors.CANONICAL_TAG_IN_HEAD.check,
           error: ChecksAndErrors.CANONICAL_TAG_IN_HEAD.error,
         });
         log.info(`Canonical tag is not in the head section for URL: ${url}`);
+      } else {
+        checks.push({
+          check: ChecksAndErrors.CANONICAL_TAG_IN_HEAD.check,
+          success: true,
+        });
+        log.info(`Canonical tag is in the head section for URL: ${url}`);
       }
     }
 
     log.info(`Validation checks for URL: ${url}, Checks: ${JSON.stringify(checks)}`);
     return { canonicalUrl, checks };
   } catch (error) {
-    log.error(`Error validating canonical tag for ${url}: ${error.message}`);
+    const errorMessage = `Error validating canonical tag for ${url}: ${error.message}`;
+    log.error(errorMessage);
     return {
       canonicalUrl: null,
       checks: [{
