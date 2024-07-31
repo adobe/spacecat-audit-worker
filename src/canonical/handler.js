@@ -10,9 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
+// import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { JSDOM } from 'jsdom';
 import { notFound } from '@adobe/spacecat-shared-http-utils';
+import { getTopPagesForSite } from '@adobe/spacecat-shared-data-access';
 import { fetch } from '../support/utils.js';
 import { getBaseUrlPagesFromSitemaps } from '../sitemap/handler.js';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -103,28 +104,28 @@ const ChecksAndErrors = Object.freeze({
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
  */
-async function getTop200Pages(url, context, log) {
-  try {
-    const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-
-    const { result } = await ahrefsAPIClient.getTopPages(url, 200);
-
-    log.info('Received top pages response:', JSON.stringify(result, null, 2));
-
-    const topPages = result?.pages || [];
-    if (topPages.length > 0) {
-      const topPagesUrls = topPages.map((page) => ({ url: page.url }));
-      log.info(`Found ${topPagesUrls.length} top pages`);
-      return topPagesUrls;
-    } else {
-      log.info('No top pages found');
-      return [];
-    }
-  } catch (error) {
-    log.error(`Error retrieving top pages for site ${url}: ${error.message}`);
-    return [];
-  }
-}
+// async function getTop200Pages(url, context, log) {
+//   try {
+//     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
+//
+//     const { result } = await ahrefsAPIClient.getTopPages(url, 200);
+//
+//     log.info('Received top pages response:', JSON.stringify(result, null, 2));
+//
+//     const topPages = result?.pages || [];
+//     if (topPages.length > 0) {
+//       const topPagesUrls = topPages.map((page) => ({ url: page.url }));
+//       log.info(`Found ${topPagesUrls.length} top pages`);
+//       return topPagesUrls;
+//     } else {
+//       log.info('No top pages found');
+//       return [];
+//     }
+//   } catch (error) {
+//     log.error(`Error retrieving top pages for site ${url}: ${error.message}`);
+//     return [];
+//   }
+// }
 /**
  * Validates the canonical tag of a given URL
  *
@@ -361,7 +362,7 @@ export async function canonicalAuditRunner(input, context) {
     log.info(`Retrieved base URL: ${baseURL} for site ID: ${input}`);
   }
   try {
-    const topPages = await getTop200Pages(baseURL, context, log);
+    const topPages = await getTopPagesForSite(baseURL, context, log);
     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
