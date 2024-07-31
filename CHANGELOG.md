@@ -1,3 +1,24 @@
+## [1.22.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.7...v1.22.8) (2024-07-30)
+
+
+### Bug Fixes
+
+* incorrect experiment end date showing the experiment status incorrectly ([#333](https://github.com/adobe/spacecat-audit-worker/issues/333)) ([b497a9d](https://github.com/adobe/spacecat-audit-worker/commit/b497a9d206592c4695e3b90455b0b1e708ada7f8))
+
+## [1.22.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.6...v1.22.7) (2024-07-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.5.2 ([#338](https://github.com/adobe/spacecat-audit-worker/issues/338)) ([48733c7](https://github.com/adobe/spacecat-audit-worker/commit/48733c7c619a55faa298c04d9bf9af11e09cd595))
+
+## [1.22.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.5...v1.22.6) (2024-07-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.4.0 ([#337](https://github.com/adobe/spacecat-audit-worker/issues/337)) ([5e50fee](https://github.com/adobe/spacecat-audit-worker/commit/5e50fee282fd97a7c32e999b9d5af84ac52b29fb))
+
 ## [1.22.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.4...v1.22.5) (2024-07-27)
 
 
