@@ -107,7 +107,7 @@ async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
 
-    const { result } = await ahrefsAPIClient.getTopPages(url, 5);
+    const { result } = await ahrefsAPIClient.getTopPages(url, 1);
 
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
@@ -148,7 +148,6 @@ async function validateCanonicalTag(url, log) {
     const response = await fetch(url);
     const html = await response.text();
     log.info(`Fetched HTML content for URL: ${url}`);
-    log.debug(`HTML content: ${html}`); // Log the HTML content
     const dom = new JSDOM(html);
     log.info(`Parsed DOM for URL: ${url}`);
     const { head } = dom.window.document;
@@ -393,9 +392,16 @@ export async function canonicalAuditRunner(input, context) {
       if (canonicalUrl && !canonicalTagChecks.some((check) => check.error)) {
         const allPages = [];
         // const setsOfPages = Object.values(aggregatedPageLinks);
-        const setsOfPages = Object.values(topPages);
+        const setsOfPages = topPages;
+        // for (const pages of setsOfPages) {
+        //   allPages.push(...pages);
+        // }
         for (const pages of setsOfPages) {
-          allPages.push(...pages);
+          if (Array.isArray(pages)) {
+            allPages.push(...pages);
+          } else if (pages && pages.url) {
+            allPages.push(pages.url);
+          }
         }
 
         // const sitemapCheck = validateCanonicalInSitemap(allPages, canonicalUrl);
