@@ -382,7 +382,7 @@ export async function canonicalAuditRunner(input, context) {
     log.info(`Aggregated page links from sitemaps for baseURL ${baseURL}: ${JSON.stringify(aggregatedPageLinks)}`);
 
     const auditPromises = topPages.map(async (page) => {
-      const { url } = page.url;
+      const { url } = page;
       log.info(`Validating canonical tag for URL: ${url}`);
       const checks = [];
 
