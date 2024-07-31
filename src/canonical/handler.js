@@ -103,7 +103,7 @@ const ChecksAndErrors = Object.freeze({
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
  */
-async function getTopPagesForSite(url, context, log) {
+async function getTop200Pages(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
 
@@ -361,7 +361,7 @@ export async function canonicalAuditRunner(input, context) {
     log.info(`Retrieved base URL: ${baseURL} for site ID: ${input}`);
   }
   try {
-    const topPages = await getTopPagesForSite(baseURL, context, log);
+    const topPages = await getTop200Pages(baseURL, context, log);
     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
