@@ -342,7 +342,6 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
  */
 export async function canonicalAuditRunner(input, context) {
   const { log, dataAccess } = context;
-  let auditSuccess = true;
 
   // temporary, to check what input it gets
   let baseURL = input;
@@ -398,10 +397,6 @@ export async function canonicalAuditRunner(input, context) {
         checks.push(...urlFormatChecks);
       }
 
-      if (checks.some((check) => check.error)) {
-        auditSuccess = false;
-      }
-
       return { [url]: checks };
     });
 
@@ -415,9 +410,8 @@ export async function canonicalAuditRunner(input, context) {
     log.info(`Successfully completed canonical audit for site: ${baseURL}`);
 
     return {
-      domain: baseURL,
-      results: auditResults,
-      success: auditSuccess,
+      fullAuditRef: baseURL,
+      auditResult: auditResults,
     };
   } catch (error) {
     // log.error(`canonical audit for site ${baseURL} failed with error: ${error.message}`, error);
