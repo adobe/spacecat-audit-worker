@@ -148,13 +148,8 @@ async function validateCanonicalTag(url, log) {
     const response = await fetch(url);
     const html = await response.text();
     log.info(`Fetched HTML content for URL: ${url}`);
-    // Sanitize HTML content to avoid parsing errors
-    const sanitizedHtml = html.replace(/<(\w+)([^>]*)>/g, (match, tagName, attributes) => {
-      const sanitizedAttributes = attributes.replace(/(\w+)=["']?([^"'\s]*)["']?/g, (attrMatch, attrName, attrValue) => (attrValue ? `${attrName}="${attrValue}"` : `${attrName}=""`));
-      return `<${tagName}${sanitizedAttributes}>`;
-    });
-
-    const dom = new JSDOM(sanitizedHtml);
+    log.debug(`HTML content: ${html}`); // Log the HTML content
+    const dom = new JSDOM(html);
     log.info(`Parsed DOM for URL: ${url}`);
     const { head } = dom.window.document;
     const canonicalLinks = head.querySelectorAll('link[rel="canonical"]');
