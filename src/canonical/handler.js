@@ -122,7 +122,7 @@ async function getTopPagesForSite(url, context, log) {
   }
 }
 /**
- * Validates the canonical tag of a given URL.
+ * Validates the canonical tag of a given URL
  *
  * @param {string} url - The URL to validate the canonical tag for.
  * @param {Object} log - The logging object to log information.
