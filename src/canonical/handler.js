@@ -12,10 +12,12 @@
 
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { JSDOM } from 'jsdom';
+import { notFound } from '@adobe/spacecat-shared-http-utils';
 import { fetch } from '../support/utils.js';
 import { getBaseUrlPagesFromSitemaps } from '../sitemap/handler.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
+import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 // Enums for checks and errors
 const ChecksAndErrors = Object.freeze({
@@ -333,14 +335,24 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
 /**
  * Audits the canonical URLs for a given site.
  *
- * @param {string} baseURL
+ * @param {string} input -- not sure if baseURL like in apex or siteId as we see in logs
  * @param {Object} context - The context object containing necessary information.
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Object>} An object containing the audit results.
  */
-export async function canonicalAuditRunner(baseURL, context) {
-  const { log } = context;
+export async function canonicalAuditRunner(input, context) {
+  const { log, dataAccess } = context;
   let auditSuccess = true;
+
+  // temporary, to check what input it gets
+  let baseURL = input;
+  if (!baseURL.startsWith('https://')) {
+    const site = await retrieveSiteBySiteId(dataAccess, input, log);
+    if (!site) {
+      return notFound('Site not found');
+    }
+    baseURL = site.getBaseURL();
+  }
 
   try {
     const topPages = await getTopPagesForSite(baseURL, context, log);
