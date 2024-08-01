@@ -425,6 +425,7 @@ export async function canonicalAuditRunner(input, context) {
       checks.push(...canonicalTagChecks);
 
       if (canonicalUrl) {
+        log.info(`Found canonical URL: ${canonicalUrl}`);
         // if (canonicalUrl && !canonicalTagChecks.some((check) => check.error)) {
         // const allPages = [];
         // const setsOfPages = Object.values(aggregatedPageLinks);
@@ -443,11 +444,13 @@ export async function canonicalAuditRunner(input, context) {
         // const sitemapCheck = validateCanonicalInSitemap(allPages, canonicalUrl);
         // checks.push(sitemapCheck);
 
-        const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
-        checks.push(urlContentCheck);
-
         const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, baseURL);
+        log.info(`validateCanonicalUrlFormat results for ${canonicalUrl}: ${JSON.stringify(urlFormatChecks)}`);
         checks.push(...urlFormatChecks);
+
+        const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
+        log.info(`validateCanonicalUrlContentsRecursive result for ${canonicalUrl}: ${JSON.stringify(urlContentCheck)}`);
+        checks.push(urlContentCheck);
       }
       log.info(`Checks for URL ${url}: ${JSON.stringify(checks)}`);
       return { [url]: checks };
