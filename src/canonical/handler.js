@@ -107,7 +107,7 @@ async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
 
-    const { result } = await ahrefsAPIClient.getTopPages(url, 1);
+    const { result } = await ahrefsAPIClient.getTopPages(url, 3);
 
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
@@ -136,13 +136,6 @@ async function validateCanonicalTag(url, log) {
   if (!url) {
     const errorMessage = 'URL is undefined or null';
     log.error(errorMessage);
-    return {
-      canonicalUrl: null,
-      checks: [{
-        check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
-        error: errorMessage,
-      }],
-    };
   }
 
   try {
