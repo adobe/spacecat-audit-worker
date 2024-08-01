@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.22.8",
+  "version": "1.22.9",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
