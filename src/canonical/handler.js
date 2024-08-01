@@ -112,7 +112,7 @@ async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
 
-    const { result } = await ahrefsAPIClient.getTopPages(url, 50);
+    const { result } = await ahrefsAPIClient.getTopPages(url, 4);
 
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
@@ -424,7 +424,8 @@ export async function canonicalAuditRunner(input, context) {
       const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
       checks.push(...canonicalTagChecks);
 
-      if (canonicalUrl && !canonicalTagChecks.some((check) => check.error)) {
+      if (canonicalUrl) {
+        // if (canonicalUrl && !canonicalTagChecks.some((check) => check.error)) {
         // const allPages = [];
         // const setsOfPages = Object.values(aggregatedPageLinks);
         // const setsOfPages = topPages;
