@@ -90,6 +90,11 @@ const ChecksAndErrors = Object.freeze({
     check: 'top-pages',
     error: 'no-top-pages-found',
   },
+  URL_UNDEFINED: {
+    check: 'url-defined',
+    error: 'url-undefined',
+    explanation: 'The URL is undefined or null, which prevents the canonical tag validation process.',
+  },
 });
 
 // const unknowError = 'Unspecified error';
@@ -107,7 +112,7 @@ async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
 
-    const { result } = await ahrefsAPIClient.getTopPages(url, 3);
+    const { result } = await ahrefsAPIClient.getTopPages(url, 50);
 
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
@@ -136,6 +141,13 @@ async function validateCanonicalTag(url, log) {
   if (!url) {
     const errorMessage = 'URL is undefined or null';
     log.error(errorMessage);
+    return {
+      canonicalUrl: null,
+      checks: [{
+        check: ChecksAndErrors.URL_UNDEFINED.check,
+        error: ChecksAndErrors.URL_UNDEFINED.error,
+      }],
+    };
   }
 
   try {
@@ -384,6 +396,7 @@ export async function canonicalAuditRunner(input, context) {
   try {
     const topPages = await getTopPagesForSite(baseURL, context, log);
     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
+
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
       return {
@@ -412,19 +425,19 @@ export async function canonicalAuditRunner(input, context) {
       checks.push(...canonicalTagChecks);
 
       if (canonicalUrl && !canonicalTagChecks.some((check) => check.error)) {
-        const allPages = [];
+        // const allPages = [];
         // const setsOfPages = Object.values(aggregatedPageLinks);
-        const setsOfPages = topPages;
+        // const setsOfPages = topPages;
         // for (const pages of setsOfPages) {
         //   allPages.push(...pages);
         // }
-        for (const pages of setsOfPages) {
-          if (Array.isArray(pages)) {
-            allPages.push(...pages);
-          } else if (pages && pages.url) {
-            allPages.push(pages.url);
-          }
-        }
+        // for (const pages of setsOfPages) {
+        //   if (Array.isArray(pages)) {
+        //     allPages.push(...pages);
+        //   } else if (pages && pages.url) {
+        //     allPages.push(pages.url);
+        //   }
+        // }
 
         // const sitemapCheck = validateCanonicalInSitemap(allPages, canonicalUrl);
         // checks.push(sitemapCheck);
