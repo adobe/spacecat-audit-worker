@@ -332,7 +332,7 @@ async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedU
  * @returns {Array<Object>} Array of check results, each with a check and error if the check failed.
  */
 
-function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
+function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
   const url = new URL(canonicalUrl);
   const base = new URL(baseUrl);
   const checks = [];
@@ -343,6 +343,13 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
       check: ChecksAndErrors.CANONICAL_URL_ABSOLUTE.check,
       error: ChecksAndErrors.CANONICAL_URL_ABSOLUTE.error,
     });
+    log.info(`Canonical URL ${canonicalUrl} is not absolute.`);
+  } else {
+    checks.push({
+      check: ChecksAndErrors.CANONICAL_URL_ABSOLUTE.check,
+      success: true,
+    });
+    log.info(`Canonical URL ${canonicalUrl} is absolute.`);
   }
 
   // Check if the canonical URL has the same protocol as the base URL
@@ -351,6 +358,13 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
       check: ChecksAndErrors.CANONICAL_URL_SAME_PROTOCOL.check,
       error: ChecksAndErrors.CANONICAL_URL_SAME_PROTOCOL.error,
     });
+    log.info(`Canonical URL ${canonicalUrl} uses a different protocol.`);
+  } else {
+    checks.push({
+      check: ChecksAndErrors.CANONICAL_URL_SAME_PROTOCOL.check,
+      success: true,
+    });
+    log.info(`Canonical URL ${canonicalUrl} uses the same protocol.`);
   }
 
   // Check if the canonical URL has the same domain as the base URL
@@ -359,14 +373,28 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl) {
       check: ChecksAndErrors.CANONICAL_URL_SAME_DOMAIN.check,
       error: ChecksAndErrors.CANONICAL_URL_SAME_DOMAIN.error,
     });
+    log.info(`Canonical URL ${canonicalUrl} is not on the same domain.`);
+  } else {
+    checks.push({
+      check: ChecksAndErrors.CANONICAL_URL_SAME_DOMAIN.check,
+      success: true,
+    });
+    log.info(`Canonical URL ${canonicalUrl} is on the same domain.`);
   }
 
   // Check if the canonical URL is in lowercase
-  if (url.href !== url.href.toLowerCase()) {
+  if (canonicalUrl !== canonicalUrl.toLowerCase()) {
     checks.push({
       check: ChecksAndErrors.CANONICAL_URL_LOWERCASED.check,
       error: ChecksAndErrors.CANONICAL_URL_LOWERCASED.error,
     });
+    log.info(`Canonical URL ${canonicalUrl} is not lowercased.`);
+  } else {
+    checks.push({
+      check: ChecksAndErrors.CANONICAL_URL_LOWERCASED.check,
+      success: true,
+    });
+    log.info(`Canonical URL ${canonicalUrl} is lowercased.`);
   }
 
   return checks;
