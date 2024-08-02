@@ -46,9 +46,9 @@ const ChecksAndErrors = Object.freeze({
     error: 'canonical-url-not-in-sitemap',
     explanation: 'The canonical URL should be included in the sitemap to facilitate its discovery by search engines, improving indexing.',
   },
-  CANONICAL_URL_200: {
-    check: 'canonical-url-200',
-    error: 'canonical-url-not-200',
+  CANONICAL_URL_STATUS_OK: {
+    check: 'canonical-url-status-ok',
+    error: 'canonical-url-status-not-ok',
     explanation: 'The canonical URL should return a 200 status code to ensure it is accessible and indexable by search engines.',
   },
   CANONICAL_URL_3XX: {
@@ -419,7 +419,7 @@ async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedU
     if (response.ok) { // 2xx status codes
       log.info(`Canonical URL is valid and accessible: ${canonicalUrl}`);
       checks.push({
-        check: ChecksAndErrors.CANONICAL_URL_200.check,
+        check: ChecksAndErrors.CANONICAL_URL_STATUS_OK.check,
         success: true,
       });
 
