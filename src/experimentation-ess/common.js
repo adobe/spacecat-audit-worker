@@ -25,7 +25,6 @@ const EXPERIMENT_PLUGIN_OPTIONS = {
 };
 
 const METRIC_CHECKPOINTS = ['click', 'convert', 'formsubmit'];
-const SPACECAT_STATISTICS_SERVICE_ARN = 'arn:aws:lambda:us-east-1:282898975672:function:spacecat-services--statistics-service';
 
 let log = console;
 
@@ -351,13 +350,13 @@ function mergeData(experiment, experimentMetadata, url) {
   return experiment;
 }
 
-async function invokeLambdaFunction(payload) {
+async function invokeLambdaFunction(payload, lambdaARN) {
   const lambdaClient = new LambdaClient({
     region: 'us-east-1',
     credentials: defaultProvider(),
   });
   const invokeParams = {
-    FunctionName: SPACECAT_STATISTICS_SERVICE_ARN,
+    FunctionName: lambdaARN,
     InvocationType: 'RequestResponse',
     Payload: JSON.stringify(payload),
   };
@@ -365,7 +364,7 @@ async function invokeLambdaFunction(payload) {
   return JSON.parse(new TextDecoder().decode(response.Payload));
 }
 
-async function addPValues(experimentData) {
+async function addPValues(experimentData, lambdaARN) {
   const lambdaPayload = {
     type: 'statsig',
     payload: {
@@ -386,7 +385,7 @@ async function addPValues(experimentData) {
   log.info('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
   let lambdaResult;
   try {
-    const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
+    const lambdaResponse = await invokeLambdaFunction(lambdaPayload, lambdaARN);
     log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
     const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
     lambdaResult = lambdaResponseBody.result;
@@ -542,10 +541,11 @@ async function convertToExperimentsSchema(experimentInsights) {
   return experiments;
 }
 
-async function processExperimentRUMData(experimentInsights) {
+async function processExperimentRUMData(experimentInsights, context) {
+  const lambdaARN = context.env.SPACECAT_STATISTICS_LAMBDA_ARN;
   log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
   const experimentData = await convertToExperimentsSchema(experimentInsights);
-  await addPValues(experimentData);
+  await addPValues(experimentData, lambdaARN);
   return experimentData;
 }
 
@@ -561,7 +561,7 @@ export async function processAudit(auditURL, context, site, days) {
     granularity: 'hourly',
   };
   const experimentData = await rumAPIClient.query('experiment', options);
-  return processExperimentRUMData(experimentData);
+  return processExperimentRUMData(experimentData, context);
 }
 
 export async function postProcessor(auditUrl, auditData, context) {
