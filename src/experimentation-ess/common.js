@@ -17,6 +17,8 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { getRUMDomainkey } from '../support/utils.js';
 
+const DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD = 500;
+
 const EXPERIMENT_PLUGIN_OPTIONS = {
   experimentsRoot: '/experiments',
   experimentsConfigFile: 'manifest.json',
@@ -414,8 +416,15 @@ async function addPValues(experimentData) {
   }
 }
 
-function getObjectByProperty(array, name, value) {
-  return array.find((e) => e[name] === value);
+function getObjectByProperties(array, properties) {
+  return array.find((e) => {
+    for (const key of Object.keys(properties)) {
+      if (e[key] !== properties[key]) {
+        return false;
+      }
+    }
+    return true;
+  });
 }
 
 /**
@@ -471,7 +480,11 @@ async function convertToExperimentsSchema(experimentInsights) {
       } catch (e) {
         log.error(`Error fetching experiment [${id}] metadata at url ${url}: ${e}`);
       }
-      const experiment = mergeData(getObjectByProperty(experiments, 'id', id), experimentMetadataFromPage, url) || {};
+      const experiment = mergeData(
+        getObjectByProperties(experiments, { id, url }),
+        experimentMetadataFromPage,
+        url,
+      ) || {};
       if (!experiment.inferredStartDate
         || new Date(exp.inferredStartDate) < new Date(experiment.inferredStartDate)) {
         experiment.inferredStartDate = exp.inferredStartDate;
@@ -483,7 +496,7 @@ async function convertToExperimentsSchema(experimentInsights) {
       const variants = experiment?.variants || [];
       for (const expVariant of exp.variants) {
         const variantName = expVariant.name;
-        const variant = getObjectByProperty(variants, 'name', variantName);
+        const variant = getObjectByProperties(variants, { name: variantName });
         const { views, interactionsCount } = expVariant;
         if (variant && (variant.views >= expVariant.views)) {
           // we already have this variant, and it has more views than the new one, so we skip it
@@ -523,7 +536,7 @@ async function convertToExperimentsSchema(experimentInsights) {
           variant.url = url;
         }
       }
-      const existingExperiment = getObjectByProperty(experiments, 'id', id);
+      const existingExperiment = getObjectByProperties(experiments, { id, url });
       const controlUrl = variants.find((v) => v.name === 'control')?.url;
       if (!existingExperiment) {
         const experimentUrl = controlUrl || url;
@@ -542,8 +555,81 @@ async function convertToExperimentsSchema(experimentInsights) {
   return experiments;
 }
 
-async function processExperimentRUMData(experimentInsights) {
+/**
+ * Any experiment with in multiple urls is considered a multi-page experiment
+ * @param {*} experimentInsights
+ * @returns {Array} list of multi-page experiment names
+ */
+function getMultiPageExperimentNames(experimentInsights) {
+  const experimentUrlCounts = {};
+  for (const url of Object.keys(experimentInsights)) {
+    const urlInsights = experimentInsights[url];
+    for (const exp of urlInsights) {
+      const id = exp.experiment;
+      if (!experimentUrlCounts[id]) {
+        experimentUrlCounts[id] = [url];
+      } else {
+        experimentUrlCounts[id].push(url);
+      }
+    }
+  }
+  return Object.keys(experimentUrlCounts).filter((id) => experimentUrlCounts[id]?.length > 1);
+}
+
+/**
+ * Filters out multi-page experiments that have less than the threshold number of daily views
+ * @param {*} experimentInsights
+ * @param {*} multiPageExperimentNames
+ * @param {*} days
+ * @param {*} threshold
+ * */
+function filterMultiPageExperimentsByThreshold(
+  experimentInsights,
+  multiPageExperimentNames,
+  days,
+  threshold,
+) {
+  for (const url of Object.keys(experimentInsights)) {
+    const urlInsights = experimentInsights[url];
+    const newUrlInsights = [];
+    for (const exp of urlInsights) {
+      const id = exp.experiment;
+      const experimentViews = exp.variants.reduce((acc, v) => acc + v.views, 0);
+      const experimentDays = Math.min(
+        days,
+        Math.floor(
+          (new Date(exp.inferredEndDate) - new Date(exp.inferredStartDate)) / (1000 * 60 * 60 * 24),
+        ),
+      ) || 1;
+      const dailyViews = Math.ceil(experimentViews / experimentDays);
+      if (multiPageExperimentNames.includes(id)
+        && dailyViews < threshold) {
+        log.info(`Filtering out experiment ${id} from url ${url} as daily views ${dailyViews} are less than threshold ${threshold}`);
+      } else {
+        newUrlInsights.push(exp);
+      }
+    }
+    if (newUrlInsights.length === 0) {
+      // eslint-disable-next-line no-param-reassign
+      delete experimentInsights[url];
+    } else if (newUrlInsights.length < urlInsights.length) {
+      // eslint-disable-next-line no-param-reassign
+      experimentInsights[url] = newUrlInsights;
+    }
+  }
+}
+
+async function processExperimentRUMData(experimentInsights, context, days) {
   log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
+  const multiPageExperimentNames = getMultiPageExperimentNames(experimentInsights);
+  const dailyPageViewsThreshold = context.env.MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD
+  || DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD;
+  filterMultiPageExperimentsByThreshold(
+    experimentInsights,
+    multiPageExperimentNames,
+    days,
+    dailyPageViewsThreshold,
+  );
   const experimentData = await convertToExperimentsSchema(experimentInsights);
   await addPValues(experimentData);
   return experimentData;
@@ -561,7 +647,7 @@ export async function processAudit(auditURL, context, site, days) {
     granularity: 'hourly',
   };
   const experimentData = await rumAPIClient.query('experiment', options);
-  return processExperimentRUMData(experimentData);
+  return processExperimentRUMData(experimentData, context, days);
 }
 
 export async function postProcessor(auditUrl, auditData, context) {
