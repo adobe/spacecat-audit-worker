@@ -46,15 +46,20 @@ const ChecksAndErrors = Object.freeze({
     error: 'canonical-url-not-in-sitemap',
     explanation: 'The canonical URL should be included in the sitemap to facilitate its discovery by search engines, improving indexing.',
   },
-  CANONICAL_URL_4XX: {
-    check: 'canonical-url-4xx',
-    error: 'canonical-url-4xx-error',
-    explanation: 'The canonical URL returns a 4xx error, indicating it is inaccessible, which can harm SEO visibility.',
+  CANONICAL_URL_200: {
+    check: 'canonical-url-200',
+    error: 'canonical-url-not-200',
+    explanation: 'The canonical URL should return a 200 status code to ensure it is accessible and indexable by search engines.',
   },
   CANONICAL_URL_3XX: {
     check: 'canonical-url-3xx',
     error: 'canonical-url-3xx-redirect',
     explanation: 'The canonical URL returns a 3xx redirect, which may lead to confusion for search engines and dilute page authority.',
+  },
+  CANONICAL_URL_4XX: {
+    check: 'canonical-url-4xx',
+    error: 'canonical-url-4xx-error',
+    explanation: 'The canonical URL returns a 4xx error, indicating it is inaccessible, which can harm SEO visibility.',
   },
   CANONICAL_URL_5XX: {
     check: 'canonical-url-5xx',
@@ -414,7 +419,7 @@ async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedU
     if (response.ok) { // 2xx status codes
       log.info(`Canonical URL is valid and accessible: ${canonicalUrl}`);
       checks.push({
-        check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
+        check: ChecksAndErrors.CANONICAL_URL_200.check,
         success: true,
       });
 
@@ -548,7 +553,7 @@ export async function canonicalAuditRunner(input, context) {
 
         const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
         log.info(`validateCanonicalUrlContentsRecursive result for ${canonicalUrl}: ${JSON.stringify(urlContentCheck)}`);
-        checks.push(urlContentCheck);
+        checks.push(...urlContentCheck);
       }
       log.info(`Checks for URL ${url}: ${JSON.stringify(checks)}`);
       return { [url]: checks };
