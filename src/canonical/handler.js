@@ -305,95 +305,6 @@ async function validateCanonicalTag(url, log) {
 // }
 
 /**
- * Recursively validates the contents of a canonical URL.
- *
- * @param {string} canonicalUrl - The canonical URL to validate.
- * @param {Object} log - The logging object to log information.
- * @param {Set<string>} [visitedUrls=new Set()] - A set of visited URLs to detect redirect loops.
- * @returns {Promise<Object>} An object with the check result and any error if the check failed.
- */
-async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedUrls = new Set()) {
-  const checks = [];
-
-  // Check for redirect loops
-  if (visitedUrls.has(canonicalUrl)) {
-    log.error(`Detected a redirect loop for canonical URL ${canonicalUrl}`);
-    checks.push({
-      check: ChecksAndErrors.CANONICAL_URL_NO_REDIRECT.check,
-      error: ChecksAndErrors.CANONICAL_URL_NO_REDIRECT.error,
-      success: false,
-    });
-    return { canonicalUrl, checks };
-  }
-
-  // Add the current URL to the visited set
-  visitedUrls.add(canonicalUrl);
-
-  try {
-    const response = await fetch(canonicalUrl);
-    const finalUrl = response.url;
-
-    // Only accept 2xx responses
-    if (response.ok) { // 2xx status codes
-      log.info(`Canonical URL is valid and accessible: ${canonicalUrl}`);
-      checks.push({
-        check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
-        success: true,
-      });
-
-      // Check for redirection to another URL
-      if (canonicalUrl !== finalUrl) {
-        log.info(`Canonical URL redirects to: ${finalUrl}`);
-        const result = await validateCanonicalUrlContentsRecursive(finalUrl, log, visitedUrls);
-        checks.push(...result.checks);
-      } else {
-        checks.push({
-          check: ChecksAndErrors.CANONICAL_URL_NO_REDIRECT.check,
-          success: true,
-        });
-      }
-    } else if (response.status >= 300 && response.status < 400) {
-      log.error(`Canonical URL returned a 3xx redirect: ${canonicalUrl}`);
-      checks.push({
-        check: ChecksAndErrors.CANONICAL_URL_3XX.check,
-        error: ChecksAndErrors.CANONICAL_URL_3XX.error,
-        success: false,
-      });
-    } else if (response.status >= 400 && response.status < 500) {
-      log.error(`Canonical URL returned a 4xx error: ${canonicalUrl}`);
-      checks.push({
-        check: ChecksAndErrors.CANONICAL_URL_4XX.check,
-        error: ChecksAndErrors.CANONICAL_URL_4XX.error,
-        success: false,
-      });
-    } else if (response.status >= 500) {
-      log.error(`Canonical URL returned a 5xx error: ${canonicalUrl}`);
-      checks.push({
-        check: ChecksAndErrors.CANONICAL_URL_5XX.check,
-        error: ChecksAndErrors.CANONICAL_URL_5XX.error,
-        success: false,
-      });
-    } else {
-      log.error(`Unexpected status code ${response.status} for canonical URL: ${canonicalUrl}`);
-      checks.push({
-        check: ChecksAndErrors.UNEXPECTED_STATUS_CODE.check,
-        error: ChecksAndErrors.UNEXPECTED_STATUS_CODE.error,
-        success: false,
-      });
-    }
-  } catch (error) {
-    log.error(`Error fetching canonical URL ${canonicalUrl}: ${error.message}`);
-    checks.push({
-      check: ChecksAndErrors.CANONICAL_URL_FETCH_ERROR.check,
-      error: ChecksAndErrors.CANONICAL_URL_FETCH_ERROR.error,
-      success: false,
-    });
-  }
-
-  return { canonicalUrl, checks };
-}
-
-/**
  * Validates the format of a canonical URL against a base URL.
  *
  * @param {string} canonicalUrl - The canonical URL to validate.
@@ -465,6 +376,95 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
       success: true,
     });
     log.info(`Canonical URL is in lowercase: ${canonicalUrl}`);
+  }
+
+  return checks;
+}
+
+/**
+ * Recursively validates the contents of a canonical URL.
+ *
+ * @param {string} canonicalUrl - The canonical URL to validate.
+ * @param {Object} log - The logging object to log information.
+ * @param {Set<string>} [visitedUrls=new Set()] - A set of visited URLs to detect redirect loops.
+ * @returns {Promise<Object>} An object with the check result and any error if the check failed.
+ */
+async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedUrls = new Set()) {
+  const checks = [];
+
+  // Check for redirect loops
+  if (visitedUrls.has(canonicalUrl)) {
+    log.error(`Detected a redirect loop for canonical URL ${canonicalUrl}`);
+    checks.push({
+      check: ChecksAndErrors.CANONICAL_URL_NO_REDIRECT.check,
+      error: ChecksAndErrors.CANONICAL_URL_NO_REDIRECT.error,
+      success: false,
+    });
+    return checks;
+  }
+
+  // Add the current URL to the visited set
+  visitedUrls.add(canonicalUrl);
+
+  try {
+    const response = await fetch(canonicalUrl);
+    const finalUrl = response.url;
+
+    // Only accept 2xx responses
+    if (response.ok) { // 2xx status codes
+      log.info(`Canonical URL is valid and accessible: ${canonicalUrl}`);
+      checks.push({
+        check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
+        success: true,
+      });
+
+      // Check for redirection to another URL
+      if (canonicalUrl !== finalUrl) {
+        log.info(`Canonical URL redirects to: ${finalUrl}`);
+        const result = await validateCanonicalUrlContentsRecursive(finalUrl, log, visitedUrls);
+        checks.push(...result.checks);
+      } else {
+        checks.push({
+          check: ChecksAndErrors.CANONICAL_URL_NO_REDIRECT.check,
+          success: true,
+        });
+      }
+    } else if (response.status >= 300 && response.status < 400) {
+      log.error(`Canonical URL returned a 3xx redirect: ${canonicalUrl}`);
+      checks.push({
+        check: ChecksAndErrors.CANONICAL_URL_3XX.check,
+        error: ChecksAndErrors.CANONICAL_URL_3XX.error,
+        success: false,
+      });
+    } else if (response.status >= 400 && response.status < 500) {
+      log.error(`Canonical URL returned a 4xx error: ${canonicalUrl}`);
+      checks.push({
+        check: ChecksAndErrors.CANONICAL_URL_4XX.check,
+        error: ChecksAndErrors.CANONICAL_URL_4XX.error,
+        success: false,
+      });
+    } else if (response.status >= 500) {
+      log.error(`Canonical URL returned a 5xx error: ${canonicalUrl}`);
+      checks.push({
+        check: ChecksAndErrors.CANONICAL_URL_5XX.check,
+        error: ChecksAndErrors.CANONICAL_URL_5XX.error,
+        success: false,
+      });
+    } else {
+      log.error(`Unexpected status code ${response.status} for canonical URL: ${canonicalUrl}`);
+      checks.push({
+        check: ChecksAndErrors.UNEXPECTED_STATUS_CODE.check,
+        error: ChecksAndErrors.UNEXPECTED_STATUS_CODE.error,
+        success: false,
+      });
+    }
+  } catch (error) {
+    log.error(`Error fetching canonical URL ${canonicalUrl}: ${error.message}`);
+    checks.push({
+      check: ChecksAndErrors.CANONICAL_URL_FETCH_ERROR.check,
+      error: ChecksAndErrors.CANONICAL_URL_FETCH_ERROR.error,
+      success: false,
+    });
   }
 
   return checks;
