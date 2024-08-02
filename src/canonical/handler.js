@@ -473,7 +473,7 @@ export async function canonicalAuditRunner(input, context) {
         // const sitemapCheck = validateCanonicalInSitemap(allPages, canonicalUrl);
         // checks.push(sitemapCheck);
 
-        const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, baseURL);
+        const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, baseURL, log);
         log.info(`validateCanonicalUrlFormat results for ${canonicalUrl}: ${JSON.stringify(urlFormatChecks)}`);
         checks.push(...urlFormatChecks);
 
