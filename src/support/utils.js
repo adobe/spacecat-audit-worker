@@ -18,6 +18,107 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 
 URI.preventInvalidHostname = true;
 
+// Constants for the top pages limit
+export const limitTopPages = 4;
+
+// Enums for checks and errors in canonical tag validation
+export const ChecksAndErrors = Object.freeze({
+  CANONICAL_TAG_EXISTS: {
+    check: 'canonical-tag-exists',
+    error: 'canonical-tag-not-found',
+    explanation: 'The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.',
+  },
+  CANONICAL_TAG_ONCE: {
+    check: 'canonical-tag-once',
+    error: 'multiple-canonical-tags',
+    explanation: 'Multiple canonical tags detected, which confuses search engines and can dilute page authority.',
+  },
+  CANONICAL_TAG_NONEMPTY: {
+    check: 'canonical-tag-nonempty',
+    error: 'canonical-tag-empty',
+    explanation: 'The canonical tag is empty. It should point to the preferred version of the page to avoid content duplication.',
+  },
+  CANONICAL_TAG_IN_HEAD: {
+    check: 'canonical-tag-in-head',
+    error: 'canonical-tag-not-in-head',
+    explanation: 'The canonical tag must be placed in the head section of the HTML document to ensure it is recognized by search engines.',
+  },
+  CANONICAL_URL_IN_SITEMAP: {
+    check: 'canonical-url-in-sitemap',
+    error: 'canonical-url-not-in-sitemap',
+    explanation: 'The canonical URL should be included in the sitemap to facilitate its discovery by search engines, improving indexing.',
+  },
+  CANONICAL_URL_STATUS_OK: {
+    check: 'canonical-url-status-ok',
+    error: 'canonical-url-status-not-ok',
+    explanation: 'The canonical URL should return a 200 status code to ensure it is accessible and indexable by search engines.',
+  },
+  CANONICAL_URL_3XX: {
+    check: 'canonical-url-3xx',
+    error: 'canonical-url-3xx-redirect',
+    explanation: 'The canonical URL returns a 3xx redirect, which may lead to confusion for search engines and dilute page authority.',
+  },
+  CANONICAL_URL_4XX: {
+    check: 'canonical-url-4xx',
+    error: 'canonical-url-4xx-error',
+    explanation: 'The canonical URL returns a 4xx error, indicating it is inaccessible, which can harm SEO visibility.',
+  },
+  CANONICAL_URL_5XX: {
+    check: 'canonical-url-5xx',
+    error: 'canonical-url-5xx-error',
+    explanation: 'The canonical URL returns a 5xx server error, indicating it is temporarily or permanently unavailable, affecting SEO performance.',
+  },
+  CANONICAL_URL_NO_REDIRECT: {
+    check: 'canonical-url-no-redirect',
+    error: 'canonical-url-redirect',
+    explanation: 'The canonical URL should be a direct link without redirects to ensure search engines recognize the intended page.',
+  },
+  CANONICAL_SELF_REFERENCED: {
+    check: 'canonical-self-referenced',
+    error: 'canonical-url-not-self-referenced',
+    explanation: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
+  },
+  CANONICAL_URL_ABSOLUTE: {
+    check: 'canonical-url-absolute',
+    error: 'canonical-url-not-absolute',
+    explanation: 'Canonical URLs must be absolute to avoid ambiguity in URL resolution and ensure proper indexing by search engines.',
+  },
+  CANONICAL_URL_SAME_DOMAIN: {
+    check: 'canonical-url-same-domain',
+    error: 'canonical-url-different-domain',
+    explanation: 'The canonical URL should match the domain of the page to avoid signaling to search engines that the content is duplicated elsewhere.',
+  },
+  CANONICAL_URL_SAME_PROTOCOL: {
+    check: 'canonical-url-same-protocol',
+    error: 'canonical-url-different-protocol',
+    explanation: 'The canonical URL must use the same protocol (HTTP or HTTPS) as the page to maintain consistency and avoid indexing issues.',
+  },
+  CANONICAL_URL_LOWERCASED: {
+    check: 'canonical-url-lowercased',
+    error: 'canonical-url-not-lowercased',
+    explanation: 'Canonical URLs should be in lowercase to prevent duplicate content issues since URLs are case-sensitive.',
+  },
+  CANONICAL_URL_FETCH_ERROR: {
+    check: 'canonical-url-fetch-error',
+    error: 'canonical-url-fetch-error',
+    explanation: 'There was an error fetching the canonical URL, which prevents validation of the canonical tag.',
+  },
+  TOPPAGES: {
+    check: 'top-pages',
+    error: 'no-top-pages-found',
+  },
+  URL_UNDEFINED: {
+    check: 'url-defined',
+    error: 'url-undefined',
+    explanation: 'The URL is undefined or null, which prevents the canonical tag validation process.',
+  },
+  UNEXPECTED_STATUS_CODE: {
+    check: 'unexpected-status-code',
+    error: 'unexpected-status-code',
+    explanation: 'The response returned an unexpected status code, indicating an unforeseen issue with the canonical URL.',
+  },
+});
+
 /* c8 ignore next 3 */
 export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
   ? h1()
