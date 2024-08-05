@@ -10,11 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
+import { JSDOM } from 'jsdom';
 import { notFound } from '@adobe/spacecat-shared-http-utils';
 import { fetch, ChecksAndErrors, limitTopPages } from '../support/utils.js';
-import { getBaseUrlPagesFromSitemaps } from '../sitemap/handler.js';
+// import { getBaseUrlPagesFromSitemaps } from '../sitemap/handler.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
@@ -22,15 +22,18 @@ import { retrieveSiteBySiteId } from '../utils/data-access.js';
 /**
  * Retrieves the top pages for a given site.
  *
- * @param url
+ * @param {string} url - The page of the site to retrieve the top pages for.
  * @param {Object} context - The context object containing necessary information.
  * @param log
+ * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
  */
 async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
+
     const { result } = await ahrefsAPIClient.getTopPages(url, limitTopPages);
+
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
     const topPages = result?.pages || [];
@@ -74,6 +77,7 @@ async function validateCanonicalTag(url, log) {
     log.info(`Fetching URL: ${url}`);
     const response = await fetch(url);
     const html = await response.text();
+    log.info(`Fetched HTML content for URL: ${url}`);
 
     const dom = new JSDOM(html);
     const { head } = dom.window.document;
@@ -158,7 +162,7 @@ async function validateCanonicalTag(url, log) {
         checks.push({
           check: ChecksAndErrors.CANONICAL_TAG_IN_HEAD.check,
           error: ChecksAndErrors.CANONICAL_TAG_IN_HEAD.error,
-          success: false,
+          success: false, // Adding success: false
         });
         log.info(`Canonical tag is not in the head section for URL: ${url}`);
       } else {
@@ -180,6 +184,7 @@ async function validateCanonicalTag(url, log) {
       checks: [{
         check: ChecksAndErrors.CANONICAL_TAG_EXISTS.check,
         error: 'Error fetching or parsing HTML document',
+        explanation: error.message,
         success: false,
       }],
     };
@@ -187,21 +192,21 @@ async function validateCanonicalTag(url, log) {
 }
 
 /**
- * Validates if the canonical URL is present in the sitemap.
+ * Verify if the canonical page URL is present in the sitemap.
  *
- * @param {Object} pageLinks - An array of page links from the sitemap.
+ * @param {Array<string>} pageLinks - An array of page links from the sitemap.
  * @param {string} canonicalUrl - The canonical URL to validate.
  * @returns {Object} An object containing the check result and any error if the check failed.
  */
-function validateCanonicalInSitemap(pageLinks, canonicalUrl) {
-  if (pageLinks.includes(canonicalUrl)) {
-    return { check: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.check, success: true };
-  }
-  return {
-    check: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.check,
-    error: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.error,
-  };
-}
+// function validateCanonicalInSitemap(pageLinks, canonicalUrl) {
+//   if (pageLinks.includes(canonicalUrl)) {
+//     return { check: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.check, success: true };
+//   }
+//   return {
+//     check: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.check,
+//     error: ChecksAndErrors.CANONICAL_URL_IN_SITEMAP.error,
+//   };
+// }
 
 /**
  * Validates the format of a canonical URL against a base URL.
@@ -211,6 +216,7 @@ function validateCanonicalInSitemap(pageLinks, canonicalUrl) {
  * @param log
  * @returns {Array<Object>} Array of check results, each with a check and error if the check failed.
  */
+
 function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
   const url = new URL(canonicalUrl);
   const base = new URL(baseUrl);
@@ -379,10 +385,9 @@ async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedU
 export async function canonicalAuditRunner(input, context) {
   const { log, dataAccess } = context;
   log.info(`Starting canonical audit with input: ${JSON.stringify(input)}`);
+  // temporary, to check what input it gets
   let baseURL = input;
-
-  // Retrieve site information if input is not a URL
-  if (!baseURL.startsWith('https://') && !baseURL.startsWith('http://')) {
+  if (!baseURL.startsWith('https://')) {
     const site = await retrieveSiteBySiteId(dataAccess, input, log);
     if (!site) {
       return notFound('Site not found');
@@ -390,9 +395,7 @@ export async function canonicalAuditRunner(input, context) {
     baseURL = site.getBaseURL();
     log.info(`Retrieved base URL: ${baseURL} for site ID: ${input}`);
   }
-
   try {
-    // Get top pages for the site
     const topPages = await getTopPagesForSite(baseURL, context, log);
     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
 
@@ -408,14 +411,13 @@ export async function canonicalAuditRunner(input, context) {
       };
     }
 
-    // Aggregate page links from sitemaps
-    const aggregatedPageLinks = await getBaseUrlPagesFromSitemaps(
-      baseURL,
-      [baseURL],
-    );
-    log.info(`Aggregated page links from sitemaps for baseURL ${baseURL}: ${JSON.stringify(aggregatedPageLinks)}`);
+    // const aggregatedPageLinks = await getBaseUrlPagesFromSitemaps(
+    //   baseURL,
+    //   topPages.map((page) => page.url),
+    // );
+    // eslint-disable-next-line max-len
+    // log.info(`Aggregated page links from sitemaps for baseURL ${baseURL}: ${JSON.stringify(aggregatedPageLinks)}`);
 
-    // Audit each top page
     const auditPromises = topPages.map(async (page) => {
       const { url } = page;
       log.info(`Validating canonical tag for URL: ${url}`);
@@ -426,6 +428,23 @@ export async function canonicalAuditRunner(input, context) {
 
       if (canonicalUrl) {
         log.info(`Found canonical URL: ${canonicalUrl}`);
+        // if (canonicalUrl && !canonicalTagChecks.some((check) => check.error)) {
+        // const allPages = [];
+        // const setsOfPages = Object.values(aggregatedPageLinks);
+        // const setsOfPages = topPages;
+        // for (const pages of setsOfPages) {
+        //   allPages.push(...pages);
+        // }
+        // for (const pages of setsOfPages) {
+        //   if (Array.isArray(pages)) {
+        //     allPages.push(...pages);
+        //   } else if (pages && pages.url) {
+        //     allPages.push(pages.url);
+        //   }
+        // }
+
+        // const sitemapCheck = validateCanonicalInSitemap(allPages, canonicalUrl);
+        // checks.push(sitemapCheck);
 
         const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, baseURL, log);
         log.info(`validateCanonicalUrlFormat results for ${canonicalUrl}: ${JSON.stringify(urlFormatChecks)}`);
@@ -434,16 +453,7 @@ export async function canonicalAuditRunner(input, context) {
         const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
         log.info(`validateCanonicalUrlContentsRecursive result for ${canonicalUrl}: ${JSON.stringify(urlContentCheck)}`);
         checks.push(...urlContentCheck);
-
-        // Check if the canonical URL is in the sitemap
-        const sitemapCheck = validateCanonicalInSitemap(
-          Object.values(aggregatedPageLinks).flat(),
-          canonicalUrl,
-        );
-        log.info(`validateCanonicalInSitemap results for ${canonicalUrl}: ${JSON.stringify(sitemapCheck)}`);
-        checks.push(sitemapCheck);
       }
-
       log.info(`Checks for URL ${url}: ${JSON.stringify(checks)}`);
       return { url, checks };
     });
@@ -469,7 +479,8 @@ export async function canonicalAuditRunner(input, context) {
       auditResult: aggregatedResults,
     };
   } catch (error) {
-    log.error(`Canonical audit for site ${baseURL} failed with error: ${error.message} ${JSON.stringify(error)}`, error);
+    // log.error(`canonical audit for site ${baseURL} failed with error: ${error.message}`, error);
+    log.error(`canonical audit for site ${baseURL} failed with error: ${error.message} ${JSON.stringify(error)}`, error);
     return {
       error: `Audit failed with error: ${error.message}`,
       success: false,
