@@ -100,18 +100,24 @@ export default async function auditBrokenBacklinks(message, context) {
       const filteredBacklinks = result?.backlinks?.filter(
         (backlink) => !excludedURLs?.includes(backlink.url_to),
       );
-      const brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
+      let brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
+      try {
+        const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
+        const keywords = topPages.map(
+          (page) => ({
+            url: page.getURL(),
+            keyword: page.getTopKeyword(),
+            traffic: page.getTraffic(),
+          }),
+        );
+        brokenBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+      } catch (e) {
+        log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`, e);
+      }
 
-      const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-      const keywords = topPages.map(
-        (page) => (
-          { url: page.getURL(), keyword: page.getTopKeyword(), traffic: page.getTraffic() }
-        ),
-      );
-      const enhancedBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
       auditResult = {
         finalUrl: auditContext.finalUrl,
-        brokenBacklinks: enhancedBacklinks,
+        brokenBacklinks,
         fullAuditRef,
       };
     } catch (e) {
