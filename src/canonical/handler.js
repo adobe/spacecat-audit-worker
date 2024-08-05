@@ -379,10 +379,10 @@ async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedU
 export async function canonicalAuditRunner(input, context) {
   const { log, dataAccess } = context;
   log.info(`Starting canonical audit with input: ${JSON.stringify(input)}`);
-  // temporary, to check what input it gets
   let baseURL = input;
+
   // Retrieve site information if input is not a URL
-  if (!baseURL.startsWith('https://')) {
+  if (!baseURL.startsWith('https://') && !baseURL.startsWith('http://')) {
     const site = await retrieveSiteBySiteId(dataAccess, input, log);
     if (!site) {
       return notFound('Site not found');
@@ -390,6 +390,7 @@ export async function canonicalAuditRunner(input, context) {
     baseURL = site.getBaseURL();
     log.info(`Retrieved base URL: ${baseURL} for site ID: ${input}`);
   }
+
   try {
     // Get top pages for the site
     const topPages = await getTopPagesForSite(baseURL, context, log);
@@ -410,7 +411,7 @@ export async function canonicalAuditRunner(input, context) {
     // Aggregate page links from sitemaps
     const aggregatedPageLinks = await getBaseUrlPagesFromSitemaps(
       baseURL,
-      topPages.map((page) => page.url),
+      [baseURL],
     );
     log.info(`Aggregated page links from sitemaps for baseURL ${baseURL}: ${JSON.stringify(aggregatedPageLinks)}`);
 
@@ -434,9 +435,13 @@ export async function canonicalAuditRunner(input, context) {
         log.info(`validateCanonicalUrlContentsRecursive result for ${canonicalUrl}: ${JSON.stringify(urlContentCheck)}`);
         checks.push(...urlContentCheck);
 
-        // Run validateCanonicalInSitemap but do not include it in checks
-        const sitemapCheck = validateCanonicalInSitemap(aggregatedPageLinks, canonicalUrl);
+        // Check if the canonical URL is in the sitemap
+        const sitemapCheck = validateCanonicalInSitemap(
+          Object.values(aggregatedPageLinks).flat(),
+          canonicalUrl,
+        );
         log.info(`validateCanonicalInSitemap results for ${canonicalUrl}: ${JSON.stringify(sitemapCheck)}`);
+        checks.push(sitemapCheck);
       }
 
       log.info(`Checks for URL ${url}: ${JSON.stringify(checks)}`);
@@ -464,7 +469,7 @@ export async function canonicalAuditRunner(input, context) {
       auditResult: aggregatedResults,
     };
   } catch (error) {
-    log.error(`canonical audit for site ${baseURL} failed with error: ${error.message} ${JSON.stringify(error)}`, error);
+    log.error(`Canonical audit for site ${baseURL} failed with error: ${error.message} ${JSON.stringify(error)}`, error);
     return {
       error: `Audit failed with error: ${error.message}`,
       success: false,
