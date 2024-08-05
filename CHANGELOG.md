@@ -1,3 +1,31 @@
+## [1.22.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.11...v1.22.12) (2024-08-05)
+
+
+### Bug Fixes
+
+* gracefully handle broken backlinks suggestion error ([#346](https://github.com/adobe/spacecat-audit-worker/issues/346)) ([1422d55](https://github.com/adobe/spacecat-audit-worker/commit/1422d552f738ecd2dce232b91601af284e5aac9e))
+
+## [1.22.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.10...v1.22.11) (2024-08-03)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#344](https://github.com/adobe/spacecat-audit-worker/issues/344)) ([ed9ab5e](https://github.com/adobe/spacecat-audit-worker/commit/ed9ab5ebc599c0631f6561344325454ff009209c))
+
+## [1.22.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.9...v1.22.10) (2024-08-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.6.0 ([#343](https://github.com/adobe/spacecat-audit-worker/issues/343)) ([0daf0e8](https://github.com/adobe/spacecat-audit-worker/commit/0daf0e8bc3066ded154445630cca6328f81a6288))
+
+## [1.22.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.8...v1.22.9) (2024-08-01)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#340](https://github.com/adobe/spacecat-audit-worker/issues/340)) ([ca00a08](https://github.com/adobe/spacecat-audit-worker/commit/ca00a08d09eabe794112d597e2b600daa911d02e))
+
 ## [1.22.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.7...v1.22.8) (2024-07-30)
 
 
