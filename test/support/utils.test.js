@@ -15,6 +15,7 @@ import chai from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
+import { LambdaClient } from '@aws-sdk/client-lambda';
 import {
   enhanceBacklinksWithFixes,
   extractKeywordsFromUrl,
@@ -89,85 +90,83 @@ describe('extractKeywordsFromUrl', () => {
 
 describe('enhanceBacklinksWithFixes', () => {
   let log;
+  let invokeStub;
 
   beforeEach(() => {
-    log = { info: sinon.stub() };
+    log = { info: sinon.stub(), error: sinon.stub() };
+    invokeStub = sinon.stub(LambdaClient.prototype, 'send').resolves();
   });
 
   afterEach(() => {
     sinon.restore();
   });
 
-  it('should prioritize keywords closer to the end of the URL path', async () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo/bar/baz.html',
+  it('should invoke the Lambda function with the correct payload', async () => {
+    const config = {
+      siteId: 'testSiteId',
+      brokenBacklinks: [
+        { url_to: 'https://www.example.com/foo/bar/baz.html' },
+      ],
+      sitemapUrls: ['https://www.example.com/sitemap.xml'],
+      region: 'test-region',
+      statisticsService: 'testStatisticsService',
+      log,
+    };
+
+    const result = await enhanceBacklinksWithFixes(config);
+
+    expect(invokeStub.calledOnce).to.be.true;
+    const [command] = invokeStub.getCall(0).args;
+    expect(command.input.FunctionName).to.equal('testStatisticsService');
+    const payload = JSON.parse(command.input.Payload);
+    expect(payload).to.deep.equal({
+      type: 'broken-backlinks',
+      payload: {
+        siteId: 'testSiteId',
+        brokenBacklinks: [{ url_to: 'https://www.example.com/foo/bar/baz.html' }],
+        sitemapUrls: ['https://www.example.com/sitemap.xml'],
       },
-    ];
+    });
 
-    const keywords = [
-      { keyword: 'foo', traffic: 100, url: 'https://www.example.com/foo.html' },
-      { keyword: 'bar', traffic: 200, url: 'https://www.example.com/foo/bar.html' },
-      { keyword: 'baz', traffic: 50, url: 'https://www.example.com/baz.html' },
-    ];
-
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/baz.html');
+    expect(result).to.deep.equal({ status: 'Lambda function invoked' });
   });
 
-  it('should use traffic as a secondary sort criterion', async () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo/bar/baz.html',
-      },
-    ];
+  it('should log info message when Lambda function is invoked successfully', async () => {
+    const config = {
+      siteId: 'testSiteId',
+      brokenBacklinks: [
+        { url_to: 'https://www.example.com/foo/bar/baz.html' },
+      ],
+      sitemapUrls: ['https://www.example.com/sitemap.xml'],
+      region: 'test-region',
+      statisticsService: 'testStatisticsService',
+      log,
+    };
 
-    const keywords = [
-      { keyword: 'foo', traffic: 300, url: 'https://www.example.com/foo.html' },
-      { keyword: 'another baz', traffic: 200, url: 'https://www.example.com/foo/bar.html' },
-      { keyword: 'baz', traffic: 100, url: 'https://www.example.com/baz.html' },
-    ];
+    await enhanceBacklinksWithFixes(config);
 
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/foo/bar.html');
+    expect(log.info.calledOnce).to.be.true;
+    expect(log.info.calledWith('Lambda function testStatisticsService invoked successfully.')).to.be.true;
   });
 
-  it('should correctly handle cases where keywords are split', async () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo-bar-baz.html',
-      },
-    ];
+  it('should log error message when Lambda function invocation fails', async () => {
+    invokeStub.rejects(new Error('Invocation failed'));
 
-    const keywords = [
-      { keyword: 'foo', traffic: 100, url: 'https://www.example.com/foo.html' },
-      { keyword: 'bar', traffic: 300, url: 'https://www.example.com/bar.html' },
-      { keyword: 'baz', traffic: 200, url: 'https://www.example.com/baz.html' },
-    ];
+    const config = {
+      siteId: 'testSiteId',
+      brokenBacklinks: [
+        { url_to: 'https://www.example.com/foo/bar/baz.html' },
+      ],
+      sitemapUrls: ['https://www.example.com/sitemap.xml'],
+      region: 'test-region',
+      statisticsService: 'testStatisticsService',
+      log,
+    };
 
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+    await enhanceBacklinksWithFixes(config);
 
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
-  });
-
-  it('should match keywords only for whole words', () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo/bar.html',
-      },
-    ];
-    const keywords = [
-      { keyword: 'foobar', traffic: 400, url: 'https://www.example.com/foobar.html' },
-      { keyword: 'foo', traffic: 200, url: 'https://www.example.com/foo.html' },
-      { keyword: 'bar', traffic: 50, url: 'https://www.example.com/bar.html' },
-    ];
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
+    expect(log.error.calledOnce).to.be.true;
+    expect(log.error.args[0][0]).to.equal('Error invoking Lambda function testStatisticsService:');
+    expect(log.error.args[0][1]).to.be.an('error').that.has.property('message', 'Invocation failed');
   });
 });
