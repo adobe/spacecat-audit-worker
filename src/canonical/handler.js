@@ -30,9 +30,7 @@ import { retrieveSiteBySiteId } from '../utils/data-access.js';
 async function getTopPagesForSite(url, context, log) {
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-
     const { result } = await ahrefsAPIClient.getTopPages(url, limitTopPages);
-
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
     const topPages = result?.pages || [];
@@ -383,18 +381,16 @@ export async function canonicalAuditRunner(input, context) {
   log.info(`Starting canonical audit with input: ${JSON.stringify(input)}`);
   // temporary, to check what input it gets
   let baseURL = input;
-
-  try {
-    // Retrieve site information if input is not a URL
-    if (!baseURL.startsWith('https://')) {
-      const site = await retrieveSiteBySiteId(dataAccess, input, log);
-      if (!site) {
-        return notFound('Site not found');
-      }
-      baseURL = site.getBaseURL();
-      log.info(`Retrieved base URL: ${baseURL} for site ID: ${input}`);
+  // Retrieve site information if input is not a URL
+  if (!baseURL.startsWith('https://')) {
+    const site = await retrieveSiteBySiteId(dataAccess, input, log);
+    if (!site) {
+      return notFound('Site not found');
     }
-
+    baseURL = site.getBaseURL();
+    log.info(`Retrieved base URL: ${baseURL} for site ID: ${input}`);
+  }
+  try {
     // Get top pages for the site
     const topPages = await getTopPagesForSite(baseURL, context, log);
     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
