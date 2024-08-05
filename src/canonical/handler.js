@@ -464,11 +464,11 @@ export async function canonicalAuditRunner(input, context) {
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
       const { url, checks } = result;
       checks.forEach((check) => {
-        const checkType = check.check;
+        const { check: checkType, success, error } = check;
         if (!acc[checkType]) {
-          acc[checkType] = [];
+          acc[checkType] = { success, error, url: [] };
         }
-        acc[checkType].push({ url, ...check });
+        acc[checkType].url.push(url);
       });
       return acc;
     }, {});
