@@ -19,7 +19,7 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 URI.preventInvalidHostname = true;
 
 // Constants for the top pages limit
-export const limitTopPages = 4;
+export const limitTopPages = 200;
 
 // Enums for checks and errors in canonical tag validation
 export const ChecksAndErrors = Object.freeze({
