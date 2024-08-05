@@ -1,3 +1,10 @@
+## [1.22.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.11...v1.22.12) (2024-08-05)
+
+
+### Bug Fixes
+
+* gracefully handle broken backlinks suggestion error ([#346](https://github.com/adobe/spacecat-audit-worker/issues/346)) ([1422d55](https://github.com/adobe/spacecat-audit-worker/commit/1422d552f738ecd2dce232b91601af284e5aac9e))
+
 ## [1.22.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.10...v1.22.11) (2024-08-03)
 
 
