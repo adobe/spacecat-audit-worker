@@ -109,7 +109,7 @@ describe('enhanceBacklinksWithFixes', () => {
       ],
       sitemapUrls: ['https://www.example.com/sitemap.xml'],
       region: 'test-region',
-      statisticsService: 'testStatisticsService',
+      statisticsServiceArn: 'testStatisticsService',
       log,
     };
 
@@ -139,7 +139,7 @@ describe('enhanceBacklinksWithFixes', () => {
       ],
       sitemapUrls: ['https://www.example.com/sitemap.xml'],
       region: 'test-region',
-      statisticsService: 'testStatisticsService',
+      statisticsServiceArn: 'testStatisticsService',
       log,
     };
 
@@ -159,7 +159,7 @@ describe('enhanceBacklinksWithFixes', () => {
       ],
       sitemapUrls: ['https://www.example.com/sitemap.xml'],
       region: 'test-region',
-      statisticsService: 'testStatisticsService',
+      statisticsServiceArn: 'testStatisticsService',
       log,
     };
 

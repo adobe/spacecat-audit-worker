@@ -229,13 +229,13 @@ export const extractKeywordsFromUrl = (url, log) => {
  */
 export async function enhanceBacklinksWithFixes(config) {
   const {
-    siteId, brokenBacklinks, sitemapUrls, region, statisticsService, log,
+    siteId, brokenBacklinks, sitemapUrls, region, statisticsServiceArn, log,
   } = config;
 
-  const invoke = async (funcName, payload) => {
+  const invoke = async (funcArn, payload) => {
     const client = new LambdaClient({ region });
     const command = new InvokeCommand({
-      FunctionName: funcName,
+      FunctionName: funcArn,
       Payload: JSON.stringify(payload),
       LogType: LogType.Tail,
       InvocationType: 'Event',
@@ -243,9 +243,9 @@ export async function enhanceBacklinksWithFixes(config) {
 
     try {
       await client.send(command);
-      log.info(`Lambda function ${funcName} invoked successfully.`);
+      log.info(`Lambda function ${funcArn} invoked successfully.`);
     } catch (error) {
-      log.error(`Error invoking Lambda function ${funcName}:`, error);
+      log.error(`Error invoking Lambda function ${funcArn}:`, error);
     }
   };
 
@@ -258,7 +258,7 @@ export async function enhanceBacklinksWithFixes(config) {
     },
   };
 
-  invoke(statisticsService, payload); // No need to await this call
+  invoke(statisticsServiceArn, payload); // No need to await this call
 
   return { status: 'Lambda function invoked' };
 }

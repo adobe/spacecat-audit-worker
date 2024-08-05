@@ -66,7 +66,7 @@ export default async function auditBrokenBacklinks(message, context) {
   const { dataAccess, log, sqs } = context;
   const {
     AWS_REGION: region,
-    STATISTICS_SERVICE_LAMBDA: statisticsService,
+    SPACECAT_STATISTICS_LAMBDA_ARN: statisticsServiceArn,
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
 
@@ -144,7 +144,7 @@ export default async function auditBrokenBacklinks(message, context) {
         brokenBacklinks: auditResult.brokenBacklinks,
         sitemapUrls,
         region,
-        statisticsService,
+        statisticsServiceArn,
         log,
       });
     } catch (e) {
