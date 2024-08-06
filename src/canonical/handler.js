@@ -10,10 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { JSDOM } from 'jsdom';
 import { notFound } from '@adobe/spacecat-shared-http-utils';
-import { fetch, ChecksAndErrors, limitTopPages } from '../support/utils.js';
+import { fetch, ChecksAndErrors } from '../support/utils.js';
 // import { getBaseUrlPagesFromSitemaps } from '../sitemap/handler.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
@@ -22,23 +21,21 @@ import { retrieveSiteBySiteId } from '../utils/data-access.js';
 /**
  * Retrieves the top pages for a given site.
  *
- * @param {string} url - The page of the site to retrieve the top pages for.
+ * @param dataAccess
+ * @param {string} siteId - The page of the site to retrieve the top pages for.
  * @param {Object} context - The context object containing necessary information.
  * @param log
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
  */
-async function getTopPagesForSite(url, context, log) {
+async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
   try {
-    const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-
-    const { result } = await ahrefsAPIClient.getTopPages(url, limitTopPages);
-
+    const result = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
-    const topPages = result?.pages || [];
+    const topPages = result || [];
     if (topPages.length > 0) {
-      const topPagesUrls = topPages.map((page) => ({ url: page.url }));
+      const topPagesUrls = topPages.map((page) => ({ url: page.getURL() }));
       log.info(`Found ${topPagesUrls.length} top pages`);
       return topPagesUrls;
     } else {
@@ -46,7 +43,7 @@ async function getTopPagesForSite(url, context, log) {
       return [];
     }
   } catch (error) {
-    log.error(`Error retrieving top pages for site ${url}: ${error.message}`);
+    log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
     return [];
   }
 }
@@ -396,7 +393,7 @@ export async function canonicalAuditRunner(input, context) {
     log.info(`Retrieved base URL: ${baseURL} for site ID: ${input}`);
   }
   try {
-    const topPages = await getTopPagesForSite(baseURL, context, log);
+    const topPages = await getTopPagesForSiteId(dataAccess, input, context, log);
     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
 
     if (topPages.length === 0) {
