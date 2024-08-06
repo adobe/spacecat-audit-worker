@@ -399,12 +399,12 @@ export async function canonicalAuditRunner(input, context) {
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
       return {
-        domain: baseURL,
-        results: [{
+        fullAuditRef: baseURL,
+        auditResult: {
           check: ChecksAndErrors.TOPPAGES.check,
           error: ChecksAndErrors.TOPPAGES.error,
-        }],
-        success: false,
+          success: false,
+        },
       };
     }
 
@@ -455,16 +455,18 @@ export async function canonicalAuditRunner(input, context) {
       return { url, checks };
     });
 
-    const auditResultsArray = await Promise.all(auditPromises);
+    const auditResultsArray = await Promise.allSettled(auditPromises);
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
-      const { url, checks } = result;
-      checks.forEach((check) => {
-        const { check: checkType, success, error } = check;
-        if (!acc[checkType]) {
-          acc[checkType] = { success, error, url: [] };
-        }
-        acc[checkType].url.push(url);
-      });
+      if (result.status === 'fulfilled') {
+        const { url, checks } = result.value;
+        checks.forEach((check) => {
+          const { check: checkType, success, error } = check;
+          if (!acc[checkType]) {
+            acc[checkType] = { success, error, url: [] };
+          }
+          acc[checkType].url.push(url);
+        });
+      }
       return acc;
     }, {});
 
@@ -479,8 +481,11 @@ export async function canonicalAuditRunner(input, context) {
     // log.error(`canonical audit for site ${baseURL} failed with error: ${error.message}`, error);
     log.error(`canonical audit for site ${baseURL} failed with error: ${error.message} ${JSON.stringify(error)}`, error);
     return {
-      error: `Audit failed with error: ${error.message}`,
-      success: false,
+      fullAuditRef: baseURL,
+      auditResult: {
+        error: `Audit failed with error: ${error.message}`,
+        success: false,
+      },
     };
   }
 }
