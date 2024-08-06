@@ -704,7 +704,7 @@ export async function postProcessor(auditUrl, auditData, context) {
       for (const variant of experimentData.variants) {
         for (const prop of EXCLUDE_UPDATE_PROPERTIES) {
           if (!variant[prop]) {
-            variant[prop] = existingExperiment.variants.find((v) => v.name === variant.name)
+            variant[prop] = existingExperiment.variants?.find((v) => v.name === variant.name)
               ?.[prop];
           }
         }
