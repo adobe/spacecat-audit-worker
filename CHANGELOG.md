@@ -1,3 +1,10 @@
+# [1.23.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.12...v1.23.0) (2024-08-06)
+
+
+### Features
+
+* support for multi page experiments and multiple experiments on the same page ([#342](https://github.com/adobe/spacecat-audit-worker/issues/342)) ([5ec1876](https://github.com/adobe/spacecat-audit-worker/commit/5ec1876e8207c6c56349c7125bf26eac28d67a3e))
+
 ## [1.22.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.22.11...v1.22.12) (2024-08-05)
 
 
