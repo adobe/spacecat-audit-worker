@@ -26,6 +26,8 @@ const EXPERIMENT_PLUGIN_OPTIONS = {
   experimentsQueryParameter: 'experiment',
 };
 
+const EXCLUDE_UPDATE_PROPERTIES = ['split'];
+
 const METRIC_CHECKPOINTS = ['click', 'convert', 'formsubmit'];
 const SPACECAT_STATISTICS_SERVICE_ARN = 'arn:aws:lambda:us-east-1:282898975672:function:spacecat-services--statistics-service';
 
@@ -376,10 +378,11 @@ async function addPValues(experimentData) {
     },
   };
   for (const experiment of experimentData) {
-    lambdaPayload.payload.rumData[experiment.id] = {};
+    const id = `${experiment.id}#${experiment.url}`;
+    lambdaPayload.payload.rumData[id] = {};
     const metric = experiment.conversionEventName || 'click';
     for (const variant of experiment.variants) {
-      lambdaPayload.payload.rumData[experiment.id][variant.name] = {
+      lambdaPayload.payload.rumData[id][variant.name] = {
         views: variant.views,
         metrics: variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.value || 0,
       };
@@ -400,7 +403,8 @@ async function addPValues(experimentData) {
     return;
   }
   for (const experiment of experimentData) {
-    const stats = lambdaResult[experiment.id];
+    const id = `${experiment.id}#${experiment.url}`;
+    const stats = lambdaResult[id];
     if (stats && !stats.error) {
       for (const variant of experiment.variants) {
         const variantStats = stats[variant.name];
@@ -533,7 +537,7 @@ async function convertToExperimentsSchema(experimentInsights) {
           variant.metrics = metrics;
           variant.views = views;
           variant.interactionsCount = interactionsCount;
-          variant.url = url;
+          variant.url = variant.url || url;
         }
       }
       const existingExperiment = getObjectByProperties(experiments, { id, url });
@@ -622,6 +626,7 @@ function filterMultiPageExperimentsByThreshold(
 async function processExperimentRUMData(experimentInsights, context, days) {
   log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
   const multiPageExperimentNames = getMultiPageExperimentNames(experimentInsights);
+  log.info('Multi-Page Experiment Names: ', multiPageExperimentNames.join(', '));
   const dailyPageViewsThreshold = context.env.MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD
   || DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD;
   filterMultiPageExperimentsByThreshold(
@@ -695,11 +700,14 @@ export async function postProcessor(auditUrl, auditData, context) {
       if (existingExperiment.url) {
         experimentData.url = existingExperiment.url;
       }
-      // don't update the experiment control split if it's already set
-      const controlVariant = experimentData.variants?.find((v) => v.name === 'control');
-      const existingControlVariant = existingExperiment.variants?.find((v) => v.name === 'control');
-      if (existingControlVariant && controlVariant && existingControlVariant.split) {
-        controlVariant.split = existingControlVariant.split;
+      // don't update the excluded properties if experimentData property is empty
+      for (const variant of experimentData.variants) {
+        for (const prop of EXCLUDE_UPDATE_PROPERTIES) {
+          if (!variant[prop]) {
+            variant[prop] = existingExperiment.variants.find((v) => v.name === variant.name)
+              ?.[prop];
+          }
+        }
       }
     }
     // eslint-disable-next-line no-await-in-loop
