@@ -94,7 +94,36 @@ describe('Canonical URL Tests', () => {
 
       expect(result.canonicalUrl).to.be.null;
       expect(result.checks).to.deep.include({ check: 'canonical-url-fetch-error', success: false, explanation: 'There was an error fetching the canonical URL, which prevents validation of the canonical tag.' });
-      // expect(log.error).to.have.been.calledWith('Error validating canonical tag for http://example.com: request to http://example.com/ failed, reason: Test error');
+    });
+
+    it('should handle empty canonical tag', async () => {
+      const url = 'http://example.com';
+      const html = '<html><head><link rel="canonical" href=""></head><body></body></html>';
+      nock(url).get('/').reply(200, html);
+
+      const result = await validateCanonicalTag(url, log);
+
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.deep.include({
+        check: 'canonical-tag-nonempty',
+        success: false,
+        explanation: 'The canonical tag is empty. It should point to the preferred version of the page to avoid content duplication.',
+      });
+      expect(log.info).to.have.been.calledWith(`Empty canonical tag found for URL: ${url}`);
+    });
+
+    it('should handle multiple canonical tags', async () => {
+      const url = 'http://example.com';
+      const html = '<html><head><link rel="canonical" href="http://example.com/page1"><link rel="canonical" href="http://example.com/page2"></head><body></body></html>';
+      nock(url).get('/').reply(200, html);
+
+      const result = await validateCanonicalTag(url, log);
+
+      expect(result.checks).to.deep.include({
+        check: 'canonical-tag-once',
+        success: false,
+        explanation: 'Multiple canonical tags detected, which confuses search engines and can dilute page authority.',
+      });
     });
   });
 
@@ -114,15 +143,57 @@ describe('Canonical URL Tests', () => {
     it('should handle invalid canonical URL', () => {
       const canonicalUrl = 'invalid-url';
       const baseUrl = 'http://example.com';
-
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
 
-      expect(result).to.deep.include({ check: 'url-defined', success: false, explanation: 'The URL is undefined or null, which prevents the canonical tag validation process.' });
+      expect(result).to.deep.include({
+        check: 'url-defined',
+        success: false,
+        explanation: 'The URL is undefined or null, which prevents the canonical tag validation process.',
+      });
       expect(log.error).to.have.been.calledWith('Invalid URL: invalid-url');
+    });
+
+    it('should handle non-lowercase canonical URL', () => {
+      const canonicalUrl = 'http://example.com/UpperCase';
+      const baseUrl = 'http://example.com';
+      const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
+
+      expect(result).to.deep.include({
+        check: 'canonical-url-lowercased',
+        success: false,
+        explanation: 'Canonical URLs should be in lowercase to prevent duplicate content issues since URLs are case-sensitive.',
+      });
+      expect(log.info).to.have.been.calledWith('Canonical URL is not lowercased: http://example.com/UpperCase');
+    });
+
+    it('should handle different domains', () => {
+      const canonicalUrl = 'http://another.com';
+      const baseUrl = 'http://example.com';
+      const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
+
+      expect(result).to.deep.include({
+        check: 'canonical-url-same-domain',
+        success: false,
+        explanation: 'The canonical URL should match the domain of the page to avoid signaling to search engines that the content is duplicated elsewhere.',
+      });
+      expect(log.info).to.have.been.calledWith('Canonical URL http://another.com does not have the same domain as base URL http://example.com');
+    });
+
+    it('should handle different protocols', () => {
+      const canonicalUrl = 'https://example.com';
+      const baseUrl = 'http://example.com';
+      const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
+
+      expect(result).to.deep.include({
+        check: 'canonical-url-same-protocol',
+        success: false,
+        explanation: 'The canonical URL must use the same protocol (HTTP or HTTPS) as the page to maintain consistency and avoid indexing issues.',
+      });
+      expect(log.info).to.have.been.calledWith('Canonical URL  https://example.com uses a different protocol than base URL http://example.com');
     });
   });
 
-  describe('validateCanonicalUrlContentsRecursive', () => {
+  describe('validateCanonicalRecursively', () => {
     it('should validate canonical URL contents successfully', async () => {
       const canonicalUrl = 'http://example.com/page';
       nock('http://example.com').get('/page').reply(200);
