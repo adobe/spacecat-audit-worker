@@ -38,7 +38,6 @@ describe('Canonical URL Tests', () => {
 
   afterEach(() => {
     sinon.restore();
-    nock.cleanAll();
   });
 
   describe('getTopPagesForSiteId', () => {
@@ -67,6 +66,19 @@ describe('Canonical URL Tests', () => {
       expect(result).to.deep.equal([]);
       expect(log.error).to.have.been.calledWith('Error retrieving top pages for site testSiteId: Test error');
     });
+
+    it('should log and return an empty array if no top pages are found', async () => {
+      const dataAccess = {
+        getTopPagesForSite: sinon.stub().resolves([]),
+      };
+      const siteId = 'testSiteId';
+      const context = { log };
+
+      const result = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+
+      expect(result).to.deep.equal([]);
+      expect(log.info).to.have.been.calledWith('No top pages found');
+    });
   });
 
   describe('validateCanonicalTag', () => {
@@ -84,6 +96,18 @@ describe('Canonical URL Tests', () => {
         explanation: 'The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.',
       });
       expect(log.info).to.have.been.called;
+    });
+
+    it('should return an error when URL is undefined or null', async () => {
+      const result = await validateCanonicalTag(null, log);
+
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.deep.include({
+        check: 'url-defined',
+        success: false,
+        explanation: 'The URL is undefined or null, which prevents the canonical tag validation process.',
+      });
+      expect(log.error).to.have.been.calledWith('URL is undefined or null');
     });
 
     it('should handle fetch error', async () => {
