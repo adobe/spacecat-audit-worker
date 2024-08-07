@@ -102,18 +102,18 @@ describe('enhanceBacklinksWithFixes', () => {
   });
 
   it('should invoke the Lambda function with the correct payload', async () => {
+    const siteId = 'testSiteId';
+    const brokenBacklinks = [
+      { url_to: 'https://www.example.com/foo/bar/baz.html' },
+    ];
+    const sitemapUrls = ['https://www.example.com/sitemap.xml'];
     const config = {
-      siteId: 'testSiteId',
-      brokenBacklinks: [
-        { url_to: 'https://www.example.com/foo/bar/baz.html' },
-      ],
-      sitemapUrls: ['https://www.example.com/sitemap.xml'],
       region: 'test-region',
       statisticsServiceArn: 'testStatisticsService',
       log,
     };
 
-    const result = await enhanceBacklinksWithFixes(config);
+    const result = await enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemapUrls, config);
 
     expect(invokeStub.calledOnce).to.be.true;
     const [command] = invokeStub.getCall(0).args;
@@ -132,18 +132,18 @@ describe('enhanceBacklinksWithFixes', () => {
   });
 
   it('should log info message when Lambda function is invoked successfully', async () => {
+    const siteId = 'testSiteId';
+    const brokenBacklinks = [
+      { url_to: 'https://www.example.com/foo/bar/baz.html' },
+    ];
+    const sitemapUrls = ['https://www.example.com/sitemap.xml'];
     const config = {
-      siteId: 'testSiteId',
-      brokenBacklinks: [
-        { url_to: 'https://www.example.com/foo/bar/baz.html' },
-      ],
-      sitemapUrls: ['https://www.example.com/sitemap.xml'],
       region: 'test-region',
       statisticsServiceArn: 'testStatisticsService',
       log,
     };
 
-    await enhanceBacklinksWithFixes(config);
+    await enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemapUrls, config);
 
     expect(log.info.calledOnce).to.be.true;
     expect(log.info.calledWith('Lambda function testStatisticsService invoked successfully.')).to.be.true;
@@ -152,18 +152,18 @@ describe('enhanceBacklinksWithFixes', () => {
   it('should log error message when Lambda function invocation fails', async () => {
     invokeStub.rejects(new Error('Invocation failed'));
 
+    const siteId = 'testSiteId';
+    const brokenBacklinks = [
+      { url_to: 'https://www.example.com/foo/bar/baz.html' },
+    ];
+    const sitemapUrls = ['https://www.example.com/sitemap.xml'];
     const config = {
-      siteId: 'testSiteId',
-      brokenBacklinks: [
-        { url_to: 'https://www.example.com/foo/bar/baz.html' },
-      ],
-      sitemapUrls: ['https://www.example.com/sitemap.xml'],
       region: 'test-region',
       statisticsServiceArn: 'testStatisticsService',
       log,
     };
 
-    await enhanceBacklinksWithFixes(config);
+    await enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemapUrls, config);
 
     expect(log.error.calledOnce).to.be.true;
     expect(log.error.args[0][0]).to.equal('Error invoking Lambda function testStatisticsService:');

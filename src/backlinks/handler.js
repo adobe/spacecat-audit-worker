@@ -18,7 +18,7 @@ import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
-import { findSitemap } from '../sitemap/handler.js';
+import { obtainSitemapUrls } from '../sitemap/handler.js';
 
 const TIMEOUT = 3000;
 
@@ -134,24 +134,28 @@ export default async function auditBrokenBacklinks(message, context) {
       auditResult,
     };
 
+    await sqs.sendMessage(queueUrl, data);
+
     try {
       const baseUrl = site.getBaseURL();
-      const sitemaps = await findSitemap(baseUrl);
-      const sitemapUrls = Object.values(sitemaps.paths)
-        .reduce((acc, curr) => acc.concat(curr), []);
-      await enhanceBacklinksWithFixes({
-        siteId,
-        brokenBacklinks: auditResult.brokenBacklinks,
-        sitemapUrls,
-        region,
-        statisticsServiceArn,
-        log,
-      });
+      const sitemaps = await obtainSitemapUrls(baseUrl);
+      if (sitemaps?.success && sitemaps?.paths) {
+        const sitemapUrls = Object.values(sitemaps.paths)
+          .reduce((acc, curr) => acc.concat(curr), []);
+        await enhanceBacklinksWithFixes(
+          siteId,
+          auditResult.brokenBacklinks,
+          sitemapUrls,
+          {
+            region,
+            statisticsServiceArn,
+            log,
+          },
+        );
+      }
     } catch (e) {
       log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`, e);
     }
-
-    await sqs.sendMessage(queueUrl, data);
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
