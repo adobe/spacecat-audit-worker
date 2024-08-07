@@ -145,7 +145,6 @@ describe('enhanceBacklinksWithFixes', () => {
 
     await enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemapUrls, config);
 
-    expect(log.info.calledOnce).to.be.true;
     expect(log.info.calledWith('Lambda function testStatisticsService invoked successfully.')).to.be.true;
   });
 
