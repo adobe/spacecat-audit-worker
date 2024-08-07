@@ -15,7 +15,7 @@ import { hasText, resolveCustomerSecretsName } from '@adobe/spacecat-shared-util
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
-import { InvokeCommand, LambdaClient, LogType } from '@aws-sdk/client-lambda';
+import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 
 URI.preventInvalidHostname = true;
 
@@ -233,23 +233,6 @@ export async function enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemap
   } = config;
   log.info(`Enhancing backlinks with fixes for site ${siteId}`);
 
-  const invoke = async (funcArn, payload) => {
-    const client = new LambdaClient({ region });
-    const command = new InvokeCommand({
-      FunctionName: funcArn,
-      Payload: JSON.stringify(payload),
-      LogType: LogType.Tail,
-      InvocationType: 'Event',
-    });
-
-    try {
-      await client.send(command);
-      log.info(`Lambda function ${funcArn} invoked successfully.`);
-    } catch (error) {
-      log.error(`Error invoking Lambda function ${funcArn}:`, error);
-    }
-  };
-
   const payload = {
     type: 'broken-backlinks',
     payload: {
@@ -259,7 +242,19 @@ export async function enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemap
     },
   };
 
-  invoke(statisticsServiceArn, payload); // No need to await this call
+  const client = new LambdaClient({ region });
+  const command = new InvokeCommand({
+    FunctionName: statisticsServiceArn,
+    Payload: JSON.stringify(payload),
+    InvocationType: 'Event',
+  });
+
+  try {
+    await client.send(command);
+    log.info(`Lambda function ${statisticsServiceArn} invoked successfully.`);
+  } catch (error) {
+    log.error(`Error invoking Lambda function ${statisticsServiceArn}:`, error);
+  }
 
   return { status: 'Lambda function invoked' };
 }
