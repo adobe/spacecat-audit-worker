@@ -100,7 +100,7 @@ const CANONICAL_CHECKS = Object.freeze({
  * @param {Object} context.log - The logging object to log information.
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
  */
-async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
+export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
   try {
     const result = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
@@ -127,7 +127,7 @@ async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
  * @param {Object} log - The logging object to log information.
  * @returns {Promise<Object>} An object containing the canonical URL and an array of checks.
  */
-async function validateCanonicalTag(url, log) {
+export async function validateCanonicalTag(url, log) {
   // in case of undefined or null URL in the 200 top pages list
   if (!url) {
     const errorMessage = 'URL is undefined or null';
@@ -146,8 +146,6 @@ async function validateCanonicalTag(url, log) {
     log.info(`Fetching URL: ${url}`);
     const response = await fetch(url);
     const html = await response.text();
-    log.info(`Fetched HTML content for URL: ${url}`);
-
     const dom = new JSDOM(html);
     const { head } = dom.window.document;
     const canonicalLinks = head.querySelectorAll('link[rel="canonical"]');
@@ -183,8 +181,6 @@ async function validateCanonicalTag(url, log) {
       log.info(`Multiple canonical tags found for URL: ${url}`);
     } else if (canonicalLinks.length === 1) {
       const canonicalLink = canonicalLinks[0];
-      log.info(`Canonical link element: ${JSON.stringify(canonicalLink.outerHTML)}`);
-
       const href = canonicalLink.getAttribute('href');
       if (!href) {
         checks.push({
@@ -200,21 +196,20 @@ async function validateCanonicalTag(url, log) {
             check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
             success: true,
           });
-          log.info(`Valid canonical URL resolved: ${canonicalUrl}`);
           // Check if canonical URL points to itself
           if (canonicalUrl === url) {
             checks.push({
               check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
               success: true,
             });
-            log.info(`Canonical URL correctly references itself: ${canonicalUrl}`);
+            log.info(`Canonical URL ${canonicalUrl} references itself`);
           } else {
             checks.push({
               check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
               success: false,
               explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
             });
-            log.info(`Canonical URL does not reference itself: ${canonicalUrl}`);
+            log.info(`Canonical URL ${canonicalUrl} does not reference itself`);
           }
         } catch (error) {
           checks.push({
@@ -239,11 +234,10 @@ async function validateCanonicalTag(url, log) {
           check: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
           success: true,
         });
-        log.info(`Canonical tag is correctly placed in the head section for URL: ${url}`);
       }
     }
 
-    log.info(`Validation checks for URL: ${url}, Checks: ${JSON.stringify(checks)}`);
+    log.info(`Checks: ${JSON.stringify(checks)}`);
     return { canonicalUrl, checks };
   } catch (error) {
     const errorMessage = `Error validating canonical tag for ${url}: ${error.message}`;
@@ -265,10 +259,9 @@ async function validateCanonicalTag(url, log) {
  * @param {string} canonicalUrl - The canonical URL to validate.
  * @param {string} baseUrl - The base URL to compare against.
  * @param log
- * @returns {Array<Object>} Array of check results, each with a check and error if the check failed.
+ * @returns {Array<Object>} Array of check results.
  */
-
-function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
+export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
   const checks = [];
   let url;
   let base;
@@ -313,7 +306,6 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
       check: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
       success: true,
     });
-    log.info(`Canonical URL is absolute:  ${canonicalUrl}`);
   }
 
   // Check if the canonical URL has the same protocol as the base URL
@@ -329,7 +321,6 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
       check: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
       success: true,
     });
-    log.info('Canonical URL uses the same protocol');
   }
 
   // Check if the canonical URL has the same domain as the base URL
@@ -345,7 +336,6 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
       check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
       success: true,
     });
-    log.info(`Canonical URL ${canonicalUrl}  has the same domain as base URL: ${canonicalUrl}`);
   }
 
   // Check if the canonical URL is in lowercase
@@ -361,7 +351,6 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
       check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
       success: true,
     });
-    log.info(`Canonical URL is lowercased: ${canonicalUrl}`);
   }
 
   return checks;
@@ -375,7 +364,7 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
  * @param {Set<string>} [visitedUrls=new Set()] - A set of visited URLs to detect redirect loops.
  * @returns {Promise<Object>} An object with the check result and any error if the check failed.
  */
-async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedUrls = new Set()) {
+export async function validateCanonicalRecursively(canonicalUrl, log, visitedUrls = new Set()) {
   const checks = [];
 
   // Check for redirect loops
@@ -407,7 +396,7 @@ async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedU
       // Check for redirection to another URL
       if (canonicalUrl !== finalUrl) {
         log.info(`Canonical URL redirects to: ${finalUrl}`);
-        const result = await validateCanonicalUrlContentsRecursive(finalUrl, log, visitedUrls);
+        const result = await validateCanonicalRecursively(finalUrl, log, visitedUrls);
         checks.push(...result.checks);
       } else {
         checks.push({
@@ -496,11 +485,11 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       if (canonicalUrl) {
         log.info(`Found Canonical URL: ${canonicalUrl}`);
 
-        const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, baseURL, log);
+        const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
         log.info(`Canonical URL format results for ${canonicalUrl}: ${JSON.stringify(urlFormatChecks)}`);
         checks.push(...urlFormatChecks);
 
-        const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
+        const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log);
         log.info(`Canonical URL recursive result for ${canonicalUrl}: ${JSON.stringify(urlContentCheck)}`);
         checks.push(...urlContentCheck);
       }
@@ -523,7 +512,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return acc;
     }, {});
 
-    log.info(`Successfully completed canonical audit for site: ${baseURL}`);
+    log.info(`Successfully completed Canonical Audit for site: ${baseURL}`);
     log.info(`Audit results: ${JSON.stringify(aggregatedResults)}`);
 
     return {
