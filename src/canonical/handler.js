@@ -18,91 +18,74 @@ import { noopUrlResolver } from '../common/audit.js';
 const CANONICAL_CHECKS = Object.freeze({
   CANONICAL_TAG_EXISTS: {
     check: 'canonical-tag-exists',
-    error: 'canonical-tag-not-found',
     explanation: 'The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.',
   },
   CANONICAL_TAG_ONCE: {
     check: 'canonical-tag-once',
-    error: 'multiple-canonical-tags',
     explanation: 'Multiple canonical tags detected, which confuses search engines and can dilute page authority.',
   },
   CANONICAL_TAG_NONEMPTY: {
     check: 'canonical-tag-nonempty',
-    error: 'canonical-tag-empty',
     explanation: 'The canonical tag is empty. It should point to the preferred version of the page to avoid content duplication.',
   },
   CANONICAL_TAG_IN_HEAD: {
     check: 'canonical-tag-in-head',
-    error: 'canonical-tag-not-in-head',
     explanation: 'The canonical tag must be placed in the head section of the HTML document to ensure it is recognized by search engines.',
   },
   CANONICAL_URL_STATUS_OK: {
     check: 'canonical-url-status-ok',
-    error: 'canonical-url-status-not-ok',
     explanation: 'The canonical URL should return a 200 status code to ensure it is accessible and indexable by search engines.',
   },
   CANONICAL_URL_3XX: {
     check: 'canonical-url-3xx',
-    error: 'canonical-url-3xx-redirect',
     explanation: 'The canonical URL returns a 3xx redirect, which may lead to confusion for search engines and dilute page authority.',
   },
   CANONICAL_URL_4XX: {
     check: 'canonical-url-4xx',
-    error: 'canonical-url-4xx-error',
     explanation: 'The canonical URL returns a 4xx error, indicating it is inaccessible, which can harm SEO visibility.',
   },
   CANONICAL_URL_5XX: {
     check: 'canonical-url-5xx',
-    error: 'canonical-url-5xx-error',
     explanation: 'The canonical URL returns a 5xx server error, indicating it is temporarily or permanently unavailable, affecting SEO performance.',
   },
   CANONICAL_URL_NO_REDIRECT: {
     check: 'canonical-url-no-redirect',
-    error: 'canonical-url-redirect',
     explanation: 'The canonical URL should be a direct link without redirects to ensure search engines recognize the intended page.',
   },
   CANONICAL_SELF_REFERENCED: {
     check: 'canonical-self-referenced',
-    error: 'canonical-url-not-self-referenced',
     explanation: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
   },
   CANONICAL_URL_ABSOLUTE: {
     check: 'canonical-url-absolute',
-    error: 'canonical-url-not-absolute',
     explanation: 'Canonical URLs must be absolute to avoid ambiguity in URL resolution and ensure proper indexing by search engines.',
   },
   CANONICAL_URL_SAME_DOMAIN: {
     check: 'canonical-url-same-domain',
-    error: 'canonical-url-different-domain',
     explanation: 'The canonical URL should match the domain of the page to avoid signaling to search engines that the content is duplicated elsewhere.',
   },
   CANONICAL_URL_SAME_PROTOCOL: {
     check: 'canonical-url-same-protocol',
-    error: 'canonical-url-different-protocol',
     explanation: 'The canonical URL must use the same protocol (HTTP or HTTPS) as the page to maintain consistency and avoid indexing issues.',
   },
   CANONICAL_URL_LOWERCASED: {
     check: 'canonical-url-lowercased',
-    error: 'canonical-url-not-lowercased',
     explanation: 'Canonical URLs should be in lowercase to prevent duplicate content issues since URLs are case-sensitive.',
   },
   CANONICAL_URL_FETCH_ERROR: {
     check: 'canonical-url-fetch-error',
-    error: 'canonical-url-fetch-error',
     explanation: 'There was an error fetching the canonical URL, which prevents validation of the canonical tag.',
   },
   TOPPAGES: {
     check: 'top-pages',
-    error: 'no-top-pages-found',
+    explanation: 'No top pages found',
   },
   URL_UNDEFINED: {
     check: 'url-defined',
-    error: 'url-undefined',
     explanation: 'The URL is undefined or null, which prevents the canonical tag validation process.',
   },
   UNEXPECTED_STATUS_CODE: {
     check: 'unexpected-status-code',
-    error: 'unexpected-status-code',
     explanation: 'The response returned an unexpected status code, indicating an unforeseen issue with the canonical URL.',
   },
 });
@@ -153,7 +136,8 @@ async function validateCanonicalTag(url, log) {
       canonicalUrl: null,
       checks: [{
         check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-        error: CANONICAL_CHECKS.URL_UNDEFINED.error,
+        success: false,
+        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
       }],
     };
   }
@@ -176,8 +160,8 @@ async function validateCanonicalTag(url, log) {
     if (canonicalLinks.length === 0) {
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.check,
-        error: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.error,
         success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.explanation,
       });
       log.info(`No canonical tag found for URL: ${url}`);
     } else {
@@ -193,8 +177,8 @@ async function validateCanonicalTag(url, log) {
     if (canonicalLinks.length > 1) {
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.check,
-        error: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.error,
         success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.explanation,
       });
       log.info(`Multiple canonical tags found for URL: ${url}`);
     } else if (canonicalLinks.length === 1) {
@@ -205,8 +189,8 @@ async function validateCanonicalTag(url, log) {
       if (!href) {
         checks.push({
           check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
-          error: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.error,
           success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.explanation,
         });
         log.info(`Empty canonical tag found for URL: ${url}`);
       } else {
@@ -227,18 +211,18 @@ async function validateCanonicalTag(url, log) {
           } else {
             checks.push({
               check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-              error: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.error,
               success: false,
+              explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
             });
             log.info(`Canonical URL does not reference itself: ${canonicalUrl}`);
           }
         } catch (error) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
-            error: 'invalid-canonical-url',
             success: false,
+            explanation: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.explanation,
           });
-          log.error(`Invalid canonical URL found: ${href} on page ${url}`);
+          log.info(`Invalid canonical URL found for page ${url}`);
         }
       }
 
@@ -246,8 +230,8 @@ async function validateCanonicalTag(url, log) {
       if (!canonicalLink.closest('head')) {
         checks.push({
           check: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
-          error: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.error,
           success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.explanation,
         });
         log.info(`Canonical tag is not in the head section for URL: ${url}`);
       } else {
@@ -255,7 +239,7 @@ async function validateCanonicalTag(url, log) {
           check: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
           success: true,
         });
-        log.info(`Canonical tag is in the head section for URL: ${url}`);
+        log.info(`Canonical tag is correctly placed in the head section for URL: ${url}`);
       }
     }
 
@@ -267,10 +251,9 @@ async function validateCanonicalTag(url, log) {
     return {
       canonicalUrl: null,
       checks: [{
-        check: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.check,
-        error: 'Error fetching or parsing HTML document',
-        explanation: error.message,
+        check: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
         success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.explanation,
       }],
     };
   }
@@ -296,8 +279,8 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
     log.error(`Invalid URL: ${canonicalUrl}`);
     checks.push({
       check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-      error: CANONICAL_CHECKS.URL_UNDEFINED.error,
       success: false,
+      explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
     });
     return checks;
   }
@@ -308,8 +291,8 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
     log.error(`Invalid URL: ${baseUrl}`);
     checks.push({
       check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-      error: CANONICAL_CHECKS.URL_UNDEFINED.error,
       success: false,
+      explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
     });
     return checks;
   }
@@ -318,7 +301,8 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
   if (!url.href.startsWith('http://') && !url.href.startsWith('https://')) {
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
-      error: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.error,
+      success: false,
+      explanation: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.explanation,
     });
     log.info(`Canonical URL is not absolute: ${canonicalUrl}`);
   } else {
@@ -326,29 +310,31 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
       check: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
       success: true,
     });
-    log.info(`Canonical URL is absolute: ${canonicalUrl}`);
+    log.info(`Canonical URL is absolute for URL: ${url}`);
   }
 
   // Check if the canonical URL has the same protocol as the base URL
   if (!url.href.startsWith(base.protocol)) {
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
-      error: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.error,
+      success: false,
+      explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.explanation,
     });
-    log.info(`Canonical URL does not have the same protocol as base URL: ${canonicalUrl}`);
+    log.info(`Canonical URL uses a different protocol for URL: ${url}`);
   } else {
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
       success: true,
     });
-    log.info(`Canonical URL has the same protocol as base URL: ${canonicalUrl}`);
+    log.info(`Canonical URL uses the same protocol for URL: ${url}`);
   }
 
   // Check if the canonical URL has the same domain as the base URL
   if (url.hostname !== base.hostname) {
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
-      error: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.error,
+      success: false,
+      explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.explanation,
     });
     log.info(`Canonical URL does not have the same domain as base URL: ${canonicalUrl}`);
   } else {
@@ -363,7 +349,8 @@ function validateCanonicalUrlFormat(canonicalUrl, baseUrl, log) {
   if (canonicalUrl !== canonicalUrl.toLowerCase()) {
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
-      error: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.error,
+      success: false,
+      explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
     });
     log.info(`Canonical URL is not in lowercase: ${canonicalUrl}`);
   } else {
@@ -393,8 +380,8 @@ async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedU
     log.error(`Detected a redirect loop for canonical URL ${canonicalUrl}`);
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
-      error: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.error,
       success: false,
+      explanation: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.explanation,
     });
     return checks;
   }
@@ -407,7 +394,7 @@ async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedU
     const finalUrl = response.url;
 
     // Only accept 2xx responses
-    if (response.ok) { // 2xx status codes
+    if (response.ok) {
       log.info(`Canonical URL is valid and accessible: ${canonicalUrl}`);
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
@@ -429,37 +416,37 @@ async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedU
       log.error(`Canonical URL returned a 3xx redirect: ${canonicalUrl}`);
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_URL_3XX.check,
-        error: CANONICAL_CHECKS.CANONICAL_URL_3XX.error,
         success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_3XX.explanation,
       });
     } else if (response.status >= 400 && response.status < 500) {
       log.error(`Canonical URL returned a 4xx error: ${canonicalUrl}`);
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_URL_4XX.check,
-        error: CANONICAL_CHECKS.CANONICAL_URL_4XX.error,
         success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_4XX.error.explanation,
       });
     } else if (response.status >= 500) {
       log.error(`Canonical URL returned a 5xx error: ${canonicalUrl}`);
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_URL_5XX.check,
-        error: CANONICAL_CHECKS.CANONICAL_URL_5XX.error,
         success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_5XX.error.explanation,
       });
     } else {
       log.error(`Unexpected status code ${response.status} for canonical URL: ${canonicalUrl}`);
       checks.push({
         check: CANONICAL_CHECKS.UNEXPECTED_STATUS_CODE.check,
-        error: CANONICAL_CHECKS.UNEXPECTED_STATUS_CODE.error,
         success: false,
+        explanation: CANONICAL_CHECKS.UNEXPECTED_STATUS_CODE.explanation,
       });
     }
   } catch (error) {
     log.error(`Error fetching canonical URL ${canonicalUrl}: ${error.message}`);
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
-      error: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.error,
       success: false,
+      explanation: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.explanation,
     });
   }
 
@@ -478,7 +465,7 @@ async function validateCanonicalUrlContentsRecursive(canonicalUrl, log, visitedU
 export async function canonicalAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.info(`Starting canonical audit with input: ${JSON.stringify(siteId)}`);
+  log.info(`Starting canonical audit with siteId: ${JSON.stringify(siteId)}`);
   try {
     const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
@@ -497,7 +484,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
     const auditPromises = topPages.map(async (page) => {
       const { url } = page;
-      log.info(`Validating canonical tag for URL: ${url}`);
+      log.info(`Validating canonical for URL: ${url}`);
       const checks = [];
 
       const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
@@ -507,11 +494,11 @@ export async function canonicalAuditRunner(baseURL, context, site) {
         log.info(`Found canonical URL: ${canonicalUrl}`);
 
         const urlFormatChecks = validateCanonicalUrlFormat(canonicalUrl, baseURL, log);
-        log.info(`validateCanonicalUrlFormat results for ${canonicalUrl}: ${JSON.stringify(urlFormatChecks)}`);
+        log.info(`CanonicalURL format results for ${canonicalUrl}: ${JSON.stringify(urlFormatChecks)}`);
         checks.push(...urlFormatChecks);
 
         const urlContentCheck = await validateCanonicalUrlContentsRecursive(canonicalUrl, log);
-        log.info(`validateCanonicalUrlContentsRecursive result for ${canonicalUrl}: ${JSON.stringify(urlContentCheck)}`);
+        log.info(`CanonicalURL recursive result for ${canonicalUrl}: ${JSON.stringify(urlContentCheck)}`);
         checks.push(...urlContentCheck);
       }
       log.info(`Checks for URL ${url}: ${JSON.stringify(checks)}`);
@@ -541,7 +528,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       auditResult: aggregatedResults,
     };
   } catch (error) {
-    log.error(`canonical audit for site ${baseURL} failed with error: ${error.message} ${JSON.stringify(error)}`, error);
+    log.error(`Canonical Audit for site ${baseURL} failed with error: ${error.message} ${JSON.stringify(error)}`, error);
     return {
       fullAuditRef: baseURL,
       auditResult: {
@@ -555,5 +542,4 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(canonicalAuditRunner)
-  // .withUrlResolver((site) => site.getId())
   .build();
