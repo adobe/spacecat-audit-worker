@@ -231,6 +231,7 @@ export async function enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemap
   const {
     region, statisticsServiceArn, log,
   } = config;
+  log.info(`Enhancing backlinks with fixes for site ${siteId}`);
 
   const invoke = async (funcArn, payload) => {
     const client = new LambdaClient({ region });
