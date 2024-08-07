@@ -177,6 +177,19 @@ describe('Canonical URL Tests', () => {
       expect(log.error).to.have.been.calledWith('Invalid URL: invalid-url');
     });
 
+    it('should handle invalid base URL', () => {
+      const canonicalUrl = 'http://example.com';
+      const baseUrl = 'invalid-url';
+      const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
+
+      expect(result).to.deep.include({
+        check: 'url-defined',
+        success: false,
+        explanation: 'The URL is undefined or null, which prevents the canonical tag validation process.',
+      });
+      expect(log.error).to.have.been.calledWith('Invalid URL: invalid-url');
+    });
+
     it('should handle non-lowercase canonical URL', () => {
       const canonicalUrl = 'http://example.com/UpperCase';
       const baseUrl = 'http://example.com';
