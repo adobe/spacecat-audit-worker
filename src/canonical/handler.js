@@ -15,7 +15,7 @@ import { fetch } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 
-const CANONICAL_CHECKS = Object.freeze({
+export const CANONICAL_CHECKS = Object.freeze({
   CANONICAL_TAG_EXISTS: {
     check: 'canonical-tag-exists',
     explanation: 'The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.',
