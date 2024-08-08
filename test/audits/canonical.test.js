@@ -98,6 +98,19 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.called;
     });
 
+    it('should handle invalid base URL correctly', () => {
+      const canonicalUrl = 'https://example.com';
+      const baseUrl = 'invalid-url';
+      const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
+
+      expect(result).to.deep.include({
+        check: 'url-defined',
+        success: false,
+        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
+      });
+      expect(log.error).to.have.been.calledWith(`Invalid URL: ${baseUrl}`);
+    });
+
     it('should return an error when URL is undefined or null', async () => {
       const result = await validateCanonicalTag(null, log);
 
@@ -122,6 +135,21 @@ describe('Canonical URL Tests', () => {
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.explanation,
       });
+    });
+
+    it('should handle invalid canonical URL correctly', async () => {
+      const url = 'http://example.com';
+      const html = '<html><head><link rel="canonical" href="invalid-url"></head><body></body></html>';
+      nock(url).get('/').reply(200, html);
+
+      const result = await validateCanonicalTag(url, log);
+
+      expect(result.checks).to.deep.include({
+        check: 'canonical-url-invalid',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_INVALID.explanation,
+      });
+      expect(log.info).to.have.been.calledWith('Invalid canonical URL found for page http://example.com');
     });
 
     it('should handle empty canonical tag', async () => {
@@ -324,6 +352,61 @@ describe('Canonical URL Tests', () => {
         explanation: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.explanation,
       });
       expect(log.error).to.have.been.calledWith(`Error fetching canonical URL ${canonicalUrl}: Network error`);
+    });
+
+    it('should detect and handle redirect loop correctly', async () => {
+      const canonicalUrl = 'http://example.com/redirect-loop';
+      const visitedUrls = new Set([canonicalUrl]);
+
+      const result = await validateCanonicalRecursively(canonicalUrl, log, visitedUrls);
+
+      expect(result).to.deep.include({
+        check: 'canonical-url-no-redirect',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.explanation,
+      });
+      expect(log.info).to.have.been.calledWith(`Detected a redirect loop for canonical URL ${canonicalUrl}`);
+    });
+
+    it('should handle 4xx error response correctly', async () => {
+      const canonicalUrl = 'http://example.com/404';
+      nock('http://example.com').get('/404').reply(404); // Simulate a 404 response
+
+      const result = await validateCanonicalRecursively(canonicalUrl, log);
+
+      expect(result).to.deep.include({
+        check: 'canonical-url-4xx',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_4XX.explanation,
+      });
+      expect(log.info).to.have.been.calledWith(`Canonical URL ${canonicalUrl} returned a 4xx error: 404`);
+    });
+
+    it('should handle 5xx error response correctly', async () => {
+      const canonicalUrl = 'http://example.com/500';
+      nock('http://example.com').get('/500').reply(500); // Simulate a 500 response
+
+      const result = await validateCanonicalRecursively(canonicalUrl, log);
+
+      expect(result).to.deep.include({
+        check: 'canonical-url-5xx',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_5XX.explanation,
+      });
+    });
+
+    it('should handle unexpected status code response correctly', async () => {
+      const canonicalUrl = 'http://example.com/300';
+      nock('http://example.com').get('/300').reply(300); // Simulate a 300 response
+
+      const result = await validateCanonicalRecursively(canonicalUrl, log);
+
+      expect(result).to.deep.include({
+        check: 'unexpected-status-code',
+        success: false,
+        explanation: CANONICAL_CHECKS.UNEXPECTED_STATUS_CODE.explanation,
+      });
+      expect(log.info).to.have.been.calledWith(`Unexpected status code 300 for canonical URL: ${canonicalUrl}`);
     });
   });
 

@@ -72,6 +72,10 @@ export const CANONICAL_CHECKS = Object.freeze({
     check: 'canonical-url-fetch-error',
     explanation: 'There was an error fetching the canonical URL, which prevents validation of the canonical tag.',
   },
+  CANONICAL_URL_INVALID: {
+    check: 'canonical-url-invalid',
+    explanation: 'The canonical URL is malformed or invalid.',
+  },
   TOPPAGES: {
     check: 'top-pages',
     explanation: 'No top pages found',
@@ -214,9 +218,9 @@ export async function validateCanonicalTag(url, log) {
             }
           } catch (error) {
             checks.push({
-              check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
+              check: CANONICAL_CHECKS.CANONICAL_URL_INVALID.check,
               success: false,
-              explanation: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.explanation,
+              explanation: CANONICAL_CHECKS.CANONICAL_URL_INVALID.explanation,
             });
             log.info(`Invalid canonical URL found for page ${url}`);
           }
