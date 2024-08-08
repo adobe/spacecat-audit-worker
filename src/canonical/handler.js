@@ -186,7 +186,14 @@ export async function validateCanonicalTag(url, log) {
           log.info(`Empty canonical tag found for URL: ${url}`);
         } else {
           try {
-            canonicalUrl = new URL(href, url).toString();
+            canonicalUrl = href.startsWith('/')
+              ? new URL(href, url).toString()
+              : new URL(href).toString();
+
+            if (!href.endsWith('/') && canonicalUrl.endsWith('/')) {
+              canonicalUrl = canonicalUrl.substring(0, canonicalUrl.length - 1);
+            }
+
             checks.push({
               check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
               success: true,
@@ -258,20 +265,7 @@ export async function validateCanonicalTag(url, log) {
  */
 export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
   const checks = [];
-  let url;
   let base;
-
-  try {
-    url = new URL(canonicalUrl);
-  } catch (error) {
-    log.error(`Invalid URL: ${canonicalUrl}`);
-    checks.push({
-      check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-      success: false,
-      explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-    });
-    return checks;
-  }
 
   try {
     base = new URL(baseUrl);
@@ -285,67 +279,88 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
     return checks;
   }
 
-  log.info(`Canonical URL hostname: ${url.hostname}`);
-  log.info(`Base URL hostname: ${base.hostname}`);
+  // Check if the canonical URL is in lowercase
+  if (canonicalUrl) {
+    if (typeof canonicalUrl === 'string') {
+      if (canonicalUrl !== canonicalUrl.toLowerCase()) {
+        checks.push({
+          check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
+          success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
+        });
+        log.info(`Canonical URL is not lowercased: ${canonicalUrl}`);
+        // } else {
+        //   checks.push({
+        //     check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
+        //     success: true,
+        //   });
+      }
+    } else {
+      checks.push({
+        check: CANONICAL_CHECKS.URL_UNDEFINED.check,
+        success: false,
+        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
+      });
+      return checks;
+    }
+  }
 
   // Check if the canonical URL is absolute
-  if (!url.href.startsWith('http://') && !url.href.startsWith('https://')) {
+  if (!canonicalUrl.startsWith('http://') && !canonicalUrl.startsWith('https://')) {
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
       success: false,
       explanation: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.explanation,
     });
-    log.info(`Canonical URL is not absolute: ${canonicalUrl}`);
+    log.info('Canonical URL is not absolute');
   } else {
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
       success: true,
     });
-  }
+    let url;
 
-  // Check if the canonical URL has the same protocol as the base URL
-  if (!url.href.startsWith(base.protocol)) {
-    checks.push({
-      check: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
-      success: false,
-      explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.explanation,
-    });
-    log.info(`Canonical URL  ${canonicalUrl} uses a different protocol than base URL ${baseUrl}`);
-  } else {
-    checks.push({
-      check: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
-      success: true,
-    });
-  }
+    try {
+      url = new URL(canonicalUrl);
+    } catch (error) {
+      log.error(`Invalid URL: ${canonicalUrl}`);
+      checks.push({
+        check: CANONICAL_CHECKS.URL_UNDEFINED.check,
+        success: false,
+        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
+      });
+      return checks;
+    }
 
-  // Check if the canonical URL has the same domain as the base URL
-  if (url.hostname !== base.hostname) {
-    checks.push({
-      check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
-      success: false,
-      explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.explanation,
-    });
-    log.info(`Canonical URL ${canonicalUrl} does not have the same domain as base URL ${baseUrl}`);
-  } else {
-    checks.push({
-      check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
-      success: true,
-    });
-  }
+    // Check if the canonical URL has the same protocol as the base URL
+    if (!url.href.startsWith(base.protocol)) {
+      checks.push({
+        check: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.explanation,
+      });
+      log.info(`Canonical URL  ${canonicalUrl} uses a different protocol than base URL ${baseUrl}`);
+    } else {
+      checks.push({
+        check: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
+        success: true,
+      });
+    }
 
-  // Check if the canonical URL is in lowercase
-  if (canonicalUrl !== canonicalUrl.toLowerCase()) {
-    checks.push({
-      check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
-      success: false,
-      explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
-    });
-    log.info(`Canonical URL is not lowercased: ${canonicalUrl}`);
-  } else {
-    checks.push({
-      check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
-      success: true,
-    });
+    // Check if the canonical URL has the same domain as the base URL
+    if (url.hostname !== base.hostname) {
+      checks.push({
+        check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.explanation,
+      });
+      log.info(`Canonical URL ${canonicalUrl} does not have the same domain as base URL ${baseUrl}`);
+    } else {
+      checks.push({
+        check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
+        success: true,
+      });
+    }
   }
 
   return checks;
