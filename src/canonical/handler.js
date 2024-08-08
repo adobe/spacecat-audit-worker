@@ -36,10 +36,6 @@ const CANONICAL_CHECKS = Object.freeze({
     check: 'canonical-url-status-ok',
     explanation: 'The canonical URL should return a 200 status code to ensure it is accessible and indexable by search engines.',
   },
-  CANONICAL_URL_3XX: {
-    check: 'canonical-url-3xx',
-    explanation: 'The canonical URL returns a 3xx redirect, which may lead to confusion for search engines and dilute page authority.',
-  },
   CANONICAL_URL_4XX: {
     check: 'canonical-url-4xx',
     explanation: 'The canonical URL returns a 4xx error, indicating it is inaccessible, which can harm SEO visibility.',
@@ -147,14 +143,13 @@ export async function validateCanonicalTag(url, log) {
     const response = await fetch(url);
     const html = await response.text();
     const dom = new JSDOM(html);
-    const { head } = dom.window.document;
-    const canonicalLinks = head.querySelectorAll('link[rel="canonical"]');
+    const { document } = dom.window;
 
-    // Initialize checks array and canonicalUrl variable
+    const canonicalLinks = document.querySelectorAll('link[rel="canonical"]');
     const checks = [];
     let canonicalUrl = null;
 
-    // Log presence or absence of canonical tags
+    // Check if any canonical tag exists
     if (canonicalLinks.length === 0) {
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.check,
@@ -163,7 +158,6 @@ export async function validateCanonicalTag(url, log) {
       });
       log.info(`No canonical tag found for URL: ${url}`);
     } else {
-      // Log the success of canonical tag existence
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.check,
         success: true,
@@ -171,69 +165,70 @@ export async function validateCanonicalTag(url, log) {
       log.info(`Canonical tag exists for URL: ${url}`);
     }
 
-    // Handle multiple canonical tags
-    if (canonicalLinks.length > 1) {
-      checks.push({
-        check: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.check,
-        success: false,
-        explanation: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.explanation,
-      });
-      log.info(`Multiple canonical tags found for URL: ${url}`);
-    } else if (canonicalLinks.length === 1) {
-      const canonicalLink = canonicalLinks[0];
-      const href = canonicalLink.getAttribute('href');
-      if (!href) {
+    // Proceed with the checks only if there is at least one canonical tag
+    if (canonicalLinks.length > 0) {
+      if (canonicalLinks.length > 1) {
         checks.push({
-          check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
+          check: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.check,
           success: false,
-          explanation: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.explanation,
+          explanation: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.explanation,
         });
-        log.info(`Empty canonical tag found for URL: ${url}`);
+        log.info(`Multiple canonical tags found for URL: ${url}`);
       } else {
-        try {
-          canonicalUrl = new URL(href, url).toString();
-          checks.push({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
-            success: true,
-          });
-          // Check if canonical URL points to itself
-          if (canonicalUrl === url) {
-            checks.push({
-              check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-              success: true,
-            });
-            log.info(`Canonical URL ${canonicalUrl} references itself`);
-          } else {
-            checks.push({
-              check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-              success: false,
-              explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
-            });
-            log.info(`Canonical URL ${canonicalUrl} does not reference itself`);
-          }
-        } catch (error) {
+        const canonicalLink = canonicalLinks[0];
+        const href = canonicalLink.getAttribute('href');
+        if (!href) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
             success: false,
             explanation: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.explanation,
           });
-          log.info(`Invalid canonical URL found for page ${url}`);
+          log.info(`Empty canonical tag found for URL: ${url}`);
+        } else {
+          try {
+            canonicalUrl = new URL(href, url).toString();
+            checks.push({
+              check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
+              success: true,
+            });
+            if (canonicalUrl === url) {
+              checks.push({
+                check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+                success: true,
+              });
+              log.info(`Canonical URL ${canonicalUrl} references itself`);
+            } else {
+              checks.push({
+                check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+                success: false,
+                explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
+              });
+              log.info(`Canonical URL ${canonicalUrl} does not reference itself`);
+            }
+          } catch (error) {
+            checks.push({
+              check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
+              success: false,
+              explanation: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.explanation,
+            });
+            log.info(`Invalid canonical URL found for page ${url}`);
+          }
         }
-      }
 
-      // Check if canonical link is in the head section
-      if (!canonicalLink.closest('head')) {
-        checks.push({
-          check: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
-          success: false,
-          explanation: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.explanation,
-        });
-        log.info(`Canonical tag is not in the head section for URL: ${url}`);
-      } else {
-        checks.push({
-          check: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
-          success: true,
-        });
+        // Check if canonical link is in the head section
+        if (!canonicalLink.closest('head')) {
+          checks.push({
+            check: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
+            success: false,
+            explanation: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.explanation,
+          });
+          log.info('Canonical tag is not in the head section');
+        } else {
+          checks.push({
+            check: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
+            success: true,
+          });
+        }
       }
     }
 
@@ -385,7 +380,6 @@ export async function validateCanonicalRecursively(canonicalUrl, log, visitedUrl
     const response = await fetch(canonicalUrl, { redirect: 'manual' });
     const finalUrl = response.url;
 
-    // Only accept 2xx responses
     if (response.ok) {
       log.info(`Canonical URL is accessible: ${canonicalUrl}`, response.status);
       checks.push({
@@ -404,13 +398,6 @@ export async function validateCanonicalRecursively(canonicalUrl, log, visitedUrl
           success: true,
         });
       }
-    } else if (response.status >= 300 && response.status < 400) {
-      log.info(`Canonical URL ${canonicalUrl} returned a 3xx redirect: ${response.status}`);
-      checks.push({
-        check: CANONICAL_CHECKS.CANONICAL_URL_3XX.check,
-        success: false,
-        explanation: CANONICAL_CHECKS.CANONICAL_URL_3XX.explanation,
-      });
     } else if (response.status >= 400 && response.status < 500) {
       log.info(`Canonical URL ${canonicalUrl} returned a 4xx error: ${response.status}`);
       checks.push({
