@@ -383,8 +383,8 @@ async function addPValues(experimentData) {
     const metric = experiment.conversionEventName || 'click';
     for (const variant of experiment.variants) {
       lambdaPayload.payload.rumData[id][variant.name] = {
-        views: variant.views,
-        metrics: variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.value || 0,
+        views: variant.samples || 0,
+        metrics: variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.samples || 0,
       };
     }
   }
@@ -501,7 +501,7 @@ async function convertToExperimentsSchema(experimentInsights) {
       for (const expVariant of exp.variants) {
         const variantName = expVariant.name;
         const variant = getObjectByProperties(variants, { name: variantName });
-        const { views, interactionsCount } = expVariant;
+        const { views, samples, interactionsCount } = expVariant;
         if (variant && (variant.views >= expVariant.views)) {
           // we already have this variant, and it has more views than the new one, so we skip it
           // eslint-disable-next-line no-continue
@@ -514,11 +514,13 @@ async function convertToExperimentsSchema(experimentInsights) {
               (m) => m.type === metricCheckPoint && m.selector === selector,
             );
             if (existingMetric) {
-              existingMetric.value += expVariant[metricCheckPoint][selector];
+              existingMetric.value += expVariant[metricCheckPoint][selector].value;
+              existingMetric.samples += expVariant[metricCheckPoint][selector].samples;
             } else {
               metrics.push({
                 type: metricCheckPoint,
-                value: expVariant[metricCheckPoint][selector],
+                value: expVariant[metricCheckPoint][selector].value,
+                samples: expVariant[metricCheckPoint][selector].samples,
                 selector,
               });
             }
@@ -528,6 +530,7 @@ async function convertToExperimentsSchema(experimentInsights) {
           variants.push({
             name: variantName,
             views,
+            samples,
             interactionsCount,
             url,
             metrics,
@@ -536,6 +539,7 @@ async function convertToExperimentsSchema(experimentInsights) {
           // override the variant with the new data
           variant.metrics = metrics;
           variant.views = views;
+          variant.samples = samples;
           variant.interactionsCount = interactionsCount;
           variant.url = variant.url || url;
         }
