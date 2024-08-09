@@ -308,6 +308,28 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith(`Canonical URL ${url} references itself`);
     });
 
+    it('should handle try-catch for invalid canonical URL', () => {
+      const invalidCanonicalUrl = 'http://%'; // Invalid URL to trigger the error
+      const baseUrl = 'https://example.com';
+
+      const result = validateCanonicalFormat(invalidCanonicalUrl, baseUrl, log);
+
+      // Check that the result contains the "canonical-url-absolute" check with success
+      expect(result).to.deep.include.members([{
+        check: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
+        success: true,
+      }]);
+
+      // Check that the result contains the "url-defined" check with failure
+      expect(result).to.deep.include.members([{
+        check: CANONICAL_CHECKS.URL_UNDEFINED.check,
+        success: false,
+        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
+      }]);
+
+      expect(log.error).to.have.been.calledWith(`Invalid URL: ${invalidCanonicalUrl}`);
+    });
+
     it('should fail if the canonical URL does not point to itself', async () => {
       const url = 'http://example.com';
       const canonicalUrl = 'http://example.com/other-page';
@@ -342,7 +364,7 @@ describe('Canonical URL Tests', () => {
 
     it('should handle a fetch error correctly', async () => {
       const canonicalUrl = 'http://example.com/fetcherror';
-      nock('http://example.com').get('/fetcherror').replyWithError('Network error'); // Simulate a network error
+      nock('http://example.com').get('/fetcherror').replyWithError('Network error');
 
       const result = await validateCanonicalRecursively(canonicalUrl, log);
 

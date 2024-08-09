@@ -464,6 +464,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
   log.info(`Starting Canonical Audit with siteId: ${JSON.stringify(siteId)}`);
+
   try {
     const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
