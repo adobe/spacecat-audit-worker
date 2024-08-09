@@ -470,6 +470,44 @@ describe('Canonical URL Tests', () => {
       });
     });
 
+    it('should correctly resolve relative canonical URL with base URL', async () => {
+      const url = 'https://example.com/some-page';
+      const href = '/canonical-page';
+      const expectedCanonicalUrl = 'https://example.com/canonical-page';
+
+      // Mock the HTML content with a canonical link
+      const html = `
+    <html>
+      <head>
+        <link rel="canonical" href="${href}">
+      </head>
+      <body>
+        <h1>Test Page</h1>
+      </body>
+    </html>
+  `;
+
+      // Mock the fetch response to return the above HTML
+      nock('https://example.com')
+        .get('/some-page')
+        .reply(200, html);
+
+      const result = await validateCanonicalTag(url, log);
+
+      // Ensure that the resolved canonical URL is correct
+      expect(result.canonicalUrl).to.equal(expectedCanonicalUrl);
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
+        success: true,
+      });
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
+      });
+      expect(log.info).to.have.been.calledWith(`Canonical URL ${expectedCanonicalUrl} does not reference itself`);
+    });
+
     it('should handle unexpected status code response correctly', async () => {
       const canonicalUrl = 'http://example.com/300';
       nock('http://example.com').get('/300').reply(300); // Simulate a 300 response

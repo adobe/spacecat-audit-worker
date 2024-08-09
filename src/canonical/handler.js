@@ -397,7 +397,6 @@ export async function validateCanonicalRecursively(canonicalUrl, log, visitedUrl
 
   try {
     const response = await fetch(canonicalUrl, { redirect: 'manual' });
-
     if (response.ok) {
       log.info(`Canonical URL is accessible: ${canonicalUrl}`, response.status);
       checks.push({
