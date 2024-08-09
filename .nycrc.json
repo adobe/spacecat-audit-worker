@@ -4,9 +4,9 @@
     "text"
   ],
   "check-coverage": true,
-  "lines": 98,
+  "lines": 100,
   "branches": 98,
-  "statements": 98,
+  "statements": 100,
   "all": true,
   "include": [
     "src/**/*.js"

@@ -28,7 +28,6 @@ const { expect } = chai;
 
 describe('Canonical URL Tests', () => {
   let log;
-
   beforeEach(() => {
     log = {
       info: sinon.stub(),
@@ -54,16 +53,32 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.called;
     });
 
-    it('should handle error and return an empty array', async () => {
+    it('should handle null result and return an empty array', async () => {
       const dataAccess = {
-        getTopPagesForSite: sinon.stub().rejects(new Error('Test error')),
+        getTopPagesForSite: sinon.stub().resolves(null), // Simulate null result
       };
       const siteId = 'testSiteId';
       const context = { log };
 
       const result = await getTopPagesForSiteId(dataAccess, siteId, context, log);
 
-      expect(result).to.deep.equal([]);
+      expect(result).to.deep.equal([]); // Ensure the result is an empty array
+      expect(log.info).to.have.been.calledWith('No top pages found');
+    });
+
+    it('should log the error and propagate the exception when retrieving top pages fails', async () => {
+      const dataAccess = {
+        getTopPagesForSite: sinon.stub().rejects(new Error('Test error')),
+      };
+      const siteId = 'testSiteId';
+      const context = { log };
+
+      try {
+        await getTopPagesForSiteId(dataAccess, siteId, context, log);
+      } catch (error) {
+        expect(error.message).to.equal('Test error');
+      }
+
       expect(log.error).to.have.been.calledWith('Error retrieving top pages for site testSiteId: Test error');
     });
 
@@ -248,6 +263,44 @@ describe('Canonical URL Tests', () => {
         explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
       });
       expect(log.info).to.have.been.calledWith('Canonical URL is not lowercased: https://example.com/UpperCase');
+    });
+
+    it('should pass if canonical URL is in lowercase', () => {
+      const canonicalUrl = 'https://example.com/lowercase';
+      const baseUrl = 'https://example.com';
+
+      const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
+
+      // Check that the result contains the appropriate success entry
+      expect(result).to.deep.include({
+        check: 'canonical-url-lowercased',
+        success: true,
+      });
+    });
+
+    it('should handle redirection scenario and stop at the first redirect', async () => {
+      const canonicalUrl = 'http://example.com/page1';
+      const redirectUrl = 'http://example.com/page2';
+
+      // Mock the initial request that returns a redirect
+      nock('http://example.com')
+        .get('/page1')
+        .reply(301, null, { Location: redirectUrl });
+
+      // Mock the redirected request that returns a 200 OK
+      nock('http://example.com')
+        .get('/page2')
+        .reply(200);
+
+      const result = await validateCanonicalRecursively(canonicalUrl, log, new Set());
+
+      expect(result).to.deep.include.members([
+        {
+          check: 'canonical-url-no-redirect',
+          success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.explanation,
+        },
+      ]);
     });
 
     it('should handle different domains', () => {
@@ -435,6 +488,8 @@ describe('Canonical URL Tests', () => {
   describe('canonicalAuditRunner', () => {
     it('should run canonical audit successfully', async () => {
       const baseURL = 'http://example.com';
+      const html = `<html><head><link rel="canonical" href="${baseURL}"></head><body></body></html>`;
+      nock('http://example.com/page1').get('').reply(200, html);
       const context = { log, dataAccess: { getTopPagesForSite: sinon.stub().resolves([{ getURL: () => 'http://example.com/page1' }]) } };
       const site = { getId: () => 'testSiteId' };
 
@@ -465,6 +520,43 @@ describe('Canonical URL Tests', () => {
         },
       });
       expect(log.info).to.have.been.calledWith('No top pages found, ending audit.');
+    });
+
+    it('should log a simplified error and return a failed audit result if an exception occurs', async () => {
+      const baseURL = 'http://example.com';
+      const context = { log, dataAccess: { getTopPagesForSite: sinon.stub().rejects(new Error('Test Error')) } };
+      const site = { getId: () => 'testSiteId' };
+
+      // Run the audit function
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      // Verify that the returned audit result indicates a failure with the correct error message
+      expect(result).to.deep.equal({
+        fullAuditRef: baseURL,
+        auditResult: {
+          error: 'Audit failed with error: Test Error',
+          success: false,
+        },
+      });
+    });
+
+    it('should pass if the canonical URL points to itself', async () => {
+      const url = 'http://example.com';
+      const html = `<html><head><link rel="canonical" href="${url}"></head><body></body></html>`;
+      nock(url).get('/').reply(200, html);
+
+      const result = await validateCanonicalTag(url, log);
+
+      expect(result.checks).to.deep.include.members([
+        {
+          check: 'canonical-tag-nonempty',
+          success: true,
+        },
+        {
+          check: 'canonical-tag-exists',
+          success: true,
+        }]);
+      expect(log.info).to.have.been.calledWith(`Canonical URL ${url} references itself`);
     });
   });
 });

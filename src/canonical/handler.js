@@ -116,7 +116,7 @@ export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
     }
   } catch (error) {
     log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
-    return [];
+    throw error;
   }
 }
 
@@ -293,11 +293,11 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
           explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
         });
         log.info(`Canonical URL is not lowercased: ${canonicalUrl}`);
-        // } else {
-        //   checks.push({
-        //     check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
-        //     success: true,
-        //   });
+      } else {
+        checks.push({
+          check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
+          success: true,
+        });
       }
     } else {
       checks.push({
@@ -397,7 +397,6 @@ export async function validateCanonicalRecursively(canonicalUrl, log, visitedUrl
 
   try {
     const response = await fetch(canonicalUrl, { redirect: 'manual' });
-    const finalUrl = response.url;
 
     if (response.ok) {
       log.info(`Canonical URL is accessible: ${canonicalUrl}`, response.status);
@@ -405,18 +404,17 @@ export async function validateCanonicalRecursively(canonicalUrl, log, visitedUrl
         check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
         success: true,
       });
-
-      // Check for redirection to another URL
-      if (canonicalUrl !== finalUrl) {
-        log.info(`Canonical URL redirects to: ${finalUrl}`);
-        const result = await validateCanonicalRecursively(finalUrl, log, visitedUrls);
-        checks.push(...result.checks);
-      } else {
-        checks.push({
-          check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
-          success: true,
-        });
-      }
+      checks.push({
+        check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
+        success: true,
+      });
+    } else if ([301, 302, 303, 307, 308].includes(response.status)) {
+      log.info(`Canonical URL ${canonicalUrl} returned a 3xx status: ${response.status}`);
+      checks.push({
+        check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.explanation,
+      });
     } else if (response.status >= 400 && response.status < 500) {
       log.info(`Canonical URL ${canonicalUrl} returned a 4xx error: ${response.status}`);
       checks.push({
@@ -483,7 +481,6 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
     const auditPromises = topPages.map(async (page) => {
       const { url } = page;
-      log.info(`Validating canonical for URL: ${url}`);
       const checks = [];
 
       const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
@@ -493,14 +490,11 @@ export async function canonicalAuditRunner(baseURL, context, site) {
         log.info(`Found Canonical URL: ${canonicalUrl}`);
 
         const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
-        log.info(`Canonical URL format results for ${canonicalUrl}: ${JSON.stringify(urlFormatChecks)}`);
         checks.push(...urlFormatChecks);
 
         const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log);
-        log.info(`Canonical URL recursive result for ${canonicalUrl}: ${JSON.stringify(urlContentCheck)}`);
         checks.push(...urlContentCheck);
       }
-      log.info(`Checks for URL ${url}: ${JSON.stringify(checks)}`);
       return { url, checks };
     });
 
@@ -527,7 +521,6 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       auditResult: aggregatedResults,
     };
   } catch (error) {
-    log.error(`Canonical Audit for site ${baseURL} failed with error: ${error.message} ${JSON.stringify(error)}`, error);
     return {
       fullAuditRef: baseURL,
       auditResult: {
