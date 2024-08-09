@@ -15,6 +15,7 @@ import { hasText, resolveCustomerSecretsName } from '@adobe/spacecat-shared-util
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 
 URI.preventInvalidHostname = true;
 
@@ -216,69 +217,44 @@ export const extractKeywordsFromUrl = (url, log) => {
 };
 
 /**
- * Processes broken backlinks to find suggested URLs based on keywords.
- *
- * @param {Array} brokenBacklinks - The array of broken backlink objects to process.
- * @param {Array} keywords - The array of keyword objects to match against.
- * @param {Object} log - The logger object for logging messages.
- * @returns {Array} A new array of backlink objects with suggested URLs added.
+ * Enhances the backlinks with fixes, triggers a Lambda function to calculate the fixes.
+ * @param siteId - The site ID.
+ * @param brokenBacklinks - The broken backlinks.
+ * @param sitemapUrls - The sitemap URLs.
+ * @param config - The configuration object.
+ * @param config.region - The AWS region.
+ * @param config.statisticsService - The statistics service Lambda function name.
+ * @param config.log - The logger.
+ * @returns {Promise<{status: string}>}
  */
-export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
-  const result = [];
+export async function enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemapUrls, config) {
+  const {
+    region, statisticsServiceArn, log,
+  } = config;
+  log.info(`Enhancing backlinks with fixes for site ${siteId}`);
 
-  for (const backlink of brokenBacklinks) {
-    log.info(`trying to find redirect for: ${backlink.url_to}`);
-    const extractedKeywords = extractKeywordsFromUrl(backlink.url_to, log);
+  const payload = {
+    type: 'broken-backlinks',
+    payload: {
+      siteId,
+      brokenBacklinks,
+      sitemapUrls,
+    },
+  };
 
-    const matchedData = [];
+  const client = new LambdaClient({ region });
+  const command = new InvokeCommand({
+    FunctionName: statisticsServiceArn,
+    Payload: JSON.stringify(payload),
+    InvocationType: 'Event',
+  });
 
-    // Match keywords and include rank in the matched data
-    keywords.forEach((entry) => {
-      const matchingKeyword = extractedKeywords.find(
-        (keywordObj) => {
-          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          return regex.test(entry.keyword);
-        },
-      );
-      if (matchingKeyword) {
-        matchedData.push({ ...entry, rank: matchingKeyword.rank });
-      }
-    });
-
-    // Try again with split keywords if no matches found
-    if (matchedData.length === 0) {
-      const splitKeywords = extractedKeywords
-        .map((keywordObj) => keywordObj.keyword.split(' ').map((k) => ({ keyword: k, rank: keywordObj.rank })))
-        .flat();
-
-      splitKeywords.forEach((keywordObj) => {
-        keywords.forEach((entry) => {
-          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          if (regex.test(entry.keyword)) {
-            matchedData.push({ ...entry, rank: keywordObj.rank });
-          }
-        });
-      });
-    }
-
-    // Sort by rank and then by traffic
-    matchedData.sort((a, b) => {
-      if (b.rank === a.rank) {
-        return b.traffic - a.traffic; // Higher traffic ranks first
-      }
-      return a.rank - b.rank; // Higher rank ranks first (1 is highest)
-    });
-
-    const newBacklink = { ...backlink };
-
-    if (matchedData.length > 0) {
-      log.info(`found ${matchedData.length} keywords for backlink ${backlink.url_to}`);
-      newBacklink.url_suggested = matchedData[0].url;
-    } else {
-      log.info(`could not find suggested URL for backlink ${backlink.url_to} with keywords ${extractedKeywords.map((k) => k.keyword).join(', ')}`);
-    }
-
-    result.push(newBacklink);
+  try {
+    await client.send(command);
+    log.info(`Lambda function ${statisticsServiceArn} invoked successfully.`);
+  } catch (error) {
+    log.error(`Error invoking Lambda function ${statisticsServiceArn}:`, error);
   }
-  return result;
-};
+
+  return { status: 'Lambda function invoked' };
+}

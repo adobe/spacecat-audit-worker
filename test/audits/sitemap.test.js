@@ -19,7 +19,7 @@ import chaiAsPromised from 'chai-as-promised';
 import {
   checkSitemap,
   ERROR_CODES,
-  findSitemap,
+  obtainSitemapUrls,
   isSitemapContentValid,
   checkRobotsForSitemap, sitemapAuditRunner, fetchContent, getBaseUrlPagesFromSitemaps,
 } from '../../src/sitemap/handler.js';
@@ -432,9 +432,9 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe('findSitemap', () => {
+  describe('obtainSitemapUrls', () => {
     it('should return error when URL is invalid', async () => {
-      const result = await findSitemap('not a valid url');
+      const result = await obtainSitemapUrls('not a valid url');
       expect(result.success).to.equal(false);
       expect(result.reasons).to.deep.equal([{
         error: ERROR_CODES.INVALID_URL,
@@ -451,7 +451,7 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .reply(200, sampleSitemap);
 
-      const result = await findSitemap(url);
+      const result = await obtainSitemapUrls(url);
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
@@ -475,7 +475,7 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .reply(200, sampleSitemap);
 
-      const result = await findSitemap('https://some-domain.adobe');
+      const result = await obtainSitemapUrls('https://some-domain.adobe');
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
@@ -499,7 +499,7 @@ describe('Sitemap Audit', () => {
         .get('/sitemap_index.xml')
         .reply(200, sitemapIndex);
 
-      const result = await findSitemap(url);
+      const result = await obtainSitemapUrls(url);
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
         [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
@@ -519,7 +519,7 @@ describe('Sitemap Audit', () => {
       topPagesResponse.result.pages[0].url = `${protocol}://www.${domain}/foo`;
       topPagesResponse.result.pages[1].url = `${protocol}://www.${domain}/bar`;
 
-      const result = await findSitemap(`${protocol}://www.${domain}`);
+      const result = await obtainSitemapUrls(`${protocol}://www.${domain}`);
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${protocol}://www.${domain}/foo`, `${protocol}://www.${domain}/bar`],
@@ -539,7 +539,7 @@ describe('Sitemap Audit', () => {
         .head('/sitemap_index.xml')
         .reply(404);
 
-      const result = await findSitemap(url);
+      const result = await obtainSitemapUrls(url);
       expect(result.success).to.equal(false);
     });
 
@@ -564,7 +564,7 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .reply(200, sitemapInvalidPaths);
 
-      const result = await findSitemap(url);
+      const result = await obtainSitemapUrls(url);
       expect(result.success).to.equal(false);
     });
   });

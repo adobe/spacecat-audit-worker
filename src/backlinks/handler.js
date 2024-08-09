@@ -18,6 +18,7 @@ import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
+import { obtainSitemapUrls } from '../sitemap/handler.js';
 
 const TIMEOUT = 3000;
 
@@ -64,6 +65,8 @@ export default async function auditBrokenBacklinks(message, context) {
   const { type, url: siteId, auditContext = {} } = message;
   const { dataAccess, log, sqs } = context;
   const {
+    AWS_REGION: region,
+    SPACECAT_STATISTICS_LAMBDA_ARN: statisticsServiceArn,
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
 
@@ -100,20 +103,7 @@ export default async function auditBrokenBacklinks(message, context) {
       const filteredBacklinks = result?.backlinks?.filter(
         (backlink) => !excludedURLs?.includes(backlink.url_to),
       );
-      let brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
-      try {
-        const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-        const keywords = topPages.map(
-          (page) => ({
-            url: page.getURL(),
-            keyword: page.getTopKeyword(),
-            traffic: page.getTraffic(),
-          }),
-        );
-        brokenBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-      } catch (e) {
-        log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`, e);
-      }
+      const brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
 
       auditResult = {
         finalUrl: auditContext.finalUrl,
@@ -143,7 +133,29 @@ export default async function auditBrokenBacklinks(message, context) {
       auditContext,
       auditResult,
     };
+
     await sqs.sendMessage(queueUrl, data);
+
+    try {
+      const baseUrl = site.getBaseURL();
+      const sitemaps = await obtainSitemapUrls(baseUrl);
+      if (sitemaps?.success && sitemaps?.paths) {
+        const sitemapUrls = Object.values(sitemaps.paths)
+          .reduce((acc, curr) => acc.concat(curr), []);
+        await enhanceBacklinksWithFixes(
+          siteId,
+          auditResult.brokenBacklinks,
+          sitemapUrls,
+          {
+            region,
+            statisticsServiceArn,
+            log,
+          },
+        );
+      }
+    } catch (e) {
+      log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`, e);
+    }
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
