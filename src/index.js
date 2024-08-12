@@ -14,7 +14,7 @@ import { helixStatus } from '@adobe/helix-status';
 import { Response } from '@adobe/fetch';
 import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
-import { resolveSecretsName } from '@adobe/spacecat-shared-utils';
+import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
 
 import sqs from './support/sqs.js';
 import apex from './apex/handler.js';
@@ -26,6 +26,8 @@ import sitemap from './sitemap/handler.js';
 import backlinks from './backlinks/handler.js';
 import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
+import essExperimentationDaily from './experimentation-ess/daily.js';
+import essExperimentationAll from './experimentation-ess/all.js';
 
 const HANDLERS = {
   apex,
@@ -37,38 +39,9 @@ const HANDLERS = {
   'broken-backlinks': backlinks,
   experimentation,
   conversion,
+  'experimentation-ess-daily': essExperimentationDaily,
+  'experimentation-ess-all': essExperimentationAll,
 };
-
-/**
- * Wrapper to turn an SQS record into a function param
- * Inspired by https://github.com/adobe/helix-admin/blob/main/src/index.js#L104C1-L128C5
- *
- * @param {UniversalAction} fn
- * @returns {function(object, UniversalContext): Promise<Response>}
- */
-function sqsEventAdapter(fn) {
-  return async (req, context) => {
-    const { log } = context;
-    let message;
-
-    try {
-      // currently not publishing batch messages
-      const records = context.invocation?.event?.Records;
-      log.info(`Received ${records.length} many records. ID of the first message in the batch: ${records[0]?.messageId}`);
-      message = JSON.parse(records[0]?.body);
-      log.info(`Received message with id: ${context.invocation?.event?.Records.length}`);
-    } catch (e) {
-      log.error('Function was not invoked properly, message body is not a valid JSON', e);
-      return new Response('', {
-        status: 400,
-        headers: {
-          'x-error': 'Event does not contain a valid message body',
-        },
-      });
-    }
-    return fn(message, context);
-  };
-}
 
 function getElapsedSeconds(startTime) {
   const endTime = process.hrtime(startTime);

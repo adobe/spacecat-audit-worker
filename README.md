@@ -204,8 +204,10 @@ export async function auditRunner(url, context) {
   };
 }
 
-async function postProcessor(auditUrl, auditData) {
+async function postProcessor(auditUrl, auditData, context) {
   // your post-processing logic goes here
+  // you can obtain the dataAccess from context
+  // { dataAccess } = context;
 }
 
 export default new AuditBuilder()
