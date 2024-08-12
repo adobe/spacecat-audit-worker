@@ -443,7 +443,7 @@ describe('Canonical URL Tests', () => {
 
     it('should handle 4xx error response correctly', async () => {
       const canonicalUrl = 'http://example.com/404';
-      nock('http://example.com').get('/404').reply(404); // Simulate a 404 response
+      nock('http://example.com').get('/404').reply(404);
 
       const result = await validateCanonicalRecursively(canonicalUrl, log);
 
@@ -457,7 +457,7 @@ describe('Canonical URL Tests', () => {
 
     it('should handle 5xx error response correctly', async () => {
       const canonicalUrl = 'http://example.com/500';
-      nock('http://example.com').get('/500').reply(500); // Simulate a 500 response
+      nock('http://example.com').get('/500').reply(500);
 
       const result = await validateCanonicalRecursively(canonicalUrl, log);
 
@@ -473,7 +473,6 @@ describe('Canonical URL Tests', () => {
       const href = '/canonical-page';
       const expectedCanonicalUrl = 'https://example.com/canonical-page';
 
-      // Mock the HTML content with a canonical link
       const html = `
     <html>
       <head>
@@ -485,7 +484,6 @@ describe('Canonical URL Tests', () => {
     </html>
   `;
 
-      // Mock the fetch response to return the above HTML
       nock('https://example.com')
         .get('/some-page')
         .reply(200, html);
@@ -508,7 +506,7 @@ describe('Canonical URL Tests', () => {
 
     it('should handle unexpected status code response correctly', async () => {
       const canonicalUrl = 'http://example.com/300';
-      nock('http://example.com').get('/300').reply(300); // Simulate a 300 response
+      nock('http://example.com').get('/300').reply(300);
 
       const result = await validateCanonicalRecursively(canonicalUrl, log);
 

@@ -36,6 +36,10 @@ export const CANONICAL_CHECKS = Object.freeze({
     check: 'canonical-url-status-ok',
     explanation: 'The canonical URL should return a 200 status code to ensure it is accessible and indexable by search engines.',
   },
+  CANONICAL_URL_NO_REDIRECT: {
+    check: 'canonical-url-no-redirect',
+    explanation: 'The canonical URL should be a direct link without redirects to ensure search engines recognize the intended page.',
+  },
   CANONICAL_URL_4XX: {
     check: 'canonical-url-4xx',
     explanation: 'The canonical URL returns a 4xx error, indicating it is inaccessible, which can harm SEO visibility.',
@@ -43,10 +47,6 @@ export const CANONICAL_CHECKS = Object.freeze({
   CANONICAL_URL_5XX: {
     check: 'canonical-url-5xx',
     explanation: 'The canonical URL returns a 5xx server error, indicating it is temporarily or permanently unavailable, affecting SEO performance.',
-  },
-  CANONICAL_URL_NO_REDIRECT: {
-    check: 'canonical-url-no-redirect',
-    explanation: 'The canonical URL should be a direct link without redirects to ensure search engines recognize the intended page.',
   },
   CANONICAL_SELF_REFERENCED: {
     check: 'canonical-self-referenced',
