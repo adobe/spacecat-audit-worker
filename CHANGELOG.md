@@ -1,3 +1,24 @@
+## [1.23.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.23.4...v1.23.5) (2024-08-10)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#353](https://github.com/adobe/spacecat-audit-worker/issues/353)) ([8955a64](https://github.com/adobe/spacecat-audit-worker/commit/8955a64f2e83edc78f06ad92374378463bfd9209))
+
+## [1.23.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.23.3...v1.23.4) (2024-08-09)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#352](https://github.com/adobe/spacecat-audit-worker/issues/352)) ([347b083](https://github.com/adobe/spacecat-audit-worker/commit/347b0838af3059fa392905eb610ae216e8fef154))
+
+## [1.23.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.23.2...v1.23.3) (2024-08-09)
+
+
+### Bug Fixes
+
+* use actual number of samples in p-value calculations instead of weighted calculations ([#351](https://github.com/adobe/spacecat-audit-worker/issues/351)) ([3dfdc86](https://github.com/adobe/spacecat-audit-worker/commit/3dfdc86c5796e3cf5af2414f3d1638040de45335))
+
 ## [1.23.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.23.1...v1.23.2) (2024-08-08)
 
 
