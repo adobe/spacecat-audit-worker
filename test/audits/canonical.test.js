@@ -55,14 +55,14 @@ describe('Canonical URL Tests', () => {
 
     it('should handle null result and return an empty array', async () => {
       const dataAccess = {
-        getTopPagesForSite: sinon.stub().resolves(null), // Simulate null result
+        getTopPagesForSite: sinon.stub().resolves(null),
       };
       const siteId = 'testSiteId';
       const context = { log };
 
       const result = await getTopPagesForSiteId(dataAccess, siteId, context, log);
 
-      expect(result).to.deep.equal([]); // Ensure the result is an empty array
+      expect(result).to.deep.equal([]);
       expect(log.info).to.have.been.calledWith('No top pages found');
     });
 
@@ -271,7 +271,6 @@ describe('Canonical URL Tests', () => {
 
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
 
-      // Check that the result contains the appropriate success entry
       expect(result).to.deep.include({
         check: 'canonical-url-lowercased',
         success: true,
@@ -362,12 +361,11 @@ describe('Canonical URL Tests', () => {
     });
 
     it('should handle try-catch for invalid canonical URL', () => {
-      const invalidCanonicalUrl = 'http://%'; // Invalid URL to trigger the error
+      const invalidCanonicalUrl = 'http://%';
       const baseUrl = 'https://example.com';
 
       const result = validateCanonicalFormat(invalidCanonicalUrl, baseUrl, log);
 
-      // Check that the result contains the "canonical-url-absolute" check with success
       expect(result).to.deep.include.members([{
         check: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
         success: true,
@@ -542,7 +540,7 @@ describe('Canonical URL Tests', () => {
       const context = {
         log,
         dataAccess: {
-          getTopPagesForSite: sinon.stub().resolves([]), // Simulate no top pages found
+          getTopPagesForSite: sinon.stub().resolves([]),
         },
       };
       const site = { getId: () => 'testSiteId' };
@@ -565,7 +563,6 @@ describe('Canonical URL Tests', () => {
       const context = { log, dataAccess: { getTopPagesForSite: sinon.stub().rejects(new Error('Test Error')) } };
       const site = { getId: () => 'testSiteId' };
 
-      // Run the audit function
       const result = await canonicalAuditRunner(baseURL, context, site);
 
       // Verify that the returned audit result indicates a failure with the correct error message
