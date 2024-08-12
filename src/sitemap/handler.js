@@ -156,6 +156,7 @@ async function checkCommonSitemapUrls(urls) {
     return response.ok ? url : null;
   });
   const results = await Promise.all(fetchPromises);
+  // Returns only URLs that exist
   return results.filter((url) => url !== null);
 }
 
@@ -278,10 +279,12 @@ export async function findSitemap(inputUrl) {
 
   // check if URLs from each sitemap exist and remove entries if none exist
   if (Object.entries(extractedPaths).length > 0) {
-    const extractedSitemapUrlEntries = Object.keys(extractedPaths);
-    for (const s of extractedSitemapUrlEntries) {
+    const extractedSitemapUrls = Object.keys(extractedPaths);
+    for (const s of extractedSitemapUrls) {
+      const urlsToCheck = extractedPaths[s];
       // eslint-disable-next-line no-await-in-loop
-      const existingPages = await checkCommonSitemapUrls(extractedSitemapUrlEntries[s]);
+      const existingPages = await checkCommonSitemapUrls(urlsToCheck);
+
       if (existingPages.length === 0) {
         delete extractedPaths[s];
       } else {
