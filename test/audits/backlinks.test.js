@@ -28,6 +28,7 @@ chai.use(sinonChai);
 chai.use(chaiAsPromised);
 const { expect } = chai;
 
+// eslint-disable-next-line func-names
 describe('Backlinks Tests', function () {
   this.timeout(10000);
   let message;
@@ -517,7 +518,7 @@ describe('Backlinks Tests', function () {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-    expect(context.log.warn).to.have.been.calledWith('Backlink https://foo.com/returns-429 returned status 429');
+    expect(context.log.warn).to.have.been.calledWith('backlink https://foo.com/returns-429 returned status 429');
     expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
   });
 
