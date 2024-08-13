@@ -513,7 +513,6 @@ export async function canonicalAuditRunner(baseURL, context, site) {
     }, {});
 
     log.info(`Successfully completed Canonical Audit for site: ${baseURL}`);
-    log.info(`Audit results: ${JSON.stringify(aggregatedResults)}`);
 
     return {
       fullAuditRef: baseURL,

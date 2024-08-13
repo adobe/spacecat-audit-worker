@@ -523,13 +523,35 @@ describe('Canonical URL Tests', () => {
     it('should run canonical audit successfully', async () => {
       const baseURL = 'http://example.com';
       const html = `<html><head><link rel="canonical" href="${baseURL}"></head><body></body></html>`;
-      nock('http://example.com/page1').get('').reply(200, html);
-      const context = { log, dataAccess: { getTopPagesForSite: sinon.stub().resolves([{ getURL: () => 'http://example.com/page1' }]) } };
+
+      nock('http://example.com').get('/page1').reply(200, html);
+      nock(baseURL).get('/').reply(200, html);
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getURL: () => 'http://example.com/page1' }]);
+
+      const context = {
+        log,
+        dataAccess: {
+          getTopPagesForSite: getTopPagesForSiteStub,
+        },
+      };
       const site = { getId: () => 'testSiteId' };
 
       const result = await canonicalAuditRunner(baseURL, context, site);
 
       expect(result).to.be.an('object');
+      expect(result.auditResult).to.have.all.keys(
+        'canonical-self-referenced',
+        'canonical-tag-exists',
+        'canonical-tag-in-head',
+        'canonical-tag-nonempty',
+        'canonical-url-absolute',
+        'canonical-url-lowercased',
+        'canonical-url-same-domain',
+        'canonical-url-same-protocol',
+        'canonical-url-no-redirect',
+        'canonical-url-status-ok',
+      );
+      expect(getTopPagesForSiteStub).to.have.been.calledOnceWith('testSiteId', 'ahrefs', 'global');
       expect(log.info).to.have.been.called;
     });
 
