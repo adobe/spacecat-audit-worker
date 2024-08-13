@@ -150,7 +150,7 @@ export async function checkSitemap(sitemapUrl) {
  * @param {Array<string>} urls - Array of URLs to check.
  * @returns {Promise<Array<string>>} - List of sitemap URLs that exist.
  */
-async function checkCommonSitemapUrls(urls) {
+async function filterValidUrls(urls) {
   const fetchPromises = urls.map(async (url) => {
     const response = await fetch(url, { method: 'HEAD' });
     return response.ok ? url : null;
@@ -264,7 +264,7 @@ export async function findSitemap(inputUrl) {
 
   if (!sitemapUrls.length) {
     const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
-    sitemapUrls = await checkCommonSitemapUrls(commonSitemapUrls);
+    sitemapUrls = await filterValidUrls(commonSitemapUrls);
     if (!sitemapUrls.length) {
       logMessages.push({ value: `No sitemap found in robots.txt or common paths for ${protocol}://${domain}`, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
       return { success: false, reasons: logMessages };
@@ -283,7 +283,7 @@ export async function findSitemap(inputUrl) {
     for (const s of extractedSitemapUrls) {
       const urlsToCheck = extractedPaths[s];
       // eslint-disable-next-line no-await-in-loop
-      const existingPages = await checkCommonSitemapUrls(urlsToCheck);
+      const existingPages = await filterValidUrls(urlsToCheck);
 
       if (existingPages.length === 0) {
         delete extractedPaths[s];
