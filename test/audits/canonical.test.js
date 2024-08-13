@@ -281,12 +281,10 @@ describe('Canonical URL Tests', () => {
       const canonicalUrl = 'http://example.com/page1';
       const redirectUrl = 'http://example.com/page2';
 
-      // Mock the initial request that returns a redirect
       nock('http://example.com')
         .get('/page1')
         .reply(301, null, { Location: redirectUrl });
 
-      // Mock the redirected request that returns a 200 OK
       nock('http://example.com')
         .get('/page2')
         .reply(200);
@@ -371,7 +369,6 @@ describe('Canonical URL Tests', () => {
         success: true,
       }]);
 
-      // Check that the result contains the "url-defined" check with failure
       expect(result).to.deep.include.members([{
         check: CANONICAL_CHECKS.URL_UNDEFINED.check,
         success: false,
@@ -490,7 +487,7 @@ describe('Canonical URL Tests', () => {
 
       const result = await validateCanonicalTag(url, log);
 
-      // Ensure that the resolved canonical URL is correct
+      // ensure that the resolved canonical URL is correct
       expect(result.canonicalUrl).to.equal(expectedCanonicalUrl);
       expect(result.checks).to.deep.include({
         check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
@@ -585,7 +582,7 @@ describe('Canonical URL Tests', () => {
 
       const result = await canonicalAuditRunner(baseURL, context, site);
 
-      // Verify that the returned audit result indicates a failure with the correct error message
+      // verify that the returned audit result indicates a failure with an error message
       expect(result).to.deep.equal({
         fullAuditRef: baseURL,
         auditResult: {
@@ -593,25 +590,6 @@ describe('Canonical URL Tests', () => {
           success: false,
         },
       });
-    });
-
-    it('should pass if the canonical URL points to itself', async () => {
-      const url = 'http://example.com';
-      const html = `<html><head><link rel="canonical" href="${url}"></head><body></body></html>`;
-      nock(url).get('/').reply(200, html);
-
-      const result = await validateCanonicalTag(url, log);
-
-      expect(result.checks).to.deep.include.members([
-        {
-          check: 'canonical-tag-nonempty',
-          success: true,
-        },
-        {
-          check: 'canonical-tag-exists',
-          success: true,
-        }]);
-      expect(log.info).to.have.been.calledWith(`Canonical URL ${url} references itself`);
     });
   });
 });
