@@ -146,17 +146,35 @@ export async function checkSitemap(sitemapUrl) {
 }
 
 /**
- * Checks for common sitemap URLs and returns any that exist.
- * @param {Array<string>} urls - Array of URLs to check.
- * @returns {Promise<Array<string>>} - List of sitemap URLs that exist.
+ * Filters a list of URLs to return only those that exist.
+ *
+ * @async
+ * @param {string[]} urls - An array of URLs to check.
+ * @param {Object} log - The logging object to record information and errors.
+ * @returns {Promise<string[]>} - A promise that resolves to an array of URLs that exist.
  */
-async function checkCommonSitemapUrls(urls) {
+async function filterValidUrls(urls, log) {
   const fetchPromises = urls.map(async (url) => {
-    const response = await fetch(url, { method: 'HEAD' });
-    return response.ok ? url : null;
+    try {
+      const response = await fetch(url, { method: 'HEAD' });
+      if (response.ok) {
+        return url;
+      } else {
+        log.info(`URL ${url} returned status code ${response.status}`);
+        return null;
+      }
+    } catch (error) {
+      log.error(`Failed to fetch URL ${url}: ${error.message}`);
+      return null;
+    }
   });
-  const results = await Promise.all(fetchPromises);
-  return results.filter((url) => url !== null);
+
+  const results = await Promise.allSettled(fetchPromises);
+
+  // filter only the fulfilled promises that have a valid URL
+  return results
+    .filter((result) => result.status === 'fulfilled' && result.value !== null)
+    .map((result) => result.value);
 }
 
 /**
@@ -232,9 +250,10 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
  * The extracted paths response length < 0, log messages and returns the failure status and reasons.
  *
  * @param {string} inputUrl - The URL for which to find and validate the sitemap
+ * @param log
  * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
  */
-export async function findSitemap(inputUrl) {
+export async function findSitemap(inputUrl, log) {
   const logMessages = [];
 
   const parsedUrl = extractDomainAndProtocol(inputUrl);
@@ -263,7 +282,7 @@ export async function findSitemap(inputUrl) {
 
   if (!sitemapUrls.length) {
     const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
-    sitemapUrls = await checkCommonSitemapUrls(commonSitemapUrls);
+    sitemapUrls = await filterValidUrls(commonSitemapUrls, log);
     if (!sitemapUrls.length) {
       logMessages.push({ value: `No sitemap found in robots.txt or common paths for ${protocol}://${domain}`, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
       return { success: false, reasons: logMessages };
@@ -275,6 +294,22 @@ export async function findSitemap(inputUrl) {
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
   const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
+
+  // check if URLs from each sitemap exist and remove entries if none exist
+  if (Object.entries(extractedPaths).length > 0) {
+    const extractedSitemapUrls = Object.keys(extractedPaths);
+    for (const s of extractedSitemapUrls) {
+      const urlsToCheck = extractedPaths[s];
+      // eslint-disable-next-line no-await-in-loop
+      const existingPages = await filterValidUrls(urlsToCheck, log);
+
+      if (existingPages.length === 0) {
+        delete extractedPaths[s];
+      } else {
+        extractedPaths[s] = existingPages;
+      }
+    }
+  }
 
   if (Object.entries(extractedPaths).length > 0) {
     logMessages.push({ value: 'Sitemaps found and validated successfully.' });
@@ -299,7 +334,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
   log.info(`Received sitemap audit request for ${baseURL}`);
   const startTime = process.hrtime();
-  const auditResult = await findSitemap(baseURL);
+  const auditResult = await findSitemap(baseURL, log);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
