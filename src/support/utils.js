@@ -168,8 +168,8 @@ export async function getSitemapUrlsFromSitemapIndex(content, log, fetchContent)
   for (const sitemapUrl of sitemapUrls) {
     log.info(`Processing sitemap: ${sitemapUrl}`);
 
-    // Fetch the content of each sitemap URL
     try {
+      // Fetch the content of each sitemap URL
       // eslint-disable-next-line no-await-in-loop
       const sitemapContent = await fetchContent(sitemapUrl);
 

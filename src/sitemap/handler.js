@@ -215,13 +215,16 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
     if (urlData.existsAndIsValid) {
       if (urlData.details && urlData.details.isSitemapIndex) {
         log.info(`Sitemap Index found: ${url}`);
-        // eslint-disable-next-line max-len
+        // Ensure we await the result of getSitemapUrlsFromSitemapIndex
+        // eslint-disable-next-line no-await-in-loop,max-len
         const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent, log, fetchContent);
-        log.info(`Extracted Sitemaps from Index: ${extractedSitemaps}`);
+        log.info(`Extracted Sitemaps from Index: ${JSON.stringify(extractedSitemaps)}`);
+
         for (const extractedSitemapUrl of extractedSitemaps) {
           if (!contentsCache[extractedSitemapUrl]) {
             matchingUrls.push(extractedSitemapUrl);
             try {
+              // Fetch contents for each sitemap URL
               // eslint-disable-next-line no-await-in-loop
               await fillSitemapContents(extractedSitemapUrl);
             } catch (err) {
