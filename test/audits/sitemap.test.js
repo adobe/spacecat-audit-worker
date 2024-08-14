@@ -65,7 +65,14 @@ describe('Sitemap Audit', () => {
     + `<sitemap><loc>${url}/sitemap_bar.xml</loc></sitemap>\n`
     + '</sitemapindex>';
 
+  const payload1 = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+  + `<url> <loc>${url}/foo</loc></url>\n`
+  + `<url> <loc>${url}/bar</loc></url>\n`
+  + '</urlset>';
+
   beforeEach('setup', () => {
+    nock.cleanAll();
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .build(message);
@@ -132,7 +139,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it.skip('runs successfully for sitemap extracted from robots.txt through sitemap index', async () => {
+    it('runs successfully for sitemap extracted from robots.txt through sitemap index', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap_index.xml`);
@@ -142,11 +149,11 @@ describe('Sitemap Audit', () => {
         .reply(200, sitemapIndex);
 
       nock(url)
-        .head('/sitemap_foo.xml')
-        .reply(200);
+        .get('/sitemap_foo.xml')
+        .reply(200, payload1);
 
       nock(url)
-        .head('/sitemap_bar.xml')
+        .get('/sitemap_bar.xml')
         .reply(200);
 
       nock(url)
@@ -574,7 +581,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it.skip('should return success when sitemap_index.xml is found', async () => {
+    it('should return success when sitemap_index.xml is found', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, 'Allow: /');

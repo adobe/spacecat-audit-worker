@@ -190,34 +190,42 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   const baseUrlVariant = toggleWWW(baseUrl);
   const contentsCache = {};
 
-  // Prepare all promises for checking each sitemap URL.
-  const checkPromises = urls.map(async (url) => {
+  const fillSitemapContents = async (url) => {
     const urlData = await checkSitemap(url);
     contentsCache[url] = urlData;
     return { url, urlData };
-  });
+  };
+
+  // Prepare all promises for checking each sitemap URL.
+  const checkPromises = urls.map(fillSitemapContents);
 
   // Execute all checks concurrently.
   const results = await Promise.all(checkPromises);
   const matchingUrls = [];
 
   // Process each result.
-  results.forEach(({ url, urlData }) => {
+  for (const { url, urlData } of results) {
     if (urlData.existsAndIsValid) {
       if (urlData.details && urlData.details.isSitemapIndex) {
         console.log(`Sitemap Index found: ${url}`);
         const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
         console.log(`Extracted Sitemaps from Index: ${extractedSitemaps}`);
-        extractedSitemaps.forEach((extractedSitemapUrl) => {
+        for (const extractedSitemapUrl of extractedSitemaps) {
           if (!contentsCache[extractedSitemapUrl]) {
             matchingUrls.push(extractedSitemapUrl);
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              await fillSitemapContents(extractedSitemapUrl);
+            } catch (err) {
+              // not available
+            }
           }
-        });
+        }
       } else if (url.startsWith(baseUrl) || url.startsWith(baseUrlVariant)) {
         matchingUrls.push(url);
       }
     }
-  });
+  }
 
   console.log(`Matching URLs for further processing: ${matchingUrls}`);
 
