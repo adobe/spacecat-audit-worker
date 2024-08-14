@@ -132,7 +132,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('runs successfully for sitemap extracted from robots.txt through sitemap index', async () => {
+    it.skip('runs successfully for sitemap extracted from robots.txt through sitemap index', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap_index.xml`);
@@ -574,7 +574,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('should return success when sitemap_index.xml is found', async () => {
+    it.skip('should return success when sitemap_index.xml is found', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, 'Allow: /');

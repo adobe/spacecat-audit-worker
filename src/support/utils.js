@@ -86,17 +86,26 @@ export function extractDomainAndProtocol(inputUrl) {
  * @param {Object} content - The content of the sitemap.
  * @param {string} tagName - The name of the tag to extract URLs from.
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
- */
-export function extractUrlsFromSitemap(content, tagName = 'url') {
+ */export function extractUrlsFromSitemap(content, tagName = 'url') {
+  // Initialize JSDOM with the content and specify the XML content type
   const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
 
+  // Retrieve all elements with the specified tag name
   const elements = document.getElementsByTagName(tagName);
-  // Filter out any nulls if 'loc' element is missing
-  return Array.from(elements).map((element) => {
-    const loc = element.getElementsByTagName('loc')[0];
-    return loc ? loc.textContent : null;
-  }).filter((url) => url !== null);
+
+  // Map through the elements, extract the text of the 'loc' tags, and filter out null
+  return Array.from(elements)
+    .map((element) => {
+      const loc = element.getElementsByTagName('loc')[0];
+      // Check if loc exists before trying to access textContent
+      if (loc && loc.textContent) {
+        console.log('Extracted URLs from sitemap fct:', loc.textContent.trim());
+        return loc.textContent.trim();
+      }
+      return null;
+    })
+    .filter((url) => url !== null); // Filter out any nulls if 'loc' element is missing or empty
 }
 
 /**
@@ -119,12 +128,18 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
 
   if (sitemapDetails.isText) {
     const lines = sitemapDetails.sitemapContent.payload.split('\n').map((line) => line.trim());
+    console.log(`Extracted lines from text sitemap: ${lines}`);
 
-    return filterPages(lines.filter((line) => line.length > 0));
+    const filteredPages = filterPages(lines.filter((line) => line.length > 0));
+    console.log(`Filtered pages from text sitemap: ${filteredPages}`);
+    return filteredPages;
   } else {
     const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
+    console.log(`Extracted pages from XML sitemap: ${sitemapPages}`);
 
-    return filterPages(sitemapPages);
+    const filteredPages = filterPages(sitemapPages);
+    console.log(`Filtered pages from XML sitemap: ${filteredPages}`);
+    return filteredPages;
   }
 }
 

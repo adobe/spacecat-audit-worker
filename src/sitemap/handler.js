@@ -126,6 +126,7 @@ export async function checkSitemap(sitemapUrl) {
         reasons: [ERROR_CODES.SITEMAP_FORMAT],
       };
     }
+    console.log(`Processed ${sitemapUrl}: isSitemapIndex=${isSitemapIndex}`);
     return {
       existsAndIsValid: true,
       reasons: [],
@@ -203,9 +204,10 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   // Process each result.
   results.forEach(({ url, urlData }) => {
     if (urlData.existsAndIsValid) {
-      if (urlData.details.isSitemapIndex) {
-        // Handle sitemap index by extracting more URLs and recursively check them
+      if (urlData.details && urlData.details.isSitemapIndex) {
+        console.log(`Sitemap Index found: ${url}`);
         const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
+        console.log(`Extracted Sitemaps from Index: ${extractedSitemaps}`);
         extractedSitemaps.forEach((extractedSitemapUrl) => {
           if (!contentsCache[extractedSitemapUrl]) {
             matchingUrls.push(extractedSitemapUrl);
@@ -217,25 +219,26 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
     }
   });
 
+  console.log(`Matching URLs for further processing: ${matchingUrls}`);
+
   // Further process matching URLs if necessary
   const response = {};
   const pagesPromises = matchingUrls.map(async (matchingUrl) => {
-    // Check if further detailed checks are needed or directly use cached data
-    if (!contentsCache[matchingUrl]) {
-      contentsCache[matchingUrl] = await checkSitemap(matchingUrl);
-    }
-    const pages = getBaseUrlPagesFromSitemapContents(
-      baseUrl,
-      contentsCache[matchingUrl].details,
-    );
+    if (contentsCache[matchingUrl] && contentsCache[matchingUrl].details) {
+      const pages = getBaseUrlPagesFromSitemapContents(
+        baseUrl,
+        contentsCache[matchingUrl].details,
+      );
+      console.log(`Pages extracted from ${matchingUrl}: ${pages}`);
 
-    if (pages.length > 0) {
-      response[matchingUrl] = pages;
+      if (pages.length > 0) {
+        response[matchingUrl] = pages;
+      }
     }
   });
 
-  // Wait for all pages promises to resolve
   await Promise.all(pagesPromises);
+  console.log(`Final response object: ${JSON.stringify(response)}`);
 
   return response;
 }
@@ -313,11 +316,13 @@ export async function findSitemap(inputUrl, log) {
 
   if (Object.entries(extractedPaths).length > 0) {
     logMessages.push({ value: 'Sitemaps found and validated successfully.' });
+    console.log('Extracted Paths:', extractedPaths);
     return {
       success: true, reasons: logMessages, paths: extractedPaths, url: inputUrl,
     };
   } else {
     logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
+    console.log('Failed to extract paths:', extractedPaths);
     return { success: false, reasons: logMessages, url: inputUrl };
   }
 }
@@ -351,7 +356,7 @@ export async function sitemapAuditRunner(baseURL, context) {
 
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
-  .withPersister(() => {})
+  // .withPersister(() => {})
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
     .then((url) => (getUrlWithoutPath(prependSchema(url)))))
   .build();
