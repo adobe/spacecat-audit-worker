@@ -103,6 +103,7 @@ export function isSitemapContentValid(sitemapContent) {
  *
  * @async
  * @param {string} sitemapUrl - The URL of the sitemap to check.
+ * @param log
  * @returns {Promise<Object>} - A Promise that resolves to an object representing the result check.
  * The object has the following properties:
  * - existsAndIsValid: A boolean indicating whether the sitemap exists and is in a valid format.
@@ -113,7 +114,7 @@ export function isSitemapContentValid(sitemapContent) {
  *   - isText: A boolean indicating whether the sitemap content is plain text.
  *   - isSitemapIndex: A boolean indicating whether the sitemap is an index of other sitemaps.
  */
-export async function checkSitemap(sitemapUrl) {
+export async function checkSitemap(sitemapUrl, log) {
   try {
     const sitemapContent = await fetchContent(sitemapUrl);
     const isValidFormat = isSitemapContentValid(sitemapContent);
@@ -124,9 +125,11 @@ export async function checkSitemap(sitemapUrl) {
       return {
         existsAndIsValid: false,
         reasons: [ERROR_CODES.SITEMAP_FORMAT],
+        details: { sitemapContent: {}, isText: false, isSitemapIndex: false },
       };
     }
-    console.log(`Processed ${sitemapUrl}: isSitemapIndex=${isSitemapIndex}`);
+
+    log.info(`Processed ${sitemapUrl}: isSitemapIndex=${isSitemapIndex}`);
     return {
       existsAndIsValid: true,
       reasons: [],
@@ -137,11 +140,13 @@ export async function checkSitemap(sitemapUrl) {
       return {
         existsAndIsValid: false,
         reasons: [ERROR_CODES.SITEMAP_NOT_FOUND],
+        details: { sitemapContent: {}, isText: false, isSitemapIndex: false },
       };
     }
     return {
       existsAndIsValid: false,
       reasons: [ERROR_CODES.FETCH_ERROR],
+      details: { sitemapContent: {}, isText: false, isSitemapIndex: false },
     };
   }
 }
@@ -192,7 +197,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
   const contentsCache = {};
 
   const fillSitemapContents = async (url) => {
-    const urlData = await checkSitemap(url);
+    const urlData = await checkSitemap(url, log);
     contentsCache[url] = urlData;
     return { url, urlData };
   };
@@ -237,6 +242,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
       const pages = getBaseUrlPagesFromSitemapContents(
         baseUrl,
         contentsCache[matchingUrl].details,
+        log,
       );
       log.info(`Pages extracted from ${matchingUrl}: ${pages}`);
 

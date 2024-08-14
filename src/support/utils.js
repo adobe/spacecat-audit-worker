@@ -84,10 +84,11 @@ export function extractDomainAndProtocol(inputUrl) {
  * Extracts URLs from a sitemap XML content based on a specified tag name.
  *
  * @param {Object} content - The content of the sitemap.
+ * @param log
  * @param {string} tagName - The name of the tag to extract URLs from.
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
-export function extractUrlsFromSitemap(content, tagName = 'url') {
+export function extractUrlsFromSitemap(content, log, tagName = 'url') {
   // Initialize JSDOM with the content and specify the XML content type
   const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
@@ -101,7 +102,7 @@ export function extractUrlsFromSitemap(content, tagName = 'url') {
       const loc = element.getElementsByTagName('loc')[0];
       // Check if loc exists before trying to access textContent
       if (loc && loc.textContent) {
-        console.log('Extracted URLs from sitemap fct:', loc.textContent.trim());
+        log.info('Extracted URLs from sitemap fct:', loc.textContent.trim());
         return loc.textContent.trim();
       }
       return null;
@@ -114,34 +115,37 @@ export function extractUrlsFromSitemap(content, tagName = 'url') {
  *
  * @param {string} baseUrl - The base URL to match against the URLs in the sitemap.
  * @param {Object} sitemapDetails - An object containing details about the sitemap.
+ * @param log
  * @param {boolean} sitemapDetails.isText - A flag indicating if the sitemap content is plain text.
  * @param {Object} sitemapDetails.sitemapContent - The sitemap content object.
  * @param {string} sitemapDetails.sitemapContent.payload - The actual content of the sitemap.
  *
  * @returns {string[]} URLs from the sitemap that start with the base URL or its www variant.
  */
-export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
+export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log) {
   const baseUrlVariant = toggleWWW(baseUrl);
 
   const filterPages = (pages) => pages.filter(
     (url) => url.startsWith(baseUrl) || url.startsWith(baseUrlVariant),
   );
 
-  if (sitemapDetails.isText) {
+  if (sitemapDetails && sitemapDetails.isText) {
     const lines = sitemapDetails.sitemapContent.payload.split('\n').map((line) => line.trim());
-    console.log(`Extracted lines from text sitemap: ${lines}`);
+    log.info(`Extracted lines from text sitemap: ${lines}`);
 
     const filteredPages = filterPages(lines.filter((line) => line.length > 0));
-    console.log(`Filtered pages from text sitemap: ${filteredPages}`);
+    log.info(`Filtered pages from text sitemap: ${filteredPages}`);
     return filteredPages;
-  } else {
+  } else if (sitemapDetails) {
     const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
-    console.log(`Extracted pages from XML sitemap: ${sitemapPages}`);
+    log.info(`Extracted pages from XML sitemap: ${sitemapPages}`);
 
     const filteredPages = filterPages(sitemapPages);
-    console.log(`Filtered pages from XML sitemap: ${filteredPages}`);
+    log.info(`Filtered pages from XML sitemap: ${filteredPages}`);
     return filteredPages;
   }
+
+  return [];
 }
 
 /**
