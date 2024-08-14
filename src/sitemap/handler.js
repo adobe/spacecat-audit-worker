@@ -184,9 +184,10 @@ async function filterValidUrls(urls, log) {
  * @async
  * @param {string} baseUrl - The base URL to find pages for.
  * @param {string[]} urls - The list of sitemap URLs to check.
+ * @param log
  * @returns {Promise<Object>} - Resolves to an object mapping sitemap URLs to arrays of page URLs.
  */
-export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
+export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
   const baseUrlVariant = toggleWWW(baseUrl);
   const contentsCache = {};
 
@@ -207,9 +208,9 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   for (const { url, urlData } of results) {
     if (urlData.existsAndIsValid) {
       if (urlData.details && urlData.details.isSitemapIndex) {
-        console.log(`Sitemap Index found: ${url}`);
+        log.info(`Sitemap Index found: ${url}`);
         const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
-        console.log(`Extracted Sitemaps from Index: ${extractedSitemaps}`);
+        log.info(`Extracted Sitemaps from Index: ${extractedSitemaps}`);
         for (const extractedSitemapUrl of extractedSitemaps) {
           if (!contentsCache[extractedSitemapUrl]) {
             matchingUrls.push(extractedSitemapUrl);
@@ -217,7 +218,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
               // eslint-disable-next-line no-await-in-loop
               await fillSitemapContents(extractedSitemapUrl);
             } catch (err) {
-              // not available
+              log.error(`Failed to fetch sitemap: ${extractedSitemapUrl}, Error: ${err.message}`);
             }
           }
         }
@@ -227,7 +228,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
     }
   }
 
-  console.log(`Matching URLs for further processing: ${matchingUrls}`);
+  log.info(`Matching URLs for further processing: ${matchingUrls}`);
 
   // Further process matching URLs if necessary
   const response = {};
@@ -237,7 +238,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
         baseUrl,
         contentsCache[matchingUrl].details,
       );
-      console.log(`Pages extracted from ${matchingUrl}: ${pages}`);
+      log.info(`Pages extracted from ${matchingUrl}: ${pages}`);
 
       if (pages.length > 0) {
         response[matchingUrl] = pages;
@@ -246,7 +247,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   });
 
   await Promise.all(pagesPromises);
-  console.log(`Final response object: ${JSON.stringify(response)}`);
+  log.info(`Final response object: ${JSON.stringify(response)}`);
 
   return response;
 }
@@ -304,7 +305,7 @@ export async function findSitemap(inputUrl, log) {
   const filteredSitemapUrls = sitemapUrls.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, log);
 
   // check if URLs from each sitemap exist and remove entries if none exist
   if (Object.entries(extractedPaths).length > 0) {
@@ -324,13 +325,13 @@ export async function findSitemap(inputUrl, log) {
 
   if (Object.entries(extractedPaths).length > 0) {
     logMessages.push({ value: 'Sitemaps found and validated successfully.' });
-    console.log('Extracted Paths:', extractedPaths);
+    log.info('Extracted Paths:', extractedPaths);
     return {
       success: true, reasons: logMessages, paths: extractedPaths, url: inputUrl,
     };
   } else {
     logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
-    console.log('Failed to extract paths:', extractedPaths);
+    log.info('Failed to extract paths:', extractedPaths);
     return { success: false, reasons: logMessages, url: inputUrl };
   }
 }

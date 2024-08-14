@@ -65,7 +65,7 @@ describe('Sitemap Audit', () => {
     + `<sitemap><loc>${url}/sitemap_bar.xml</loc></sitemap>\n`
     + '</sitemapindex>';
 
-  const payload1 = '<?xml version="1.0" encoding="UTF-8"?>\n'
+  const payloadData = '<?xml version="1.0" encoding="UTF-8"?>\n'
     + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
   + `<url> <loc>${url}/foo</loc></url>\n`
   + `<url> <loc>${url}/bar</loc></url>\n`
@@ -150,7 +150,7 @@ describe('Sitemap Audit', () => {
 
       nock(url)
         .get('/sitemap_foo.xml')
-        .reply(200, payload1);
+        .reply(200, payloadData);
 
       nock(url)
         .get('/sitemap_bar.xml')
@@ -438,6 +438,10 @@ describe('Sitemap Audit', () => {
   });
 
   describe('getBaseUrlPagesFromSitemaps', () => {
+    const mockLog = {
+      info: sinon.stub(),
+      error: sinon.stub(),
+    };
     const sampleSitemapMoreUrls = '<?xml version="1.0" encoding="UTF-8"?>\n'
       + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
       + `<url> <loc>${url}/foo</loc></url>\n`
@@ -449,7 +453,7 @@ describe('Sitemap Audit', () => {
       nock(url)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrls);
-      const result = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`]);
+      const result = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`], mockLog);
       expect(result).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
@@ -459,7 +463,7 @@ describe('Sitemap Audit', () => {
       nock(`${protocol}://www.${domain}`)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrls);
-      const result = await getBaseUrlPagesFromSitemaps(url, [`${protocol}://www.${domain}/sitemap.xml`]);
+      const result = await getBaseUrlPagesFromSitemaps(url, [`${protocol}://www.${domain}/sitemap.xml`], mockLog);
       expect(result).to.deep.equal({
         [`${protocol}://www.${domain}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
@@ -469,7 +473,7 @@ describe('Sitemap Audit', () => {
       nock(`${url}`)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrlsWWW);
-      const result = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`]);
+      const result = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`], mockLog);
       expect(result).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${protocol}://www.${domain}/foo`, `${protocol}://www.${domain}/bar`],
       });
@@ -484,12 +488,16 @@ describe('Sitemap Audit', () => {
           + '<url></url>\n'
           + '</urlset>');
 
-      const resp = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`]);
+      const resp = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`], mockLog);
       expect(resp).to.deep.equal({});
     });
   });
 
   describe('findSitemap', () => {
+    const mockLog = {
+      info: sinon.stub(),
+      error: sinon.stub(),
+    };
     it('should return error when URL is invalid', async () => {
       const result = await findSitemap('not a valid url');
       expect(result.success).to.equal(false);
@@ -516,7 +524,7 @@ describe('Sitemap Audit', () => {
         .head('/bar')
         .reply(404);
 
-      const result = await findSitemap(url);
+      const result = await findSitemap(url, mockLog);
 
       expect(result.success).to.equal(false);
       expect(result.reasons).to.deep.include({
@@ -542,7 +550,7 @@ describe('Sitemap Audit', () => {
         .head('/bar')
         .reply(200);
 
-      const result = await findSitemap(url);
+      const result = await findSitemap(url, mockLog);
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
@@ -574,7 +582,7 @@ describe('Sitemap Audit', () => {
         .head('/bar')
         .reply(200);
 
-      const result = await findSitemap('https://some-domain.adobe');
+      const result = await findSitemap('https://some-domain.adobe', mockLog);
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
@@ -622,7 +630,7 @@ describe('Sitemap Audit', () => {
         .head('/cux')
         .reply(200);
 
-      const result = await findSitemap(url);
+      const result = await findSitemap(url, mockLog);
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
         [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
@@ -647,7 +655,7 @@ describe('Sitemap Audit', () => {
         .head('/bar')
         .reply(200);
 
-      const result = await findSitemap(`${protocol}://www.${domain}`);
+      const result = await findSitemap(`${protocol}://www.${domain}`, mockLog);
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${protocol}://www.${domain}/foo`, `${protocol}://www.${domain}/bar`],
@@ -692,7 +700,7 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .reply(200, sitemapInvalidPaths);
 
-      const result = await findSitemap(url);
+      const result = await findSitemap(url, mockLog);
       expect(result.success).to.equal(false);
     });
   });

@@ -86,7 +86,8 @@ export function extractDomainAndProtocol(inputUrl) {
  * @param {Object} content - The content of the sitemap.
  * @param {string} tagName - The name of the tag to extract URLs from.
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
- */export function extractUrlsFromSitemap(content, tagName = 'url') {
+ */
+export function extractUrlsFromSitemap(content, tagName = 'url') {
   // Initialize JSDOM with the content and specify the XML content type
   const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
