@@ -1,3 +1,10 @@
+# [1.24.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.23.5...v1.24.0) (2024-08-14)
+
+
+### Features
+
+* verify sitemap urls ([#266](https://github.com/adobe/spacecat-audit-worker/issues/266)) ([750f19a](https://github.com/adobe/spacecat-audit-worker/commit/750f19a809ace64609a2c7dec9101c0cb1cd882b))
+
 ## [1.23.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.23.4...v1.23.5) (2024-08-10)
 
 
