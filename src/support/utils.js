@@ -15,6 +15,8 @@ import { hasText, resolveCustomerSecretsName } from '@adobe/spacecat-shared-util
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+// eslint-disable-next-line import/no-cycle
+import { isSitemapContentValid } from '../sitemap/handler.js';
 
 URI.preventInvalidHostname = true;
 
@@ -102,7 +104,7 @@ export function extractUrlsFromSitemap(content, log, tagName = 'url') {
       const loc = element.getElementsByTagName('loc')[0];
       // Check if loc exists before trying to access textContent
       if (loc && loc.textContent) {
-        log.info('Extracted URLs from sitemap fct:', loc.textContent.trim());
+        log.info('Extracted URL:', loc.textContent.trim());
         return loc.textContent.trim();
       }
       return null;
@@ -137,7 +139,7 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log)
     log.info(`Filtered pages from text sitemap: ${filteredPages}`);
     return filteredPages;
   } else if (sitemapDetails) {
-    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
+    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent, log);
     log.info(`Extracted pages from XML sitemap: ${sitemapPages}`);
 
     const filteredPages = filterPages(sitemapPages);
@@ -152,11 +154,45 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log)
  * Extracts sitemap URLs from a sitemap index XML content.
  *
  * @param {Object} content - The content of the sitemap index.
+ * @param log
+ * @param fetchContent
  * @param {string} content.payload - The XML content of the sitemap index as a string.
  * @returns {Array<string>} An array of sitemap URLs extracted from the sitemap index.
  */
-export function getSitemapUrlsFromSitemapIndex(content) {
-  return extractUrlsFromSitemap(content, 'sitemap');
+export async function getSitemapUrlsFromSitemapIndex(content, log, fetchContent) {
+  const sitemapUrls = extractUrlsFromSitemap(content, log, 'sitemap');
+
+  const allUrls = [];
+
+  // Process each sitemap URL recursively to extract actual URLs
+  for (const sitemapUrl of sitemapUrls) {
+    log.info(`Processing sitemap: ${sitemapUrl}`);
+
+    // Fetch the content of each sitemap URL
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const sitemapContent = await fetchContent(sitemapUrl);
+
+      // Check if the fetched sitemap content is valid
+      if (sitemapContent && isSitemapContentValid(sitemapContent)) {
+        // If this is another sitemap index, process it recursively
+        if (sitemapContent.payload.includes('</sitemapindex>')) {
+          const nestedUrls = getSitemapUrlsFromSitemapIndex(sitemapContent, log, fetchContent);
+          allUrls.push(...nestedUrls);
+        } else {
+          // Otherwise, extract the actual URLs
+          const urls = extractUrlsFromSitemap(sitemapContent, log);
+          allUrls.push(...urls);
+        }
+      } else {
+        log.error(`Failed to fetch or process sitemap: ${sitemapUrl}`);
+      }
+    } catch (error) {
+      log.error(`Error processing sitemap URL ${sitemapUrl}: ${error.message}`);
+    }
+  }
+
+  return allUrls;
 }
 
 export function getUrlWithoutPath(url) {

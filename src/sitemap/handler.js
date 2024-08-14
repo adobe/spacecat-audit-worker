@@ -11,6 +11,7 @@
  */
 
 import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
+// eslint-disable-next-line import/no-cycle
 import {
   extractDomainAndProtocol,
   fetch,
@@ -214,7 +215,8 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
     if (urlData.existsAndIsValid) {
       if (urlData.details && urlData.details.isSitemapIndex) {
         log.info(`Sitemap Index found: ${url}`);
-        const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
+        // eslint-disable-next-line max-len
+        const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent, log, fetchContent);
         log.info(`Extracted Sitemaps from Index: ${extractedSitemaps}`);
         for (const extractedSitemapUrl of extractedSitemaps) {
           if (!contentsCache[extractedSitemapUrl]) {
@@ -257,6 +259,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
 
   return response;
 }
+
 /**
  * This function is used to find the sitemap of a given URL.
  * It first extracts the domain and protocol from the input URL.
