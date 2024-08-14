@@ -1,3 +1,10 @@
+# [1.25.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.24.0...v1.25.0) (2024-08-14)
+
+
+### Features
+
+* canonical url audit ([#326](https://github.com/adobe/spacecat-audit-worker/issues/326)) ([86692c8](https://github.com/adobe/spacecat-audit-worker/commit/86692c831bc591098dc7dcdf60491453b742da75))
+
 # [1.24.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.23.5...v1.24.0) (2024-08-14)
 
 
