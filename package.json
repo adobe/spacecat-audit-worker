@@ -59,7 +59,7 @@
     "@adobe/spacecat-shared-ahrefs-client": "1.4.1",
     "@adobe/spacecat-shared-data-access": "1.41.2",
     "@adobe/spacecat-shared-http-utils": "1.6.1",
-    "@adobe/spacecat-shared-rum-api-client": "2.7.3",
+    "@adobe/spacecat-shared-rum-api-client": "https://gitpkg.now.sh/adobe/spacecat-shared/packages/spacecat-shared-rum-api-client?cede51c05756f680ea6a31189323038f7171da85",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@aws-sdk/client-lambda": "3.624.0",
     "@aws-sdk/credential-provider-node": "3.624.0",
