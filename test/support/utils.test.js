@@ -124,7 +124,7 @@ describe('enhanceBacklinksWithFixes', () => {
       payload: {
         siteId: 'testSiteId',
         brokenBacklinks: [{ url_to: 'https://www.example.com/foo/bar/baz.html' }],
-        sitemapUrls: ['https://www.example.com/sitemap.xml'],
+        sitemapPaths: ['https://www.example.com/sitemap.xml'],
       },
     });
 

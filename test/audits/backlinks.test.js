@@ -327,9 +327,8 @@ describe('Backlinks Tests', function () {
       payload: {
         siteId: 'site1',
         brokenBacklinks: auditResult.backlinks,
-        sitemapUrls: [
-          'https://bar.foo.com/foo',
-          'https://bar.foo.com/bar',
+        sitemapPaths: [
+          'https://bar.foo.com/sitemap.xml',
         ],
       },
     });

@@ -220,14 +220,14 @@ export const extractKeywordsFromUrl = (url, log) => {
  * Enhances the backlinks with fixes, triggers a Lambda function to calculate the fixes.
  * @param siteId - The site ID.
  * @param brokenBacklinks - The broken backlinks.
- * @param sitemapUrls - The sitemap URLs.
+ * @param sitemapPaths - Paths of all sitemaps of the site.
  * @param config - The configuration object.
  * @param config.region - The AWS region.
  * @param config.statisticsService - The statistics service Lambda function name.
  * @param config.log - The logger.
  * @returns {Promise<{status: string}>}
  */
-export async function enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemapUrls, config) {
+export async function enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemapPaths, config) {
   const {
     region, statisticsServiceArn, log,
   } = config;
@@ -238,7 +238,7 @@ export async function enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemap
     payload: {
       siteId,
       brokenBacklinks,
-      sitemapUrls,
+      sitemapPaths,
     },
   };
 

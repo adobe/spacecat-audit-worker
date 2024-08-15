@@ -140,12 +140,10 @@ export default async function auditBrokenBacklinks(message, context) {
       const baseUrl = site.getBaseURL();
       const sitemaps = await obtainSitemapUrls(baseUrl);
       if (sitemaps?.success && sitemaps?.paths) {
-        const sitemapUrls = Object.values(sitemaps.paths)
-          .reduce((acc, curr) => acc.concat(curr), []);
         await enhanceBacklinksWithFixes(
           siteId,
           auditResult.brokenBacklinks,
-          sitemapUrls,
+          Object.keys(sitemaps.paths),
           {
             region,
             statisticsServiceArn,
