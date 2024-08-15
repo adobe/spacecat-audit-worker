@@ -128,7 +128,7 @@ describe('enhanceBacklinksWithFixes', () => {
       },
     });
 
-    expect(result).to.deep.equal({ status: 'Lambda function invoked' });
+    expect(result).to.deep.equal({ status: 'Lambda function invoked for 1 batch(es)' });
   });
 
   it('should log info message when Lambda function is invoked successfully', async () => {
@@ -145,7 +145,7 @@ describe('enhanceBacklinksWithFixes', () => {
 
     await enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemapUrls, config);
 
-    expect(log.info.calledWith('Lambda function testStatisticsService invoked successfully.')).to.be.true;
+    expect(log.info.calledWith('Lambda function testStatisticsService invoked successfully for batch.')).to.be.true;
   });
 
   it('should log error message when Lambda function invocation fails', async () => {
@@ -165,7 +165,7 @@ describe('enhanceBacklinksWithFixes', () => {
     await enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemapUrls, config);
 
     expect(log.error.calledOnce).to.be.true;
-    expect(log.error.args[0][0]).to.equal('Error invoking Lambda function testStatisticsService:');
+    expect(log.error.args[0][0]).to.equal('Error invoking Lambda function testStatisticsService for batch:');
     expect(log.error.args[0][1]).to.be.an('error').that.has.property('message', 'Invocation failed');
   });
 });

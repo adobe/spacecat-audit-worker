@@ -233,28 +233,42 @@ export async function enhanceBacklinksWithFixes(siteId, brokenBacklinks, sitemap
   } = config;
   log.info(`Enhancing backlinks with fixes for site ${siteId}`);
 
-  const payload = {
-    type: 'broken-backlinks',
-    payload: {
-      siteId,
-      brokenBacklinks,
-      sitemapPaths,
-    },
+  const client = new LambdaClient({ region });
+
+  const invokeLambdaForBatch = async (batch) => {
+    const payload = {
+      type: 'broken-backlinks',
+      payload: {
+        siteId,
+        brokenBacklinks: batch,
+        sitemapPaths,
+      },
+    };
+
+    const command = new InvokeCommand({
+      FunctionName: statisticsServiceArn,
+      Payload: JSON.stringify(payload),
+      InvocationType: 'Event',
+    });
+
+    try {
+      await client.send(command);
+      log.info(`Lambda function ${statisticsServiceArn} invoked successfully for batch.`);
+    } catch (error) {
+      log.error(`Error invoking Lambda function ${statisticsServiceArn} for batch:`, error);
+    }
   };
 
-  const client = new LambdaClient({ region });
-  const command = new InvokeCommand({
-    FunctionName: statisticsServiceArn,
-    Payload: JSON.stringify(payload),
-    InvocationType: 'Event',
-  });
+  // Invoke Lambda in batches of 10
+  const batchSize = 10;
+  const promises = [];
 
-  try {
-    await client.send(command);
-    log.info(`Lambda function ${statisticsServiceArn} invoked successfully.`);
-  } catch (error) {
-    log.error(`Error invoking Lambda function ${statisticsServiceArn}:`, error);
+  for (let i = 0; i < brokenBacklinks.length; i += batchSize) {
+    const batch = brokenBacklinks.slice(i, i + batchSize);
+    promises.push(invokeLambdaForBatch(batch));
   }
 
-  return { status: 'Lambda function invoked' };
+  await Promise.all(promises);
+
+  return { status: `Lambda function invoked for ${promises.length} batch(es)` };
 }
