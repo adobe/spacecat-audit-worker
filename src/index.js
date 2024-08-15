@@ -29,6 +29,7 @@ import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
+import opportunities from './opportunities/opportunities.js';
 
 const HANDLERS = {
   apex,
@@ -43,6 +44,7 @@ const HANDLERS = {
   conversion,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
+  opportunities,
 };
 
 function getElapsedSeconds(startTime) {

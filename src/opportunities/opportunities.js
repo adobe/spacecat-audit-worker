@@ -40,13 +40,15 @@ export async function experimentationOpportunitiesHandler(auditUrl, context, sit
     interval: DAYS,
     granularity: 'hourly',
   };
-  const queryHandlers = ['rageclick'];
-  const queryResults = await rumAPIClient.queryMulti(queryHandlers, options);
+  const experimentationHandlers = ['rageclick'];
+  const queryResults = await rumAPIClient.queryMulti(experimentationHandlers, options);
   const auditData = {
     experimentationOpportunities: [],
   };
   for (const queryResult of Object.keys(queryResults)) {
-    auditData.experimentationOpportunities.push(queryResults[queryResult]);
+    if (experimentationHandlers.includes(queryResult)) {
+      auditData.experimentationOpportunities.push(...queryResults[queryResult]);
+    }
   }
 
   const endTime = process.hrtime(startTime);
