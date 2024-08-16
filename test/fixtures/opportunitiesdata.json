@@ -1,0 +1,47 @@
+{
+  "rageclick": [
+    {
+      "type": "rageclick",
+      "page": "https://abc.com/abc-adoption/survey",
+      "screenshot": "",
+      "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
+      "trackedPageKPIValue": 43.25513196480938,
+      "pageViews": 34100,
+      "samples": 341,
+      "metrics": [
+        {
+          "type": "click",
+          "selector": ".abc-survey",
+          "value": 2111,
+          "samples": 138,
+          "percentage": 40.469208211143695
+        },
+        {
+          "type": "click",
+          "selector": ".abc-survey #abc-survey-next",
+          "value": 2160,
+          "samples": 157,
+          "percentage": 46.04105571847507
+        }
+      ]
+    },
+    {
+      "type": "rageclick",
+      "page": "https://abc.com/abc-adoption/account",
+      "screenshot": "",
+      "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
+      "trackedPageKPIValue": 8.771929824561402,
+      "pageViews": 11400,
+      "samples": 114,
+      "metrics": [
+        {
+          "type": "click",
+          "selector": ".account #favorites",
+          "value": 138,
+          "samples": 10,
+          "percentage": 8.771929824561402
+        }
+      ]
+    }
+  ]
+}

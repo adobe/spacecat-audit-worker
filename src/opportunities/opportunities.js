@@ -20,14 +20,14 @@ const DAYS = 30;
 let log = console;
 
 /**
- * Audit handler container for all the experimentation opportunities
+ * Audit handler container for all the opportunities
  * @param {*} auditUrl
  * @param {*} context
  * @param {*} site
  * @returns
  */
 
-export async function experimentationOpportunitiesHandler(auditUrl, context, site) {
+export async function opportunitiesHandler(auditUrl, context, site) {
   log = context.log;
   log.info(`Received Experimentation Opportunities audit request for ${auditUrl}`);
   const startTime = process.hrtime();
@@ -64,6 +64,6 @@ export async function experimentationOpportunitiesHandler(auditUrl, context, sit
 }
 
 export default new AuditBuilder()
-  .withRunner(experimentationOpportunitiesHandler)
+  .withRunner(opportunitiesHandler)
   .build();
 /* c8 ignore stop */
