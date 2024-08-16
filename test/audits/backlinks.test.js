@@ -293,11 +293,18 @@ describe('Backlinks Tests', function () {
       .reply(200);
     nock(url)
       .head('/sitemap_index.xml')
-      .reply(200);
+      .reply(404);
 
     nock(url)
       .get('/sitemap.xml')
       .reply(200, sampleSitemap);
+
+    nock(url)
+      .head('/foo')
+      .reply(200);
+    nock(url)
+      .head('/bar')
+      .reply(200);
 
     const expectedMessage = {
       type: message.type,

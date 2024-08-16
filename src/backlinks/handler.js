@@ -136,23 +136,19 @@ export default async function auditBrokenBacklinks(message, context) {
 
     await sqs.sendMessage(queueUrl, data);
 
-    try {
-      const baseUrl = site.getBaseURL();
-      const sitemaps = await obtainSitemapUrls(baseUrl);
-      if (sitemaps?.success && sitemaps?.paths) {
-        await enhanceBacklinksWithFixes(
-          siteId,
-          auditResult.brokenBacklinks,
-          Object.keys(sitemaps.paths),
-          {
-            region,
-            statisticsServiceArn,
-            log,
-          },
-        );
-      }
-    } catch (e) {
-      log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`, e);
+    const baseUrl = site.getBaseURL();
+    const sitemaps = await obtainSitemapUrls(baseUrl, log);
+    if (sitemaps?.success && sitemaps?.paths) {
+      await enhanceBacklinksWithFixes(
+        siteId,
+        auditResult.brokenBacklinks,
+        Object.keys(sitemaps.paths),
+        {
+          region,
+          statisticsServiceArn,
+          log,
+        },
+      );
     }
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);

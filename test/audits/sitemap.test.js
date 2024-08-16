@@ -65,8 +65,6 @@ describe('Sitemap Audit', () => {
     + `<sitemap><loc>${url}/sitemap_bar.xml</loc></sitemap>\n`
     + '</sitemapindex>';
 
-  let topPagesResponse;
-
   beforeEach('setup', () => {
     context = new MockContextBuilder()
       .withSandbox(sandbox)
@@ -78,29 +76,6 @@ describe('Sitemap Audit', () => {
     nock(url)
       .get('/sitemap_bar.xml')
       .reply(200, sampleSitemapTwo);
-
-    topPagesResponse = {
-      result: {
-        pages: [
-          {
-            url: `${url}/foo`,
-            sum_traffic: 100,
-          },
-          {
-            url: `${url}/bar`,
-            sum_traffic: 200,
-          },
-          {
-            url: `${url}/baz`,
-            sum_traffic: 300,
-          },
-          {
-            url: `${url}/cux`,
-            sum_traffic: 400,
-          },
-        ],
-      },
-    };
   });
 
   afterEach(() => {
@@ -114,6 +89,30 @@ describe('Sitemap Audit', () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap_foo.xml\nSitemap: ${url}/sitemap_bar.xml`);
+
+      nock(url)
+        .head('/sitemap_foo.xml')
+        .reply(200);
+
+      nock(url)
+        .head('/sitemap_bar.xml')
+        .reply(200);
+
+      nock(url)
+        .head('/foo')
+        .reply(200);
+
+      nock(url)
+        .head('/bar')
+        .reply(200);
+
+      nock(url)
+        .head('/baz')
+        .reply(200);
+
+      nock(url)
+        .head('/cux')
+        .reply(200);
 
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
@@ -137,9 +136,35 @@ describe('Sitemap Audit', () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap_index.xml`);
+
       nock(url)
         .get('/sitemap_index.xml')
         .reply(200, sitemapIndex);
+
+      nock(url)
+        .head('/sitemap_foo.xml')
+        .reply(200);
+
+      nock(url)
+        .head('/sitemap_bar.xml')
+        .reply(200);
+
+      nock(url)
+        .head('/foo')
+        .reply(200);
+
+      nock(url)
+        .head('/bar')
+        .reply(200);
+
+      nock(url)
+        .head('/baz')
+        .reply(200);
+
+      nock(url)
+        .head('/cux')
+        .reply(200);
+
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
         auditResult: {
@@ -166,9 +191,26 @@ describe('Sitemap Audit', () => {
       nock(url)
         .get('/sitemap_foo.txt')
         .reply(200, `${url}/foo\n${url}/bar`, { 'content-type': 'text/plain' });
+
       nock(url)
         .get('/sitemap_bar.txt')
         .reply(200, `${url}/baz\n${url}/cux`, { 'content-type': 'text/plain' });
+
+      nock(url)
+        .head('/foo')
+        .reply(200);
+
+      nock(url)
+        .head('/bar')
+        .reply(200);
+
+      nock(url)
+        .head('/baz')
+        .reply(200);
+
+      nock(url)
+        .head('/cux')
+        .reply(200);
 
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
@@ -204,6 +246,14 @@ describe('Sitemap Audit', () => {
       nock(url)
         .get('/sitemap.xml')
         .reply(200, sampleSitemap);
+
+      nock(url)
+        .head('/foo')
+        .reply(200);
+
+      nock(url)
+        .head('/bar')
+        .reply(200);
 
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
@@ -442,6 +492,32 @@ describe('Sitemap Audit', () => {
       }]);
     });
 
+    it('should delete extracted paths when no valid pages exist', async () => {
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, `Sitemap: ${url}/sitemap.xml`);
+
+      nock(url)
+        .get('/sitemap.xml')
+        .reply(200, sampleSitemap);
+
+      nock(url)
+        .head('/foo')
+        .reply(404);
+
+      nock(url)
+        .head('/bar')
+        .reply(404);
+
+      const result = await obtainSitemapUrls(url);
+
+      expect(result.success).to.equal(false);
+      expect(result.reasons).to.deep.include({
+        value: 'No valid paths extracted from sitemaps.',
+        error: ERROR_CODES.NO_PATHS_IN_SITEMAP,
+      });
+    });
+
     it('should return success when sitemap is found in robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
@@ -450,6 +526,14 @@ describe('Sitemap Audit', () => {
       nock(url)
         .get('/sitemap.xml')
         .reply(200, sampleSitemap);
+
+      nock(url)
+        .head('/foo')
+        .reply(200);
+
+      nock(url)
+        .head('/bar')
+        .reply(200);
 
       const result = await obtainSitemapUrls(url);
       expect(result.success).to.equal(true);
@@ -475,6 +559,14 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .reply(200, sampleSitemap);
 
+      nock(url)
+        .head('/foo')
+        .reply(200);
+
+      nock(url)
+        .head('/bar')
+        .reply(200);
+
       const result = await obtainSitemapUrls('https://some-domain.adobe');
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
@@ -499,6 +591,30 @@ describe('Sitemap Audit', () => {
         .get('/sitemap_index.xml')
         .reply(200, sitemapIndex);
 
+      nock(url)
+        .head('/sitemap_foo.xml')
+        .reply(200);
+
+      nock(url)
+        .head('/sitemap_bar.xml')
+        .reply(200);
+
+      nock(url)
+        .head('/foo')
+        .reply(200);
+
+      nock(url)
+        .head('/bar')
+        .reply(200);
+
+      nock(url)
+        .head('/baz')
+        .reply(200);
+
+      nock(url)
+        .head('/cux')
+        .reply(200);
+
       const result = await obtainSitemapUrls(url);
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
@@ -516,8 +632,13 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrlsWWW);
 
-      topPagesResponse.result.pages[0].url = `${protocol}://www.${domain}/foo`;
-      topPagesResponse.result.pages[1].url = `${protocol}://www.${domain}/bar`;
+      nock(`${protocol}://www.${domain}`)
+        .head('/foo')
+        .reply(200);
+
+      nock(`${protocol}://www.${domain}`)
+        .head('/bar')
+        .reply(200);
 
       const result = await obtainSitemapUrls(`${protocol}://www.${domain}`);
       expect(result.success).to.equal(true);

@@ -17,12 +17,16 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { getRUMDomainkey } from '../support/utils.js';
 
+const DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD = 500;
+
 const EXPERIMENT_PLUGIN_OPTIONS = {
   experimentsRoot: '/experiments',
   experimentsConfigFile: 'manifest.json',
   experimentsMetaTag: 'experiment',
   experimentsQueryParameter: 'experiment',
 };
+
+const EXCLUDE_UPDATE_PROPERTIES = ['split'];
 
 const METRIC_CHECKPOINTS = ['click', 'convert', 'formsubmit'];
 const SPACECAT_STATISTICS_SERVICE_ARN = 'arn:aws:lambda:us-east-1:282898975672:function:spacecat-services--statistics-service';
@@ -374,12 +378,13 @@ async function addPValues(experimentData) {
     },
   };
   for (const experiment of experimentData) {
-    lambdaPayload.payload.rumData[experiment.id] = {};
+    const id = `${experiment.id}#${experiment.url}`;
+    lambdaPayload.payload.rumData[id] = {};
     const metric = experiment.conversionEventName || 'click';
     for (const variant of experiment.variants) {
-      lambdaPayload.payload.rumData[experiment.id][variant.name] = {
-        views: variant.views,
-        metrics: variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.value || 0,
+      lambdaPayload.payload.rumData[id][variant.name] = {
+        views: variant.samples || 0,
+        metrics: variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.samples || 0,
       };
     }
   }
@@ -398,7 +403,8 @@ async function addPValues(experimentData) {
     return;
   }
   for (const experiment of experimentData) {
-    const stats = lambdaResult[experiment.id];
+    const id = `${experiment.id}#${experiment.url}`;
+    const stats = lambdaResult[id];
     if (stats && !stats.error) {
       for (const variant of experiment.variants) {
         const variantStats = stats[variant.name];
@@ -414,8 +420,15 @@ async function addPValues(experimentData) {
   }
 }
 
-function getObjectByProperty(array, name, value) {
-  return array.find((e) => e[name] === value);
+function getObjectByProperties(array, properties) {
+  return array.find((e) => {
+    for (const key of Object.keys(properties)) {
+      if (e[key] !== properties[key]) {
+        return false;
+      }
+    }
+    return true;
+  });
 }
 
 /**
@@ -471,7 +484,11 @@ async function convertToExperimentsSchema(experimentInsights) {
       } catch (e) {
         log.error(`Error fetching experiment [${id}] metadata at url ${url}: ${e}`);
       }
-      const experiment = mergeData(getObjectByProperty(experiments, 'id', id), experimentMetadataFromPage, url) || {};
+      const experiment = mergeData(
+        getObjectByProperties(experiments, { id, url }),
+        experimentMetadataFromPage,
+        url,
+      ) || {};
       if (!experiment.inferredStartDate
         || new Date(exp.inferredStartDate) < new Date(experiment.inferredStartDate)) {
         experiment.inferredStartDate = exp.inferredStartDate;
@@ -483,8 +500,8 @@ async function convertToExperimentsSchema(experimentInsights) {
       const variants = experiment?.variants || [];
       for (const expVariant of exp.variants) {
         const variantName = expVariant.name;
-        const variant = getObjectByProperty(variants, 'name', variantName);
-        const { views, interactionsCount } = expVariant;
+        const variant = getObjectByProperties(variants, { name: variantName });
+        const { views, samples, interactionsCount } = expVariant;
         if (variant && (variant.views >= expVariant.views)) {
           // we already have this variant, and it has more views than the new one, so we skip it
           // eslint-disable-next-line no-continue
@@ -497,11 +514,13 @@ async function convertToExperimentsSchema(experimentInsights) {
               (m) => m.type === metricCheckPoint && m.selector === selector,
             );
             if (existingMetric) {
-              existingMetric.value += expVariant[metricCheckPoint][selector];
+              existingMetric.value += expVariant[metricCheckPoint][selector].value;
+              existingMetric.samples += expVariant[metricCheckPoint][selector].samples;
             } else {
               metrics.push({
                 type: metricCheckPoint,
-                value: expVariant[metricCheckPoint][selector],
+                value: expVariant[metricCheckPoint][selector].value,
+                samples: expVariant[metricCheckPoint][selector].samples,
                 selector,
               });
             }
@@ -511,6 +530,7 @@ async function convertToExperimentsSchema(experimentInsights) {
           variants.push({
             name: variantName,
             views,
+            samples,
             interactionsCount,
             url,
             metrics,
@@ -519,11 +539,12 @@ async function convertToExperimentsSchema(experimentInsights) {
           // override the variant with the new data
           variant.metrics = metrics;
           variant.views = views;
+          variant.samples = samples;
           variant.interactionsCount = interactionsCount;
-          variant.url = url;
+          variant.url = variant.url || url;
         }
       }
-      const existingExperiment = getObjectByProperty(experiments, 'id', id);
+      const existingExperiment = getObjectByProperties(experiments, { id, url });
       const controlUrl = variants.find((v) => v.name === 'control')?.url;
       if (!existingExperiment) {
         const experimentUrl = controlUrl || url;
@@ -542,8 +563,82 @@ async function convertToExperimentsSchema(experimentInsights) {
   return experiments;
 }
 
-async function processExperimentRUMData(experimentInsights) {
+/**
+ * Any experiment with in multiple urls is considered a multi-page experiment
+ * @param {*} experimentInsights
+ * @returns {Array} list of multi-page experiment names
+ */
+function getMultiPageExperimentNames(experimentInsights) {
+  const experimentUrlCounts = {};
+  for (const url of Object.keys(experimentInsights)) {
+    const urlInsights = experimentInsights[url];
+    for (const exp of urlInsights) {
+      const id = exp.experiment;
+      if (!experimentUrlCounts[id]) {
+        experimentUrlCounts[id] = [url];
+      } else {
+        experimentUrlCounts[id].push(url);
+      }
+    }
+  }
+  return Object.keys(experimentUrlCounts).filter((id) => experimentUrlCounts[id]?.length > 1);
+}
+
+/**
+ * Filters out multi-page experiments that have less than the threshold number of daily views
+ * @param {*} experimentInsights
+ * @param {*} multiPageExperimentNames
+ * @param {*} days
+ * @param {*} threshold
+ * */
+function filterMultiPageExperimentsByThreshold(
+  experimentInsights,
+  multiPageExperimentNames,
+  days,
+  threshold,
+) {
+  for (const url of Object.keys(experimentInsights)) {
+    const urlInsights = experimentInsights[url];
+    const newUrlInsights = [];
+    for (const exp of urlInsights) {
+      const id = exp.experiment;
+      const experimentViews = exp.variants.reduce((acc, v) => acc + v.views, 0);
+      const experimentDays = Math.min(
+        days,
+        Math.floor(
+          (new Date(exp.inferredEndDate) - new Date(exp.inferredStartDate)) / (1000 * 60 * 60 * 24),
+        ),
+      ) || 1;
+      const dailyViews = Math.ceil(experimentViews / experimentDays);
+      if (multiPageExperimentNames.includes(id)
+        && dailyViews < threshold) {
+        log.info(`Filtering out experiment ${id} from url ${url} as daily views ${dailyViews} are less than threshold ${threshold}`);
+      } else {
+        newUrlInsights.push(exp);
+      }
+    }
+    if (newUrlInsights.length === 0) {
+      // eslint-disable-next-line no-param-reassign
+      delete experimentInsights[url];
+    } else if (newUrlInsights.length < urlInsights.length) {
+      // eslint-disable-next-line no-param-reassign
+      experimentInsights[url] = newUrlInsights;
+    }
+  }
+}
+
+async function processExperimentRUMData(experimentInsights, context, days) {
   log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
+  const multiPageExperimentNames = getMultiPageExperimentNames(experimentInsights);
+  log.info('Multi-Page Experiment Names: ', multiPageExperimentNames.join(', '));
+  const dailyPageViewsThreshold = context.env.MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD
+  || DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD;
+  filterMultiPageExperimentsByThreshold(
+    experimentInsights,
+    multiPageExperimentNames,
+    days,
+    dailyPageViewsThreshold,
+  );
   const experimentData = await convertToExperimentsSchema(experimentInsights);
   await addPValues(experimentData);
   return experimentData;
@@ -561,7 +656,7 @@ export async function processAudit(auditURL, context, site, days) {
     granularity: 'hourly',
   };
   const experimentData = await rumAPIClient.query('experiment', options);
-  return processExperimentRUMData(experimentData);
+  return processExperimentRUMData(experimentData, context, days);
 }
 
 export async function postProcessor(auditUrl, auditData, context) {
@@ -609,11 +704,14 @@ export async function postProcessor(auditUrl, auditData, context) {
       if (existingExperiment.url) {
         experimentData.url = existingExperiment.url;
       }
-      // don't update the experiment control split if it's already set
-      const controlVariant = experimentData.variants?.find((v) => v.name === 'control');
-      const existingControlVariant = existingExperiment.variants?.find((v) => v.name === 'control');
-      if (existingControlVariant && controlVariant && existingControlVariant.split) {
-        controlVariant.split = existingControlVariant.split;
+      // don't update the excluded properties if experimentData property is empty
+      for (const variant of experimentData.variants) {
+        for (const prop of EXCLUDE_UPDATE_PROPERTIES) {
+          if (!variant[prop]) {
+            variant[prop] = existingExperiment.variants?.find((v) => v.name === variant.name)
+              ?.[prop];
+          }
+        }
       }
     }
     // eslint-disable-next-line no-await-in-loop
