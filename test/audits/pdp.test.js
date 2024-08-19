@@ -15,7 +15,7 @@ import chai from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { urlInspectRunner } from '../../src/urlInspect/handler.js';
+import { pdpIndexabilityRunner } from '../../src/url-inspect/pdp-handler.js';
 
 chai.use(sinonChai);
 const { expect } = chai;
@@ -23,87 +23,19 @@ const sandbox = sinon.createSandbox();
 
 describe('URLInspect Audit', () => {
   let context;
-  let dataAccess;
   let googleClientStub;
   let urlInspectStub;
   let siteStub;
 
-  const fullUrlInspectionResult = {
-    inspectionResult: {
-      inspectionResultLink: 'https://search.google.com/search-console/inspect?resource_id=https://www.example.com/',
-      indexStatusResult: {
-        verdict: 'PASS',
-        coverageState: 'Submitted and indexed',
-        robotsTxtState: 'ALLOWED',
-        indexingState: 'INDEXING_ALLOWED',
-        lastCrawlTime: '2024-08-13T22:35:22Z',
-        pageFetchState: 'SUCCESSFUL',
-        googleCanonical: 'https://www.example.com/foo',
-        userCanonical: 'https://www.example.com/foo',
-        referringUrls: [
-          'https://www.example.com/bar',
-        ],
-        crawledAs: 'MOBILE',
-      },
-      mobileUsabilityResult: {
-        verdict: 'VERDICT_UNSPECIFIED',
-      },
-      richResultsResult: {
-        verdict: 'PASS',
-        detectedItems: [
-          {
-            richResultType: 'Product snippets',
-            items: [
-              {
-                name: 'Example Product Name',
-                issues: [
-                  {
-                    issueMessage: 'Missing field "image"',
-                    severity: 'ERROR',
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            richResultType: 'Merchant listings',
-            items: [
-              {
-                name: 'Example Product Name',
-                issues: [
-                  {
-                    issueMessage: 'Missing field "hasMerchantReturnPolicy"',
-                    severity: 'WARNING',
-                  },
-                  {
-                    issueMessage: 'Missing field "shippingDetails"',
-                    severity: 'ERROR',
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
-    },
-  };
-
-  const topPages = [
-    { url: 'https://example.com/foo' },
-    { url: 'https://example.com/bar' },
-  ];
+  let fullUrlInspectionResult;
 
   beforeEach(() => {
-    dataAccess = {
-      getTopPagesForSite: sinon.stub(),
-    };
     context = {
       log: {
         info: sinon.stub(),
         warn: sinon.stub(),
         error: sinon.stub(),
       },
-      dataAccess,
     };
 
     googleClientStub = {
@@ -113,6 +45,69 @@ describe('URLInspect Audit', () => {
     urlInspectStub = googleClientStub.urlInspect;
     siteStub = {
       getId: () => '123',
+      getConfig: () => ({
+        getProductDetailPages: () => ['https://example.com/product/1', 'https://example.com/product/2'],
+      }),
+    };
+
+    fullUrlInspectionResult = {
+      inspectionResult: {
+        inspectionResultLink: 'https://search.google.com/search-console/inspect?resource_id=https://www.example.com/',
+        indexStatusResult: {
+          verdict: 'PASS',
+          coverageState: 'Submitted and indexed',
+          robotsTxtState: 'ALLOWED',
+          indexingState: 'INDEXING_ALLOWED',
+          lastCrawlTime: '2024-08-13T22:35:22Z',
+          pageFetchState: 'SUCCESSFUL',
+          googleCanonical: 'https://www.example.com/foo',
+          userCanonical: 'https://www.example.com/foo',
+          referringUrls: [
+            'https://www.example.com/bar',
+          ],
+          crawledAs: 'MOBILE',
+        },
+        mobileUsabilityResult: {
+          verdict: 'VERDICT_UNSPECIFIED',
+        },
+        richResultsResult: {
+          verdict: 'PASS',
+          detectedItems: [
+            {
+              richResultType: 'Product snippets',
+              items: [
+                {
+                  name: 'Example Product Name',
+                  issues: [
+                    {
+                      issueMessage: 'Missing field "image"',
+                      severity: 'ERROR',
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              richResultType: 'Merchant listings',
+              items: [
+                {
+                  name: 'Example Product Name',
+                  issues: [
+                    {
+                      issueMessage: 'Missing field "hasMerchantReturnPolicy"',
+                      severity: 'WARNING',
+                    },
+                    {
+                      issueMessage: 'Missing field "shippingDetails"',
+                      severity: 'ERROR',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
     };
   });
 
@@ -121,16 +116,14 @@ describe('URLInspect Audit', () => {
   });
 
   it('should successfully return a filtered result of the url inspection result', async () => {
-    dataAccess.getTopPagesForSite.resolves(topPages);
-
     urlInspectStub.resolves(fullUrlInspectionResult);
 
-    const auditData = await urlInspectRunner('https://www.example.com', context, siteStub);
+    const auditData = await pdpIndexabilityRunner('https://www.example.com', context, siteStub);
 
     expect(auditData.auditResult).to.deep.equal(
       [
         {
-          inspectionUrl: 'https://example.com/foo',
+          inspectionUrl: 'https://example.com/product/1',
           indexStatusResult: {
             verdict: fullUrlInspectionResult.inspectionResult.indexStatusResult.verdict,
             lastCrawlTime: fullUrlInspectionResult.inspectionResult.indexStatusResult.lastCrawlTime,
@@ -179,7 +172,7 @@ describe('URLInspect Audit', () => {
           ],
         },
         {
-          inspectionUrl: 'https://example.com/bar',
+          inspectionUrl: 'https://example.com/product/2',
           indexStatusResult: {
             verdict: fullUrlInspectionResult.inspectionResult.indexStatusResult.verdict,
             lastCrawlTime: fullUrlInspectionResult.inspectionResult.indexStatusResult.lastCrawlTime,
@@ -232,19 +225,35 @@ describe('URLInspect Audit', () => {
   });
 
   it('returns no rich results when there are no rich results errors', async () => {
-    dataAccess.getTopPagesForSite.resolves(topPages);
     delete fullUrlInspectionResult.inspectionResult.richResultsResult;
+    urlInspectStub.resolves(fullUrlInspectionResult);
 
-    const auditData = await urlInspectRunner('https://www.example.com', context, siteStub);
+    const auditData = await pdpIndexabilityRunner('https://www.example.com', context, siteStub);
 
     expect(auditData.auditResult[0].richResults).to.equal(undefined);
   });
 
-  it('returns an empty array if there are no top pages', async () => {
-    dataAccess.getTopPagesForSite.resolves([]);
+  it('returns no rich results when there are no errors in rich results', async () => {
+    fullUrlInspectionResult.inspectionResult
+      .richResultsResult.detectedItems[0].items[0].issues = [];
+    delete fullUrlInspectionResult.inspectionResult
+      .richResultsResult.detectedItems[1].items[0].issues[1];
+    urlInspectStub.resolves(fullUrlInspectionResult);
 
-    const auditData = await urlInspectRunner('https://www.example.com', context, siteStub);
+    const auditData = await pdpIndexabilityRunner('https://www.example.com', context, siteStub);
 
-    expect(auditData.auditResult).to.deep.equal([]);
+    expect(auditData.auditResult[0].richResults).to.deep.equal([]);
+    expect(auditData.auditResult[1].richResults).to.deep.equal([]);
+  });
+
+  it('throws error if there are no configured PDPs', async () => {
+    siteStub.getConfig = () => ({
+      getProductDetailPages: () => [],
+    });
+    try {
+      await pdpIndexabilityRunner('https://www.example.com', context, siteStub);
+    } catch (error) {
+      expect(error.message).to.equal('No top pages found for site: https://www.example.com');
+    }
   });
 });

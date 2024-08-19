@@ -13,7 +13,7 @@ import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 
 /**
- * Processes an audit of the top pages of a site using Google's URL inspection tool.
+ * Processes an audit of the product detail pages of a site using Google's URL inspection tool.
  *
  * @async
  * @function
@@ -28,21 +28,21 @@ import { AuditBuilder } from '../common/audit-builder.js';
  * @throws {Error} - Throws an error if the audit process fails.
  */
 async function processAudit(baseURL, context, site) {
-  const { dataAccess, log } = context;
+  const { log } = context;
   const siteId = site.getId();
 
-  const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-  if (!topPages || topPages.length === 0) {
-    log.warn(`No top pages found for site ID: ${siteId}`);
-    return [];
+  const productDetailPages = await site.getConfig().getProductDetailPages('pdp-indexability');
+  if (!productDetailPages || productDetailPages.length === 0) {
+    log.error(`No top pages found for site ID: ${siteId}`);
+    throw new Error(`No top pages found for site: ${baseURL}`);
   }
 
   const google = GoogleClient.createFrom(context, baseURL);
 
-  const urlInspectionResult = topPages.map(async (page) => {
+  const urlInspectionResult = productDetailPages.map(async (pdp) => {
     try {
-      const { inspectionResult } = await google.urlInspect(page.url);
-      log.info(`Successfully inspected URL: ${page.url}`);
+      const { inspectionResult } = await google.urlInspect(pdp);
+      log.info(`Successfully inspected URL: ${pdp}`);
 
       const filteredIndexStatusResult = {
         verdict: inspectionResult.indexStatusResult.verdict,
@@ -69,20 +69,20 @@ async function processAudit(baseURL, context, site) {
 
       if (filteredRichResults.length > 0) {
         filteredRichResults.verdict = inspectionResult.richResultsResult.verdict;
-        log.info(`Found ${filteredRichResults.length} rich results issues for URL: ${page.url}`);
+        log.info(`Found ${filteredRichResults.length} rich results issues for URL: ${pdp}`);
       } else {
-        log.info(`No rich results issues found for URL: ${page.url}`);
+        log.info(`No rich results issues found for URL: ${pdp}`);
       }
 
       return {
-        inspectionUrl: page.url,
+        inspectionUrl: pdp,
         indexStatusResult: filteredIndexStatusResult,
         richResults: filteredRichResults,
       };
     } catch (error) {
-      log.error(`Failed to inspect URL: ${page.url}. Error: ${error.message}`);
+      log.error(`Failed to inspect URL: ${pdp}. Error: ${error.message}`);
       return {
-        inspectionUrl: page.url,
+        inspectionUrl: pdp,
         error: error.message,
       };
     }
@@ -91,9 +91,9 @@ async function processAudit(baseURL, context, site) {
   return Promise.all(urlInspectionResult);
 }
 
-export async function urlInspectRunner(baseURL, context, site) {
+export async function pdpIndexabilityRunner(baseURL, context, site) {
   const { log } = context;
-  log.info(`Received URL Inspect audit request for ${baseURL}`);
+  log.info(`Received Product Detail Page indexability audit request for ${baseURL}`);
   const startTime = process.hrtime();
 
   const auditResult = await processAudit(baseURL, context, site);
@@ -111,6 +111,6 @@ export async function urlInspectRunner(baseURL, context, site) {
 }
 
 export default new AuditBuilder()
-  .withRunner(urlInspectRunner)
+  .withRunner(pdpIndexabilityRunner)
   .withUrlResolver((site) => site.getBaseURL())
   .build();
