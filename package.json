@@ -56,7 +56,7 @@
     "@adobe/helix-status": "10.1.2",
     "@adobe/helix-universal": "5.0.5",
     "@adobe/helix-universal-logger": "3.0.18",
-    "@adobe/spacecat-shared-ahrefs-client": "1.4.1",
+    "@adobe/spacecat-shared-ahrefs-client": "https://gitpkg.now.sh/adobe/spacecat-shared/packages/spacecat-shared-ahrefs-client?ahrefs-cost",
     "@adobe/spacecat-shared-data-access": "1.41.4",
     "@adobe/spacecat-shared-http-utils": "1.6.5",
     "@adobe/spacecat-shared-rum-api-client": "2.7.3",
