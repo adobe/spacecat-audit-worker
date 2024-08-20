@@ -108,6 +108,7 @@ export async function checkRobotsForSitemap(protocol, domain, log) {
     reasons: sitemapPaths.length ? [] : [ERROR_CODES.NO_SITEMAP_IN_ROBOTS],
   };
 }
+
 /**
  * Checks if the sitemap content is valid.
  *
@@ -115,10 +116,10 @@ export async function checkRobotsForSitemap(protocol, domain, log) {
  * @returns {boolean} - True if the sitemap content is valid, otherwise false.
  */
 export function isSitemapContentValid(sitemapContent) {
-  const payload = sitemapContent.payload.trim();
-  return payload.startsWith('<?xml') && payload.endsWith('>')
-      && VALID_MIME_TYPES.some((type) => sitemapContent.type.includes(type));
+  return sitemapContent.payload.trim().startsWith('<?xml')
+        || VALID_MIME_TYPES.some((type) => sitemapContent.type.includes(type));
 }
+
 /**
  * Checks the validity and existence of a sitemap by fetching its content.
  *
