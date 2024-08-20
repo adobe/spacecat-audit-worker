@@ -38,11 +38,11 @@ export async function processUrlInspect(baseURL, context, pages) {
       log.info(`Successfully inspected URL: ${page}`);
 
       const filteredIndexStatusResult = {
-        verdict: inspectionResult.indexStatusResult.verdict,
-        lastCrawlTime: inspectionResult.indexStatusResult.lastCrawlTime,
+        verdict: inspectionResult.indexStatusResult?.verdict,
+        lastCrawlTime: inspectionResult.indexStatusResult?.lastCrawlTime,
       };
 
-      const filteredRichResults = inspectionResult.richResultsResult.detectedItems.map(
+      const filteredRichResults = inspectionResult.richResultsResult?.detectedItems?.map(
         (item) => {
           const filteredItems = item.items.filter(
             (issueItem) => issueItem.issues.some(
@@ -61,7 +61,7 @@ export async function processUrlInspect(baseURL, context, pages) {
       ).filter((item) => item.items.length > 0);
 
       if (filteredRichResults.length > 0) {
-        filteredRichResults.verdict = inspectionResult.richResultsResult.verdict;
+        filteredRichResults.verdict = inspectionResult.richResultsResult?.verdict;
         log.info(`Found ${filteredRichResults.length} rich results issues for URL: ${page}`);
       } else {
         log.info(`No rich results issues found for URL: ${page}`);
