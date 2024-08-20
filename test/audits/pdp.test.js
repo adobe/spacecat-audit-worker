@@ -50,7 +50,7 @@ describe('URLInspect Audit', () => {
     googleClientStub = {
       urlInspect: sandbox.stub(),
     };
-    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
+
     urlInspectStub = googleClientStub.urlInspect;
     siteStub = {
       getId: () => '123',
@@ -125,6 +125,7 @@ describe('URLInspect Audit', () => {
   });
 
   it('should successfully return a filtered result of the url inspection result', async () => {
+    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
     urlInspectStub.resolves(fullUrlInspectionResult);
 
     const auditData = await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
@@ -234,6 +235,7 @@ describe('URLInspect Audit', () => {
   });
 
   it('returns no rich results when there are no rich results errors', async () => {
+    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
     delete fullUrlInspectionResult.inspectionResult.richResultsResult;
     urlInspectStub.resolves(fullUrlInspectionResult);
 
@@ -243,6 +245,7 @@ describe('URLInspect Audit', () => {
   });
 
   it('returns no rich results when there are no errors in rich results', async () => {
+    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
     fullUrlInspectionResult.inspectionResult
       .richResultsResult.detectedItems[0].items[0].issues = [];
     delete fullUrlInspectionResult.inspectionResult
@@ -256,6 +259,7 @@ describe('URLInspect Audit', () => {
   });
 
   it('throws error if there are no configured PDPs', async () => {
+    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
     siteStub.getConfig = () => ({
       getProductDetailPages: () => [],
     });
@@ -263,6 +267,16 @@ describe('URLInspect Audit', () => {
       await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
     } catch (error) {
       expect(error.message).to.equal('No top pages found for site: https://www.example.com');
+    }
+  });
+
+  it('throws error if site is not configured for google search console', async () => {
+    sandbox.stub(GoogleClient, 'createFrom').throws('No secrets found');
+
+    try {
+      await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
+    } catch (error) {
+      expect(error.message).to.equal('Failed to create Google client. Site was probably not onboarded to GSC yet. Error: Sinon-provided No secrets found');
     }
   });
 });

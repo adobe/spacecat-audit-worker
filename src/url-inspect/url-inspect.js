@@ -30,7 +30,13 @@ import GoogleClient from '@adobe/spacecat-shared-google-client';
 export async function processUrlInspect(baseURL, context, pages) {
   const { log } = context;
 
-  const google = GoogleClient.createFrom(context, baseURL);
+  let google;
+  try {
+    google = GoogleClient.createFrom(context, baseURL);
+  } catch (error) {
+    log.error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
+    throw new Error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
+  }
 
   const urlInspectionResult = pages.map(async (page) => {
     try {
