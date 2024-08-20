@@ -11,6 +11,8 @@
  */
 
 import GoogleClient from '@adobe/spacecat-shared-google-client';
+import { isArray } from '@adobe/spacecat-shared-utils';
+import { AuditBuilder } from '../common/audit-builder.js';
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -89,3 +91,35 @@ export async function processUrlInspect(baseURL, context, pages) {
 
   return Promise.all(urlInspectionResult);
 }
+
+export async function structuredDataHandler(baseURL, context, site) {
+  const { log } = context;
+  log.info(`Received structured data audit request for ${baseURL}`);
+  const startTime = process.hrtime();
+
+  const siteId = site.getId();
+
+  const productDetailPages = await site.getConfig().getProductDetailPages('pdp-indexability');
+  if (isArray(productDetailPages) && productDetailPages.length === 0) {
+    log.error(`No product detail pages found for site ID: ${siteId}`);
+    throw new Error(`No product detail pages found for site: ${baseURL}`);
+  }
+
+  const auditResult = await processUrlInspect(baseURL, context, productDetailPages);
+
+  const endTime = process.hrtime(startTime);
+  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+  const formattedElapsed = elapsedSeconds.toFixed(2);
+
+  log.info(`Structured data audit completed in ${formattedElapsed} seconds for ${baseURL}`);
+
+  return {
+    fullAuditRef: baseURL,
+    auditResult,
+  };
+}
+
+export default new AuditBuilder()
+  .withRunner(structuredDataHandler)
+  .withUrlResolver((site) => site.getBaseURL())
+  .build();

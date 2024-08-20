@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 
-import { gscPdpStructuredDataHandler } from '../../src/url-inspect/pdp-handler.js';
+import { structuredDataHandler } from '../../src/structured-data/handler.js';
 import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
@@ -128,52 +128,40 @@ describe('URLInspect Audit', () => {
     sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
     urlInspectStub.resolves(fullUrlInspectionResult);
 
-    const auditData = await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
+    const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
     expect(auditData.auditResult).to.deep.equal(
       [
         {
           inspectionUrl: 'https://example.com/product/1',
           indexStatusResult: {
-            verdict: fullUrlInspectionResult.inspectionResult.indexStatusResult.verdict,
-            lastCrawlTime: fullUrlInspectionResult.inspectionResult.indexStatusResult.lastCrawlTime,
+            verdict: 'PASS',
+            lastCrawlTime: '2024-08-13T22:35:22Z',
           },
           richResults: [
             {
-              richResultType: fullUrlInspectionResult
-                .inspectionResult.richResultsResult.detectedItems[0].richResultType,
+              richResultType: 'Product snippets',
               items: [
                 {
-                  name: fullUrlInspectionResult
-                    .inspectionResult.richResultsResult.detectedItems[0].items[0].name,
+                  name: 'Example Product Name',
                   issues: [
                     {
-                      issueMessage: fullUrlInspectionResult
-                        .inspectionResult.richResultsResult
-                        .detectedItems[0].items[0].issues[0].issueMessage,
-                      severity: fullUrlInspectionResult
-                        .inspectionResult.richResultsResult
-                        .detectedItems[0].items[0].issues[0].severity,
+                      issueMessage: 'Missing field "image"',
+                      severity: 'ERROR',
                     },
                   ],
                 },
               ],
             },
             {
-              richResultType: fullUrlInspectionResult
-                .inspectionResult.richResultsResult.detectedItems[1].richResultType,
+              richResultType: 'Merchant listings',
               items: [
                 {
-                  name: fullUrlInspectionResult
-                    .inspectionResult.richResultsResult.detectedItems[1].items[0].name,
+                  name: 'Example Product Name',
                   issues: [
                     {
-                      issueMessage: fullUrlInspectionResult
-                        .inspectionResult.richResultsResult
-                        .detectedItems[1].items[0].issues[1].issueMessage,
-                      severity: fullUrlInspectionResult
-                        .inspectionResult.richResultsResult
-                        .detectedItems[1].items[0].issues[1].severity,
+                      issueMessage: 'Missing field "shippingDetails"',
+                      severity: 'ERROR',
                     },
                   ],
                 },
@@ -184,45 +172,33 @@ describe('URLInspect Audit', () => {
         {
           inspectionUrl: 'https://example.com/product/2',
           indexStatusResult: {
-            verdict: fullUrlInspectionResult.inspectionResult.indexStatusResult.verdict,
-            lastCrawlTime: fullUrlInspectionResult.inspectionResult.indexStatusResult.lastCrawlTime,
+            verdict: 'PASS',
+            lastCrawlTime: '2024-08-13T22:35:22Z',
           },
           richResults: [
             {
-              richResultType: fullUrlInspectionResult
-                .inspectionResult.richResultsResult.detectedItems[0].richResultType,
+              richResultType: 'Product snippets',
               items: [
                 {
-                  name: fullUrlInspectionResult
-                    .inspectionResult.richResultsResult.detectedItems[0].items[0].name,
+                  name: 'Example Product Name',
                   issues: [
                     {
-                      issueMessage: fullUrlInspectionResult
-                        .inspectionResult.richResultsResult
-                        .detectedItems[0].items[0].issues[0].issueMessage,
-                      severity: fullUrlInspectionResult
-                        .inspectionResult.richResultsResult
-                        .detectedItems[0].items[0].issues[0].severity,
+                      issueMessage: 'Missing field "image"',
+                      severity: 'ERROR',
                     },
                   ],
                 },
               ],
             },
             {
-              richResultType: fullUrlInspectionResult
-                .inspectionResult.richResultsResult.detectedItems[1].richResultType,
+              richResultType: 'Merchant listings',
               items: [
                 {
-                  name: fullUrlInspectionResult
-                    .inspectionResult.richResultsResult.detectedItems[1].items[0].name,
+                  name: 'Example Product Name',
                   issues: [
                     {
-                      issueMessage: fullUrlInspectionResult
-                        .inspectionResult.richResultsResult
-                        .detectedItems[1].items[0].issues[1].issueMessage,
-                      severity: fullUrlInspectionResult
-                        .inspectionResult.richResultsResult
-                        .detectedItems[1].items[0].issues[1].severity,
+                      issueMessage: 'Missing field "shippingDetails"',
+                      severity: 'ERROR',
                     },
                   ],
                 },
@@ -239,7 +215,7 @@ describe('URLInspect Audit', () => {
     delete fullUrlInspectionResult.inspectionResult.richResultsResult;
     urlInspectStub.resolves(fullUrlInspectionResult);
 
-    const auditData = await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
+    const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
     expect(auditData.auditResult[0].richResults).to.deep.equal([]);
   });
@@ -252,7 +228,7 @@ describe('URLInspect Audit', () => {
       .richResultsResult.detectedItems[1].items[0].issues[1];
     urlInspectStub.resolves(fullUrlInspectionResult);
 
-    const auditData = await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
+    const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
     expect(auditData.auditResult[0].richResults).to.deep.equal([]);
     expect(auditData.auditResult[1].richResults).to.deep.equal([]);
@@ -264,9 +240,9 @@ describe('URLInspect Audit', () => {
       getProductDetailPages: () => [],
     });
     try {
-      await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
+      await structuredDataHandler('https://www.example.com', context, siteStub);
     } catch (error) {
-      expect(error.message).to.equal('No top pages found for site: https://www.example.com');
+      expect(error.message).to.equal('No product detail pages found for site: https://www.example.com');
     }
   });
 
@@ -274,7 +250,7 @@ describe('URLInspect Audit', () => {
     sandbox.stub(GoogleClient, 'createFrom').throws('No secrets found');
 
     try {
-      await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
+      await structuredDataHandler('https://www.example.com', context, siteStub);
     } catch (error) {
       expect(error.message).to.equal('Failed to create Google client. Site was probably not onboarded to GSC yet. Error: Sinon-provided No secrets found');
     }
@@ -285,7 +261,7 @@ describe('URLInspect Audit', () => {
     sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
 
     try {
-      await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
+      await structuredDataHandler('https://www.example.com', context, siteStub);
     } catch (error) {
       expect(error.message).to.equal('Failed to inspect URL: https://example.com/product/1. Error: Failed to inspect URL');
     }
