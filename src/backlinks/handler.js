@@ -19,8 +19,8 @@ import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { enhanceBacklinksWithFixes, isStillBrokenURL } from '../support/utils.js';
 
 export async function filterOutValidBacklinks(backlinks, log) {
-  const backlinkStatuses = await Promise.all(backlinks.map(async (backlink) => isStillBrokenURL(backlink.url_to, 'backlink', log)));
-  return backlinks.filter((_, index) => backlinkStatuses[index]);
+  const backlinkStatuses = await Promise.allSettled(backlinks.map(async (backlink) => isStillBrokenURL(backlink.url_to, 'Backlink', log)));
+  return backlinks.filter((_, index) => backlinkStatuses[index].status === 'fulfilled' && backlinkStatuses[index].value);
 }
 
 export default async function auditBrokenBacklinks(message, context) {
