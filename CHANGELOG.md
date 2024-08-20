@@ -1,3 +1,10 @@
+# [1.26.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.25.7...v1.26.0) (2024-08-20)
+
+
+### Features
+
+* **costs:** add costs audit that returns the ahrefs API units consumed and limit ([#365](https://github.com/adobe/spacecat-audit-worker/issues/365)) ([936fe87](https://github.com/adobe/spacecat-audit-worker/commit/936fe87512e81c1ad25c082122949c62acdb6a32))
+
 ## [1.25.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.25.6...v1.25.7) (2024-08-20)
 
 
