@@ -14,16 +14,15 @@
 
 import wrap from '@adobe/helix-shared-wrap';
 import sinon from 'sinon';
-import chai from 'chai';
+import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import crypto from 'crypto';
 import sqsWrapper from '../../src/support/sqs.js';
 
-chai.use(sinonChai);
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(sinonChai);
+use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 

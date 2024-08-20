@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
@@ -20,8 +20,7 @@ import { audit404Runner } from '../../src/notfound/handler.js';
 import { notFoundData } from '../fixtures/notfounddata.js';
 import { MockContextBuilder } from '../shared.js';
 
-chai.use(sinonChai);
-const { expect } = chai;
+use(sinonChai);
 
 describe('404 Tests', () => {
   const url = 'https://abc.com';

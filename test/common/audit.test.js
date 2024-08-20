@@ -11,7 +11,7 @@
  */
 
 /* eslint-env mocha */
-import chai from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
@@ -30,9 +30,8 @@ import { AuditBuilder } from '../../src/common/audit-builder.js';
 import { MockContextBuilder } from '../shared.js';
 import { getUrlWithoutPath } from '../../src/support/utils.js';
 
-chai.use(sinonChai);
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(sinonChai);
+use(chaiAsPromised);
 
 const baseURL = 'https://space.cat';
 const message = {
