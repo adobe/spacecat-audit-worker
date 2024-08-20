@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -22,9 +22,8 @@ import {
   validateCanonicalRecursively, canonicalAuditRunner, CANONICAL_CHECKS,
 } from '../../src/canonical/handler.js';
 
-chai.use(sinonChai);
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(sinonChai);
+use(chaiAsPromised);
 
 describe('Canonical URL Tests', () => {
   let log;

@@ -216,7 +216,7 @@ export async function validateCanonicalTag(url, log) {
               });
               log.info(`Canonical URL ${canonicalUrl} does not reference itself`);
             }
-          } catch (error) {
+          } catch {
             checks.push({
               check: CANONICAL_CHECKS.CANONICAL_URL_INVALID.check,
               success: false,
@@ -273,7 +273,7 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
 
   try {
     base = new URL(baseUrl);
-  } catch (error) {
+  } catch {
     log.error(`Invalid URL: ${baseUrl}`);
     checks.push({
       check: CANONICAL_CHECKS.URL_UNDEFINED.check,
@@ -326,7 +326,7 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
 
     try {
       url = new URL(canonicalUrl);
-    } catch (error) {
+    } catch {
       log.error(`Invalid URL: ${canonicalUrl}`);
       checks.push({
         check: CANONICAL_CHECKS.URL_UNDEFINED.check,

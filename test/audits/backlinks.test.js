@@ -17,16 +17,15 @@ import { createSiteTopPage } from '@adobe/spacecat-shared-data-access/src/models
 import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
 import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import auditBrokenBacklinks from '../../src/backlinks/handler.js';
 
-chai.use(sinonChai);
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(sinonChai);
+use(chaiAsPromised);
 
 // eslint-disable-next-line func-names
 describe('Backlinks Tests', function () {

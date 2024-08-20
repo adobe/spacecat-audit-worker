@@ -90,7 +90,7 @@ export function hasNonWWWSubdomain(baseUrl) {
   try {
     const uri = new URI(baseUrl);
     return hasText(uri.domain()) && hasText(uri.subdomain()) && uri.subdomain() !== 'www';
-  } catch (e) {
+  } catch {
     throw new Error(`Cannot parse baseURL: ${baseUrl}`);
   }
 }
@@ -122,7 +122,7 @@ export function extractDomainAndProtocol(inputUrl) {
       protocol: parsedUrl.protocol.slice(0, -1),
       domain: parsedUrl.hostname,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }

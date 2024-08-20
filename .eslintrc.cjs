@@ -29,7 +29,7 @@ module.exports = {
     {
       files: ['*.test.js'],
       rules: {
-        'no-unused-expressions': 'off',
+        '@typescript-eslint/no-unused-expressions': 'off',
       },
     },
   ],
