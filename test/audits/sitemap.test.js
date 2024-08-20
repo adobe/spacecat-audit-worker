@@ -11,7 +11,7 @@
  */
 /* eslint-env mocha */
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
@@ -26,9 +26,8 @@ import {
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 
-chai.use(sinonChai);
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(sinonChai);
+use(chaiAsPromised);
 const sandbox = sinon.createSandbox();
 
 describe('Sitemap Audit', () => {
