@@ -99,7 +99,7 @@ export async function structuredDataHandler(baseURL, context, site) {
 
   const siteId = site.getId();
 
-  const productDetailPages = await site.getConfig().getProductDetailPages('pdp-indexability');
+  const productDetailPages = await site.getConfig().getProductDetailPages('structured-data');
   if (isArray(productDetailPages) && productDetailPages.length === 0) {
     log.error(`No product detail pages found for site ID: ${siteId}`);
     throw new Error(`No product detail pages found for site: ${baseURL}`);

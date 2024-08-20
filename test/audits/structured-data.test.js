@@ -23,7 +23,7 @@ use(sinonChai);
 
 const sandbox = sinon.createSandbox();
 const message = {
-  type: 'gsc-pdp-structured-data',
+  type: 'structured-data',
   url: 'https://www.example.com',
 };
 
