@@ -15,8 +15,6 @@ import { hasText, resolveCustomerSecretsName } from '@adobe/spacecat-shared-util
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
-// eslint-disable-next-line import/no-cycle
-import { isSitemapContentValid } from '../sitemap/handler.js';
 
 URI.preventInvalidHostname = true;
 
@@ -148,44 +146,32 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log)
  *
  * @param {Object} content - The content of the sitemap index.
  * @param log
- * @param fetchContent
  * @param {string} content.payload - The XML content of the sitemap index as a string.
  * @returns {Array<string>} An array of sitemap URLs extracted from the sitemap index.
  */
-export async function getSitemapUrlsFromSitemapIndex(content, log, fetchContent) {
+export async function getSitemapUrlsFromSitemapIndex(content, log) {
   const sitemapUrls = extractUrlsFromSitemap(content, log, 'sitemap');
+  const accessibleUrls = [];
 
-  const allUrls = [];
-
-  // Process each sitemap URL recursively to extract actual URLs
-  for (const sitemapUrl of sitemapUrls) {
-    log.info(`Processing sitemap: ${sitemapUrl}`);
-
+  // Check the accessibility of each sitemap URL
+  const checkAccessibility = async (sitemapUrl) => {
     try {
-      // Fetch the content of each sitemap URL
-      // eslint-disable-next-line no-await-in-loop
-      const sitemapContent = await fetchContent(sitemapUrl);
-
-      // Check if the fetched sitemap content is valid
-      if (sitemapContent && isSitemapContentValid(sitemapContent)) {
-        // If this is another sitemap index, process it recursively
-        if (sitemapContent.payload.includes('</sitemapindex>')) {
-          const nestedUrls = getSitemapUrlsFromSitemapIndex(sitemapContent, log, fetchContent);
-          allUrls.push(...nestedUrls);
-        } else {
-          // extract the actual URLs
-          const urls = extractUrlsFromSitemap(sitemapContent, log);
-          allUrls.push(...urls);
-        }
+      const response = await fetch(sitemapUrl, { method: 'HEAD' });
+      if (response.ok) {
+        log.info(`Accessible sitemap URL: ${sitemapUrl}`);
+        accessibleUrls.push(sitemapUrl);
       } else {
-        log.error(`Failed to fetch or process sitemap: ${sitemapUrl}`);
+        log.warn(`Sitemap URL not accessible: ${sitemapUrl} (Status: ${response.status})`);
       }
     } catch (error) {
-      log.error(`Error processing sitemap URL ${sitemapUrl}: ${error.message}`);
+      log.error(`Error checking sitemap URL ${sitemapUrl}: ${error.message}`);
     }
-  }
+  };
 
-  return allUrls;
+  const promises = sitemapUrls.map(checkAccessibility);
+  await Promise.all(promises);
+
+  return accessibleUrls;
 }
 
 export function getUrlWithoutPath(url) {
