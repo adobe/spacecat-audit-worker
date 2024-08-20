@@ -13,12 +13,11 @@
 /* eslint-env mocha */
 
 import nock from 'nock';
-import chai from 'chai';
+import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import { getRUMDomainkey } from '../../src/support/utils.js';
 
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(chaiAsPromised);
 
 describe('rum utils', () => {
   let context;

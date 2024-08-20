@@ -11,7 +11,7 @@
  */
 
 /* eslint-env mocha */
-import chai from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
@@ -24,8 +24,7 @@ import {
   rumDataEmpty,
 } from '../fixtures/experimentation-data.js';
 
-chai.use(sinonChai);
-const { expect } = chai;
+use(sinonChai);
 
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   interval: 7,
