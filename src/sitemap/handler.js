@@ -138,17 +138,27 @@ export function isSitemapContentValid(sitemapContent) {
 export async function checkSitemap(sitemapUrl, log) {
   try {
     const sitemapContent = await fetchContent(sitemapUrl, log);
-    const isValidFormat = isSitemapContentValid(sitemapContent);
-    const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
-    const isText = isValidFormat && sitemapContent.type === 'text/plain';
+    if (!sitemapContent || !sitemapContent.payload) {
+      log.error(`No content received from ${sitemapUrl}`);
+      return {
+        existsAndIsValid: false,
+        reasons: [ERROR_CODES.SITEMAP_NOT_FOUND],
+        details: { sitemapContent: {}, isText: false, isSitemapIndex: false },
+      };
+    }
 
+    const isValidFormat = isSitemapContentValid(sitemapContent);
     if (!isValidFormat) {
+      log.error(`Invalid sitemap format at ${sitemapUrl}`);
       return {
         existsAndIsValid: false,
         reasons: [ERROR_CODES.SITEMAP_FORMAT],
         details: { sitemapContent: {}, isText: false, isSitemapIndex: false },
       };
     }
+
+    const isSitemapIndex = sitemapContent.payload.includes('</sitemapindex>');
+    const isText = sitemapContent.type === 'text/plain';
 
     log.info(`Processed ${sitemapUrl}: isSitemapIndex=${isSitemapIndex}`);
     return {
@@ -157,13 +167,7 @@ export async function checkSitemap(sitemapUrl, log) {
       details: { sitemapContent, isText, isSitemapIndex },
     };
   } catch (error) {
-    if (error.message.includes('404')) {
-      return {
-        existsAndIsValid: false,
-        reasons: [ERROR_CODES.SITEMAP_NOT_FOUND],
-        details: { sitemapContent: {}, isText: false, isSitemapIndex: false },
-      };
-    }
+    log.error(`Error processing sitemap at ${sitemapUrl}: ${error.message}`);
     return {
       existsAndIsValid: false,
       reasons: [ERROR_CODES.FETCH_ERROR],
