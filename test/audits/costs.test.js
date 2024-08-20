@@ -11,7 +11,7 @@
  */
 
 /* eslint-env mocha */
-import chai from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
@@ -19,9 +19,8 @@ import nock from 'nock';
 import { MockContextBuilder } from '../shared.js';
 import { runner } from '../../src/costs/handler.js';
 
-chai.use(sinonChai);
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(sinonChai);
+use(chaiAsPromised);
 
 const message = {
   type: 'costs',
