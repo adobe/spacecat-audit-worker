@@ -32,7 +32,7 @@ export async function processUrlInspect(baseURL, context, pages) {
 
   let google;
   try {
-    google = GoogleClient.createFrom(context, baseURL);
+    google = await GoogleClient.createFrom(context, baseURL);
   } catch (error) {
     log.error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
     throw new Error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
