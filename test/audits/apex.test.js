@@ -11,7 +11,7 @@
  */
 
 /* eslint-env mocha */
-import chai from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
@@ -20,9 +20,8 @@ import { apexAuditRunner } from '../../src/apex/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import { hasNonWWWSubdomain, toggleWWW } from '../../src/support/utils.js';
 
-chai.use(sinonChai);
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(sinonChai);
+use(chaiAsPromised);
 
 const message = {
   type: 'apex',

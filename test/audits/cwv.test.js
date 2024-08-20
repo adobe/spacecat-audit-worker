@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { Request } from '@adobe/fetch';
@@ -22,8 +22,7 @@ import { main } from '../../src/index.js';
 import { getRUMUrl } from '../../src/support/utils.js';
 import { expectedAuditResult, rumData } from '../fixtures/rum-data.js';
 
-chai.use(sinonChai);
-const { expect } = chai;
+use(sinonChai);
 
 const sandbox = sinon.createSandbox();
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {

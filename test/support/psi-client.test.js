@@ -12,16 +12,14 @@
 
 /* eslint-env mocha */
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import sinon from 'sinon';
 
 import PSIClient from '../../src/support/psi-client.js';
 
-chai.use(chaiAsPromised);
-
-const { expect } = chai;
+use(chaiAsPromised);
 
 describe('PSIClient', () => {
   let client;
@@ -104,7 +102,7 @@ describe('PSIClient', () => {
       try {
         await client.performPSICheck('testsite.com', 'mobile');
         expect.fail('Should have thrown an error');
-      } catch (e) {
+      } catch {
         expect(logMock.error.called).to.be.true;
       }
     });
