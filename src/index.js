@@ -30,7 +30,7 @@ import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
 import costs from './costs/handler.js';
-import pdpIndexability from './url-inspect/pdp-handler.js';
+import gscPdpStructuredData from './url-inspect/pdp-handler.js';
 
 const HANDLERS = {
   apex,
@@ -46,7 +46,7 @@ const HANDLERS = {
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
   costs,
-  'pdp-indexability': pdpIndexability,
+  'gsc-pdp-structured-data': gscPdpStructuredData,
 };
 
 function getElapsedSeconds(startTime) {

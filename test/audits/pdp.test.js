@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 
-import { pdpIndexabilityRunner } from '../../src/url-inspect/pdp-handler.js';
+import { gscPdpStructuredDataHandler } from '../../src/url-inspect/pdp-handler.js';
 
 use(sinonChai);
 
@@ -119,7 +119,7 @@ describe('URLInspect Audit', () => {
   it('should successfully return a filtered result of the url inspection result', async () => {
     urlInspectStub.resolves(fullUrlInspectionResult);
 
-    const auditData = await pdpIndexabilityRunner('https://www.example.com', context, siteStub);
+    const auditData = await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
 
     expect(auditData.auditResult).to.deep.equal(
       [
@@ -229,7 +229,7 @@ describe('URLInspect Audit', () => {
     delete fullUrlInspectionResult.inspectionResult.richResultsResult;
     urlInspectStub.resolves(fullUrlInspectionResult);
 
-    const auditData = await pdpIndexabilityRunner('https://www.example.com', context, siteStub);
+    const auditData = await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
 
     expect(auditData.auditResult[0].richResults).to.equal(undefined);
   });
@@ -241,7 +241,7 @@ describe('URLInspect Audit', () => {
       .richResultsResult.detectedItems[1].items[0].issues[1];
     urlInspectStub.resolves(fullUrlInspectionResult);
 
-    const auditData = await pdpIndexabilityRunner('https://www.example.com', context, siteStub);
+    const auditData = await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
 
     expect(auditData.auditResult[0].richResults).to.deep.equal([]);
     expect(auditData.auditResult[1].richResults).to.deep.equal([]);
@@ -252,7 +252,7 @@ describe('URLInspect Audit', () => {
       getProductDetailPages: () => [],
     });
     try {
-      await pdpIndexabilityRunner('https://www.example.com', context, siteStub);
+      await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
     } catch (error) {
       expect(error.message).to.equal('No top pages found for site: https://www.example.com');
     }
