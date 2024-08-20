@@ -17,10 +17,15 @@ import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 
 import { gscPdpStructuredDataHandler } from '../../src/url-inspect/pdp-handler.js';
+import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
 
 const sandbox = sinon.createSandbox();
+const message = {
+  type: 'gsc-pdp-structured-data',
+  url: 'https://www.example.com',
+};
 
 describe('URLInspect Audit', () => {
   let context;
@@ -31,13 +36,16 @@ describe('URLInspect Audit', () => {
   let fullUrlInspectionResult;
 
   beforeEach(() => {
-    context = {
-      log: {
-        info: sinon.stub(),
-        warn: sinon.stub(),
-        error: sinon.stub(),
-      },
-    };
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        log: {
+          info: sinon.stub(),
+          warn: sinon.stub(),
+          error: sinon.stub(),
+        },
+      })
+      .build(message);
 
     googleClientStub = {
       urlInspect: sandbox.stub(),
