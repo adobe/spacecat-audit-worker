@@ -241,7 +241,7 @@ describe('URLInspect Audit', () => {
 
     const auditData = await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
 
-    expect(auditData.auditResult[0].richResults).to.equal(undefined);
+    expect(auditData.auditResult[0].richResults).to.deep.equal([]);
   });
 
   it('returns no rich results when there are no errors in rich results', async () => {
@@ -277,6 +277,17 @@ describe('URLInspect Audit', () => {
       await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
     } catch (error) {
       expect(error.message).to.equal('Failed to create Google client. Site was probably not onboarded to GSC yet. Error: Sinon-provided No secrets found');
+    }
+  });
+
+  it('throws error if google client fails to inspect URL', async () => {
+    urlInspectStub.rejects(new Error('Failed to inspect URL'));
+    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
+
+    try {
+      await gscPdpStructuredDataHandler('https://www.example.com', context, siteStub);
+    } catch (error) {
+      expect(error.message).to.equal('Failed to inspect URL: https://example.com/product/1. Error: Failed to inspect URL');
     }
   });
 });
