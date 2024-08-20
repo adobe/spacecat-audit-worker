@@ -91,11 +91,9 @@ export function extractDomainAndProtocol(inputUrl) {
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
 export function extractUrlsFromSitemap(content, log, tagName = 'url') {
-  // Initialize JSDOM with the content and specify the XML content type
   const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
 
-  // Retrieve all elements with the specified tag name
   const elements = document.getElementsByTagName(tagName);
 
   // Map through the elements, extract the text of the 'loc' tags, and filter out null
@@ -109,7 +107,7 @@ export function extractUrlsFromSitemap(content, log, tagName = 'url') {
       }
       return null;
     })
-    .filter((url) => url !== null); // Filter out any nulls if 'loc' element is missing or empty
+    .filter((url) => url !== null);
 }
 
 /**
@@ -133,18 +131,10 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log)
 
   if (sitemapDetails && sitemapDetails.isText) {
     const lines = sitemapDetails.sitemapContent.payload.split('\n').map((line) => line.trim());
-    log.info(`Extracted lines from text sitemap: ${lines}`);
-
-    const filteredPages = filterPages(lines.filter((line) => line.length > 0));
-    log.info(`Filtered pages from text sitemap: ${filteredPages}`);
-    return filteredPages;
+    return filterPages(lines.filter((line) => line.length > 0));
   } else if (sitemapDetails) {
     const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent, log);
-    log.info(`Extracted pages from XML sitemap: ${sitemapPages}`);
-
-    const filteredPages = filterPages(sitemapPages);
-    log.info(`Filtered pages from XML sitemap: ${filteredPages}`);
-    return filteredPages;
+    return filterPages(sitemapPages);
   }
 
   return [];
@@ -180,7 +170,7 @@ export async function getSitemapUrlsFromSitemapIndex(content, log, fetchContent)
           const nestedUrls = getSitemapUrlsFromSitemapIndex(sitemapContent, log, fetchContent);
           allUrls.push(...nestedUrls);
         } else {
-          // Otherwise, extract the actual URLs
+          // extract the actual URLs
           const urls = extractUrlsFromSitemap(sitemapContent, log);
           allUrls.push(...urls);
         }
