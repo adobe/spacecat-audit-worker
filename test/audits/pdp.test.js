@@ -11,14 +11,15 @@
  */
 
 /* eslint-env mocha */
-import chai from 'chai';
+import GoogleClient from '@adobe/spacecat-shared-google-client';
+import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
-import GoogleClient from '@adobe/spacecat-shared-google-client';
+
 import { pdpIndexabilityRunner } from '../../src/url-inspect/pdp-handler.js';
 
-chai.use(sinonChai);
-const { expect } = chai;
+use(sinonChai);
+
 const sandbox = sinon.createSandbox();
 
 describe('URLInspect Audit', () => {

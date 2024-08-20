@@ -12,12 +12,6 @@
     },
     {
       "matchPackageNames": [
-        "chai"
-      ],
-      "allowedVersions": "<5.0.0"
-    },
-    {
-      "matchPackageNames": [
         "eslint"
       ],
       "allowedVersions": "<9.0.0"

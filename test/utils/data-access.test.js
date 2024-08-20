@@ -12,13 +12,12 @@
 
 /* eslint-env mocha */
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import { retrieveSiteBySiteId } from '../../src/utils/data-access.js';
 
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(chaiAsPromised);
 
 describe('retrieveSiteBySiteId', () => {
   let mockDataAccess;
