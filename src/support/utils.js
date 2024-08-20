@@ -91,23 +91,26 @@ export function extractDomainAndProtocol(inputUrl) {
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
 export function extractUrlsFromSitemap(content, log, tagName = 'url') {
-  const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
-  const { document } = dom.window;
+  try {
+    const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
+    const { document } = dom.window;
+    const elements = document.getElementsByTagName(tagName);
 
-  const elements = document.getElementsByTagName(tagName);
-
-  // Map through the elements, extract the text of the 'loc' tags, and filter out null
-  return Array.from(elements)
-    .map((element) => {
-      const loc = element.getElementsByTagName('loc')[0];
-      // Check if loc exists before trying to access textContent
-      if (loc && loc.textContent) {
-        log.info('Extracted URL:', loc.textContent.trim());
-        return loc.textContent.trim();
-      }
-      return null;
-    })
-    .filter((url) => url !== null);
+    return Array.from(elements)
+      .map((element) => {
+        const loc = element.getElementsByTagName('loc')[0];
+        if (loc && loc.textContent) {
+          log.info('Extracted URL:', loc.textContent.trim());
+          return loc.textContent.trim();
+        }
+        return null;
+      })
+      .filter((url) => url !== null);
+  } catch (error) {
+    log.error(`Failed to parse XML content in sitemap: ${error.message}`);
+    log.error(`Content received: ${content.payload}`);
+    return [];
+  }
 }
 
 /**
