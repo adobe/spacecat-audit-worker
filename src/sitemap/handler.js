@@ -116,8 +116,15 @@ export async function checkRobotsForSitemap(protocol, domain, log) {
  * @returns {boolean} - True if the sitemap content is valid, otherwise false.
  */
 export function isSitemapContentValid(sitemapContent) {
-  return sitemapContent.payload.trim().startsWith('<?xml')
-        || VALID_MIME_TYPES.some((type) => sitemapContent.type.includes(type));
+  const payload = sitemapContent.payload.trim();
+
+  // Check if the content is HTML and return false if it is
+  if (payload.startsWith('<!DOCTYPE html>') || payload.startsWith('<html')) {
+    return false;
+  }
+
+  // Only consider it valid if it's XML
+  return payload.startsWith('<?xml') && VALID_MIME_TYPES.some((type) => sitemapContent.type.includes(type));
 }
 
 /**
@@ -150,7 +157,7 @@ export async function checkSitemap(sitemapUrl, log) {
 
     const isValidFormat = isSitemapContentValid(sitemapContent);
     if (!isValidFormat) {
-      log.error(`Invalid sitemap format at ${sitemapUrl}`);
+      log.error(`Invalid sitemap format or non-sitemap content at ${sitemapUrl}`);
       return {
         existsAndIsValid: false,
         reasons: [ERROR_CODES.SITEMAP_FORMAT],
@@ -158,6 +165,7 @@ export async function checkSitemap(sitemapUrl, log) {
       };
     }
 
+    // Additional processing logic
     const isSitemapIndex = sitemapContent.payload.includes('</sitemapindex>');
     const isText = sitemapContent.type === 'text/plain';
 
