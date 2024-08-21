@@ -29,7 +29,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
  *
  * @throws {Error} - Throws an error if the audit process fails.
  */
-export async function processUrlInspect(baseURL, context, pages) {
+export async function processStructuredData(baseURL, context, pages) {
   const { log } = context;
 
   let google;
@@ -74,11 +74,15 @@ export async function processUrlInspect(baseURL, context, pages) {
       } else {
         log.info(`No rich results issues found for URL: ${page}`);
       }
-
       return {
         inspectionUrl: page,
         indexStatusResult: filteredIndexStatusResult,
-        richResults: filteredRichResults,
+        richResults: inspectionResult?.richResultsResult
+          ? {
+            verdict: inspectionResult.richResultsResult.verdict,
+            detectedIssues: filteredRichResults,
+          }
+          : {},
       };
     } catch (error) {
       log.error(`Failed to inspect URL: ${page}. Error: ${error.message}`);
@@ -105,7 +109,7 @@ export async function structuredDataHandler(baseURL, context, site) {
     throw new Error(`No product detail pages found for site: ${baseURL}`);
   }
 
-  const auditResult = await processUrlInspect(baseURL, context, productDetailPages);
+  const auditResult = await processStructuredData(baseURL, context, productDetailPages);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;

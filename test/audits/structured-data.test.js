@@ -138,36 +138,39 @@ describe('URLInspect Audit', () => {
             verdict: 'PASS',
             lastCrawlTime: '2024-08-13T22:35:22Z',
           },
-          richResults: [
-            {
-              richResultType: 'Product snippets',
-              items: [
-                {
-                  name: 'Example Product Name',
-                  issues: [
-                    {
-                      issueMessage: 'Missing field "image"',
-                      severity: 'ERROR',
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              richResultType: 'Merchant listings',
-              items: [
-                {
-                  name: 'Example Product Name',
-                  issues: [
-                    {
-                      issueMessage: 'Missing field "shippingDetails"',
-                      severity: 'ERROR',
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
+          richResults: {
+            verdict: 'PASS',
+            detectedIssues: [
+              {
+                richResultType: 'Product snippets',
+                items: [
+                  {
+                    name: 'Example Product Name',
+                    issues: [
+                      {
+                        issueMessage: 'Missing field "image"',
+                        severity: 'ERROR',
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                richResultType: 'Merchant listings',
+                items: [
+                  {
+                    name: 'Example Product Name',
+                    issues: [
+                      {
+                        issueMessage: 'Missing field "shippingDetails"',
+                        severity: 'ERROR',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
         },
         {
           inspectionUrl: 'https://example.com/product/2',
@@ -175,36 +178,39 @@ describe('URLInspect Audit', () => {
             verdict: 'PASS',
             lastCrawlTime: '2024-08-13T22:35:22Z',
           },
-          richResults: [
-            {
-              richResultType: 'Product snippets',
-              items: [
-                {
-                  name: 'Example Product Name',
-                  issues: [
-                    {
-                      issueMessage: 'Missing field "image"',
-                      severity: 'ERROR',
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              richResultType: 'Merchant listings',
-              items: [
-                {
-                  name: 'Example Product Name',
-                  issues: [
-                    {
-                      issueMessage: 'Missing field "shippingDetails"',
-                      severity: 'ERROR',
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
+          richResults: {
+            verdict: 'PASS',
+            detectedIssues: [
+              {
+                richResultType: 'Product snippets',
+                items: [
+                  {
+                    name: 'Example Product Name',
+                    issues: [
+                      {
+                        issueMessage: 'Missing field "image"',
+                        severity: 'ERROR',
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                richResultType: 'Merchant listings',
+                items: [
+                  {
+                    name: 'Example Product Name',
+                    issues: [
+                      {
+                        issueMessage: 'Missing field "shippingDetails"',
+                        severity: 'ERROR',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
         },
       ],
     );
@@ -217,7 +223,7 @@ describe('URLInspect Audit', () => {
 
     const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
-    expect(auditData.auditResult[0].richResults).to.deep.equal([]);
+    expect(auditData.auditResult[0].richResults).to.deep.equal({});
   });
 
   it('returns no rich results when there are no errors in rich results', async () => {
@@ -230,8 +236,8 @@ describe('URLInspect Audit', () => {
 
     const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
-    expect(auditData.auditResult[0].richResults).to.deep.equal([]);
-    expect(auditData.auditResult[1].richResults).to.deep.equal([]);
+    expect(auditData.auditResult[0].richResults.detectedIssues).to.deep.equal([]);
+    expect(auditData.auditResult[1].richResults.verdict).to.equal('PASS');
   });
 
   it('throws error if there are no configured PDPs', async () => {
