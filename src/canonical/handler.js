@@ -352,7 +352,7 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
     }
 
     // Check if the canonical URL has the same domain as the base URL
-    if (url.hostname !== base.hostname) {
+    if (url.hostname !== base.hostname && url.hostname !== `www.${base.hostname}` && `www.${url.hostname}` !== base.hostname) {
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
         success: false,
