@@ -140,6 +140,10 @@ describe('URLInspect Audit', () => {
           },
           richResults: {
             verdict: 'PASS',
+            detectedItemTypes: [
+              'Product snippets',
+              'Merchant listings',
+            ],
             detectedIssues: [
               {
                 richResultType: 'Product snippets',
@@ -180,6 +184,10 @@ describe('URLInspect Audit', () => {
           },
           richResults: {
             verdict: 'PASS',
+            detectedItemTypes: [
+              'Product snippets',
+              'Merchant listings',
+            ],
             detectedIssues: [
               {
                 richResultType: 'Product snippets',

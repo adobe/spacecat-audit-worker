@@ -50,8 +50,10 @@ export async function processStructuredData(baseURL, context, pages) {
         lastCrawlTime: inspectionResult?.indexStatusResult?.lastCrawlTime,
       };
 
+      const detectedItemTypes = [];
       const filteredRichResults = inspectionResult?.richResultsResult?.detectedItems?.map(
         (item) => {
+          detectedItemTypes.push(item?.richResultType);
           const filteredItems = item?.items?.filter(
             (issueItem) => issueItem?.issues?.some(
               (issue) => issue?.severity === 'ERROR',
@@ -80,6 +82,7 @@ export async function processStructuredData(baseURL, context, pages) {
         richResults: inspectionResult?.richResultsResult
           ? {
             verdict: inspectionResult.richResultsResult.verdict,
+            detectedItemTypes,
             detectedIssues: filteredRichResults,
           }
           : {},
