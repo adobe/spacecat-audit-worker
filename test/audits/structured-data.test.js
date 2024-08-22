@@ -55,7 +55,7 @@ describe('URLInspect Audit', () => {
     siteStub = {
       getId: () => '123',
       getConfig: () => ({
-        getProductDetailPages: () => ['https://example.com/product/1', 'https://example.com/product/2'],
+        getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2'],
       }),
     };
 
@@ -251,7 +251,7 @@ describe('URLInspect Audit', () => {
   it('throws error if there are no configured PDPs', async () => {
     sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
     siteStub.getConfig = () => ({
-      getProductDetailPages: () => [],
+      getIncludedURLs: () => [],
     });
     try {
       await structuredDataHandler('https://www.example.com', context, siteStub);

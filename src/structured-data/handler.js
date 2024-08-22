@@ -106,13 +106,13 @@ export async function structuredDataHandler(baseURL, context, site) {
 
   const siteId = site.getId();
 
-  const productDetailPages = await site.getConfig().getProductDetailPages('structured-data');
-  if (isArray(productDetailPages) && productDetailPages.length === 0) {
+  const structuredDataURLs = await site.getConfig().getIncludedURLs('structured-data');
+  if (isArray(structuredDataURLs) && structuredDataURLs.length === 0) {
     log.error(`No product detail pages found for site ID: ${siteId}`);
     throw new Error(`No product detail pages found for site: ${baseURL}`);
   }
 
-  const auditResult = await processStructuredData(baseURL, context, productDetailPages);
+  const auditResult = await processStructuredData(baseURL, context, structuredDataURLs);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
