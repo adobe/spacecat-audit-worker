@@ -11,6 +11,7 @@
  */
 
 import { JSDOM } from 'jsdom';
+import { composeBaseURL } from '@adobe/spacecat-shared-utils';
 import { fetch } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
@@ -352,7 +353,7 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
     }
 
     // Check if the canonical URL has the same domain as the base URL
-    if (url.hostname !== base.hostname) {
+    if (composeBaseURL(url.hostname) !== composeBaseURL(base.hostname)) {
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
         success: false,
