@@ -96,7 +96,10 @@ export async function processStructuredData(baseURL, context, pages) {
     }
   });
 
-  return Promise.all(urlInspectionResult);
+  const results = await Promise.allSettled(urlInspectionResult);
+  return results
+    .filter((result) => result.status === 'fulfilled')
+    .map((result) => result.value);
 }
 
 export async function structuredDataHandler(baseURL, context, site) {
