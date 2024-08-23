@@ -325,25 +325,19 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith('Canonical URL  https://example.com uses a different protocol than base URL http://example.com');
     });
 
-    it('should pass when canonical URL and base URL are identical, including the www prefix', () => {
-      const canonicalUrl = 'https://www.example.com';
-      const baseUrl = 'https://example.com';
-      const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
+    it('should pass when canonical URL and base URL are identical, regardless of the www prefix', () => {
+      const cases = [
+        { canonicalUrl: 'https://www.example.com', baseUrl: 'https://example.com' },
+        { canonicalUrl: 'https://example.com', baseUrl: 'https://www.example.com' },
+      ];
 
-      expect(result).to.deep.include({
-        check: 'canonical-url-same-domain',
-        success: true,
-      });
-    });
+      cases.forEach(({ canonicalUrl, baseUrl }) => {
+        const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
 
-    it('should pass when canonical URL and base URL are identical, including the www prefix', () => {
-      const canonicalUrl = 'https://example.com';
-      const baseUrl = 'https://www.example.com';
-      const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
-
-      expect(result).to.deep.include({
-        check: 'canonical-url-same-domain',
-        success: true,
+        expect(result).to.deep.include({
+          check: 'canonical-url-same-domain',
+          success: true,
+        });
       });
     });
 
