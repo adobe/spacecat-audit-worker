@@ -1,3 +1,24 @@
+## [1.26.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.26.3...v1.26.4) (2024-08-23)
+
+
+### Bug Fixes
+
+* same domain check with www for baseUrl ([#375](https://github.com/adobe/spacecat-audit-worker/issues/375)) ([eb30da3](https://github.com/adobe/spacecat-audit-worker/commit/eb30da3862cb9c2b73285ad1e02a582b6abd1fa1))
+
+## [1.26.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.26.2...v1.26.3) (2024-08-22)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#374](https://github.com/adobe/spacecat-audit-worker/issues/374)) ([09d2496](https://github.com/adobe/spacecat-audit-worker/commit/09d2496751784652183da0492163667e344a0d4e))
+
+## [1.26.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.26.1...v1.26.2) (2024-08-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.43.0 ([#372](https://github.com/adobe/spacecat-audit-worker/issues/372)) ([f5476d9](https://github.com/adobe/spacecat-audit-worker/commit/f5476d90c241aa4ade8ab0f062a70900a4fe8aa8))
+
 ## [1.26.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.26.0...v1.26.1) (2024-08-20)
 
 
