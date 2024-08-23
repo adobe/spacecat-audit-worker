@@ -98,7 +98,7 @@ describe('Canonical URL Tests', () => {
   describe('validateCanonicalTag', () => {
     it('should handle missing canonical tag', async () => {
       const url = 'http://example.com';
-      const html = '<!DOCTYPE html><html><head></head><body></body></html>';
+      const html = '<!DOCTYPE html><html lang="en"><head><title>test</title></head><body></body></html>';
       nock('http://example.com').get('/').reply(200, html);
 
       const result = await validateCanonicalTag(url, log);
@@ -153,7 +153,7 @@ describe('Canonical URL Tests', () => {
 
     it('should handle invalid canonical URL correctly', async () => {
       const url = 'http://example.com';
-      const html = '<html><head><link rel="canonical" href="invalid-url"></head><body></body></html>';
+      const html = '<html lang="en"><head><link rel="canonical" href="invalid-url"><title>test</title></head><body></body></html>';
       nock(url).get('/').reply(200, html);
 
       const result = await validateCanonicalTag(url, log);
@@ -168,7 +168,7 @@ describe('Canonical URL Tests', () => {
 
     it('should handle empty canonical tag', async () => {
       const url = 'http://example.com';
-      const html = '<html><head><link rel="canonical" href=""></head><body></body></html>';
+      const html = '<html lang="en"><head><link rel="canonical" href=""><title>test</title></head><body></body></html>';
       nock(url).get('/').reply(200, html);
 
       const result = await validateCanonicalTag(url, log);
@@ -184,7 +184,7 @@ describe('Canonical URL Tests', () => {
 
     it('should handle multiple canonical tags', async () => {
       const url = 'http://example.com';
-      const html = '<html><head><link rel="canonical" href="http://example.com/page1"><link rel="canonical" href="http://example.com/page2"></head><body></body></html>';
+      const html = '<html lang="en"><head><link rel="canonical" href="http://example.com/page1"><link rel="canonical" href="http://example.com/page2"><title>test</title></head><body></body></html>';
       nock(url).get('/').reply(200, html);
 
       const result = await validateCanonicalTag(url, log);
@@ -198,7 +198,7 @@ describe('Canonical URL Tests', () => {
 
     it('should fail if the canonical tag is not in the head section', async () => {
       const url = 'http://example.com';
-      const html = '<html><head></head><body><link rel="canonical" href="http://example.com"></body></html>';
+      const html = '<html lang="en"><head><title>test</title></head><body><link rel="canonical" href="http://example.com"></body></html>';
       nock(url).get('/').reply(200, html);
 
       const result = await validateCanonicalTag(url, log);
@@ -356,7 +356,7 @@ describe('Canonical URL Tests', () => {
 
     it('should pass if the canonical URL points to itself', async () => {
       const url = 'http://example.com';
-      const html = `<html><head><link rel="canonical" href="${url}"></head><body></body></html>`;
+      const html = `<html lang="en"><head><link rel="canonical" href="${url}"><title>test</title></head><body></body></html>`;
       nock(url).get('/').reply(200, html);
 
       const result = await validateCanonicalTag(url, log);
@@ -396,7 +396,7 @@ describe('Canonical URL Tests', () => {
     it('should fail if the canonical URL does not point to itself', async () => {
       const url = 'http://example.com';
       const canonicalUrl = 'http://example.com/other-page';
-      const html = `<html><head><link rel="canonical" href="${canonicalUrl}"></head><body></body></html>`;
+      const html = `<html lang="en"><head><link rel="canonical" href="${canonicalUrl}"><title>test</title></head><body></body></html>`;
       nock(url).get('/').reply(200, html);
 
       const result = await validateCanonicalTag(url, log);
@@ -486,9 +486,9 @@ describe('Canonical URL Tests', () => {
       const expectedCanonicalUrl = 'https://example.com/canonical-page';
 
       const html = `
-    <html>
+    <html lang="en">
       <head>
-        <link rel="canonical" href="${href}">
+        <link rel="canonical" href="${href}"><title>test</title>
       </head>
       <body>
         <h1>Test Page</h1>
@@ -534,7 +534,7 @@ describe('Canonical URL Tests', () => {
   describe('canonicalAuditRunner', () => {
     it('should run canonical audit successfully', async () => {
       const baseURL = 'http://example.com';
-      const html = `<html><head><link rel="canonical" href="${baseURL}"></head><body></body></html>`;
+      const html = `<html lang="en"><head><link rel="canonical" href="${baseURL}"><title>test</title></head><body></body></html>`;
 
       nock('http://example.com').get('/page1').reply(200, html);
       nock(baseURL).get('/').reply(200, html);
