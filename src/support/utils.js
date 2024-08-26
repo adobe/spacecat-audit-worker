@@ -11,7 +11,7 @@
  */
 
 import { context as h2, h1 } from '@adobe/fetch';
-import { hasText, resolveCustomerSecretsName } from '@adobe/spacecat-shared-utils';
+import { hasText, prependSchema, resolveCustomerSecretsName } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
@@ -26,7 +26,7 @@ export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
 // weekly pageview threshold to eliminate urls with lack of samples
 
 export async function getRUMUrl(url) {
-  const urlWithScheme = url.startsWith('http') ? url : `https://${url}`;
+  const urlWithScheme = prependSchema(url);
   const resp = await fetch(urlWithScheme);
   const finalUrl = resp.url.split('://')[1];
   return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
@@ -43,7 +43,7 @@ export function hasNonWWWSubdomain(baseUrl) {
   try {
     const uri = new URI(baseUrl);
     return hasText(uri.domain()) && hasText(uri.subdomain()) && uri.subdomain() !== 'www';
-  } catch (e) {
+  } catch {
     throw new Error(`Cannot parse baseURL: ${baseUrl}`);
   }
 }
@@ -75,7 +75,7 @@ export function extractDomainAndProtocol(inputUrl) {
       protocol: parsedUrl.protocol.slice(0, -1),
       domain: parsedUrl.hostname,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
