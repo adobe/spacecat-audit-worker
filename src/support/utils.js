@@ -26,6 +26,7 @@ export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
 // weekly pageview threshold to eliminate urls with lack of samples
 
 export async function getRUMUrl(url) {
+  /* c8 ignore next 1 */
   const urlWithScheme = url.startsWith('http') ? url : `https://${url}`;
   const resp = await fetch(urlWithScheme);
   const finalUrl = resp.url.split('://')[1];
