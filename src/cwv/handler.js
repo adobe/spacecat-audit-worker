@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Adobe. All rights reserved.
+ * Copyright 2024 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,83 +10,28 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient, { createRUMURL } from '@adobe/spacecat-shared-rum-api-client-v1';
-import { internalServerError, noContent } from '@adobe/spacecat-shared-http-utils';
-import { composeAuditURL } from '@adobe/spacecat-shared-utils';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { getRUMDomainkey } from '../support/utils.js';
+import { AuditBuilder } from '../common/audit-builder.js';
 
-const PAGEVIEW_THRESHOLD = 35000;
+const INTERVAL = 7; // days
 
-export function filterRUMData(data) {
-  return data.pageviews > PAGEVIEW_THRESHOLD // ignore the pages with low pageviews
-      && data.url.toLowerCase() !== 'other'; // ignore the combined result
+export async function CWVRunner(auditUrl, context, site) {
+  const rumAPIClient = RUMAPIClient.createFrom(context);
+  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
+  const options = {
+    domain: auditUrl,
+    domainkey,
+    interval: INTERVAL,
+    granularity: 'hourly',
+  };
+  const cwvData = await rumAPIClient.query('cwv', options);
+  return {
+    auditResult: cwvData,
+    fullAuditRef: auditUrl,
+  };
 }
 
-/**
- * url param in run-query@v3/rum-dashboard works in a 'startsWith' fashion. url=domain.com returns
- * an empty result whereas url=www.domain.com/ returns the desired result. To catch the redirects
- * to subdomains we issue a GET call to the domain, then use the final url after redirects
- * @param url
- * @returns finalUrl {Promise<string>}
- */
-
-function processRUMResponse(data) {
-  return data
-    .filter(filterRUMData)
-    .map((row) => ({
-      url: row.url,
-      pageviews: row.pageviews,
-      CLS: row.avgcls,
-      INP: row.avginp,
-      LCP: row.avglcp,
-    }));
-}
-export default async function auditCWV(message, context) {
-  const { type, url: siteId, auditContext = {} } = message;
-  const { dataAccess, log, sqs } = context;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
-  try {
-    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    const url = site.getBaseURL();
-
-    log.info(`Received audit req for domain: ${url}`);
-
-    const rumAPIClient = RUMAPIClient.createFrom(context);
-    const finalUrl = await composeAuditURL(url);
-    auditContext.finalUrl = finalUrl;
-
-    const params = {
-      url: finalUrl,
-    };
-
-    const data = await rumAPIClient.getRUMDashboard(params);
-    const auditResult = processRUMResponse(data);
-    const fullAuditRef = createRUMURL({ ...params, domainkey: '' });
-
-    const auditData = {
-      siteId: site.getId(),
-      isLive: site.isLive(),
-      auditedAt: new Date().toISOString(),
-      auditType: type,
-      fullAuditRef,
-      auditResult,
-    };
-
-    await dataAccess.addAudit(auditData);
-
-    await sqs.sendMessage(queueUrl, {
-      type,
-      url,
-      auditContext,
-      auditResult,
-    });
-
-    log.info(`Successfully audited ${url} for ${type} type audit`);
-    return noContent();
-  } catch (e) {
-    log.info(`CWV audit failed for ${siteId} failed due to ${e.message}`);
-    return internalServerError(`Internal server error: ${e.message}`);
-  }
-}
+export default new AuditBuilder()
+  .withRunner(CWVRunner)
+  .build();
