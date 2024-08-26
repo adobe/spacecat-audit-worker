@@ -61,7 +61,9 @@ describe('Index Tests', () => {
   it('cwv audit runs rum api client cwv query', async () => {
     const result = await CWVRunner('www.spacecat.com', context, site);
     expect(result).to.deep.equal({
-      auditResult: rumData.filter((data) => data.pageviews >= 7000),
+      auditResult: {
+        cwv: rumData.filter((data) => data.pageviews >= 7000),
+      },
       fullAuditRef: auditUrl,
     });
   });
