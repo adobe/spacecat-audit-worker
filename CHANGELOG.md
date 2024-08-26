@@ -1,3 +1,10 @@
+# [1.28.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.27.0...v1.28.0) (2024-08-26)
+
+
+### Features
+
+* opportunities audit ([#360](https://github.com/adobe/spacecat-audit-worker/issues/360)) ([22128fd](https://github.com/adobe/spacecat-audit-worker/commit/22128fd0c311d65e0a5b60e4d229205feb2bf219))
+
 # [1.27.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.26.5...v1.27.0) (2024-08-26)
 
 
