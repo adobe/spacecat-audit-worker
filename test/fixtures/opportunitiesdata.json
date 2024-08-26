@@ -13,14 +13,27 @@
           "type": "click",
           "selector": ".abc-survey",
           "value": 2111,
+          "targets": {
+            "https://abc.com/in/products/media_1c2c9e62626b7b4df13882c013438725ae05464d6.jpeg": 577,
+            "undefined": 1534
+          },
           "samples": 138,
+          "mobileSamples": 106,
+          "desktopSamples": 32,
           "percentage": 40.469208211143695
         },
         {
           "type": "click",
           "selector": ".abc-survey #abc-survey-next",
           "value": 2160,
+          "targets": {
+            "https://abc.com/in/images/media_1c2c9e62626b7b4df13882c0134982380923890.jpeg": 141,
+            "https://abc.com/in/images/media_1c2c9e62626b7b4df13882c013498223987923afe.jpeg": 401,
+            "undefined": 1618
+          },
           "samples": 157,
+          "mobileSamples": 96,
+          "desktopSamples": 61,
           "percentage": 46.04105571847507
         }
       ]
@@ -38,7 +51,12 @@
           "type": "click",
           "selector": ".account #favorites",
           "value": 138,
+          "targets": {
+            "undefined": 138
+          },
           "samples": 10,
+          "mobileSamples": 9,
+          "desktopSamples": 1,
           "percentage": 8.771929824561402
         }
       ]

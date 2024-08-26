@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
@@ -20,8 +20,7 @@ import { opportunitiesHandler } from '../../src/opportunities/opportunities.js';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/opportunitiesdata.json' assert { type: 'json' };
 
-chai.use(sinonChai);
-const { expect } = chai;
+use(sinonChai);
 
 describe('Opportunities Tests', () => {
   const url = 'https://abc.com';
