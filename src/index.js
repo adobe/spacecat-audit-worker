@@ -11,10 +11,10 @@
  */
 import wrap from '@adobe/helix-shared-wrap';
 import { helixStatus } from '@adobe/helix-status';
-import { Response } from '@adobe/fetch';
 import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
 import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
+import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 
 import sqs from './support/sqs.js';
 import apex from './apex/handler.js';
@@ -47,6 +47,7 @@ const HANDLERS = {
   'experimentation-ess-all': essExperimentationAll,
   costs,
   'structured-data': structuredData,
+  dummy: (message) => ok(message),
 };
 
 function getElapsedSeconds(startTime) {
@@ -71,7 +72,7 @@ async function run(message, context) {
   if (!handler) {
     const msg = `no such audit type: ${type}`;
     log.error(msg);
-    return new Response('', { status: 404 });
+    return notFound();
   }
 
   const startTime = process.hrtime();
@@ -84,12 +85,7 @@ async function run(message, context) {
     return result;
   } catch (e) {
     log.error(`Audit failed after ${getElapsedSeconds(startTime)} seconds`, e);
-    return new Response('', {
-      status: e.statusCode || 500,
-      headers: {
-        'x-error': 'internal server error',
-      },
-    });
+    return internalServerError();
   }
 }
 

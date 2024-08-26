@@ -29,8 +29,8 @@ describe('Index Tests', () => {
 
   beforeEach('setup', () => {
     messageBodyJson = {
-      type: 'cwv',
-      url: 'adobe.com',
+      type: 'dummy',
+      url: 'site-id',
       auditContext: {
         key: 'value',
       },
@@ -80,10 +80,8 @@ describe('Index Tests', () => {
     expect(resp.status).to.equal(500);
   });
 
-  it('fails when missing required env variables', async () => {
+  it('happy path', async () => {
     const resp = await main(request, context);
-
-    expect(resp.status).to.equal(500);
-    expect(resp.headers.plain()['x-error']).to.equal('internal server error');
+    expect(resp.status).to.equal(200);
   });
 });
