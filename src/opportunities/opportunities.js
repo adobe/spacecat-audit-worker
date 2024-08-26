@@ -29,7 +29,7 @@ let log = console;
 
 export async function opportunitiesHandler(auditUrl, context, site) {
   log = context.log;
-  log.info(`Received Experimentation Opportunities audit request for ${auditUrl}`);
+  log.info(`Received Opportunities audit request for ${auditUrl}`);
   const startTime = process.hrtime();
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -55,7 +55,7 @@ export async function opportunitiesHandler(auditUrl, context, site) {
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`Experimentation opportunities Audit is completed in ${formattedElapsed} seconds for ${auditUrl}`);
+  log.info(`Opportunities Audit is completed in ${formattedElapsed} seconds for ${auditUrl}`);
 
   return {
     auditResult: auditData,
