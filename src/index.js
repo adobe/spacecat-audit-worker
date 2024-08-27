@@ -17,6 +17,7 @@ import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-util
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 
 import sqs from './support/sqs.js';
+import s3Client from './support/s3-client.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
@@ -29,6 +30,7 @@ import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
+import metaTags from './metatags/handler.js';
 import opportunities from './opportunities/opportunities.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
@@ -46,6 +48,7 @@ const HANDLERS = {
   conversion,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
+  metaTags,
   opportunities,
   costs,
   'structured-data': structuredData,
@@ -95,5 +98,6 @@ export const main = wrap(run)
   .with(dataAccess)
   .with(sqsEventAdapter)
   .with(sqs)
+  .with(s3Client)
   .with(secrets, { name: resolveSecretsName })
   .with(helixStatus);
