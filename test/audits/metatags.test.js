@@ -35,7 +35,7 @@ import auditMetaTags from '../../src/metatags/handler.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('SeoTags', () => {
+describe('Meta Tags', () => {
   describe('SeoChecks', () => {
     let seoChecks;
     let logMock;

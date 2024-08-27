@@ -48,7 +48,7 @@ const HANDLERS = {
   conversion,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
-  metaTags,
+  'meta-tags': metaTags,
   opportunities,
   costs,
   'structured-data': structuredData,
