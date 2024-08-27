@@ -1,3 +1,10 @@
+## [1.28.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.28.0...v1.28.1) (2024-08-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency jsdom to v25 ([#379](https://github.com/adobe/spacecat-audit-worker/issues/379)) ([d785019](https://github.com/adobe/spacecat-audit-worker/commit/d7850193c94d6f6bc03134c1cfb00d28dd16f807))
+
 # [1.28.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.27.0...v1.28.0) (2024-08-26)
 
 
