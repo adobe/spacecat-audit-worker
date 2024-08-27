@@ -31,6 +31,7 @@ import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
 import opportunities from './opportunities/opportunities.js';
 import costs from './costs/handler.js';
+import structuredData from './structured-data/handler.js';
 
 const HANDLERS = {
   apex,
@@ -47,6 +48,7 @@ const HANDLERS = {
   'experimentation-ess-all': essExperimentationAll,
   opportunities,
   costs,
+  'structured-data': structuredData,
   dummy: (message) => ok(message),
 };
 
