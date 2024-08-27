@@ -1,3 +1,10 @@
+# [1.29.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.28.1...v1.29.0) (2024-08-27)
+
+
+### Features
+
+* introduce structured data audit ([#367](https://github.com/adobe/spacecat-audit-worker/issues/367)) ([3e6901d](https://github.com/adobe/spacecat-audit-worker/commit/3e6901d5c51c2ade763aeae7607ba8f476d55dce))
+
 ## [1.28.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.28.0...v1.28.1) (2024-08-27)
 
 
