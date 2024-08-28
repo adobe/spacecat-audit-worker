@@ -1,3 +1,10 @@
+## [1.29.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.29.0...v1.29.1) (2024-08-28)
+
+
+### Bug Fixes
+
+* audit context includes interval info ([#383](https://github.com/adobe/spacecat-audit-worker/issues/383)) ([c0add98](https://github.com/adobe/spacecat-audit-worker/commit/c0add98e5b1a794284bcb72624c284f0aed6593d))
+
 # [1.29.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.28.1...v1.29.0) (2024-08-27)
 
 
