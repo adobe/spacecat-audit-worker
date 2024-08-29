@@ -13,36 +13,23 @@
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
-import { JSDOM } from 'jsdom';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
-import { DESCRIPTION, H1, TITLE } from './constants.js';
 import SeoChecks from './seo-checks.js';
-
-function extractTagsFromHtml(htmlContent) {
-  const dom = new JSDOM(htmlContent);
-  const doc = dom.window.document;
-
-  const title = doc.querySelector('title')?.textContent;
-  const description = doc.querySelector('meta[name="description"]')?.getAttribute('content');
-  const h1Tags = Array.from(doc.querySelectorAll('h1')).map((h1) => h1.textContent);
-  return {
-    [TITLE]: title,
-    [DESCRIPTION]: description,
-    [H1]: h1Tags,
-  };
-}
 
 async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
-  if (!object?.Body?.rawBody || typeof object.Body.rawBody !== 'string') {
-    log.error(`No Scraped html found in S3 ${key} object`);
+  if (!object?.Body?.tags || typeof object.Body.tags !== 'object') {
+    log.error(`No Scraped tags found in S3 ${key} object`);
     return null;
   }
-  const tags = extractTagsFromHtml(object.Body.rawBody);
   const pageUrl = key.slice(prefix.length - 1).replace('.json', ''); // Remove the prefix and .json suffix
   return {
-    [pageUrl]: tags,
+    [pageUrl]: {
+      title: object.Body.tags.title,
+      description: object.Body.tags.description,
+      h1: object.Body.tags.h1 || [],
+    },
   };
 }
 
@@ -83,15 +70,8 @@ export default async function auditMetaTags(message, context) {
       log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
       return notFound('Site tags data not available');
     }
-    // Fetch keywords for top pages
-    const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-    const keywords = {};
-    topPages.forEach((page) => {
-      const endpoint = new URL(page.getURL).pathname;
-      keywords[endpoint] = page.getTopKeyword();
-    });
     // Perform SEO checks
-    const seoChecks = new SeoChecks(log, keywords);
+    const seoChecks = new SeoChecks(log);
     for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
       seoChecks.performChecks(pageUrl, pageTags);
     }

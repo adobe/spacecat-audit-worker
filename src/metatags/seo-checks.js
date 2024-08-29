@@ -20,9 +20,8 @@ import {
 } from './constants.js';
 
 class SeoChecks {
-  constructor(log, keywords) {
+  constructor(log) {
     this.log = log;
-    this.keywords = keywords;
     this.detectedTags = {
       [TITLE]: [],
       [DESCRIPTION]: [],
@@ -131,43 +130,11 @@ class SeoChecks {
       this.addDetectedTagEntry(
         url,
         H1,
-        pageTags[H1],
+        JSON.stringify(pageTags[H1]),
         MODERATE,
         `There are ${pageTags[H1].length} H1 tags on this page, which is more than the recommended count of 1.`,
       );
     }
-  }
-
-  /**
-   * Checks for keyword inclusion in the tags and adds to detected tags array if found lacking.
-   * @param {string} url - The URL of the page.
-   * @param {object} pageTags - An object containing the tags of the page.
-   */
-  checkForKeywordInclusion(url, pageTags) {
-    if (!this.keywords[url]) {
-      this.log.warn(`Keyword Inclusion check failed, keyword not found for ${url}`);
-      return;
-    }
-    const keyword = this.keywords[url].toLowerCase();
-
-    const tags = {
-      [TITLE]: pageTags[TITLE],
-      [DESCRIPTION]: pageTags[DESCRIPTION],
-      [H1]: pageTags[H1][0],
-    };
-
-    Object.entries(tags).forEach(([tagName, tagContent]) => {
-      if (!tagContent?.toLowerCase().includes(keyword)) {
-        this.addDetectedTagEntry(
-          url,
-          tagName,
-          tagContent,
-          HIGH,
-          `The ${tagName} tag on this page is missing the page's top keyword '${keyword}'. `
-          + `It's recommended to include the primary keyword in the ${tagName} tag.`,
-        );
-      }
-    });
   }
 
   /**
@@ -205,7 +172,6 @@ class SeoChecks {
     this.checkForMissingTags(url, pageTags);
     this.checkForTagsLength(url, pageTags);
     this.checkForH1Count(url, pageTags);
-    this.checkForKeywordInclusion(url, pageTags);
     this.checkForUniqueness(url, pageTags);
   }
 

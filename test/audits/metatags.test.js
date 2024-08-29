@@ -128,34 +128,10 @@ describe('Meta Tags', () => {
         expect(seoChecks.detectedTags[H1][0]).to.deep.equal({
           pageUrl: 'https://example.com',
           tagName: H1,
-          tagContent: ['First H1', 'Second H1'],
+          tagContent: JSON.stringify(['First H1', 'Second H1']),
           seoImpact: MODERATE,
           seoOpportunityText: 'There are 2 H1 tags on this page, which is more than the recommended count of 1.',
         });
-      });
-    });
-
-    describe('checkForKeywordInclusion', () => {
-      it('should detect missing keywords in tags', () => {
-        const pageTags = {
-          [TITLE]: 'Some other title',
-          [DESCRIPTION]: 'Some other description',
-          [H1]: ['Some other H1'],
-        };
-
-        seoChecks.checkForKeywordInclusion('https://example.com', pageTags);
-
-        expect(seoChecks.detectedTags[TITLE]).to.have.lengthOf(1);
-        expect(seoChecks.detectedTags[DESCRIPTION]).to.have.lengthOf(1);
-        expect(seoChecks.detectedTags[H1]).to.have.lengthOf(1);
-      });
-
-      it('should log a warning if the keyword is not found for the URL', () => {
-        const logSpy = sinon.spy(logMock, 'warn');
-        seoChecks.checkForKeywordInclusion('https://unknown.com', {});
-
-        expect(logSpy.calledOnce).to.be.true;
-        expect(logSpy.firstCall.args[0]).to.equal('Keyword Inclusion check failed, keyword not found for https://unknown.com');
       });
     });
 
@@ -182,6 +158,7 @@ describe('Meta Tags', () => {
       });
     });
   });
+
   describe('handler method', () => {
     let message;
     let context;
@@ -279,7 +256,10 @@ describe('Meta Tags', () => {
       }).returns({
         promise: sinon.stub().resolves({
           Body: {
-            rawBody: '<html lang="en"><head><meta name="description" content=""><title>Test Page</title></head><body></body></html>',
+            tags: {
+              title: 'Test Page',
+              description: '',
+            },
           },
         }),
       });
@@ -289,7 +269,10 @@ describe('Meta Tags', () => {
       }).returns({
         promise: sinon.stub().resolves({
           Body: {
-            rawBody: '<html lang="en"><head><title>Test Page</title></head><body><h1>This is a dummy H1 that is overly length from SEO perspective</h1></body></html>',
+            tags: {
+              title: 'Test Page',
+              description: 'This is a dummy H1 that is overly length from SEO perspective',
+            },
           },
         }),
       });
@@ -332,26 +315,100 @@ describe('Meta Tags', () => {
             seoOpportunityText: 'The description tag on this page has a length of 0 characters, which is below the recommended length of 140-160 characters.',
           },
           {
-            pageUrl: '/blog/page1',
-            tagName: 'description',
-            tagContent: '',
-            seoImpact: 'High',
-            seoOpportunityText: "The description tag on this page is missing the page's top keyword 'page'. It's recommended to include the primary keyword in the description tag.",
-          },
-          {
             pageUrl: '/blog/page2',
             tagName: 'description',
             tagContent: '',
             seoImpact: 'High',
             seoOpportunityText: "The description tag on this page is missing. It's recommended to have a description tag on each page.",
           },
+        ],
+        h1: [
+          {
+            pageUrl: '/blog/page1',
+            tagName: 'h1',
+            tagContent: '',
+            seoImpact: 'High',
+            seoOpportunityText: "The h1 tag on this page is missing. It's recommended to have a h1 tag on each page.",
+          },
           {
             pageUrl: '/blog/page2',
-            tagName: 'description',
-            seoImpact: 'High',
-            seoOpportunityText: "The description tag on this page is missing the page's top keyword 'test'. It's recommended to include the primary keyword in the description tag.",
+            tagName: 'h1',
+            tagContent: 'This is a dummy H1 that is overly length from SEO perspective',
+            seoImpact: 'Moderate',
+            seoOpportunityText: 'The h1 tag on this page has a length of 61 characters, which is above the recommended length of 60 characters.',
           },
         ],
+      }));
+      expect(addAuditStub.calledOnce).to.be.true;
+      expect(logStub.info.calledTwice).to.be.true;
+    });
+
+    it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
+      const site = { isLive: sinon.stub().returns(true), getId: sinon.stub().returns('site-id') };
+      const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
+        { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') }];
+
+      dataAccessStub.getSiteByID.resolves(site);
+      dataAccessStub.getConfiguration.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      });
+      dataAccessStub.getTopPagesForSite.resolves(topPages);
+
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Prefix: 'scrapes/site-id/',
+          MaxKeys: 1000,
+        })))
+        .resolves({
+          Contents: [
+            { Key: 'scrapes/site-id/blog/page1.json' },
+            { Key: 'scrapes/site-id/blog/page2.json' },
+          ],
+        });
+
+      s3ClientStub.getObject.withArgs({
+        Bucket: 'test-bucket',
+        Key: 'scrapes/site-id/blog/page1.json',
+      }).returns({
+        promise: sinon.stub().resolves({
+          Body: {
+            tags: {
+              title: 'This is an SEO optimal page1 valid title.',
+              description: 'This is a dummy description that is optimal from SEO perspective for page1. It has the correct length of characters, and is unique across all pages.',
+              h1: [
+                'This is an overly long H1 tag from SEO perspective due to its length exceeding 60 chars',
+                'This is second h1 tag on same page',
+              ],
+            },
+          },
+        }),
+      });
+      s3ClientStub.getObject.withArgs({
+        Bucket: 'test-bucket',
+        Key: 'scrapes/site-id/blog/page2.json',
+      }).returns({
+        promise: sinon.stub().resolves({
+          Body: {
+            tags: {
+              title: 'This is a SEO wise optimised page2 title.',
+              description: 'This is a dummy description that is optimal from SEO perspective for page2. It has the correct length of characters, and is unique across all pages.',
+              h1: [
+                'This is an overly long H1 tag from SEO perspective',
+              ],
+            },
+          },
+        }),
+      });
+      const addAuditStub = sinon.stub().resolves();
+      dataAccessStub.addAudit = addAuditStub;
+
+      const result = await auditMetaTags(message, context);
+
+      expect(JSON.stringify(result)).to.equal(JSON.stringify(noContent()));
+      expect(addAuditStub.calledWithMatch({
+        title: [],
+        description: [],
         h1: [
           {
             pageUrl: '/blog/page1',
@@ -435,7 +492,7 @@ describe('Meta Tags', () => {
       expect(logStub.error.calledTwice).to.be.true;
     });
 
-    it('should handle gracefully if S3 object is not a html', async () => {
+    it('should handle gracefully if S3 tags object is not valid', async () => {
       const site = { isLive: sinon.stub().returns(true), getId: sinon.stub().returns('site-id') };
       const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') }];
@@ -461,7 +518,7 @@ describe('Meta Tags', () => {
       s3ClientStub.getObject.returns({
         promise: sinon.stub().resolves({
           Body: {
-            rawBody: 5,
+            tags: 5,
           },
         }),
       });
