@@ -16,6 +16,11 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
 
 const DAYS = 30;
+const OPPTY_QUERIES = [
+  'exp-opportunity/rage-click',
+  'exp-opportunity/high-inorganic-high-bounce-rate',
+  'exp-opportunity/high-organic-low-bounce-rate',
+];
 
 let log = console;
 
@@ -40,13 +45,13 @@ export async function opportunitiesHandler(auditUrl, context, site) {
     interval: DAYS,
     granularity: 'hourly',
   };
-  const experimentationHandlers = ['rageclick'];
-  const queryResults = await rumAPIClient.queryMulti(experimentationHandlers, options);
+
+  const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const auditData = {
     experimentationOpportunities: [],
   };
   for (const queryResult of Object.keys(queryResults)) {
-    if (experimentationHandlers.includes(queryResult)) {
+    if (OPPTY_QUERIES.includes(queryResult)) {
       auditData.experimentationOpportunities.push(...queryResults[queryResult]);
     }
   }

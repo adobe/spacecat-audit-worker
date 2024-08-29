@@ -60,7 +60,7 @@
     "@adobe/spacecat-shared-data-access": "1.43.3",
     "@adobe/spacecat-shared-google-client": "1.2.2",
     "@adobe/spacecat-shared-http-utils": "1.6.8",
-    "@adobe/spacecat-shared-rum-api-client": "2.8.0",
+    "@adobe/spacecat-shared-rum-api-client": "https://gitpkg.now.sh/adobe/spacecat-shared/packages/spacecat-shared-rum-api-client?9b54c84d774a490e107c56c51db8d7a38562c8c9",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@aws-sdk/client-lambda": "3.637.0",
     "@aws-sdk/credential-provider-node": "3.637.0",
