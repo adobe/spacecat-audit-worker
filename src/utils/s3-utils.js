@@ -23,6 +23,7 @@ export async function getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log
     data?.Contents?.forEach((obj) => {
       objectKeys.push(obj.Key);
     });
+    log.info(`Fetched ${objectKeys.length} keys from S3 for bucket ${bucketName} and prefix ${prefix}`);
   } catch (err) {
     log.error(`Error while fetching S3 object keys using bucket ${bucketName} and prefix ${prefix}`, err);
   }

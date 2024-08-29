@@ -186,7 +186,7 @@ describe('Meta Tags', () => {
         log: logStub,
         dataAccess: dataAccessStub,
         s3Client: s3ClientStub,
-        env: { S3_BUCKET_NAME: 'test-bucket' },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
       };
     });
 
@@ -271,7 +271,9 @@ describe('Meta Tags', () => {
           Body: {
             tags: {
               title: 'Test Page',
-              description: 'This is a dummy H1 that is overly length from SEO perspective',
+              h1: [
+                'This is a dummy H1 that is overly length from SEO perspective',
+              ],
             },
           },
         }),
@@ -340,7 +342,7 @@ describe('Meta Tags', () => {
         ],
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.calledTwice).to.be.true;
+      expect(logStub.info.calledThrice).to.be.true;
     });
 
     it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
@@ -440,7 +442,7 @@ describe('Meta Tags', () => {
         ],
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.calledTwice).to.be.true;
+      expect(logStub.info.calledThrice).to.be.true;
     });
 
     it('should handle errors and return internalServerError', async () => {

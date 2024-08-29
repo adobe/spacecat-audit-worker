@@ -93,29 +93,29 @@ class SeoChecks {
    * Checks if tag lengths are within recommended limits
    * and adds to detected tags array if found lacking.
    * @param {string} url - The URL of the page.
-   * @param {object} tags - An object containing the tags of the page.
+   * @param {object} pageTags - An object containing the tags of the page.
    */
-  checkForTagsLength(url, tags) {
+  checkForTagsLength(url, pageTags) {
     [TITLE, DESCRIPTION].forEach((tagName) => {
-      if (tags[tagName]?.length > TAG_LENGTHS[tagName].maxLength
-          || tags[tagName]?.length < TAG_LENGTHS[tagName].minLength) {
+      if (pageTags[tagName]?.length > TAG_LENGTHS[tagName].maxLength
+          || pageTags[tagName]?.length < TAG_LENGTHS[tagName].minLength) {
         this.addDetectedTagEntry(
           url,
           tagName,
-          tags[tagName],
+          pageTags[tagName],
           MODERATE,
-          SeoChecks.createLengthCheckText(tagName, tags[tagName]),
+          SeoChecks.createLengthCheckText(tagName, pageTags[tagName]),
         );
       }
     });
 
-    if (Array.isArray(tags[H1]) && tags[H1][0]?.length > TAG_LENGTHS[H1].maxLength) {
+    if (Array.isArray(pageTags[H1]) && pageTags[H1][0]?.length > TAG_LENGTHS[H1].maxLength) {
       this.addDetectedTagEntry(
         url,
         H1,
-        tags[H1][0],
+        pageTags[H1][0],
         MODERATE,
-        SeoChecks.createLengthCheckText(H1, tags[H1][0]),
+        SeoChecks.createLengthCheckText(H1, pageTags[H1][0]),
       );
     }
   }
@@ -126,7 +126,7 @@ class SeoChecks {
    * @param {object} pageTags - An object containing the tags of the page.
    */
   checkForH1Count(url, pageTags) {
-    if (pageTags[H1]?.length > 1) {
+    if (Array.isArray(pageTags[H1]) && pageTags[H1]?.length > 1) {
       this.addDetectedTagEntry(
         url,
         H1,
