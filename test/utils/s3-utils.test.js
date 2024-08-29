@@ -78,9 +78,7 @@ describe('S3 Utility Functions', () => {
       const expectedObject = { Body: 'file contents' };
 
       const s3ClientMock = {
-        getObject: () => ({
-          promise: async () => expectedObject,
-        }),
+        send: () => expectedObject,
       };
 
       const result = await getObjectFromKey(s3ClientMock, bucketName, key, logMock);
@@ -92,11 +90,9 @@ describe('S3 Utility Functions', () => {
       const key = 'test-key';
 
       const s3ClientMock = {
-        getObject: () => ({
-          promise: async () => {
-            throw new Error('S3 getObject error');
-          },
-        }),
+        send: () => {
+          throw new Error('S3 getObject error');
+        },
       };
       const logMock2 = {
         error: (msg, err) => {

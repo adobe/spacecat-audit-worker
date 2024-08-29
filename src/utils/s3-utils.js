@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 export async function getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log) {
   const objectKeys = [];
@@ -31,12 +31,12 @@ export async function getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log
 }
 
 export async function getObjectFromKey(s3Client, bucketName, key, log) {
-  const params = {
+  const command = new GetObjectCommand({
     Bucket: bucketName,
     Key: key,
-  };
+  });
   try {
-    return await s3Client.getObject(params).promise();
+    return await s3Client.send(command);
   } catch (err) {
     log.error(`Error while fetching S3 object from bucket ${bucketName} using key ${key}`, err);
     return null;

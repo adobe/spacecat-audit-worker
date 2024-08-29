@@ -21,7 +21,7 @@ import {
   notFound,
   internalServerError,
 } from '@adobe/spacecat-shared-http-utils';
-import { ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import {
   TITLE,
   DESCRIPTION,
@@ -250,24 +250,23 @@ describe('Meta Tags', () => {
           ],
         });
 
-      s3ClientStub.getObject.withArgs({
-        Bucket: 'test-bucket',
-        Key: 'scrapes/site-id/blog/page1.json',
-      }).returns({
-        promise: sinon.stub().resolves({
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Key: 'scrapes/site-id/blog/page1.json',
+        }))).returns({
           Body: {
             tags: {
               title: 'Test Page',
               description: '',
             },
           },
-        }),
-      });
-      s3ClientStub.getObject.withArgs({
-        Bucket: 'test-bucket',
-        Key: 'scrapes/site-id/blog/page2.json',
-      }).returns({
-        promise: sinon.stub().resolves({
+        });
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Key: 'scrapes/site-id/blog/page2.json',
+        }))).returns({
           Body: {
             tags: {
               title: 'Test Page',
@@ -276,8 +275,7 @@ describe('Meta Tags', () => {
               ],
             },
           },
-        }),
-      });
+        });
       const addAuditStub = sinon.stub().resolves();
       dataAccessStub.addAudit = addAuditStub;
 
@@ -369,11 +367,12 @@ describe('Meta Tags', () => {
           ],
         });
 
-      s3ClientStub.getObject.withArgs({
-        Bucket: 'test-bucket',
-        Key: 'scrapes/site-id/blog/page1.json',
-      }).returns({
-        promise: sinon.stub().resolves({
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Key: 'scrapes/site-id/blog/page1.json',
+        }))).returns({
+
           Body: {
             tags: {
               title: 'This is an SEO optimal page1 valid title.',
@@ -384,13 +383,12 @@ describe('Meta Tags', () => {
               ],
             },
           },
-        }),
-      });
-      s3ClientStub.getObject.withArgs({
-        Bucket: 'test-bucket',
-        Key: 'scrapes/site-id/blog/page2.json',
-      }).returns({
-        promise: sinon.stub().resolves({
+        });
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Key: 'scrapes/site-id/blog/page2.json',
+        }))).returns({
           Body: {
             tags: {
               title: 'This is a SEO wise optimised page2 title.',
@@ -400,8 +398,7 @@ describe('Meta Tags', () => {
               ],
             },
           },
-        }),
-      });
+        });
       const addAuditStub = sinon.stub().resolves();
       dataAccessStub.addAudit = addAuditStub;
 
@@ -475,15 +472,14 @@ describe('Meta Tags', () => {
           ],
         });
 
-      s3ClientStub.getObject.withArgs({
-        Bucket: 'test-bucket',
-        Key: 'scrapes/site-id/blog/page1.json',
-      }).returns({
-        promise: sinon.stub().resolves({
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Key: 'scrapes/site-id/blog/page1.json',
+        }))).returns({
           Body: {
           },
-        }),
-      });
+        });
       const addAuditStub = sinon.stub().resolves();
       dataAccessStub.addAudit = addAuditStub;
 
@@ -517,13 +513,13 @@ describe('Meta Tags', () => {
           ],
         });
 
-      s3ClientStub.getObject.returns({
-        promise: sinon.stub().resolves({
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand))
+        .returns({
           Body: {
             tags: 5,
           },
-        }),
-      });
+        });
       const result = await auditMetaTags(message, context);
 
       expect(JSON.stringify(result)).to.equal(JSON.stringify(notFound('Site tags data not available')));
