@@ -17,9 +17,9 @@ import { getRUMDomainkey } from '../support/utils.js';
 
 const DAYS = 30;
 const OPPTY_QUERIES = [
-  'exp-opportunity/rage-click',
-  'exp-opportunity/high-inorganic-high-bounce-rate',
-  'exp-opportunity/high-organic-low-bounce-rate',
+  'rageclick',
+  'high-inorganic-high-bounce-rate',
+  'high-organic-low-ctr',
 ];
 
 let log = console;

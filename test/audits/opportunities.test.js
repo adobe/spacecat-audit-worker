@@ -93,17 +93,20 @@ describe('Opportunities Tests', () => {
     };
     const auditData = await opportunitiesHandler(url, context, site);
 
-    expect(context.rumApiClient.queryMulti).calledWith(
-      ['rageclick'],
-      {
-        domain: 'https://abc.com',
-        domainkey: 'abc_dummy_key',
-        interval: 30,
-        granularity: 'hourly',
-      },
-    );
+    const expected = Object.values(opportunitiesData).flatMap((data) => data);
+
+    expect(context.rumApiClient.queryMulti).calledWith([
+      'rageclick',
+      'high-inorganic-high-bounce-rate',
+      'high-organic-low-ctr',
+    ], {
+      domain: 'https://abc.com',
+      domainkey: 'abc_dummy_key',
+      interval: 30,
+      granularity: 'hourly',
+    });
     expect(
       auditData.auditResult.experimentationOpportunities,
-    ).to.deep.equal(opportunitiesData.rageclick);
+    ).to.deep.equal(expected);
   });
 });
