@@ -21,7 +21,7 @@ export const rumData = [
     inpCount: 3,
     ttfb: 520.4500000476837,
     ttfbCount: 18,
-    pageviews: 2620,
+    pageviews: 9620,
   },
   {
     url: 'https://www.aem.live/developer/block-collection',
@@ -33,7 +33,7 @@ export const rumData = [
     inpCount: 2,
     ttfb: 122.90000003576279,
     ttfbCount: 4,
-    pageviews: 2000,
+    pageviews: 8000,
   },
   {
     url: 'https://www.aem.live/docs/',
@@ -45,7 +45,7 @@ export const rumData = [
     inpCount: 8,
     ttfb: 96.97500000149012,
     ttfbCount: 16,
-    pageviews: 1910,
+    pageviews: 7910,
   },
   {
     url: 'https://www.aem.live/tools/rum/explorer.html',
@@ -57,7 +57,7 @@ export const rumData = [
     inpCount: 5,
     ttfb: 312.69999980926514,
     ttfbCount: 9,
-    pageviews: 1600,
+    pageviews: 7600,
   },
   {
     url: 'https://www.aem.live/developer/tutorial',

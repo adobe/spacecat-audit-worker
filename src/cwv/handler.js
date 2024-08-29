@@ -29,6 +29,9 @@ export async function CWVRunner(auditUrl, context, site) {
   const cwvData = await rumAPIClient.query('cwv', options);
   const auditResult = {
     cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
+    auditContext: {
+      interval: INTERVAL,
+    },
   };
 
   return {
