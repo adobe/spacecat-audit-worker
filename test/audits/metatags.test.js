@@ -534,7 +534,9 @@ describe('Meta Tags', () => {
         .returns({
           Body: {
             transformToString: () => JSON.stringify({
-              tags: 5,
+              scrapeResult: {
+                tags: 5,
+              },
             }),
           },
         });
