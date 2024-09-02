@@ -75,14 +75,18 @@ describe('S3 Utility Functions', () => {
     it('should return the S3 object when getObject succeeds', async () => {
       const bucketName = 'test-bucket';
       const key = 'test-key';
-      const expectedObject = { Body: 'file contents' };
+      const expectedObject = { Body: { transformToString: () => '{"tags": {"title": "sample-title"}}' } };
 
       const s3ClientMock = {
         send: () => expectedObject,
       };
 
       const result = await getObjectFromKey(s3ClientMock, bucketName, key, logMock);
-      expect(result).to.deep.equal(expectedObject);
+      expect(result).to.deep.equal({
+        tags: {
+          title: 'sample-title',
+        },
+      });
     });
 
     it('should return null and log an error when getObject fails', async () => {

@@ -36,7 +36,9 @@ export async function getObjectFromKey(s3Client, bucketName, key, log) {
     Key: key,
   });
   try {
-    return await s3Client.send(command);
+    const response = await s3Client.send(command);
+    const body = await response.Body.transformToString();
+    return JSON.parse(body);
   } catch (err) {
     log.error(`Error while fetching S3 object from bucket ${bucketName} using key ${key}`, err);
     return null;

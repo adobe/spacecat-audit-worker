@@ -245,35 +245,39 @@ describe('Meta Tags', () => {
         })))
         .resolves({
           Contents: [
-            { Key: 'scrapes/site-id/blog/page1.json' },
-            { Key: 'scrapes/site-id/blog/page2.json' },
+            { Key: 'scrapes/site-id/blog/page1/scrape.json' },
+            { Key: 'scrapes/site-id/blog/page2/scrape.json' },
           ],
         });
 
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
           Bucket: 'test-bucket',
-          Key: 'scrapes/site-id/blog/page1.json',
+          Key: 'scrapes/site-id/blog/page1/scrape.json',
         }))).returns({
           Body: {
-            tags: {
-              title: 'Test Page',
-              description: '',
-            },
+            transformToString: () => JSON.stringify({
+              tags: {
+                title: 'Test Page',
+                description: '',
+              },
+            }),
           },
         });
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
           Bucket: 'test-bucket',
-          Key: 'scrapes/site-id/blog/page2.json',
+          Key: 'scrapes/site-id/blog/page2/scrape.json',
         }))).returns({
           Body: {
-            tags: {
-              title: 'Test Page',
-              h1: [
-                'This is a dummy H1 that is overly length from SEO perspective',
-              ],
-            },
+            transformToString: () => JSON.stringify({
+              tags: {
+                title: 'Test Page',
+                h1: [
+                  'This is a dummy H1 that is overly length from SEO perspective',
+                ],
+              },
+            }),
           },
         });
       const addAuditStub = sinon.stub().resolves();
@@ -362,41 +366,44 @@ describe('Meta Tags', () => {
         })))
         .resolves({
           Contents: [
-            { Key: 'scrapes/site-id/blog/page1.json' },
-            { Key: 'scrapes/site-id/blog/page2.json' },
+            { Key: 'scrapes/site-id/blog/page1/scrape.json' },
+            { Key: 'scrapes/site-id/blog/page2/scrape.json' },
           ],
         });
 
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
           Bucket: 'test-bucket',
-          Key: 'scrapes/site-id/blog/page1.json',
+          Key: 'scrapes/site-id/blog/page1/scrape.json',
         }))).returns({
-
           Body: {
-            tags: {
-              title: 'This is an SEO optimal page1 valid title.',
-              description: 'This is a dummy description that is optimal from SEO perspective for page1. It has the correct length of characters, and is unique across all pages.',
-              h1: [
-                'This is an overly long H1 tag from SEO perspective due to its length exceeding 60 chars',
-                'This is second h1 tag on same page',
-              ],
-            },
+            transformToString: () => JSON.stringify({
+              tags: {
+                title: 'This is an SEO optimal page1 valid title.',
+                description: 'This is a dummy description that is optimal from SEO perspective for page1. It has the correct length of characters, and is unique across all pages.',
+                h1: [
+                  'This is an overly long H1 tag from SEO perspective due to its length exceeding 60 chars',
+                  'This is second h1 tag on same page',
+                ],
+              },
+            }),
           },
         });
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
           Bucket: 'test-bucket',
-          Key: 'scrapes/site-id/blog/page2.json',
+          Key: 'scrapes/site-id/blog/page2/scrape.json',
         }))).returns({
           Body: {
-            tags: {
-              title: 'This is a SEO wise optimised page2 title.',
-              description: 'This is a dummy description that is optimal from SEO perspective for page2. It has the correct length of characters, and is unique across all pages.',
-              h1: [
-                'This is an overly long H1 tag from SEO perspective',
-              ],
-            },
+            transformToString: () => JSON.stringify({
+              tags: {
+                title: 'This is a SEO wise optimised page2 title.',
+                description: 'This is a dummy description that is optimal from SEO perspective for page2. It has the correct length of characters, and is unique across all pages.',
+                h1: [
+                  'This is an overly long H1 tag from SEO perspective',
+                ],
+              },
+            }),
           },
         });
       const addAuditStub = sinon.stub().resolves();
