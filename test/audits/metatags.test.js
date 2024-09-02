@@ -485,6 +485,7 @@ describe('Meta Tags', () => {
           Key: 'scrapes/site-id/blog/page1.json',
         }))).returns({
           Body: {
+            transformToString: () => '',
           },
         });
       const addAuditStub = sinon.stub().resolves();
@@ -494,7 +495,7 @@ describe('Meta Tags', () => {
 
       expect(JSON.stringify(result)).to.equal(JSON.stringify(notFound('Site tags data not available')));
       expect(addAuditStub.calledOnce).to.be.false;
-      expect(logStub.error.calledTwice).to.be.true;
+      expect(logStub.error.calledThrice).to.be.true;
     });
 
     it('should handle gracefully if S3 tags object is not valid', async () => {
@@ -524,7 +525,9 @@ describe('Meta Tags', () => {
         .withArgs(sinon.match.instanceOf(GetObjectCommand))
         .returns({
           Body: {
-            tags: 5,
+            transformToString: () => JSON.stringify({
+              tags: 5,
+            }),
           },
         });
       const result = await auditMetaTags(message, context);
