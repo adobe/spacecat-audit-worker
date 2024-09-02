@@ -11,17 +11,25 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import URI from 'urijs';
+import { hasText } from '@adobe/spacecat-shared-utils';
 import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
 
+export function getAuditUrl(baseURL) {
+  const uri = new URI(baseURL);
+  return hasText(uri.subdomain()) ? baseURL.replace(/https?:\/\//, '') : baseURL.replace(/https?:\/\//, 'www.');
+}
+
 export async function CWVRunner(auditUrl, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
+  const finalUrl = getAuditUrl(auditUrl);
   const options = {
-    domain: auditUrl,
+    domain: finalUrl,
     domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
@@ -36,10 +44,11 @@ export async function CWVRunner(auditUrl, context, site) {
 
   return {
     auditResult,
-    fullAuditRef: auditUrl,
+    fullAuditRef: finalUrl,
   };
 }
 
 export default new AuditBuilder()
+  .withUrlResolver((site) => site.getBaseURL())
   .withRunner(CWVRunner)
   .build();
