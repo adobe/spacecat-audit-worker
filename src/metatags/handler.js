@@ -20,10 +20,10 @@ import SeoChecks from './seo-checks.js';
 async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!object?.Body?.tags || typeof object.Body.tags !== 'object') {
-    log.error(`No Scraped tags found in S3 ${key} object`);
+    log.error(`No Scraped tags found in S3 ${key} object with body ${object.Body}`);
     return null;
   }
-  const pageUrl = key.slice(prefix.length - 1).replace('.json', ''); // Remove the prefix and .json suffix
+  const pageUrl = key.slice(prefix.length - 1).replace('scrape.json', ''); // Remove the prefix and .json suffix
   return {
     [pageUrl]: {
       title: object.Body.tags.title,
