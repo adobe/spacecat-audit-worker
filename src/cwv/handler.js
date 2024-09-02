@@ -13,6 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { hasNonWWWSubdomain } from '../experimentation/handler.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
@@ -20,13 +21,28 @@ const INTERVAL = 7; // days
 export async function CWVRunner(auditUrl, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
-  const options = {
+  let options = {
     domain: auditUrl,
     domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
   };
-  const cwvData = await rumAPIClient.query('cwv', options);
+  let cwvData;
+
+  try {
+    cwvData = await rumAPIClient.query('cwv', options);
+    /* c8 ignore start */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (e) {
+    if (!hasNonWWWSubdomain(auditUrl) && !auditUrl.toLowerCase().startsWith('www')) {
+      options = {
+        ...options,
+        domain: `www.${auditUrl}`,
+      };
+      cwvData = await rumAPIClient.query('cwv', options);
+    }
+  }
+  /* c8 ignore stop */
   const auditResult = {
     cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
     auditContext: {
