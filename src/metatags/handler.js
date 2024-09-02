@@ -28,6 +28,7 @@ async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)
     return null;
   }
   const pageUrl = key.slice(prefix.length - 1).replace('scrape.json', ''); // Remove the prefix and .json suffix
+  log.info(`Scraped tags for ${pageUrl} : ${JSON.stringify(object.scrapeResult.tags)}`);
   return {
     [pageUrl]: {
       title: object.scrapeResult.tags.title,
