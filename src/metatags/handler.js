@@ -19,16 +19,16 @@ import SeoChecks from './seo-checks.js';
 
 async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
-  if (!object?.tags || typeof object.tags !== 'object') {
+  if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`No Scraped tags found in S3 ${key} object, body ${JSON.stringify(object)}`);
     return null;
   }
   const pageUrl = key.slice(prefix.length - 1).replace('scrape.json', ''); // Remove the prefix and .json suffix
   return {
     [pageUrl]: {
-      title: object.tags.title,
-      description: object.tags.description,
-      h1: object.tags.h1 || [],
+      title: object.scrapeResult.tags.title,
+      description: object.scrapeResult.tags.description,
+      h1: object.scrapeResult.tags.h1 || [],
     },
   };
 }
@@ -66,10 +66,12 @@ export default async function auditMetaTags(message, context) {
         Object.assign(extractedTags, pageMetadata);
       }
     }
-    if (Object.entries(extractedTags).length === 0) {
+    const extractedTagsCount = Object.entries(extractedTags).length;
+    if (extractedTagsCount === 0) {
       log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
       return notFound('Site tags data not available');
     }
+    log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
     // Perform SEO checks
     const seoChecks = new SeoChecks(log);
     for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {

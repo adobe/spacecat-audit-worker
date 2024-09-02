@@ -257,9 +257,11 @@ describe('Meta Tags', () => {
         }))).returns({
           Body: {
             transformToString: () => JSON.stringify({
-              tags: {
-                title: 'Test Page',
-                description: '',
+              scrapeResult: {
+                tags: {
+                  title: 'Test Page',
+                  description: '',
+                },
               },
             }),
           },
@@ -271,11 +273,13 @@ describe('Meta Tags', () => {
         }))).returns({
           Body: {
             transformToString: () => JSON.stringify({
-              tags: {
-                title: 'Test Page',
-                h1: [
-                  'This is a dummy H1 that is overly length from SEO perspective',
-                ],
+              scrapeResult: {
+                tags: {
+                  title: 'Test Page',
+                  h1: [
+                    'This is a dummy H1 that is overly length from SEO perspective',
+                  ],
+                },
               },
             }),
           },
@@ -344,7 +348,7 @@ describe('Meta Tags', () => {
         ],
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.calledThrice).to.be.true;
+      expect(logStub.info.callCount).to.equal(4);
     });
 
     it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
@@ -378,13 +382,15 @@ describe('Meta Tags', () => {
         }))).returns({
           Body: {
             transformToString: () => JSON.stringify({
-              tags: {
-                title: 'This is an SEO optimal page1 valid title.',
-                description: 'This is a dummy description that is optimal from SEO perspective for page1. It has the correct length of characters, and is unique across all pages.',
-                h1: [
-                  'This is an overly long H1 tag from SEO perspective due to its length exceeding 60 chars',
-                  'This is second h1 tag on same page',
-                ],
+              scrapeResult: {
+                tags: {
+                  title: 'This is an SEO optimal page1 valid title.',
+                  description: 'This is a dummy description that is optimal from SEO perspective for page1. It has the correct length of characters, and is unique across all pages.',
+                  h1: [
+                    'This is an overly long H1 tag from SEO perspective due to its length exceeding 60 chars',
+                    'This is second h1 tag on same page',
+                  ],
+                },
               },
             }),
           },
@@ -396,12 +402,14 @@ describe('Meta Tags', () => {
         }))).returns({
           Body: {
             transformToString: () => JSON.stringify({
-              tags: {
-                title: 'This is a SEO wise optimised page2 title.',
-                description: 'This is a dummy description that is optimal from SEO perspective for page2. It has the correct length of characters, and is unique across all pages.',
-                h1: [
-                  'This is an overly long H1 tag from SEO perspective',
-                ],
+              scrapeResult: {
+                tags: {
+                  title: 'This is a SEO wise optimised page2 title.',
+                  description: 'This is a dummy description that is optimal from SEO perspective for page2. It has the correct length of characters, and is unique across all pages.',
+                  h1: [
+                    'This is an overly long H1 tag from SEO perspective',
+                  ],
+                },
               },
             }),
           },
@@ -446,7 +454,7 @@ describe('Meta Tags', () => {
         ],
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.calledThrice).to.be.true;
+      expect(logStub.info.callCount).to.equal(4);
     });
 
     it('should handle errors and return internalServerError', async () => {
