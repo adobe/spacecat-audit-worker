@@ -17,7 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
-import { CWVRunner } from '../../src/cwv/handler.js';
+import { CWVRunner, getAuditUrl } from '../../src/cwv/handler.js';
 import { rumData } from '../fixtures/rum-data.js';
 
 use(sinonChai);
@@ -59,7 +59,7 @@ describe('Index Tests', () => {
   });
 
   it('cwv audit runs rum api client cwv query', async () => {
-    const result = await CWVRunner('www.spacecat.com', context, site);
+    const result = await CWVRunner('https://spacecat.com', context, site);
     expect(result).to.deep.equal({
       auditResult: {
         cwv: rumData.filter((data) => data.pageviews >= 7000),
@@ -69,5 +69,14 @@ describe('Index Tests', () => {
       },
       fullAuditRef: auditUrl,
     });
+  });
+
+  it('audit url calculated correctly', async () => {
+    expect(getAuditUrl('http://spacecat.com')).to.equal('www.spacecat.com');
+    expect(getAuditUrl('https://spacecat.com')).to.equal('www.spacecat.com');
+    expect(getAuditUrl('http://www.spacecat.com')).to.equal('www.spacecat.com');
+    expect(getAuditUrl('https://www.spacecat.com')).to.equal('www.spacecat.com');
+    expect(getAuditUrl('http://blog.spacecat.com')).to.equal('blog.spacecat.com');
+    expect(getAuditUrl('https://blog.spacecat.com')).to.equal('blog.spacecat.com');
   });
 });

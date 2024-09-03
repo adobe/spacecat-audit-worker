@@ -1,3 +1,10 @@
+## [1.29.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.29.1...v1.29.2) (2024-09-02)
+
+
+### Bug Fixes
+
+* **cwv:** audit url calculating for rum bundler API ([#386](https://github.com/adobe/spacecat-audit-worker/issues/386)) ([1ac8123](https://github.com/adobe/spacecat-audit-worker/commit/1ac8123b08d8e2fbb62c10addf9893ba3124019c))
+
 ## [1.29.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.29.0...v1.29.1) (2024-08-28)
 
 
