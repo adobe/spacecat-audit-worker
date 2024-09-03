@@ -10,14 +10,17 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
+import { wwwUrlResolver } from '../common/audit.js';
 
 const DAYS = 30;
-
-let log = console;
+const OPPTY_QUERIES = [
+  'rageclick',
+  'high-inorganic-high-bounce-rate',
+  'high-organic-low-ctr',
+];
 
 /**
  * Audit handler container for all the opportunities
@@ -27,10 +30,8 @@ let log = console;
  * @returns
  */
 
-export async function opportunitiesHandler(auditUrl, context, site) {
-  log = context.log;
-  log.info(`Received Opportunities audit request for ${auditUrl}`);
-  const startTime = process.hrtime();
+export async function handler(auditUrl, context, site) {
+  const { log } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
@@ -40,30 +41,21 @@ export async function opportunitiesHandler(auditUrl, context, site) {
     interval: DAYS,
     granularity: 'hourly',
   };
-  const experimentationHandlers = ['rageclick'];
-  const queryResults = await rumAPIClient.queryMulti(experimentationHandlers, options);
-  const auditData = {
-    experimentationOpportunities: [],
-  };
-  for (const queryResult of Object.keys(queryResults)) {
-    if (experimentationHandlers.includes(queryResult)) {
-      auditData.experimentationOpportunities.push(...queryResults[queryResult]);
-    }
-  }
 
-  const endTime = process.hrtime(startTime);
-  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
-  const formattedElapsed = elapsedSeconds.toFixed(2);
+  const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
+  const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
 
-  log.info(`Opportunities Audit is completed in ${formattedElapsed} seconds for ${auditUrl}`);
+  log.info(`Found ${experimentationOpportunities.length} many experimentation opportunites for ${auditUrl}`);
 
   return {
-    auditResult: auditData,
+    auditResult: {
+      experimentationOpportunities,
+    },
     fullAuditRef: auditUrl,
   };
 }
 
 export default new AuditBuilder()
-  .withRunner(opportunitiesHandler)
+  .withRunner(handler)
+  .withUrlResolver(wwwUrlResolver)
   .build();
-/* c8 ignore stop */
