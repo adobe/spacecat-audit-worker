@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { opportunitiesHandler } from '../../src/opportunities/opportunities.js';
+import { handler } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/opportunitiesdata.json' assert { type: 'json' };
 
@@ -91,7 +91,7 @@ describe('Opportunities Tests', () => {
     const site = {
       getBaseURL: () => 'https://abc.com',
     };
-    const auditData = await opportunitiesHandler(url, context, site);
+    const auditData = await handler(url, context, site);
 
     const expected = Object.values(opportunitiesData).flatMap((data) => data);
 
