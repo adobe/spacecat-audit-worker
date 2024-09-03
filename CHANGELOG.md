@@ -1,3 +1,15 @@
+# [1.30.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.29.2...v1.30.0) (2024-09-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.9.0 ([#388](https://github.com/adobe/spacecat-audit-worker/issues/388)) ([b55e4fb](https://github.com/adobe/spacecat-audit-worker/commit/b55e4fb993a7d3f782e4e2109ce63c46e2df74bf))
+
+
+### Features
+
+* high bounce rate and low ctr opportunities ([#384](https://github.com/adobe/spacecat-audit-worker/issues/384)) ([33aa025](https://github.com/adobe/spacecat-audit-worker/commit/33aa0257031ddc92c47718aaf100a30cf7662a61))
+
 ## [1.29.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.29.2...v1.29.3) (2024-09-03)
 
 
