@@ -13,6 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
+import { wwwUrlResolver } from '../common/audit.js';
 
 const DAYS = 30;
 const OPPTY_QUERIES = [
@@ -56,4 +57,5 @@ export async function handler(auditUrl, context, site) {
 
 export default new AuditBuilder()
   .withRunner(handler)
+  .withUrlResolver(wwwUrlResolver)
   .build();
