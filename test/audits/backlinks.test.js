@@ -56,6 +56,14 @@ describe('Backlinks Tests', function () {
         enabledByDefault: false,
         dependencies: [],
       },
+      'broken-backlinks-auto-suggest': {
+        enabled: {
+          sites: ['site1', 'site2', 'site3', 'site'],
+          orgs: ['org1', 'org2', 'org3'],
+        },
+        enabledByDefault: false,
+        dependencies: [],
+      },
     },
     jobs: [],
   };
@@ -317,7 +325,8 @@ describe('Backlinks Tests', function () {
     expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
   });
 
-  it('should successfully perform an audit to detect broken backlinks based on keywords from top pages', async () => {
+  it('should successfully perform an audit to detect broken backlinks and suggest fixes based on keywords from top pages if auto-suggest'
+    + ' enabled', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
     mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
@@ -354,6 +363,49 @@ describe('Backlinks Tests', function () {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+  });
+
+  it('should successfully perform an audit to detect broken backlinks and not suggest fixes if auto-suggest disabled', async () => {
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
+    configuration.disableHandlerForSite('broken-backlinks-auto-suggest', { getId: () => site2.getId(), getOrganizationId: () => org.getId() });
+    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+
+    nock(site2.getBaseURL())
+      .get(/.*/)
+      .reply(301, undefined, { location: 'https://www.foo.com' });
+
+    nock('https://www.foo.com')
+      .get(/.*/)
+      .reply(200);
+
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(200, auditResult);
+
+    const expectedMessage = {
+      type: message.type,
+      url: site2.getBaseURL(),
+      auditContext: {
+        finalUrl: 'www.foo.com',
+      },
+      auditResult: {
+        finalUrl: 'www.foo.com',
+        brokenBacklinks: auditResult.backlinks,
+        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=www.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
+      },
+    };
+
+    const response = await auditBrokenBacklinks({
+      url: site2.getId(), type: 'broken-backlinks',
+    }, context);
+
+    expect(response.status).to.equal(204);
+    expect(mockDataAccess.getTopPagesForSite).to.not.have.been.called;
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been
+      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+    expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
   });
 
   it('should detect broken backlinks and save the proper audit result, even if the suggested fix fails', async () => {
