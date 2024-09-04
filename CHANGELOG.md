@@ -1,3 +1,10 @@
+## [1.30.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.2...v1.30.3) (2024-09-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-google-client to v1.2.3 ([#395](https://github.com/adobe/spacecat-audit-worker/issues/395)) ([e92d4cd](https://github.com/adobe/spacecat-audit-worker/commit/e92d4cd9223d35f959a000134e1660c6b2d15a21))
+
 ## [1.30.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.1...v1.30.2) (2024-09-04)
 
 
