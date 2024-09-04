@@ -1,3 +1,10 @@
+## [1.30.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.1...v1.30.2) (2024-09-04)
+
+
+### Bug Fixes
+
+* **experimentation-ess:** audit url calculating for rum bundler API ([#389](https://github.com/adobe/spacecat-audit-worker/issues/389)) ([488a9a7](https://github.com/adobe/spacecat-audit-worker/commit/488a9a7fdcc248a8f49e30b211f6c36d3aa68091))
+
 ## [1.30.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.0...v1.30.1) (2024-09-04)
 
 
