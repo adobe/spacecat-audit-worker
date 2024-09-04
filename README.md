@@ -1,7 +1,5 @@
 # SpaceCat Audit Worker
 
-Test
-
 > SpaceCat Audit Worker for auditing edge delivery sites.
 
 ## Status
