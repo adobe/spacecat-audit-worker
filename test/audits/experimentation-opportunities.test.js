@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { opportunitiesHandler } from '../../src/opportunities/opportunities.js';
+import { handler } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/opportunitiesdata.json' assert { type: 'json' };
 
@@ -91,19 +91,22 @@ describe('Opportunities Tests', () => {
     const site = {
       getBaseURL: () => 'https://abc.com',
     };
-    const auditData = await opportunitiesHandler(url, context, site);
+    const auditData = await handler(url, context, site);
 
-    expect(context.rumApiClient.queryMulti).calledWith(
-      ['rageclick'],
-      {
-        domain: 'https://abc.com',
-        domainkey: 'abc_dummy_key',
-        interval: 30,
-        granularity: 'hourly',
-      },
-    );
+    const expected = Object.values(opportunitiesData).flatMap((data) => data);
+
+    expect(context.rumApiClient.queryMulti).calledWith([
+      'rageclick',
+      'high-inorganic-high-bounce-rate',
+      'high-organic-low-ctr',
+    ], {
+      domain: 'https://abc.com',
+      domainkey: 'abc_dummy_key',
+      interval: 30,
+      granularity: 'hourly',
+    });
     expect(
       auditData.auditResult.experimentationOpportunities,
-    ).to.deep.equal(opportunitiesData.rageclick);
+    ).to.deep.equal(expected);
   });
 });

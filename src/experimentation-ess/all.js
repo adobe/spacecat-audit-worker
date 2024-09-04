@@ -13,6 +13,7 @@
 /* c8 ignore start */
 import { AuditBuilder } from '../common/audit-builder.js';
 import { processAudit, postProcessor } from './common.js';
+import { wwwUrlResolver } from '../common/audit.js';
 
 const DAYS = 180;
 
@@ -79,6 +80,7 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
 
 export default new AuditBuilder()
   .withRunner(essExperimentationAllAuditRunner)
+  .withUrlResolver(wwwUrlResolver)
   .withPostProcessors([postProcessor])
   .withPersister(persistOnlyMetadata)
   .withMessageSender(() => true)

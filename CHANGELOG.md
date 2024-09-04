@@ -1,3 +1,50 @@
+## [1.30.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.2...v1.30.3) (2024-09-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-google-client to v1.2.3 ([#395](https://github.com/adobe/spacecat-audit-worker/issues/395)) ([e92d4cd](https://github.com/adobe/spacecat-audit-worker/commit/e92d4cd9223d35f959a000134e1660c6b2d15a21))
+
+## [1.30.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.1...v1.30.2) (2024-09-04)
+
+
+### Bug Fixes
+
+* **experimentation-ess:** audit url calculating for rum bundler API ([#389](https://github.com/adobe/spacecat-audit-worker/issues/389)) ([488a9a7](https://github.com/adobe/spacecat-audit-worker/commit/488a9a7fdcc248a8f49e30b211f6c36d3aa68091))
+
+## [1.30.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.0...v1.30.1) (2024-09-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-ahrefs-client to v1.5.2 ([#394](https://github.com/adobe/spacecat-audit-worker/issues/394)) ([6e684ff](https://github.com/adobe/spacecat-audit-worker/commit/6e684ffebf30ab4fdd633f2a4419c646675e80e7))
+
+# [1.30.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.29.2...v1.30.0) (2024-09-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.9.0 ([#388](https://github.com/adobe/spacecat-audit-worker/issues/388)) ([b55e4fb](https://github.com/adobe/spacecat-audit-worker/commit/b55e4fb993a7d3f782e4e2109ce63c46e2df74bf))
+
+
+### Features
+
+* high bounce rate and low ctr opportunities ([#384](https://github.com/adobe/spacecat-audit-worker/issues/384)) ([33aa025](https://github.com/adobe/spacecat-audit-worker/commit/33aa0257031ddc92c47718aaf100a30cf7662a61))
+
+## [1.29.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.29.2...v1.29.3) (2024-09-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.9.0 ([#388](https://github.com/adobe/spacecat-audit-worker/issues/388)) ([b55e4fb](https://github.com/adobe/spacecat-audit-worker/commit/b55e4fb993a7d3f782e4e2109ce63c46e2df74bf))
+
+## [1.29.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.29.1...v1.29.2) (2024-09-02)
+
+
+### Bug Fixes
+
+* **cwv:** audit url calculating for rum bundler API ([#386](https://github.com/adobe/spacecat-audit-worker/issues/386)) ([1ac8123](https://github.com/adobe/spacecat-audit-worker/commit/1ac8123b08d8e2fbb62c10addf9893ba3124019c))
+
 ## [1.29.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.29.0...v1.29.1) (2024-08-28)
 
 

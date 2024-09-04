@@ -13,6 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { wwwUrlResolver } from '../common/audit.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
@@ -41,5 +42,6 @@ export async function CWVRunner(auditUrl, context, site) {
 }
 
 export default new AuditBuilder()
+  .withUrlResolver(wwwUrlResolver)
   .withRunner(CWVRunner)
   .build();
