@@ -63,6 +63,9 @@ describe('Index Tests', () => {
     expect(result).to.deep.equal({
       auditResult: {
         cwv: rumData.filter((data) => data.pageviews >= 7000),
+        auditContext: {
+          interval: 7,
+        },
       },
       fullAuditRef: auditUrl,
     });

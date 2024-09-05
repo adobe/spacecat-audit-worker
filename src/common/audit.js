@@ -10,8 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
 import { ok } from '@adobe/spacecat-shared-http-utils';
+import URI from 'urijs';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 export async function defaultMessageSender(resultMessage, context) {
@@ -50,6 +51,12 @@ export async function defaultOrgProvider(orgId, context) {
 
 export async function defaultUrlResolver(site) {
   return composeAuditURL(site.getBaseURL());
+}
+
+export function wwwUrlResolver(site) {
+  const baseURL = site.getBaseURL();
+  const uri = new URI(baseURL);
+  return hasText(uri.subdomain()) ? baseURL.replace(/https?:\/\//, '') : baseURL.replace(/https?:\/\//, 'www.');
 }
 
 export async function noopUrlResolver(site) {
