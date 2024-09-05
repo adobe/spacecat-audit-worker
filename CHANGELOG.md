@@ -1,3 +1,10 @@
+## [1.30.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.4...v1.30.5) (2024-09-05)
+
+
+### Bug Fixes
+
+* **deps:** update dependency diff to v6 ([#387](https://github.com/adobe/spacecat-audit-worker/issues/387)) ([55585d5](https://github.com/adobe/spacecat-audit-worker/commit/55585d54eec766e950daa1dde8f196aa11e935e9))
+
 ## [1.30.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.3...v1.30.4) (2024-09-05)
 
 
