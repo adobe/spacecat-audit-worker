@@ -11,37 +11,51 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { getRUMDomainkey } from '../support/utils.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
-const DAILY_THRESHOLD = 1000;
-const INTERVAL = 7; // days
+const DAYS = 30;
+const OPPTY_QUERIES = [
+  'rageclick',
+  'high-inorganic-high-bounce-rate',
+  'high-organic-low-ctr',
+];
 
-export async function CWVRunner(auditUrl, context, site) {
+/**
+ * Audit handler container for all the opportunities
+ * @param {*} auditUrl
+ * @param {*} context
+ * @param {*} site
+ * @returns
+ */
+
+export async function handler(auditUrl, context, site) {
+  const { log } = context;
+
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: auditUrl,
     domainkey,
-    interval: INTERVAL,
+    interval: DAYS,
     granularity: 'hourly',
   };
-  const cwvData = await rumAPIClient.query('cwv', options);
-  const auditResult = {
-    cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
-    auditContext: {
-      interval: INTERVAL,
-    },
-  };
+
+  const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
+  const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
+
+  log.info(`Found ${experimentationOpportunities.length} many experimentation opportunites for ${auditUrl}`);
 
   return {
-    auditResult,
+    auditResult: {
+      experimentationOpportunities,
+    },
     fullAuditRef: auditUrl,
   };
 }
 
 export default new AuditBuilder()
+  .withRunner(handler)
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(CWVRunner)
   .build();

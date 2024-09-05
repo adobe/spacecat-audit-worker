@@ -11,10 +11,10 @@
  */
 import wrap from '@adobe/helix-shared-wrap';
 import { helixStatus } from '@adobe/helix-status';
-import { Response } from '@adobe/fetch';
 import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
 import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
+import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 
 import sqs from './support/sqs.js';
 import apex from './apex/handler.js';
@@ -29,6 +29,9 @@ import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
+import experimentationOpportunities from './experimentation-opportunities/experimentation-opportunities.js';
+import costs from './costs/handler.js';
+import structuredData from './structured-data/handler.js';
 
 const HANDLERS = {
   apex,
@@ -43,6 +46,10 @@ const HANDLERS = {
   conversion,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
+  'experimentation-opportunities': experimentationOpportunities,
+  costs,
+  'structured-data': structuredData,
+  dummy: (message) => ok(message),
 };
 
 function getElapsedSeconds(startTime) {
@@ -61,13 +68,13 @@ async function run(message, context) {
   const { log } = context;
   const { type, url } = message;
 
-  log.info(`Audit req received for url: ${url}`);
+  log.info(`Received ${type} audit request for: ${url}`);
 
   const handler = HANDLERS[type];
   if (!handler) {
     const msg = `no such audit type: ${type}`;
     log.error(msg);
-    return new Response('', { status: 404 });
+    return notFound();
   }
 
   const startTime = process.hrtime();
@@ -75,17 +82,12 @@ async function run(message, context) {
   try {
     const result = await (typeof handler.run === 'function' ? handler.run(message, context) : handler(message, context));
 
-    log.info(`Audit for ${type} completed in ${getElapsedSeconds(startTime)} seconds`);
+    log.info(`${type} audit for ${url} completed in ${getElapsedSeconds(startTime)} seconds`);
 
     return result;
   } catch (e) {
-    log.error(`Audit failed after ${getElapsedSeconds(startTime)} seconds`, e);
-    return new Response('', {
-      status: e.statusCode || 500,
-      headers: {
-        'x-error': 'internal server error',
-      },
-    });
+    log.error(`${type} audit for ${url} failed after ${getElapsedSeconds(startTime)} seconds`, e);
+    return internalServerError();
   }
 }
 

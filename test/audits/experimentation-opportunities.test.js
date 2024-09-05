@@ -16,15 +16,16 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { audit404Runner } from '../../src/notfound/handler.js';
-import { notFoundData } from '../fixtures/notfounddata.js';
+import { handler } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
 import { MockContextBuilder } from '../shared.js';
+import opportunitiesData from '../fixtures/opportunitiesdata.json' assert { type: 'json' };
 
 use(sinonChai);
 
-describe('404 Tests', () => {
+describe('Opportunities Tests', () => {
   const url = 'https://abc.com';
   let context;
+  let processEnvCopy;
   let messageBodyJson;
   let sandbox;
   before('setup', function () {
@@ -48,34 +49,64 @@ describe('404 Tests', () => {
       .withOverrides({
         env: {
           AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
+          AWS_REGION: 'us-east-1',
+          AWS_ACCESS_KEY_ID: 'some-key-id',
+          AWS_SECRET_ACCESS_KEY: 'some-secret-key',
+          AWS_SESSION_TOKEN: 'some-secret-token',
         },
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
       })
       .build(messageBodyJson);
+    processEnvCopy = { ...process.env };
+    process.env = {
+      ...process.env,
+      ...context.env,
+    };
   });
   after('clean', function () {
     this.clock.uninstall();
   });
 
   afterEach(() => {
+    process.env = processEnvCopy;
     nock.cleanAll();
     sinon.restore();
   });
 
-  it('fetch 404s for base url > process > send results', async () => {
+  it('fetch bundles for base url > process > send opportunities', async () => {
+    nock('https://secretsmanager.us-east-1.amazonaws.com/')
+      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/abc_com/ci')
+      .reply(200, {
+        SecretString: JSON.stringify({
+          RUM_DOMAIN_KEY: 'abc_dummy_key',
+        }),
+      });
     nock('https://abc.com')
       .get('/')
       .reply(200);
     context.rumApiClient = {
-      get404Sources: sinon.stub().resolves(notFoundData.results.data),
-      create404URL: () => 'abc.com',
+      queryMulti: sinon.stub().resolves(opportunitiesData),
     };
-    await audit404Runner(url, context);
+    const site = {
+      getBaseURL: () => 'https://abc.com',
+    };
+    const auditData = await handler(url, context, site);
 
-    expect(context.rumApiClient.get404Sources).calledWith({
-      url: 'abc.com',
-      interval: -1,
-      startdate: '2023-11-20',
-      enddate: '2023-11-27',
+    const expected = Object.values(opportunitiesData).flatMap((data) => data);
+
+    expect(context.rumApiClient.queryMulti).calledWith([
+      'rageclick',
+      'high-inorganic-high-bounce-rate',
+      'high-organic-low-ctr',
+    ], {
+      domain: 'https://abc.com',
+      domainkey: 'abc_dummy_key',
+      interval: 30,
+      granularity: 'hourly',
     });
+    expect(
+      auditData.auditResult.experimentationOpportunities,
+    ).to.deep.equal(expected);
   });
 });

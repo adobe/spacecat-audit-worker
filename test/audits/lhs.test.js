@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -27,9 +27,8 @@ import createLHSAuditRunner, {
 } from '../../src/lhs/lib.js';
 import { MockContextBuilder } from '../shared.js';
 
-const { expect } = chai;
-chai.use(sinonChai);
-chai.use(chaiAsPromised);
+use(sinonChai);
+use(chaiAsPromised);
 
 const message = {
   type: 'lhs-mobile',

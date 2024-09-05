@@ -11,7 +11,7 @@
  */
 /* eslint-env mocha */
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -22,9 +22,8 @@ import {
   getUrlWithoutPath,
 } from '../../src/support/utils.js';
 
-chai.use(sinonChai);
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(sinonChai);
+use(chaiAsPromised);
 
 describe('getUrlWithoutPath', () => {
   it('returns the URL without the path from a URL with a path', () => {

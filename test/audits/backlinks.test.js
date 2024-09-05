@@ -16,7 +16,7 @@ import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.j
 import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
 import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
 
-import chai from 'chai';
+import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -24,9 +24,8 @@ import nock from 'nock';
 import { LambdaClient } from '@aws-sdk/client-lambda';
 import auditBrokenBacklinks from '../../src/backlinks/handler.js';
 
-chai.use(sinonChai);
-chai.use(chaiAsPromised);
-const { expect } = chai;
+use(sinonChai);
+use(chaiAsPromised);
 
 describe('Backlinks Tests', function () {
   this.timeout(10000);
@@ -57,6 +56,14 @@ describe('Backlinks Tests', function () {
         enabledByDefault: false,
         dependencies: [],
       },
+      'broken-backlinks-auto-suggest': {
+        enabled: {
+          sites: ['site1', 'site2', 'site3', 'site'],
+          orgs: ['org1', 'org2', 'org3'],
+        },
+        enabledByDefault: false,
+        dependencies: [],
+      },
     },
     jobs: [],
   };
@@ -77,6 +84,13 @@ describe('Backlinks Tests', function () {
 
   const org = createOrganization({ name: 'org4' });
 
+  const brokenBacklinkWithTimeout = {
+    title: 'backlink that times out',
+    url_from: 'https://from.com/from-4',
+    url_to: 'https://foo.com/times-out',
+    domain_traffic: 500,
+  };
+
   const auditResult = {
     backlinks: [
       {
@@ -96,12 +110,6 @@ describe('Backlinks Tests', function () {
         url_from: 'https://from.com/from-3',
         url_to: 'https://foo.com/returns-429',
         domain_traffic: 1000,
-      },
-      {
-        title: 'backlink that times out',
-        url_from: 'https://from.com/from-4',
-        url_to: 'https://foo.com/times-out',
-        domain_traffic: 500,
       },
     ],
   };
@@ -149,12 +157,6 @@ describe('Backlinks Tests', function () {
         url_from: 'https://from.com/from-3',
         url_to: 'https://foo.com/returns-429',
         domain_traffic: 1000,
-      },
-      {
-        title: 'backlink that times out',
-        url_from: 'https://from.com/from-4',
-        url_to: 'https://foo.com/times-out',
-        domain_traffic: 500,
       },
       {
         title: 'backlink that is not excluded',
@@ -225,7 +227,7 @@ describe('Backlinks Tests', function () {
 
     nock('https://foo.com')
       .get('/times-out')
-      .delay(10000)
+      .delay(3010)
       .reply(200);
   });
   afterEach(() => {
@@ -315,7 +317,7 @@ describe('Backlinks Tests', function () {
       auditResult: {
         finalUrl: 'bar.foo.com',
         brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=bar.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
+        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=bar.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
       },
     };
 
@@ -368,7 +370,7 @@ describe('Backlinks Tests', function () {
       auditResult: {
         finalUrl: 'www.foo.com',
         brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=www.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
+        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=www.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
       },
     };
 
@@ -384,7 +386,7 @@ describe('Backlinks Tests', function () {
     expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
   });
 
-  it('should filter out from audit result broken backlinks the ones that return ok(even with redirection)', async () => {
+  it('should filter out from audit result broken backlinks the ones that return ok (even with redirection)', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
     mockDataAccess.getTopPagesForSite.resolves([]);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
@@ -403,7 +405,7 @@ describe('Backlinks Tests', function () {
         traffic_domain: 1500,
       },
     ];
-    const allBacklinks = auditResult.backlinks.concat(fixedBacklinks);
+    const allBacklinks = auditResult.backlinks.concat(fixedBacklinks, brokenBacklinkWithTimeout);
 
     nock('https://foo.com')
       .get('/fixed')
@@ -433,8 +435,8 @@ describe('Backlinks Tests', function () {
       },
       auditResult: {
         finalUrl: 'foo.com',
-        brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22is_dofollow%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22is_content%22%2C%22is%22%3A%5B%22eq%22%2C1%5D%7D%2C%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
+        brokenBacklinks: auditResult.backlinks.concat(brokenBacklinkWithTimeout),
+        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
       },
     };
 
