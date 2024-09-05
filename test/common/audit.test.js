@@ -21,10 +21,13 @@ import { createOrganization } from '@adobe/spacecat-shared-data-access/src/model
 import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
 import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
-  defaultMessageSender, defaultOrgProvider,
+  defaultMessageSender,
+  defaultOrgProvider,
   defaultPersister,
   defaultSiteProvider,
-  defaultUrlResolver, noopUrlResolver,
+  defaultUrlResolver,
+  noopUrlResolver,
+  wwwUrlResolver,
 } from '../../src/common/audit.js';
 import { AuditBuilder } from '../../src/common/audit-builder.js';
 import { MockContextBuilder } from '../shared.js';
@@ -325,5 +328,14 @@ describe('Audit tests', () => {
     };
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);
+  });
+
+  it('wwwUrlResolver calculates audit urls correctly', async () => {
+    expect(wwwUrlResolver(createSite({ baseURL: 'http://spacecat.com' }))).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver(createSite({ baseURL: 'https://spacecat.com' }))).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver(createSite({ baseURL: 'http://www.spacecat.com' }))).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver(createSite({ baseURL: 'https://www.spacecat.com' }))).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver(createSite({ baseURL: 'http://blog.spacecat.com' }))).to.equal('blog.spacecat.com');
+    expect(wwwUrlResolver(createSite({ baseURL: 'https://blog.spacecat.com' }))).to.equal('blog.spacecat.com');
   });
 });

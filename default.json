@@ -46,8 +46,5 @@
       "updateTypes": ["patch", "minor"],
       "automerge": true
     }
-  ],
-  "encrypted": {
-    "npmToken": "wcFMA/xDdHCJBTolAQ//cBnUY2GbbFUjxEW/JyLas0ZYKaS9XCOrP4FA7r43SwRV44ynLM0XIWB+ceGUFrTN8YWfvkbbMVFcxqKYFnjl2l1S/8G9jvvS7bJLZCd1WNk7oVkIXnpb76FE6FQe0giudOiaWo21QVORVEoN/G6du3EOEiCghLMSCMtjg9+0M9Qg9dFJFoUeAHxLhGMjU3kQFO89ljYjaEYA4dvY2Id4pQOx2l0K2T70hSvGhrDGnDyGzOdA3rtz5as+/LgASvOOsTvn9JRndN9G1vnWqHR8xJBibPOqRyJ82IH+pe/+fRex/4Dr1HxlVa9BPhLslAFgUZqTrmwVhZutwURd5sRYNbYiMCBNNjmuVSfIIv+3/y4yEimaQWoh5RVGNxfYddryOSL/FKGeIybuKpskhzTzjtohvu71EjBinyx0qw/O92gZ+UHIZqhOWfmIoGV/pLPjGqkboXYjeQmSauVl8e9by1QXDiGmKe0T16UblNAhU+sQJdneFE4UBflK61jnReAUOsRVFvn9vuVrOuF8zwdXPs8xb7vuE77wUg9M/2N7I+y3tzVtb4uHvoVjtzIlkBe37xkzunKCDbk/Hdgk4lGdlFeTpQYL8Q/rU0itnYHZwfUThgPq1BhP+rWxj6Qkv1DR1983yowG9Zv54bO42oGO6apVAMZQ4q8Bz15BK0TCQFzSdAHRSJq9bALOc/HK5GbEQQ7sZ1JU76jjSFXqeBMZs7A2jrm1yNJAJ7WW+zLgXLjm9s1e1epn4PXerD50ypBKZnKfhmnnBB67IlO4IVfOLIllq3N1dJT2q5zqGdfgMN1qbyCg2JlgVSM8k83wwYtdLXC+mfl+"
-  }
+  ]
 }

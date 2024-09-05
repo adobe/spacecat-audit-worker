@@ -29,7 +29,9 @@ import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
+import experimentationOpportunities from './experimentation-opportunities/experimentation-opportunities.js';
 import costs from './costs/handler.js';
+import structuredData from './structured-data/handler.js';
 
 const HANDLERS = {
   apex,
@@ -44,7 +46,9 @@ const HANDLERS = {
   conversion,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
+  'experimentation-opportunities': experimentationOpportunities,
   costs,
+  'structured-data': structuredData,
   dummy: (message) => ok(message),
 };
 
@@ -64,7 +68,7 @@ async function run(message, context) {
   const { log } = context;
   const { type, url } = message;
 
-  log.info(`Audit req received for url: ${url}`);
+  log.info(`Received ${type} audit request for: ${url}`);
 
   const handler = HANDLERS[type];
   if (!handler) {
@@ -78,11 +82,11 @@ async function run(message, context) {
   try {
     const result = await (typeof handler.run === 'function' ? handler.run(message, context) : handler(message, context));
 
-    log.info(`Audit for ${type} completed in ${getElapsedSeconds(startTime)} seconds`);
+    log.info(`${type} audit for ${url} completed in ${getElapsedSeconds(startTime)} seconds`);
 
     return result;
   } catch (e) {
-    log.error(`Audit failed after ${getElapsedSeconds(startTime)} seconds`, e);
+    log.error(`${type} audit for ${url} failed after ${getElapsedSeconds(startTime)} seconds`, e);
     return internalServerError();
   }
 }
