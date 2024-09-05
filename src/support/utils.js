@@ -19,6 +19,7 @@ import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 
 URI.preventInvalidHostname = true;
+const TIMEOUT = 3000;
 
 /* c8 ignore next 3 */
 export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
@@ -33,8 +34,6 @@ export async function getRUMUrl(url) {
   const finalUrl = resp.url.split('://')[1];
   return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
 }
-
-const TIMEOUT = 3000;
 
 /**
  * Fetches a URL with a specified timeout.
