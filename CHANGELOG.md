@@ -1,3 +1,10 @@
+## [1.30.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.3...v1.30.4) (2024-09-05)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** introduce auto-suggest flag for broken backlinks suggestions ([#396](https://github.com/adobe/spacecat-audit-worker/issues/396)) ([4601b00](https://github.com/adobe/spacecat-audit-worker/commit/4601b0084c8373bfda1af58f93d1bdecb382c986))
+
 ## [1.30.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.2...v1.30.3) (2024-09-04)
 
 
