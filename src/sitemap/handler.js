@@ -103,6 +103,7 @@ export function isSitemapContentValid(sitemapContent) {
  *
  * @async
  * @param {string} sitemapUrl - The URL of the sitemap to check.
+ * @param log
  * @returns {Promise<Object>} - A Promise that resolves to an object representing the result check.
  * The object has the following properties:
  * - existsAndIsValid: A boolean indicating whether the sitemap exists and is in a valid format.
@@ -113,11 +114,13 @@ export function isSitemapContentValid(sitemapContent) {
  *   - isText: A boolean indicating whether the sitemap content is plain text.
  *   - isSitemapIndex: A boolean indicating whether the sitemap is an index of other sitemaps.
  */
-export async function checkSitemap(sitemapUrl) {
+export async function checkSitemap(sitemapUrl, log) {
   try {
     const sitemapContent = await fetchContent(sitemapUrl);
+    log.info(`Fetched sitemap content: ${sitemapContent.payload}`);
     const isValidFormat = isSitemapContentValid(sitemapContent);
     const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
+    log.info(`Is sitemap index? ${isSitemapIndex}`);
     const isText = isValidFormat && sitemapContent.type === 'text/plain';
 
     if (!isValidFormat) {
@@ -183,15 +186,16 @@ async function filterValidUrls(urls, log) {
  * @async
  * @param {string} baseUrl - The base URL to find pages for.
  * @param {string[]} urls - The list of sitemap URLs to check.
+ * @param log
  * @returns {Promise<Object>} - Resolves to an object mapping sitemap URLs to arrays of page URLs.
  */
-export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
+export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
   const baseUrlVariant = toggleWWW(baseUrl);
   const contentsCache = {};
 
   // Prepare all promises for checking each sitemap URL.
   const checkPromises = urls.map(async (url) => {
-    const urlData = await checkSitemap(url);
+    const urlData = await checkSitemap(url, log);
     contentsCache[url] = urlData;
     return { url, urlData };
   });
@@ -222,7 +226,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   const pagesPromises = matchingUrls.map(async (matchingUrl) => {
     // Check if further detailed checks are needed or directly use cached data
     if (!contentsCache[matchingUrl]) {
-      contentsCache[matchingUrl] = await checkSitemap(matchingUrl);
+      contentsCache[matchingUrl] = await checkSitemap(matchingUrl, log);
     }
     const pages = getBaseUrlPagesFromSitemapContents(
       baseUrl,
@@ -293,7 +297,7 @@ export async function findSitemap(inputUrl, log) {
   const filteredSitemapUrls = sitemapUrls.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, log);
 
   // check if URLs from each sitemap exist and remove entries if none exist
   if (Object.entries(extractedPaths).length > 0) {
