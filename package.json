@@ -67,7 +67,7 @@
     "@adobe/spacecat-shared-utils": "1.19.7",
     "@aws-sdk/client-secrets-manager": "3.645.0",
     "@aws-sdk/client-sqs": "3.645.0",
-    "diff": "6.0.0",
+    "diff": "7.0.0",
     "jsdom": "25.0.0",
     "urijs": "1.19.11"
   },
