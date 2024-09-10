@@ -198,13 +198,13 @@ describe('Meta Tags', () => {
       expect(logStub.info.calledOnce).to.be.true;
     });
 
-    it('should return ok if site is not live', async () => {
-      dataAccessStub.getSiteByID.resolves({ isLive: sinon.stub().returns(false) });
-
-      const result = await auditMetaTags(message, context);
-      expect(JSON.stringify(result)).to.equal(JSON.stringify(ok()));
-      expect(logStub.info.calledTwice).to.be.true;
-    });
+    // it('should return ok if site is not live', async () => {
+    //   dataAccessStub.getSiteByID.resolves({ isLive: sinon.stub().returns(false) });
+    //
+    //   const result = await auditMetaTags(message, context);
+    //   expect(JSON.stringify(result)).to.equal(JSON.stringify(ok()));
+    //   expect(logStub.info.calledTwice).to.be.true;
+    // });
 
     it('should return ok if audit type is disabled for site', async () => {
       dataAccessStub.getConfiguration.resolves({

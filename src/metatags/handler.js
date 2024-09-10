@@ -46,10 +46,10 @@ export default async function auditMetaTags(message, context) {
     if (!site) {
       return notFound('Site not found');
     }
-    if (!site.isLive()) {
-      log.info(`Site ${siteId} is not live`);
-      return ok();
-    }
+    // if (!site.isLive()) {
+    //   log.info(`Site ${siteId} is not live`);
+    //   return ok();
+    // }
     const configuration = await dataAccess.getConfiguration();
     if (!configuration.isHandlerEnabledForSite(type, site)) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
