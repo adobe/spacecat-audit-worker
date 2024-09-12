@@ -168,8 +168,10 @@ class SeoChecks {
       this.allTags[H1][tag].count += 1;
 
       if (this.allTags[H1][tag].count > 1) {
-        this.detectedTags[H1][NON_UNIQUE] ??= {};
-        this.detectedTags[H1][NON_UNIQUE][tag] = { ...this.allTags[H1][tag] };
+        if (!this.detectedTags[H1][0] || !this.detectedTags[H1][0][NON_UNIQUE]) {
+          this.detectedTags[H1].unshift({ [NON_UNIQUE]: {} });
+        }
+        this.detectedTags[H1][0][NON_UNIQUE][tag] = { ...this.allTags[H1][tag] };
       }
     });
   }
