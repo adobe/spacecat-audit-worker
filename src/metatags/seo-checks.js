@@ -35,6 +35,20 @@ class SeoChecks {
   }
 
   /**
+   * Sorts Non Unique H1 tags in descending order of their occurrence count
+   */
+  sortNonUniqueH1Tags() {
+    if (!this.detectedTags[H1][0] || !this.detectedTags[H1][0][NON_UNIQUE]) {
+      return;
+    }
+    // Convert the non-unique H1 tags object to an array of [key, value] entries
+    const sortedEntries = Object.entries(this.detectedTags[H1][0][NON_UNIQUE])
+      .sort(([, a], [, b]) => b.count - a.count); // Sort by `count` in descending order
+
+    this.detectedTags[H1][0][NON_UNIQUE] = Object.fromEntries(sortedEntries);
+  }
+
+  /**
    * Adds an entry to the detected tags array.
    * @param {string} pageUrl - The URL of the page.
    * @param {string} tagName - The name of the tag (e.g., 'title', 'description', 'h1').
@@ -194,6 +208,13 @@ class SeoChecks {
    */
   getDetectedTags() {
     return this.detectedTags;
+  }
+
+  /**
+   * Processes detected tags, including sorting non-unique H1 tags.
+   */
+  organizeDetectedTags() {
+    this.sortNonUniqueH1Tags();
   }
 }
 

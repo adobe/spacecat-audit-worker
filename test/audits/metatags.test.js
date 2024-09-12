@@ -28,6 +28,7 @@ import {
   H1,
   HIGH,
   MODERATE,
+  NON_UNIQUE,
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import auditMetaTags from '../../src/metatags/handler.js';
@@ -155,6 +156,29 @@ describe('Meta Tags', () => {
           seoImpact: HIGH,
           seoOpportunityText: 'The title tag on this page is identical to the one on https://page1.com. It\'s recommended to have unique title tags for each page.',
         });
+      });
+    });
+
+    describe('Organize Detected Tags', () => {
+      it('should sort non-unique H1 tags by count in descending order', () => {
+        seoChecks.detectedTags = {
+          h1: [
+            {
+              [NON_UNIQUE]: {
+                'Tag A': { count: 3, urls: ['/url1', '/url2'] },
+                'Tag B': { count: 5, urls: ['/url3'] },
+                'Tag C': { count: 1, urls: ['/url4'] },
+              },
+            },
+          ],
+        };
+        seoChecks.sortNonUniqueH1Tags();
+        const expected = {
+          'Tag B': { count: 5, urls: ['/url3'] },
+          'Tag A': { count: 3, urls: ['/url1', '/url2'] },
+          'Tag C': { count: 1, urls: ['/url4'] },
+        };
+        expect(seoChecks.detectedTags[H1][0][NON_UNIQUE]).to.deep.equal(expected);
       });
     });
   });
