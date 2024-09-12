@@ -19,6 +19,9 @@ export const H1 = 'h1';
 export const HIGH = 'High';
 export const MODERATE = 'Moderate';
 
+// Audit result constants
+export const NON_UNIQUE = 'non-unique';
+
 // Tags lengths
 export const TAG_LENGTHS = {
   [TITLE]: {

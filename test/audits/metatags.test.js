@@ -348,7 +348,7 @@ describe('Meta Tags', () => {
         ],
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(6);
+      expect(logStub.info.callCount).to.equal(4);
     });
 
     it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
@@ -454,7 +454,7 @@ describe('Meta Tags', () => {
         ],
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(6);
+      expect(logStub.info.callCount).to.equal(4);
     });
 
     it('should handle errors and return internalServerError', async () => {

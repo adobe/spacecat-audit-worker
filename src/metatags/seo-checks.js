@@ -16,7 +16,7 @@ import {
   H1,
   TAG_LENGTHS,
   HIGH,
-  MODERATE,
+  MODERATE, NON_UNIQUE,
 } from './constants.js';
 
 class SeoChecks {
@@ -146,9 +146,10 @@ class SeoChecks {
     const tags = {
       [TITLE]: pageTags[TITLE],
       [DESCRIPTION]: pageTags[DESCRIPTION],
-      [H1]: Array.isArray(pageTags[H1]) ? pageTags[H1][0] : '',
+      [H1]: Array.isArray(pageTags[H1]) ? pageTags[H1] : [],
     };
-    Object.entries(tags).forEach(([tagName, tagContent = '']) => {
+    [TITLE, DESCRIPTION].forEach((tagName) => {
+      const tagContent = tags[tagName];
       if (tagContent && this.allTags[tagName][tagContent.toLowerCase()]) {
         this.addDetectedTagEntry(
           url,
@@ -159,7 +160,17 @@ class SeoChecks {
           + `It's recommended to have unique ${tagName} tags for each page.`,
         );
       }
-      this.allTags[tagName][tagContent.toLowerCase()] = url;
+      this.allTags[tagName][tagContent?.toLowerCase()] = url;
+    });
+    tags[H1].forEach((tag) => {
+      this.allTags[H1][tag] ??= { count: 0, urls: [] };
+      this.allTags[H1][tag].urls.push(url);
+      this.allTags[H1][tag].count += 1;
+
+      if (this.allTags[H1][tag].count > 1) {
+        this.detectedTags[H1][NON_UNIQUE] ??= {};
+        this.detectedTags[H1][NON_UNIQUE][tag] = { ...this.allTags[H1][tag] };
+      }
     });
   }
 
