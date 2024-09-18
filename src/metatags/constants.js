@@ -21,18 +21,23 @@ export const MODERATE = 'Moderate';
 
 // Audit result constants
 export const NON_UNIQUE = 'non-unique';
+export const MISSING_TAGS = 'missing_tags';
+export const EMPTY_TAGS = 'empty_tags';
+export const LENGTH_CHECK_FAIL_TAGS = 'length_check_fail_tags';
+export const DUPLICATE_TAGS = 'duplicate_tags';
+export const MULTIPLE_H1_COUNT = 'multiple_h1_count';
 
 // Tags lengths
 export const TAG_LENGTHS = {
   [TITLE]: {
-    minLength: 40,
-    maxLength: 60,
+    minLength: 25,
+    maxLength: 75,
   },
   [DESCRIPTION]: {
-    minLength: 140,
-    maxLength: 160,
+    minLength: 100,
+    maxLength: 180,
   },
   [H1]: {
-    maxLength: 60,
+    maxLength: 75,
   },
 };
