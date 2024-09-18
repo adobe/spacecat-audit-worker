@@ -73,8 +73,8 @@ class SeoChecks {
       if (tagContent === '') {
         this.detectedTags[tagName][EMPTY_TAGS] ??= { pageUrls: [] };
         this.detectedTags[tagName][EMPTY_TAGS].pageUrls.push(url);
-      } else if (tagContent.length > TAG_LENGTHS[tagName].maxLength
-        || tagContent.length < TAG_LENGTHS[tagName].minLength) {
+      } else if (tagContent?.length > TAG_LENGTHS[tagName].maxLength
+        || tagContent?.length < TAG_LENGTHS[tagName].minLength) {
         this.detectedTags[tagName][LENGTH_CHECK_FAIL_TAGS] ??= {};
         this.detectedTags[tagName][LENGTH_CHECK_FAIL_TAGS].url = url;
         this.detectedTags[tagName][LENGTH_CHECK_FAIL_TAGS].tagContent = tagContent;
