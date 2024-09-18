@@ -124,6 +124,9 @@ class SeoChecks {
    * @param tagContent
    */
   addToAllTags(url, tagName, tagContent) {
+    if (!tagContent) {
+      return;
+    }
     const tagContentLowerCase = tagContent.toLowerCase();
     this.allTags[tagName][tagContentLowerCase] ??= {
       pageUrls: new Set(),
