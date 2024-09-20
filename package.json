@@ -64,7 +64,7 @@
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@aws-sdk/client-lambda": "3.651.1",
     "@aws-sdk/credential-provider-node": "3.651.1",
-    "@adobe/spacecat-shared-utils": "1.20.0",
+    "@adobe/spacecat-shared-utils": "1.20.1",
     "@aws-sdk/client-secrets-manager": "3.651.1",
     "@aws-sdk/client-sqs": "3.651.1",
     "diff": "7.0.0",
