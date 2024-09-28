@@ -1,3 +1,10 @@
+## [1.30.20](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.19...v1.30.20) (2024-09-28)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#416](https://github.com/adobe/spacecat-audit-worker/issues/416)) ([c7c53f4](https://github.com/adobe/spacecat-audit-worker/commit/c7c53f4c7e3c857c766f10c5c21311c1e4c0c891))
+
 ## [1.30.19](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.18...v1.30.19) (2024-09-27)
 
 
