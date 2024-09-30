@@ -80,6 +80,7 @@ export default async function auditMetaTags(message, context) {
     }
     seoChecks.finalChecks();
     const detectedTags = seoChecks.getDetectedTags();
+    log.info(`Detected tags - ${JSON.stringify(detectedTags)}`);
     // Prepare Audit result
     const auditResult = {
       detectedTags,

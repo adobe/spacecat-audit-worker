@@ -144,7 +144,6 @@ class SeoChecks {
     this.checkForMissingTags(url, pageTags);
     this.checkForTagsLength(url, pageTags);
     this.checkForH1Count(url, pageTags);
-    this.log.info(`Found tags ${this.detectedTags.length}`);
     // store tag data in all tags object to be used in later checks like uniqueness
     this.addToAllTags(TITLE, pageTags[TITLE]);
     this.addToAllTags(DESCRIPTION, pageTags[DESCRIPTION]);
