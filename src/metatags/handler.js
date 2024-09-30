@@ -75,12 +75,10 @@ export default async function auditMetaTags(message, context) {
     // Perform SEO checks
     const seoChecks = new SeoChecks(log);
     for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
-      log.info(`Processing ${pageUrl} with ${JSON.stringify(pageTags)}`);
       seoChecks.performChecks(pageUrl, pageTags);
     }
     seoChecks.finalChecks();
     const detectedTags = seoChecks.getDetectedTags();
-    log.info(`Detected tags - ${JSON.stringify(detectedTags)}`);
     // Prepare Audit result
     const auditResult = {
       detectedTags,

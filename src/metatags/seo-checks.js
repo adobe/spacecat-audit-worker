@@ -92,13 +92,11 @@ class SeoChecks {
    */
   checkForH1Count(url, pageTags) {
     if (pageTags[H1]?.length > 1) {
-      console.log('Detected duplicate H1');
       this.detectedTags[H1][MULTIPLE_H1_COUNT] ??= [];
       this.detectedTags[H1][MULTIPLE_H1_COUNT].push({
         pageUrl: url,
         tagContent: JSON.stringify(pageTags[H1]),
       });
-      console.log(`Check detected tags ${JSON.stringify(this.detectedTags[H1])}`);
     }
   }
 
