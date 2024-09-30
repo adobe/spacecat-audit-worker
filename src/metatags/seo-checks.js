@@ -19,9 +19,9 @@ class SeoChecks {
   constructor(log) {
     this.log = log;
     this.detectedTags = {
-      [TITLE]: [],
-      [DESCRIPTION]: [],
-      [H1]: [],
+      [TITLE]: {},
+      [DESCRIPTION]: {},
+      [H1]: {},
     };
     this.allTags = {
       [TITLE]: {},
