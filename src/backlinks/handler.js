@@ -154,6 +154,7 @@ export default async function auditBrokenBacklinks(message, context) {
     await sqs.sendMessage(queueUrl, data);
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
+    log.info(`test log 003`);
     return noContent();
   } catch (e) {
     log.error(`${type} type audit for ${siteId} failed with error: ${e.message}`, e);
