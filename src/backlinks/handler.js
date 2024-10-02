@@ -21,6 +21,8 @@ import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
 
 const TIMEOUT = 3000;
 
+console.log("test log 001");
+
 export async function filterOutValidBacklinks(backlinks, log) {
   const fetchWithTimeout = async (url, timeout) => {
     const controller = new AbortController();
@@ -61,6 +63,9 @@ export async function filterOutValidBacklinks(backlinks, log) {
 }
 
 export default async function auditBrokenBacklinks(message, context) {
+
+  console.log("test log 002");
+
   const { type, url: siteId, auditContext = {} } = message;
   const { dataAccess, log, sqs } = context;
   const {
