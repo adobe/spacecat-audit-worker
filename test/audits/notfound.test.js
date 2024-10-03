@@ -32,6 +32,7 @@ describe('404 Tests', () => {
     const mockDate = '2023-11-27T12:30:01.124Z';
     this.clock = sandbox.useFakeTimers({
       now: new Date(mockDate).getTime(),
+      shouldAdvanceTime: true,
     });
   });
 
