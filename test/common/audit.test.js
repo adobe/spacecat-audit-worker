@@ -256,7 +256,7 @@ describe('Audit tests', () => {
       const auditData = {
         siteId: site.getId(),
         isLive: site.isLive(),
-        auditedAt: mockDate,
+        auditedAt: '2023-03-12T15:24:51.431Z',
         auditType: message.type,
         auditResult: { metric: 42 },
         fullAuditRef,
@@ -315,7 +315,7 @@ describe('Audit tests', () => {
     expect(context.dataAccess.addAudit).to.have.been.calledWith({
       siteId: site.getId(),
       isLive: site.isLive(),
-      auditedAt: mockDate,
+      auditedAt: '2023-03-12T15:24:51.271Z',
       auditType: message.type,
       auditResult: { metric: 42 },
       fullAuditRef,
