@@ -11,23 +11,59 @@
  */
 
 import {
-  DESCRIPTION, TITLE, H1, TAG_LENGTHS, MISSING_TAGS, EMPTY_TAGS,
-  LENGTH_CHECK_FAIL_TAGS, DUPLICATE_TAGS, MULTIPLE_H1_COUNT,
+  DESCRIPTION,
+  TITLE,
+  H1,
+  TAG_LENGTHS,
+  HIGH,
+  MODERATE, NON_UNIQUE,
 } from './constants.js';
 
 class SeoChecks {
   constructor(log) {
     this.log = log;
     this.detectedTags = {
-      [TITLE]: {},
-      [DESCRIPTION]: {},
-      [H1]: {},
+      [TITLE]: [],
+      [DESCRIPTION]: [],
+      [H1]: [],
     };
     this.allTags = {
       [TITLE]: {},
       [DESCRIPTION]: {},
       [H1]: {},
     };
+  }
+
+  /**
+   * Sorts Non Unique H1 tags in descending order of their occurrence count
+   */
+  sortNonUniqueH1Tags() {
+    if (!this.detectedTags[H1][0] || !this.detectedTags[H1][0][NON_UNIQUE]) {
+      return;
+    }
+    // Convert the non-unique H1 tags object to an array of [key, value] entries
+    const sortedEntries = Object.entries(this.detectedTags[H1][0][NON_UNIQUE])
+      .sort(([, a], [, b]) => b.count - a.count); // Sort by `count` in descending order
+
+    this.detectedTags[H1][0][NON_UNIQUE] = Object.fromEntries(sortedEntries);
+  }
+
+  /**
+   * Adds an entry to the detected tags array.
+   * @param {string} pageUrl - The URL of the page.
+   * @param {string} tagName - The name of the tag (e.g., 'title', 'description', 'h1').
+   * @param {string} tagContent - The content of the tag.
+   * @param {string} seoImpact - The impact level of the issue (e.g., 'High', 'Moderate').
+   * @param {string} seoOpportunityText - The text describing the SEO opportunity or issue.
+   */
+  addDetectedTagEntry(pageUrl, tagName, tagContent, seoImpact, seoOpportunityText) {
+    this.detectedTags[tagName].push({
+      pageUrl,
+      tagName,
+      tagContent,
+      seoImpact,
+      seoOpportunityText,
+    });
   }
 
   /**
@@ -55,9 +91,14 @@ class SeoChecks {
   checkForMissingTags(url, pageTags) {
     [TITLE, DESCRIPTION, H1].forEach((tagName) => {
       if (pageTags[tagName] === undefined
-          || (Array.isArray(pageTags[tagName]) && pageTags[tagName].length === 0)) {
-        this.detectedTags[tagName][MISSING_TAGS] ??= { pageUrls: [] };
-        this.detectedTags[tagName][MISSING_TAGS].pageUrls.push(url);
+        || (Array.isArray(pageTags[tagName]) && pageTags[tagName].length === 0)) {
+        this.addDetectedTagEntry(
+          url,
+          tagName,
+          '',
+          HIGH,
+          `The ${tagName} tag on this page is missing. It's recommended to have a ${tagName} tag on each page.`,
+        );
       }
     });
   }
@@ -69,20 +110,28 @@ class SeoChecks {
    * @param {object} pageTags - An object containing the tags of the page.
    */
   checkForTagsLength(url, pageTags) {
-    const checkTag = (tagName, tagContent) => {
-      if (tagContent === '') {
-        this.detectedTags[tagName][EMPTY_TAGS] ??= { pageUrls: [] };
-        this.detectedTags[tagName][EMPTY_TAGS].pageUrls.push(url);
-      } else if (tagContent?.length > TAG_LENGTHS[tagName].maxLength
-        || tagContent?.length < TAG_LENGTHS[tagName].minLength) {
-        this.detectedTags[tagName][LENGTH_CHECK_FAIL_TAGS] ??= {};
-        this.detectedTags[tagName][LENGTH_CHECK_FAIL_TAGS].url = url;
-        this.detectedTags[tagName][LENGTH_CHECK_FAIL_TAGS].tagContent = tagContent;
+    [TITLE, DESCRIPTION].forEach((tagName) => {
+      if (pageTags[tagName]?.length > TAG_LENGTHS[tagName].maxLength
+        || pageTags[tagName]?.length < TAG_LENGTHS[tagName].minLength) {
+        this.addDetectedTagEntry(
+          url,
+          tagName,
+          pageTags[tagName],
+          MODERATE,
+          SeoChecks.createLengthCheckText(tagName, pageTags[tagName]),
+        );
       }
-    };
-    checkTag(TITLE, pageTags[TITLE]);
-    checkTag(DESCRIPTION, pageTags[DESCRIPTION]);
-    checkTag(H1, pageTags[H1][0]);
+    });
+
+    if (Array.isArray(pageTags[H1]) && pageTags[H1][0]?.length > TAG_LENGTHS[H1].maxLength) {
+      this.addDetectedTagEntry(
+        url,
+        H1,
+        pageTags[H1][0],
+        MODERATE,
+        SeoChecks.createLengthCheckText(H1, pageTags[H1][0]),
+      );
+    }
   }
 
   /**
@@ -91,48 +140,54 @@ class SeoChecks {
    * @param {object} pageTags - An object containing the tags of the page.
    */
   checkForH1Count(url, pageTags) {
-    if (pageTags[H1]?.length > 1) {
-      this.detectedTags[H1][MULTIPLE_H1_COUNT] ??= [];
-      this.detectedTags[H1][MULTIPLE_H1_COUNT].push({
-        pageUrl: url,
-        tagContent: JSON.stringify(pageTags[H1]),
-      });
+    if (Array.isArray(pageTags[H1]) && pageTags[H1]?.length > 1) {
+      this.addDetectedTagEntry(
+        url,
+        H1,
+        JSON.stringify(pageTags[H1]),
+        MODERATE,
+        `There are ${pageTags[H1].length} H1 tags on this page, which is more than the recommended count of 1.`,
+      );
     }
   }
 
   /**
    * Checks for tag uniqueness and adds to detected tags array if found lacking.
+   * @param {object} pageTags - An object containing the tags of the page.
+   * @param {string} url - The URL of the page.
    */
-  checkForUniqueness() {
-    [TITLE, DESCRIPTION, H1].forEach((tagName) => {
-      Object.values(this.allTags[tagName]).forEach((value) => {
-        if (value?.pageUrls?.size > 1) {
-          this.detectedTags[tagName][DUPLICATE_TAGS] ??= [];
-          this.detectedTags[tagName][DUPLICATE_TAGS].push({
-            tagContent: value.tagContent,
-            pageUrls: Array.from(value.pageUrls),
-          });
-        }
-      });
-    });
-  }
-
-  /**
-   * Adds tag data entry to all Tags Object
-   * @param url
-   * @param tagName
-   * @param tagContent
-   */
-  addToAllTags(url, tagName, tagContent) {
-    if (!tagContent) {
-      return;
-    }
-    const tagContentLowerCase = tagContent.toLowerCase();
-    this.allTags[tagName][tagContentLowerCase] ??= {
-      pageUrls: new Set(),
-      tagContent,
+  checkForUniqueness(url, pageTags) {
+    const tags = {
+      [TITLE]: pageTags[TITLE],
+      [DESCRIPTION]: pageTags[DESCRIPTION],
+      [H1]: Array.isArray(pageTags[H1]) ? pageTags[H1] : [],
     };
-    this.allTags[tagName][tagContentLowerCase].pageUrls.add(url);
+    [TITLE, DESCRIPTION].forEach((tagName) => {
+      const tagContent = tags[tagName];
+      if (tagContent && this.allTags[tagName][tagContent.toLowerCase()]) {
+        this.addDetectedTagEntry(
+          url,
+          tagName,
+          tagContent,
+          HIGH,
+          `The ${tagName} tag on this page is identical to the one on ${this.allTags[tagName][tagContent.toLowerCase()]}. `
+          + `It's recommended to have unique ${tagName} tags for each page.`,
+        );
+      }
+      this.allTags[tagName][tagContent?.toLowerCase()] = url;
+    });
+    tags[H1].forEach((tag) => {
+      this.allTags[H1][tag] ??= { count: 0, urls: [] };
+      this.allTags[H1][tag].urls.push(url);
+      this.allTags[H1][tag].count += 1;
+
+      if (this.allTags[H1][tag].count > 1) {
+        if (!this.detectedTags[H1][0] || !this.detectedTags[H1][0][NON_UNIQUE]) {
+          this.detectedTags[H1].unshift({ [NON_UNIQUE]: {} });
+        }
+        this.detectedTags[H1][0][NON_UNIQUE][tag] = { ...this.allTags[H1][tag] };
+      }
+    });
   }
 
   /**
@@ -144,10 +199,7 @@ class SeoChecks {
     this.checkForMissingTags(url, pageTags);
     this.checkForTagsLength(url, pageTags);
     this.checkForH1Count(url, pageTags);
-    // store tag data in all tags object to be used in later checks like uniqueness
-    this.addToAllTags(TITLE, pageTags[TITLE]);
-    this.addToAllTags(DESCRIPTION, pageTags[DESCRIPTION]);
-    pageTags[H1].forEach((tagContent) => this.addToAllTags(H1, tagContent));
+    this.checkForUniqueness(url, pageTags);
   }
 
   /**
@@ -158,15 +210,12 @@ class SeoChecks {
     return this.detectedTags;
   }
 
-  finalChecks() {
-    this.checkForUniqueness();
-  }
-
   /**
    * Processes detected tags, including sorting non-unique H1 tags.
    */
-  // organizeDetectedTags() {
-  // }
+  organizeDetectedTags() {
+    this.sortNonUniqueH1Tags();
+  }
 }
 
 export default SeoChecks;

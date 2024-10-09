@@ -31,11 +31,11 @@ export const MULTIPLE_H1_COUNT = 'multiple_h1_count';
 export const TAG_LENGTHS = {
   [TITLE]: {
     minLength: 25,
-    maxLength: 75,
+    maxLength: 70,
   },
   [DESCRIPTION]: {
     minLength: 100,
-    maxLength: 180,
+    maxLength: 175,
   },
   [H1]: {
     maxLength: 75,
