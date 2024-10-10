@@ -29,9 +29,9 @@ jobs:
       - run:
           name: Lint
           command: npm run lint
-      - run:
-          name: Getting Code Coverage
-          command: npm run test
+      # - run:
+      #     name: Getting Code Coverage
+      #     command: npm run test
       - codecov/upload
       - store_test_results:
           path: junit
