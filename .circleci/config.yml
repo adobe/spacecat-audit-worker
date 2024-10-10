@@ -26,17 +26,17 @@ jobs:
     steps:
       - setup
       - run: mkdir junit
-      # - run:
-      #     name: Lint
-      #     command: npm run lint
-      # - run:
-      #     name: Getting Code Coverage
-      #     command: npm run test
-      # - codecov/upload
-      # - store_test_results:
-      #     path: junit
-      # - store_artifacts:
-      #     path: junit
+      - run:
+          name: Lint
+          command: npm run lint
+      - run:
+          name: Getting Code Coverage
+          command: npm run test
+      - codecov/upload
+      - store_test_results:
+          path: junit
+      - store_artifacts:
+          path: junit
 
   semantic-release:
     executor: node-executor
