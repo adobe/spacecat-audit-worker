@@ -253,7 +253,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
  * @param log
  * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
  */
-export async function findSitemap(inputUrl, log) {
+export async function obtainSitemapUrls(inputUrl, log) {
   const logMessages = [];
 
   const parsedUrl = extractDomainAndProtocol(inputUrl);
@@ -334,7 +334,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
   log.info(`Received sitemap audit request for ${baseURL}`);
   const startTime = process.hrtime();
-  const auditResult = await findSitemap(baseURL, log);
+  const auditResult = await obtainSitemapUrls(baseURL, log);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;

@@ -13,7 +13,6 @@
 /* eslint-env mocha */
 
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
-import { createSiteTopPage } from '@adobe/spacecat-shared-data-access/src/models/site-top-page.js';
 import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
 import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
 
@@ -22,6 +21,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import { LambdaClient } from '@aws-sdk/client-lambda';
 import auditBrokenBacklinks from '../../src/backlinks/handler.js';
 
 use(sinonChai);
@@ -69,26 +69,6 @@ describe('Backlinks Tests', function () {
   };
 
   const configuration = createConfiguration(configurationData);
-
-  const siteTopPage = createSiteTopPage({
-    siteId: site.getId(),
-    url: `${site.getBaseURL()}/foo.html`,
-    traffic: 1000,
-    source: 'ahrefs',
-    geo: 'global',
-    importedAt: new Date('2024-06-18').toISOString(),
-    topKeyword: '404',
-  });
-
-  const siteTopPage2 = createSiteTopPage({
-    siteId: site.getId(),
-    url: `${site.getBaseURL()}/bar.html`,
-    traffic: 500,
-    source: 'ahrefs',
-    geo: 'global',
-    importedAt: new Date('2024-06-18').toISOString(),
-    topKeyword: '429',
-  });
 
   const site2 = createSite({
     id: 'site2',
@@ -177,7 +157,6 @@ describe('Backlinks Tests', function () {
         url_from: 'https://from.com/from-3',
         url_to: 'https://foo.com/returns-429',
         domain_traffic: 1000,
-        url_suggested: 'https://bar.foo.com/bar.html',
       },
       {
         title: 'backlink that is not excluded',
@@ -257,7 +236,6 @@ describe('Backlinks Tests', function () {
   });
 
   it('should filter out excluded URLs and include valid backlinks', async () => {
-    mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(siteWithExcludedUrls);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
 
@@ -289,18 +267,46 @@ describe('Backlinks Tests', function () {
     );
   });
 
-  it('should successfully perform an audit to detect broken backlinks, save and send the proper audit result', async () => {
+  it('should successfully perform an audit to detect broken backlinks, save and send the proper audit result, then trigger suggested fix lambda', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
-    mockDataAccess.getTopPagesForSite.resolves([]);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    const invokeStub = sinon.stub(LambdaClient.prototype, 'send').resolves();
+    const url = site.getBaseURL();
 
-    nock(site.getBaseURL())
+    const sampleSitemap = '<?xml version="1.0" encoding="UTF-8"?>\n'
+      + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+      + `<url> <loc>${url}/foo</loc></url>\n`
+      + `<url> <loc>${url}/bar</loc></url>\n`
+      + '</urlset>';
+
+    nock(url)
       .get(/.*/)
       .reply(200);
 
     nock('https://ahrefs.com')
       .get(/.*/)
       .reply(200, auditResult);
+    nock(url)
+      .get('/robots.txt')
+      .reply(200, 'Allow: /');
+
+    nock(url)
+      .head('/sitemap.xml')
+      .reply(200);
+    nock(url)
+      .head('/sitemap_index.xml')
+      .reply(404);
+
+    nock(url)
+      .get('/sitemap.xml')
+      .reply(200, sampleSitemap);
+
+    nock(url)
+      .head('/foo')
+      .reply(200);
+    nock(url)
+      .head('/bar')
+      .reply(200);
 
     const expectedMessage = {
       type: message.type,
@@ -316,146 +322,26 @@ describe('Backlinks Tests', function () {
     };
 
     const response = await auditBrokenBacklinks(message, context);
+    const [command] = invokeStub.getCall(0).args;
+    const payload = JSON.parse(command.input.Payload);
 
     expect(response.status).to.equal(204);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+    expect(invokeStub.calledOnce).to.be.true;
+    expect(payload).to.deep.equal({
+      type: 'broken-backlinks',
+      payload: {
+        siteId: 'site1',
+        brokenBacklinks: auditResult.backlinks,
+        sitemapPaths: [
+          'https://bar.foo.com/sitemap.xml',
+        ],
+      },
+    });
     expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
-  });
-
-  it('should successfully perform an audit to detect broken backlinks and suggest fixes based on keywords from top pages if auto-suggest'
-    + ' enabled', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
-    mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
-    nock(site.getBaseURL())
-      .get(/.*/)
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, auditResult);
-
-    const expectedEnhancedBacklinks = auditResult.backlinks;
-    expectedEnhancedBacklinks[0].url_suggested = 'https://bar.foo.com/foo.html';
-    expectedEnhancedBacklinks[2].url_suggested = 'https://bar.foo.com/bar.html';
-
-    const expectedMessage = {
-      type: message.type,
-      url: site.getBaseURL(),
-      auditContext: {
-        finalUrl: 'bar.foo.com',
-      },
-      auditResult: {
-        finalUrl: 'bar.foo.com',
-        brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=bar.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
-      },
-    };
-
-    const response = await auditBrokenBacklinks(message, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-  });
-
-  it('should successfully perform an audit to detect broken backlinks and not suggest fixes if auto-suggest disabled', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
-    configuration.disableHandlerForSite('broken-backlinks-auto-suggest', { getId: () => site2.getId(), getOrganizationId: () => org.getId() });
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
-    nock(site2.getBaseURL())
-      .get(/.*/)
-      .reply(301, undefined, { location: 'https://www.foo.com' });
-
-    nock('https://www.foo.com')
-      .get(/.*/)
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, auditResult);
-
-    const expectedMessage = {
-      type: message.type,
-      url: site2.getBaseURL(),
-      auditContext: {
-        finalUrl: 'www.foo.com',
-      },
-      auditResult: {
-        finalUrl: 'www.foo.com',
-        brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=www.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
-      },
-    };
-
-    const response = await auditBrokenBacklinks({
-      url: site2.getId(), type: 'broken-backlinks',
-    }, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.getTopPagesForSite).to.not.have.been.called;
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-    expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
-  });
-
-  it('should detect broken backlinks and save the proper audit result, even if the suggested fix fails', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
-    mockDataAccess.getTopPagesForSite.resolves([createSiteTopPage({
-      siteId: site.getId(),
-      url: `${site.getBaseURL()}/foo.html`,
-      traffic: 1000,
-      source: 'ahrefs',
-      geo: 'global',
-      importedAt: new Date('2024-06-18').toISOString(),
-      topKeyword: 'c++',
-    })]);
-    const brokenBacklink = {
-      backlinks: [
-        {
-          title: 'backlink that has a faulty path',
-          url_from: 'https://from.com/from-1',
-          url_to: 'https://foo.com/c++',
-          domain_traffic: 4000,
-        }],
-    };
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-    nock(site.getBaseURL())
-      .get(/.*/)
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, brokenBacklink);
-
-    const expectedMessage = {
-      type: message.type,
-      url: site.getBaseURL(),
-      auditContext: {
-        finalUrl: 'bar.foo.com',
-      },
-      auditResult: {
-        finalUrl: 'bar.foo.com',
-        brokenBacklinks: brokenBacklink.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=bar.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
-      },
-    };
-    const response = await auditBrokenBacklinks(message, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
   });
 
   it('should successfully perform an audit to detect broken backlinks and set finalUrl, for baseUrl redirecting to www domain', async () => {
