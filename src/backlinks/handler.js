@@ -11,13 +11,16 @@
  */
 
 import {
-  internalServerError, noContent, notFound, ok,
-} from '@adobe/spacecat-shared-http-utils';
-import { composeAuditURL } from '@adobe/spacecat-shared-utils';
-import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { AbortController, AbortError } from '@adobe/fetch';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
+  internalServerError,
+  noContent,
+  notFound,
+  ok,
+} from "@adobe/spacecat-shared-http-utils";
+import { composeAuditURL } from "@adobe/spacecat-shared-utils";
+import AhrefsAPIClient from "@adobe/spacecat-shared-ahrefs-client";
+import { AbortController, AbortError } from "@adobe/fetch";
+import { retrieveSiteBySiteId } from "../utils/data-access.js";
+import { enhanceBacklinksWithFixes, fetch } from "../support/utils.js";
 
 const TIMEOUT = 3000;
 
@@ -45,33 +48,41 @@ export async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
     try {
       const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
-      if (!response.ok && response.status !== 404
-        && response.status >= 400 && response.status < 500) {
-        log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
+      if (
+        !response.ok &&
+        response.status !== 404 &&
+        response.status >= 400 &&
+        response.status < 500
+      ) {
+        log.warn(
+          `Backlink ${backlink.url_to} returned status ${response.status}`
+        );
       }
       return !response.ok;
     } catch (error) {
-      log.error(`Failed to check backlink ${backlink.url_to}: ${error.message}`);
+      log.error(
+        `Failed to check backlink ${backlink.url_to}: ${error.message}`
+      );
       return true;
     }
   };
 
-  const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
+  const backlinkStatuses = await Promise.all(
+    backlinks.map(isStillBrokenBacklink)
+  );
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
 export default async function auditBrokenBacklinks(message, context) {
   const { type, url: siteId, auditContext = {} } = message;
   const { dataAccess, log, sqs } = context;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
+  const { AUDIT_RESULTS_QUEUE_URL: queueUrl } = context.env;
 
   try {
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
     if (!site) {
-      return notFound('Site not found');
+      return notFound("Site not found");
     }
     if (!site.isLive()) {
       log.info(`Site ${siteId} is not live`);
@@ -86,35 +97,51 @@ export default async function auditBrokenBacklinks(message, context) {
     try {
       auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
     } catch (e) {
-      log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
+      log.error(
+        `Get final URL for siteId ${siteId} failed with error: ${e.message}`,
+        e
+      );
       return internalServerError(`Internal server error: ${e.message}`);
     }
     let auditResult;
     try {
-      const {
-        result,
-        fullAuditRef,
-      } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
-      log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
+      const { result, fullAuditRef } = await ahrefsAPIClient.getBrokenBacklinks(
+        auditContext.finalUrl
+      );
+      log.info(
+        `Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`
+      );
       const excludedURLs = site.getConfig().getExcludedURLs(type);
       const filteredBacklinks = result?.backlinks?.filter(
-        (backlink) => !excludedURLs?.includes(backlink.url_to),
+        (backlink) => !excludedURLs?.includes(backlink.url_to)
       );
-      let brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
+      let brokenBacklinks = await filterOutValidBacklinks(
+        filteredBacklinks,
+        log
+      );
 
       if (configuration.isHandlerEnabledForSite(`${type}-auto-suggest`, site)) {
         try {
-          const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-          const keywords = topPages.map(
-            (page) => ({
-              url: page.getURL(),
-              keyword: page.getTopKeyword(),
-              traffic: page.getTraffic(),
-            }),
+          const topPages = await dataAccess.getTopPagesForSite(
+            siteId,
+            "ahrefs",
+            "global"
           );
-          brokenBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+          const keywords = topPages.map((page) => ({
+            url: page.getURL(),
+            keyword: page.getTopKeyword(),
+            traffic: page.getTraffic(),
+          }));
+          brokenBacklinks = enhanceBacklinksWithFixes(
+            brokenBacklinks,
+            keywords,
+            log
+          );
         } catch (e) {
-          log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`, e);
+          log.error(
+            `Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`,
+            e
+          );
         }
       }
 
@@ -124,7 +151,10 @@ export default async function auditBrokenBacklinks(message, context) {
         fullAuditRef,
       };
     } catch (e) {
-      log.error(`${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error: ${e.message}`, e);
+      log.error(
+        `${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error: ${e.message}`,
+        e
+      );
       auditResult = {
         finalUrl: auditContext.finalUrl,
         error: `${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error`,
@@ -136,7 +166,7 @@ export default async function auditBrokenBacklinks(message, context) {
       auditedAt: new Date().toISOString(),
       auditType: type,
       fullAuditRef: auditResult?.fullAuditRef,
-      auditResult,
+      auditResult: { test: 'test1234' },
     };
 
     await dataAccess.addAudit(auditData);
@@ -151,7 +181,10 @@ export default async function auditBrokenBacklinks(message, context) {
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
   } catch (e) {
-    log.error(`${type} type audit for ${siteId} failed with error: ${e.message}`, e);
+    log.error(
+      `${type} type audit for ${siteId} failed with error: ${e.message}`,
+      e
+    );
     return internalServerError(`Internal server error: ${e.message}`);
   }
 }
