@@ -13,13 +13,13 @@
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
-import { composeAuditURL } from '@adobe/spacecat-shared-utils';
-import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { AbortController, AbortError } from '@adobe/fetch';
+// import { composeAuditURL } from '@adobe/spacecat-shared-utils';
+// import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
+// import { AbortController, AbortError } from '@adobe/fetch';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
+// import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
 
-const TIMEOUT = 3000;
+// const TIMEOUT = 3000;
 
 // export async function filterOutValidBacklinks(backlinks, log) {
 //   const fetchWithTimeout = async (url, timeout) => {
@@ -69,14 +69,14 @@ export default async function auditBrokenInternalLinks(message, context) {
 
   try {
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
-    // const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    // if (!site) {
-    //   return notFound('Site not found');
-    // }
-    // if (!site.isLive()) {
-    //   log.info(`Site ${siteId} is not live`);
-    //   return ok();
-    // }
+    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
+    if (!site) {
+      return notFound('Site not found');
+    }
+    if (!site.isLive()) {
+      log.info(`Site ${siteId} is not live`);
+      return ok();
+    }
     // const configuration = await dataAccess.getConfiguration();
     // if (!configuration.isHandlerEnabledForSite(type, site)) {
     //   log.info(`Audit type ${type} disabled for site ${siteId}`);
@@ -89,47 +89,51 @@ export default async function auditBrokenInternalLinks(message, context) {
     //   log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
     //   return internalServerError(`Internal server error: ${e.message}`);
     // }
-    // let auditResult;
+    let auditResult;
     try {
     //   const {
     //     result,
     //     fullAuditRef,
     //   } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
-    //   log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
+    //   log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId:
+    // ${siteId} and url ${auditContext.finalUrl}`);
     //   const excludedURLs = site.getConfig().getExcludedURLs(type);
     //   const filteredBacklinks = result?.backlinks?.filter(
     //     (backlink) => !excludedURLs?.includes(backlink.url_to),
     //   );
     //   let brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
 
-    //   if (configuration.isHandlerEnabledForSite(`${type}-auto-suggest`, site)) {
-    //     try {
-    //       const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-    //       const keywords = topPages.map(
-    //         (page) => ({
-    //           url: page.getURL(),
-    //           keyword: page.getTopKeyword(),
-    //           traffic: page.getTraffic(),
-    //         }),
-    //       );
-    //       brokenBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-    //     } catch (e) {
-    //       log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`, e);
-    //     }
-    //   }
+      //   if (configuration.isHandlerEnabledForSite(`${type}-auto-suggest`, site)) {
+      //     try {
+      //       const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
+      //       const keywords = topPages.map(
+      //         (page) => ({
+      //           url: page.getURL(),
+      //           keyword: page.getTopKeyword(),
+      //           traffic: page.getTraffic(),
+      //         }),
+      //       );
+      //       brokenBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+      //     } catch (e) {
+      //       log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with
+      // error: ${e.message}`, e);
+      //     }
+      //   }
 
       auditResult = {
-        finalUrl: "http://google.com/result",
-        brokenInternalLinks: [{"name": "hello"}],
-        fullAuditRef: "http://google.com/fullAuditRef",
+        finalUrl: 'http://google.com/result',
+        brokenInternalLinks: [{ name: 'hello' }],
+        fullAuditRef: 'http://google.com/fullAuditRef',
       };
     } catch (e) {
-      // log.error(`${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error: ${e.message}`, e);
+      // log.error(`${type} type audit for ${siteId} with url ${auditContext.finalUrl}
+      // failed with error: ${e.message}`, e);
       log.error(`${type} type audit for ${siteId} with url http://google.com/result failed with error: ${e.message}`, e);
       auditResult = {
         // finalUrl: auditContext.finalUrl,
-        finalUrl: "http://google.com/result",
-        // error: `${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error`,
+        finalUrl: 'http://google.com/result',
+        // error: `${type} type audit for ${siteId} with url ${auditContext.finalUrl}
+        // failed with error`,
         error: `${type} type audit for ${siteId} with url http://google.com/result failed with error`,
       };
     }
@@ -138,7 +142,7 @@ export default async function auditBrokenInternalLinks(message, context) {
       isLive: site.isLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
-      fullAuditRef: "http://google.com/result",
+      fullAuditRef: 'http://google.com/result',
       auditResult,
     };
 
