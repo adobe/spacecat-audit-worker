@@ -22,13 +22,13 @@ import {
 import { AuditBuilder } from '../common/audit-builder.js';
 
 export const ERROR_CODES = Object.freeze({
-  INVALID_URL: 'INVALID_URL',
-  NO_SITEMAP_IN_ROBOTS: 'NO_SITEMAP_IN_ROBOTS_TXT',
+  INVALID_URL: 'Invalid URL',
+  NO_SITEMAP_IN_ROBOTS: 'Robots.txt does not contain a sitemap path',
   NO_PATHS_IN_SITEMAP: 'NO_PATHS_IN_SITEMAP',
-  SITEMAP_NOT_FOUND: 'SITEMAP_NOT_FOUND',
-  SITEMAP_EMPTY: 'SITEMAP_EMPTY',
-  SITEMAP_FORMAT: 'INVALID_SITEMAP_FORMAT',
-  FETCH_ERROR: 'FETCH_ERROR',
+  SITEMAP_NOT_FOUND: 'Sitemap could not be found',
+  SITEMAP_EMPTY: 'Sitemap is empty',
+  SITEMAP_FORMAT: 'Invalid sitemap format',
+  FETCH_ERROR: 'Error fetching the sitemap',
 });
 
 const VALID_MIME_TYPES = Object.freeze([
