@@ -252,7 +252,6 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
  * It then gets the base URL pages from the sitemaps.
  * The extracted paths response length > 0, it returns the success status, log messages, and paths.
  * The extracted paths response length < 0, log messages and returns the failure status and reasons.
- *
  * @param {string} inputUrl - The URL for which to find and validate the sitemap
  * @param log
  * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
@@ -287,8 +286,19 @@ export async function findSitemap(inputUrl, log) {
   if (!sitemapUrls.length) {
     const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
     sitemapUrls = await filterValidUrls(commonSitemapUrls, log);
-    if (!sitemapUrls.length) {
-      logMessages.push({ value: `No sitemap found in robots.txt or common paths for ${protocol}://${domain}`, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
+
+    if (sitemapUrls.length) {
+      // If sitemap is found in common locations but not mentioned in robots.txt
+      logMessages.push({
+        value: `Sitemap not mentioned in robots.txt but found in common paths: ${commonSitemapUrls.join(', ')}`,
+        info: 'SITEMAP_FOUND_BUT_NOT_IN_ROBOTS',
+      });
+    } else {
+      // If no sitemap found anywhere
+      logMessages.push({
+        value: `No sitemap found in robots.txt or common paths for ${protocol}://${domain}`,
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+      });
       return { success: false, reasons: logMessages };
     }
   }
@@ -299,7 +309,7 @@ export async function findSitemap(inputUrl, log) {
   );
   const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, log);
 
-  // check if URLs from each sitemap exist and remove entries if none exist
+  // Check if URLs from each sitemap exist and remove entries if none exist
   if (Object.entries(extractedPaths).length > 0) {
     const extractedSitemapUrls = Object.keys(extractedPaths);
     for (const s of extractedSitemapUrls) {
