@@ -153,16 +153,15 @@ export async function checkSitemap(sitemapUrl) {
  * @param {Object} log - The logging object to record information and errors.
  * @returns {Promise<string[]>} - A promise that resolves to an array of URLs that exist.
  */
-async function filterValidUrls(urls, log) {
+async function filterUrlsByStatus(urls, log) {
   const fetchPromises = urls.map(async (url) => {
     try {
       const response = await fetch(url, { method: 'HEAD' });
-      if (response.ok) {
-        return url;
-      } else {
+      if (response.status === 301 || response.status === 404) {
         log.info(`URL ${url} returned status code ${response.status}`);
-        return null;
+        return { url, status: response.status };
       }
+      return null;
     } catch (error) {
       log.error(`Failed to fetch URL ${url}: ${error.message}`);
       return null;
@@ -171,7 +170,6 @@ async function filterValidUrls(urls, log) {
 
   const results = await Promise.allSettled(fetchPromises);
 
-  // filter only the fulfilled promises that have a valid URL
   return results
     .filter((result) => result.status === 'fulfilled' && result.value !== null)
     .map((result) => result.value);
@@ -282,7 +280,7 @@ export async function findSitemap(inputUrl, log) {
 
   if (!sitemapUrls.length) {
     const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
-    sitemapUrls = await filterValidUrls(commonSitemapUrls, log);
+    sitemapUrls = await filterUrlsByStatus(commonSitemapUrls, log);
     if (!sitemapUrls.length) {
       logMessages.push({ value: `No sitemap found in robots.txt or common paths for ${protocol}://${domain}`, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
       return { success: false, reasons: logMessages };
@@ -301,7 +299,7 @@ export async function findSitemap(inputUrl, log) {
     for (const s of extractedSitemapUrls) {
       const urlsToCheck = extractedPaths[s];
       // eslint-disable-next-line no-await-in-loop
-      const existingPages = await filterValidUrls(urlsToCheck, log);
+      const existingPages = await filterUrlsByStatus(urlsToCheck, log);
 
       if (existingPages.length === 0) {
         delete extractedPaths[s];
