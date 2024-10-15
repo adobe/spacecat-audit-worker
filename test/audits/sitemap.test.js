@@ -264,7 +264,7 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
-              value: `Error fetching or processing robots.txt: Failed to fetch content from ${url}/robots.txt. Status: 404`,
+              value: `Failed to fetch content from ${url}/robots.txt. Status: 404`,
             },
             {
               value: 'Sitemaps found and validated successfully.',
@@ -294,7 +294,7 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
-              value: `Error fetching or processing robots.txt: Failed to fetch content from ${url}/robots.txt. Status: 404`,
+              value: `Failed to fetch content from ${url}/robots.txt. Status: 404`,
             },
             {
               error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,

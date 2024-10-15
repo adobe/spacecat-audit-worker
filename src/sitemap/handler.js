@@ -28,7 +28,7 @@ export const ERROR_CODES = Object.freeze({
   SITEMAP_NOT_FOUND: 'Sitemap could not be found',
   SITEMAP_EMPTY: 'Sitemap is empty',
   SITEMAP_FORMAT: 'Invalid sitemap format',
-  FETCH_ERROR: 'Error fetching the sitemap',
+  FETCH_ERROR: 'Error fetching data',
 });
 
 const VALID_MIME_TYPES = Object.freeze([
@@ -276,7 +276,7 @@ export async function findSitemap(inputUrl, log) {
       sitemapUrls = robotsResult.paths;
     }
   } catch (error) {
-    logMessages.push({ value: `Error fetching or processing robots.txt: ${error.message}`, error: ERROR_CODES.FETCH_ERROR });
+    logMessages.push({ value: `${error.message}`, error: ERROR_CODES.FETCH_ERROR });
     // Don't return failure yet, try the fallback URLs
   }
 
