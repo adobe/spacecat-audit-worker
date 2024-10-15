@@ -628,6 +628,10 @@ function filterMultiPageExperimentsByThreshold(
 }
 
 async function processExperimentRUMData(experimentInsights, context, days) {
+  if (Object.keys(experimentInsights).length === 0) {
+    log.info('No Experiment Insights found');
+    return [];
+  }
   log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
   const multiPageExperimentNames = getMultiPageExperimentNames(experimentInsights);
   log.info('Multi-Page Experiment Names: ', multiPageExperimentNames.join(', '));
