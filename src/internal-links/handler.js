@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Adobe. All rights reserved.
+ * Copyright 2023 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,155 +10,111 @@
  * governing permissions and limitations under the License.
  */
 
-import {
-  internalServerError, noContent, notFound, ok,
-} from '@adobe/spacecat-shared-http-utils';
-// import { composeAuditURL } from '@adobe/spacecat-shared-utils';
-// import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-// import { AbortController, AbortError } from '@adobe/fetch';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
-// import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+// import { dateAfterDays } from '@adobe/spacecat-shared-utils';
+import { getRUMDomainkey } from '../support/utils.js';
+import { AuditBuilder } from '../common/audit-builder.js';
+import { noopUrlResolver } from '../common/audit.js';
 
-// const TIMEOUT = 3000;
+// const AUDIT_TYPE = '404';
+const INTERVAL = 30; // days
+const DAILY_THRESHOLD = 1000;
 
-// export async function filterOutValidBacklinks(backlinks, log) {
-//   const fetchWithTimeout = async (url, timeout) => {
-//     const controller = new AbortController();
-//     const { signal } = controller;
-//     const id = setTimeout(() => controller.abort(), timeout);
-
-//     try {
-//       const response = await fetch(url, { signal });
-//       clearTimeout(id);
-//       return response;
-//     } catch (error) {
-//       if (error instanceof AbortError) {
-//         log.warn(`Request to ${url} timed out after ${timeout}ms`);
-//         return { ok: false, status: 408 };
-//       }
-//     } finally {
-//       clearTimeout(id);
-//     }
-//     return null;
-//   };
-
-//   const isStillBrokenBacklink = async (backlink) => {
-//     try {
-//       const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
-//       if (!response.ok && response.status !== 404
-//         && response.status >= 400 && response.status < 500) {
-//         log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
-//       }
-//       return !response.ok;
-//     } catch (error) {
-//       log.error(`Failed to check backlink ${backlink.url_to}: ${error.message}`);
-//       return true;
-//     }
-//   };
-
-//   const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
-//   return backlinks.filter((_, index) => backlinkStatuses[index]);
+// export function filter404Data(data) {
+//   return data.views > PAGEVIEW_THRESHOLD
+//       && !!data.url
+//       && data.url.toLowerCase() !== 'other'
+//       && data.source_count > 0;
 // }
 
-export default async function auditBrokenInternalLinks(message, context) {
-  const { type, url: siteId, auditContext = {} } = message;
-  const { dataAccess, log, sqs } = context;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
+// function process404Response(data) {
+//   return data
+//     .filter(filter404Data)
+//     .map((row) => ({
+//       url: row.url,
+//       pageviews: row.views,
+//       sources: row.all_sources.filter((source) => !!source),
+//     }));
+// }
+
+// function filter404LinksByDailyThreashold(links) {
+//   return links.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL);
+// }
+
+// function getValidInternalLinks(links, baseURL) {
+//   return links.filter((data) => data.url.startsWith(baseURL));
+// }
+
+/**
+ * Perform an audit to check if both www and non-www versions of a domain are accessible.
+ * If the site contains a subdomain, the audit is skipped for that specific subdomain.
+ *
+ * @async
+ * @param {string} baseURL - The URL to run audit against
+ * @param {Object} context - The context object containing configurations, services,
+ * and environment variables.
+ * @returns {Response} - Returns a response object indicating the result of the audit process.
+ */
+export async function internalLinksAuditRunner(auditUrl, context, site) {
+  // export async function internalLinksAuditRunner(baseURL, context) {
+  const { log } = context;
+
+  log.info(`Received audit req for domain: ${auditUrl}`);
+  // if (hasNonWWWSubdomain(baseURL)) {
+  //   throw Error(`Url ${baseURL} already has a subdomain. No need to run apex audit.`);
+  // }
+
+  // const urls = [baseURL, toggleWWW(baseURL)];
+  // const results = await Promise.all(urls.map((_url) => probeUrlConnection(_url, log)));
+
+  // return {
+  //   auditResult: results,
+  //   fullAuditRef: baseURL,
+  // };
+
+  // const finalUrl = await getRUMUrl(auditUrl);
+
+  const rumAPIClient = RUMAPIClient.createFrom(context);
+  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
+
+  // const startDate = dateAfterDays(-7);
+
+  // const params = {
+  //   url: finalUrl,
+  //   interval: -1,
+  //   startdate: startDate.toISOString().split('T')[0],
+  //   enddate: new Date().toISOString().split('T')[0],
+  // };
+  const options = {
+    domain: auditUrl,
+    domainkey,
+    interval: INTERVAL,
+    granularity: 'hourly',
+  };
 
   try {
-    log.info(`Received ${type} audit request for siteId: ${siteId}`);
-    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    if (!site) {
-      return notFound('Site not found');
-    }
-    if (!site.isLive()) {
-      log.info(`Site ${siteId} is not live`);
-      return ok();
-    }
-    // const configuration = await dataAccess.getConfiguration();
-    // if (!configuration.isHandlerEnabledForSite(type, site)) {
-    //   log.info(`Audit type ${type} disabled for site ${siteId}`);
-    //   return ok();
-    // }
-    // const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    // try {
-    //   auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
-    // } catch (e) {
-    //   log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
-    //   return internalServerError(`Internal server error: ${e.message}`);
-    // }
-    let auditResult;
-    try {
-    //   const {
-    //     result,
-    //     fullAuditRef,
-    //   } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
-    //   log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId:
-    // ${siteId} and url ${auditContext.finalUrl}`);
-    //   const excludedURLs = site.getConfig().getExcludedURLs(type);
-    //   const filteredBacklinks = result?.backlinks?.filter(
-    //     (backlink) => !excludedURLs?.includes(backlink.url_to),
-    //   );
-    //   let brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
-
-      //   if (configuration.isHandlerEnabledForSite(`${type}-auto-suggest`, site)) {
-      //     try {
-      //       const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-      //       const keywords = topPages.map(
-      //         (page) => ({
-      //           url: page.getURL(),
-      //           keyword: page.getTopKeyword(),
-      //           traffic: page.getTraffic(),
-      //         }),
-      //       );
-      //       brokenBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-      //     } catch (e) {
-      //       log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with
-      // error: ${e.message}`, e);
-      //     }
-      //   }
-
-      auditResult = {
-        finalUrl: 'http://google.com/result',
-        brokenInternalLinks: [{ name: 'hello' }],
-        fullAuditRef: 'http://google.com/fullAuditRef',
-      };
-    } catch (e) {
-      // log.error(`${type} type audit for ${siteId} with url ${auditContext.finalUrl}
-      // failed with error: ${e.message}`, e);
-      log.error(`${type} type audit for ${siteId} with url http://google.com/result failed with error: ${e.message}`, e);
-      auditResult = {
-        // finalUrl: auditContext.finalUrl,
-        finalUrl: 'http://google.com/result',
-        // error: `${type} type audit for ${siteId} with url ${auditContext.finalUrl}
-        // failed with error`,
-        error: `${type} type audit for ${siteId} with url http://google.com/result failed with error`,
-      };
-    }
-    const auditData = {
-      siteId: site.getId(),
-      isLive: site.isLive(),
-      auditedAt: new Date().toISOString(),
-      auditType: type,
-      fullAuditRef: 'http://google.com/result',
-      auditResult,
+    const all404Links = await rumAPIClient.query('404', options);
+    return {
+      auditResult: all404Links,
+      fullAuditRef: auditUrl,
     };
-
-    await dataAccess.addAudit(auditData);
-    const data = {
-      type,
-      url: site.getBaseURL(),
-      auditContext,
-      auditResult,
+  } catch (error) {
+    return {
+      auditResult: error,
+      fullAuditRef: auditUrl,
     };
-    await sqs.sendMessage(queueUrl, data);
-
-    log.info(`Successfully audited ${siteId} for ${type} type audit`);
-    return noContent();
-  } catch (e) {
-    log.error(`${type} type audit for ${siteId} failed with error: ${e.message}`, e);
-    return internalServerError(`Internal server error: ${e.message}`);
   }
+  // const all404LinksWithThreshold = filter404LinksByDailyThreashold(all404Links);
+  // const all404InternalLinks = getValidInternalLinks(all404LinksWithThreshold, site.getBaseURL());
+  // const auditResult = {
+  //   internalLinks: all404InternalLinks,
+  //   auditContext: {
+  //     interval: INTERVAL,
+  //   },
+  // };
 }
+
+export default new AuditBuilder()
+  .withUrlResolver(noopUrlResolver)
+  .withRunner(internalLinksAuditRunner)
+  .build();
