@@ -264,7 +264,7 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
-              value: `Failed to fetch content from ${url}/robots.txt. Status: 404`,
+              value: `StatusCode: 404 for ${url}/robots.txt`,
             },
             {
               value: 'Sitemaps found and validated successfully.',
@@ -294,11 +294,11 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
-              value: `Failed to fetch content from ${url}/robots.txt. Status: 404`,
+              value: `StatusCode: 404 for ${url}/robots.txt`,
             },
             {
               error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
-              value: 'No sitemap mentioned in robots.txt',
+              value: 'Robots.txt',
             },
           ],
         },
@@ -326,7 +326,7 @@ describe('Sitemap Audit', () => {
       nock(url)
         .get('/test')
         .reply(404);
-      await expect(fetchContent(`${url}/test`)).to.be.rejectedWith(`Failed to fetch content from ${url}/test. Status: 404`);
+      await expect(fetchContent(`${url}/test`)).to.be.rejectedWith('StatusCode: 404 for https://some-domain.adobe/test');
     });
   });
 
@@ -346,7 +346,7 @@ describe('Sitemap Audit', () => {
         .get('/robots.txt')
         .reply(404);
 
-      await expect(checkRobotsForSitemap(protocol, domain)).to.be.rejectedWith(`Failed to fetch content from ${url}/robots.txt. Status: 404`);
+      await expect(checkRobotsForSitemap(protocol, domain)).to.be.rejectedWith('StatusCode: 404 for https://some-domain.adobe/robots.txt');
     });
   });
 

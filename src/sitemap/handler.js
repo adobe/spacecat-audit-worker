@@ -23,7 +23,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'Invalid URL',
-  NO_SITEMAP_IN_ROBOTS: 'Robots.txt does not contain a sitemap path',
+  NO_SITEMAP_IN_ROBOTS: 'Does not mention a sitemap path',
   NO_PATHS_IN_SITEMAP: 'NO_PATHS_IN_SITEMAP',
   SITEMAP_NOT_FOUND: 'Sitemap could not be found',
   SITEMAP_EMPTY: 'Sitemap is empty',
@@ -54,7 +54,7 @@ const VALID_MIME_TYPES = Object.freeze([
 export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl);
   if (!response.ok) {
-    throw new Error(`Failed to fetch content from ${targetUrl}. Status: ${response.status}`);
+    throw new Error(`StatusCode: ${response.status} for ${targetUrl}`);
   }
   return { payload: await response.text(), type: response.headers.get('content-type') };
 }
@@ -284,7 +284,7 @@ export async function findSitemap(inputUrl, log) {
     const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
     sitemapUrls = await filterValidUrls(commonSitemapUrls, log);
     if (!sitemapUrls.length) {
-      logMessages.push({ value: 'No sitemap mentioned in robots.txt', error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
+      logMessages.push({ value: 'Robots.txt', error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
       return { success: false, reasons: logMessages };
     }
   }
