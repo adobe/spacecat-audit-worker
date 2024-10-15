@@ -151,30 +151,46 @@ export async function checkSitemap(sitemapUrl) {
  * @async
  * @param {string[]} urls - An array of URLs to check.
  * @param {Object} log - The logging object to record information and errors.
- * @returns {Promise<string[]>} - A promise that resolves to an array of URLs that exist.
+ * @returns {Promise<{ok: string[], notOk: string[], err: string[]}>} -
+ * A promise that resolves to an dict of URLs that exist.
  */
 async function filterValidUrls(urls, log) {
+  const OK = 1;
+  const NOT_OK = 2;
+  const ERR = 3;
+
   const fetchPromises = urls.map(async (url) => {
     try {
       const response = await fetch(url, { method: 'HEAD' });
       if (response.ok) {
-        return url;
+        return { status: OK, url };
       } else {
         log.info(`URL ${url} returned status code ${response.status}`);
-        return null;
+        return { status: NOT_OK, url };
       }
     } catch (error) {
       log.error(`Failed to fetch URL ${url}: ${error.message}`);
-      return null;
+      return { status: ERR, url };
     }
   });
 
   const results = await Promise.allSettled(fetchPromises);
 
   // filter only the fulfilled promises that have a valid URL
-  return results
-    .filter((result) => result.status === 'fulfilled' && result.value !== null)
+  const filtered = results
+    .filter((result) => result.status === 'fulfilled')
     .map((result) => result.value);
+
+  return filtered.reduce((acc, result) => {
+    if (result.status === OK) {
+      acc.ok.push(result.url);
+    } else if (result.status === NOT_OK) {
+      acc.notOk.push(result.url);
+    } else {
+      acc.error.push(result.url);
+    }
+    return acc;
+  }, { ok: [], notOk: [], error: [] });
 }
 
 /**
@@ -269,28 +285,28 @@ export async function findSitemap(inputUrl, log) {
   }
 
   const { protocol, domain } = parsedUrl;
-  let sitemapUrls = [];
+  let sitemapUrls = { ok: [], notOk: [], error: [] };
   try {
     const robotsResult = await checkRobotsForSitemap(protocol, domain);
     if (robotsResult.paths.length) {
-      sitemapUrls = robotsResult.paths;
+      sitemapUrls.ok = robotsResult.paths;
     }
   } catch (error) {
     logMessages.push({ value: `${error.message}`, error: ERROR_CODES.FETCH_ERROR });
     // Don't return failure yet, try the fallback URLs
   }
 
-  if (!sitemapUrls.length) {
+  if (!sitemapUrls.ok.length) {
     const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
     sitemapUrls = await filterValidUrls(commonSitemapUrls, log);
-    if (!sitemapUrls.length) {
+    if (!sitemapUrls.ok.length) {
       logMessages.push({ value: 'Robots.txt', error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
-      return { success: false, reasons: logMessages };
+      return { success: false, reasons: logMessages, details: sitemapUrls };
     }
   }
 
   const inputUrlToggledWww = toggleWWW(inputUrl);
-  const filteredSitemapUrls = sitemapUrls.filter(
+  const filteredSitemapUrls = sitemapUrls.ok.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
   const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
@@ -303,10 +319,10 @@ export async function findSitemap(inputUrl, log) {
       // eslint-disable-next-line no-await-in-loop
       const existingPages = await filterValidUrls(urlsToCheck, log);
 
-      if (existingPages.length === 0) {
+      if (existingPages.ok.length === 0) {
         delete extractedPaths[s];
       } else {
-        extractedPaths[s] = existingPages;
+        extractedPaths[s] = existingPages.ok;
       }
     }
   }
@@ -314,11 +330,17 @@ export async function findSitemap(inputUrl, log) {
   if (Object.entries(extractedPaths).length > 0) {
     logMessages.push({ value: 'Sitemaps found and validated successfully.' });
     return {
-      success: true, reasons: logMessages, paths: extractedPaths, url: inputUrl,
+      success: true,
+      reasons: logMessages,
+      paths: extractedPaths,
+      url: inputUrl,
+      details: sitemapUrls,
     };
   } else {
     logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
-    return { success: false, reasons: logMessages, url: inputUrl };
+    return {
+      success: false, reasons: logMessages, url: inputUrl, details: sitemapUrls,
+    };
   }
 }
 
