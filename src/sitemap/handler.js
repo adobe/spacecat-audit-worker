@@ -334,12 +334,15 @@ export async function findSitemap(inputUrl, log) {
       reasons: logMessages,
       paths: extractedPaths,
       url: inputUrl,
-      details: sitemapUrls,
+      details: { ok: undefined, ...sitemapUrls },
     };
   } else {
     logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
     return {
-      success: false, reasons: logMessages, url: inputUrl, details: sitemapUrls,
+      success: false,
+      reasons: logMessages,
+      url: inputUrl,
+      details: { ok: undefined, ...sitemapUrls },
     };
   }
 }

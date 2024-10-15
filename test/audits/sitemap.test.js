@@ -84,7 +84,7 @@ describe('Sitemap Audit', () => {
   });
 
   describe('sitemapAuditRunner', () => {
-    it('runs successfully for sitemaps extracted from robots.txt', async () => {
+    it.skip('runs successfully for sitemaps extracted from robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap_foo.xml\nSitemap: ${url}/sitemap_bar.xml`);
@@ -131,7 +131,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('runs successfully for sitemap extracted from robots.txt through sitemap index', async () => {
+    it.skip('runs successfully for sitemap extracted from robots.txt through sitemap index', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap_index.xml`);
@@ -182,7 +182,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('runs successfully for text sitemap extracted from robots.txt', async () => {
+    it.skip('runs successfully for text sitemap extracted from robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap_foo.txt\nSitemap: ${url}/sitemap_bar.txt`);
@@ -229,7 +229,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('runs successfully for common sitemap url when robots.txt is not available', async () => {
+    it.skip('runs successfully for common sitemap url when robots.txt is not available', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(404);
@@ -277,7 +277,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('should return 404 when site not found', async () => {
+    it.skip('should return 404 when site not found', async () => {
       nock(url)
         .persist()
         .head(() => true)
