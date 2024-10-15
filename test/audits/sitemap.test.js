@@ -83,7 +83,7 @@ describe('Sitemap Audit', () => {
     sandbox.restore();
   });
 
-  describe.skip('sitemapAuditRunner', () => {
+  describe('sitemapAuditRunner', () => {
     it('runs successfully for sitemaps extracted from robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
@@ -298,7 +298,7 @@ describe('Sitemap Audit', () => {
             },
             {
               error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
-              value: `No sitemap found in robots.txt or common paths for ${url}`,
+              value: 'No sitemap mentioned in robots.txt',
             },
           ],
         },
@@ -385,7 +385,7 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe.skip('checkSitemap', () => {
+  describe('checkSitemap', () => {
     it('should return SITEMAP_NOT_FOUND when the sitemap does not exist', async () => {
       nock(url)
         .get('/sitemap.xml')
@@ -429,7 +429,7 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe.skip('getBaseUrlPagesFromSitemaps', () => {
+  describe('getBaseUrlPagesFromSitemaps', () => {
     const sampleSitemapMoreUrls = '<?xml version="1.0" encoding="UTF-8"?>\n'
       + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
       + `<url> <loc>${url}/foo</loc></url>\n`
@@ -481,7 +481,7 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe.skip('findSitemap', () => {
+  describe('findSitemap', () => {
     it('should return error when URL is invalid', async () => {
       const result = await findSitemap('not a valid url');
       expect(result.success).to.equal(false);
