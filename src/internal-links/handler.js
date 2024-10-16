@@ -11,43 +11,37 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-// import { dateAfterDays } from '@adobe/spacecat-shared-utils';
-import { getRUMDomainkey } from '../support/utils.js';
+import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 
-// const AUDIT_TYPE = '404';
 const INTERVAL = 30; // days
-const DAILY_THRESHOLD = 1000;
+const DAILY_PAGEVIEW_THRESHOLD = 100;
 
-// export function filter404Data(data) {
-//   return data.views > PAGEVIEW_THRESHOLD
-//       && !!data.url
-//       && data.url.toLowerCase() !== 'other'
-//       && data.source_count > 0;
-// }
-
-// function process404Response(data) {
-//   return data
-//     .filter(filter404Data)
-//     .map((row) => ({
-//       url: row.url,
-//       pageviews: row.views,
-//       sources: row.all_sources.filter((source) => !!source),
-//     }));
-// }
-
-// function filter404LinksByDailyThreashold(links) {
-//   return links.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL);
-// }
-
-// function getValidInternalLinks(links, baseURL) {
-//   return links.filter((data) => data.url.startsWith(baseURL));
-// }
+function hasSameHost(url, currentHost) {
+  const host = new URL(url).hostname;
+  return host === currentHost;
+}
 
 /**
- * Perform an audit to check if both www and non-www versions of a domain are accessible.
- * If the site contains a subdomain, the audit is skipped for that specific subdomain.
+ * Filter out the 404 links that:
+ * - have less than 100 views and do not have a URL.
+ * - do not have any sources from the same domain.
+ * @param {*} links - all 404 links Data
+ * @param {*} hostUrl - the host URL of the domain
+ * @returns {Array} - Returns an array of 404 links that meet the criteria.
+ */
+
+function transform404LinksData(responseData, hostUrl) {
+  return responseData.filter(
+    (item) => item.views >= DAILY_PAGEVIEW_THRESHOLD
+    && !!item.url
+    && item.all_sources.filter(Boolean).some((source) => hasSameHost(source, hostUrl)),
+  );
+}
+
+/**
+ * Perform an audit to check which internal links for domain are broken.
  *
  * @async
  * @param {string} baseURL - The URL to run audit against
@@ -56,62 +50,30 @@ const DAILY_THRESHOLD = 1000;
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
 export async function internalLinksAuditRunner(auditUrl, context, site) {
-  // export async function internalLinksAuditRunner(baseURL, context) {
-  const { log } = context;
-
-  log.info(`Received audit req for domain: ${auditUrl}`);
-  // if (hasNonWWWSubdomain(baseURL)) {
-  //   throw Error(`Url ${baseURL} already has a subdomain. No need to run apex audit.`);
-  // }
-
-  // const urls = [baseURL, toggleWWW(baseURL)];
-  // const results = await Promise.all(urls.map((_url) => probeUrlConnection(_url, log)));
-
-  // return {
-  //   auditResult: results,
-  //   fullAuditRef: baseURL,
-  // };
-
-  // const finalUrl = await getRUMUrl(auditUrl);
+  const finalUrl = await getRUMUrl(auditUrl);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
 
-  // const startDate = dateAfterDays(-7);
-
-  // const params = {
-  //   url: finalUrl,
-  //   interval: -1,
-  //   startdate: startDate.toISOString().split('T')[0],
-  //   enddate: new Date().toISOString().split('T')[0],
-  // };
   const options = {
-    domain: auditUrl,
+    domain: finalUrl,
     domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
   };
 
-  try {
-    const all404Links = await rumAPIClient.query('404', options);
-    return {
-      auditResult: all404Links,
-      fullAuditRef: auditUrl,
-    };
-  } catch (error) {
-    return {
-      auditResult: error,
-      fullAuditRef: auditUrl,
-    };
-  }
-  // const all404LinksWithThreshold = filter404LinksByDailyThreashold(all404Links);
-  // const all404InternalLinks = getValidInternalLinks(all404LinksWithThreshold, site.getBaseURL());
-  // const auditResult = {
-  //   internalLinks: all404InternalLinks,
-  //   auditContext: {
-  //     interval: INTERVAL,
-  //   },
-  // };
+  const all404Links = await rumAPIClient.query('404', options);
+  const auditResult = {
+    internalLinks: transform404LinksData(all404Links, finalUrl),
+    auditContext: {
+      interval: INTERVAL,
+    },
+  };
+
+  return {
+    auditResult,
+    fullAuditRef: auditUrl,
+  };
 }
 
 export default new AuditBuilder()
