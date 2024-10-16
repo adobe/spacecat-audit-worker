@@ -85,18 +85,24 @@ export function extractDomainAndProtocol(inputUrl) {
  *
  * @param {Object} content - The content of the sitemap.
  * @param {string} tagName - The name of the tag to extract URLs from.
+ * @param log
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
-export function extractUrlsFromSitemap(content, tagName = 'url') {
+export function extractUrlsFromSitemap(content, log, tagName = 'url') {
+  log?.debug(`Extracting URLs from sitemap, content length: ${content.payload.length}`);
   const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
 
   const elements = document.getElementsByTagName(tagName);
+  log?.debug(`Found ${elements.length} ${tagName} elements in sitemap`);
   // Filter out any nulls if 'loc' element is missing
-  return Array.from(elements).map((element) => {
+  const urls = Array.from(elements).map((element) => {
     const loc = element.getElementsByTagName('loc')[0];
     return loc ? loc.textContent : null;
   }).filter((url) => url !== null);
+
+  log?.debug(`Extracted ${urls.length} valid URLs from sitemap`);
+  return urls;
 }
 
 /**
@@ -104,13 +110,14 @@ export function extractUrlsFromSitemap(content, tagName = 'url') {
  *
  * @param {string} baseUrl - The base URL to match against the URLs in the sitemap.
  * @param {Object} sitemapDetails - An object containing details about the sitemap.
+ * @param log
  * @param {boolean} sitemapDetails.isText - A flag indicating if the sitemap content is plain text.
  * @param {Object} sitemapDetails.sitemapContent - The sitemap content object.
  * @param {string} sitemapDetails.sitemapContent.payload - The actual content of the sitemap.
  *
  * @returns {string[]} URLs from the sitemap that start with the base URL or its www variant.
  */
-export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
+export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log) {
   const baseUrlVariant = toggleWWW(baseUrl);
 
   const filterPages = (pages) => pages.filter(
@@ -122,7 +129,7 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
 
     return filterPages(lines.filter((line) => line.length > 0));
   } else {
-    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
+    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent, log);
 
     return filterPages(sitemapPages);
   }
