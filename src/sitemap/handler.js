@@ -55,16 +55,23 @@ const VALID_MIME_TYPES = Object.freeze([
 export async function fetchContent(targetUrl, log) {
   try {
     const response = await fetch(targetUrl);
+    log?.info(`Response Status: ${response.status} for ${targetUrl}`);
+    log?.info(`Response Headers: ${JSON.stringify(response.headers.raw())}`);
+
     if (!response.ok) {
       log.info(`Fetch error for ${targetUrl}: Status ${response.status}`);
       return null;
     }
-    return { payload: await response.text(), type: response.headers.get('content-type') };
+
+    const text = await response.text();
+    log?.info(`Response Size: ${text.length}`);
+    return { payload: text, type: response.headers.get('content-type') };
   } catch (error) {
     log.info(`Fetch error for ${targetUrl}: ${error.message}`);
     return null;
   }
 }
+
 /**
  * Checks the robots.txt file for a sitemap and returns the sitemap paths if found.
  *
