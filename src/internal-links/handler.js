@@ -18,6 +18,12 @@ import { noopUrlResolver } from '../common/audit.js';
 const INTERVAL = 30; // days
 const DAILY_PAGEVIEW_THRESHOLD = 100;
 
+/**
+ * Determines if the URL has the same host as the current host.
+ * @param {*} url
+ * @param {*} currentHost
+ * @returns
+ */
 function hasSameHost(url, currentHost) {
   const host = new URL(url).hostname;
   return host === currentHost;
@@ -29,17 +35,36 @@ function hasSameHost(url, currentHost) {
  * - do not have any sources from the same domain.
  * @param {*} links - all 404 links Data
  * @param {*} hostUrl - the host URL of the domain
+ * @param {*} auditUrl - the URL to run audit against
+ * @param {*} log - the logger object
  * @returns {Array} - Returns an array of 404 links that meet the criteria.
  */
 
-function transform404LinksData(responseData, hostUrl) {
-  return responseData.filter(
-    (item) => item.views >= DAILY_PAGEVIEW_THRESHOLD
-    && !!item.url
-    && item.all_sources.filter(Boolean).some((source) => hasSameHost(source, hostUrl)),
-  );
+function transform404LinksData(responseData, hostUrl, auditUrl, log) {
+  return responseData.reduce((result, { url, views, all_sources: allSources }) => {
+    try {
+      const sameDomainSources = allSources.filter(
+        (source) => source && hasSameHost(source, hostUrl),
+      );
+      if (
+        views >= DAILY_PAGEVIEW_THRESHOLD
+        && url
+        && sameDomainSources.length
+      ) {
+        result.push({
+          url,
+          views,
+          sources: sameDomainSources,
+        });
+      }
+    } catch {
+      log.error(
+        `Error occurred for audit type broken-internal-links for url ${auditUrl}, while processing sources for link ${url}`,
+      );
+    }
+    return result;
+  }, []);
 }
-
 /**
  * Perform an audit to check which internal links for domain are broken.
  *
@@ -50,10 +75,11 @@ function transform404LinksData(responseData, hostUrl) {
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
 export async function internalLinksAuditRunner(auditUrl, context, site) {
+  const { log } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
+  const domainkey = await getRUMDomainkey(site.getBaseURL(), context, auditUrl, log);
 
   const options = {
     domain: finalUrl,
