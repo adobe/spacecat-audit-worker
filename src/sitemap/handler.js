@@ -43,6 +43,7 @@ const VALID_MIME_TYPES = Object.freeze([
  *
  * @async
  * @param {string} targetUrl - The URL from which to fetch the content.
+ * @param log
  * @returns {Promise<{
  *    payload: string,
  *    type: string
@@ -51,20 +52,26 @@ const VALID_MIME_TYPES = Object.freeze([
  * and the content type as the type string if the request was successful, otherwise null.
  * @throws {Error} If the fetch operation fails or the response status is not OK.
  */
-export async function fetchContent(targetUrl) {
-  const response = await fetch(targetUrl);
-  if (!response.ok) {
-    throw new Error(`StatusCode: ${response.status} for ${targetUrl}`);
+export async function fetchContent(targetUrl, log) {
+  try {
+    const response = await fetch(targetUrl);
+    if (!response.ok) {
+      log.info(`Fetch error for ${targetUrl}: Status ${response.status}`);
+      return null;
+    }
+    return { payload: await response.text(), type: response.headers.get('content-type') };
+  } catch (error) {
+    log.info(`Fetch error for ${targetUrl}: ${error.message}`);
+    return null;
   }
-  return { payload: await response.text(), type: response.headers.get('content-type') };
 }
-
 /**
  * Checks the robots.txt file for a sitemap and returns the sitemap paths if found.
  *
  * @async
  * @param {string} protocol - The protocol (http or https) of the site.
  * @param {string} domain - The domain of the site.
+ * @param log
  * @returns {Promise<{ paths: string[], reasons: string[] }>} - A Promise that resolves
  * to an object containing the sitemap paths and reasons for success or failure.
  * The object has the following properties:
@@ -72,16 +79,22 @@ export async function fetchContent(targetUrl) {
  * - reasons: An array of strings representing the reasons for not finding any sitemap paths.
  * @throws {Error} If the fetch operation fails or the response status is not OK.
  */
-export async function checkRobotsForSitemap(protocol, domain) {
+export async function checkRobotsForSitemap(protocol, domain, log) {
   const robotsUrl = `${protocol}://${domain}/robots.txt`;
   const sitemapPaths = [];
-  const robotsContent = await fetchContent(robotsUrl);
+  const robotsContent = await fetchContent(robotsUrl, log);
+
   if (robotsContent !== null) {
     const sitemapMatches = robotsContent.payload.matchAll(/Sitemap:\s*(.*)/gi);
     for (const match of sitemapMatches) {
-      sitemapPaths.push(match[1].trim());
+      const path = match[1].trim();
+      sitemapPaths.push(path);
+      log.info(`Extracted sitemap path: ${path}`);
     }
+  } else {
+    log.error('No content found in robots.txt');
   }
+
   return {
     paths: sitemapPaths,
     reasons: sitemapPaths.length ? [] : [ERROR_CODES.NO_SITEMAP_IN_ROBOTS],
@@ -91,18 +104,24 @@ export async function checkRobotsForSitemap(protocol, domain) {
  * Checks if the sitemap content is valid.
  *
  * @param {{ payload: string, type: string }} sitemapContent - The sitemap content to validate.
+ * @param log
  * @returns {boolean} - True if the sitemap content is valid, otherwise false.
  */
-export function isSitemapContentValid(sitemapContent) {
-  return sitemapContent.payload.trim().startsWith('<?xml')
+export function isSitemapContentValid(sitemapContent, log) {
+  const validStarts = ['<?xml', '<urlset', '<sitemapindex'];
+  const isValid = validStarts.some((start) => sitemapContent.payload.trim().startsWith(start))
       || VALID_MIME_TYPES.some((type) => sitemapContent.type.includes(type));
+
+  // Log the validation result if `log` is provided
+  log?.info?.(`Sitemap content validation result: ${isValid}`);
+
+  return isValid;
 }
 
 /**
  * Checks the validity and existence of a sitemap by fetching its content.
  *
  * @async
- * @param {string} sitemapUrl - The URL of the sitemap to check.
  * @returns {Promise<Object>} - A Promise that resolves to an object representing the result check.
  * The object has the following properties:
  * - existsAndIsValid: A boolean indicating whether the sitemap exists and is in a valid format.
@@ -113,10 +132,10 @@ export function isSitemapContentValid(sitemapContent) {
  *   - isText: A boolean indicating whether the sitemap content is plain text.
  *   - isSitemapIndex: A boolean indicating whether the sitemap is an index of other sitemaps.
  */
-export async function checkSitemap(sitemapUrl) {
+export async function checkSitemap(sitemapUrl, log) {
   try {
-    const sitemapContent = await fetchContent(sitemapUrl);
-    const isValidFormat = isSitemapContentValid(sitemapContent);
+    const sitemapContent = await fetchContent(sitemapUrl, log);
+    const isValidFormat = isSitemapContentValid(sitemapContent, log);
     const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
     const isText = isValidFormat && sitemapContent.type === 'text/plain';
 
@@ -199,15 +218,16 @@ async function filterValidUrls(urls, log) {
  * @async
  * @param {string} baseUrl - The base URL to find pages for.
  * @param {string[]} urls - The list of sitemap URLs to check.
+ * @param log
  * @returns {Promise<Object>} - Resolves to an object mapping sitemap URLs to arrays of page URLs.
  */
-export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
+export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
   const baseUrlVariant = toggleWWW(baseUrl);
   const contentsCache = {};
 
   // Prepare all promises for checking each sitemap URL.
   const checkPromises = urls.map(async (url) => {
-    const urlData = await checkSitemap(url);
+    const urlData = await checkSitemap(url, log);
     contentsCache[url] = urlData;
     return { url, urlData };
   });
@@ -238,7 +258,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   const pagesPromises = matchingUrls.map(async (matchingUrl) => {
     // Check if further detailed checks are needed or directly use cached data
     if (!contentsCache[matchingUrl]) {
-      contentsCache[matchingUrl] = await checkSitemap(matchingUrl);
+      contentsCache[matchingUrl] = await checkSitemap(matchingUrl, log);
     }
     const pages = getBaseUrlPagesFromSitemapContents(
       baseUrl,
@@ -287,7 +307,7 @@ export async function findSitemap(inputUrl, log) {
   const { protocol, domain } = parsedUrl;
   let sitemapUrls = { ok: [], notOk: [], error: [] };
   try {
-    const robotsResult = await checkRobotsForSitemap(protocol, domain);
+    const robotsResult = await checkRobotsForSitemap(protocol, domain, log);
     if (robotsResult.paths.length) {
       sitemapUrls.ok = robotsResult.paths;
     }
@@ -309,7 +329,7 @@ export async function findSitemap(inputUrl, log) {
   const filteredSitemapUrls = sitemapUrls.ok.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, log);
 
   // check if URLs from each sitemap exist and remove entries if none exist
   if (Object.entries(extractedPaths).length > 0) {
