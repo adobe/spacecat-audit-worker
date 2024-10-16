@@ -513,7 +513,7 @@ describe('Sitemap Audit', () => {
       expect(result.success).to.equal(false);
       expect(result.reasons).to.deep.include({
         value: 'No valid paths extracted from sitemaps.',
-        error: ERROR_CODES.NO_PATHS_IN_SITEMAP,
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
       });
     });
 

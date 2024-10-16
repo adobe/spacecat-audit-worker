@@ -24,7 +24,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'Invalid URL',
   NO_SITEMAP_IN_ROBOTS: 'Does not mention a sitemap path',
-  NO_PATHS_IN_SITEMAP: 'NO_PATHS_IN_SITEMAP',
+  NO_VALID_PATHS_EXTRACTED: 'No valid URLs were found in the sitemap.',
   SITEMAP_NOT_FOUND: 'Sitemap could not be found',
   SITEMAP_EMPTY: 'Sitemap is empty',
   SITEMAP_FORMAT: 'Invalid sitemap format',
@@ -152,7 +152,7 @@ export async function checkSitemap(sitemapUrl) {
  * @param {string[]} urls - An array of URLs to check.
  * @param {Object} log - The logging object to record information and errors.
  * @returns {Promise<{ok: string[], notOk: string[], err: string[]}>} -
- * A promise that resolves to an dict of URLs that exist.
+ * A promise that resolves to a dict of URLs that exist.
  */
 async function filterValidUrls(urls, log) {
   const OK = 1;
@@ -337,7 +337,7 @@ export async function findSitemap(inputUrl, log) {
       details: { ok: undefined, ...sitemapUrls },
     };
   } else {
-    logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_PATHS_IN_SITEMAP });
+    logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED });
     return {
       success: false,
       reasons: logMessages,
