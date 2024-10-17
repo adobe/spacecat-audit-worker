@@ -358,6 +358,8 @@ export async function findSitemap(inputUrl, log) {
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
   const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, log);
+  // map[str,str]
+  const notOkPagesFromSitemap = {};
 
   // check if URLs from each sitemap exist and remove entries if none exist
   if (Object.entries(extractedPaths).length > 0) {
@@ -366,6 +368,18 @@ export async function findSitemap(inputUrl, log) {
       const urlsToCheck = extractedPaths[s];
       // eslint-disable-next-line no-await-in-loop
       const existingPages = await filterValidUrls(urlsToCheck, log);
+
+      if (existingPages.notOk.length > 0) {
+        notOkPagesFromSitemap[s] = existingPages.notOk;
+      }
+
+      if (existingPages.err.length > 0) {
+        if (Object.keys(notOkPagesFromSitemap).indexOf(s) < 0) {
+          notOkPagesFromSitemap[s] = existingPages.err;
+        } else {
+          notOkPagesFromSitemap[s] = [...notOkPagesFromSitemap[s], ...existingPages.notOk];
+        }
+      }
 
       if (existingPages.ok.length === 0) {
         logMessages.push({
@@ -386,7 +400,7 @@ export async function findSitemap(inputUrl, log) {
       reasons: logMessages,
       paths: extractedPaths,
       url: inputUrl,
-      details: { ok: undefined, ...sitemapUrls },
+      details: { issues: notOkPagesFromSitemap },
     };
   } else {
     logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED });
@@ -394,7 +408,7 @@ export async function findSitemap(inputUrl, log) {
       success: false,
       reasons: logMessages,
       url: inputUrl,
-      details: { ok: undefined, ...sitemapUrls },
+      details: { issues: notOkPagesFromSitemap },
     };
   }
 }
