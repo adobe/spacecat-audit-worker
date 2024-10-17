@@ -318,17 +318,11 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
  * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
  */
 export async function findSitemap(inputUrl, log) {
-  const logMessages = [];
-
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
-    logMessages.push({
-      value: inputUrl,
-      error: ERROR_CODES.INVALID_URL,
-    });
     return {
       success: false,
-      reasons: logMessages,
+      reasons: [{ value: inputUrl, error: ERROR_CODES.INVALID_URL }],
     };
   }
 
@@ -340,15 +334,21 @@ export async function findSitemap(inputUrl, log) {
       sitemapUrls.ok = robotsResult.paths;
     }
   } catch (error) {
-    logMessages.push({ value: `${error.message}`, error: ERROR_CODES.FETCH_ERROR });
+    return {
+      success: false,
+      reasons: [{ value: `${error.message}`, error: ERROR_CODES.FETCH_ERROR }],
+    };
   }
 
   if (!sitemapUrls.ok.length) {
     const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
     sitemapUrls = await filterValidUrls(commonSitemapUrls, log);
     if (!sitemapUrls.ok || !sitemapUrls.ok.length) {
-      logMessages.push({ value: 'Robots.txt', error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
-      return { success: false, reasons: logMessages, details: sitemapUrls };
+      return {
+        success: false,
+        reasons: [{ value: 'Robots.txt', error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS }],
+        details: sitemapUrls,
+      };
     }
   }
 
@@ -380,10 +380,6 @@ export async function findSitemap(inputUrl, log) {
         }
 
         if (!existingPages.ok || existingPages.ok.length === 0) {
-          logMessages.push({
-            value: s,
-            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-          });
           delete extractedPaths[s];
         } else {
           extractedPaths[s] = existingPages.ok;
@@ -393,19 +389,21 @@ export async function findSitemap(inputUrl, log) {
   }
 
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
-    logMessages.push({ value: 'Sitemaps found and validated successfully.' });
     return {
       success: true,
-      reasons: logMessages,
+      reasons: [{ value: 'Sitemaps found and validated successfully.' }],
       paths: extractedPaths,
       url: inputUrl,
       details: { issues: notOkPagesFromSitemap },
     };
   } else {
-    logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED });
     return {
       success: false,
-      reasons: logMessages,
+      reasons: [{
+        value: filteredSitemapUrls[0]
+            || inputUrl,
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+      }],
       url: inputUrl,
       details: { issues: notOkPagesFromSitemap },
     };
