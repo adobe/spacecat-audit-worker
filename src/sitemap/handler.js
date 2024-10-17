@@ -336,18 +336,17 @@ export async function findSitemap(inputUrl, log) {
   let sitemapUrls = { ok: [], notOk: [], error: [] };
   try {
     const robotsResult = await checkRobotsForSitemap(protocol, domain, log);
-    if (robotsResult.paths.length) {
+    if (robotsResult && robotsResult.paths && robotsResult.paths.length) {
       sitemapUrls.ok = robotsResult.paths;
     }
   } catch (error) {
     logMessages.push({ value: `${error.message}`, error: ERROR_CODES.FETCH_ERROR });
-    // Don't return failure yet, try the fallback URLs
   }
 
   if (!sitemapUrls.ok.length) {
     const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
     sitemapUrls = await filterValidUrls(commonSitemapUrls, log);
-    if (!sitemapUrls.ok.length) {
+    if (!sitemapUrls.ok || !sitemapUrls.ok.length) {
       logMessages.push({ value: 'Robots.txt', error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS });
       return { success: false, reasons: logMessages, details: sitemapUrls };
     }
@@ -358,42 +357,42 @@ export async function findSitemap(inputUrl, log) {
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
   const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, log);
-  // map[str,str]
   const notOkPagesFromSitemap = {};
 
-  // check if URLs from each sitemap exist and remove entries if none exist
-  if (Object.entries(extractedPaths).length > 0) {
+  if (extractedPaths && Object.keys(extractedPaths).length > 0) {
     const extractedSitemapUrls = Object.keys(extractedPaths);
     for (const s of extractedSitemapUrls) {
       const urlsToCheck = extractedPaths[s];
-      // eslint-disable-next-line no-await-in-loop
-      const existingPages = await filterValidUrls(urlsToCheck, log);
+      if (urlsToCheck && urlsToCheck.length) {
+        // eslint-disable-next-line no-await-in-loop
+        const existingPages = await filterValidUrls(urlsToCheck, log);
 
-      if (existingPages.notOk.length > 0) {
-        notOkPagesFromSitemap[s] = existingPages.notOk;
-      }
-
-      if (existingPages.err.length > 0) {
-        if (Object.keys(notOkPagesFromSitemap).indexOf(s) < 0) {
-          notOkPagesFromSitemap[s] = existingPages.err;
-        } else {
-          notOkPagesFromSitemap[s] = [...notOkPagesFromSitemap[s], ...existingPages.notOk];
+        if (existingPages.notOk && existingPages.notOk.length > 0) {
+          notOkPagesFromSitemap[s] = existingPages.notOk;
         }
-      }
 
-      if (existingPages.ok.length === 0) {
-        logMessages.push({
-          value: s,
-          error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-        });
-        delete extractedPaths[s];
-      } else {
-        extractedPaths[s] = existingPages.ok;
+        if (existingPages.err && existingPages.err.length > 0) {
+          if (!notOkPagesFromSitemap[s]) {
+            notOkPagesFromSitemap[s] = existingPages.err;
+          } else {
+            notOkPagesFromSitemap[s] = [...notOkPagesFromSitemap[s], ...existingPages.notOk];
+          }
+        }
+
+        if (!existingPages.ok || existingPages.ok.length === 0) {
+          logMessages.push({
+            value: s,
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+          });
+          delete extractedPaths[s];
+        } else {
+          extractedPaths[s] = existingPages.ok;
+        }
       }
     }
   }
 
-  if (Object.entries(extractedPaths).length > 0) {
+  if (extractedPaths && Object.keys(extractedPaths).length > 0) {
     logMessages.push({ value: 'Sitemaps found and validated successfully.' });
     return {
       success: true,

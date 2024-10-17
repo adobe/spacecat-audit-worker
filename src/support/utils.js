@@ -89,12 +89,23 @@ export function extractDomainAndProtocol(inputUrl) {
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
 export function extractUrlsFromSitemap(content, log, tagName = 'url') {
+  if (!content || !content.payload) {
+    log?.error('Invalid content: content or content.payload is undefined');
+    return [];
+  }
+
   log?.debug(`Extracting URLs from sitemap, content length: ${content.payload.length}`);
   const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
 
+  if (!document) {
+    log?.error('Failed to parse XML content');
+    return [];
+  }
+
   const elements = document.getElementsByTagName(tagName);
   log?.debug(`Found ${elements.length} ${tagName} elements in sitemap`);
+
   // Filter out any nulls if 'loc' element is missing
   const urls = Array.from(elements).map((element) => {
     const loc = element.getElementsByTagName('loc')[0];
@@ -118,17 +129,30 @@ export function extractUrlsFromSitemap(content, log, tagName = 'url') {
  * @returns {string[]} URLs from the sitemap that start with the base URL or its www variant.
  */
 export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log) {
+  if (!baseUrl || !sitemapDetails) {
+    log?.error('Invalid input: baseUrl or sitemapDetails is undefined');
+    return [];
+  }
+
   const baseUrlVariant = toggleWWW(baseUrl);
 
   const filterPages = (pages) => pages.filter(
-    (url) => url.startsWith(baseUrl) || url.startsWith(baseUrlVariant),
+    (url) => url && (url.startsWith(baseUrl) || url.startsWith(baseUrlVariant)),
   );
 
   if (sitemapDetails.isText) {
+    if (!sitemapDetails.sitemapContent || !sitemapDetails.sitemapContent.payload) {
+      log?.error('Invalid sitemap content: payload is undefined');
+      return [];
+    }
     const lines = sitemapDetails.sitemapContent.payload.split('\n').map((line) => line.trim());
 
     return filterPages(lines.filter((line) => line.length > 0));
   } else {
+    if (!sitemapDetails.sitemapContent) {
+      log?.error('Invalid sitemap content: sitemapContent is undefined');
+      return [];
+    }
     const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent, log);
 
     return filterPages(sitemapPages);
