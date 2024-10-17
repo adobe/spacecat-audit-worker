@@ -192,8 +192,14 @@ async function filterValidUrls(urls, log) {
   const ERR = 3;
 
   const fetchPromises = urls.map(async (url) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await fetch(url, { method: 'HEAD' });
+      const response = await fetch(url, { method: 'HEAD', signal: controller.signal });
+      log.debug(`URL ${url} returned status: ${response.status}`);
+      clearTimeout(timeout);
+      log.debug(`URL ${url} returned status: ${response.status}`);
+
       if (response.ok) {
         return { status: OK, url };
       } else {
@@ -201,7 +207,12 @@ async function filterValidUrls(urls, log) {
         return { status: NOT_OK, url };
       }
     } catch (error) {
-      log.error(`Failed to fetch URL ${url}: ${error.message}`);
+      clearTimeout(timeout);
+      if (error.name === 'AbortError') {
+        log.error(`Request timeout for URL ${url}`);
+      } else {
+        log.error(`Failed to fetch URL ${url}: ${error.message}`);
+      }
       return { status: ERR, url };
     }
   });
@@ -370,7 +381,8 @@ export async function findSitemap(inputUrl, log) {
       reasons: logMessages,
       paths: extractedPaths,
       url: inputUrl,
-      details: { ok: undefined, ...sitemapUrls },
+      // details: { ok: undefined, ...sitemapUrls },
+      details: { ...sitemapUrls },
     };
   } else {
     logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED });
@@ -378,7 +390,8 @@ export async function findSitemap(inputUrl, log) {
       success: false,
       reasons: logMessages,
       url: inputUrl,
-      details: { ok: undefined, ...sitemapUrls },
+      // details: { ok: undefined, ...sitemapUrls },
+      details: { ...sitemapUrls },
     };
   }
 }
