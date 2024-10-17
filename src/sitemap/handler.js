@@ -100,7 +100,7 @@ export async function checkRobotsForSitemap(protocol, domain, log) {
       log.info(`Extracted sitemap path: ${path}`);
     }
   } else {
-    log.error('No content found in robots.txt');
+    log.error('No sitemap found in robots.txt');
   }
 
   return {
