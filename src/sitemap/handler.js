@@ -205,18 +205,14 @@ async function filterValidUrls(urls, log) {
 
       log.debug(`URL ${url} returned status: ${response.status}`);
 
-      if (response.ok) {
+      if (response.status === 200) {
         return { status: OK, url };
       } else {
-        log.info(`URL ${url} returned status code ${response.status}`);
+        log.info(`URL ${url} returned non-200 status code: ${response.status}`);
         return { status: NOT_OK, url };
       }
     } catch (error) {
-      if (error.name === 'Timeout') {
-        log.error(`Request timeout for URL ${url}`);
-      } else {
-        log.error(`Failed to fetch URL ${url}: ${error.message}`);
-      }
+      log.error(`Failed to fetch URL ${url}: ${error.message}`);
       return { status: ERR, url };
     }
   };
@@ -372,6 +368,10 @@ export async function findSitemap(inputUrl, log) {
       const existingPages = await filterValidUrls(urlsToCheck, log);
 
       if (existingPages.ok.length === 0) {
+        logMessages.push({
+          value: s,
+          error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        });
         delete extractedPaths[s];
       } else {
         extractedPaths[s] = existingPages.ok;
