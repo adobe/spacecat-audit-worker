@@ -209,7 +209,7 @@ async function filterValidUrls(urls, log) {
         return { status: OK, url };
       } else {
         log.info(`URL ${url} returned non-200 status code: ${response.status}`);
-        return { status: NOT_OK, url };
+        return { status: NOT_OK, url, statusCode: response.status };
       }
     } catch (error) {
       log.error(`Failed to fetch URL ${url}: ${error.message}`);
@@ -229,7 +229,7 @@ async function filterValidUrls(urls, log) {
     if (result.status === OK) {
       acc.ok.push(result.url);
     } else if (result.status === NOT_OK) {
-      acc.notOk.push(result.url);
+      acc.notOk.push({ url: result.url, statusCode: result.statusCode });
     } else {
       acc.error.push(result.url);
     }
@@ -386,8 +386,7 @@ export async function findSitemap(inputUrl, log) {
       reasons: logMessages,
       paths: extractedPaths,
       url: inputUrl,
-      // details: { ok: undefined, ...sitemapUrls },
-      details: { ...sitemapUrls },
+      details: { ok: undefined, ...sitemapUrls },
     };
   } else {
     logMessages.push({ value: 'No valid paths extracted from sitemaps.', error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED });
@@ -395,8 +394,7 @@ export async function findSitemap(inputUrl, log) {
       success: false,
       reasons: logMessages,
       url: inputUrl,
-      // details: { ok: undefined, ...sitemapUrls },
-      details: { ...sitemapUrls },
+      details: { ok: undefined, ...sitemapUrls },
     };
   }
 }
