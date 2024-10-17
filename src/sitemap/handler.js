@@ -23,7 +23,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'Invalid URL',
-  NO_SITEMAP_IN_ROBOTS: 'Does not mention a sitemap path',
+  NO_SITEMAP_IN_ROBOTS: 'Does not have a sitemap path',
   NO_VALID_PATHS_EXTRACTED: 'No valid URLs were found in the sitemap.',
   SITEMAP_NOT_FOUND: 'Sitemap could not be found',
   SITEMAP_EMPTY: 'Sitemap is empty',
@@ -56,7 +56,6 @@ export async function fetchContent(targetUrl, log) {
   try {
     const response = await fetch(targetUrl);
     log?.debug(`Response Status: ${response.status} for ${targetUrl}`);
-    log?.debug(`Response Headers: ${JSON.stringify(response.headers.raw())}`);
 
     if (!response.ok) {
       log.info(`Fetch error for ${targetUrl}: Status ${response.status}`);
@@ -64,7 +63,6 @@ export async function fetchContent(targetUrl, log) {
     }
 
     const text = await response.text();
-    log?.debug(`Response Content Length: ${text.length}`);
     return { payload: text, type: response.headers.get('content-type') };
   } catch (error) {
     log.error(`Fetch error for ${targetUrl}: ${error.message}`);
@@ -190,7 +188,7 @@ async function filterValidUrls(urls, log) {
   const OK = 1;
   const NOT_OK = 2;
   const ERR = 3;
-  const TIMEOUT = 5000; // 5 seconds timeout
+  const TIMEOUT = 5000; // 5sec timeout
 
   const fetchWithTimeout = async (url) => {
     const timeoutPromise = new Promise((_, reject) => {
@@ -203,12 +201,11 @@ async function filterValidUrls(urls, log) {
         timeoutPromise,
       ]);
 
-      log.debug(`URL ${url} returned status: ${response.status}`);
+      log.info(`URL ${url} returned status: ${response.status}`);
 
       if (response.status === 200) {
         return { status: OK, url };
       } else {
-        log.info(`URL ${url} returned non-200 status code: ${response.status}`);
         return { status: NOT_OK, url, statusCode: response.status };
       }
     } catch (error) {
