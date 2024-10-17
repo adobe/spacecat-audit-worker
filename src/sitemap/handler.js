@@ -55,7 +55,7 @@ const VALID_MIME_TYPES = Object.freeze([
 export async function fetchContent(targetUrl, log) {
   try {
     const response = await fetch(targetUrl);
-    log?.debug(`Response Status: ${response.status} for ${targetUrl}`);
+    log.info(`Response Status: ${response.status} for ${targetUrl}`);
 
     if (!response.ok) {
       log.info(`Fetch error for ${targetUrl}: Status ${response.status}`);
@@ -66,7 +66,7 @@ export async function fetchContent(targetUrl, log) {
     return { payload: text, type: response.headers.get('content-type') };
   } catch (error) {
     log.error(`Fetch error for ${targetUrl}: ${error.message}`);
-    log?.debug(`Error stack: ${error.stack}`);
+    log.info(`Error stack: ${error.stack}`);
     return null;
   }
 }
@@ -140,10 +140,10 @@ export function isSitemapContentValid(sitemapContent, log) {
  */
 export async function checkSitemap(sitemapUrl, log) {
   try {
-    log?.debug(`Fetching sitemap from: ${sitemapUrl}`);
+    log.info(`Fetching sitemap from: ${sitemapUrl}`);
     const sitemapContent = await fetchContent(sitemapUrl, log);
     const isValidFormat = isSitemapContentValid(sitemapContent, log);
-    log?.debug(`Sitemap format valid: ${isValidFormat}`);
+    log.info(`Sitemap format valid: ${isValidFormat}`);
     const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
     const isText = isValidFormat && sitemapContent.type === 'text/plain';
 
@@ -160,7 +160,7 @@ export async function checkSitemap(sitemapUrl, log) {
     };
   } catch (error) {
     log.error(`Error in checkSitemap for ${sitemapUrl}: ${error.message}`);
-    log?.debug(`Error stack: ${error.stack}`);
+    log.info(`Error stack: ${error.stack}`);
     if (error.message.includes('404')) {
       return {
         existsAndIsValid: false,
@@ -254,10 +254,10 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
 
   // Prepare all promises for checking each sitemap URL.
   const checkPromises = urls.map(async (url) => {
-    log?.debug(`Checking sitemap: ${url}`);
+    log.info(`Checking sitemap: ${url}`);
     const urlData = await checkSitemap(url, log);
     contentsCache[url] = urlData;
-    log?.debug(`Sitemap check result for ${url}: ${JSON.stringify(urlData)}`);
+    log.info(`Sitemap check result for ${url}: ${JSON.stringify(urlData)}`);
     return { url, urlData };
   });
 

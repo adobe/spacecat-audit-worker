@@ -103,7 +103,7 @@ export function extractUrlsFromSitemap(content, log, tagName = 'url') {
   }
 
   const elements = document.getElementsByTagName(tagName);
-  log?.debug(`Found ${elements.length} ${tagName} elements in sitemap`);
+  log.info(`Found ${elements.length} ${tagName} elements in sitemap`);
 
   // Filter out any nulls if 'loc' element is missing
   const urls = Array.from(elements).map((element) => {
@@ -111,7 +111,7 @@ export function extractUrlsFromSitemap(content, log, tagName = 'url') {
     return loc ? loc.textContent : null;
   }).filter((url) => url !== null);
 
-  log?.debug(`Extracted ${urls.length} valid URLs from sitemap`);
+  log.info(`Extracted ${urls.length} valid URLs from sitemap`);
   return urls;
 }
 
