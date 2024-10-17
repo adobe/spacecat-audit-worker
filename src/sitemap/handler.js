@@ -193,11 +193,12 @@ async function filterValidUrls(urls, log) {
 
   const fetchPromises = urls.map(async (url) => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     try {
       const response = await fetch(url, { method: 'HEAD', signal: controller.signal });
       log.debug(`URL ${url} returned status: ${response.status}`);
-      clearTimeout(timeout);
+      clearTimeout(timeoutId);
       log.debug(`URL ${url} returned status: ${response.status}`);
 
       if (response.ok) {
@@ -207,7 +208,7 @@ async function filterValidUrls(urls, log) {
         return { status: NOT_OK, url };
       }
     } catch (error) {
-      clearTimeout(timeout);
+      clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
         log.error(`Request timeout for URL ${url}`);
       } else {
