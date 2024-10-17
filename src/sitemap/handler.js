@@ -263,6 +263,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
 
   // Execute all checks concurrently.
   const results = await Promise.all(checkPromises);
+  log.info('[STEP] All sitemap checks completed');
   const matchingUrls = [];
 
   // Process each result.
@@ -332,6 +333,7 @@ export async function findSitemap(inputUrl, log) {
   let sitemapUrls = { ok: [], notOk: [], error: [] };
   try {
     const robotsResult = await checkRobotsForSitemap(protocol, domain, log);
+    log.info('[STEP] Robots.txt check completed');
     if (robotsResult && robotsResult.paths && robotsResult.paths.length) {
       sitemapUrls.ok = robotsResult.paths;
     }
@@ -358,7 +360,9 @@ export async function findSitemap(inputUrl, log) {
   const filteredSitemapUrls = sitemapUrls.ok.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
+  log.info('[STEP] Getting base URL pages from sitemaps');
   const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, log);
+  log.info('[STEP] Got base URL pages from sitemaps');
   const notOkPagesFromSitemap = {};
 
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
@@ -422,21 +426,31 @@ export async function findSitemap(inputUrl, log) {
  */
 export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
-  log.info(`Received sitemap audit request for ${baseURL}`);
-  const startTime = process.hrtime();
-  const auditResult = await findSitemap(baseURL, log);
 
-  const endTime = process.hrtime(startTime);
-  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
-  const formattedElapsed = elapsedSeconds.toFixed(2);
+  try {
+    log.info(`[START] sitemapAuditRunner for ${baseURL}`);
 
-  log.info(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
+    const startTime = process.hrtime();
+    log.info(`[STEP] Calling findSitemap for ${baseURL}`);
+    const auditResult = await findSitemap(baseURL, log);
+    log.info(`[STEP] findSitemap completed for ${baseURL}`);
 
-  return {
-    fullAuditRef: baseURL,
-    auditResult,
-    url: baseURL,
-  };
+    const endTime = process.hrtime(startTime);
+    const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+    const formattedElapsed = elapsedSeconds.toFixed(2);
+
+    log.info(`[END] Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
+
+    return {
+      fullAuditRef: baseURL,
+      auditResult,
+      url: baseURL,
+    };
+  } catch (error) {
+    log.error(`[ERROR] in sitemapAuditRunner for ${baseURL}: ${error.message}`);
+    log.error(`[ERROR] Stack trace: ${error.stack}`);
+    throw error; // Re-throw to let the caller handle it
+  }
 }
 
 export default new AuditBuilder()
