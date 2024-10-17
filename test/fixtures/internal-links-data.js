@@ -33,7 +33,7 @@ export const internalLinksData = [
     url: '',
     views: 100,
     all_sources: [
-      '',
+      'invalid-url',
     ],
     source_count: 1,
     top_source: '',
