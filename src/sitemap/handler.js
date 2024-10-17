@@ -142,7 +142,6 @@ export async function checkSitemap(sitemapUrl, log) {
   try {
     log?.debug(`Fetching sitemap from: ${sitemapUrl}`);
     const sitemapContent = await fetchContent(sitemapUrl, log);
-    log?.debug(`Sitemap content fetched, length: ${sitemapContent?.payload?.length}`);
     const isValidFormat = isSitemapContentValid(sitemapContent, log);
     log?.debug(`Sitemap format valid: ${isValidFormat}`);
     const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
@@ -197,7 +196,12 @@ async function filterValidUrls(urls, log) {
 
     try {
       const response = await Promise.race([
-        fetch(url, { method: 'HEAD' }),
+        fetch(url, {
+          method: 'HEAD',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36',
+          },
+        }),
         timeoutPromise,
       ]);
 
