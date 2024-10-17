@@ -190,15 +190,19 @@ async function filterValidUrls(urls, log) {
   const OK = 1;
   const NOT_OK = 2;
   const ERR = 3;
+  const TIMEOUT = 5000; // 5 seconds timeout
 
-  const fetchPromises = urls.map(async (url) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+  const fetchWithTimeout = async (url) => {
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Timeout')), TIMEOUT);
+    });
 
     try {
-      const response = await fetch(url, { method: 'HEAD', signal: controller.signal });
-      log.debug(`URL ${url} returned status: ${response.status}`);
-      clearTimeout(timeoutId);
+      const response = await Promise.race([
+        fetch(url, { method: 'HEAD' }),
+        timeoutPromise,
+      ]);
+
       log.debug(`URL ${url} returned status: ${response.status}`);
 
       if (response.ok) {
@@ -208,16 +212,16 @@ async function filterValidUrls(urls, log) {
         return { status: NOT_OK, url };
       }
     } catch (error) {
-      clearTimeout(timeoutId);
-      if (error.name === 'AbortError') {
+      if (error.name === 'Timeout') {
         log.error(`Request timeout for URL ${url}`);
       } else {
         log.error(`Failed to fetch URL ${url}: ${error.message}`);
       }
       return { status: ERR, url };
     }
-  });
+  };
 
+  const fetchPromises = urls.map(fetchWithTimeout);
   const results = await Promise.allSettled(fetchPromises);
 
   // filter only the fulfilled promises that have a valid URL
