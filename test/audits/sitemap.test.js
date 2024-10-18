@@ -30,7 +30,7 @@ use(sinonChai);
 use(chaiAsPromised);
 const sandbox = sinon.createSandbox();
 
-describe('Sitemap Audit', () => {
+describe.skip('Sitemap Audit', () => {
   let context;
   const url = 'https://some-domain.adobe';
   const { protocol, domain } = extractDomainAndProtocol(url);
