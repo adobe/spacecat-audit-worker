@@ -11,6 +11,7 @@
  */
 
 import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
+import { AbortController, AbortError } from '@adobe/fetch';
 import {
   extractDomainAndProtocol,
   fetch,
@@ -186,40 +187,47 @@ export async function checkSitemap(sitemapUrl, log) {
 async function filterValidUrls(urls, log) {
   const OK = 1;
   const NOT_OK = 2;
-  const ERR = 3;
   const TIMEOUT = 10000; // 5sec timeout
 
-  const fetchWithTimeout = async (url) => {
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Timeout')), TIMEOUT);
-    });
+  const fetchWithTimeout = async (url, timeout) => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const id = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const response = await Promise.race([
-        fetch(url, {
-          method: 'GET',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36',
-          },
-          redirect: 'follow',
-        }),
-        timeoutPromise,
-      ]);
-
-      log.info(`URL ${url} returned status: ${response.status}`);
-
-      if (response.status === 200) {
-        return { status: OK, url };
-      } else {
-        return { status: NOT_OK, url, statusCode: response.status };
-      }
+      const response = await fetch(url, {
+        method: 'GET',
+        signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36',
+        },
+        redirect: 'follow',
+      });
+      clearTimeout(id);
+      return response;
     } catch (error) {
-      log.error(`Failed to fetch URL ${url}: ${error.message}`);
-      return { status: ERR, url };
+      if (error instanceof AbortError) {
+        log.warn(`Request to ${url} timed out after ${timeout}ms`);
+        return { status: 408 };
+      }
+    } finally {
+      clearTimeout(id);
+    }
+    return { status: 0 };
+  };
+
+  const fetchUrl = async (url) => {
+    const response = await fetchWithTimeout(url, TIMEOUT);
+    log.info(`URL ${url} returned status: ${response.status}`);
+
+    if (response.status === 200) {
+      return { status: OK, url };
+    } else {
+      return { status: NOT_OK, url, statusCode: response.status };
     }
   };
 
-  const fetchPromises = urls.map(fetchWithTimeout);
+  const fetchPromises = urls.map(fetchUrl);
   const results = await Promise.allSettled(fetchPromises);
 
   // filter only the fulfilled promises that have a valid URL
@@ -230,13 +238,11 @@ async function filterValidUrls(urls, log) {
   return filtered.reduce((acc, result) => {
     if (result.status === OK) {
       acc.ok.push(result.url);
-    } else if (result.status === NOT_OK) {
-      acc.notOk.push({ url: result.url, statusCode: result.statusCode });
     } else {
-      acc.error.push(result.url);
+      acc.notOk.push({ url: result.url, statusCode: result.statusCode });
     }
     return acc;
-  }, { ok: [], notOk: [], error: [] });
+  }, { ok: [], notOk: [] });
 }
 
 /**
@@ -330,7 +336,7 @@ export async function findSitemap(inputUrl, log) {
   }
 
   const { protocol, domain } = parsedUrl;
-  let sitemapUrls = { ok: [], notOk: [], error: [] };
+  let sitemapUrls = { ok: [], notOk: [] };
   try {
     const robotsResult = await checkRobotsForSitemap(protocol, domain, log);
     log.info('[STEP] Robots.txt check completed');
@@ -351,7 +357,9 @@ export async function findSitemap(inputUrl, log) {
       return {
         success: false,
         reasons: [{ value: 'Robots.txt', error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS }],
-        details: sitemapUrls,
+        details: {
+          issues: sitemapUrls.notOk,
+        },
       };
     }
   }
@@ -375,14 +383,6 @@ export async function findSitemap(inputUrl, log) {
 
         if (existingPages.notOk && existingPages.notOk.length > 0) {
           notOkPagesFromSitemap[s] = existingPages.notOk;
-        }
-
-        if (existingPages.err && existingPages.err.length > 0) {
-          if (!notOkPagesFromSitemap[s]) {
-            notOkPagesFromSitemap[s] = existingPages.err;
-          } else {
-            notOkPagesFromSitemap[s] = [...notOkPagesFromSitemap[s], ...existingPages.notOk];
-          }
         }
 
         if (!existingPages.ok || existingPages.ok.length === 0) {
