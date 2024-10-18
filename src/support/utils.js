@@ -85,22 +85,11 @@ export function extractDomainAndProtocol(inputUrl) {
  *
  * @param {Object} content - The content of the sitemap.
  * @param {string} tagName - The name of the tag to extract URLs from.
- * @param log
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
-export function extractUrlsFromSitemap(content, log, tagName = 'url') {
-  if (!content || !content.payload) {
-    log?.error('Invalid content: content or content.payload is undefined');
-    return [];
-  }
-
+export function extractUrlsFromSitemap(content, tagName = 'url') {
   const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
-
-  if (!document) {
-    log?.error('Failed to parse XML content');
-    return [];
-  }
 
   const elements = document.getElementsByTagName(tagName);
 
@@ -148,7 +137,7 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log)
       log.info('Invalid sitemap content: sitemapContent is undefined');
       return [];
     }
-    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent, log);
+    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
 
     return filterPages(sitemapPages);
   }

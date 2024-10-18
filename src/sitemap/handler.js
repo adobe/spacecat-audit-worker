@@ -22,13 +22,13 @@ import {
 import { AuditBuilder } from '../common/audit-builder.js';
 
 export const ERROR_CODES = Object.freeze({
-  INVALID_URL: 'Invalid URL',
-  NO_SITEMAP_IN_ROBOTS: 'Does not have a sitemap path',
-  NO_VALID_PATHS_EXTRACTED: 'No valid URLs were found in the sitemap.',
-  SITEMAP_NOT_FOUND: 'Sitemap could not be found',
-  SITEMAP_EMPTY: 'Sitemap is empty',
-  SITEMAP_FORMAT: 'Invalid sitemap format',
-  FETCH_ERROR: 'Error fetching data',
+  INVALID_URL: 'INVALID URL',
+  NO_SITEMAP_IN_ROBOTS: 'DOES NOT CONTAIN A SITEMAP',
+  NO_VALID_PATHS_EXTRACTED: 'NO  VALID URLs WERE FOUND IN THE SITEMAP',
+  SITEMAP_NOT_FOUND: 'SITEMAP NOT FOUND',
+  SITEMAP_EMPTY: 'SITEMAP IS EMPTY',
+  SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
+  FETCH_ERROR: 'ERROR FETCHING DATA',
 });
 
 const VALID_MIME_TYPES = Object.freeze([
@@ -397,7 +397,7 @@ export async function findSitemap(inputUrl, log) {
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
     return {
       success: true,
-      reasons: [{ value: 'Sitemaps found and validated successfully.' }],
+      reasons: [{ value: 'Sitemaps found and checked.' }],
       paths: extractedPaths,
       url: inputUrl,
       details: { issues: notOkPagesFromSitemap },
