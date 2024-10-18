@@ -144,7 +144,7 @@ export async function checkSitemap(sitemapUrl, log) {
     const sitemapContent = await fetchContent(sitemapUrl, log);
     const isValidFormat = isSitemapContentValid(sitemapContent, log);
     log.info(`Sitemap format valid: ${isValidFormat}`);
-    const isSitemapIndex = isValidFormat && (sitemapContent.payload.includes('</sitemapindex>') || sitemapContent.payload.includes('</urlset>'));
+    const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
     const isText = isValidFormat && sitemapContent.type === 'text/plain';
 
     if (!isValidFormat) {
@@ -187,7 +187,7 @@ async function filterValidUrls(urls, log) {
   const OK = 1;
   const NOT_OK = 2;
   const ERR = 3;
-  const TIMEOUT = 5000; // 5sec timeout
+  const TIMEOUT = 10000; // 5sec timeout
 
   const fetchWithTimeout = async (url) => {
     const timeoutPromise = new Promise((_, reject) => {

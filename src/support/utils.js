@@ -84,16 +84,20 @@ export function extractDomainAndProtocol(inputUrl) {
  * Extracts URLs from a sitemap XML content based on a specified tag name.
  *
  * @param {Object} content - The content of the sitemap.
+ * @param {string} tagName - The name of the tag to extract URLs from.
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
-export function extractUrlsFromSitemap(content) {
+export function extractUrlsFromSitemap(content, tagName = 'url') {
   const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
   const { document } = dom.window;
 
-  const elements = document.getElementsByTagName('loc');
+  const elements = document.getElementsByTagName(tagName);
 
   // Filter out any nulls if 'loc' element is missing
-  return Array.from(elements).map((element) => element.textContent).filter((url) => url !== null);
+  return Array.from(elements).map((element) => {
+    const loc = element.getElementsByTagName('loc')[0];
+    return loc ? loc.textContent : null;
+  }).filter((url) => url !== null);
 }
 
 /**
@@ -147,7 +151,7 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log)
  * @returns {Array<string>} An array of sitemap URLs extracted from the sitemap index.
  */
 export function getSitemapUrlsFromSitemapIndex(content) {
-  return extractUrlsFromSitemap(content);
+  return extractUrlsFromSitemap(content, 'sitemap');
 }
 
 export function getUrlWithoutPath(url) {
