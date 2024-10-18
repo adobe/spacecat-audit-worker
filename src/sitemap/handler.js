@@ -144,7 +144,7 @@ export async function checkSitemap(sitemapUrl, log) {
     const sitemapContent = await fetchContent(sitemapUrl, log);
     const isValidFormat = isSitemapContentValid(sitemapContent, log);
     log.info(`Sitemap format valid: ${isValidFormat}`);
-    const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
+    const isSitemapIndex = isValidFormat && (sitemapContent.payload.includes('</sitemapindex>') || sitemapContent.payload.includes('</urlset>'));
     const isText = isValidFormat && sitemapContent.type === 'text/plain';
 
     if (!isValidFormat) {
