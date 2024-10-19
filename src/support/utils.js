@@ -84,19 +84,31 @@ export function extractDomainAndProtocol(inputUrl) {
  * Extracts URLs from a sitemap XML content based on a specified tag name.
  *
  * @param {Object} content - The content of the sitemap.
+ * @param log
  * @param {string} tagName - The name of the tag to extract URLs from.
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
-export function extractUrlsFromSitemap(content, tagName = 'url') {
-  const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
-  const { document } = dom.window;
+export function extractUrlsFromSitemap(content, log, tagName = 'url') {
+  try {
+    const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
+    const { document } = dom.window;
+    const elements = document.getElementsByTagName(tagName);
 
-  const elements = document.getElementsByTagName(tagName);
-  // Filter out any nulls if 'loc' element is missing
-  return Array.from(elements).map((element) => {
-    const loc = element.getElementsByTagName('loc')[0];
-    return loc ? loc.textContent : null;
-  }).filter((url) => url !== null);
+    return Array.from(elements)
+      .map((element) => {
+        const loc = element.getElementsByTagName('loc')[0];
+        if (loc && loc.textContent) {
+          log.info('Extracted URL:', loc.textContent.trim());
+          return loc.textContent.trim();
+        }
+        return null;
+      })
+      .filter((url) => url !== null);
+  } catch (error) {
+    log.error(`Failed to parse XML content in sitemap: ${error.message}`);
+    log.error(`Content received: ${content.payload}`);
+    return [];
+  }
 }
 
 /**
@@ -104,39 +116,62 @@ export function extractUrlsFromSitemap(content, tagName = 'url') {
  *
  * @param {string} baseUrl - The base URL to match against the URLs in the sitemap.
  * @param {Object} sitemapDetails - An object containing details about the sitemap.
+ * @param log
  * @param {boolean} sitemapDetails.isText - A flag indicating if the sitemap content is plain text.
  * @param {Object} sitemapDetails.sitemapContent - The sitemap content object.
  * @param {string} sitemapDetails.sitemapContent.payload - The actual content of the sitemap.
  *
  * @returns {string[]} URLs from the sitemap that start with the base URL or its www variant.
  */
-export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
+export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log) {
   const baseUrlVariant = toggleWWW(baseUrl);
 
   const filterPages = (pages) => pages.filter(
     (url) => url.startsWith(baseUrl) || url.startsWith(baseUrlVariant),
   );
 
-  if (sitemapDetails.isText) {
+  if (sitemapDetails && sitemapDetails.isText) {
     const lines = sitemapDetails.sitemapContent.payload.split('\n').map((line) => line.trim());
-
     return filterPages(lines.filter((line) => line.length > 0));
-  } else {
-    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
-
+  } else if (sitemapDetails) {
+    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent, log);
     return filterPages(sitemapPages);
   }
+
+  return [];
 }
 
 /**
  * Extracts sitemap URLs from a sitemap index XML content.
  *
  * @param {Object} content - The content of the sitemap index.
+ * @param log
  * @param {string} content.payload - The XML content of the sitemap index as a string.
  * @returns {Array<string>} An array of sitemap URLs extracted from the sitemap index.
  */
-export function getSitemapUrlsFromSitemapIndex(content) {
-  return extractUrlsFromSitemap(content, 'sitemap');
+export async function getSitemapUrlsFromSitemapIndex(content, log) {
+  const sitemapUrls = extractUrlsFromSitemap(content, log, 'sitemap');
+  const accessibleUrls = [];
+
+  // Check the accessibility of each sitemap URL
+  const checkAccessibility = async (sitemapUrl) => {
+    try {
+      const response = await fetch(sitemapUrl, { method: 'HEAD' });
+      if (response.ok) {
+        log.info(`Accessible sitemap URL: ${sitemapUrl}`);
+        accessibleUrls.push(sitemapUrl);
+      } else {
+        log.warn(`Sitemap URL not accessible: ${sitemapUrl} (Status: ${response.status})`);
+      }
+    } catch (error) {
+      log.error(`Error checking sitemap URL ${sitemapUrl}: ${error.message}`);
+    }
+  };
+
+  const promises = sitemapUrls.map(checkAccessibility);
+  await Promise.all(promises);
+
+  return accessibleUrls;
 }
 
 export function getUrlWithoutPath(url) {
