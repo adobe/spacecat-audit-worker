@@ -30,7 +30,7 @@ export const internalLinksData = [
     top_source: 'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-8',
   },
   {
-    url: '',
+    url: 'x',
     views: 100,
     all_sources: [
       'invalid-url',
