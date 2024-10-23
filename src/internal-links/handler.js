@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Adobe. All rights reserved.
+ * Copyright 2024 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -43,14 +43,13 @@ function hasSameHost(url, currentHost) {
 function transform404LinksData(responseData, hostUrl, auditUrl, log) {
   return responseData.reduce((result, { url, views, all_sources: allSources }) => {
     try {
+      if (!url || views < DAILY_PAGEVIEW_THRESHOLD) {
+        return result;
+      }
       const sameDomainSources = allSources.filter(
         (source) => source && hasSameHost(source, hostUrl),
       );
-      if (
-        views >= DAILY_PAGEVIEW_THRESHOLD
-        && url
-        && sameDomainSources.length
-      ) {
+      if (sameDomainSources.length) {
         result.push({
           url,
           views,
