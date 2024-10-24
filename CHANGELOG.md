@@ -1,3 +1,15 @@
+# [1.31.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.30...v1.31.0) (2024-10-24)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.21.0 ([#437](https://github.com/adobe/spacecat-audit-worker/issues/437)) ([5bad931](https://github.com/adobe/spacecat-audit-worker/commit/5bad9316527d9a8ad72e6c62e5fe14f401527f78))
+
+
+### Features
+
+* introduce broken internal links audit (SITES-25870) ([#426](https://github.com/adobe/spacecat-audit-worker/issues/426)) ([d8e5a21](https://github.com/adobe/spacecat-audit-worker/commit/d8e5a21f64a467a46478e88eaa71cf44865714a6))
+
 ## [1.30.30](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.29...v1.30.30) (2024-10-21)
 
 
