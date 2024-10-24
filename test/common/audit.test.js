@@ -45,12 +45,18 @@ const message = {
 const mockDate = '2023-03-12T15:24:51.231Z';
 const sandbox = sinon.createSandbox();
 describe('Audit tests', () => {
+  let clock;
   let context;
   let site;
   let org;
   let configuration;
 
   beforeEach('setup', () => {
+    clock = sandbox.useFakeTimers({
+      now: +new Date(mockDate),
+      toFake: ['Date'],
+    });
+
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .build(message);
@@ -75,15 +81,8 @@ describe('Audit tests', () => {
     configuration = createConfiguration(configurationData);
   });
 
-  before('setup', function () {
-    this.clock = sandbox.useFakeTimers({
-      now: +new Date(mockDate),
-      shouldAdvanceTime: true,
-    });
-  });
-
-  after('clean', function () {
-    this.clock.uninstall();
+  afterEach('clean', () => {
+    clock.restore();
   });
 
   describe('default components', () => {
@@ -256,7 +255,7 @@ describe('Audit tests', () => {
       const auditData = {
         siteId: site.getId(),
         isLive: site.isLive(),
-        auditedAt: '2023-03-12T15:24:51.431Z', // time is advanced by 200ms
+        auditedAt: mockDate,
         auditType: message.type,
         auditResult: { metric: 42 },
         fullAuditRef,
@@ -315,7 +314,7 @@ describe('Audit tests', () => {
     expect(context.dataAccess.addAudit).to.have.been.calledWith({
       siteId: site.getId(),
       isLive: site.isLive(),
-      auditedAt: '2023-03-12T15:24:51.271Z', // time is advanced by 40ms
+      auditedAt: mockDate,
       auditType: message.type,
       auditResult: { metric: 42 },
       fullAuditRef,

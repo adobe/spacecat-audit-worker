@@ -24,19 +24,22 @@ use(sinonChai);
 
 describe('404 Tests', () => {
   const url = 'https://abc.com';
+  const mockDate = '2023-11-27T12:30:01.124Z';
+
+  let clock;
   let context;
   let messageBodyJson;
   let sandbox;
-  before('setup', function () {
+
+  before('setup', () => {
     sandbox = sinon.createSandbox();
-    const mockDate = '2023-11-27T12:30:01.124Z';
-    this.clock = sandbox.useFakeTimers({
-      now: +new Date(mockDate),
-      shouldAdvanceTime: true,
-    });
   });
 
   beforeEach('setup', () => {
+    clock = sandbox.useFakeTimers({
+      now: +new Date(mockDate),
+      toFake: ['Date'],
+    });
     messageBodyJson = {
       type: '404',
       url: 'https://abc.com',
@@ -53,12 +56,10 @@ describe('404 Tests', () => {
       })
       .build(messageBodyJson);
   });
-  after('clean', function () {
-    this.clock.uninstall();
-  });
 
   afterEach(() => {
     nock.cleanAll();
+    clock.restore();
     sinon.restore();
   });
 
