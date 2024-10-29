@@ -59,13 +59,14 @@ export default async function auditMetaTags(message, context) {
     const prefix = `scrapes/${siteId}/`;
     const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
     const extractedTags = {};
-    for (const key of scrapedObjectKeys) {
-      // eslint-disable-next-line no-await-in-loop
-      const pageMetadata = await fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log);
+    const pageMetadataResults = await Promise.all(scrapedObjectKeys.map(
+      (key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log),
+    ));
+    pageMetadataResults.forEach((pageMetadata) => {
       if (pageMetadata) {
         Object.assign(extractedTags, pageMetadata);
       }
-    }
+    });
     const extractedTagsCount = Object.entries(extractedTags).length;
     if (extractedTagsCount === 0) {
       log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
