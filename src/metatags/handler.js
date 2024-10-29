@@ -79,7 +79,10 @@ export default async function auditMetaTags(message, context) {
       seoChecks.performChecks(pageUrl, pageTags);
     }
     seoChecks.finalChecks();
-    const detectedTags = seoChecks.getDetectedTags();
+    const detectedTags = {
+      text: 'dummy-data',
+    };// seoChecks.getDetectedTags();
+    console.log(`detected tags length - ${Object.keys(seoChecks.getDetectedTags()).length}`);
     // Prepare Audit result
     const auditResult = {
       detectedTags,
