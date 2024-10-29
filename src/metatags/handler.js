@@ -23,7 +23,7 @@ async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)
     log.error(`No Scraped tags found in S3 ${key} object`);
     return null;
   }
-  const pageUrl = key.slice(prefix.length - 1).replace('scrape.json', ''); // Remove the prefix and .json suffix
+  const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
   return {
     [pageUrl]: {
       title: object.scrapeResult.tags.title,
@@ -45,10 +45,10 @@ export default async function auditMetaTags(message, context) {
     if (!site) {
       return notFound('Site not found');
     }
-    // if (!site.isLive()) {
-    //   log.info(`Site ${siteId} is not live`);
-    //   return ok();
-    // }
+    if (!site.isLive()) {
+      log.info(`Site ${siteId} is not live`);
+      return ok();
+    }
     const configuration = await dataAccess.getConfiguration();
     if (!configuration.isHandlerEnabledForSite(type, site)) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
