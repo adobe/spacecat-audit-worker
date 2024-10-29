@@ -26,6 +26,7 @@ import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
+import internalLinks from './internal-links/handler.js';
 import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
@@ -44,6 +45,7 @@ const HANDLERS = {
   sitemap,
   canonical,
   'broken-backlinks': backlinks,
+  'broken-internal-links': internalLinks,
   experimentation,
   conversion,
   'experimentation-ess-daily': essExperimentationDaily,

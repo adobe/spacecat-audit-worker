@@ -1,3 +1,232 @@
+## [1.31.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.3...v1.31.4) (2024-10-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.49.3 ([#443](https://github.com/adobe/spacecat-audit-worker/issues/443)) ([2223ae2](https://github.com/adobe/spacecat-audit-worker/commit/2223ae248d22f45d2c10bd9e75af869be3f49290))
+
+## [1.31.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.2...v1.31.3) (2024-10-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.49.2 ([#442](https://github.com/adobe/spacecat-audit-worker/issues/442)) ([3e1938c](https://github.com/adobe/spacecat-audit-worker/commit/3e1938c76e4e188a58c9708d5f4dc93ab1df261f))
+
+## [1.31.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.1...v1.31.2) (2024-10-26)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#440](https://github.com/adobe/spacecat-audit-worker/issues/440)) ([d450db9](https://github.com/adobe/spacecat-audit-worker/commit/d450db9bc1e4de443f5f5c341a47ff3441720ee3))
+
+## [1.31.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.0...v1.31.1) (2024-10-24)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.49.0 ([#438](https://github.com/adobe/spacecat-audit-worker/issues/438)) ([b23d62c](https://github.com/adobe/spacecat-audit-worker/commit/b23d62c79e0e42c52a12b34a6bd229a58a72d2a5))
+
+# [1.31.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.30...v1.31.0) (2024-10-24)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.21.0 ([#437](https://github.com/adobe/spacecat-audit-worker/issues/437)) ([5bad931](https://github.com/adobe/spacecat-audit-worker/commit/5bad9316527d9a8ad72e6c62e5fe14f401527f78))
+
+
+### Features
+
+* introduce broken internal links audit (SITES-25870) ([#426](https://github.com/adobe/spacecat-audit-worker/issues/426)) ([d8e5a21](https://github.com/adobe/spacecat-audit-worker/commit/d8e5a21f64a467a46478e88eaa71cf44865714a6))
+
+## [1.30.30](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.29...v1.30.30) (2024-10-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/helix-universal-logger to v3.0.21 ([#435](https://github.com/adobe/spacecat-audit-worker/issues/435)) ([55ca979](https://github.com/adobe/spacecat-audit-worker/commit/55ca9799168844f623b9768d2c8e6189462d4f9c))
+
+## [1.30.29](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.28...v1.30.29) (2024-10-21)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#434](https://github.com/adobe/spacecat-audit-worker/issues/434)) ([0718885](https://github.com/adobe/spacecat-audit-worker/commit/07188853c1b7316b63eab879c59a95bd562180b7))
+
+## [1.30.28](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.27...v1.30.28) (2024-10-19)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#432](https://github.com/adobe/spacecat-audit-worker/issues/432)) ([00718bb](https://github.com/adobe/spacecat-audit-worker/commit/00718bbced607dcf826a844bdf89c82548ced8ee))
+
+## [1.30.27](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.26...v1.30.27) (2024-10-12)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#428](https://github.com/adobe/spacecat-audit-worker/issues/428)) ([8242130](https://github.com/adobe/spacecat-audit-worker/commit/8242130e48faf78490c6f7091babd02147f4c8dd))
+
+## [1.30.26](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.25...v1.30.26) (2024-10-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.48.0 ([#427](https://github.com/adobe/spacecat-audit-worker/issues/427)) ([ef5ba73](https://github.com/adobe/spacecat-audit-worker/commit/ef5ba73b7578bdcff0cc2b1aa31b34950d708e49))
+
+## [1.30.25](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.24...v1.30.25) (2024-10-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-google-client to v1.2.11 ([#424](https://github.com/adobe/spacecat-audit-worker/issues/424)) ([fa34d6d](https://github.com/adobe/spacecat-audit-worker/commit/fa34d6df9e9c29c83c647f777e5c2bd1580d976a))
+
+## [1.30.24](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.23...v1.30.24) (2024-10-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.47.1 ([#423](https://github.com/adobe/spacecat-audit-worker/issues/423)) ([a62fae2](https://github.com/adobe/spacecat-audit-worker/commit/a62fae28bb23760c95a3bf04f5cb9f9c193ed326))
+
+## [1.30.23](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.22...v1.30.23) (2024-10-05)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#421](https://github.com/adobe/spacecat-audit-worker/issues/421)) ([7901227](https://github.com/adobe/spacecat-audit-worker/commit/7901227be79c8c7e2174ed8ed324b63fd190d2ad))
+
+## [1.30.22](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.21...v1.30.22) (2024-10-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.46.0 ([#419](https://github.com/adobe/spacecat-audit-worker/issues/419)) ([0133439](https://github.com/adobe/spacecat-audit-worker/commit/01334390f5ca89b68b67b421004e70fa302af9b8))
+
+## [1.30.21](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.20...v1.30.21) (2024-09-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.45.5 ([#418](https://github.com/adobe/spacecat-audit-worker/issues/418)) ([37a7f3f](https://github.com/adobe/spacecat-audit-worker/commit/37a7f3fbf794b01c60508b3dfb04e27edec201d3))
+
+## [1.30.20](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.19...v1.30.20) (2024-09-28)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#416](https://github.com/adobe/spacecat-audit-worker/issues/416)) ([c7c53f4](https://github.com/adobe/spacecat-audit-worker/commit/c7c53f4c7e3c857c766f10c5c21311c1e4c0c891))
+
+## [1.30.19](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.18...v1.30.19) (2024-09-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.45.3 ([#415](https://github.com/adobe/spacecat-audit-worker/issues/415)) ([e042383](https://github.com/adobe/spacecat-audit-worker/commit/e0423834d0a8aaf0848b9b669e81f53f8f1b72ff))
+
+## [1.30.18](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.17...v1.30.18) (2024-09-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.45.2 ([#414](https://github.com/adobe/spacecat-audit-worker/issues/414)) ([7819cee](https://github.com/adobe/spacecat-audit-worker/commit/7819cee265626d79dc91ccd97e6bc51b938eb7a9))
+
+## [1.30.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.16...v1.30.17) (2024-09-24)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.45.1 ([#413](https://github.com/adobe/spacecat-audit-worker/issues/413)) ([e2564ec](https://github.com/adobe/spacecat-audit-worker/commit/e2564ec8fb4565287cb8237ae306d7d70582752c))
+
+## [1.30.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.15...v1.30.16) (2024-09-23)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.44.5 ([#411](https://github.com/adobe/spacecat-audit-worker/issues/411)) ([e711155](https://github.com/adobe/spacecat-audit-worker/commit/e7111551c85156156a335d59874ee096de6b2678))
+
+## [1.30.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.14...v1.30.15) (2024-09-22)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#410](https://github.com/adobe/spacecat-audit-worker/issues/410)) ([a3a5eb8](https://github.com/adobe/spacecat-audit-worker/commit/a3a5eb8f5e5a2b38c8f5dadc2a4d678c7c374a6f))
+
+## [1.30.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.13...v1.30.14) (2024-09-21)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#409](https://github.com/adobe/spacecat-audit-worker/issues/409)) ([9118190](https://github.com/adobe/spacecat-audit-worker/commit/9118190aef8d46923b05ff33801b4f66d20ee628))
+
+## [1.30.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.12...v1.30.13) (2024-09-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.20.1 ([#407](https://github.com/adobe/spacecat-audit-worker/issues/407)) ([c797405](https://github.com/adobe/spacecat-audit-worker/commit/c79740591aa39441b9b29d71ec6042b2005b0f16))
+
+## [1.30.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.11...v1.30.12) (2024-09-20)
+
+
+### Bug Fixes
+
+* trigger release ([c1917a8](https://github.com/adobe/spacecat-audit-worker/commit/c1917a804afad32e46f2b118ee5e8e5746ad3927))
+
+## [1.30.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.10...v1.30.11) (2024-09-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#406](https://github.com/adobe/spacecat-audit-worker/issues/406)) ([317793a](https://github.com/adobe/spacecat-audit-worker/commit/317793a7e242c6a43e3ba2c5f73c8cfb8ec74686))
+
+## [1.30.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.9...v1.30.10) (2024-09-16)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#404](https://github.com/adobe/spacecat-audit-worker/issues/404)) ([e3b0505](https://github.com/adobe/spacecat-audit-worker/commit/e3b0505b8691159750c4b2906a7e851ef53a7d24))
+
+## [1.30.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.8...v1.30.9) (2024-09-14)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#402](https://github.com/adobe/spacecat-audit-worker/issues/402)) ([d3baf0c](https://github.com/adobe/spacecat-audit-worker/commit/d3baf0cb47d7d15062b585692438d23d175097c6))
+
+## [1.30.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.7...v1.30.8) (2024-09-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.44.0 ([#401](https://github.com/adobe/spacecat-audit-worker/issues/401)) ([dc2ff81](https://github.com/adobe/spacecat-audit-worker/commit/dc2ff81bf40d64527dcac84a7f1e02c5c7813086))
+
+## [1.30.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.6...v1.30.7) (2024-09-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependency diff to v7 ([#400](https://github.com/adobe/spacecat-audit-worker/issues/400)) ([9c81e84](https://github.com/adobe/spacecat-audit-worker/commit/9c81e84479219cb65a7833954d18e441d8de2fbf))
+
+## [1.30.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.5...v1.30.6) (2024-09-07)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#398](https://github.com/adobe/spacecat-audit-worker/issues/398)) ([0544fb8](https://github.com/adobe/spacecat-audit-worker/commit/0544fb8d4f4f9e8de363efdb46dc5cecafcf136a))
+
+## [1.30.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.4...v1.30.5) (2024-09-05)
+
+
+### Bug Fixes
+
+* **deps:** update dependency diff to v6 ([#387](https://github.com/adobe/spacecat-audit-worker/issues/387)) ([55585d5](https://github.com/adobe/spacecat-audit-worker/commit/55585d54eec766e950daa1dde8f196aa11e935e9))
+
+## [1.30.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.3...v1.30.4) (2024-09-05)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** introduce auto-suggest flag for broken backlinks suggestions ([#396](https://github.com/adobe/spacecat-audit-worker/issues/396)) ([4601b00](https://github.com/adobe/spacecat-audit-worker/commit/4601b0084c8373bfda1af58f93d1bdecb382c986))
+
 ## [1.30.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.30.2...v1.30.3) (2024-09-04)
 
 

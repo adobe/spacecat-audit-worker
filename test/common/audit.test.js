@@ -45,12 +45,18 @@ const message = {
 const mockDate = '2023-03-12T15:24:51.231Z';
 const sandbox = sinon.createSandbox();
 describe('Audit tests', () => {
+  let clock;
   let context;
   let site;
   let org;
   let configuration;
 
   beforeEach('setup', () => {
+    clock = sandbox.useFakeTimers({
+      now: +new Date(mockDate),
+      toFake: ['Date'],
+    });
+
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .build(message);
@@ -75,14 +81,8 @@ describe('Audit tests', () => {
     configuration = createConfiguration(configurationData);
   });
 
-  before('setup', function () {
-    this.clock = sandbox.useFakeTimers({
-      now: new Date(mockDate).getTime(),
-    });
-  });
-
-  after('clean', function () {
-    this.clock.uninstall();
+  afterEach('clean', () => {
+    clock.restore();
   });
 
   describe('default components', () => {
