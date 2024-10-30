@@ -183,9 +183,9 @@ class SeoChecks {
    * @param {object} pageTags - An object containing the tags of the page.
    */
   performChecks(url, pageTags) {
-    this.checkForH1Count(url, pageTags);
     this.checkForMissingTags(url, pageTags);
     this.checkForTagsLength(url, pageTags);
+    this.checkForH1Count(url, pageTags);
     // store tag data in all tags object to be used in later checks like uniqueness
     this.addToAllTags(url, TITLE, pageTags[TITLE]);
     this.addToAllTags(url, DESCRIPTION, pageTags[DESCRIPTION]);

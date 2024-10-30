@@ -49,11 +49,11 @@ export default async function auditMetaTags(message, context) {
       log.info(`Site ${siteId} is not live`);
       return ok();
     }
-    // const configuration = await dataAccess.getConfiguration();
-    // if (!configuration.isHandlerEnabledForSite(type, site)) {
-    //   log.info(`Audit type ${type} disabled for site ${siteId}`);
-    //   return ok();
-    // }
+    const configuration = await dataAccess.getConfiguration();
+    if (!configuration.isHandlerEnabledForSite(type, site)) {
+      log.info(`Audit type ${type} disabled for site ${siteId}`);
+      return ok();
+    }
     // Fetch site's scraped content from S3
     const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
     const prefix = `scrapes/${siteId}/`;
