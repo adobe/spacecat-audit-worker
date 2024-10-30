@@ -20,8 +20,7 @@ import {
 class SeoChecks {
   constructor(log) {
     this.log = log;
-    this.detectedTags = {
-    };
+    this.detectedTags = {};
     this.allTags = {
       [TITLE]: {},
       [DESCRIPTION]: {},
