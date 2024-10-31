@@ -256,9 +256,9 @@ const extractLinksFromHeader = (rawHtml, baseUrl) => {
   return links;
 };
 
-const getFileContentFromS3 = async (s3, bucket, key) => {
-  const getParams = { Bucket: bucket, Key: key };
-  const data = await s3.send(new GetObjectCommand(getParams));
+const getFileContentFromS3 = async (s3, key) => {
+  const getParams = { Bucket: s3.s3Bucket, Key: key };
+  const data = await s3.s3Client.send(new GetObjectCommand(getParams));
   const content = await data.Body.transformToString();
   return JSON.parse(content);
 };
@@ -310,14 +310,14 @@ const getScrapedData = async (s3, site, log) => {
   // Step 2: Extract data from each JSON file
   const extractedData = await Promise.all(
     allFiles.map(async (file) => {
-      const fileContent = await getFileContentFromS3(s3.s3Bucket, file.Key);
+      const fileContent = await getFileContentFromS3(s3, file.Key);
       const jsonData = extractDataFromJson(fileContent, log);
 
       return jsonData || null;
     }),
   );
   const indexFile = allFiles.find((file) => file.Key.endsWith(`${site.getId()}/scrape.json`));
-  const indexFileContent = await getFileContentFromS3(s3.s3Bucket, indexFile.Key);
+  const indexFileContent = await getFileContentFromS3(s3, indexFile.Key);
   const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL());
 
   return {
