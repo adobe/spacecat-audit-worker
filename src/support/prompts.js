@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => ({
+export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => JSON.stringify({
   messages: [
     {
       role: 'system',
@@ -36,7 +36,7 @@ export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => ({
   ],
 });
 
-export const backlinksSuggestionPrompt = (brokenUrl, suggestedUrls, headerLinks) => ({
+export const backlinksSuggestionPrompt = (brokenUrl, suggestedUrls, headerLinks) => JSON.stringify({
   messages: [
     {
       role: 'system',
