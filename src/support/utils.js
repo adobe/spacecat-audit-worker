@@ -219,10 +219,11 @@ export const extractKeywordsFromUrl = (url, log) => {
 
 const extractDataFromJson = (data, log) => {
   try {
+    log.info(`Extracting data from JSON (${data.finalUrl}:`, data.scrapeResult);
     const finalUrl = data.finalUrl || '';
-    const title = data.scrapeResult.tags.title || '';
-    const description = data.scrapeResult.tags.description || '';
-    const h1Tags = data.scrapeResult.tags.h1 || [];
+    const title = data.scrapeResult?.tags?.title || '';
+    const description = data.scrapeResult?.tags?.description || '';
+    const h1Tags = data.scrapeResult?.tags?.h1 || [];
     const h1Tag = h1Tags.length > 0 ? h1Tags[0] : '';
 
     return {
@@ -289,7 +290,7 @@ const getScrapedData = async (s3, site, log) => {
     };
 
     const listResponse = await s3.s3Client.send(new ListObjectsV2Command(listParams));
-    allFiles = allFiles.concat(listResponse.Contents.filter((file) => file.Key.endsWith('.json')));
+    allFiles = allFiles.concat(listResponse.Contents);
     isTruncated = listResponse.IsTruncated;
     continuationToken = listResponse.NextContinuationToken;
 
@@ -383,7 +384,7 @@ export const enhanceBacklinksWithFixes = async (brokenBacklinks, config) => {
       const finalSuggestion = JSON.parse(finalResponse);
 
       const newBacklink = { ...backlink };
-      newBacklink.urls_suggested = finalSuggestion.suggested_urls;
+      newBacklink.url_suggested = finalSuggestion.suggested_urls[0] || '';
       return newBacklink;
     }),
   );
