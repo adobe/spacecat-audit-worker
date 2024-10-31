@@ -355,6 +355,7 @@ export const enhanceBacklinksWithFixes = async (brokenBacklinks, config) => {
     brokenBacklinks.map(async (backlink) => {
       const requestBody = brokenBacklinksPrompt(data.headerLinks, backlink.url_to);
       const response = await firefallClient.fetch(requestBody);
+      log.info(`Found header suggestions: ${response}`);
       return JSON.parse(response);
     }),
   );
@@ -369,6 +370,7 @@ export const enhanceBacklinksWithFixes = async (brokenBacklinks, config) => {
           log.info(`Processing batch ${batchIndex + 1}/${totalBatches}...`);
           const requestBody = brokenBacklinksPrompt(batch, backlink.url_to);
           const response = await firefallClient.fetch(requestBody);
+          log.info(`Found suggestions: ${response}`);
           return JSON.parse(response);
         }),
       );
