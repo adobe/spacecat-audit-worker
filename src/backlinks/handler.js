@@ -111,7 +111,7 @@ export default async function auditBrokenBacklinks(message, context) {
           const config = {
             site, s3, firefallClient, log,
           };
-          brokenBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, config);
+          brokenBacklinks = await enhanceBacklinksWithFixes(brokenBacklinks, config);
         } catch (e) {
           log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`, e);
         }
