@@ -219,12 +219,11 @@ export const extractKeywordsFromUrl = (url, log) => {
 
 const extractDataFromJson = (data, log) => {
   try {
-    log.info(`Extracting data from JSON (${data.finalUrl}:`, typeof data.scrapeResult);
-    const parsedScrapeResult = JSON.parse(data.scrapeResult);
+    log.info(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
     const finalUrl = data.finalUrl || '';
-    const title = parsedScrapeResult.tags?.title || '';
-    const description = parsedScrapeResult.tags?.description || '';
-    const h1Tags = parsedScrapeResult.tags?.h1 || [];
+    const title = data.scrapeResult.tags?.title || '';
+    const description = data.scrapeResult.tags?.description || '';
+    const h1Tags = data.scrapeResult.tags?.h1 || [];
     const h1Tag = h1Tags.length > 0 ? h1Tags[0] : '';
 
     return {
