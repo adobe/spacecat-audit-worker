@@ -24,7 +24,7 @@ export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => JSON.string
       content: 'You have to provide the output in the following Format, where suggestedUrls is the top 3 suggestions. '
         + 'The confidence_score should be a number between 1-100 that reflects the percentage of how likely this url matches the broken url. '
         + 'IT SHOULD BE VALID JSON. RETURN JUST THE JSON OBJECT AND NO OTHER FORMATTING!'
-        + "{ 'broken_url': 'string', 'suggested_urls': ['string'], 'ai_rationale': 'string', 'confidence_score': number }",
+        + '{ "broken_url": "string", "suggested_urls": ["string"], "ai_rationale": "string", "confidence_score": number }',
     },
     {
       role: 'system',
@@ -54,7 +54,7 @@ export const backlinksSuggestionPrompt = (brokenUrl, suggestedUrls, headerLinks)
       content: 'You have to provide the output in the following Format, where suggestedUrls is the top 3 suggestions. '
         + 'The confidence_score should be a number between 1-100 that reflects the percentage of how likely this url matches the broken url: '
         + 'IT SHOULD BE VALID JSON. RETURN JUST THE JSON OBJECT AND NO OTHER FORMATTING!'
-        + "{ 'broken_url': 'string', 'suggested_urls': ['string'], 'ai_rationale': 'string', 'confidence_score': number }",
+        + '{ "broken_url": "string", "suggested_urls": ["string"], "ai_rationale": "string", "confidence_score": number }',
     },
     {
       role: 'system',
