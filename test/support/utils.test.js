@@ -16,7 +16,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import {
-  enhanceBacklinksWithFixes,
+  // enhanceBacklinksWithFixes,
   extractKeywordsFromUrl,
   getUrlWithoutPath,
 } from '../../src/support/utils.js';
@@ -86,87 +86,87 @@ describe('extractKeywordsFromUrl', () => {
   });
 });
 
-describe('enhanceBacklinksWithFixes', () => {
-  let log;
-
-  beforeEach(() => {
-    log = { info: sinon.stub() };
-  });
-
-  afterEach(() => {
-    sinon.restore();
-  });
-
-  it('should prioritize keywords closer to the end of the URL path', async () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo/bar/baz.html',
-      },
-    ];
-
-    const keywords = [
-      { keyword: 'foo', traffic: 100, url: 'https://www.example.com/foo.html' },
-      { keyword: 'bar', traffic: 200, url: 'https://www.example.com/foo/bar.html' },
-      { keyword: 'baz', traffic: 50, url: 'https://www.example.com/baz.html' },
-    ];
-
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/baz.html');
-  });
-
-  it('should use traffic as a secondary sort criterion', async () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo/bar/baz.html',
-      },
-    ];
-
-    const keywords = [
-      { keyword: 'foo', traffic: 300, url: 'https://www.example.com/foo.html' },
-      { keyword: 'another baz', traffic: 200, url: 'https://www.example.com/foo/bar.html' },
-      { keyword: 'baz', traffic: 100, url: 'https://www.example.com/baz.html' },
-    ];
-
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/foo/bar.html');
-  });
-
-  it('should correctly handle cases where keywords are split', async () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo-bar-baz.html',
-      },
-    ];
-
-    const keywords = [
-      { keyword: 'foo', traffic: 100, url: 'https://www.example.com/foo.html' },
-      { keyword: 'bar', traffic: 300, url: 'https://www.example.com/bar.html' },
-      { keyword: 'baz', traffic: 200, url: 'https://www.example.com/baz.html' },
-    ];
-
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
-  });
-
-  it('should match keywords only for whole words', () => {
-    const brokenBacklinks = [
-      {
-        url_to: 'https://www.example.com/foo/bar.html',
-      },
-    ];
-    const keywords = [
-      { keyword: 'foobar', traffic: 400, url: 'https://www.example.com/foobar.html' },
-      { keyword: 'foo', traffic: 200, url: 'https://www.example.com/foo.html' },
-      { keyword: 'bar', traffic: 50, url: 'https://www.example.com/bar.html' },
-    ];
-    const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-    expect(result).to.be.an('array').that.has.lengthOf(1);
-    expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
-  });
-});
+// describe('enhanceBacklinksWithFixes', () => {
+//   let log;
+//
+//   beforeEach(() => {
+//     log = { info: sinon.stub() };
+//   });
+//
+//   afterEach(() => {
+//     sinon.restore();
+//   });
+//
+//   it('should prioritize keywords closer to the end of the URL path', async () => {
+//     const brokenBacklinks = [
+//       {
+//         url_to: 'https://www.example.com/foo/bar/baz.html',
+//       },
+//     ];
+//
+//     const keywords = [
+//       { keyword: 'foo', traffic: 100, url: 'https://www.example.com/foo.html' },
+//       { keyword: 'bar', traffic: 200, url: 'https://www.example.com/foo/bar.html' },
+//       { keyword: 'baz', traffic: 50, url: 'https://www.example.com/baz.html' },
+//     ];
+//
+//     const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+//
+//     expect(result).to.be.an('array').that.has.lengthOf(1);
+//     expect(result[0].url_suggested).to.equal('https://www.example.com/baz.html');
+//   });
+//
+//   it('should use traffic as a secondary sort criterion', async () => {
+//     const brokenBacklinks = [
+//       {
+//         url_to: 'https://www.example.com/foo/bar/baz.html',
+//       },
+//     ];
+//
+//     const keywords = [
+//       { keyword: 'foo', traffic: 300, url: 'https://www.example.com/foo.html' },
+//       { keyword: 'another baz', traffic: 200, url: 'https://www.example.com/foo/bar.html' },
+//       { keyword: 'baz', traffic: 100, url: 'https://www.example.com/baz.html' },
+//     ];
+//
+//     const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+//
+//     expect(result).to.be.an('array').that.has.lengthOf(1);
+//     expect(result[0].url_suggested).to.equal('https://www.example.com/foo/bar.html');
+//   });
+//
+//   it('should correctly handle cases where keywords are split', async () => {
+//     const brokenBacklinks = [
+//       {
+//         url_to: 'https://www.example.com/foo-bar-baz.html',
+//       },
+//     ];
+//
+//     const keywords = [
+//       { keyword: 'foo', traffic: 100, url: 'https://www.example.com/foo.html' },
+//       { keyword: 'bar', traffic: 300, url: 'https://www.example.com/bar.html' },
+//       { keyword: 'baz', traffic: 200, url: 'https://www.example.com/baz.html' },
+//     ];
+//
+//     const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+//
+//     expect(result).to.be.an('array').that.has.lengthOf(1);
+//     expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
+//   });
+//
+//   it('should match keywords only for whole words', () => {
+//     const brokenBacklinks = [
+//       {
+//         url_to: 'https://www.example.com/foo/bar.html',
+//       },
+//     ];
+//     const keywords = [
+//       { keyword: 'foobar', traffic: 400, url: 'https://www.example.com/foobar.html' },
+//       { keyword: 'foo', traffic: 200, url: 'https://www.example.com/foo.html' },
+//       { keyword: 'bar', traffic: 50, url: 'https://www.example.com/bar.html' },
+//     ];
+//     const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+//     expect(result).to.be.an('array').that.has.lengthOf(1);
+//     expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
+//   });
+// });

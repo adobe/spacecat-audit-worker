@@ -15,6 +15,8 @@ import { hasText, prependSchema, resolveCustomerSecretsName } from '@adobe/space
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { brokenBacklinksPrompt, backlinksSuggestionPrompt } from './prompts.js';
 
 URI.preventInvalidHostname = true;
 
@@ -215,70 +217,174 @@ export const extractKeywordsFromUrl = (url, log) => {
   }
 };
 
-/**
- * Processes broken backlinks to find suggested URLs based on keywords.
- *
- * @param {Array} brokenBacklinks - The array of broken backlink objects to process.
- * @param {Array} keywords - The array of keyword objects to match against.
- * @param {Object} log - The logger object for logging messages.
- * @returns {Array} A new array of backlink objects with suggested URLs added.
- */
-export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
-  const result = [];
+const extractDataFromJson = (data, log) => {
+  try {
+    const finalUrl = data.finalUrl || '';
+    const title = data.scrapeResult.tags.title || '';
+    const description = data.scrapeResult.tags.description || '';
+    const h1Tags = data.scrapeResult.tags.h1 || [];
+    const h1Tag = h1Tags.length > 0 ? h1Tags[0] : '';
 
-  for (const backlink of brokenBacklinks) {
-    log.info(`trying to find redirect for: ${backlink.url_to}`);
-    const extractedKeywords = extractKeywordsFromUrl(backlink.url_to, log);
-
-    const matchedData = [];
-
-    // Match keywords and include rank in the matched data
-    keywords.forEach((entry) => {
-      const matchingKeyword = extractedKeywords.find(
-        (keywordObj) => {
-          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          return regex.test(entry.keyword);
-        },
-      );
-      if (matchingKeyword) {
-        matchedData.push({ ...entry, rank: matchingKeyword.rank });
-      }
-    });
-
-    // Try again with split keywords if no matches found
-    if (matchedData.length === 0) {
-      const splitKeywords = extractedKeywords
-        .map((keywordObj) => keywordObj.keyword.split(' ').map((k) => ({ keyword: k, rank: keywordObj.rank })))
-        .flat();
-
-      splitKeywords.forEach((keywordObj) => {
-        keywords.forEach((entry) => {
-          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          if (regex.test(entry.keyword)) {
-            matchedData.push({ ...entry, rank: keywordObj.rank });
-          }
-        });
-      });
-    }
-
-    // Sort by rank and then by traffic
-    matchedData.sort((a, b) => {
-      if (b.rank === a.rank) {
-        return b.traffic - a.traffic; // Higher traffic ranks first
-      }
-      return a.rank - b.rank; // Higher rank ranks first (1 is highest)
-    });
-
-    const newBacklink = { ...backlink };
-
-    if (matchedData.length > 0) {
-      log.info(`found ${matchedData.length} keywords for backlink ${backlink.url_to}`);
-      newBacklink.url_suggested = matchedData[0].url;
-    } else {
-      log.info(`could not find suggested URL for backlink ${backlink.url_to} with keywords ${extractedKeywords.map((k) => k.keyword).join(', ')}`);
-    }
-
-    result.push(newBacklink);
+    return {
+      url: finalUrl,
+      title,
+      description,
+      h1: h1Tag,
+    };
+  } catch (error) {
+    log.error('Error extracting data:', error);
+    return null;
   }
-  return result;
+};
+
+const extractLinksFromHeader = (rawHtml, baseUrl) => {
+  const dom = new JSDOM(rawHtml);
+  const { document } = dom.window;
+
+  const header = document.querySelector('header');
+  if (!header) {
+    return [];
+  }
+
+  const links = [];
+  header.querySelectorAll('a[href]').forEach((aTag) => {
+    const href = aTag.getAttribute('href');
+    const fullUrl = new URL(href, baseUrl).href;
+    links.push(fullUrl);
+  });
+
+  return links;
+};
+
+const getFileContentFromS3 = async (s3, bucket, key) => {
+  const getParams = { Bucket: bucket, Key: key };
+  const data = await s3.send(new GetObjectCommand(getParams));
+  const content = await data.Body.transformToString();
+  return JSON.parse(content);
+};
+
+/**
+ * Retrieves scraped data from the specified S3 bucket.
+ * @param s3 - The S3 wrapper object.
+ * @param s3.s3Client - The S3 client object.
+ * @param s3.s3Bucket - The S3 bucket name.
+ * @param site - The site object.
+ * @param log - The logger object for logging messages.
+ * @returns {Promise<{
+ * headerLinks: Array<string>,
+ * siteData: Array<Object>
+ *   }>} - A promise that resolves to an object containing the header links and site data.
+ */
+const getScrapedData = async (s3, site, log) => {
+  let allFiles = [];
+  let isTruncated = true;
+  let continuationToken = null;
+
+  // Step 1: List all objects with pagination
+  async function fetchFiles() {
+    const listParams = {
+      Bucket: s3.s3Bucket,
+      Prefix: `scrapes/${site.getId()}`,
+      ContinuationToken: continuationToken,
+    };
+
+    const listResponse = await s3.s3Client.send(new ListObjectsV2Command(listParams));
+    allFiles = allFiles.concat(listResponse.Contents.filter((file) => file.Key.endsWith('.json')));
+    isTruncated = listResponse.IsTruncated;
+    continuationToken = listResponse.NextContinuationToken;
+
+    if (isTruncated) {
+      await fetchFiles();
+    }
+  }
+
+  await fetchFiles();
+
+  if (allFiles.length === 0) {
+    return {
+      headerLinks: [],
+      siteData: [],
+    };
+  }
+
+  // Step 2: Extract data from each JSON file
+  const extractedData = await Promise.all(
+    allFiles.map(async (file) => {
+      const fileContent = await getFileContentFromS3(s3.s3Bucket, file.Key);
+      const jsonData = extractDataFromJson(fileContent, log);
+
+      return jsonData || null;
+    }),
+  );
+  const indexFile = allFiles.find((file) => file.Key.endsWith(`${site.getId()}/scrape.json`));
+  const indexFileContent = await getFileContentFromS3(s3.s3Bucket, indexFile.Key);
+  const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL());
+
+  return {
+    headerLinks,
+    siteData: extractedData.filter(Boolean),
+  };
+};
+
+/**
+ * Enhances the broken backlinks with suggested fixes, based on LLM decisions.
+ * @param brokenBacklinks - The broken backlinks to enhance.
+ * @param config - The configuration object.
+ * @param config.site - The site object.
+ * @param config.s3 - The S3 wrapper object.
+ * @param config.firefallClient - The Firefall client object.
+ * @param config.log - The logger object for logging messages.
+ * @returns {Promise<Awaited<Array>[]>}
+ */
+export const enhanceBacklinksWithFixes = async (brokenBacklinks, config) => {
+  const {
+    site, s3, firefallClient, log,
+  } = config;
+  const BATCH_SIZE = 300;
+  const data = await getScrapedData(s3, site, log);
+  const totalBatches = Math.ceil(data.siteData.length / BATCH_SIZE);
+  log.info(`Processing ${data.siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
+
+  const dataBatches = [];
+  for (let i = 0; i < data.siteData.length; i += BATCH_SIZE) {
+    dataBatches.push(data.siteData.slice(i, i + BATCH_SIZE));
+  }
+
+  const headerSuggestionsResults = await Promise.all(
+    brokenBacklinks.map(async (backlink) => {
+      const requestBody = brokenBacklinksPrompt(data.headerLinks, backlink.url_to);
+      const response = await firefallClient.fetch(requestBody);
+      return JSON.parse(response);
+    }),
+  );
+
+  return Promise.all(
+    brokenBacklinks.map(async (backlink, index) => {
+      log.info(`Trying to find redirect for: ${backlink.url_to}`);
+      const suggestions = [];
+
+      const batchResults = await Promise.all(
+        dataBatches.map(async (batch, batchIndex) => {
+          log.info(`Processing batch ${batchIndex + 1}/${totalBatches}...`);
+          const requestBody = brokenBacklinksPrompt(batch, backlink.url_to);
+          const response = await firefallClient.fetch(requestBody);
+          return JSON.parse(response);
+        }),
+      );
+      suggestions.push(...batchResults);
+
+      log.info(`Evaluating final suggestions for: ${backlink.url_to}`);
+      const finalRequestBody = backlinksSuggestionPrompt(
+        backlink.url_to,
+        suggestions,
+        headerSuggestionsResults[index],
+      );
+      const finalResponse = await firefallClient.fetch(finalRequestBody);
+      const finalSuggestion = JSON.parse(finalResponse);
+
+      const newBacklink = { ...backlink };
+      newBacklink.urls_suggested = finalSuggestion.suggested_urls;
+      return newBacklink;
+    }),
+  );
 };

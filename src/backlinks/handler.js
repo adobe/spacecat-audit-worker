@@ -15,6 +15,7 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
+import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
@@ -62,7 +63,9 @@ export async function filterOutValidBacklinks(backlinks, log) {
 
 export default async function auditBrokenBacklinks(message, context) {
   const { type, url: siteId, auditContext = {} } = message;
-  const { dataAccess, log, sqs } = context;
+  const {
+    dataAccess, log, sqs, s3,
+  } = context;
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
@@ -104,15 +107,11 @@ export default async function auditBrokenBacklinks(message, context) {
 
       if (configuration.isHandlerEnabledForSite(`${type}-auto-suggest`, site)) {
         try {
-          const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
-          const keywords = topPages.map(
-            (page) => ({
-              url: page.getURL(),
-              keyword: page.getTopKeyword(),
-              traffic: page.getTraffic(),
-            }),
-          );
-          brokenBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
+          const firefallClient = FirefallClient.createFrom(context);
+          const config = {
+            site, s3, firefallClient, log,
+          };
+          brokenBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, config);
         } catch (e) {
           log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`, e);
         }
