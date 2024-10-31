@@ -41,6 +41,9 @@ describe('Index Tests', () => {
       runtime: {
         region: 'us-east-1',
       },
+      env: {
+        AWS_REGION: 'us-east-1',
+      },
       invocation: {
         event: {
           Records: [{
