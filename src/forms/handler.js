@@ -17,7 +17,7 @@ import { noopUrlResolver } from '../common/audit.js';
 
 const INTERVAL = 1; // days
 
-export async function formsAuditRunner(auditUrl, context) {
+export async function formsAuditRunner(auditUrl, context, site) {
   const { log } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
