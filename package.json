@@ -59,6 +59,7 @@
     "@adobe/spacecat-shared-ahrefs-client": "1.5.8",
     "@adobe/spacecat-shared-data-access": "1.49.3",
     "@adobe/spacecat-shared-google-client": "1.2.16",
+    "@adobe/spacecat-shared-gpt-client": "1.2.18",
     "@adobe/spacecat-shared-http-utils": "1.6.14",
     "@adobe/spacecat-shared-rum-api-client": "2.9.7",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
@@ -67,6 +68,7 @@
     "@adobe/spacecat-shared-utils": "1.22.0",
     "@aws-sdk/client-secrets-manager": "3.679.0",
     "@aws-sdk/client-sqs": "3.679.0",
+    "@aws-sdk/client-s3": "3.682.0",
     "diff": "7.0.0",
     "jsdom": "25.0.1",
     "urijs": "1.19.11"
