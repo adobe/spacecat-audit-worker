@@ -15,7 +15,7 @@ import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 
-const INTERVAL = 1; // days
+const INTERVAL = 7; // days
 
 export async function formsAuditRunner(auditUrl, context, site) {
   const { log } = context;
