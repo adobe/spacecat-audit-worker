@@ -99,12 +99,13 @@ class SeoChecks {
       }
       if (issue) {
         this.detectedTags[url] ??= {};
-        this.detectedTags[url][tagName] ??= { tagContent };
+        this.detectedTags[url][tagName] ??= {};
         Object.assign(this.detectedTags[url][tagName], {
           [SEO_IMPACT]: issueImpact,
           [ISSUE]: issue,
           [ISSUE_DETAILS]: issueDetails,
           [SEO_RECOMMENDATION]: recommendation,
+          ...(tagContent && { tagContent }),
         });
       }
     };
