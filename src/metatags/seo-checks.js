@@ -33,7 +33,7 @@ class SeoChecks {
    * @param str
    * @returns {string}
    */
-  static capitalizeFirstLetter(str) {
+  static #capitalizeFirstLetter(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
 
@@ -46,7 +46,7 @@ class SeoChecks {
     [TITLE, DESCRIPTION, H1].forEach((tagName) => {
       if (pageTags[tagName] === undefined
         || (Array.isArray(pageTags[tagName]) && pageTags[tagName].length === 0)) {
-        const capitalisedTagName = SeoChecks.capitalizeFirstLetter(tagName);
+        const capitalisedTagName = SeoChecks.#capitalizeFirstLetter(tagName);
         this.detectedTags[url] ??= {};
         this.detectedTags[url][tagName] = {
           [SEO_IMPACT]: HIGH,
@@ -75,7 +75,7 @@ class SeoChecks {
     };
 
     const checkTag = (tagName, tagContent) => {
-      const capitalizedTagName = SeoChecks.capitalizeFirstLetter(tagName);
+      const capitalizedTagName = SeoChecks.#capitalizeFirstLetter(tagName);
       let issueDetails;
       let issueImpact;
       let issue;
@@ -139,7 +139,7 @@ class SeoChecks {
     [TITLE, DESCRIPTION, H1].forEach((tagName) => {
       Object.values(this.allTags[tagName]).forEach((value) => {
         if (value?.pageUrls?.size > 1) {
-          const capitalisedTagName = SeoChecks.capitalizeFirstLetter(tagName);
+          const capitalisedTagName = SeoChecks.#capitalizeFirstLetter(tagName);
           const pageUrls = [...value.pageUrls];
           pageUrls.forEach((url, index) => {
             this.detectedTags[url] ??= {};

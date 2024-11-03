@@ -47,13 +47,6 @@ describe('Meta Tags', () => {
       sinon.restore();
     });
 
-    describe('capitalizeFirstLetter', () => {
-      it('should capitalize the first letter of a string', () => {
-        const result = SeoChecks.capitalizeFirstLetter('test');
-        expect(result).to.equal('Test');
-      });
-    });
-
     describe('checkForMissingTags', () => {
       it('should detect missing tags and add to detectedTags', () => {
         const url = 'https://example.com';
