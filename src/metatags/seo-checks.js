@@ -10,13 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { hasText } from '@adobe/spacecat-shared-utils';
+import { hasText, isObject } from '@adobe/spacecat-shared-utils';
 import {
-  DESCRIPTION, TITLE, H1, TAG_LENGTHS, ISSUE, ISSUE_DETAILS, SEO_IMPACT, HIGH,
-  SEO_RECOMMENDATION, SHOULD_BE_PRESENT, TITLE_LENGTH_SUGGESTION,
-  DESCRIPTION_LENGTH_SUGGESTION, H1_LENGTH_SUGGESTION, MODERATE,
-  ONE_H1_ON_A_PAGE, UNIQUE_ACROSS_PAGES, DUPLICATES, MULTIPLE_H1_ON_PAGE,
+  DESCRIPTION, TITLE, H1, ISSUE, ISSUE_DETAILS, SEO_IMPACT, HIGH,
+  SEO_RECOMMENDATION, MODERATE, DUPLICATES, MULTIPLE_H1_ON_PAGE,
 } from './constants.js';
+import config from './config/metatagsConfig.json' assert { type: 'json' };
 
 class SeoChecks {
   constructor(log) {
@@ -54,7 +53,7 @@ class SeoChecks {
           [SEO_IMPACT]: HIGH,
           [ISSUE]: `Missing ${capitalisedTagName}`,
           [ISSUE_DETAILS]: `${capitalisedTagName} tag is missing`,
-          [SEO_RECOMMENDATION]: SHOULD_BE_PRESENT,
+          [SEO_RECOMMENDATION]: config.suggestions.shouldBePresent,
         };
       }
     });
@@ -69,11 +68,11 @@ class SeoChecks {
   checkForTagsLength(url, pageTags) {
     const getLengthSuggestion = (tagName) => {
       if (TITLE === tagName.toLowerCase()) {
-        return TITLE_LENGTH_SUGGESTION;
+        return config.suggestions.titleLengthSuggestion;
       } else if (DESCRIPTION === tagName.toLowerCase()) {
-        return DESCRIPTION_LENGTH_SUGGESTION;
+        return config.suggestions.descriptionLengthSuggestion;
       }
-      return H1_LENGTH_SUGGESTION;
+      return config.suggestions.h1LengthSuggestion;
     };
 
     const checkTag = (tagName, tagContent) => {
@@ -88,14 +87,14 @@ class SeoChecks {
         issueDetails = `${capitalizedTagName} tag is empty`;
         issueImpact = HIGH;
         recommendation = getLengthSuggestion(tagName);
-      } else if (tagContent?.length > TAG_LENGTHS[tagName].maxLength) {
+      } else if (tagContent?.length > config.tagLengths[tagName].maxLength) {
         issue = `${capitalizedTagName} too long`;
-        issueDetails = `${tagContent.length - TAG_LENGTHS[tagName].idealMaxLength} chars over limit`;
+        issueDetails = `${tagContent.length - config.tagLengths[tagName].idealMaxLength} chars over limit`;
         issueImpact = MODERATE;
         recommendation = getLengthSuggestion(tagName);
-      } else if (tagContent?.length < TAG_LENGTHS[tagName].minLength) {
+      } else if (tagContent?.length < config.tagLengths[tagName].minLength) {
         issue = `${capitalizedTagName} too short`;
-        issueDetails = `${TAG_LENGTHS[tagName].idealMinLength - tagContent.length} chars below limit`;
+        issueDetails = `${config.tagLengths[tagName].idealMinLength - tagContent.length} chars below limit`;
         issueImpact = MODERATE;
         recommendation = getLengthSuggestion(tagName);
       }
@@ -129,7 +128,7 @@ class SeoChecks {
         [SEO_IMPACT]: MODERATE,
         [ISSUE]: MULTIPLE_H1_ON_PAGE,
         [ISSUE_DETAILS]: `${pageTags[H1].length} H1 detected`,
-        [SEO_RECOMMENDATION]: ONE_H1_ON_A_PAGE,
+        [SEO_RECOMMENDATION]: config.suggestions.oneH1OnAPage,
       };
     }
   }
@@ -150,7 +149,7 @@ class SeoChecks {
               [SEO_IMPACT]: HIGH,
               [ISSUE]: `Duplicate ${capitalisedTagName}`,
               [ISSUE_DETAILS]: `${pageUrls.length} pages share same ${tagName}`,
-              [SEO_RECOMMENDATION]: UNIQUE_ACROSS_PAGES,
+              [SEO_RECOMMENDATION]: config.suggestions.uniqueAcrossPages,
               [DUPLICATES]: [
                 ...pageUrls.slice(0, index),
                 ...pageUrls.slice(index + 1),
@@ -182,10 +181,13 @@ class SeoChecks {
 
   /**
    * Performs all SEO checks on the provided tags.
-   * @param {string} url - The URL of the page.
+   * @param {string} url - Endpoint of the URL of the page.
    * @param {object} pageTags - An object containing the tags of the page.
    */
   performChecks(url, pageTags) {
+    if (!hasText(url) || !isObject(pageTags)) {
+      return;
+    }
     this.checkForMissingTags(url, pageTags);
     this.checkForTagsLength(url, pageTags);
     this.checkForH1Count(url, pageTags);

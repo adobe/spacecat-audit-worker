@@ -24,11 +24,11 @@ import {
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import {
   TITLE, DESCRIPTION, H1, SEO_IMPACT, HIGH, MODERATE, ISSUE,
-  SEO_RECOMMENDATION, SHOULD_BE_PRESENT, MULTIPLE_H1_ON_PAGE, ONE_H1_ON_A_PAGE,
-  TAG_LENGTHS,
+  SEO_RECOMMENDATION, MULTIPLE_H1_ON_PAGE,
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import auditMetaTags from '../../src/metatags/handler.js';
+import config from '../../src/metatags/config/metatagsConfig.json' assert { type: 'json' };
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -73,7 +73,7 @@ describe('Meta Tags', () => {
 
         expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Missing Title');
         expect(seoChecks.getDetectedTags()[url][TITLE][SEO_RECOMMENDATION])
-          .to.equal(SHOULD_BE_PRESENT);
+          .to.equal(config.suggestions.shouldBePresent);
       });
     });
 
@@ -90,7 +90,7 @@ describe('Meta Tags', () => {
 
       it('should detect too long tag and add to detectedTags with MODERATE impact', () => {
         const url = 'https://example.com';
-        const longTitle = 'A'.repeat(TAG_LENGTHS[TITLE].maxLength + 1);
+        const longTitle = 'A'.repeat(config.tagLengths[TITLE].maxLength + 1);
         const pageTags = { [TITLE]: longTitle };
 
         seoChecks.checkForTagsLength(url, pageTags);
@@ -101,7 +101,7 @@ describe('Meta Tags', () => {
 
       it('should detect too short tag and add to detectedTags with MODERATE impact', () => {
         const url = 'https://example.com';
-        const shortTitle = 'A'.repeat(TAG_LENGTHS[TITLE].minLength - 1);
+        const shortTitle = 'A'.repeat(config.tagLengths[TITLE].minLength - 1);
         const pageTags = { [TITLE]: shortTitle };
 
         seoChecks.checkForTagsLength(url, pageTags);
@@ -114,12 +114,13 @@ describe('Meta Tags', () => {
     describe('checkForH1Count', () => {
       it('should detect multiple H1 tags on the page', () => {
         const url = 'https://example.com';
-        const pageTags = { [H1]: ['Heading 1', 'Heading 2'] }; // Simulating multiple H1 tags
+        const pageTags = { [H1]: ['Heading 1', 'Heading 2'] };
 
         seoChecks.checkForH1Count(url, pageTags);
 
         expect(seoChecks.getDetectedTags()[url][H1][ISSUE]).to.equal(MULTIPLE_H1_ON_PAGE);
-        expect(seoChecks.getDetectedTags()[url][H1][SEO_RECOMMENDATION]).to.equal(ONE_H1_ON_A_PAGE);
+        expect(seoChecks.getDetectedTags()[url][H1][SEO_RECOMMENDATION])
+          .to.equal(config.suggestions.oneH1OnAPage);
       });
 
       it('should not detect an issue if there is only one H1 tag', () => {
@@ -166,6 +167,27 @@ describe('Meta Tags', () => {
         const detectedTags = seoChecks.getDetectedTags();
         expect(detectedTags[url][TITLE][ISSUE]).to.equal('Empty Title');
         expect(detectedTags[url][H1][ISSUE]).to.equal(MULTIPLE_H1_ON_PAGE);
+      });
+
+      it('should return if url is invalid', () => {
+        const pageTags = {
+          [TITLE]: '', // Empty title
+          [DESCRIPTION]: 'A short description.',
+          [H1]: ['Heading 1', 'Heading 2'], // Multiple H1 tags
+        };
+
+        seoChecks.performChecks(null, pageTags);
+
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags).to.deep.equal({});
+      });
+
+      it('should return if pageTags is invalid', () => {
+        const url = 'https://example.com';
+        seoChecks.performChecks(url, null);
+
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags).to.deep.equal({});
       });
     });
   });

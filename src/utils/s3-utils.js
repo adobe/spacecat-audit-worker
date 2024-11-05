@@ -11,7 +11,7 @@
  */
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
-export async function getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log) {
+export async function getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log, maxKeys = 1000) {
   const objectKeys = [];
   let continuationToken = null;
   if (!s3Client || !bucketName || !prefix) {
@@ -22,7 +22,7 @@ export async function getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log
     const params = {
       Bucket: bucketName,
       Prefix: prefix,
-      MaxKeys: 1000,
+      MaxKeys: maxKeys,
     };
     do {
       if (continuationToken) {

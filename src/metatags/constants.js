@@ -26,31 +26,3 @@ export const SEO_RECOMMENDATION = 'seoRecommendation';
 export const SEO_IMPACT = 'seoImpact';
 export const DUPLICATES = 'duplicates';
 export const MULTIPLE_H1_ON_PAGE = 'Multiple H1 on page';
-
-// SEO Guidelines Suggestions
-export const SHOULD_BE_PRESENT = 'Should be present';
-export const UNIQUE_ACROSS_PAGES = 'Unique across pages';
-export const TITLE_LENGTH_SUGGESTION = '40-60 characters long';
-export const DESCRIPTION_LENGTH_SUGGESTION = '140-160 characters long';
-export const H1_LENGTH_SUGGESTION = 'Below 70 characters';
-export const ONE_H1_ON_A_PAGE = '1 H1 on a page';
-
-// Tags lengths
-export const TAG_LENGTHS = {
-  [TITLE]: {
-    minLength: 25,
-    maxLength: 75,
-    idealMinLength: 40,
-    idealMaxLength: 60,
-  },
-  [DESCRIPTION]: {
-    minLength: 100,
-    maxLength: 175,
-    idealMinLength: 140,
-    idealMaxLength: 160,
-  },
-  [H1]: {
-    maxLength: 75,
-    idealMaxLength: 70,
-  },
-};
