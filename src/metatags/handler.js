@@ -55,7 +55,7 @@ export default async function auditMetaTags(message, context) {
       return ok();
     }
     // Fetch site's scraped content from S3
-    const bucketName = context.env.S3_SCRAPER_BUCKET_NAME || 'spacecat-scraper-dev';
+    const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
     const prefix = `scrapes/${siteId}/`;
     const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
     const extractedTags = {};
