@@ -14,8 +14,8 @@ import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 export async function getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log, maxKeys = 1000) {
   const objectKeys = [];
   let continuationToken = null;
-  if (!s3Client) {
-    log.error('Invalid input parameters: ensure s3Client, bucketName, and prefix are provided.');
+  if (!s3Client || !bucketName || !prefix) {
+    log.error(`Invalid input parameters: ensure s3Client, bucketName:${bucketName}, and prefix:${prefix} are provided.`);
     throw new Error('Invalid input parameters: ensure s3Client, bucketName, and prefix are provided.');
   }
   try {
