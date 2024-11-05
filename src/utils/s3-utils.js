@@ -13,24 +13,41 @@ import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 export async function getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log) {
   const objectKeys = [];
+  let continuationToken = null;
+  if (!s3Client || !bucketName || !prefix) {
+    log.error('Invalid input parameters: ensure s3Client, bucketName, and prefix are provided.');
+    throw new Error('Invalid input parameters: ensure s3Client, bucketName, and prefix are provided.');
+  }
   try {
     const params = {
       Bucket: bucketName,
       Prefix: prefix,
       MaxKeys: 1000,
     };
-    const data = await s3Client.send(new ListObjectsV2Command(params));
-    data?.Contents?.forEach((obj) => {
-      objectKeys.push(obj.Key);
-    });
+    do {
+      if (continuationToken) {
+        params.ContinuationToken = continuationToken;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const data = await s3Client.send(new ListObjectsV2Command(params));
+      data?.Contents?.forEach((obj) => {
+        objectKeys.push(obj.Key);
+      });
+      continuationToken = data?.NextContinuationToken;
+    } while (continuationToken);
     log.info(`Fetched ${objectKeys.length} keys from S3 for bucket ${bucketName} and prefix ${prefix}`);
   } catch (err) {
     log.error(`Error while fetching S3 object keys using bucket ${bucketName} and prefix ${prefix}`, err);
+    throw err;
   }
   return objectKeys;
 }
 
 export async function getObjectFromKey(s3Client, bucketName, key, log) {
+  if (!s3Client || !bucketName || !key) {
+    log.error('Invalid input parameters: ensure s3Client, bucketName, and key are provided.');
+    return null;
+  }
   const command = new GetObjectCommand({
     Bucket: bucketName,
     Key: key,

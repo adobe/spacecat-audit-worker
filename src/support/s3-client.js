@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import AWSXray from 'aws-xray-sdk';
 import { S3Client } from '@aws-sdk/client-s3';
 
 /**
@@ -20,7 +21,9 @@ import { S3Client } from '@aws-sdk/client-s3';
 export default function s3Client(fn) {
   return async (request, context) => {
     if (!context.s3Client) {
-      context.s3Client = new S3Client();
+      const region = context.env?.AWS_REGION;
+      const options = region ? { region } : {};
+      context.s3Client = AWSXray.captureAWSv3Client(new S3Client(options));
     }
     return fn(request, context);
   };

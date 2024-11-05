@@ -47,6 +47,23 @@ describe('Meta Tags', () => {
       sinon.restore();
     });
 
+    describe('capitalizeFirstLetter', () => {
+      it('should capitalize the first letter of a string', () => {
+        const result = SeoChecks.capitalizeFirstLetter('title');
+        expect(result).to.equal('Title');
+      });
+
+      it('should return the original string if it is empty', () => {
+        const result = SeoChecks.capitalizeFirstLetter('');
+        expect(result).to.equal('');
+      });
+
+      it('should return the original string if it is null or undefined', () => {
+        const result = SeoChecks.capitalizeFirstLetter(null);
+        expect(result).to.be.null;
+      });
+    });
+
     describe('checkForMissingTags', () => {
       it('should detect missing tags and add to detectedTags', () => {
         const url = 'https://example.com';

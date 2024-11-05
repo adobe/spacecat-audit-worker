@@ -30,7 +30,7 @@ describe('s3Client middleware', () => {
   beforeEach(() => {
     mockFn = sinon.stub().resolves({ statusCode: 200, body: 'Success' });
     request = {};
-    context = {};
+    context = { env: { AWS_REGION: 'us-west-2' } };
   });
 
   afterEach(() => {

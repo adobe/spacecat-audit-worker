@@ -13,28 +13,64 @@
 
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
+import sinon from 'sinon';
+import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../../src/utils/s3-utils.js';
 
 use(chaiAsPromised);
 
 describe('S3 Utility Functions', () => {
   const logMock = {
+    info: () => {},
     error: () => {},
   };
 
   describe('getObjectKeysUsingPrefix', () => {
+    it('should throw if params are missing', async () => {
+      try {
+        await getObjectKeysUsingPrefix(null, null, null, logMock);
+        throw new Error('Expected an error but none was thrown.');
+      } catch (error) {
+        expect(error).to.be.an('error');
+        expect(error.message).to.equal('Invalid input parameters: ensure s3Client, bucketName, and prefix are provided.');
+      }
+    });
+
     it('should return a list of object keys when S3 returns data', async () => {
       const bucketName = 'test-bucket';
       const prefix = 'test-prefix';
-      const expectedKeys = ['file1.txt', 'file2.txt'];
+      const expectedKeys = ['scrapes/site-id/blog/page1/scrape.json', 'scrapes/site-id/blog/page2/scrape.json', 'scrapes/site-id/blog/page3/scrape.json'];
 
-      const s3ClientMock = {
-        send: async () => ({
-          Contents: expectedKeys.map((key) => ({ Key: key })),
-        }),
+      const s3ClientStub = {
+        send: sinon.stub(),
       };
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
+          Bucket: bucketName,
+          Prefix: prefix,
+          MaxKeys: 1000,
+        })))
+        .resolves({
+          NextContinuationToken: 'token',
+          Contents: [
+            { Key: 'scrapes/site-id/blog/page1/scrape.json' },
+            { Key: 'scrapes/site-id/blog/page2/scrape.json' },
+          ],
+        });
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
+          Bucket: bucketName,
+          Prefix: prefix,
+          MaxKeys: 1000,
+          ContinuationToken: 'token',
+        })))
+        .resolves({
+          Contents: [
+            { Key: 'scrapes/site-id/blog/page3/scrape.json' },
+          ],
+        });
 
-      const keys = await getObjectKeysUsingPrefix(s3ClientMock, bucketName, prefix, logMock);
+      const keys = await getObjectKeysUsingPrefix(s3ClientStub, bucketName, prefix, logMock);
       expect(keys).to.deep.equal(expectedKeys);
     });
 
@@ -66,12 +102,22 @@ describe('S3 Utility Functions', () => {
         },
       };
 
-      const keys = await getObjectKeysUsingPrefix(s3ClientMock, bucketName, prefix, logMock2);
-      expect(keys).to.deep.equal([]);
+      try {
+        await getObjectKeysUsingPrefix(s3ClientMock, bucketName, prefix, logMock2);
+        throw new Error('Expected an error but none was thrown.');
+      } catch (error) {
+        expect(error).to.be.an('error');
+        expect(error.message).to.equal('S3 error');
+      }
     });
   });
 
   describe('getObjectFromKey', () => {
+    it('should return null if params are missing', async () => {
+      const response = await getObjectFromKey(null, null, null, logMock);
+      expect(response).to.be.null;
+    });
+
     it('should return the S3 object when getObject succeeds', async () => {
       const bucketName = 'test-bucket';
       const key = 'test-key';
