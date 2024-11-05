@@ -24,8 +24,5 @@
       "maxLength": 75,
       "idealMaxLength": 70
     }
-  },
-  "aws": {
-    "maxKeys": 1000
   }
 }
