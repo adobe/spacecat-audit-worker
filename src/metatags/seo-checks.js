@@ -12,10 +12,10 @@
 
 import { hasText, isObject } from '@adobe/spacecat-shared-utils';
 import {
-  DESCRIPTION, TITLE, H1, ISSUE, ISSUE_DETAILS, SEO_IMPACT, HIGH,
-  SEO_RECOMMENDATION, MODERATE, DUPLICATES, MULTIPLE_H1_ON_PAGE,
+  DESCRIPTION, TITLE, H1, ISSUE, ISSUE_DETAILS, SEO_IMPACT, HIGH, SEO_RECOMMENDATION,
+  MODERATE, DUPLICATES, MULTIPLE_H1_ON_PAGE, ONE_H1_ON_A_PAGE, TAG_LENGTHS, SHOULD_BE_PRESENT,
+  TITLE_LENGTH_SUGGESTION, DESCRIPTION_LENGTH_SUGGESTION, H1_LENGTH_SUGGESTION, UNIQUE_ACROSS_PAGES,
 } from './constants.js';
-import config from './config/metatagsConfig.json' assert { type: 'json' };
 
 class SeoChecks {
   constructor(log) {
@@ -53,7 +53,7 @@ class SeoChecks {
           [SEO_IMPACT]: HIGH,
           [ISSUE]: `Missing ${capitalisedTagName}`,
           [ISSUE_DETAILS]: `${capitalisedTagName} tag is missing`,
-          [SEO_RECOMMENDATION]: config.suggestions.shouldBePresent,
+          [SEO_RECOMMENDATION]: SHOULD_BE_PRESENT,
         };
       }
     });
@@ -68,11 +68,11 @@ class SeoChecks {
   checkForTagsLength(url, pageTags) {
     const getLengthSuggestion = (tagName) => {
       if (TITLE === tagName.toLowerCase()) {
-        return config.suggestions.titleLengthSuggestion;
+        return TITLE_LENGTH_SUGGESTION;
       } else if (DESCRIPTION === tagName.toLowerCase()) {
-        return config.suggestions.descriptionLengthSuggestion;
+        return DESCRIPTION_LENGTH_SUGGESTION;
       }
-      return config.suggestions.h1LengthSuggestion;
+      return H1_LENGTH_SUGGESTION;
     };
 
     const checkTag = (tagName, tagContent) => {
@@ -87,14 +87,14 @@ class SeoChecks {
         issueDetails = `${capitalizedTagName} tag is empty`;
         issueImpact = HIGH;
         recommendation = getLengthSuggestion(tagName);
-      } else if (tagContent?.length > config.tagLengths[tagName].maxLength) {
+      } else if (tagContent?.length > TAG_LENGTHS[tagName].maxLength) {
         issue = `${capitalizedTagName} too long`;
-        issueDetails = `${tagContent.length - config.tagLengths[tagName].idealMaxLength} chars over limit`;
+        issueDetails = `${tagContent.length - TAG_LENGTHS[tagName].idealMaxLength} chars over limit`;
         issueImpact = MODERATE;
         recommendation = getLengthSuggestion(tagName);
-      } else if (tagContent?.length < config.tagLengths[tagName].minLength) {
+      } else if (tagContent?.length < TAG_LENGTHS[tagName].minLength) {
         issue = `${capitalizedTagName} too short`;
-        issueDetails = `${config.tagLengths[tagName].idealMinLength - tagContent.length} chars below limit`;
+        issueDetails = `${TAG_LENGTHS[tagName].idealMinLength - tagContent.length} chars below limit`;
         issueImpact = MODERATE;
         recommendation = getLengthSuggestion(tagName);
       }
@@ -128,7 +128,7 @@ class SeoChecks {
         [SEO_IMPACT]: MODERATE,
         [ISSUE]: MULTIPLE_H1_ON_PAGE,
         [ISSUE_DETAILS]: `${pageTags[H1].length} H1 detected`,
-        [SEO_RECOMMENDATION]: config.suggestions.oneH1OnAPage,
+        [SEO_RECOMMENDATION]: ONE_H1_ON_A_PAGE,
       };
     }
   }
@@ -149,7 +149,7 @@ class SeoChecks {
               [SEO_IMPACT]: HIGH,
               [ISSUE]: `Duplicate ${capitalisedTagName}`,
               [ISSUE_DETAILS]: `${pageUrls.length} pages share same ${tagName}`,
-              [SEO_RECOMMENDATION]: config.suggestions.uniqueAcrossPages,
+              [SEO_RECOMMENDATION]: UNIQUE_ACROSS_PAGES,
               [DUPLICATES]: [
                 ...pageUrls.slice(0, index),
                 ...pageUrls.slice(index + 1),

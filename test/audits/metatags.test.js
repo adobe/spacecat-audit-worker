@@ -24,11 +24,10 @@ import {
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import {
   TITLE, DESCRIPTION, H1, SEO_IMPACT, HIGH, MODERATE, ISSUE,
-  SEO_RECOMMENDATION, MULTIPLE_H1_ON_PAGE,
+  SEO_RECOMMENDATION, MULTIPLE_H1_ON_PAGE, SHOULD_BE_PRESENT, TAG_LENGTHS, ONE_H1_ON_A_PAGE,
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import auditMetaTags from '../../src/metatags/handler.js';
-import config from '../../src/metatags/config/metatagsConfig.json' assert { type: 'json' };
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -73,7 +72,7 @@ describe('Meta Tags', () => {
 
         expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Missing Title');
         expect(seoChecks.getDetectedTags()[url][TITLE][SEO_RECOMMENDATION])
-          .to.equal(config.suggestions.shouldBePresent);
+          .to.equal(SHOULD_BE_PRESENT);
       });
     });
 
@@ -90,7 +89,7 @@ describe('Meta Tags', () => {
 
       it('should detect too long tag and add to detectedTags with MODERATE impact', () => {
         const url = 'https://example.com';
-        const longTitle = 'A'.repeat(config.tagLengths[TITLE].maxLength + 1);
+        const longTitle = 'A'.repeat(TAG_LENGTHS[TITLE].maxLength + 1);
         const pageTags = { [TITLE]: longTitle };
 
         seoChecks.checkForTagsLength(url, pageTags);
@@ -101,7 +100,7 @@ describe('Meta Tags', () => {
 
       it('should detect too short tag and add to detectedTags with MODERATE impact', () => {
         const url = 'https://example.com';
-        const shortTitle = 'A'.repeat(config.tagLengths[TITLE].minLength - 1);
+        const shortTitle = 'A'.repeat(TAG_LENGTHS[TITLE].minLength - 1);
         const pageTags = { [TITLE]: shortTitle };
 
         seoChecks.checkForTagsLength(url, pageTags);
@@ -120,7 +119,7 @@ describe('Meta Tags', () => {
 
         expect(seoChecks.getDetectedTags()[url][H1][ISSUE]).to.equal(MULTIPLE_H1_ON_PAGE);
         expect(seoChecks.getDetectedTags()[url][H1][SEO_RECOMMENDATION])
-          .to.equal(config.suggestions.oneH1OnAPage);
+          .to.equal(ONE_H1_ON_A_PAGE);
       });
 
       it('should not detect an issue if there is only one H1 tag', () => {
