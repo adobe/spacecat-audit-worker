@@ -92,6 +92,7 @@ describe('Opportunities Tests', () => {
     };
     const site = {
       getBaseURL: () => 'https://abc.com',
+      getId: () => '056f9dbe-e9e1-4d80-8bfb-c9785a873b6a',
     };
     const auditData = await handler(url, context, site);
 

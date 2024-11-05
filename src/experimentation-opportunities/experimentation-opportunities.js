@@ -16,6 +16,9 @@ import { getRUMDomainkey } from '../support/utils.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
 const DAYS = 30;
+const MAX_OPPORTUNITIES = 10;
+const CTR_THRESHOLD_MARGIN = 0.04;
+
 const OPPTY_QUERIES = [
   'rageclick',
   'high-inorganic-high-bounce-rate',
@@ -31,7 +34,7 @@ const OPPTY_QUERIES = [
  */
 
 export async function handler(auditUrl, context, site) {
-  const { log } = context;
+  const { sqs, log } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
@@ -44,6 +47,29 @@ export async function handler(auditUrl, context, site) {
 
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
+  // for the high-organic-low-ctr opportunities urls, trigger the scrape
+  const highOrganicLowCtrOpportunities = experimentationOpportunities.filter((oppty) => oppty.type === 'high-organic-low-ctr');
+  /* c8 ignore start */
+  highOrganicLowCtrOpportunities.sort((a, b) => {
+    const aPotentialClicks = a.pageViews
+    * (a.trackedKPISiteAverage - CTR_THRESHOLD_MARGIN - a.trackedPageKPIValue) * 100;
+    const bPotentialClicks = b.pageViews
+    * (b.trackedKPISiteAverage - CTR_THRESHOLD_MARGIN - b.trackedPageKPIValue) * 100;
+    return bPotentialClicks - aPotentialClicks;
+  });
+  const topHighOrganicLowCtrOpportunities = highOrganicLowCtrOpportunities.slice(
+    0,
+    MAX_OPPORTUNITIES,
+  );
+  const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => oppty.page);
+  log.info(`Triggering scrape for [${topHighOrganicUrls.join(',')}]`);
+  const scrapeResult = await sqs.sendMessage('spacecat-scraping-jobs-dev', {
+    processingType: 'default',
+    jobId: site.getId(),
+    urls: [...topHighOrganicUrls],
+  });
+  log.info(`scrapeResult: ${scrapeResult}`);
+  /* c8 ignore stop */
 
   log.info(`Found ${experimentationOpportunities.length} many experimentation opportunites for ${auditUrl}`);
 
