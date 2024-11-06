@@ -61,7 +61,9 @@ export async function handler(auditUrl, context, site) {
     0,
     MAX_OPPORTUNITIES,
   );
-  const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => oppty.page);
+  const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => ({
+    url: oppty.page,
+  }));
   log.info(`Triggering scrape for [${topHighOrganicUrls.join(',')}]`);
   const scrapeResult = await sqs.sendMessage('spacecat-scraping-jobs-dev', {
     processingType: 'default',
@@ -71,7 +73,7 @@ export async function handler(auditUrl, context, site) {
   log.info(`scrapeResult: ${scrapeResult}`);
   /* c8 ignore stop */
 
-  log.info(`Found ${experimentationOpportunities.length} many experimentation opportunites for ${auditUrl}`);
+  log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {
     auditResult: {
