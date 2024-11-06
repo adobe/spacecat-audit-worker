@@ -66,7 +66,7 @@ export async function handler(auditUrl, context, site) {
   const scrapeResult = await sqs.sendMessage('spacecat-scraping-jobs-dev', {
     processingType: 'default',
     jobId: site.getId(),
-    urls: [...topHighOrganicUrls],
+    urls: topHighOrganicUrls,
   });
   log.info(`scrapeResult: ${scrapeResult}`);
   /* c8 ignore stop */
