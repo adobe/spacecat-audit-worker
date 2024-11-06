@@ -64,7 +64,7 @@ export async function handler(auditUrl, context, site) {
   const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => ({
     url: oppty.page,
   }));
-  log.info(`Triggering scrape for [${topHighOrganicUrls.join(',')}]`);
+  log.info(`Triggering scrape for [${JSON.stringify(topHighOrganicUrls, null, 2)}]`);
   const scrapeResult = await sqs.sendMessage('spacecat-scraping-jobs-dev', {
     processingType: 'default',
     jobId: site.getId(),
