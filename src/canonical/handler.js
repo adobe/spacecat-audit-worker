@@ -11,8 +11,7 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { composeBaseURL } from '@adobe/spacecat-shared-utils';
-import { fetch } from '../support/utils.js';
+import { composeBaseURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 

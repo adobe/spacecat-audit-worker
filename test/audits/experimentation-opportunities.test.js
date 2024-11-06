@@ -18,7 +18,7 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { handler } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
 import { MockContextBuilder } from '../shared.js';
-import opportunitiesData from '../fixtures/opportunitiesdata.json' assert { type: 'json' };
+import opportunitiesData from '../fixtures/opportunitiesdata.json' with { type: 'json' };
 
 use(sinonChai);
 

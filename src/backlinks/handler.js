@@ -13,11 +13,11 @@
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
-import { composeAuditURL } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
+import { enhanceBacklinksWithFixes } from '../support/utils.js';
 
 const TIMEOUT = 3000;
 
