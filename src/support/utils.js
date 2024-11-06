@@ -10,13 +10,16 @@
  * governing permissions and limitations under the License.
  */
 
-import { context as h2, h1 } from '@adobe/fetch';
+import {
+  AbortController, AbortError, context as h2, h1,
+} from '@adobe/fetch';
 import { hasText, prependSchema, resolveCustomerSecretsName } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 
 URI.preventInvalidHostname = true;
+const TIMEOUT = 3000;
 
 /* c8 ignore next 3 */
 export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
@@ -31,6 +34,49 @@ export async function getRUMUrl(url) {
   const finalUrl = resp.url.split('://')[1];
   return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
 }
+
+/**
+ * Fetches a URL with a specified timeout.
+ *
+ * @async
+ * @param {string} url - The URL to fetch.
+ * @param {number} timeout - The timeout duration in milliseconds.
+ * @param {Object} log - The logging object to record information and errors.
+ * @returns {Promise<{ok: boolean, status: number}>} - A promise that resolves the response object
+ */
+export const fetchWithTimeout = async (url, timeout, log) => {
+  const controller = new AbortController();
+  const { signal } = controller;
+  const id = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, { signal });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    if (error instanceof AbortError) {
+      log.warn(`Request to ${url} timed out after ${timeout}ms`);
+      return { ok: false, status: 408 };
+    }
+  } finally {
+    clearTimeout(id);
+  }
+  return null;
+};
+
+export const isStillBrokenURL = async (url, label, log) => {
+  try {
+    const response = await fetchWithTimeout(url, TIMEOUT, log);
+    if (!response.ok && response.status !== 404
+        && response.status >= 400 && response.status < 500) {
+      log.warn(`${label} ${url} returned status ${response.status}`);
+    }
+    return !response.ok;
+  } catch (error) {
+    log.error(`Failed to check ${label} ${url}: ${error.message}`);
+    return true;
+  }
+};
 
 /**
  * Checks if a given URL contains a domain with a non-www subdomain.
