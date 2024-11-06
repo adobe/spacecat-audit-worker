@@ -40,16 +40,16 @@ class SeoChecks {
 
   /**
    * Checks for missing tags on the page and adds to detected tags array if found lacking.
-   * @param {string} url - The URL of the page.
+   * @param {string} urlPath - The URL of the page.
    * @param {object} pageTags - An object containing the tags of the page.
    */
-  checkForMissingTags(url, pageTags) {
+  checkForMissingTags(urlPath, pageTags) {
     [TITLE, DESCRIPTION, H1].forEach((tagName) => {
       if (pageTags[tagName] === undefined
         || (Array.isArray(pageTags[tagName]) && pageTags[tagName].length === 0)) {
         const capitalisedTagName = SeoChecks.capitalizeFirstLetter(tagName);
-        this.detectedTags[url] ??= {};
-        this.detectedTags[url][tagName] = {
+        this.detectedTags[urlPath] ??= {};
+        this.detectedTags[urlPath][tagName] = {
           [SEO_IMPACT]: HIGH,
           [ISSUE]: `Missing ${capitalisedTagName}`,
           [ISSUE_DETAILS]: `${capitalisedTagName} tag is missing`,
@@ -62,10 +62,10 @@ class SeoChecks {
   /**
    * Checks if tag lengths are within recommended limits
    * and adds to detected tags array if found lacking.
-   * @param {string} url - The URL of the page.
+   * @param {string} urlPath - The URL of the page.
    * @param {object} pageTags - An object containing the tags of the page.
    */
-  checkForTagsLength(url, pageTags) {
+  checkForTagsLength(urlPath, pageTags) {
     const getLengthSuggestion = (tagName) => {
       if (TITLE === tagName.toLowerCase()) {
         return TITLE_LENGTH_SUGGESTION;
@@ -99,9 +99,9 @@ class SeoChecks {
         recommendation = getLengthSuggestion(tagName);
       }
       if (issue) {
-        this.detectedTags[url] ??= {};
-        this.detectedTags[url][tagName] ??= {};
-        Object.assign(this.detectedTags[url][tagName], {
+        this.detectedTags[urlPath] ??= {};
+        this.detectedTags[urlPath][tagName] ??= {};
+        Object.assign(this.detectedTags[urlPath][tagName], {
           [SEO_IMPACT]: issueImpact,
           [ISSUE]: issue,
           [ISSUE_DETAILS]: issueDetails,
@@ -117,13 +117,13 @@ class SeoChecks {
 
   /**
    * Checks if there are more than one H1 tags and adds to detected tags array if found lacking.
-   * @param {string} url - The URL of the page.
+   * @param {string} urlPath - The URL of the page.
    * @param {object} pageTags - An object containing the tags of the page.
    */
-  checkForH1Count(url, pageTags) {
+  checkForH1Count(urlPath, pageTags) {
     if (pageTags[H1]?.length > 1) {
-      this.detectedTags[url] ??= {};
-      this.detectedTags[url][H1] = {
+      this.detectedTags[urlPath] ??= {};
+      this.detectedTags[urlPath][H1] = {
         tagContent: JSON.stringify(pageTags[H1]),
         [SEO_IMPACT]: MODERATE,
         [ISSUE]: MULTIPLE_H1_ON_PAGE,
@@ -163,11 +163,11 @@ class SeoChecks {
 
   /**
    * Adds tag data entry to all Tags Object
-   * @param url
+   * @param urlPath
    * @param tagName
    * @param tagContent
    */
-  addToAllTags(url, tagName, tagContent) {
+  addToAllTags(urlPath, tagName, tagContent) {
     if (!tagContent) {
       return;
     }
@@ -176,25 +176,25 @@ class SeoChecks {
       pageUrls: new Set(),
       tagContent,
     };
-    this.allTags[tagName][tagContentLowerCase].pageUrls.add(url);
+    this.allTags[tagName][tagContentLowerCase].pageUrls.add(urlPath);
   }
 
   /**
    * Performs all SEO checks on the provided tags.
-   * @param {string} url - Endpoint of the URL of the page.
+   * @param {string} urlPath - Endpoint of the URL of the page.
    * @param {object} pageTags - An object containing the tags of the page.
    */
-  performChecks(url, pageTags) {
-    if (!hasText(url) || !isObject(pageTags)) {
+  performChecks(urlPath, pageTags) {
+    if (!hasText(urlPath) || !isObject(pageTags)) {
       return;
     }
-    this.checkForMissingTags(url, pageTags);
-    this.checkForTagsLength(url, pageTags);
-    this.checkForH1Count(url, pageTags);
+    this.checkForMissingTags(urlPath, pageTags);
+    this.checkForTagsLength(urlPath, pageTags);
+    this.checkForH1Count(urlPath, pageTags);
     // store tag data in all tags object to be used in later checks like uniqueness
-    this.addToAllTags(url, TITLE, pageTags[TITLE]);
-    this.addToAllTags(url, DESCRIPTION, pageTags[DESCRIPTION]);
-    pageTags[H1].forEach((tagContent) => this.addToAllTags(url, H1, tagContent));
+    this.addToAllTags(urlPath, TITLE, pageTags[TITLE]);
+    this.addToAllTags(urlPath, DESCRIPTION, pageTags[DESCRIPTION]);
+    pageTags[H1].forEach((tagContent) => this.addToAllTags(urlPath, H1, tagContent));
   }
 
   /**
