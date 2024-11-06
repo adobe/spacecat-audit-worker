@@ -1,3 +1,24 @@
+# [1.32.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.6...v1.32.0) (2024-11-06)
+
+
+### Features
+
+* meta-tags audit ([#382](https://github.com/adobe/spacecat-audit-worker/issues/382)) ([e621229](https://github.com/adobe/spacecat-audit-worker/commit/e621229be01c9f5e8d38b998cf382f69193c6877))
+
+## [1.31.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.5...v1.31.6) (2024-11-02)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#447](https://github.com/adobe/spacecat-audit-worker/issues/447)) ([70e3fe1](https://github.com/adobe/spacecat-audit-worker/commit/70e3fe1b82e3852beb23a100bacc279474227c04))
+
+## [1.31.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.4...v1.31.5) (2024-10-31)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.22.0 ([#445](https://github.com/adobe/spacecat-audit-worker/issues/445)) ([04a9448](https://github.com/adobe/spacecat-audit-worker/commit/04a9448ebd59b622463221a81f67a5e2ee4f38ee))
+
 ## [1.31.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.3...v1.31.4) (2024-10-29)
 
 
