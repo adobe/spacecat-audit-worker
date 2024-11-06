@@ -1,3 +1,10 @@
+# [1.32.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.6...v1.32.0) (2024-11-06)
+
+
+### Features
+
+* meta-tags audit ([#382](https://github.com/adobe/spacecat-audit-worker/issues/382)) ([e621229](https://github.com/adobe/spacecat-audit-worker/commit/e621229be01c9f5e8d38b998cf382f69193c6877))
+
 ## [1.31.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.5...v1.31.6) (2024-11-02)
 
 
