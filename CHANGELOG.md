@@ -1,3 +1,10 @@
+## [1.32.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.2...v1.32.3) (2024-11-07)
+
+
+### Bug Fixes
+
+* use tracing fetch ([#450](https://github.com/adobe/spacecat-audit-worker/issues/450)) ([4213ef9](https://github.com/adobe/spacecat-audit-worker/commit/4213ef920ca23a00fc3fbc41f95d03dd15e6b477))
+
 ## [1.32.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.1...v1.32.2) (2024-11-07)
 
 
