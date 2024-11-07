@@ -11,6 +11,8 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
 import { wwwUrlResolver } from '../common/audit.js';
@@ -18,12 +20,137 @@ import { wwwUrlResolver } from '../common/audit.js';
 const DAYS = 30;
 const MAX_OPPORTUNITIES = 10;
 const CTR_THRESHOLD_MARGIN = 0.04;
+const VENDOR_METRICS_PAGEVIEW_THRESHOLD = 10000;
 
 const OPPTY_QUERIES = [
   'rageclick',
   'high-inorganic-high-bounce-rate',
   'high-organic-low-ctr',
 ];
+/* c8 ignore start */
+
+function getS3PathPrefix(url, site) {
+  const urlObj = new URL(url);
+  let pathname = { urlObj };
+  pathname = pathname.replace('.html', '').replace('.htm', '');
+  pathname = pathname.endsWith('/') ? pathname : `${pathname}/`;
+  return `/scrapes/${site.getId()}${pathname}`;
+}
+
+async function invokeLambdaFunction(payload) {
+  const lambdaClient = new LambdaClient({
+    region: process.env.AWS_REGION,
+    credentials: defaultProvider(),
+  });
+  const invokeParams = {
+    FunctionName: process.env.SPACECAT_STATISTICS_LAMBDA_ARN,
+    InvocationType: 'RequestResponse',
+    Payload: JSON.stringify(payload),
+  };
+  const response = await lambdaClient.send(new InvokeCommand(invokeParams));
+  return JSON.parse(new TextDecoder().decode(response.Payload));
+}
+
+async function getMetricsByVendor(metrics) {
+  const metricsByVendor = metrics.reduce((acc, metric) => {
+    const vendor = { metric };
+    if (!acc[vendor]) {
+      acc[vendor] = {};
+    }
+    if (metric.type === 'traffic') {
+      acc[vendor].pageviews = metric.value?.total;
+    } else if (metric.type === 'ctr') {
+      acc[vendor].ctr = metric.value?.page;
+    }
+    return acc;
+  }, {});
+  return metricsByVendor.filter((vendor) => vendor.pageviews > VENDOR_METRICS_PAGEVIEW_THRESHOLD);
+}
+
+async function updateRecommendations(oppty, context, site) {
+  const { log } = context;
+  const lambdaPayload = {
+    type: 'experimentation-guidance',
+    payload: {
+      rumData: {
+        audience: '',
+        url: oppty.page,
+        s3BucketName: process.env.S3_SCRAPER_BUCKET_NAME,
+        screenshotPaths: [`${getS3PathPrefix(oppty.page, site)}screenshot-desktop.png`],
+        scrapeJsonPath: `${getS3PathPrefix(oppty.page, site)}scrape.json`,
+        metricsByVendor: getMetricsByVendor(oppty.metrics),
+        additionalContext: '',
+      },
+    },
+  };
+  log.info('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
+  let lambdaResult;
+  try {
+    // eslint-disable-next-line no-await-in-loop
+    const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
+    log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
+    const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
+    lambdaResult = lambdaResponseBody.result;
+  } catch (error) {
+    log.error('Error invoking lambda function: ', error);
+  }
+  if (!lambdaResult) {
+    log.error(`Error obtaining from LLM: No result from lambda function for ${oppty.page}`);
+  } else {
+    const recommendations = oppty.recommendations || [];
+    for (const guidance of lambdaResult) {
+      recommendations.push({
+        type: 'guidance',
+        insight: guidance.insight,
+        recommendation: guidance.recommendation,
+        rationale: guidance.rationale,
+      });
+    }
+    // eslint-disable-next-line no-param-reassign
+    oppty.recommendations = recommendations;
+  }
+}
+
+async function processHighOrganicLowCtrOpportunities(opportunites, context, site) {
+  const { sqs, log } = context;
+  const highOrganicLowCtrOpportunities = opportunites.filter((oppty) => oppty.type === 'high-organic-low-ctr')
+    .map((oppty) => {
+      const { pageViews, trackedPageKPIValue, trackedKPISiteAverage } = oppty;
+      const potentialClicks = pageViews
+          * (trackedKPISiteAverage - CTR_THRESHOLD_MARGIN - trackedPageKPIValue)
+          * 100;
+      return {
+        ...oppty,
+        potentialClicks,
+      };
+    });
+  log.info(`Found ${highOrganicLowCtrOpportunities.length} high organic low CTR opportunities`);
+  highOrganicLowCtrOpportunities.sort((a, b) => b.potentialClicks - a.potentialClicks);
+  const topHighOrganicLowCtrOpportunities = highOrganicLowCtrOpportunities.slice(
+    0,
+    MAX_OPPORTUNITIES,
+  );
+  log.info(`highes: ${highOrganicLowCtrOpportunities[0].potentialClicks}.. Lowest: ${highOrganicLowCtrOpportunities[highOrganicLowCtrOpportunities.length - 1].potentialClicks}`);
+  const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => ({
+    url: oppty.page,
+  }));
+  log.info(`Triggering scrape for [${JSON.stringify(topHighOrganicUrls, null, 2)}]`);
+  await sqs.sendMessage(process.env.SCRAPING_JOBS_QUEUE_URL, {
+    processingType: 'default',
+    jobId: site.getId(),
+    urls: topHighOrganicUrls,
+  });
+  // wait a minute for the scrape to finish
+  await new Promise((resolve) => {
+    setTimeout(resolve, 60000);
+  });
+  // generate the guidance for the top opportunities
+  const promises = topHighOrganicLowCtrOpportunities.map(
+    (oppty) => updateRecommendations(oppty, context, site),
+  );
+  await Promise.all(promises);
+}
+/* c8 ignore stop */
 
 /**
  * Audit handler container for all the opportunities
@@ -34,7 +161,7 @@ const OPPTY_QUERIES = [
  */
 
 export async function handler(auditUrl, context, site) {
-  const { sqs, log } = context;
+  const { log } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
@@ -47,32 +174,7 @@ export async function handler(auditUrl, context, site) {
 
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
-  // for the high-organic-low-ctr opportunities urls, trigger the scrape
-  const highOrganicLowCtrOpportunities = experimentationOpportunities.filter((oppty) => oppty.type === 'high-organic-low-ctr');
-  /* c8 ignore start */
-  highOrganicLowCtrOpportunities.sort((a, b) => {
-    const aPotentialClicks = a.pageViews
-    * (a.trackedKPISiteAverage - CTR_THRESHOLD_MARGIN - a.trackedPageKPIValue) * 100;
-    const bPotentialClicks = b.pageViews
-    * (b.trackedKPISiteAverage - CTR_THRESHOLD_MARGIN - b.trackedPageKPIValue) * 100;
-    return bPotentialClicks - aPotentialClicks;
-  });
-  const topHighOrganicLowCtrOpportunities = highOrganicLowCtrOpportunities.slice(
-    0,
-    MAX_OPPORTUNITIES,
-  );
-  const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => ({
-    url: oppty.page,
-  }));
-  log.info(`Triggering scrape for [${JSON.stringify(topHighOrganicUrls, null, 2)}]`);
-  const scrapeResult = await sqs.sendMessage('spacecat-scraping-jobs-dev', {
-    processingType: 'default',
-    jobId: site.getId(),
-    urls: topHighOrganicUrls,
-  });
-  log.info(`scrapeResult: ${scrapeResult}`);
-  /* c8 ignore stop */
-
+  processHighOrganicLowCtrOpportunities(experimentationOpportunities, context, site);
   log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {
