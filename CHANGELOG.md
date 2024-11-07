@@ -1,3 +1,10 @@
+## [1.32.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.0...v1.32.1) (2024-11-07)
+
+
+### Bug Fixes
+
+* handle empty insights from RUM data ([#430](https://github.com/adobe/spacecat-audit-worker/issues/430)) ([b406d2d](https://github.com/adobe/spacecat-audit-worker/commit/b406d2d061bff5bea8cf9ea9dcb8df10261fc839))
+
 # [1.32.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.31.6...v1.32.0) (2024-11-06)
 
 
