@@ -27,6 +27,7 @@ import auditBrokenBacklinks from '../../src/backlinks/handler.js';
 use(sinonChai);
 use(chaiAsPromised);
 
+// eslint-disable-next-line func-names
 describe('Backlinks Tests', function () {
   this.timeout(10000);
   let message;

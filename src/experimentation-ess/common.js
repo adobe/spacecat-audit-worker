@@ -12,6 +12,7 @@
 
 /* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { JSDOM } from 'jsdom';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';

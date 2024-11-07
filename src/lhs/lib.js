@@ -10,10 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
+import { isObject, isValidUrl, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
 import PSIClient from '../support/psi-client.js';
-import { fetch } from '../support/utils.js';
 
 /**
  * Extracts audit scores from an audit.
