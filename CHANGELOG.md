@@ -1,3 +1,10 @@
+## [1.32.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.4...v1.32.5) (2024-11-08)
+
+
+### Bug Fixes
+
+* engine spec, dynamo query ([#454](https://github.com/adobe/spacecat-audit-worker/issues/454)) ([60193a4](https://github.com/adobe/spacecat-audit-worker/commit/60193a415d0b396381fc8ce4b2612743c2c5f409))
+
 ## [1.32.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.3...v1.32.4) (2024-11-08)
 
 
