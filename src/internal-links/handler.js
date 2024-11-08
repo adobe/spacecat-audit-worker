@@ -87,6 +87,8 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
     granularity: 'hourly',
   };
 
+  log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
+
   const all404Links = await rumAPIClient.query('404', options);
   const auditResult = {
     internalLinks: transform404LinksData(all404Links, finalUrl, auditUrl, log),
