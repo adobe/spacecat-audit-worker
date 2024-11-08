@@ -17,6 +17,10 @@ import { wwwUrlResolver } from '../common/audit.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
+const CWV_QUERIES = [
+  'cwv',
+  'formVitals',
+];
 
 export async function CWVRunner(auditUrl, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -27,9 +31,19 @@ export async function CWVRunner(auditUrl, context, site) {
     interval: INTERVAL,
     granularity: 'hourly',
   };
-  const cwvData = await rumAPIClient.query('cwv', options);
+  const cwvData = await rumAPIClient.queryMulti(CWV_QUERIES, options);
   const auditResult = {
-    cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
+    cwv: cwvData.cwv.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL)
+      .map((cwvItem) => {
+        // Find a matching formVital by URL
+        const matchingFormVital = cwvData.formVitals.find(
+          (formVital) => formVital.url === cwvItem.url,
+        );
+
+        // eslint-disable-next-line max-len
+        const hasForm = matchingFormVital ? (matchingFormVital.isFormViewPresent || matchingFormVital.isFormSubmitPresent) : false;
+        return { ...cwvItem, hasForm };
+      }),
     auditContext: {
       interval: INTERVAL,
     },
