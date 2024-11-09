@@ -2,7 +2,7 @@ version: 2.1
 executors:
   node-executor:
     docker:
-      - image: cimg/node:20.11
+      - image: cimg/node:20.11.1
     working_directory: ~/repo
 
 orbs:
