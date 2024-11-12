@@ -84,7 +84,9 @@ describe('Broken internal links audit', () => {
     });
     expect(result).to.deep.equal({
       auditResult: {
-        internalLinks: AUDIT_RESULT_DATA,
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        fullAuditRef: auditUrl,
+        finalUrl: auditUrl,
         auditContext: {
           interval: 30,
         },
