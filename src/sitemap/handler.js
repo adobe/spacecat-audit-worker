@@ -10,11 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, prependSchema, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { AbortController, AbortError } from '@adobe/fetch';
 import {
   extractDomainAndProtocol,
-  fetch,
   getBaseUrlPagesFromSitemapContents,
   getSitemapUrlsFromSitemapIndex,
   getUrlWithoutPath,
