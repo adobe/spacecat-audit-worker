@@ -49,19 +49,12 @@ function transform404LinksData(responseData, hostUrl, auditUrl, log) {
       const sameDomainSources = allSources.filter(
         (source) => source && hasSameHost(source, hostUrl),
       );
-      if (sameDomainSources.length) {
-        // for (const source of sameDomainSources) {
-        //   result.push({
-        //     url_to: source.url_to,
-        //     title: '',
-        //     url_from: source,
-        //     traffic_domain: source.traffic_domain,
-        //   });
-        // }
+
+      for (const source of sameDomainSources) {
         result.push({
-          url,
-          views,
-          sources: sameDomainSources,
+          url_to: url,
+          url_from: source,
+          traffic_domain: views,
         });
       }
     } catch {
