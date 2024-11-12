@@ -92,7 +92,9 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
 
   const all404Links = await rumAPIClient.query('404', options);
   const auditResult = {
-    internalLinks: transform404LinksData(all404Links, finalUrl, auditUrl, log),
+    brokenInternalLinks: transform404LinksData(all404Links, finalUrl, auditUrl, log),
+    fullAuditRef: auditUrl,
+    finalUrl,
     auditContext: {
       interval: INTERVAL,
     },
