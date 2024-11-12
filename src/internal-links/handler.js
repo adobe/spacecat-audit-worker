@@ -50,6 +50,14 @@ function transform404LinksData(responseData, hostUrl, auditUrl, log) {
         (source) => source && hasSameHost(source, hostUrl),
       );
       if (sameDomainSources.length) {
+        // for (const source of sameDomainSources) {
+        //   result.push({
+        //     url_to: source.url_to,
+        //     title: '',
+        //     url_from: source,
+        //     traffic_domain: source.traffic_domain,
+        //   });
+        // }
         result.push({
           url,
           views,
@@ -87,7 +95,10 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
     granularity: 'hourly',
   };
 
+  log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
+
   const all404Links = await rumAPIClient.query('404', options);
+  log.info('broken-internal-links: All 404 links: ', JSON.stringify(all404Links));
   const auditResult = {
     internalLinks: transform404LinksData(all404Links, finalUrl, auditUrl, log),
     auditContext: {
