@@ -49,11 +49,12 @@ function transform404LinksData(responseData, hostUrl, auditUrl, log) {
       const sameDomainSources = allSources.filter(
         (source) => source && hasSameHost(source, hostUrl),
       );
-      if (sameDomainSources.length) {
+
+      for (const source of sameDomainSources) {
         result.push({
-          url,
-          views,
-          sources: sameDomainSources,
+          url_to: url,
+          url_from: source,
+          traffic_domain: views,
         });
       }
     } catch {
@@ -87,9 +88,13 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
     granularity: 'hourly',
   };
 
+  log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
+
   const all404Links = await rumAPIClient.query('404', options);
   const auditResult = {
-    internalLinks: transform404LinksData(all404Links, finalUrl, auditUrl, log),
+    brokenInternalLinks: transform404LinksData(all404Links, finalUrl, auditUrl, log),
+    fullAuditRef: auditUrl,
+    finalUrl,
     auditContext: {
       interval: INTERVAL,
     },
