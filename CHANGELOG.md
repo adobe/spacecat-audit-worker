@@ -1,3 +1,24 @@
+## [1.32.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.11...v1.32.12) (2024-11-13)
+
+
+### Bug Fixes
+
+* broken backlinks no longer because of migration to jobs-dispatcher ([#464](https://github.com/adobe/spacecat-audit-worker/issues/464)) ([cc38be2](https://github.com/adobe/spacecat-audit-worker/commit/cc38be247b1cea86977f3268e7c7bfe5ec6ceee5))
+
+## [1.32.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.10...v1.32.11) (2024-11-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.52.0 ([#463](https://github.com/adobe/spacecat-audit-worker/issues/463)) ([e8eb5a3](https://github.com/adobe/spacecat-audit-worker/commit/e8eb5a393b3e18799076c984d9c8b43608524e1f))
+
+## [1.32.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.9...v1.32.10) (2024-11-13)
+
+
+### Bug Fixes
+
+* broken internal links result schema update ([#460](https://github.com/adobe/spacecat-audit-worker/issues/460)) ([58d8171](https://github.com/adobe/spacecat-audit-worker/commit/58d81717fcbeedf4aa20d358a6fe7ec3a3b8f919))
+
 ## [1.32.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.8...v1.32.9) (2024-11-12)
 
 
