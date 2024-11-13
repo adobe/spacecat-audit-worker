@@ -104,16 +104,14 @@ export function extractUrlsFromSitemap(content, tagName = 'url') {
  *
  * @param {string} baseUrl - The base URL to match against the URLs in the sitemap.
  * @param {Object} sitemapDetails - An object containing details about the sitemap.
- * @param log
  * @param {boolean} sitemapDetails.isText - A flag indicating if the sitemap content is plain text.
  * @param {Object} sitemapDetails.sitemapContent - The sitemap content object.
  * @param {string} sitemapDetails.sitemapContent.payload - The actual content of the sitemap.
  *
  * @returns {string[]} URLs from the sitemap that start with the base URL or its www variant.
  */
-export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log) {
+export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
   if (!baseUrl || !sitemapDetails) {
-    log.info('Invalid input: baseUrl or sitemapDetails is undefined');
     return [];
   }
 
@@ -125,7 +123,6 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log)
 
   if (sitemapDetails.isText) {
     if (!sitemapDetails.sitemapContent || !sitemapDetails.sitemapContent.payload) {
-      log.info('Invalid sitemap content: payload is undefined');
       return [];
     }
     const lines = sitemapDetails.sitemapContent.payload.split('\n').map((line) => line.trim());
@@ -133,7 +130,6 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails, log)
     return filterPages(lines.filter((line) => line.length > 0));
   } else {
     if (!sitemapDetails.sitemapContent) {
-      log.info('Invalid sitemap content: sitemapContent is undefined');
       return [];
     }
     const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
