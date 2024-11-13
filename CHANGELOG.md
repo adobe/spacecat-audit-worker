@@ -1,3 +1,10 @@
+## [1.32.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.11...v1.32.12) (2024-11-13)
+
+
+### Bug Fixes
+
+* broken backlinks no longer because of migration to jobs-dispatcher ([#464](https://github.com/adobe/spacecat-audit-worker/issues/464)) ([cc38be2](https://github.com/adobe/spacecat-audit-worker/commit/cc38be247b1cea86977f3268e7c7bfe5ec6ceee5))
+
 ## [1.32.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.10...v1.32.11) (2024-11-13)
 
 
