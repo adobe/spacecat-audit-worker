@@ -1,3 +1,10 @@
+## [1.32.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.9...v1.32.10) (2024-11-13)
+
+
+### Bug Fixes
+
+* broken internal links result schema update ([#460](https://github.com/adobe/spacecat-audit-worker/issues/460)) ([58d8171](https://github.com/adobe/spacecat-audit-worker/commit/58d81717fcbeedf4aa20d358a6fe7ec3a3b8f919))
+
 ## [1.32.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.8...v1.32.9) (2024-11-12)
 
 
