@@ -308,8 +308,8 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe.skip('fetchContent', () => {
-    it('should return payload and type when response is successful', async () => {
+  describe('fetchContent', () => {
+    it.skip('should return payload and type when response is successful', async () => {
       const mockResponse = {
         payload: 'test',
         type: 'text/plain',
@@ -322,7 +322,7 @@ describe('Sitemap Audit', () => {
       expect(result).to.eql(mockResponse);
     });
 
-    it('should throw error when response is not successful', async () => {
+    it.skip('should throw error when response is not successful', async () => {
       nock(url)
         .get('/test')
         .reply(404);
@@ -330,8 +330,8 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe.skip('checkRobotsForSitemap', () => {
-    it('should return error when no sitemap found in robots.txt', async () => {
+  describe('checkRobotsForSitemap', () => {
+    it.skip('should return error when no sitemap found in robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, 'Allow: /');
@@ -341,7 +341,7 @@ describe('Sitemap Audit', () => {
       expect(reasons).to.deep.equal([ERROR_CODES.NO_SITEMAP_IN_ROBOTS]);
     });
 
-    it('should return error when unable to fetch robots.txt', async () => {
+    it.skip('should return error when unable to fetch robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(404);
@@ -385,8 +385,8 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe.skip('checkSitemap', () => {
-    it('should return SITEMAP_NOT_FOUND when the sitemap does not exist', async () => {
+  describe('checkSitemap', () => {
+    it.skip('should return SITEMAP_NOT_FOUND when the sitemap does not exist', async () => {
       nock(url)
         .get('/sitemap.xml')
         .reply(404);
@@ -406,7 +406,7 @@ describe('Sitemap Audit', () => {
       expect(resp.reasons).to.include(ERROR_CODES.FETCH_ERROR);
     });
 
-    it('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
+    it.skip('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
       nock(url)
         .get('/sitemap.xml')
         .reply(200, 'Not valid XML', { 'content-type': 'invalid' });
@@ -416,7 +416,7 @@ describe('Sitemap Audit', () => {
       expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_FORMAT);
     });
 
-    it('checkSitemap returns invalid result for non-existing sitemap', async () => {
+    it.skip('checkSitemap returns invalid result for non-existing sitemap', async () => {
       nock(url)
         .get('/non-existent-sitemap.xml')
         .reply(404);
@@ -429,7 +429,7 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe.skip('getBaseUrlPagesFromSitemaps', () => {
+  describe('getBaseUrlPagesFromSitemaps', () => {
     const sampleSitemapMoreUrls = '<?xml version="1.0" encoding="UTF-8"?>\n'
       + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
       + `<url> <loc>${url}/foo</loc></url>\n`
@@ -437,7 +437,7 @@ describe('Sitemap Audit', () => {
       + '<url> <loc>https://another-url.test/baz</loc></url>\n'
       + '</urlset>';
 
-    it('should return all pages from sitemap that have the same base url', async () => {
+    it.skip('should return all pages from sitemap that have the same base url', async () => {
       nock(url)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrls);
@@ -447,7 +447,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('should return all pages from sitemap that have the same base url variant', async () => {
+    it.skip('should return all pages from sitemap that have the same base url variant', async () => {
       nock(`${protocol}://www.${domain}`)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrls);
@@ -457,7 +457,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('should return all pages from sitemap that include www', async () => {
+    it.skip('should return all pages from sitemap that include www', async () => {
       nock(`${url}`)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrlsWWW);
