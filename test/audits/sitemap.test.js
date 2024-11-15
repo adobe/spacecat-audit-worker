@@ -435,33 +435,30 @@ describe('Sitemap Audit', () => {
       + '</urlset>';
 
     it('should return all pages from sitemap that have the same base url', async () => {
-      const mockLog = { info: () => {} };
       nock(url)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrls);
-      const result = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`], mockLog);
+      const result = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`]);
       expect(result).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
     });
 
     it('should return all pages from sitemap that have the same base url variant', async () => {
-      const mockLog = { info: () => {} };
       nock(`${protocol}://www.${domain}`)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrls);
-      const result = await getBaseUrlPagesFromSitemaps(url, [`${protocol}://www.${domain}/sitemap.xml`], mockLog);
+      const result = await getBaseUrlPagesFromSitemaps(url, [`${protocol}://www.${domain}/sitemap.xml`]);
       expect(result).to.deep.equal({
         [`${protocol}://www.${domain}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
     });
 
     it('should return all pages from sitemap that include www', async () => {
-      const mockLog = { info: () => {} };
       nock(`${url}`)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrlsWWW);
-      const result = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`], mockLog);
+      const result = await getBaseUrlPagesFromSitemaps(url, [`${url}/sitemap.xml`]);
       expect(result).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${protocol}://www.${domain}/foo`, `${protocol}://www.${domain}/bar`],
       });

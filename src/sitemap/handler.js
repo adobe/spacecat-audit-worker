@@ -75,12 +75,10 @@ export async function checkRobotsForSitemap(protocol, domain) {
   const robotsUrl = `${protocol}://${domain}/robots.txt`;
   const sitemapPaths = [];
   const robotsContent = await fetchContent(robotsUrl);
-
   if (robotsContent !== null) {
     const sitemapMatches = robotsContent.payload.matchAll(/Sitemap:\s*(.*)/gi);
     for (const match of sitemapMatches) {
-      const path = match[1].trim();
-      sitemapPaths.push(path);
+      sitemapPaths.push(match[1].trim());
     }
   }
   return {
@@ -105,7 +103,7 @@ export function isSitemapContentValid(sitemapContent) {
  * Checks the validity and existence of a sitemap by fetching its content.
  *
  * @async
- * @param {string} sitemapUrl - The URL of the sitemap to check
+ * @param {string} sitemapUrl - The URL of the sitemap to check.
  * @returns {Promise<Object>} - A Promise that resolves to an object representing the result check.
  * The object has the following properties:
  * - existsAndIsValid: A boolean indicating whether the sitemap exists and is in a valid format.
@@ -213,16 +211,15 @@ export async function filterValidUrls(urls, log) {
  * @async
  * @param {string} baseUrl - The base URL to find pages for.
  * @param {string[]} urls - The list of sitemap URLs to check.
- * @param log
  * @returns {Promise<Object>} - Resolves to an object mapping sitemap URLs to arrays of page URLs.
  */
-export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
+export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   const baseUrlVariant = toggleWWW(baseUrl);
   const contentsCache = {};
 
   // Prepare all promises for checking each sitemap URL.
   const checkPromises = urls.map(async (url) => {
-    const urlData = await checkSitemap(url, log);
+    const urlData = await checkSitemap(url);
     contentsCache[url] = urlData;
     return { url, urlData };
   });
@@ -253,7 +250,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
   const pagesPromises = matchingUrls.map(async (matchingUrl) => {
     // Check if further detailed checks are needed or directly use cached data
     if (!contentsCache[matchingUrl]) {
-      contentsCache[matchingUrl] = await checkSitemap(matchingUrl, log);
+      contentsCache[matchingUrl] = await checkSitemap(matchingUrl);
     }
     const pages = getBaseUrlPagesFromSitemapContents(
       baseUrl,
@@ -296,7 +293,7 @@ export async function findSitemap(inputUrl, log) {
   const { protocol, domain } = parsedUrl;
   let sitemapUrls = { ok: [], notOk: [] };
   try {
-    const robotsResult = await checkRobotsForSitemap(protocol, domain, log);
+    const robotsResult = await checkRobotsForSitemap(protocol, domain);
     if (robotsResult && robotsResult.paths && robotsResult.paths.length) {
       sitemapUrls.ok = robotsResult.paths;
     }
@@ -325,7 +322,7 @@ export async function findSitemap(inputUrl, log) {
   const filteredSitemapUrls = sitemapUrls.ok.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, log);
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
   const notOkPagesFromSitemap = {};
 
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
@@ -381,14 +378,14 @@ export async function findSitemap(inputUrl, log) {
  */
 export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
-
+  log.info(`Received sitemap audit request for ${baseURL}`);
   const startTime = process.hrtime();
   const auditResult = await findSitemap(baseURL, log);
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`[END] Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
+  log.info(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
 
   return {
     fullAuditRef: baseURL,
