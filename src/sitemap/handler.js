@@ -42,7 +42,6 @@ const VALID_MIME_TYPES = Object.freeze([
  *
  * @async
  * @param {string} targetUrl - The URL from which to fetch the content.
- * @param log
  * @returns {Promise<{
  *    payload: string,
  *    type: string
@@ -51,23 +50,12 @@ const VALID_MIME_TYPES = Object.freeze([
  * and the content type as the type string if the request was successful, otherwise null.
  * @throws {Error} If the fetch operation fails or the response status is not OK.
  */
-export async function fetchContent(targetUrl, log) {
-  try {
-    const response = await fetch(targetUrl);
-    log.info(`Response Status: ${response.status} for ${targetUrl}`);
-
-    if (!response.ok) {
-      log.info(`Fetch error for ${targetUrl}: Status ${response.status}`);
-      return null;
-    }
-
-    const text = await response.text();
-    return { payload: text, type: response.headers.get('content-type') };
-  } catch (error) {
-    log.error(`Fetch error for ${targetUrl}: ${error.message}`);
-    log.info(`Error stack: ${error.stack}`);
-    return null;
+export async function fetchContent(targetUrl) {
+  const response = await fetch(targetUrl);
+  if (!response.ok) {
+    throw new Error(`Fetch error for ${targetUrl}: Status ${response.status}`);
   }
+  return { payload: await response.text(), type: response.headers.get('content-type') };
 }
 
 /**
@@ -76,7 +64,6 @@ export async function fetchContent(targetUrl, log) {
  * @async
  * @param {string} protocol - The protocol (http or https) of the site.
  * @param {string} domain - The domain of the site.
- * @param log
  * @returns {Promise<{ paths: string[], reasons: string[] }>} - A Promise that resolves
  * to an object containing the sitemap paths and reasons for success or failure.
  * The object has the following properties:
@@ -84,22 +71,18 @@ export async function fetchContent(targetUrl, log) {
  * - reasons: An array of strings representing the reasons for not finding any sitemap paths.
  * @throws {Error} If the fetch operation fails or the response status is not OK.
  */
-export async function checkRobotsForSitemap(protocol, domain, log) {
+export async function checkRobotsForSitemap(protocol, domain) {
   const robotsUrl = `${protocol}://${domain}/robots.txt`;
   const sitemapPaths = [];
-  const robotsContent = await fetchContent(robotsUrl, log);
+  const robotsContent = await fetchContent(robotsUrl);
 
   if (robotsContent !== null) {
     const sitemapMatches = robotsContent.payload.matchAll(/Sitemap:\s*(.*)/gi);
     for (const match of sitemapMatches) {
       const path = match[1].trim();
       sitemapPaths.push(path);
-      log.info(`Extracted sitemap path: ${path}`);
     }
-  } else {
-    log.error('No sitemap found in robots.txt');
   }
-
   return {
     paths: sitemapPaths,
     reasons: sitemapPaths.length ? [] : [ERROR_CODES.NO_SITEMAP_IN_ROBOTS],
@@ -122,6 +105,7 @@ export function isSitemapContentValid(sitemapContent) {
  * Checks the validity and existence of a sitemap by fetching its content.
  *
  * @async
+ * @param {string} sitemapUrl - The URL of the sitemap to check
  * @returns {Promise<Object>} - A Promise that resolves to an object representing the result check.
  * The object has the following properties:
  * - existsAndIsValid: A boolean indicating whether the sitemap exists and is in a valid format.
@@ -132,9 +116,9 @@ export function isSitemapContentValid(sitemapContent) {
  *   - isText: A boolean indicating whether the sitemap content is plain text.
  *   - isSitemapIndex: A boolean indicating whether the sitemap is an index of other sitemaps.
  */
-export async function checkSitemap(sitemapUrl, log) {
+export async function checkSitemap(sitemapUrl) {
   try {
-    const sitemapContent = await fetchContent(sitemapUrl, log);
+    const sitemapContent = await fetchContent(sitemapUrl);
     const isValidFormat = isSitemapContentValid(sitemapContent);
     const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
     const isText = isValidFormat && sitemapContent.type === 'text/plain';

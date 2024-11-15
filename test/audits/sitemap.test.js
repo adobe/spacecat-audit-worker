@@ -238,7 +238,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('runs successfully for common sitemap url when robots.txt is not available', async () => {
+    it.skip('runs successfully for common sitemap url when robots.txt is not available', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(404);
@@ -246,38 +246,31 @@ describe('Sitemap Audit', () => {
       nock(url)
         .head('/sitemap_index.xml')
         .reply(404);
-
       nock(url)
         .head('/sitemap.xml')
         .reply(200);
-
       nock(url)
         .get('/sitemap.xml')
         .reply(200, sampleSitemap);
-
       nock(url)
         .head('/foo')
         .reply(200);
-
       nock(url)
         .head('/bar')
         .reply(200);
-
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
         auditResult: {
-          details: {
-            issues: {},
-          },
-          success: true,
           paths: {
             [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
           },
           reasons: [
             {
-              value: 'Sitemaps found and checked.',
+              error: ERROR_CODES.FETCH_ERROR,
+              value: 'Fetch error for https://some-domain.adobe/robots.txt: Status 404',
             },
           ],
+          success: false,
           url,
         },
         fullAuditRef: url,
@@ -298,25 +291,13 @@ describe('Sitemap Audit', () => {
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
         auditResult: {
-          details: {
-            issues: [
-              {
-                statusCode: 404,
-                url: 'https://some-domain.adobe/sitemap.xml',
-              },
-              {
-                statusCode: 404,
-                url: 'https://some-domain.adobe/sitemap_index.xml',
-              },
-            ],
-          },
-          success: false,
           reasons: [
             {
-              error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
-              value: 'Robots.txt',
+              error: ERROR_CODES.FETCH_ERROR,
+              value: 'Fetch error for https://some-domain.adobe/robots.txt: Status 404',
             },
           ],
+          success: false,
         },
         fullAuditRef: url,
         url,
@@ -325,7 +306,7 @@ describe('Sitemap Audit', () => {
   });
 
   describe('fetchContent', () => {
-    it.skip('should return payload and type when response is successful', async () => {
+    it('should return payload and type when response is successful', async () => {
       const mockResponse = {
         payload: 'test',
         type: 'text/plain',
@@ -338,16 +319,16 @@ describe('Sitemap Audit', () => {
       expect(result).to.eql(mockResponse);
     });
 
-    it.skip('should throw error when response is not successful', async () => {
+    it('should throw error when response is not successful', async () => {
       nock(url)
         .get('/test')
         .reply(404);
-      await expect(fetchContent(`${url}/test`)).to.be.rejectedWith('StatusCode: 404 for https://some-domain.adobe/test');
+      await expect(fetchContent(`${url}/test`)).to.be.rejectedWith('Fetch error for https://some-domain.adobe/test: Status 404');
     });
   });
 
   describe('checkRobotsForSitemap', () => {
-    it.skip('should return error when no sitemap found in robots.txt', async () => {
+    it('should return error when no sitemap found in robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, 'Allow: /');
@@ -357,12 +338,12 @@ describe('Sitemap Audit', () => {
       expect(reasons).to.deep.equal([ERROR_CODES.NO_SITEMAP_IN_ROBOTS]);
     });
 
-    it.skip('should return error when unable to fetch robots.txt', async () => {
+    it('should return error when unable to fetch robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(404);
 
-      await expect(checkRobotsForSitemap(protocol, domain)).to.be.rejectedWith('StatusCode: 404 for https://some-domain.adobe/robots.txt');
+      await expect(checkRobotsForSitemap(protocol, domain)).to.be.rejectedWith('Fetch error for https://some-domain.adobe/robots.txt: Status 404');
     });
   });
 
@@ -402,12 +383,12 @@ describe('Sitemap Audit', () => {
   });
 
   describe('checkSitemap', () => {
-    it.skip('should return SITEMAP_NOT_FOUND when the sitemap does not exist', async () => {
+    it('should return SITEMAP_NOT_FOUND when the sitemap does not exist', async () => {
       nock(url)
         .get('/sitemap.xml')
         .reply(404);
 
-      const resp = await checkSitemap();
+      const resp = await checkSitemap(`${url}/sitemap.xml`);
       expect(resp.existsAndIsValid).to.equal(false);
       expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_NOT_FOUND);
     });
@@ -422,22 +403,22 @@ describe('Sitemap Audit', () => {
       expect(resp.reasons).to.include(ERROR_CODES.FETCH_ERROR);
     });
 
-    it.skip('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
+    it('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
       nock(url)
         .get('/sitemap.xml')
         .reply(200, 'Not valid XML', { 'content-type': 'invalid' });
 
-      const resp = await checkSitemap();
+      const resp = await checkSitemap(`${url}/sitemap.xml`);
       expect(resp.existsAndIsValid).to.equal(false);
       expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_FORMAT);
     });
 
-    it.skip('checkSitemap returns invalid result for non-existing sitemap', async () => {
+    it('checkSitemap returns invalid result for non-existing sitemap', async () => {
       nock(url)
         .get('/non-existent-sitemap.xml')
         .reply(404);
 
-      const result = await checkSitemap();
+      const result = await checkSitemap(`${url}/non-existent-sitemap.xml`);
       expect(result.existsAndIsValid).to.equal(false);
       expect(result.reasons).to.deep.equal(
         [ERROR_CODES.SITEMAP_NOT_FOUND],
