@@ -65,7 +65,7 @@
     "@aws-sdk/client-s3": "3.688.0",
     "@aws-sdk/client-lambda": "3.688.0",
     "@aws-sdk/credential-provider-node": "3.687.0",
-    "@adobe/spacecat-shared-utils": "1.22.5",
+    "@adobe/spacecat-shared-utils": "1.22.6",
     "@aws-sdk/client-secrets-manager": "3.687.0",
     "@aws-sdk/client-sqs": "3.687.0",
     "aws-xray-sdk": "3.10.1",
