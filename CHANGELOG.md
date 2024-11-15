@@ -1,3 +1,10 @@
+## [1.32.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.14...v1.32.15) (2024-11-15)
+
+
+### Bug Fixes
+
+* update utils ([4a3cd9e](https://github.com/adobe/spacecat-audit-worker/commit/4a3cd9e3d55ee727a15612289a467d98d735a043))
+
 ## [1.32.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.13...v1.32.14) (2024-11-15)
 
 
