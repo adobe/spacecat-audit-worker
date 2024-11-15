@@ -1,3 +1,10 @@
+## [1.32.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.15...v1.32.16) (2024-11-15)
+
+
+### Bug Fixes
+
+* bot protection for spacecat sites ([#469](https://github.com/adobe/spacecat-audit-worker/issues/469)) ([7a3b75a](https://github.com/adobe/spacecat-audit-worker/commit/7a3b75a5751edae919c5486c01298bae40c0d9b3))
+
 ## [1.32.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.14...v1.32.15) (2024-11-15)
 
 
