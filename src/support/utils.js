@@ -26,7 +26,12 @@ URI.preventInvalidHostname = true;
 
 export async function getRUMUrl(url) {
   const urlWithScheme = prependSchema(url);
-  const resp = await fetch(urlWithScheme);
+  const resp = await fetch(urlWithScheme, {
+    method: 'GET',
+    headers: {
+      'User-Agent': 'curl/7.88.1', // Set the same User-Agent
+    },
+  });
   const finalUrl = resp.url.split('://')[1];
   return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
 }
