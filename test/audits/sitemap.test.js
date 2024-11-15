@@ -646,6 +646,12 @@ describe('Sitemap Audit', () => {
       });
     });
 
+    // it('should run a temporary task', async () => {
+    //   const log = { info: () => {}, error: () => {} };
+    //   const output = await findSitemap('https://sunstar.com', log);
+    //   console.log(output);
+    // });
+
     it('should return error when no sitemap is found', async () => {
       nock(url)
         .get('/robots.txt')

@@ -11,7 +11,6 @@
  */
 
 import { composeAuditURL, prependSchema, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { AbortController, AbortError } from '@adobe/fetch';
 import {
   extractDomainAndProtocol,
   getBaseUrlPagesFromSitemapContents,
@@ -174,48 +173,40 @@ export async function checkSitemap(sitemapUrl, log) {
  * @returns {Promise<{ok: string[], notOk: string[], err: string[]}>} -
  * A promise that resolves to a dict of URLs that exist.
  */
-async function filterValidUrls(urls, log) {
+export async function filterValidUrls(urls, log) {
   const OK = 1;
   const NOT_OK = 2;
-  const TIMEOUT = 10000; // 10sec timeout
-
-  const fetchWithTimeout = async (url, timeout) => {
-    const controller = new AbortController();
-    const { signal } = controller;
-    const id = setTimeout(() => controller.abort(), timeout);
-
-    try {
-      const response = await fetch(url, {
-        method: 'HEAD',
-        signal,
-        redirect: 'follow',
-      });
-      clearTimeout(id);
-      return response;
-    } catch (error) {
-      if (error instanceof AbortError) {
-        log.info(`Request to ${url} timed out after ${timeout}ms`);
-        return { status: 408 };
-      }
-    } finally {
-      clearTimeout(id);
-    }
-    return { status: 0 };
-  };
 
   const fetchUrl = async (url) => {
-    const response = await fetchWithTimeout(url, TIMEOUT);
-    log.info(`URL ${url} returned status: ${response.status}`);
-
-    if (response.status === 200) {
-      return { status: OK, url };
-    } else {
-      return { status: NOT_OK, url, statusCode: response.status };
+    try {
+      const response = await fetch(url, { method: 'HEAD' });
+      log.info(`URL ${url} returned status: ${response.status}`);
+      if (response.status === 200) {
+        return { status: OK, url };
+      } else {
+        return { status: NOT_OK, url, statusCode: response.status };
+      }
+    } catch {
+      return { status: NOT_OK, url };
     }
   };
 
   const fetchPromises = urls.map(fetchUrl);
-  const results = await Promise.allSettled(fetchPromises);
+
+  const batchSize = 50;
+  const batches = [];
+  for (let i = 0; i < fetchPromises.length; i += batchSize) {
+    batches.push(fetchPromises.slice(i, i + batchSize));
+  }
+
+  const results = [];
+  for (const batch of batches) {
+    // eslint-disable-next-line no-await-in-loop
+    const batchResults = await Promise.allSettled(batch);
+    for (const result of batchResults) {
+      results.push(result);
+    }
+  }
 
   // filter only the fulfilled promises that have a valid URL
   const filtered = results
@@ -407,25 +398,19 @@ export async function findSitemap(inputUrl, log) {
 export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
 
-  try {
-    const startTime = process.hrtime();
-    const auditResult = await findSitemap(baseURL, log);
-    const endTime = process.hrtime(startTime);
-    const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
-    const formattedElapsed = elapsedSeconds.toFixed(2);
+  const startTime = process.hrtime();
+  const auditResult = await findSitemap(baseURL, log);
+  const endTime = process.hrtime(startTime);
+  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+  const formattedElapsed = elapsedSeconds.toFixed(2);
 
-    log.info(`[END] Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
+  log.info(`[END] Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
 
-    return {
-      fullAuditRef: baseURL,
-      auditResult,
-      url: baseURL,
-    };
-  } catch (error) {
-    log.error(`[ERROR] in sitemapAuditRunner for ${baseURL}: ${error.message}`);
-    log.error(`[ERROR] Stack trace: ${error.stack}`);
-    throw error;
-  }
+  return {
+    fullAuditRef: baseURL,
+    auditResult,
+    url: baseURL,
+  };
 }
 
 export default new AuditBuilder()
