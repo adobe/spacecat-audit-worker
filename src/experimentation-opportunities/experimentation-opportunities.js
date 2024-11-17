@@ -83,6 +83,7 @@ async function getMetricsByVendor(metrics) {
 
 async function updateRecommendations(oppty, context, site) {
   const { log } = context;
+  log.info(`Generating guidance for ${oppty.page}`);
   const lambdaPayload = {
     type: 'llm-insights',
     payload: {
@@ -160,6 +161,7 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   await new Promise((resolve) => {
     setTimeout(resolve, 120000);
   });
+  log.info('Scrape finished, processing opportunities');
   // generate the guidance for the top opportunities
   const promises = topHighOrganicLowCtrOpportunities.map(
     (oppty) => updateRecommendations(oppty, context, site),
