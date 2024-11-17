@@ -19,6 +19,12 @@ import { wwwUrlResolver } from '../common/audit.js';
 
 const DAYS = 30;
 const MAX_OPPORTUNITIES = 10;
+/**
+ * Even if the pages with high views have low CTR difference (from site wide CTR), those will be
+ * considered as top opportunities, but the chance of improvement would be very less. so we are
+ * adding a margin to the CTR difference to consider only those opportunities that have
+ * significant difference between the page CTR and site wide CTR.
+ */
 const CTR_THRESHOLD_MARGIN = 0.04;
 const VENDOR_METRICS_PAGEVIEW_THRESHOLD = 10000;
 
@@ -64,21 +70,29 @@ async function getMetricsByVendor(metrics) {
     }
     return acc;
   }, {});
-  return metricsByVendor.filter((vendor) => vendor.pageviews > VENDOR_METRICS_PAGEVIEW_THRESHOLD);
+  const filteredMetrics = metricsByVendor.filter(
+    (vendor) => vendor.pageviews > VENDOR_METRICS_PAGEVIEW_THRESHOLD,
+  );
+  let metricsByVendorString = 'vendor pageviews ctr \n';
+  for (const vendor of filteredMetrics) {
+    metricsByVendorString += `${vendor} ${filteredMetrics[vendor].pageviews} ${filteredMetrics[vendor].ctr} \n`;
+  }
+  console.log('Metrics by vendor string: ', metricsByVendorString);
+  return metricsByVendorString;
 }
 
 async function updateRecommendations(oppty, context, site) {
   const { log } = context;
   const lambdaPayload = {
-    type: 'experimentation-guidance',
+    type: 'llm-insights',
     payload: {
       rumData: {
-        audience: '',
         url: oppty.page,
         s3BucketName: process.env.S3_SCRAPER_BUCKET_NAME,
+        promptPath: 'prompts/improving-ctr-guidance-vendor-v2.prompt',
         screenshotPaths: [`${getS3PathPrefix(oppty.page, site)}screenshot-desktop.png`],
         scrapeJsonPath: `${getS3PathPrefix(oppty.page, site)}scrape.json`,
-        metricsByVendor: getMetricsByVendor(oppty.metrics),
+        vendorDetails: getMetricsByVendor(oppty.metrics),
         additionalContext: '',
       },
     },
@@ -130,7 +144,7 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     0,
     MAX_OPPORTUNITIES,
   );
-  log.info(`highes: ${highOrganicLowCtrOpportunities[0].potentialClicks}.. Lowest: ${highOrganicLowCtrOpportunities[highOrganicLowCtrOpportunities.length - 1].potentialClicks}`);
+  log.info(`highest: ${highOrganicLowCtrOpportunities[0].potentialClicks}.. Lowest: ${highOrganicLowCtrOpportunities[highOrganicLowCtrOpportunities.length - 1].potentialClicks}`);
   const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => ({
     url: oppty.page,
   }));
@@ -140,9 +154,11 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     jobId: site.getId(),
     urls: topHighOrganicUrls,
   });
-  // wait a minute for the scrape to finish
+  // Temp Solution: wait couple of minute for the scrape to finish
+  // TODO: replace this with a SQS message to run another handler to process the scraped content,
+  // to eliminate duplicate lambda run time
   await new Promise((resolve) => {
-    setTimeout(resolve, 60000);
+    setTimeout(resolve, 120000);
   });
   // generate the guidance for the top opportunities
   const promises = topHighOrganicLowCtrOpportunities.map(
