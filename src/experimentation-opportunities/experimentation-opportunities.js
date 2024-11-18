@@ -106,7 +106,7 @@ async function updateRecommendations(oppty, context, site) {
   let lambdaResult;
   try {
     // eslint-disable-next-line no-await-in-loop
-    const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
+    const lambdaResponse = await invokeLambdaFunction(lambdaPayload, context);
     log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
     const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
     lambdaResult = lambdaResponseBody.result;
