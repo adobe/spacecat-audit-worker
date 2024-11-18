@@ -145,7 +145,6 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     0,
     MAX_OPPORTUNITIES,
   );
-  log.info(`highest: ${highOrganicLowCtrOpportunities[0].opportunityImpact}.. Lowest: ${highOrganicLowCtrOpportunities[highOrganicLowCtrOpportunities.length - 1].opportunityImpact}`);
   const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => ({
     url: oppty.page,
   }));
@@ -155,18 +154,18 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     jobId: site.getId(),
     urls: topHighOrganicUrls,
   });
-  log.info('Scrape triggered');
-  // Temp Solution: wait couple of minute for the scrape to finish
+  // wait for the scrape to complete
   // TODO: replace this with a SQS message to run another handler to process the scraped content,
   // to eliminate duplicate lambda run time
-  // await new Promise((resolve) => {
-  //   setTimeout(resolve, 120000);
-  // });
-  log.info('Scrape finished, processing opportunities');
-  // generate the guidance for the top opportunities
+
+  // generate the guidance for the top opportunities in parallel
+  const promises = topHighOrganicLowCtrOpportunities.map(
+    (oppty) => updateRecommendations(oppty, context, site),
+  );
+  await Promise.all(promises);
   for (const oppty of topHighOrganicLowCtrOpportunities) {
     // eslint-disable-next-line no-await-in-loop
-    await updateRecommendations(oppty, context, site);
+    // await updateRecommendations(oppty, context, site);
     // update the oppty in the opporrtunities list
     log.info(`Updating oppty in the list for : ${oppty.page}`);
     const index = opportunites.findIndex(
