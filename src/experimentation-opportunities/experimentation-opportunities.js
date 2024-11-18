@@ -38,18 +38,15 @@ const OPPTY_QUERIES = [
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
   let { pathname } = urlObj;
-  pathname = pathname.replace('.html', '').replace('.htm', '');
   pathname = pathname.endsWith('/') ? pathname : `${pathname}/`;
   return `scrapes/${site.getId()}${pathname}`;
 }
 
-async function invokeLambdaFunction(payload, context) {
-  const { log } = context;
+async function invokeLambdaFunction(payload) {
   const lambdaClient = new LambdaClient({
     region: process.env.AWS_REGION,
     credentials: defaultProvider(),
   });
-  log.info(`Lambda ARN: ${process.env.SPACECAT_STATISTICS_LAMBDA_ARN}`);
   const invokeParams = {
     FunctionName: process.env.SPACECAT_STATISTICS_LAMBDA_ARN,
     InvocationType: 'RequestResponse',
@@ -59,8 +56,7 @@ async function invokeLambdaFunction(payload, context) {
   return JSON.parse(new TextDecoder().decode(response.Payload));
 }
 
-function getMetricsByVendor(metrics, context) {
-  const { log } = context;
+function getMetricsByVendor(metrics) {
   const metricsByVendor = metrics.reduce((acc, metric) => {
     const { vendor } = metric;
     if (!acc[vendor]) {
@@ -73,7 +69,6 @@ function getMetricsByVendor(metrics, context) {
     }
     return acc;
   }, {});
-  log.info(`Metrics by vendor: ${JSON.stringify(metricsByVendor, null, 2)}`);
   const header = 'vendor, pageviews, ctr';
   const metricsByVendorString = [
     header, // Add header row at the top
@@ -83,7 +78,6 @@ function getMetricsByVendor(metrics, context) {
       ) // Filter by pageviews > threshold
       .map(([vendor, { pageviews, ctr }]) => `${vendor}, ${pageviews}, ${ctr}`),
   ].join('\n');
-  log.info(`Metrics by vendor string: ${metricsByVendorString}`);
   return metricsByVendorString;
 }
 
@@ -99,7 +93,7 @@ async function updateRecommendations(oppty, context, site) {
         promptPath: 'prompts/improving-ctr-guidance-vendor-v2.prompt',
         screenshotPaths: [`${getS3PathPrefix(oppty.page, site)}screenshot-desktop.png`],
         scrapeJsonPath: `${getS3PathPrefix(oppty.page, site)}scrape.json`,
-        vendorDetails: getMetricsByVendor(oppty.metrics, context),
+        vendorDetails: getMetricsByVendor(oppty.metrics),
         additionalContext: '',
       },
     },
@@ -108,7 +102,7 @@ async function updateRecommendations(oppty, context, site) {
   let lambdaResult;
   try {
     // eslint-disable-next-line no-await-in-loop
-    const lambdaResponse = await invokeLambdaFunction(lambdaPayload, context);
+    const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
     log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
     const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
     lambdaResult = lambdaResponseBody.result;
