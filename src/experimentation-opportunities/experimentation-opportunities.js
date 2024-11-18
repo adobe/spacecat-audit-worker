@@ -159,9 +159,9 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   // Temp Solution: wait couple of minute for the scrape to finish
   // TODO: replace this with a SQS message to run another handler to process the scraped content,
   // to eliminate duplicate lambda run time
-  await new Promise((resolve) => {
-    setTimeout(resolve, 120000);
-  });
+  // await new Promise((resolve) => {
+  //   setTimeout(resolve, 120000);
+  // });
   log.info('Scrape finished, processing opportunities');
   // generate the guidance for the top opportunities
   const promises = topHighOrganicLowCtrOpportunities.map(
