@@ -42,7 +42,8 @@ function getS3PathPrefix(url, site) {
   return `scrapes/${site.getId()}${pathname}`;
 }
 
-async function invokeLambdaFunction(payload) {
+async function invokeLambdaFunction(payload, context) {
+  const { log } = context;
   const lambdaClient = new LambdaClient({
     region: process.env.AWS_REGION,
     credentials: defaultProvider(),
@@ -53,6 +54,7 @@ async function invokeLambdaFunction(payload) {
     Payload: JSON.stringify(payload),
   };
   const response = await lambdaClient.send(new InvokeCommand(invokeParams));
+  log.info('Lambda Response: ', JSON.stringify(response, null, 2));
   return JSON.parse(new TextDecoder().decode(response.Payload));
 }
 
@@ -102,7 +104,7 @@ async function updateRecommendations(oppty, context, site) {
   let lambdaResult;
   try {
     // eslint-disable-next-line no-await-in-loop
-    const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
+    const lambdaResponse = await invokeLambdaFunction(lambdaPayload, context);
     log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
     const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
     lambdaResult = lambdaResponseBody.result;
