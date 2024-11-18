@@ -37,10 +37,10 @@ const OPPTY_QUERIES = [
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
-  let pathname = { urlObj };
+  let { pathname } = urlObj;
   pathname = pathname.replace('.html', '').replace('.htm', '');
   pathname = pathname.endsWith('/') ? pathname : `${pathname}/`;
-  return `/scrapes/${site.getId()}${pathname}`;
+  return `scrapes/${site.getId()}${pathname}`;
 }
 
 async function invokeLambdaFunction(payload) {
