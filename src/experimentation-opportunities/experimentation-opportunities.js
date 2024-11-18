@@ -43,11 +43,13 @@ function getS3PathPrefix(url, site) {
   return `scrapes/${site.getId()}${pathname}`;
 }
 
-async function invokeLambdaFunction(payload) {
+async function invokeLambdaFunction(payload, context) {
+  const { log } = context;
   const lambdaClient = new LambdaClient({
     region: process.env.AWS_REGION,
     credentials: defaultProvider(),
   });
+  log.info(`Lambda ARN: ${process.env.SPACECAT_STATISTICS_LAMBDA_ARN}`);
   const invokeParams = {
     FunctionName: process.env.SPACECAT_STATISTICS_LAMBDA_ARN,
     InvocationType: 'RequestResponse',
@@ -57,7 +59,8 @@ async function invokeLambdaFunction(payload) {
   return JSON.parse(new TextDecoder().decode(response.Payload));
 }
 
-async function getMetricsByVendor(metrics) {
+async function getMetricsByVendor(metrics, context) {
+  const { log } = context;
   const metricsByVendor = metrics.reduce((acc, metric) => {
     const vendor = { metric };
     if (!acc[vendor]) {
@@ -70,14 +73,15 @@ async function getMetricsByVendor(metrics) {
     }
     return acc;
   }, {});
-  const filteredMetrics = metricsByVendor.filter(
+  const filteredVendors = metricsByVendor.filter(
     (vendor) => vendor.pageviews > VENDOR_METRICS_PAGEVIEW_THRESHOLD,
   );
+  log.info(`Filtered vendors: ${JSON.stringify(filteredVendors, null, 2)}`);
   let metricsByVendorString = 'vendor pageviews ctr \n';
-  for (const vendor of filteredMetrics) {
-    metricsByVendorString += `${vendor} ${filteredMetrics[vendor].pageviews} ${filteredMetrics[vendor].ctr} \n`;
+  for (const vendor of filteredVendors) {
+    metricsByVendorString += `${vendor} ${filteredVendors[vendor].pageviews} ${filteredVendors[vendor].ctr} \n`;
   }
-  console.log('Metrics by vendor string: ', metricsByVendorString);
+  log.info(`Metrics by vendor: ${metricsByVendorString}`);
   return metricsByVendorString;
 }
 
@@ -93,7 +97,7 @@ async function updateRecommendations(oppty, context, site) {
         promptPath: 'prompts/improving-ctr-guidance-vendor-v2.prompt',
         screenshotPaths: [`${getS3PathPrefix(oppty.page, site)}screenshot-desktop.png`],
         scrapeJsonPath: `${getS3PathPrefix(oppty.page, site)}scrape.json`,
-        vendorDetails: getMetricsByVendor(oppty.metrics),
+        vendorDetails: getMetricsByVendor(oppty.metrics, context),
         additionalContext: '',
       },
     },
