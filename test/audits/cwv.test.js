@@ -19,6 +19,7 @@ import nock from 'nock';
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import { CWVRunner } from '../../src/cwv/handler.js';
 import { rumData } from '../fixtures/rum-data.js';
+import { expectedCWVData } from '../fixtures/expected-cwv-data.js';
 
 use(sinonChai);
 
@@ -39,7 +40,7 @@ describe('Index Tests', () => {
     runtime: { name: 'aws-lambda', region: 'us-east-1' },
     func: { package: 'spacecat-services', version: 'ci', name: 'test' },
     rumApiClient: {
-      query: sandbox.stub().withArgs('variable-1', sinon.match(DOMAIN_REQUEST_DEFAULT_PARAMS)).resolves(rumData),
+      queryMulti: sandbox.stub().withArgs('variable-1', sinon.match(DOMAIN_REQUEST_DEFAULT_PARAMS)).resolves(rumData),
     },
   };
 
@@ -60,14 +61,6 @@ describe('Index Tests', () => {
 
   it('cwv audit runs rum api client cwv query', async () => {
     const result = await CWVRunner('www.spacecat.com', context, site);
-    expect(result).to.deep.equal({
-      auditResult: {
-        cwv: rumData.filter((data) => data.pageviews >= 7000),
-        auditContext: {
-          interval: 7,
-        },
-      },
-      fullAuditRef: auditUrl,
-    });
+    expect(result).to.deep.equal(expectedCWVData);
   });
 });

@@ -17,6 +17,21 @@ import { wwwUrlResolver } from '../common/audit.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
+const CWV_QUERIES = [
+  'cwv',
+  'form-vitals',
+];
+
+function checkHasForm(matchingFormVital) {
+  const { formview, formsubmit, formengagement } = matchingFormVital;
+
+  // Check if 'formview', 'formsubmit' or 'formengagement' is undefined or empty
+  const isFormViewPresent = formview && Object.keys(formview).length > 0;
+  const isFormSubmitPresent = formsubmit && Object.keys(formsubmit).length > 0;
+  const isFormEngagementPresent = formengagement && Object.keys(formengagement).length > 0;
+  // Return the boolean value based on presence of formview, formsubmit or formengegement
+  return isFormViewPresent || isFormSubmitPresent || isFormEngagementPresent;
+}
 
 export async function CWVRunner(auditUrl, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -27,9 +42,18 @@ export async function CWVRunner(auditUrl, context, site) {
     interval: INTERVAL,
     granularity: 'hourly',
   };
-  const cwvData = await rumAPIClient.query('cwv', options);
+  const cwvData = await rumAPIClient.queryMulti(CWV_QUERIES, options);
   const auditResult = {
-    cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
+    cwv: cwvData.cwv.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL)
+      .map((cwvItem) => {
+        // Find a matching formVital by URL
+        const matchingFormVital = cwvData['form-vitals'].find(
+          (formVital) => formVital.url === cwvItem.url,
+        );
+
+        const hasForm = matchingFormVital ? checkHasForm(matchingFormVital) : false;
+        return { ...cwvItem, hasForm };
+      }),
     auditContext: {
       interval: INTERVAL,
     },
