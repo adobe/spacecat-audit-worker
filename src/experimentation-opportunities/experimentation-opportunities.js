@@ -115,7 +115,7 @@ async function updateRecommendations(oppty, context, site) {
     log.error(`Error obtaining from LLM: No result from lambda function for ${oppty.page}`);
   } else {
     const recommendations = oppty.recommendations || [];
-    for (const guidance of lambdaResult) {
+    for (const [, guidance] of Object.entries(lambdaResult)) {
       recommendations.push({
         type: 'guidance',
         insight: guidance.insight,
