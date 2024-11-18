@@ -42,8 +42,7 @@ function getS3PathPrefix(url, site) {
   return `scrapes/${site.getId()}${pathname}`;
 }
 
-async function invokeLambdaFunction(payload, context) {
-  const { log } = context;
+async function invokeLambdaFunction(payload) {
   const lambdaClient = new LambdaClient({
     region: process.env.AWS_REGION,
     credentials: defaultProvider(),
@@ -54,7 +53,6 @@ async function invokeLambdaFunction(payload, context) {
     Payload: JSON.stringify(payload),
   };
   const response = await lambdaClient.send(new InvokeCommand(invokeParams));
-  log.info('Lambda Response: ', JSON.stringify(response, null, 2));
   return JSON.parse(new TextDecoder().decode(response.Payload));
 }
 
@@ -85,6 +83,7 @@ function getMetricsByVendor(metrics) {
 
 async function updateRecommendations(oppty, context, site) {
   const { log } = context;
+  const recommendations = [];
   log.info(`Generating guidance for ${oppty.page}`);
   const lambdaPayload = {
     type: 'llm-insights',
@@ -104,7 +103,7 @@ async function updateRecommendations(oppty, context, site) {
   let lambdaResult;
   try {
     // eslint-disable-next-line no-await-in-loop
-    const lambdaResponse = await invokeLambdaFunction(lambdaPayload, context);
+    const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
     log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
     const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
     lambdaResult = lambdaResponseBody.result;
@@ -114,7 +113,6 @@ async function updateRecommendations(oppty, context, site) {
   if (!lambdaResult) {
     log.error(`Error obtaining from LLM: No result from lambda function for ${oppty.page}`);
   } else {
-    const recommendations = oppty.recommendations || [];
     for (const [, guidance] of Object.entries(lambdaResult)) {
       recommendations.push({
         type: 'guidance',
@@ -169,6 +167,13 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   for (const oppty of topHighOrganicLowCtrOpportunities) {
     // eslint-disable-next-line no-await-in-loop
     await updateRecommendations(oppty, context, site);
+    // update the oppty in the opporrtunities list
+    log.info(`Updating oppty in the list for : ${oppty.page}`);
+    const index = opportunites.findIndex((opp) => opp.page === oppty.page);
+    if (index !== -1) {
+      // eslint-disable-next-line no-param-reassign
+      opportunites[index] = oppty;
+    }
   }
 }
 /* c8 ignore stop */
