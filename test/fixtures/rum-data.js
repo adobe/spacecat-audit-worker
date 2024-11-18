@@ -385,16 +385,27 @@ export const rumData = {
       pageviews: 100,
     },
   ],
-  formVitals: [
+  'form-vitals': [
     {
       url: 'https://www.aem.live/home',
-      isFormViewPresent: false,
-      isFormSubmitPresent: true,
+      formsubmit: {},
+      formview: {
+        'desktop:windows': 100,
+      },
+      formengagement: {},
     },
     {
       url: 'https://www.aem.live/developer/block-collection',
-      isFormViewPresent: true,
-      isFormSubmitPresent: true,
+      formsubmit: {
+        'desktop:windows': 100,
+      },
+      formview: {
+        'desktop:linux': 5600,
+        'desktop:windows': 200,
+      },
+      formengagement: {
+        'desktop:windows': 100,
+      },
     },
   ],
 };
