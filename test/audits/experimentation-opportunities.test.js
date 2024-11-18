@@ -97,6 +97,7 @@ describe('Opportunities Tests', () => {
     const auditData = await handler(url, context, site);
 
     const expected = Object.values(opportunitiesData).flatMap((data) => data);
+    expected.find((opportunity) => opportunity.type === 'high-organic-low-ctr').opportunityImpact = 128699;
 
     expect(context.rumApiClient.queryMulti).calledWith([
       'rageclick',

@@ -131,21 +131,21 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   const highOrganicLowCtrOpportunities = opportunites.filter((oppty) => oppty.type === 'high-organic-low-ctr')
     .map((oppty) => {
       const { pageViews, trackedPageKPIValue, trackedKPISiteAverage } = oppty;
-      const potentialClicks = pageViews
+      const opportunityImpact = Math.floor(pageViews
           * (trackedKPISiteAverage - CTR_THRESHOLD_MARGIN - trackedPageKPIValue)
-          * 100;
+          * 100);
       return {
         ...oppty,
-        potentialClicks,
+        opportunityImpact,
       };
     });
   log.info(`Found ${highOrganicLowCtrOpportunities.length} high organic low CTR opportunities`);
-  highOrganicLowCtrOpportunities.sort((a, b) => b.potentialClicks - a.potentialClicks);
+  highOrganicLowCtrOpportunities.sort((a, b) => b.opportunityImpact - a.opportunityImpact);
   const topHighOrganicLowCtrOpportunities = highOrganicLowCtrOpportunities.slice(
     0,
     MAX_OPPORTUNITIES,
   );
-  log.info(`highest: ${highOrganicLowCtrOpportunities[0].potentialClicks}.. Lowest: ${highOrganicLowCtrOpportunities[highOrganicLowCtrOpportunities.length - 1].potentialClicks}`);
+  log.info(`highest: ${highOrganicLowCtrOpportunities[0].opportunityImpact}.. Lowest: ${highOrganicLowCtrOpportunities[highOrganicLowCtrOpportunities.length - 1].opportunityImpact}`);
   const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => ({
     url: oppty.page,
   }));
@@ -169,7 +169,9 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     await updateRecommendations(oppty, context, site);
     // update the oppty in the opporrtunities list
     log.info(`Updating oppty in the list for : ${oppty.page}`);
-    const index = opportunites.findIndex((opp) => opp.page === oppty.page);
+    const index = opportunites.findIndex(
+      (opp) => opp.page === oppty.page && opp.type === oppty.type,
+    );
     if (index !== -1) {
       // eslint-disable-next-line no-param-reassign
       opportunites[index] = oppty;
