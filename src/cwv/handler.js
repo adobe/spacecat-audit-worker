@@ -22,17 +22,6 @@ const CWV_QUERIES = [
   'form-vitals',
 ];
 
-function checkHasForm(matchingFormVital) {
-  const { formview, formsubmit, formengagement } = matchingFormVital;
-
-  // Check if 'formview', 'formsubmit' or 'formengagement' is undefined or empty
-  const isFormViewPresent = formview && Object.keys(formview).length > 0;
-  const isFormSubmitPresent = formsubmit && Object.keys(formsubmit).length > 0;
-  const isFormEngagementPresent = formengagement && Object.keys(formengagement).length > 0;
-  // Return the boolean value based on presence of formview, formsubmit or formengegement
-  return isFormViewPresent || isFormSubmitPresent || isFormEngagementPresent;
-}
-
 export async function CWVRunner(auditUrl, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
@@ -43,15 +32,15 @@ export async function CWVRunner(auditUrl, context, site) {
     granularity: 'hourly',
   };
   const cwvData = await rumAPIClient.queryMulti(CWV_QUERIES, options);
+  const formVitalsMap = new Map(
+    cwvData['form-vitals'].map((vital) => [vital.url, vital]),
+  );
+
   const auditResult = {
     cwv: cwvData.cwv.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL)
       .map((cwvItem) => {
         // Find a matching formVital by URL
-        const matchingFormVital = cwvData['form-vitals'].find(
-          (formVital) => formVital.url === cwvItem.url,
-        );
-
-        const hasForm = matchingFormVital ? checkHasForm(matchingFormVital) : false;
+        const hasForm = formVitalsMap.has(cwvItem.url);
         return { ...cwvItem, hasForm };
       }),
     auditContext: {
