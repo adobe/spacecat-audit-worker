@@ -73,14 +73,15 @@ async function getMetricsByVendor(metrics, context) {
     }
     return acc;
   }, {});
-  const filteredVendors = metricsByVendor.filter(
-    (vendor) => vendor.pageviews > VENDOR_METRICS_PAGEVIEW_THRESHOLD,
-  );
-  log.info(`Filtered vendors: ${JSON.stringify(filteredVendors, null, 2)}`);
-  let metricsByVendorString = 'vendor pageviews ctr \n';
-  for (const vendor of filteredVendors) {
-    metricsByVendorString += `${vendor} ${filteredVendors[vendor].pageviews} ${filteredVendors[vendor].ctr} \n`;
-  }
+  const header = 'vendor, pageviews, ctr';
+  const metricsByVendorString = [
+    header, // Add header row at the top
+    ...Object.entries(metricsByVendor)
+      .filter(
+        ([, { pageviews }]) => pageviews > VENDOR_METRICS_PAGEVIEW_THRESHOLD,
+      ) // Filter by pageviews > threshold
+      .map(([vendor, { pageviews, ctr }]) => `${vendor}, ${pageviews}, ${ctr}`),
+  ].join('\n');
   log.info(`Metrics by vendor: ${metricsByVendorString}`);
   return metricsByVendorString;
 }
