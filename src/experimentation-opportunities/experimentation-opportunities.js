@@ -166,10 +166,10 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   // });
   log.info('Scrape finished, processing opportunities');
   // generate the guidance for the top opportunities
-  const promises = topHighOrganicLowCtrOpportunities.map(
-    (oppty) => updateRecommendations(oppty, context, site),
-  );
-  await Promise.all(promises);
+  for (const oppty of topHighOrganicLowCtrOpportunities) {
+    // eslint-disable-next-line no-await-in-loop
+    await updateRecommendations(oppty, context, site);
+  }
 }
 /* c8 ignore stop */
 
