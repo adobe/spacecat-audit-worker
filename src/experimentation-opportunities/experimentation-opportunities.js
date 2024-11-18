@@ -195,7 +195,7 @@ export async function handler(auditUrl, context, site) {
 
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
-  processHighOrganicLowCtrOpportunities(experimentationOpportunities, context, site);
+  await processHighOrganicLowCtrOpportunities(experimentationOpportunities, context, site);
   log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {
