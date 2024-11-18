@@ -59,10 +59,10 @@ async function invokeLambdaFunction(payload, context) {
   return JSON.parse(new TextDecoder().decode(response.Payload));
 }
 
-async function getMetricsByVendor(metrics, context) {
+function getMetricsByVendor(metrics, context) {
   const { log } = context;
   const metricsByVendor = metrics.reduce((acc, metric) => {
-    const vendor = { metric };
+    const { vendor } = metric;
     if (!acc[vendor]) {
       acc[vendor] = {};
     }
@@ -73,16 +73,17 @@ async function getMetricsByVendor(metrics, context) {
     }
     return acc;
   }, {});
+  log.info(`Metrics by vendor: ${JSON.stringify(metricsByVendor, null, 2)}`);
   const header = 'vendor, pageviews, ctr';
   const metricsByVendorString = [
     header, // Add header row at the top
     ...Object.entries(metricsByVendor)
       .filter(
-        ([, { pageviews }]) => pageviews > VENDOR_METRICS_PAGEVIEW_THRESHOLD,
+        ([vendor, { pageviews }]) => vendor !== '*' && pageviews > VENDOR_METRICS_PAGEVIEW_THRESHOLD,
       ) // Filter by pageviews > threshold
       .map(([vendor, { pageviews, ctr }]) => `${vendor}, ${pageviews}, ${ctr}`),
   ].join('\n');
-  log.info(`Metrics by vendor: ${metricsByVendorString}`);
+  log.info(`Metrics by vendor string: ${metricsByVendorString}`);
   return metricsByVendorString;
 }
 
