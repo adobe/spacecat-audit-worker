@@ -155,6 +155,7 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     jobId: site.getId(),
     urls: topHighOrganicUrls,
   });
+  log.info('Scrape triggered');
   // Temp Solution: wait couple of minute for the scrape to finish
   // TODO: replace this with a SQS message to run another handler to process the scraped content,
   // to eliminate duplicate lambda run time
