@@ -161,7 +161,7 @@ export async function filterValidUrls(urls, log) {
 
   const fetchUrl = async (url) => {
     try {
-      const response = await fetch(url, { method: 'HEAD' });
+      const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
       log.info(`URL ${url} returned status: ${response.status}`);
       if (response.status === 200) {
         return { status: OK, url };

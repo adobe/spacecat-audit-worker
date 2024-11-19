@@ -238,7 +238,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it.skip('runs successfully for common sitemap url when robots.txt is not available', async () => {
+    it('should return 404 when robots.txt not found', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(404);
@@ -261,9 +261,6 @@ describe('Sitemap Audit', () => {
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
         auditResult: {
-          paths: {
-            [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
-          },
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
@@ -271,7 +268,6 @@ describe('Sitemap Audit', () => {
             },
           ],
           success: false,
-          url,
         },
         fullAuditRef: url,
         url,
@@ -488,7 +484,7 @@ describe('Sitemap Audit', () => {
       }]);
     });
 
-    it.skip('should delete extracted paths when no valid pages exist', async () => {
+    it('should return error when no valid pages exist', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap.xml`);
@@ -508,10 +504,11 @@ describe('Sitemap Audit', () => {
       const result = await findSitemap(url);
 
       expect(result.success).to.equal(false);
-      expect(result.reasons).to.deep.include({
-        value: 'No valid paths extracted from sitemaps.',
+      expect(result.reasons).to.deep.equal([{
         error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-      });
+        value: `${url}/sitemap.xml`,
+      }]);
+      expect(result.paths).to.be.undefined;
     });
 
     it.skip('should return success when sitemap is found in robots.txt', async () => {
