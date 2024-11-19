@@ -9,8 +9,9 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
-import { fetch, hasNonWWWSubdomain, toggleWWW } from '../support/utils.js';
+import { hasNonWWWSubdomain, toggleWWW } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 

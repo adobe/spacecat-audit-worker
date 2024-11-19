@@ -13,17 +13,16 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { wwwUrlResolver } from '../common/audit.js';
 
+const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
 
 export async function formsAuditRunner(auditUrl, context, site) {
   const { log } = context;
   const finalUrl = await getRUMUrl(auditUrl);
-
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context, auditUrl, log);
-
   const options = {
     domain: finalUrl,
     domainkey,
@@ -31,9 +30,14 @@ export async function formsAuditRunner(auditUrl, context, site) {
     granularity: 'hourly',
   };
 
-  const formsAuditLinks = await rumAPIClient.query('formVitals', options);
+  const formsAuditLinks = await rumAPIClient.query('form-vitals', options);
   const auditResult = {
-    internalLinks: formsAuditLinks,
+    formVitals: formsAuditLinks.filter((data) => {
+      // Calculate the sum of all values inside the `pageview` object
+      // eslint-disable-next-line max-len
+      const pageviewsSum = Object.values(data.pageview).reduce((sum, value) => sum + value, 0);
+      return pageviewsSum >= DAILY_THRESHOLD * INTERVAL;
+    }),
     auditContext: {
       interval: INTERVAL,
     },
@@ -46,6 +50,6 @@ export async function formsAuditRunner(auditUrl, context, site) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver(wwwUrlResolver)
   .withRunner(formsAuditRunner)
   .build();

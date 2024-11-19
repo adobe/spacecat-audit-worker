@@ -63,7 +63,7 @@ describe('Forms Vitals audit', () => {
       context,
       site,
     );
-    expect(context.rumApiClient.query).calledWith('formVitals', {
+    expect(context.rumApiClient.query).calledWith('form-vitals', {
       domain: 'www.example.com',
       domainkey: 'test-key',
       interval: 7,
@@ -71,7 +71,7 @@ describe('Forms Vitals audit', () => {
     });
     expect(result).to.deep.equal({
       auditResult: {
-        internalLinks: formVitalsData,
+        formVitals: formVitalsData,
         auditContext: {
           interval: 7,
         },

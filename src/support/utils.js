@@ -10,24 +10,28 @@
  * governing permissions and limitations under the License.
  */
 
-import { context as h2, h1 } from '@adobe/fetch';
-import { hasText, prependSchema, resolveCustomerSecretsName } from '@adobe/spacecat-shared-utils';
+import {
+  hasText,
+  prependSchema,
+  resolveCustomerSecretsName,
+  tracingFetch as fetch,
+} from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 
 URI.preventInvalidHostname = true;
 
-/* c8 ignore next 3 */
-export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
-  ? h1()
-  : h2();
-
 // weekly pageview threshold to eliminate urls with lack of samples
 
 export async function getRUMUrl(url) {
   const urlWithScheme = prependSchema(url);
-  const resp = await fetch(urlWithScheme);
+  const resp = await fetch(urlWithScheme, {
+    method: 'GET',
+    headers: {
+      'User-Agent': 'curl/7.88.1', // Set the same User-Agent
+    },
+  });
   const finalUrl = resp.url.split('://')[1];
   return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
 }
