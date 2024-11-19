@@ -17,16 +17,16 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
-import { formsAuditRunner } from '../../src/forms/handler.js';
+import { formsAuditRunner } from '../../src/forms-opportunities/handler.js';
 import { MockContextBuilder } from '../shared.js';
-import { formVitalsData } from '../fixtures/form-vitals-data.js';
+import formVitalsData from '../fixtures/formvitalsdata.json' with { type: 'json' };
+import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
 
 use(sinonChai);
 
 const sandbox = sinon.createSandbox();
 
 const baseURL = 'https://example.com';
-const auditUrl = 'www.example.com';
 
 describe('Forms Vitals audit', () => {
   const site = createSite({ baseURL });
@@ -37,7 +37,7 @@ describe('Forms Vitals audit', () => {
       runtime: { name: 'aws-lambda', region: 'us-east-1' },
       func: { package: 'spacecat-services', version: 'ci', name: 'test' },
       rumApiClient: {
-        query: sinon.stub().resolves(formVitalsData),
+        queryMulti: sinon.stub().resolves(formVitalsData),
       },
     })
     .build();
@@ -58,25 +58,21 @@ describe('Forms Vitals audit', () => {
   });
 
   it('form vitals audit runs rum api client formVitals query', async () => {
+    const FORMS_OPPTY_QUERIES = [
+      'cwv',
+      'form-vitals',
+    ];
     const result = await formsAuditRunner(
       'www.example.com',
       context,
       site,
     );
-    expect(context.rumApiClient.query).calledWith('form-vitals', {
+    expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
       domain: 'www.example.com',
       domainkey: 'test-key',
       interval: 7,
       granularity: 'hourly',
     });
-    expect(result).to.deep.equal({
-      auditResult: {
-        formVitals: formVitalsData,
-        auditContext: {
-          interval: 7,
-        },
-      },
-      fullAuditRef: auditUrl,
-    });
+    expect(result).to.deep.equal(expectedFormVitalsData);
   });
 });

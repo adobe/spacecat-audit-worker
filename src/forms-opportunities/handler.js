@@ -11,33 +11,48 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
+import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
-const DAILY_THRESHOLD = 1000;
+const DAILY_THRESHOLD = 200;
 const INTERVAL = 7; // days
+const FORMS_OPPTY_QUERIES = [
+  'cwv',
+  'form-vitals',
+];
 
 export async function formsAuditRunner(auditUrl, context, site) {
-  const { log } = context;
-  const finalUrl = await getRUMUrl(auditUrl);
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context, auditUrl, log);
+  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
-    domain: finalUrl,
+    domain: auditUrl,
     domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
   };
 
-  const formsAuditLinks = await rumAPIClient.query('form-vitals', options);
+  const formsAuditLinks = await rumAPIClient.queryMulti(FORMS_OPPTY_QUERIES, options);
+  const cwvMap = new Map(
+    formsAuditLinks.cwv.map((cwv) => [cwv.url, cwv]),
+  );
+
   const auditResult = {
-    formVitals: formsAuditLinks.filter((data) => {
+    formVitals: formsAuditLinks['form-vitals'].filter((data) => {
       // Calculate the sum of all values inside the `pageview` object
       // eslint-disable-next-line max-len
       const pageviewsSum = Object.values(data.pageview).reduce((sum, value) => sum + value, 0);
       return pageviewsSum >= DAILY_THRESHOLD * INTERVAL;
-    }),
+    })
+      .map((formVital) => {
+        const cwvData = cwvMap.get(formVital.url);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { url, pageviews, ...filteredCwvData } = cwvData || {};
+        return {
+          ...formVital,
+          cwv: filteredCwvData, // Append cwv data
+        };
+      }),
     auditContext: {
       interval: INTERVAL,
     },
