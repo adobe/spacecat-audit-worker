@@ -156,8 +156,9 @@ export async function checkSitemap(sitemapUrl) {
  * A promise that resolves to a dict of URLs that exist.
  */
 export async function filterValidUrls(urls, log) {
-  const OK = 1;
-  const NOT_OK = 2;
+  const OK = 0;
+  const NOT_OK = 1;
+  const batchSize = 50;
 
   const fetchUrl = async (url) => {
     try {
@@ -175,7 +176,6 @@ export async function filterValidUrls(urls, log) {
 
   const fetchPromises = urls.map(fetchUrl);
 
-  const batchSize = 50;
   const batches = [];
   for (let i = 0; i < fetchPromises.length; i += batchSize) {
     batches.push(fetchPromises.slice(i, i + batchSize));
