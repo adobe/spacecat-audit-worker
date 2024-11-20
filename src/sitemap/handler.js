@@ -53,7 +53,7 @@ const VALID_MIME_TYPES = Object.freeze([
 export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl);
   if (!response.ok) {
-    throw new Error(`Fetch error for ${targetUrl}: Status ${response.status}`);
+    throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
   }
   return { payload: await response.text(), type: response.headers.get('content-type') };
 }
