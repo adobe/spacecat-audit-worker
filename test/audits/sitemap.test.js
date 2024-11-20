@@ -511,7 +511,7 @@ describe('Sitemap Audit', () => {
       expect(result.paths).to.be.undefined;
     });
 
-    it.skip('should return success when sitemap is found in robots.txt', async () => {
+    it('should return success when sitemap is found in robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap.xml`);
@@ -535,7 +535,45 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it.skip('should return success when sitemap.xml is found', async () => {
+    it('should fail when sitemap contents have a different URL than the base domain (regardless of www. or not)', async () => {
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, 'Sitemap: ');
+
+      nock(url)
+        .get('/sitemap.xml')
+        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
+          + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+          + '<url> <loc>https://another-url.test/baz</loc></url>\n'
+          + '</urlset>');
+
+      const result = await findSitemap(url);
+      expect(result.success).to.equal(false);
+    });
+
+    it('should fail when robots points to an empty string instead of an actual URI', async () => {
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, 'Sitemap: ');
+
+      const result = await findSitemap(url);
+      expect(result.success).to.equal(false);
+    });
+
+    it('should fail when sitemap is empty (', async () => {
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, `Sitemap: ${url}/sitemap.xml`);
+
+      nock(url)
+        .get('/sitemap.xml')
+        .reply(200, () => undefined);
+
+      const result = await findSitemap(url);
+      expect(result.success).to.equal(false);
+    });
+
+    it('should return success when sitemap.xml is found', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, 'Allow: /');
@@ -550,7 +588,13 @@ describe('Sitemap Audit', () => {
 
       nock(url)
         .get('/sitemap.xml')
-        .reply(200, sampleSitemap);
+        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
+          + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+          + `<url> <loc>${url}/foo</loc></url>\n`
+          + `<url> <loc>${url}/bar</loc></url>\n`
+          + `<url> <loc>${url}/baz</loc></url>\n`
+          + `<url> <loc>${url}/zzz</loc></url>\n`
+          + '</urlset>');
 
       nock(url)
         .head('/foo')
@@ -560,14 +604,24 @@ describe('Sitemap Audit', () => {
         .head('/bar')
         .reply(200);
 
-      const result = await findSitemap('https://some-domain.adobe');
+      nock(url)
+        .head('/zzz')
+        .replyWithError('Network error');
+
+      nock(url)
+        .head('/baz')
+        .reply(301, '', { Location: `${url}/zzz` });
+
+      const result = await findSitemap('https://some-domain.adobe', {
+        info: () => {},
+      });
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
     });
 
-    it.skip('should return success when sitemap_index.xml is found', async () => {
+    it('should return success when sitemap_index.xml is found', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, 'Allow: /');
@@ -616,7 +670,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it.skip('should return success when sitemap paths have www', async () => {
+    it('should return success when sitemap paths have www', async () => {
       nock(`${protocol}://www.${domain}`)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap.xml`);

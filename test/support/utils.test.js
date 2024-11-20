@@ -17,7 +17,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import {
   enhanceBacklinksWithFixes,
-  extractKeywordsFromUrl,
+  extractKeywordsFromUrl, getBaseUrlPagesFromSitemapContents,
   getUrlWithoutPath,
 } from '../../src/support/utils.js';
 
@@ -168,5 +168,12 @@ describe('enhanceBacklinksWithFixes', () => {
     const result = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
     expect(result).to.be.an('array').that.has.lengthOf(1);
     expect(result[0].url_suggested).to.equal('https://www.example.com/bar.html');
+  });
+});
+
+describe('getBaseUrlPagesFromSitemapContents', () => {
+  it('should return an empty array when the sitemap content is empty', () => {
+    const result = getBaseUrlPagesFromSitemapContents('https://my-site.adbe', undefined);
+    expect(result).to.deep.equal([]);
   });
 });

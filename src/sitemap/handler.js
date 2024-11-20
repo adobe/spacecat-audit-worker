@@ -78,7 +78,10 @@ export async function checkRobotsForSitemap(protocol, domain) {
   if (robotsContent !== null) {
     const sitemapMatches = robotsContent.payload.matchAll(/Sitemap:\s*(.*)/gi);
     for (const match of sitemapMatches) {
-      sitemapPaths.push(match[1].trim());
+      const answer = match[1].trim();
+      if (answer?.length) {
+        sitemapPaths.push(answer);
+      }
     }
   }
   return {
@@ -151,11 +154,10 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
- * @param {Object} log - The logging object to record information and errors.
  * @returns {Promise<{ok: string[], notOk: string[], err: string[]}>} -
  * A promise that resolves to a dict of URLs that exist.
  */
-export async function filterValidUrls(urls, log) {
+export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
   const batchSize = 50;
@@ -163,7 +165,6 @@ export async function filterValidUrls(urls, log) {
   const fetchUrl = async (url) => {
     try {
       const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
-      log.info(`URL ${url} returned status: ${response.status}`);
       if (response.status === 200) {
         return { status: OK, url };
       } else {
@@ -278,10 +279,9 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
  * The extracted paths response length < 0, log messages and returns the failure status and reasons.
  *
  * @param {string} inputUrl - The URL for which to find and validate the sitemap
- * @param log
  * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
  */
-export async function findSitemap(inputUrl, log) {
+export async function findSitemap(inputUrl) {
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
     return {
@@ -306,7 +306,7 @@ export async function findSitemap(inputUrl, log) {
 
   if (!sitemapUrls.ok.length) {
     const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
-    sitemapUrls = await filterValidUrls(commonSitemapUrls, log);
+    sitemapUrls = await filterValidUrls(commonSitemapUrls);
     if (!sitemapUrls.ok || !sitemapUrls.ok.length) {
       return {
         success: false,
@@ -331,7 +331,7 @@ export async function findSitemap(inputUrl, log) {
       const urlsToCheck = extractedPaths[s];
       if (urlsToCheck && urlsToCheck.length) {
         // eslint-disable-next-line no-await-in-loop
-        const existingPages = await filterValidUrls(urlsToCheck, log);
+        const existingPages = await filterValidUrls(urlsToCheck);
 
         if (existingPages.notOk && existingPages.notOk.length > 0) {
           notOkPagesFromSitemap[s] = existingPages.notOk;
@@ -358,8 +358,7 @@ export async function findSitemap(inputUrl, log) {
     return {
       success: false,
       reasons: [{
-        value: filteredSitemapUrls[0]
-            || inputUrl,
+        value: filteredSitemapUrls[0],
         error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
       }],
       url: inputUrl,
@@ -380,7 +379,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
   log.info(`Received sitemap audit request for ${baseURL}`);
   const startTime = process.hrtime();
-  const auditResult = await findSitemap(baseURL, log);
+  const auditResult = await findSitemap(baseURL);
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);

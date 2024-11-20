@@ -87,12 +87,12 @@ export function extractDomainAndProtocol(inputUrl) {
 /**
  * Extracts URLs from a sitemap XML content based on a specified tag name.
  *
- * @param {Object} content - The content of the sitemap.
+ * @param {String} payload - The sitemap contents.
  * @param {string} tagName - The name of the tag to extract URLs from.
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
-export function extractUrlsFromSitemap(content, tagName = 'url') {
-  const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
+export function extractUrlsFromSitemap(payload, tagName = 'url') {
+  const dom = new JSDOM(payload, { contentType: 'text/xml' });
   const { document } = dom.window;
 
   const elements = document.getElementsByTagName(tagName);
@@ -116,7 +116,7 @@ export function extractUrlsFromSitemap(content, tagName = 'url') {
  * @returns {string[]} URLs from the sitemap that start with the base URL or its www variant.
  */
 export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
-  if (!baseUrl || !sitemapDetails) {
+  if (!baseUrl?.length || !sitemapDetails?.sitemapContent?.payload?.length) {
     return [];
   }
 
@@ -127,18 +127,10 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
   );
 
   if (sitemapDetails.isText) {
-    if (!sitemapDetails.sitemapContent || !sitemapDetails.sitemapContent.payload) {
-      return [];
-    }
     const lines = sitemapDetails.sitemapContent.payload.split('\n').map((line) => line.trim());
-
     return filterPages(lines.filter((line) => line.length > 0));
   } else {
-    if (!sitemapDetails.sitemapContent) {
-      return [];
-    }
-    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
-
+    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent.payload);
     return filterPages(sitemapPages);
   }
 }
@@ -151,7 +143,7 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
  * @returns {Array<string>} An array of sitemap URLs extracted from the sitemap index.
  */
 export function getSitemapUrlsFromSitemapIndex(content) {
-  return extractUrlsFromSitemap(content, 'sitemap');
+  return extractUrlsFromSitemap(content.payload, 'sitemap');
 }
 
 export function getUrlWithoutPath(url) {
