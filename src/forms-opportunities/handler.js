@@ -40,14 +40,14 @@ export async function formsAuditRunner(auditUrl, context, site) {
   const auditResult = {
     formVitals: formsAuditLinks['form-vitals'].filter((data) => {
       // Calculate the sum of all values inside the `pageview` object
-      // eslint-disable-next-line max-len
       const pageviewsSum = Object.values(data.pageview).reduce((sum, value) => sum + value, 0);
       return pageviewsSum >= DAILY_THRESHOLD * INTERVAL;
     })
       .map((formVital) => {
         const cwvData = cwvMap.get(formVital.url);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { url, pageviews, ...filteredCwvData } = cwvData || {};
+        const filteredCwvData = cwvData
+          ? Object.fromEntries(Object.entries(cwvData).filter(([key]) => key !== 'url' && key !== 'pageviews'))
+          : {};
         return {
           ...formVital,
           cwv: filteredCwvData, // Append cwv data
