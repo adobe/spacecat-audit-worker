@@ -32,13 +32,13 @@ export async function formsAuditRunner(auditUrl, context, site) {
     granularity: 'hourly',
   };
 
-  const formsAuditLinks = await rumAPIClient.queryMulti(FORMS_OPPTY_QUERIES, options);
+  const queryResults = await rumAPIClient.queryMulti(FORMS_OPPTY_QUERIES, options);
   const cwvMap = new Map(
-    formsAuditLinks.cwv.map((cwv) => [cwv.url, cwv]),
+    queryResults.cwv.map((cwv) => [cwv.url, cwv]),
   );
 
   const auditResult = {
-    formVitals: formsAuditLinks['form-vitals'].filter((data) => {
+    formVitals: queryResults['form-vitals'].filter((data) => {
       // Calculate the sum of all values inside the `pageview` object
       const pageviewsSum = Object.values(data.pageview).reduce((sum, value) => sum + value, 0);
       return pageviewsSum >= DAILY_THRESHOLD * INTERVAL;
