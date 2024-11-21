@@ -147,27 +147,42 @@ export default async function auditBrokenBacklinks(message, context) {
       auditResult,
     };
 
-    const opportunityData = {
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BAC174971-BA97-44A9-9560-90BE6C7CF789%7D&file=Experience_Success_Studio_Broken_Backlinks_Runbook.docx&action=default&mobileredirect=true',
-      type: 'broken-backlinks',
-      origin: 'AUTOMATION',
-      title: 'Authoritative Domains are linking to invalid URLs. This could impact your SEO.',
-      description: 'Provide the correct target URL that each of the broken backlinks should be redirected to.',
-      guidance: {
-        steps: [
-          'Review the list of broken target URLs and the suggested redirects.',
-          'Manually override redirect URLs as needed.',
-          'Copy redirects.',
-          'Paste new entries in your website redirects file.',
-          'Publish the changes.',
-        ],
-      },
-      tags: ['traffic-acquisition'],
-    };
+    const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+    let brokenBacklinksOppty = opportunities.find((oppty) => oppty.getType() === 'broken-backlinks');
 
-    dataAccess.Opportunity.create(opportunityData);
+    if (!brokenBacklinksOppty) {
+      const opportunityData = {
+        siteId: site.getId(),
+        auditId: audit.getId(),
+        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BAC174971-BA97-44A9-9560-90BE6C7CF789%7D&file=Experience_Success_Studio_Broken_Backlinks_Runbook.docx&action=default&mobileredirect=true',
+        type: 'broken-backlinks',
+        origin: 'AUTOMATION',
+        title: 'Authoritative Domains are linking to invalid URLs. This could impact your SEO.',
+        description: 'Provide the correct target URL that each of the broken backlinks should be redirected to.',
+        guidance: {
+          steps: [
+            'Review the list of broken target URLs and the suggested redirects.',
+            'Manually override redirect URLs as needed.',
+            'Copy redirects.',
+            'Paste new entries in your website redirects file.',
+            'Publish the changes.',
+          ],
+        },
+        tags: ['traffic-acquisition'],
+      };
+      brokenBacklinksOppty = await dataAccess.Opportunity.create(opportunityData);
+    }
+
+    const suggestions = await brokenBacklinksOppty.addSuggestions(data.auditResult.brokenBacklinks);
+    if (suggestions.errorItems.length > 0) {
+      log.error(`Suggestions for siteId ${siteId} contains ${suggestions.errorItems.length} items with errors`);
+      suggestions.errorItems.forEach((errorItem) => {
+        log.error(`Item ${errorItem.item} failed with error: ${errorItem.error}`);
+      });
+      if (suggestions.createdItems.length <= 0) {
+        return internalServerError(`Failed to create suggestions for siteId ${siteId}`);
+      }
+    }
     await sqs.sendMessage(queueUrl, data);
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
