@@ -171,6 +171,8 @@ export default async function auditBrokenBacklinks(message, context) {
         tags: ['traffic-acquisition'],
       };
       brokenBacklinksOppty = await dataAccess.Opportunity.create(opportunityData);
+    } else {
+      brokenBacklinksOppty = brokenBacklinksOppty.setAuditId(audit.getId());
     }
 
     const suggestions = await brokenBacklinksOppty.addSuggestions(data.auditResult.brokenBacklinks);
