@@ -34,11 +34,11 @@ async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)
 }
 
 export default async function auditMetaTags(message, context) {
-  const { type, url: siteId } = message;
+  const { type } = message;
+  const siteId = message.url || message.siteId;
   const {
     dataAccess, log, s3Client,
   } = context;
-  log.warn(`meta-tags payload: ${JSON.stringify(message)}`);
   try {
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
