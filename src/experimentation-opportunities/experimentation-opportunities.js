@@ -222,6 +222,7 @@ function convertToOpportunityEntity(oppty, auditData) {
 
 export async function postProcessor(auditUrl, auditData, context) {
   const { log } = context;
+  log.info(`Experimentation Opportunities post processing for ${auditUrl}`);
   const highOrganicLowCtrOpportunities = auditData.auditResult.experimentationOpportunities
     .filter((oppty) => oppty.type === 'high-organic-low-ctr')
     .map(async (oppty) => {
