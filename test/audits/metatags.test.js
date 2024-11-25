@@ -539,8 +539,9 @@ describe('Meta Tags', () => {
     });
 
     it('should handle errors and return internalServerError', async () => {
-      dataAccessStub.getSiteByID.rejects(new Error('Some error'));
-
+      dataAccessStub.getSiteByID.withArgs('test-site').rejects(new Error('Some error'));
+      delete message.url;
+      message.siteId = 'test-site';
       const result = await auditMetaTags(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(internalServerError('Internal server error: Some error')));
       expect(logStub.error.calledOnce).to.be.true;
