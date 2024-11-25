@@ -101,7 +101,6 @@ describe('Opportunities Tests', () => {
 
     expect(context.rumApiClient.queryMulti).calledWith([
       'rageclick',
-      'high-inorganic-high-bounce-rate',
       'high-organic-low-ctr',
     ], {
       domain: 'https://abc.com',
