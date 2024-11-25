@@ -1,0 +1,50 @@
+{
+  "extends": [
+    "config:base",
+    ":semanticCommits",
+    ":autodetectPinVersions"
+  ],
+  "timezone": "Europe/Zurich",
+  "branchPrefix": "renovate-",
+  "packageRules": [
+    {
+      "packageNames": ["cimg/node"],
+      "allowedVersions": "<21"
+    },
+    {
+      "groupName": "adobe fixes",
+      "updateTypes": ["patch", "pin", "digest", "minor"],
+      "automerge": true,
+      "packagePatterns": ["^@adobe/"],
+      "schedule": ["at any time"]
+    },
+    {
+      "groupName": "adobe major",
+      "updateTypes": ["major"],
+      "packagePatterns": ["^@adobe/"],
+      "automerge": false,
+      "schedule": ["at any time"]
+    },
+    {
+      "groupName": "external fixes",
+      "updateTypes": ["patch", "pin", "digest", "minor"],
+      "automerge": true,
+      "schedule": ["after 2pm on Saturday"],
+      "packagePatterns": ["^.+"],
+      "excludePackagePatterns": ["^@adobe/"]
+    },
+    {
+      "groupName": "external major",
+      "updateTypes": ["major"],
+      "automerge": false,
+      "packagePatterns": ["^.+"],
+      "excludePackagePatterns": ["^@adobe/"],
+      "schedule": ["after 2pm on Monday"]
+    },
+    {
+      "datasources": ["orb"],
+      "updateTypes": ["patch", "minor"],
+      "automerge": true
+    }
+  ]
+}
