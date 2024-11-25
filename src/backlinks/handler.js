@@ -13,11 +13,11 @@
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
-import { composeAuditURL } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { enhanceBacklinksWithFixes, fetch } from '../support/utils.js';
+import { enhanceBacklinksWithFixes } from '../support/utils.js';
 
 const TIMEOUT = 3000;
 
@@ -61,12 +61,12 @@ export async function filterOutValidBacklinks(backlinks, log) {
 }
 
 export default async function auditBrokenBacklinks(message, context) {
-  const { type, url: siteId, auditContext = {} } = message;
+  const { type, auditContext = {} } = message;
   const { dataAccess, log, sqs } = context;
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
-
+  const siteId = message.url || message.siteId;
   try {
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);

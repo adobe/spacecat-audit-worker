@@ -12,6 +12,7 @@
 
 /* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { JSDOM } from 'jsdom';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
@@ -628,6 +629,10 @@ function filterMultiPageExperimentsByThreshold(
 }
 
 async function processExperimentRUMData(experimentInsights, context, days) {
+  if (Object.keys(experimentInsights).length === 0) {
+    log.info('No Experiment Insights found');
+    return [];
+  }
   log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
   const multiPageExperimentNames = getMultiPageExperimentNames(experimentInsights);
   log.info('Multi-Page Experiment Names: ', multiPageExperimentNames.join(', '));

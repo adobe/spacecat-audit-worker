@@ -2,12 +2,12 @@ version: 2.1
 executors:
   node-executor:
     docker:
-      - image: cimg/node:20.11
+      - image: cimg/node:20.11.1
     working_directory: ~/repo
 
 orbs:
   helix-post-deploy: adobe/helix-post-deploy@3.0.2
-  codecov: codecov/codecov@5.0.0
+  codecov: codecov/codecov@5.0.3
 
 commands:
   setup:

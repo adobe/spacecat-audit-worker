@@ -23,18 +23,14 @@ import { MockContextBuilder } from '../shared.js';
 
 const AUDIT_RESULT_DATA = [
   {
-    url: 'https://www.example.com/article/dogs/breeds/choosing-an-irish-setter',
-    views: 100,
-    sources: [
-      'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-13-manly-masculine-dog-breeds',
-    ],
+    url_to: 'https://www.example.com/article/dogs/breeds/choosing-an-irish-setter',
+    url_from: 'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-13-manly-masculine-dog-breeds',
+    traffic_domain: 100,
   },
   {
-    url: 'https://www.example.com/article/dogs/breeds/choosing-a-miniature-poodle',
-    views: 100,
-    sources: [
-      'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
-    ],
+    url_to: 'https://www.example.com/article/dogs/breeds/choosing-a-miniature-poodle',
+    url_from: 'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
+    traffic_domain: 100,
   },
 ];
 
@@ -88,7 +84,9 @@ describe('Broken internal links audit', () => {
     });
     expect(result).to.deep.equal({
       auditResult: {
-        internalLinks: AUDIT_RESULT_DATA,
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        fullAuditRef: auditUrl,
+        finalUrl: auditUrl,
         auditContext: {
           interval: 30,
         },
