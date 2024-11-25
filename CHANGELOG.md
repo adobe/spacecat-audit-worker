@@ -1,3 +1,10 @@
+# [1.33.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.26...v1.33.0) (2024-11-25)
+
+
+### Features
+
+* sitemap oppty enhacement ([#431](https://github.com/adobe/spacecat-audit-worker/issues/431)) ([00132c6](https://github.com/adobe/spacecat-audit-worker/commit/00132c613c07ff21a4c7742b325ea7b6c23ed79f))
+
 ## [1.32.26](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.25...v1.32.26) (2024-11-23)
 
 
