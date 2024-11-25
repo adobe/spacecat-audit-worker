@@ -38,7 +38,7 @@ export default async function auditMetaTags(message, context) {
   const {
     dataAccess, log, s3Client,
   } = context;
-
+  log.info(`meta-tags payload: ${JSON.stringify(message)}`);
   try {
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
