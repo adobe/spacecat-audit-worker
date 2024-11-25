@@ -227,7 +227,12 @@ export async function postProcessor(auditUrl, auditData, context) {
     .filter((oppty) => oppty.type === 'high-organic-low-ctr')
     .map(async (oppty) => {
       const opportunity = convertToOpportunityEntity(oppty, auditData);
-      await createOrUpdateOpportunityEntity(opportunity, context, auditData.siteId);
+      log.info(`converted opportunity entity for ${opportunity.data.page}`);
+      try {
+        await createOrUpdateOpportunityEntity(opportunity, context, auditData.siteId);
+      } catch (error) {
+        log.error(`Error creating/updating opportunity entity for ${opportunity.data.page}: ${error.message}`);
+      }
       return opportunity;
     });
   log.info(`Created/updated ${highOrganicLowCtrOpportunities.length} opportunity entities for ${auditUrl}`);
