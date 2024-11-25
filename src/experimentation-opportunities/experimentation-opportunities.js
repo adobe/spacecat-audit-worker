@@ -269,6 +269,7 @@ export async function handler(auditUrl, context, site) {
 
 export default new AuditBuilder()
   .withRunner(handler)
-  .withPostProcessors([postProcessor])
   .withUrlResolver(wwwUrlResolver)
+  .withPostProcessors([postProcessor])
+  .withMessageSender(() => true)
   .build();
