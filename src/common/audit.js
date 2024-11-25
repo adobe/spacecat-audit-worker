@@ -125,9 +125,12 @@ export class Audit {
         auditResult,
       };
 
+      log.info(`executing message sender for url ${finalUrl}`);
+
       await this.messageSender(resultMessage, context);
 
       for (const postProcessor of this.postProcessors) {
+        log.info(`executing post processor ${postProcessor}`);
         // eslint-disable-next-line no-await-in-loop
         await postProcessor(finalUrl, auditData, context);
       }
