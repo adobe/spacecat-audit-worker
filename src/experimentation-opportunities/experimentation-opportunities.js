@@ -177,6 +177,61 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     }
   }
 }
+
+async function createOrUpdateOpportunityEntity(opportunity, context, siteId) {
+  const { log, dataAccess } = context;
+  const { Opportunity } = dataAccess;
+  log.info(`Creating opportunity entity for ${opportunity.data.page}`);
+  const existingOpportunities = await Opportunity.allBySiteId(siteId);
+  const existingOpportunity = existingOpportunities.find(
+    (oppty) => oppty.data.page === opportunity.data.page && oppty.type === opportunity.type,
+  );
+  if (existingOpportunity) {
+    log.info(`type: [${opportunity.type}] Opportunity entity already exists for ${opportunity.data.page}, so skipping creation`);
+  } else {
+    const opportunityEntity = await Opportunity.create(opportunity);
+    log.info(`Created opportunity entity: ${JSON.stringify(opportunityEntity, null, 2)}`);
+  }
+}
+
+function convertToOpportunityEntity(oppty, auditData) {
+  return {
+    siteId: auditData.siteId,
+    auditId: auditData.id,
+    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/Doc.aspx?sourcedoc=%7B19613D9B-93D4-4112-B7C8-DBE0D9DCC55B%7D&file=Experience_Success_Studio_High_Organic_Traffic_Low_CTR_Runbook.docx&action=default&mobileredirect=true',
+    type: 'high-organic-low-ctr',
+    origin: 'AUTOMATION',
+    title: 'page with high organic traffic but low click through rate detected',
+    description: 'Adjusting the wording, images and/or layout on the page to resonate more with a specific audience should increase the overall engagement on the page and ultimately bump conversion.',
+    status: 'NEW',
+    guidance: oppty.recommendations,
+    tags: ['Engagement'],
+    data: {
+      page: oppty.page,
+      pageViews: oppty.pageViews,
+      samples: oppty.samples,
+      screenshot: oppty.screenshot,
+      trackedKPISiteAverage: oppty.trackedKPISiteAverage,
+      trackedPageKPIName: oppty.trackedPageKPIName,
+      trackedPageKPIValue: oppty.trackedPageKPIValue,
+      opportunityImpact: oppty.opportunityImpact,
+      metrics: oppty.metrics,
+    },
+  };
+}
+
+export async function postProcessor(auditUrl, auditData, context) {
+  const { log } = context;
+  const highOrganicLowCtrOpportunities = auditData.auditResult.experimentationOpportunities
+    .filter((oppty) => oppty.type === 'high-organic-low-ctr')
+    .map(async (oppty) => {
+      const opportunity = convertToOpportunityEntity(oppty, auditData);
+      await createOrUpdateOpportunityEntity(opportunity, context, auditData.siteId);
+      return opportunity;
+    });
+  log.info(`Created/updated ${highOrganicLowCtrOpportunities.length} opportunity entities for ${auditUrl}`);
+}
+
 /* c8 ignore stop */
 
 /**
@@ -214,5 +269,6 @@ export async function handler(auditUrl, context, site) {
 
 export default new AuditBuilder()
   .withRunner(handler)
+  .withPostProcessors([postProcessor])
   .withUrlResolver(wwwUrlResolver)
   .build();
