@@ -55,6 +55,7 @@ function transform404LinksData(responseData, hostUrl, auditUrl, log) {
           url_to: url,
           url_from: source,
           traffic_domain: views,
+          priority: 0,
         });
       }
     } catch {
