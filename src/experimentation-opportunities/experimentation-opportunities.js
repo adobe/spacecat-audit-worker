@@ -30,7 +30,7 @@ const VENDOR_METRICS_PAGEVIEW_THRESHOLD = 10000;
 
 const OPPTY_QUERIES = [
   'rageclick',
-  'high-inorganic-high-bounce-rate',
+  // 'high-inorganic-high-bounce-rate',
   'high-organic-low-ctr',
 ];
 /* c8 ignore start */
