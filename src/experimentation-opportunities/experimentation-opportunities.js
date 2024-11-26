@@ -192,7 +192,7 @@ async function createOrUpdateOpportunityEntity(opportunity, context, siteId) {
     log.info(`type: [${opportunity.type}] Opportunity entity already exists for ${opportunity.data.page}, so skipping creation`);
   } else {
     const opportunityEntity = await Opportunity.create(opportunity);
-    log.info(`Created opportunity entity: ${JSON.stringify(opportunityEntity, null, 2)}`);
+    log.info(`Created opportunity entity: ${opportunityEntity}`);
   }
 }
 
