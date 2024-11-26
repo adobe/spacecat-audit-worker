@@ -206,7 +206,9 @@ function convertToOpportunityEntity(oppty, auditData) {
     title: 'page with high organic traffic but low click through rate detected',
     description: 'Adjusting the wording, images and/or layout on the page to resonate more with a specific audience should increase the overall engagement on the page and ultimately bump conversion.',
     status: 'NEW',
-    guidance: oppty.recommendations,
+    guidance: {
+      recommendations: oppty.recommendations,
+    },
     tags: ['Engagement'],
     data: {
       page: oppty.page,
@@ -226,10 +228,10 @@ export async function postProcessor(auditUrl, auditData, context) {
   const { log } = context;
   log.info(`Experimentation Opportunities post processing for ${auditUrl} from audit ${auditData.id}`);
   const highOrganicLowCtrOpportunities = auditData.auditResult.experimentationOpportunities
-    .filter((oppty) => oppty.type === 'high-organic-low-ctr')
+    .filter((oppty) => oppty.type === 'high-organic-low-ctr' && oppty.recommendations)
     .map(async (oppty) => {
       const opportunity = convertToOpportunityEntity(oppty, auditData);
-      log.info(`converted opportunity entity for ${opportunity.data.page}`);
+      log.info(`converted opportunity entity for ${JSON.stringify(opportunity, null, 2)}`);
       try {
         await createOrUpdateOpportunityEntity(opportunity, context, auditData.siteId);
       } catch (error) {
