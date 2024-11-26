@@ -178,21 +178,20 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   }
 }
 
-async function createOrUpdateOpportunityEntity(opportunity, context, siteId) {
+async function createOrUpdateOpportunityEntity(opportunity, context, existingOpportunities) {
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   log.info(`Creating opportunity entity for ${opportunity.data.page}`);
-  const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  log.info(`Found ${existingOpportunities.length} existing opportunity entities for ${siteId}`);
   const existingOpportunity = existingOpportunities.find(
     (oppty) => (oppty.type === opportunity.type) && oppty.data
     && (oppty.data.page === opportunity.data.page),
   );
+  console.log('existing opportunity', existingOpportunity);
   if (existingOpportunity) {
     log.info(`type: [${opportunity.type}] Opportunity entity already exists for ${opportunity.data.page}, so skipping creation`);
   } else {
     const opportunityEntity = await Opportunity.create(opportunity);
-    log.info(`Created opportunity entity: ${opportunityEntity}`);
+    console.log(`Created opportunity entity: ${opportunityEntity}`);
   }
 }
 
@@ -226,20 +225,23 @@ function convertToOpportunityEntity(oppty, auditData) {
 
 export async function postProcessor(auditUrl, auditData, context) {
   const { log } = context;
+  const { dataAccess } = context;
   log.info(`Experimentation Opportunities post processing for ${auditUrl} from audit ${auditData.id}`);
+  const existingOpportunities = await dataAccess.Opportunity.allBySiteId(auditData.siteId);
+  log.info(`Found ${existingOpportunities.length} existing opportunity entities for ${auditData.siteId}`);
   const highOrganicLowCtrOpportunities = auditData.auditResult.experimentationOpportunities
     .filter((oppty) => oppty.type === 'high-organic-low-ctr' && oppty.recommendations)
     .map(async (oppty) => {
       const opportunity = convertToOpportunityEntity(oppty, auditData);
       log.info(`converted opportunity entity for ${JSON.stringify(opportunity, null, 2)}`);
       try {
-        await createOrUpdateOpportunityEntity(opportunity, context, auditData.siteId);
+        await createOrUpdateOpportunityEntity(opportunity, context, existingOpportunities);
       } catch (error) {
         log.error(`Error creating/updating opportunity entity for ${opportunity.data.page}: ${error.message}`);
       }
       return opportunity;
     });
-  log.info(`Created/updated ${highOrganicLowCtrOpportunities.length} opportunity entities for ${auditUrl}`);
+  log.info(`Created ${highOrganicLowCtrOpportunities.length} opportunity entities for ${auditUrl}`);
 }
 
 /* c8 ignore stop */
