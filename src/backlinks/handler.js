@@ -175,14 +175,29 @@ export default async function auditBrokenBacklinks(message, context) {
       brokenBacklinksOppty = brokenBacklinksOppty.setAuditId(audit.getId());
     }
 
-    const suggestions = await brokenBacklinksOppty.addSuggestions(data.auditResult.brokenBacklinks);
-    if (suggestions.errorItems.length > 0) {
-      log.error(`Suggestions for siteId ${siteId} contains ${suggestions.errorItems.length} items with errors`);
-      suggestions.errorItems.forEach((errorItem) => {
-        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
-      });
-      if (suggestions.createdItems.length <= 0) {
-        return internalServerError(`Failed to create suggestions for siteId ${siteId}`);
+    if (!data.auditResult.error) {
+      const suggestions = await brokenBacklinksOppty.addSuggestions(
+        data.auditResult.brokenBacklinks.map((backlink) => (
+          {
+            opportunityId: brokenBacklinksOppty.getId(),
+            type: 'REDIRECT_UPDATE',
+            rank: backlink.domain_traffic,
+            data: {
+              title: backlink.title,
+              url_from: backlink.url_from,
+              url_to: backlink.url_to,
+            },
+          }
+        )),
+      );
+      if (suggestions.errorItems.length > 0) {
+        log.error(`Suggestions for siteId ${siteId} contains ${suggestions.errorItems.length} items with errors`);
+        suggestions.errorItems.forEach((errorItem) => {
+          log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+        });
+        if (suggestions.createdItems.length <= 0) {
+          return internalServerError(`Failed to create suggestions for siteId ${siteId}`);
+        }
       }
     }
     await sqs.sendMessage(queueUrl, data);

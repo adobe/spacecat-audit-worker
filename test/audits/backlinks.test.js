@@ -210,6 +210,7 @@ describe('Backlinks Tests', function () {
   beforeEach(() => {
     brokenBacklinksOpportunity = {
       getType: () => 'broken-backlinks',
+      getId: () => 'test-opportunity-id',
       addSuggestions: sinon.stub(),
       setAuditId: sinon.stub(),
     };
