@@ -1,0 +1,167 @@
+{
+  "cwv": [
+    {
+      "url": "https://business.adobe.com/se/resources/main.html",
+      "lcp": 3797.25,
+      "lcpCount": 64,
+      "cls": 0.006370692308102836,
+      "clsCount": 49,
+      "inp": 142,
+      "inpCount": 46,
+      "ttfb": 1542.25,
+      "ttfbCount": 184,
+      "pageviews": 27890
+    },
+    {
+      "url": "https://business.adobe.com/jp/products/magento/magento-commerce.html",
+      "lcp": 3797.25,
+      "lcpCount": 64,
+      "cls": 0.006370692308102836,
+      "clsCount": 49,
+      "inp": 142,
+      "inpCount": 46,
+      "ttfb": 1542.25,
+      "ttfbCount": 184,
+      "pageviews": 27890
+    },
+    {
+      "url": "https://business.adobe.com/abc",
+      "lcp": 4786.25,
+      "lcpCount": 52,
+      "cls": 0.006572102195645995,
+      "clsCount": 48,
+      "inp": 72,
+      "inpCount": 53,
+      "ttfb": 747.5,
+      "ttfbCount": 99,
+      "pageviews": 12801
+    },
+    {
+      "url": "https://business.adobe.com/jp/resources/guides/leading-generative-ai-deployment-for-marketing.html",
+      "lcp": 1239,
+      "lcpCount": 45,
+      "cls": 0.0036327945232344965,
+      "clsCount": 31,
+      "inp": 40,
+      "inpCount": 19,
+      "ttfb": 477,
+      "ttfbCount": 79,
+      "pageviews": 11910
+    },
+    {
+      "url": "https://business.adobe.com/blog/the-latest/adobes-integrated-ecosystem-is-leveling-up-the-content-supply-chain",
+      "lcp": 1750,
+      "lcpCount": 37,
+      "cls": 0.003253518924830362,
+      "clsCount": 34,
+      "inp": 64,
+      "inpCount": 16,
+      "ttfb": 370.5,
+      "ttfbCount": 67,
+      "pageviews": 9401
+    },
+    {
+      "url": "https://business.adobe.com/be_nl/products/analytics/flow-analysis.html",
+      "lcp": 1188.6500000059605,
+      "lcpCount": 46,
+      "cls": 0.00632151746350546,
+      "clsCount": 39,
+      "inp": 128,
+      "inpCount": 37,
+      "ttfb": 337,
+      "ttfbCount": 69,
+      "pageviews": 8810
+    },
+    {
+      "url": "https://business.adobe.com/fr/resources/reports/retail-digital-trends/thank-you.html",
+      "lcp": 2196.5,
+      "lcpCount": 15,
+      "cls": 0.0044459833302099815,
+      "clsCount": 9,
+      "inp": 64,
+      "inpCount": 13,
+      "ttfb": 835.4249999998137,
+      "ttfbCount": 46,
+      "pageviews": 8000
+    },
+    {
+      "url": "https://business.adobe.com/jp/blog/basics/marketing-framework",
+      "lcp": 1732.8500000005588,
+      "lcpCount": 8,
+      "cls": 0.11065526429016916,
+      "clsCount": 5,
+      "inp": 46,
+      "inpCount": 4,
+      "ttfb": 616,
+      "ttfbCount": 47,
+      "pageviews": 7900
+    }
+  ],
+  "form-vitals": [
+    {
+      "url": "https://business.adobe.com/se/resources/main.html",
+      "formsubmit": {
+
+      },
+      "formview": {
+
+      },
+      "formengagement": {
+        "desktop:windows": 100
+      },
+      "pageview": {
+        "desktop:windows": 7898
+      }
+    },
+    {
+      "url": "https://business.adobe.com/jp/products/magento/magento-commerce.html",
+      "formsubmit": {
+
+      },
+      "formview": {
+        "desktop:mac": 100
+      },
+      "formengagement": {
+
+      },
+      "pageview": {
+        "desktop:mac": 100,
+        "desktop:linux": 2200,
+        "desktop:windows": 5890
+      }
+    },
+    {
+      "url": "https://business.adobe.com/",
+      "formsubmit": {
+
+      },
+      "formview": {
+
+      },
+      "formengagement": {
+        "desktop:windows": 100
+      },
+      "pageview": {
+        "desktop:mac": 6789,
+        "desktop:windows": 1900,
+        "mobile:ios": 100,
+        "mobile:android": 300
+      }
+    },
+    {
+      "url": "https://business.adobe.com/jp/resources/guides/leading-generative-ai-deployment-for-marketing.html",
+      "formsubmit": {
+        "desktop:windows": 200
+      },
+      "formview": {
+
+      },
+      "formengagement": {
+        "desktop:windows": 200
+      },
+      "pageview": {
+        "desktop:windows": 8000
+      }
+    }
+  ]
+}
