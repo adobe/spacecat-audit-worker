@@ -219,7 +219,9 @@ describe('Audit tests', () => {
       context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
       context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
       context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
-      context.dataAccess.addAudit.resolves();
+      context.dataAccess.addAudit.resolves({
+        getId: () => 'some-audit-id',
+      });
       context.sqs.sendMessage.resolves();
 
       const postProcessors = [
@@ -259,6 +261,9 @@ describe('Audit tests', () => {
         auditType: message.type,
         auditResult: { metric: 42 },
         fullAuditRef,
+        // Sinon is comparing against the final state of the object
+        // because JavaScript objects are passed by reference.
+        id: 'some-audit-id',
       };
       expect(context.dataAccess.addAudit).to.have.been.calledWith(auditData);
 
@@ -282,7 +287,9 @@ describe('Audit tests', () => {
     context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
     context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
     context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
-    context.dataAccess.addAudit.resolves();
+    context.dataAccess.addAudit.resolves({
+      getId: () => 'some-audit-id',
+    });
     context.sqs.sendMessage.resolves();
 
     nock(baseURL)
@@ -318,6 +325,9 @@ describe('Audit tests', () => {
       auditType: message.type,
       auditResult: { metric: 42 },
       fullAuditRef,
+      // Sinon is comparing against the final state of the object because JavaScript
+      //  objects are passed by reference.
+      id: 'some-audit-id',
     });
 
     const expectedMessage = {

@@ -24,7 +24,8 @@ export async function defaultMessageSender(resultMessage, context) {
 
 export async function defaultPersister(auditData, context) {
   const { dataAccess } = context;
-  await dataAccess.addAudit(auditData);
+  const audit = await dataAccess.addAudit(auditData);
+  return audit;
 }
 
 export async function defaultSiteProvider(siteId, context) {
@@ -114,7 +115,7 @@ export class Audit {
         auditResult,
         fullAuditRef,
       };
-      await this.persister(auditData, context);
+      const audit = await this.persister(auditData, context);
       auditContext.finalUrl = finalUrl;
       auditContext.fullAuditRef = fullAuditRef;
 
@@ -125,10 +126,11 @@ export class Audit {
         auditResult,
       };
 
-      log.info(`executing message sender for url ${finalUrl}`);
+      console.log(`executing message sender for url ${finalUrl}`);
 
       await this.messageSender(resultMessage, context);
-
+      // add auditId for the post processing
+      auditData.id = audit.getId();
       for (const postProcessor of this.postProcessors) {
         log.info(`executing post processor ${postProcessor}`);
         // eslint-disable-next-line no-await-in-loop
