@@ -183,8 +183,8 @@ async function createOrUpdateOpportunityEntity(opportunity, context, existingOpp
   const { Opportunity } = dataAccess;
   log.info(`Creating opportunity entity for ${opportunity.data.page}`);
   const existingOpportunity = existingOpportunities.find(
-    (oppty) => (oppty.type === opportunity.type) && oppty.data
-    && (oppty.data.page === opportunity.data.page),
+    (oppty) => (oppty.getType() === opportunity.type) && oppty.getData()
+    && (oppty.getData().page === opportunity.data.page),
   );
   console.log('existing opportunity', existingOpportunity);
   if (existingOpportunity) {
@@ -207,6 +207,7 @@ function convertToOpportunityEntity(oppty, auditData) {
     status: 'NEW',
     guidance: {
       recommendations: oppty.recommendations,
+      test: 'test value',
     },
     tags: ['Engagement'],
     data: {
