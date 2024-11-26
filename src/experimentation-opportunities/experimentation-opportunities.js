@@ -183,8 +183,10 @@ async function createOrUpdateOpportunityEntity(opportunity, context, siteId) {
   const { Opportunity } = dataAccess;
   log.info(`Creating opportunity entity for ${opportunity.data.page}`);
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
+  log.info(`Found ${existingOpportunities.length} existing opportunity entities for ${siteId}`);
   const existingOpportunity = existingOpportunities.find(
-    (oppty) => oppty.data.page === opportunity.data.page && oppty.type === opportunity.type,
+    (oppty) => (oppty.type === opportunity.type) && oppty.data
+    && (oppty.data.page === opportunity.data.page),
   );
   if (existingOpportunity) {
     log.info(`type: [${opportunity.type}] Opportunity entity already exists for ${opportunity.data.page}, so skipping creation`);
