@@ -179,7 +179,7 @@ export default async function auditBrokenBacklinks(message, context) {
     if (suggestions.errorItems.length > 0) {
       log.error(`Suggestions for siteId ${siteId} contains ${suggestions.errorItems.length} items with errors`);
       suggestions.errorItems.forEach((errorItem) => {
-        log.error(`Item ${errorItem.item} failed with error: ${errorItem.error}`);
+        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
       });
       if (suggestions.createdItems.length <= 0) {
         return internalServerError(`Failed to create suggestions for siteId ${siteId}`);
