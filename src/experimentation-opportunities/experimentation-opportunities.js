@@ -236,25 +236,29 @@ export async function postProcessor(auditUrl, auditData, context) {
   log.info(`Experimentation Opportunities post processing for ${auditUrl} from audit ${auditData.id}`);
   const existingOpportunities = await dataAccess.Opportunity.allBySiteId(auditData.siteId);
   log.info(`Found ${existingOpportunities.length} existing opportunity entities for ${auditData.siteId}`);
-  auditData.auditResult.experimentationOpportunities
-    .filter((oppty) => oppty.type === 'high-organic-low-ctr' && oppty.recommendations)
-    .map(async (oppty) => {
-      const opportunity = convertToOpportunityEntity(oppty, auditData);
-      log.info(`converted opportunity entity for ${JSON.stringify(opportunity, null, 2)}`);
-      try {
-        const status = await createOrUpdateOpportunityEntity(
-          opportunity,
-          context,
-          existingOpportunities,
-        );
-        if (status) {
-          updatedEntities += 1;
-        }
-      } catch (error) {
-        log.error(`Error creating/updating opportunity entity for ${opportunity.data.page}: ${error.message}`);
+
+  // Get opportunities with recommendations
+  const opportunities = auditData.auditResult.experimentationOpportunities
+    .filter((oppty) => oppty.type === 'high-organic-low-ctr' && oppty.recommendations);
+  // Process all opportunities in parallel and wait for completion
+  await Promise.all(opportunities.map(async (oppty) => {
+    const opportunity = convertToOpportunityEntity(oppty, auditData);
+    log.info(`converted opportunity entity for ${JSON.stringify(opportunity, null, 2)}`);
+    try {
+      const status = await createOrUpdateOpportunityEntity(
+        opportunity,
+        context,
+        existingOpportunities,
+      );
+      if (status) {
+        updatedEntities += 1;
       }
-      return opportunity;
-    });
+    } catch (error) {
+      log.error(`Error creating/updating opportunity entity for ${opportunity.data.page}: ${error.message}`);
+    }
+    return opportunity;
+  }));
+
   log.info(`Created/updated ${updatedEntities} opportunity entities for ${auditUrl}`);
 }
 
