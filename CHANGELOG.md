@@ -1,3 +1,10 @@
+## [1.34.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.1...v1.34.2) (2024-11-26)
+
+
+### Bug Fixes
+
+* fetch siteId from queue message ([#484](https://github.com/adobe/spacecat-audit-worker/issues/484)) ([f044e14](https://github.com/adobe/spacecat-audit-worker/commit/f044e14cf69ce997dad6e0b80f17fa8156d634ee))
+
 ## [1.34.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.0...v1.34.1) (2024-11-26)
 
 
