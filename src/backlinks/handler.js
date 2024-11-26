@@ -181,7 +181,7 @@ export default async function auditBrokenBacklinks(message, context) {
           {
             opportunityId: brokenBacklinksOppty.getId(),
             type: 'REDIRECT_UPDATE',
-            rank: backlink.domain_traffic,
+            rank: backlink.traffic_domain,
             data: {
               title: backlink.title,
               url_from: backlink.url_from,
