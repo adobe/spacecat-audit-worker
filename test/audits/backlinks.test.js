@@ -109,7 +109,7 @@ describe('Backlinks Tests', function () {
     title: 'backlink that times out',
     url_from: 'https://from.com/from-4',
     url_to: 'https://foo.com/times-out',
-    domain_traffic: 500,
+    traffic_domain: 500,
   };
 
   const auditResult = {
@@ -118,19 +118,19 @@ describe('Backlinks Tests', function () {
         title: 'backlink that returns 404',
         url_from: 'https://from.com/from-1',
         url_to: 'https://foo.com/returns-404',
-        domain_traffic: 4000,
+        traffic_domain: 4000,
       },
       {
         title: 'backlink that redirects to www and throw connection error',
         url_from: 'https://from.com/from-2',
         url_to: 'https://foo.com/redirects-throws-error',
-        domain_traffic: 2000,
+        traffic_domain: 2000,
       },
       {
         title: 'backlink that returns 429',
         url_from: 'https://from.com/from-3',
         url_to: 'https://foo.com/returns-429',
-        domain_traffic: 1000,
+        traffic_domain: 1000,
       },
     ],
   };
@@ -171,20 +171,20 @@ describe('Backlinks Tests', function () {
         title: 'backlink that redirects to www and throw connection error',
         url_from: 'https://from.com/from-2',
         url_to: 'https://foo.com/redirects-throws-error',
-        domain_traffic: 2000,
+        traffic_domain: 2000,
       },
       {
         title: 'backlink that returns 429',
         url_from: 'https://from.com/from-3',
         url_to: 'https://foo.com/returns-429',
-        domain_traffic: 1000,
+        traffic_domain: 1000,
         url_suggested: 'https://bar.foo.com/bar.html',
       },
       {
         title: 'backlink that is not excluded',
         url_from: 'https://from.com/from-not-excluded',
         url_to: 'https://foo.com/not-excluded',
-        domain_traffic: 5000,
+        traffic_domain: 5000,
       },
     ],
     fullAuditRef: sinon.match.string,
@@ -195,7 +195,7 @@ describe('Backlinks Tests', function () {
       title: 'backlink that is not excluded',
       url_from: 'https://from.com/from-not-excluded',
       url_to: 'https://foo.com/not-excluded',
-      domain_traffic: 5000,
+      traffic_domain: 5000,
     },
   ];
 
@@ -205,13 +205,16 @@ describe('Backlinks Tests', function () {
 
   let brokenBacklinksOpportunity;
   let brokenBacklinksSuggestions;
+  let brokenBacklinkExistingSuggestions;
   let otherOpportunity;
 
   beforeEach(() => {
     brokenBacklinksOpportunity = {
       getType: () => 'broken-backlinks',
       getId: () => 'test-opportunity-id',
+      getSiteId: () => site.getId(),
       addSuggestions: sinon.stub(),
+      getSuggestions: sinon.stub(),
       setAuditId: sinon.stub(),
     };
 
@@ -219,6 +222,21 @@ describe('Backlinks Tests', function () {
       createdItems: auditResult.backlinks,
       errorItems: [],
     };
+
+    brokenBacklinkExistingSuggestions = [{
+      opportunityId: brokenBacklinksOpportunity.getId(),
+      type: 'REDIRECT_UPDATE',
+      rank: 5000,
+      data: {
+        title: 'backlink that is not excluded',
+        url_from: 'https://from.com/from-not-excluded',
+        url_to: 'https://foo.com/not-excluded',
+        traffic_domain: 5000,
+      },
+      remove: sinon.stub(),
+    }];
+
+    brokenBacklinkExistingSuggestions[0].remove.resolves();
 
     otherOpportunity = {
       getType: () => 'other',
@@ -291,6 +309,7 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
     brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
     brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves(brokenBacklinkExistingSuggestions);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
@@ -329,6 +348,7 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
     brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
     brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
@@ -372,6 +392,7 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
     mockDataAccess.Opportunity.create.resolves(brokenBacklinksOpportunity);
     brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
 
     nock(site.getBaseURL())
@@ -419,6 +440,7 @@ describe('Backlinks Tests', function () {
         error: 'ValidationError',
       }],
     });
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
@@ -465,6 +487,7 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
     brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
     brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
@@ -511,6 +534,7 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
     brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
     brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
@@ -555,6 +579,7 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
     brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
     brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
@@ -620,6 +645,7 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
     brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
     brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
@@ -658,6 +684,7 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
     brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
     brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
@@ -705,6 +732,7 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
     brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
     brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
@@ -822,6 +850,7 @@ describe('Backlinks Tests', function () {
         error: 'ValidationError',
       }],
     });
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );

@@ -16,7 +16,7 @@ import {
 import { composeAuditURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { retrieveSiteBySiteId, syncSuggestions } from '../utils/data-access.js';
 import { enhanceBacklinksWithFixes } from '../support/utils.js';
 
 const TIMEOUT = 3000;
@@ -140,7 +140,7 @@ export default async function auditBrokenBacklinks(message, context) {
     };
 
     const audit = await dataAccess.addAudit(auditData);
-    const data = {
+    const result = {
       type,
       url: site.getBaseURL(),
       auditContext,
@@ -175,32 +175,28 @@ export default async function auditBrokenBacklinks(message, context) {
       brokenBacklinksOppty = brokenBacklinksOppty.setAuditId(audit.getId());
     }
 
-    if (!data.auditResult.error) {
-      const suggestions = await brokenBacklinksOppty.addSuggestions(
-        data.auditResult.brokenBacklinks.map((backlink) => (
-          {
-            opportunityId: brokenBacklinksOppty.getId(),
-            type: 'REDIRECT_UPDATE',
-            rank: backlink.traffic_domain,
-            data: {
-              title: backlink.title,
-              url_from: backlink.url_from,
-              url_to: backlink.url_to,
-            },
-          }
-        )),
-      );
-      if (suggestions.errorItems.length > 0) {
-        log.error(`Suggestions for siteId ${siteId} contains ${suggestions.errorItems.length} items with errors`);
-        suggestions.errorItems.forEach((errorItem) => {
-          log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
-        });
-        if (suggestions.createdItems.length <= 0) {
-          return internalServerError(`Failed to create suggestions for siteId ${siteId}`);
-        }
-      }
+    if (!result.auditResult.error) {
+      const buildKey = (data) => `${data.url_from}|${data.url_to}`;
+
+      await syncSuggestions({
+        opportunity: brokenBacklinksOppty,
+        newData: result.auditResult.brokenBacklinks,
+        buildKey,
+        mapNewSuggestion: (backlink) => ({
+          opportunityId: brokenBacklinksOppty.getId(),
+          type: 'REDIRECT_UPDATE',
+          rank: backlink.traffic_domain,
+          data: {
+            title: backlink.title,
+            url_from: backlink.url_from,
+            url_to: backlink.url_to,
+            traffic_domain: backlink.traffic_domain,
+          },
+        }),
+        log,
+      });
     }
-    await sqs.sendMessage(queueUrl, data);
+    await sqs.sendMessage(queueUrl, result);
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();

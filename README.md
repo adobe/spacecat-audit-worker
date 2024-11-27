@@ -174,6 +174,34 @@ export default new AuditBuilder()
 
 ```
 
+### How to add Opportunities and Syggestions
+```js
+import { syncSuggestions } from '../utils/data-access.js';
+
+// your audit logic goes here...
+
+const opportunity = Opportunity.create(opportunityData);
+
+const buildKey = (data) => `${data.property}|${data.anotherProperty}`;
+
+await syncSuggestions({
+  opportunity,
+  newData: auditResult.auditData,
+  buildKey,
+  mapNewSuggestion: (issue) => ({
+    opportunityId: opportunity.getId(),
+    type: 'SUGGESTION_TYPE',
+    rank: issue.rankMetric,
+    data: {
+      property: issue.property,
+      anotherProperty: issue.anotherProperty
+    }
+  }),
+  log
+});
+
+```
+
 ### How to add a custom post processor
 
 You can add a post-processing step for your audit using `AuditBuilder`'s `withPostProcessors` function. The list of post-processing functions will be executed sequentially after the audit run.
