@@ -126,8 +126,6 @@ export class Audit {
         auditResult,
       };
 
-      console.log(`executing message sender for url ${finalUrl}`);
-
       await this.messageSender(resultMessage, context);
       // add auditId for the post processing
       auditData.id = audit.getId();
