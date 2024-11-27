@@ -26,11 +26,13 @@ const AUDIT_RESULT_DATA = [
     url_to: 'https://www.example.com/article/dogs/breeds/choosing-an-irish-setter',
     url_from: 'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-13-manly-masculine-dog-breeds',
     traffic_domain: 100,
+    priority: 0,
   },
   {
     url_to: 'https://www.example.com/article/dogs/breeds/choosing-a-miniature-poodle',
     url_from: 'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
     traffic_domain: 100,
+    priority: 0,
   },
 ];
 
