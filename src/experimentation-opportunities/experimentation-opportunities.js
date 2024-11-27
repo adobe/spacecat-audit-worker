@@ -132,8 +132,7 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     .map((oppty) => {
       const { pageViews, trackedPageKPIValue, trackedKPISiteAverage } = oppty;
       const opportunityImpact = Math.floor(pageViews
-          * (trackedKPISiteAverage - CTR_THRESHOLD_MARGIN - trackedPageKPIValue)
-          * 100);
+          * (trackedKPISiteAverage - CTR_THRESHOLD_MARGIN - trackedPageKPIValue));
       return {
         ...oppty,
         opportunityImpact,
@@ -176,6 +175,8 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     }
   }
 }
+
+/* c8 ignore stop */
 
 async function createOrUpdateOpportunityEntity(opportunity, context, existingOpportunities) {
   const { log, dataAccess } = context;
@@ -256,8 +257,6 @@ export async function postProcessor(auditUrl, auditData, context) {
 
   log.info(`Created/updated ${updatedEntities} opportunity entities for ${auditUrl}`);
 }
-
-/* c8 ignore stop */
 
 /**
  * Audit handler container for all the opportunities
