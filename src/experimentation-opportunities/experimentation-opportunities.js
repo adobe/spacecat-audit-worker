@@ -167,7 +167,6 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     // eslint-disable-next-line no-await-in-loop
     // await updateRecommendations(oppty, context, site);
     // update the oppty in the opporrtunities list
-    log.info(`Updating oppty in the list for : ${oppty.page}`);
     const index = opportunites.findIndex(
       (opp) => opp.page === oppty.page && opp.type === oppty.type,
     );
@@ -185,7 +184,6 @@ async function createOrUpdateOpportunityEntity(opportunity, context, existingOpp
     (oppty) => (oppty.getType() === opportunity.type) && oppty.getData()
     && (oppty.getData().page === opportunity.data.page),
   );
-  console.log('existing opportunity', existingOpportunity);
   if (existingOpportunity) {
     if (existingOpportunity.getStatus() === 'NEW') {
       // remove and create a new opportunity entity with new data
@@ -212,7 +210,6 @@ function convertToOpportunityEntity(oppty, auditData) {
     status: 'NEW',
     guidance: {
       recommendations: oppty.recommendations,
-      test: 'test value',
     },
     tags: ['Engagement'],
     data: {
@@ -233,9 +230,8 @@ export async function postProcessor(auditUrl, auditData, context) {
   const { log } = context;
   const { dataAccess } = context;
   let updatedEntities = 0;
-  log.info(`Experimentation Opportunities post processing for ${auditUrl} from audit ${auditData.id}`);
+  log.info(`Experimentation Opportunities post processing started for ${auditUrl} from audit ${auditData.id}`);
   const existingOpportunities = await dataAccess.Opportunity.allBySiteId(auditData.siteId);
-  log.info(`Found ${existingOpportunities.length} existing opportunity entities for ${auditData.siteId}`);
 
   // Get opportunities with recommendations
   const opportunities = auditData.auditResult.experimentationOpportunities
@@ -243,7 +239,6 @@ export async function postProcessor(auditUrl, auditData, context) {
   // Process all opportunities in parallel and wait for completion
   await Promise.all(opportunities.map(async (oppty) => {
     const opportunity = convertToOpportunityEntity(oppty, auditData);
-    log.info(`converted opportunity entity for ${JSON.stringify(opportunity, null, 2)}`);
     try {
       const status = await createOrUpdateOpportunityEntity(
         opportunity,
