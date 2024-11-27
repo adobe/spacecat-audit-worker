@@ -1,3 +1,52 @@
+## [1.34.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.3...v1.34.4) (2024-11-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.12.4 ([#488](https://github.com/adobe/spacecat-audit-worker/issues/488)) ([948db9e](https://github.com/adobe/spacecat-audit-worker/commit/948db9e42b65bf5f4e40bc3aedbfc6acd8ea88d6))
+
+## [1.34.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.2...v1.34.3) (2024-11-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.58.0 ([#487](https://github.com/adobe/spacecat-audit-worker/issues/487)) ([dedf303](https://github.com/adobe/spacecat-audit-worker/commit/dedf3032b2f8ef8c9ac8b669f75660dd9fcba5ed))
+
+## [1.34.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.1...v1.34.2) (2024-11-26)
+
+
+### Bug Fixes
+
+* fetch siteId from queue message ([#484](https://github.com/adobe/spacecat-audit-worker/issues/484)) ([f044e14](https://github.com/adobe/spacecat-audit-worker/commit/f044e14cf69ce997dad6e0b80f17fa8156d634ee))
+
+## [1.34.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.0...v1.34.1) (2024-11-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.12.3 ([#486](https://github.com/adobe/spacecat-audit-worker/issues/486)) ([412c9d7](https://github.com/adobe/spacecat-audit-worker/commit/412c9d79fa7e7a4f88b2fc45f7bcb9023e76073e))
+
+# [1.34.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.33.1...v1.34.0) (2024-11-26)
+
+
+### Features
+
+* introduce forms audit ([#446](https://github.com/adobe/spacecat-audit-worker/issues/446)) ([d5e9bd5](https://github.com/adobe/spacecat-audit-worker/commit/d5e9bd5c79173799ab29a60c43771122ba753d36))
+
+## [1.33.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.33.0...v1.33.1) (2024-11-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.12.2 ([#482](https://github.com/adobe/spacecat-audit-worker/issues/482)) ([e587078](https://github.com/adobe/spacecat-audit-worker/commit/e58707839b0bcb5a3addd7caa7258f6e564c236a))
+
+# [1.33.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.26...v1.33.0) (2024-11-25)
+
+
+### Features
+
+* sitemap oppty enhacement ([#431](https://github.com/adobe/spacecat-audit-worker/issues/431)) ([00132c6](https://github.com/adobe/spacecat-audit-worker/commit/00132c613c07ff21a4c7742b325ea7b6c23ed79f))
+
 ## [1.32.26](https://github.com/adobe/spacecat-audit-worker/compare/v1.32.25...v1.32.26) (2024-11-23)
 
 

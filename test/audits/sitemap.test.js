@@ -116,13 +116,16 @@ describe('Sitemap Audit', () => {
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
         auditResult: {
+          details: {
+            issues: {},
+          },
           success: true,
           paths: {
             [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
             [`${url}/sitemap_bar.xml`]: [`${url}/baz`, `${url}/cux`],
           },
           reasons: [{
-            value: 'Sitemaps found and validated successfully.',
+            value: 'Sitemaps found and checked.',
           }],
           url,
         },
@@ -167,13 +170,16 @@ describe('Sitemap Audit', () => {
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
         auditResult: {
+          details: {
+            issues: {},
+          },
           success: true,
           paths: {
             [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
             [`${url}/sitemap_bar.xml`]: [`${url}/baz`, `${url}/cux`],
           },
           reasons: [{
-            value: 'Sitemaps found and validated successfully.',
+            value: 'Sitemaps found and checked.',
           }],
           url,
         },
@@ -214,13 +220,16 @@ describe('Sitemap Audit', () => {
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
         auditResult: {
+          details: {
+            issues: {},
+          },
           success: true,
           paths: {
             [`${url}/sitemap_foo.txt`]: [`${url}/foo`, `${url}/bar`],
             [`${url}/sitemap_bar.txt`]: [`${url}/baz`, `${url}/cux`],
           },
           reasons: [{
-            value: 'Sitemaps found and validated successfully.',
+            value: 'Sitemaps found and checked.',
           }],
           url,
         },
@@ -229,7 +238,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('runs successfully for common sitemap url when robots.txt is not available', async () => {
+    it('should return 404 when robots.txt not found', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(404);
@@ -237,40 +246,28 @@ describe('Sitemap Audit', () => {
       nock(url)
         .head('/sitemap_index.xml')
         .reply(404);
-
       nock(url)
         .head('/sitemap.xml')
         .reply(200);
-
       nock(url)
         .get('/sitemap.xml')
         .reply(200, sampleSitemap);
-
       nock(url)
         .head('/foo')
         .reply(200);
-
       nock(url)
         .head('/bar')
         .reply(200);
-
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
         auditResult: {
-          success: true,
-          paths: {
-            [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
-          },
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
-              value: `Error fetching or processing robots.txt: Failed to fetch content from ${url}/robots.txt. Status: 404`,
-            },
-            {
-              value: 'Sitemaps found and validated successfully.',
+              value: 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
           ],
-          url,
+          success: false,
         },
         fullAuditRef: url,
         url,
@@ -290,17 +287,13 @@ describe('Sitemap Audit', () => {
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
         auditResult: {
-          success: false,
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
-              value: `Error fetching or processing robots.txt: Failed to fetch content from ${url}/robots.txt. Status: 404`,
-            },
-            {
-              error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
-              value: `No sitemap found in robots.txt or common paths for ${url}`,
+              value: 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
           ],
+          success: false,
         },
         fullAuditRef: url,
         url,
@@ -326,7 +319,7 @@ describe('Sitemap Audit', () => {
       nock(url)
         .get('/test')
         .reply(404);
-      await expect(fetchContent(`${url}/test`)).to.be.rejectedWith(`Failed to fetch content from ${url}/test. Status: 404`);
+      await expect(fetchContent(`${url}/test`)).to.be.rejectedWith('Fetch error for https://some-domain.adobe/test Status: 404');
     });
   });
 
@@ -346,7 +339,7 @@ describe('Sitemap Audit', () => {
         .get('/robots.txt')
         .reply(404);
 
-      await expect(checkRobotsForSitemap(protocol, domain)).to.be.rejectedWith(`Failed to fetch content from ${url}/robots.txt. Status: 404`);
+      await expect(checkRobotsForSitemap(protocol, domain)).to.be.rejectedWith('Fetch error for https://some-domain.adobe/robots.txt Status: 404');
     });
   });
 
@@ -401,7 +394,7 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .replyWithError('Network error');
 
-      const resp = await checkSitemap(`${url}/sitemap.xml`);
+      const resp = await checkSitemap();
       expect(resp.existsAndIsValid).to.equal(false);
       expect(resp.reasons).to.include(ERROR_CODES.FETCH_ERROR);
     });
@@ -491,7 +484,7 @@ describe('Sitemap Audit', () => {
       }]);
     });
 
-    it('should delete extracted paths when no valid pages exist', async () => {
+    it('should return error when no valid pages exist', async () => {
       nock(url)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap.xml`);
@@ -511,10 +504,11 @@ describe('Sitemap Audit', () => {
       const result = await findSitemap(url);
 
       expect(result.success).to.equal(false);
-      expect(result.reasons).to.deep.include({
-        value: 'No valid paths extracted from sitemaps.',
-        error: ERROR_CODES.NO_PATHS_IN_SITEMAP,
-      });
+      expect(result.reasons).to.deep.equal([{
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: `${url}/sitemap.xml`,
+      }]);
+      expect(result.paths).to.be.undefined;
     });
 
     it('should return success when sitemap is found in robots.txt', async () => {
@@ -541,6 +535,44 @@ describe('Sitemap Audit', () => {
       });
     });
 
+    it('should fail when sitemap contents have a different URL than the base domain (regardless of www. or not)', async () => {
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, 'Sitemap: ');
+
+      nock(url)
+        .get('/sitemap.xml')
+        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
+          + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+          + '<url> <loc>https://another-url.test/baz</loc></url>\n'
+          + '</urlset>');
+
+      const result = await findSitemap(url);
+      expect(result.success).to.equal(false);
+    });
+
+    it('should fail when robots points to an empty string instead of an actual URI', async () => {
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, 'Sitemap: ');
+
+      const result = await findSitemap(url);
+      expect(result.success).to.equal(false);
+    });
+
+    it('should fail when sitemap is empty (', async () => {
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, `Sitemap: ${url}/sitemap.xml`);
+
+      nock(url)
+        .get('/sitemap.xml')
+        .reply(200, () => undefined);
+
+      const result = await findSitemap(url);
+      expect(result.success).to.equal(false);
+    });
+
     it('should return success when sitemap.xml is found', async () => {
       nock(url)
         .get('/robots.txt')
@@ -556,7 +588,13 @@ describe('Sitemap Audit', () => {
 
       nock(url)
         .get('/sitemap.xml')
-        .reply(200, sampleSitemap);
+        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
+          + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+          + `<url> <loc>${url}/foo</loc></url>\n`
+          + `<url> <loc>${url}/bar</loc></url>\n`
+          + `<url> <loc>${url}/baz</loc></url>\n`
+          + `<url> <loc>${url}/zzz</loc></url>\n`
+          + '</urlset>');
 
       nock(url)
         .head('/foo')
@@ -566,7 +604,17 @@ describe('Sitemap Audit', () => {
         .head('/bar')
         .reply(200);
 
-      const result = await findSitemap('https://some-domain.adobe');
+      nock(url)
+        .head('/zzz')
+        .replyWithError('Network error');
+
+      nock(url)
+        .head('/baz')
+        .reply(301, '', { Location: `${url}/zzz` });
+
+      const result = await findSitemap('https://some-domain.adobe', {
+        info: () => {},
+      });
       expect(result.success).to.equal(true);
       expect(result.paths).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
