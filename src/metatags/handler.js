@@ -13,9 +13,11 @@
 import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
+import { composeAuditURL } from '@adobe/spacecat-shared-utils';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
+import syncOpportunityAndSuggestions from './opportunityHandler.js';
 
 async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -34,7 +36,7 @@ async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)
 }
 
 export default async function auditMetaTags(message, context) {
-  const { type } = message;
+  const { type, auditContext = {} } = message;
   const siteId = message.siteId || message.url;
   const {
     dataAccess, log, s3Client,
@@ -54,6 +56,12 @@ export default async function auditMetaTags(message, context) {
     if (!configuration.isHandlerEnabledForSite(type, site)) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
       return ok();
+    }
+    try {
+      auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
+    } catch (e) {
+      log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
+      return internalServerError(`Internal server error: ${e.message}`);
     }
     // Fetch site's scraped content from S3
     const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
@@ -86,6 +94,7 @@ export default async function auditMetaTags(message, context) {
       detectedTags,
       sourceS3Folder: `${bucketName}/${prefix}`,
       fullAuditRef: 'na',
+      finalUrl: auditContext.finalUrl,
     };
     const auditData = {
       siteId: site.getId(),
@@ -96,8 +105,15 @@ export default async function auditMetaTags(message, context) {
       auditResult,
     };
     // Persist Audit result
-    await dataAccess.addAudit(auditData);
+    const audit = await dataAccess.addAudit(auditData);
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
+    await syncOpportunityAndSuggestions(
+      siteId,
+      audit.getId(),
+      auditData,
+      dataAccess,
+      log,
+    );
     return noContent();
   } catch (e) {
     log.error(`${type} type audit for ${siteId} failed with error: ${e.message}`, e);
