@@ -16,7 +16,6 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import { CWVRunner } from '../../src/cwv/handler.js';
 import { rumData } from '../fixtures/rum-data.js';
 
@@ -28,18 +27,27 @@ const baseURL = 'https://spacecat.com';
 const auditUrl = 'www.spacecat.com';
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   domain: auditUrl,
-  domainkey: 42,
+  domainkey: '42',
   interval: 7,
   granularity: 'hourly',
 };
+const HANDLER_NAME = 'cwv';
 
-describe('Index Tests', () => {
-  const site = createSite({ baseURL });
+describe('CWVRunner Tests', () => {
+  const groupedURLs = [{ test: 'test' }];
+  const siteConfig = {
+    getGroupedURLs: sandbox.stub().returns(groupedURLs),
+  };
+  const site = {
+    getBaseURL: sandbox.stub().returns(baseURL),
+    getConfig: () => siteConfig,
+  };
+
   const context = {
     runtime: { name: 'aws-lambda', region: 'us-east-1' },
     func: { package: 'spacecat-services', version: 'ci', name: 'test' },
     rumApiClient: {
-      query: sandbox.stub().withArgs('variable-1', sinon.match(DOMAIN_REQUEST_DEFAULT_PARAMS)).resolves(rumData),
+      query: sandbox.stub().resolves(rumData),
     },
   };
 
@@ -60,6 +68,18 @@ describe('Index Tests', () => {
 
   it('cwv audit runs rum api client cwv query', async () => {
     const result = await CWVRunner('www.spacecat.com', context, site);
+
+    expect(siteConfig.getGroupedURLs.calledWith(HANDLER_NAME)).to.be.true;
+    expect(
+      context.rumApiClient.query.calledWith(
+        HANDLER_NAME,
+        {
+          ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+          groupedURLs,
+        },
+      ),
+    ).to.be.true;
+
     expect(result).to.deep.equal({
       auditResult: {
         cwv: rumData.filter((data) => data.pageviews >= 7000),
