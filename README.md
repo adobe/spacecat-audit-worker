@@ -231,7 +231,7 @@ export async function auditRunner(url, context) {
   };
 }
 
-async function postProcessor(auditUrl, auditData, context) {
+async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess } = context;
   
   const opportunity = Opportunity.create(opportunityData);
@@ -256,5 +256,10 @@ async function postProcessor(auditUrl, auditData, context) {
     log
   }); 
 }
+
+export default new AuditBuilder()
+  .withRunner(auditRunner)
+  .withPostProcessors([ convertToOpportunity ])
+  .build();
 
 ```
