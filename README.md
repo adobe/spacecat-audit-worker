@@ -233,8 +233,29 @@ export async function auditRunner(url, context) {
 
 async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess } = context;
-  
-  const opportunity = Opportunity.create(opportunityData);
+
+  const opportunity = await dataAccess.Opportunity.allBySiteIdAndTypeAndStatus(auditData.siteId, 'audit-type', 'NEW')[0];
+  if (!opportunity) {
+      const opportunityData = {
+        siteId: auditData.siteId,
+        auditId: auditData.id,
+        runbook: 'link-to-runbook',
+        type: 'audit-type',
+        origin: 'AUTOMATON',
+        title: 'Opportunity Title',
+        description: 'Opportunity Description',
+        guidance: {
+          steps: [
+            'Step 1',
+            'Step 2',
+          ],
+        },
+        tags: ['tag1', 'tag2'],
+      };
+      opportunity = await dataAccess.Opportunity.create(opportunityData);
+  } else {
+    opportunity = opportunity.setAuditId(auditData.id);
+  }
 
   // this logic changes based on the audit type
   const buildKey = (auditData) => `${auditData.property}|${auditData.anotherProperty}`;
