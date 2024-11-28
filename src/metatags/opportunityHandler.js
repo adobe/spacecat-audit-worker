@@ -70,6 +70,15 @@ function getIssueRanking(tagName, issue) {
   return -1;
 }
 
+/**
+ * Updates Meta-tags Opportunity and Suggestions collection with new audit results
+ * @param siteId site id
+ * @param auditId audit id
+ * @param auditData object containing audit results and some metadata
+ * @param dataAccess object containing accessor objects
+ * @param log logger
+ * @returns {Promise<void>}
+ */
 export default async function syncOpportunityAndSuggestions(
   siteId,
   auditId,
