@@ -18,7 +18,7 @@ import { getRUMDomainkey } from '../support/utils.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
 const DAYS = 30;
-const MAX_OPPORTUNITIES = 10;
+export const MAX_OPPORTUNITIES = 10;
 /**
  * Even if the pages with high views have low CTR difference (from site wide CTR), those will be
  * considered as top opportunities, but the chance of improvement would be very less. so we are
@@ -33,12 +33,11 @@ const OPPTY_QUERIES = [
   'high-inorganic-high-bounce-rate',
   'high-organic-low-ctr',
 ];
-/* c8 ignore start */
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
   let { pathname } = urlObj;
-  pathname = pathname.endsWith('/') ? pathname : `${pathname}/`;
+  pathname = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
   return `scrapes/${site.getId()}${pathname}`;
 }
 
@@ -81,9 +80,21 @@ function getMetricsByVendor(metrics) {
   return metricsByVendorString;
 }
 
+export function getRecommendations(lambdaResult) {
+  const recommendations = [];
+  for (const [, guidance] of Object.entries(lambdaResult)) {
+    recommendations.push({
+      type: 'guidance',
+      insight: guidance.insight,
+      recommendation: guidance.recommendation,
+      rationale: guidance.rationale,
+    });
+  }
+  return recommendations;
+}
+
 async function updateRecommendations(oppty, context, site) {
   const { log } = context;
-  const recommendations = [];
   log.info(`Generating guidance for ${oppty.page}`);
   const lambdaPayload = {
     type: 'llm-insights',
@@ -92,8 +103,8 @@ async function updateRecommendations(oppty, context, site) {
         url: oppty.page,
         s3BucketName: process.env.S3_SCRAPER_BUCKET_NAME,
         promptPath: 'prompts/improving-ctr-guidance-vendor-v2.prompt',
-        screenshotPaths: [`${getS3PathPrefix(oppty.page, site)}screenshot-desktop.png`],
-        scrapeJsonPath: `${getS3PathPrefix(oppty.page, site)}scrape.json`,
+        screenshotPaths: [`${getS3PathPrefix(oppty.page, site)}/screenshot-desktop.png`],
+        scrapeJsonPath: `${getS3PathPrefix(oppty.page, site)}/scrape.json`,
         vendorDetails: getMetricsByVendor(oppty.metrics),
         additionalContext: '',
       },
@@ -105,25 +116,14 @@ async function updateRecommendations(oppty, context, site) {
     // eslint-disable-next-line no-await-in-loop
     const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
     log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
-    const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
+    const lambdaResponseBody = lambdaResponse.body;
     lambdaResult = lambdaResponseBody.result;
   } catch (error) {
     log.error('Error invoking lambda function: ', error);
+    return;
   }
-  if (!lambdaResult) {
-    log.error(`Error obtaining from LLM: No result from lambda function for ${oppty.page}`);
-  } else {
-    for (const [, guidance] of Object.entries(lambdaResult)) {
-      recommendations.push({
-        type: 'guidance',
-        insight: guidance.insight,
-        recommendation: guidance.recommendation,
-        rationale: guidance.rationale,
-      });
-    }
-    // eslint-disable-next-line no-param-reassign
-    oppty.recommendations = recommendations;
-  }
+  // eslint-disable-next-line no-param-reassign
+  oppty.recommendations = getRecommendations(lambdaResult);
 }
 
 async function processHighOrganicLowCtrOpportunities(opportunites, context, site) {
@@ -175,8 +175,6 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
     }
   }
 }
-
-/* c8 ignore stop */
 
 async function createOrUpdateOpportunityEntity(opportunity, context, existingOpportunities) {
   const { log, dataAccess } = context;

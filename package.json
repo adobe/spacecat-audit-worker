@@ -92,6 +92,7 @@
     "dotenv": "16.4.5",
     "eslint": "8.57.1",
     "husky": "9.1.7",
+    "esmock": "2.6.9",
     "junit-report-builder": "5.1.1",
     "lint-staged": "15.2.10",
     "mocha": "10.8.2",

@@ -16,9 +16,11 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { handler, postProcessor } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
+import esmock from 'esmock';
+import { postProcessor, MAX_OPPORTUNITIES, getRecommendations } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/opportunitiesdata.json' with { type: 'json' };
+import llmHandlerResponse from '../fixtures/statistics-lambda-llm-insights-response.json' with { type: 'json' };
 
 use(sinonChai);
 
@@ -31,12 +33,15 @@ describe('Opportunities Tests', () => {
   let processEnvCopy;
   let messageBodyJson;
   let sandbox;
+  let lambdaSendStub;
+  let experimentationOpportunities;
+  let site;
 
   before('setup', () => {
     sandbox = sinon.createSandbox();
   });
 
-  beforeEach('setup', () => {
+  beforeEach(async () => {
     clock = sandbox.useFakeTimers({
       now: +new Date(mockDate),
       toFake: ['Date'],
@@ -48,6 +53,11 @@ describe('Opportunities Tests', () => {
         finalUrl: 'abc.com',
       },
     };
+    site = {
+      getBaseURL: () => 'https://abc.com',
+      getId: () => '056f9dbe-e9e1-4d80-8bfb-c9785a873b6a',
+    };
+
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
@@ -62,11 +72,52 @@ describe('Opportunities Tests', () => {
         func: { package: 'spacecat-services', version: 'ci', name: 'test' },
       })
       .build(messageBodyJson);
+
+    context.rumApiClient = {
+      queryMulti: sinon.stub().resolves(opportunitiesData),
+    };
     processEnvCopy = { ...process.env };
     process.env = {
       ...process.env,
       ...context.env,
     };
+
+    nock('https://secretsmanager.us-east-1.amazonaws.com/')
+      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/abc_com/ci')
+      .reply(200, {
+        SecretString: JSON.stringify({
+          RUM_DOMAIN_KEY: 'abc_dummy_key',
+        }),
+      });
+
+    nock('https://abc.com')
+      .get('/')
+      .reply(200);
+
+    // Stub the LambdaClient's send method
+    lambdaSendStub = sinon.stub();
+
+    // Mock LambdaClient constructor to return an object with the stubbed send method
+    const LambdaClientMock = sinon.stub().returns({
+      send: lambdaSendStub,
+    });
+
+    // Stub defaultProvider
+    const defaultProviderStub = sinon.stub().returns(() => ({
+      accessKeyId: 'mockAccessKeyId',
+      secretAccessKey: 'mockSecretAccessKey',
+    }));
+
+    // Mock AWS SDK using esmock
+    experimentationOpportunities = await esmock('../../src/experimentation-opportunities/experimentation-opportunities.js', {
+      '@aws-sdk/client-lambda': { LambdaClient: LambdaClientMock },
+      '@aws-sdk/credential-provider-node': { defaultProvider: defaultProviderStub },
+    });
+
+    const lambdaResponse = {
+      Payload: new TextEncoder().encode(JSON.stringify(llmHandlerResponse)),
+    };
+    lambdaSendStub.resolves(lambdaResponse);
   });
 
   afterEach(() => {
@@ -77,27 +128,16 @@ describe('Opportunities Tests', () => {
   });
 
   it('fetch bundles for base url > process > send opportunities', async () => {
-    nock('https://secretsmanager.us-east-1.amazonaws.com/')
-      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/abc_com/ci')
-      .reply(200, {
-        SecretString: JSON.stringify({
-          RUM_DOMAIN_KEY: 'abc_dummy_key',
-        }),
-      });
-    nock('https://abc.com')
-      .get('/')
-      .reply(200);
-    context.rumApiClient = {
-      queryMulti: sinon.stub().resolves(opportunitiesData),
-    };
-    const site = {
-      getBaseURL: () => 'https://abc.com',
-      getId: () => '056f9dbe-e9e1-4d80-8bfb-c9785a873b6a',
-    };
-    const auditData = await handler(url, context, site);
+    const auditData = await experimentationOpportunities.handler(url, context, site);
 
-    const expected = Object.values(opportunitiesData).flatMap((data) => data);
-    expected.find((opportunity) => opportunity.type === 'high-organic-low-ctr').opportunityImpact = 1286;
+    // Create a deep copy of the data before manipulation
+    const expectedData = structuredClone(opportunitiesData);
+    const expected = Object.values(expectedData).flatMap((data) => data);
+    const highOrganicLowCtrOpportunity = expected.find((opportunity) => opportunity.type === 'high-organic-low-ctr');
+    highOrganicLowCtrOpportunity.opportunityImpact = 1286;
+    highOrganicLowCtrOpportunity.recommendations = getRecommendations(
+      llmHandlerResponse.body.result,
+    );
 
     expect(context.rumApiClient.queryMulti).calledWith([
       'rageclick',
@@ -112,6 +152,90 @@ describe('Opportunities Tests', () => {
     expect(
       auditData.auditResult.experimentationOpportunities,
     ).to.deep.equal(expected);
+  });
+
+  it('should process configured maximum number of high-organic-low-ctr opportunities', async () => {
+    // Mock multiple high-organic-low-ctr opportunities
+    const manyOpportunities = Array(12).fill(null).map((_, index) => ({
+      type: 'high-organic-low-ctr',
+      page: `https://abc.com/page${index}/`,
+      pageViews: 1000 * (index + 1),
+      trackedPageKPIValue: 0.09,
+      trackedKPISiteAverage: 0.23,
+      metrics: [{
+        type: 'traffic',
+        value: {
+          earned: 11000,
+          owned: 13000,
+          paid: 10030,
+          total: 34030,
+        },
+        vendor: 'facebook',
+      },
+      {
+        type: 'ctr',
+        value: {
+          page: 0.11,
+        },
+        vendor: 'facebook',
+      },
+      {
+        type: 'traffic',
+        value: {
+          earned: 100,
+          owned: 1300,
+          paid: 100,
+          total: 1500,
+        },
+        vendor: 'tiktok',
+      },
+      {
+        type: 'ctr',
+        value: {
+          page: 0.23,
+        },
+        vendor: 'tiktok',
+      }],
+    }));
+    context.rumApiClient = {
+      queryMulti: sinon.stub().resolves(manyOpportunities),
+    };
+    const auditData = await experimentationOpportunities.handler(url, context, site);
+    // Verify only top MAX_OPPORTUNITIES opportunities are processed
+    const processedOpportunities = auditData.auditResult.experimentationOpportunities
+      .filter((o) => o.type === 'high-organic-low-ctr' && o.recommendations);
+    expect(processedOpportunities).to.have.lengthOf(MAX_OPPORTUNITIES);
+  });
+
+  it('should include required parameters in lambda payload for high-organic-low-ctr opportunities', async () => {
+    await experimentationOpportunities.handler(url, context, site);
+    expect(lambdaSendStub).to.have.been.calledOnce;
+    const lambdaPayload = JSON.parse(lambdaSendStub.firstCall.args[0].input.Payload);
+    expect(lambdaPayload).to.include.all.keys([
+      'type',
+      'payload',
+    ]);
+    expect(lambdaPayload.type).to.equal('llm-insights');
+    expect(lambdaPayload).to.have.nested.property('payload.rumData.url');
+    expect(lambdaPayload).to.have.nested.property('payload.rumData.promptPath');
+  });
+
+  it('should add recommendations from lambda to high-organic-low-ctr opportunities', async () => {
+    const auditData = await experimentationOpportunities.handler(url, context, site);
+    const opportunity = auditData.auditResult.experimentationOpportunities
+      .find((o) => o.type === 'high-organic-low-ctr');
+    expect(opportunity.recommendations).to.deep.equal(
+      getRecommendations(llmHandlerResponse.body.result),
+    );
+  });
+
+  it('should not add recommendations to high-organic-low-ctr opportunities when error occurs in lambda', async () => {
+    // Mock the lambda call to throw an error
+    lambdaSendStub.rejects(new Error('Lambda error'));
+    const auditData = await experimentationOpportunities.handler(url, context, site);
+    const opportunity = auditData.auditResult.experimentationOpportunities
+      .find((o) => o.type === 'high-organic-low-ctr');
+    expect(opportunity.recommendations).to.be.undefined;
   });
 });
 
@@ -213,9 +337,6 @@ describe('Opportunities postProcessor', () => {
         metrics: rumOpportunity.metrics,
       },
     });
-    // const createArg = context.dataAccess.Opportunity.create.firstCall.args[0];
-    // expect(createArg.type).to.equal('high-organic-low-ctr');
-    // expect(createArg.data.page).to.equal('https://example.com/page1');
   });
 
   it('should skip high-organic-low-ctr opportunities without recommendations', async () => {
