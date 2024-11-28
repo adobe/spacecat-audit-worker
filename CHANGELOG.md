@@ -1,3 +1,45 @@
+## [1.34.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.5...v1.34.6) (2024-11-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.12.6 ([#490](https://github.com/adobe/spacecat-audit-worker/issues/490)) ([34d529d](https://github.com/adobe/spacecat-audit-worker/commit/34d529dc30109aefd22ab98bcf41be9740ee47fb))
+
+## [1.34.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.4...v1.34.5) (2024-11-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.12.5 ([#489](https://github.com/adobe/spacecat-audit-worker/issues/489)) ([ee6311f](https://github.com/adobe/spacecat-audit-worker/commit/ee6311fd07e674a76d17ab7f77b05f7a56a5bd53))
+
+## [1.34.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.3...v1.34.4) (2024-11-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.12.4 ([#488](https://github.com/adobe/spacecat-audit-worker/issues/488)) ([948db9e](https://github.com/adobe/spacecat-audit-worker/commit/948db9e42b65bf5f4e40bc3aedbfc6acd8ea88d6))
+
+## [1.34.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.2...v1.34.3) (2024-11-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.58.0 ([#487](https://github.com/adobe/spacecat-audit-worker/issues/487)) ([dedf303](https://github.com/adobe/spacecat-audit-worker/commit/dedf3032b2f8ef8c9ac8b669f75660dd9fcba5ed))
+
+## [1.34.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.1...v1.34.2) (2024-11-26)
+
+
+### Bug Fixes
+
+* fetch siteId from queue message ([#484](https://github.com/adobe/spacecat-audit-worker/issues/484)) ([f044e14](https://github.com/adobe/spacecat-audit-worker/commit/f044e14cf69ce997dad6e0b80f17fa8156d634ee))
+
+## [1.34.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.0...v1.34.1) (2024-11-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.12.3 ([#486](https://github.com/adobe/spacecat-audit-worker/issues/486)) ([412c9d7](https://github.com/adobe/spacecat-audit-worker/commit/412c9d79fa7e7a4f88b2fc45f7bcb9023e76073e))
+
 # [1.34.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.33.1...v1.34.0) (2024-11-26)
 
 
