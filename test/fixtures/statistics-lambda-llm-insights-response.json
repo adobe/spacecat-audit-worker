@@ -1,0 +1,23 @@
+{
+    "statusCode": 200,
+    "body": {
+      "type": "llm-insights",
+      "result": {
+        "reason_1": {
+          "insight": "The main CTAs are visually prominent but lack urgent and compelling language.",
+          "recommendation": "Update the CTA text to include more action-oriented and urgent language, such as \"Try Generative Fill Now\" instead of \"Try Generative Fill\".",
+          "rationale": "Strong, actionable language can increase the sense of urgency and prompt immediate action, improving the click-through rate (CTR). The current phrasing is informative but not compelling enough to drive immediate user engagement."
+        },
+        "reason_2": {
+          "insight": "The CTA elements are positioned in a visually appealing but somewhat dispersed manner, which may cause users to miss them due to information overload.",
+          "recommendation": "Reorganize the CTAs to create a more streamlined path for the user. Consider placing the primary CTA (e.g., \"Try Generative Fill\") at the top of the page and ensuring it is consistently visible as users scroll.",
+          "rationale": "A clearer and more focused visual hierarchy can help guide users more effectively to the primary CTA, reducing cognitive load and increasing the likelihood of engagement. By ensuring the CTA remains in the user's view, it becomes more accessible and actionable."
+        },
+        "reason_3": {
+          "insight": "The content above the fold is visually engaging but might not be immediately relevant to all users, reducing the initial engagement potential.",
+          "recommendation": "Revise the headline and introductory text to be more inclusive and highlight the immediate benefits of engaging with the CTA. For example, \"Unlock Your Creative Potential with Generative AI – Try It Now!\"",
+          "rationale": "A headline that clearly communicates the value proposition and aligns with user intent can capture attention more effectively. This adjustment ensures that users understand the benefits quickly, driving higher initial engagement and potentially increasing the CTR."
+        }
+      }
+    }
+  }
