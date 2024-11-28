@@ -234,7 +234,9 @@ export async function auditRunner(url, context) {
 async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess } = context;
 
-  const opportunity = await dataAccess.Opportunity.allBySiteIdAndTypeAndStatus(auditData.siteId, 'audit-type', 'NEW')[0];
+  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  const opportunity =  opportunities.find((oppty) => oppty.getType() === 'audit-type');
+
   if (!opportunity) {
       const opportunityData = {
         siteId: auditData.siteId,
@@ -254,7 +256,8 @@ async function convertToOpportunity(auditUrl, auditData, context) {
       };
       opportunity = await dataAccess.Opportunity.create(opportunityData);
   } else {
-    opportunity = opportunity.setAuditId(auditData.id);
+    opportunity.setAuditId(auditData.id);
+    await opportunity.save();
   }
 
   // this logic changes based on the audit type

@@ -216,6 +216,7 @@ describe('Backlinks Tests', function () {
       addSuggestions: sinon.stub(),
       getSuggestions: sinon.stub(),
       setAuditId: sinon.stub(),
+      save: sinon.stub().resolves(),
     };
 
     brokenBacklinksSuggestions = {
@@ -870,6 +871,50 @@ describe('Backlinks Tests', function () {
     expect(brokenBacklinksOpportunity.setAuditId).to.have.been.calledOnce;
     expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledOnce;
     expect(context.log.error).to.have.been.calledWith('Suggestions for siteId site1 contains 1 items with errors');
+  });
+
+  it('should return 500 when opportunity fetching fails', async () => {
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
+    mockDataAccess.getTopPagesForSite.resolves([]);
+    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('oppty error'));
+
+    nock(site.getBaseURL())
+      .get(/.*/)
+      .reply(200);
+
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(200, auditResult);
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(500);
+    expect(mockLog.error).to.have.been.calledWith('Fetching opportunities for siteId site1 failed with error: oppty error');
+  });
+
+  it('should return 500 when opportunity saving fails', async () => {
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
+    mockDataAccess.getTopPagesForSite.resolves([]);
+    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.save.rejects(new Error('save error'));
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
+
+    nock(site.getBaseURL())
+      .get(/.*/)
+      .reply(200);
+
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(200, auditResult);
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(500);
+    expect(mockLog.error).to.have.been.calledWith('Creating opportunity for siteId site1 failed with error: save error');
   });
 
   it('returns a 200 when site is not live', async () => {

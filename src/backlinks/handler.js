@@ -147,32 +147,46 @@ export default async function auditBrokenBacklinks(message, context) {
       auditResult,
     };
 
-    const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    let brokenBacklinksOppty = opportunities.find((oppty) => oppty.getType() === 'broken-backlinks');
+    let brokenBacklinksOppty;
 
-    if (!brokenBacklinksOppty) {
-      const opportunityData = {
-        siteId: site.getId(),
-        auditId: audit.getId(),
-        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BAC174971-BA97-44A9-9560-90BE6C7CF789%7D&file=Experience_Success_Studio_Broken_Backlinks_Runbook.docx&action=default&mobileredirect=true',
-        type: 'broken-backlinks',
-        origin: 'AUTOMATION',
-        title: 'Authoritative Domains are linking to invalid URLs. This could impact your SEO.',
-        description: 'Provide the correct target URL that each of the broken backlinks should be redirected to.',
-        guidance: {
-          steps: [
-            'Review the list of broken target URLs and the suggested redirects.',
-            'Manually override redirect URLs as needed.',
-            'Copy redirects.',
-            'Paste new entries in your website redirects file.',
-            'Publish the changes.',
-          ],
-        },
-        tags: ['traffic-acquisition'],
-      };
-      brokenBacklinksOppty = await dataAccess.Opportunity.create(opportunityData);
-    } else {
-      brokenBacklinksOppty = brokenBacklinksOppty.setAuditId(audit.getId());
+    try {
+      const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+      brokenBacklinksOppty = opportunities.find((oppty) => oppty.getType() === 'broken-backlinks');
+    } catch (e) {
+      log.error(`Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+      return internalServerError(`Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
+    }
+
+    try {
+      if (!brokenBacklinksOppty) {
+        const opportunityData = {
+          siteId: site.getId(),
+          auditId: audit.getId(),
+          runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BAC174971-BA97-44A9-9560-90BE6C7CF789%7D&file=Experience_Success_Studio_Broken_Backlinks_Runbook.docx&action=default&mobileredirect=true',
+          type: 'broken-backlinks',
+          origin: 'AUTOMATION',
+          title: 'Authoritative Domains are linking to invalid URLs. This could impact your SEO.',
+          description: 'Provide the correct target URL that each of the broken backlinks should be redirected to.',
+          guidance: {
+            steps: [
+              'Review the list of broken target URLs and the suggested redirects.',
+              'Manually override redirect URLs as needed.',
+              'Copy redirects.',
+              'Paste new entries in your website redirects file.',
+              'Publish the changes.',
+            ],
+          },
+          tags: ['traffic-acquisition'],
+        };
+
+        brokenBacklinksOppty = await dataAccess.Opportunity.create(opportunityData);
+      } else {
+        brokenBacklinksOppty.setAuditId(audit.getId());
+        await brokenBacklinksOppty.save();
+      }
+    } catch (e) {
+      log.error(`Creating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
+      return internalServerError(`Failed to create opportunity for siteId ${siteId}: ${e.message}`);
     }
 
     if (!result.auditResult.error) {
