@@ -217,7 +217,7 @@ export default new AuditBuilder()
 
 ```
 
-### How to add Opportunities and Syggestions
+### How to add Opportunities and Suggestions
 ```js
 import { syncSuggestions } from '../utils/data-access.js';
 
