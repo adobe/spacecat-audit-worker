@@ -174,34 +174,6 @@ export default new AuditBuilder()
 
 ```
 
-### How to add Opportunities and Syggestions
-```js
-import { syncSuggestions } from '../utils/data-access.js';
-
-// your audit logic goes here...
-
-const opportunity = Opportunity.create(opportunityData);
-
-const buildKey = (data) => `${data.property}|${data.anotherProperty}`;
-
-await syncSuggestions({
-  opportunity,
-  newData: auditResult.auditData,
-  buildKey,
-  mapNewSuggestion: (issue) => ({
-    opportunityId: opportunity.getId(),
-    type: 'SUGGESTION_TYPE',
-    rank: issue.rankMetric,
-    data: {
-      property: issue.property,
-      anotherProperty: issue.anotherProperty
-    }
-  }),
-  log
-});
-
-```
-
 ### How to add a custom post processor
 
 You can add a post-processing step for your audit using `AuditBuilder`'s `withPostProcessors` function. The list of post-processing functions will be executed sequentially after the audit run.
@@ -242,5 +214,47 @@ export default new AuditBuilder()
   .withRunner(auditRunner)
   .withPostProcessors([ postProcessor ]) // you can submit multiple post processors
   .build();
+
+```
+
+### How to add Opportunities and Syggestions
+```js
+import { syncSuggestions } from '../utils/data-access.js';
+
+export async function auditRunner(url, context) {
+
+  // your audit logic goes here...
+
+  return {
+    auditResult: results,
+    fullAuditRef: baseURL,
+  };
+}
+
+async function postProcessor(auditUrl, auditData, context) {
+  const { dataAccess } = context;
+  
+  const opportunity = Opportunity.create(opportunityData);
+
+  // this logic changes based on the audit type
+  const buildKey = (auditData) => `${auditData.property}|${auditData.anotherProperty}`;
+
+  await syncSuggestions({
+    opportunity,
+    newData: auditData,
+    buildKey,
+    mapNewSuggestion: (issue) => ({
+      opportunityId: opportunity.getId(),
+      type: 'SUGGESTION_TYPE',
+      rank: issue.rankMetric,
+      // data changes based on the audit type
+      data: {
+        property: issue.property,
+        anotherProperty: issue.anotherProperty
+      }
+    }),
+    log
+  }); 
+}
 
 ```
