@@ -17,31 +17,18 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
-import { internalLinksAuditRunner } from '../../src/internal-links/handler.js';
-import { internalLinksData } from '../fixtures/internal-links-data.js';
+import { formsAuditRunner } from '../../src/forms-opportunities/handler.js';
 import { MockContextBuilder } from '../shared.js';
-
-const AUDIT_RESULT_DATA = [
-  {
-    url_to: 'https://www.example.com/article/dogs/breeds/choosing-an-irish-setter',
-    url_from: 'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-13-manly-masculine-dog-breeds',
-    traffic_domain: 100,
-  },
-  {
-    url_to: 'https://www.example.com/article/dogs/breeds/choosing-a-miniature-poodle',
-    url_from: 'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
-    traffic_domain: 100,
-  },
-];
+import formVitalsData from '../fixtures/formvitalsdata.json' with { type: 'json' };
+import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
 
 use(sinonChai);
 
 const sandbox = sinon.createSandbox();
 
 const baseURL = 'https://example.com';
-const auditUrl = 'www.example.com';
 
-describe('Broken internal links audit', () => {
+describe('Forms Vitals audit', () => {
   const site = createSite({ baseURL });
 
   const context = new MockContextBuilder()
@@ -50,7 +37,7 @@ describe('Broken internal links audit', () => {
       runtime: { name: 'aws-lambda', region: 'us-east-1' },
       func: { package: 'spacecat-services', version: 'ci', name: 'test' },
       rumApiClient: {
-        query: sinon.stub().resolves(internalLinksData),
+        queryMulti: sinon.stub().resolves(formVitalsData),
       },
     })
     .build();
@@ -70,28 +57,22 @@ describe('Broken internal links audit', () => {
     sinon.restore();
   });
 
-  it('broken-internal-links audit runs rum api client 404 query', async () => {
-    const result = await internalLinksAuditRunner(
+  it('form vitals audit runs rum api client formVitals query', async () => {
+    const FORMS_OPPTY_QUERIES = [
+      'cwv',
+      'form-vitals',
+    ];
+    const result = await formsAuditRunner(
       'www.example.com',
       context,
       site,
     );
-    expect(context.rumApiClient.query).calledWith('404', {
+    expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
       domain: 'www.example.com',
       domainkey: 'test-key',
-      interval: 30,
+      interval: 7,
       granularity: 'hourly',
     });
-    expect(result).to.deep.equal({
-      auditResult: {
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        fullAuditRef: auditUrl,
-        finalUrl: auditUrl,
-        auditContext: {
-          interval: 30,
-        },
-      },
-      fullAuditRef: auditUrl,
-    });
+    expect(result).to.deep.equal(expectedFormVitalsData);
   });
 });
