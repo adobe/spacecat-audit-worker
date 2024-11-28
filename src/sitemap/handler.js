@@ -19,6 +19,7 @@ import {
   toggleWWW,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -393,8 +394,78 @@ export async function sitemapAuditRunner(baseURL, context) {
   };
 }
 
+async function convertToOpportunity(auditUrl, auditData, context) {
+  const { dataAccess, log } = context;
+
+  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  let sitemapOpptyPagesWithIssues = opportunities.find((oppty) => oppty.getType() === 'sitemap-pages-with-issues');
+
+  const sitemapsWithPagesWithIssues = auditData.auditResult?.details?.issues
+    ? Object.keys(auditData.auditResult?.details?.issues)
+    : [];
+
+  const newData = [];
+  sitemapsWithPagesWithIssues.forEach((sitemapUrl) => {
+    const pagesWithIssues = auditData.auditResult.details.issues[sitemapUrl];
+    pagesWithIssues.forEach((page) => {
+      newData.push({
+        ...page,
+        sitemapUrl,
+      });
+    });
+  });
+
+  if (newData.length > 0) {
+    if (!sitemapOpptyPagesWithIssues) {
+      const opportunityData = {
+        siteId: auditData.siteId,
+        auditId: auditData.id,
+        runbook: 'link-to-runbook',
+        type: 'sitemap-pages-with-issues',
+        origin: 'AUTOMATON',
+        title: 'Opportunity Title',
+        description: 'Opportunity Description',
+        guidance: {
+          steps: [
+            'Step 1',
+            'Step 2',
+          ],
+        },
+        tags: ['indexability', 'sitemap'],
+      };
+      sitemapOpptyPagesWithIssues = await dataAccess.Opportunity.create(opportunityData);
+    } else {
+      sitemapOpptyPagesWithIssues = sitemapOpptyPagesWithIssues.setAuditId(auditData.id);
+    }
+  }
+
+  if (newData.length > 0 && sitemapOpptyPagesWithIssues) {
+    const buildKey = (auditData1) => `${auditData1.siteId}|sitemap-pages-with-issues|${auditData1.auditResult.reasons.map((a) => a.value)};}`;
+
+    await syncSuggestions({
+      opportunity: sitemapOpptyPagesWithIssues,
+      newData,
+      buildKey,
+      mapNewSuggestion: (issue) => ({
+        opportunityId: sitemapOpptyPagesWithIssues.getId(),
+        type: 'SUGGESTION_TYPE',
+        rank: issue.rankMetric,
+        data: {
+          sourceSitemapUrl: issue.sitemapUrl,
+          pageUrl: issue.url,
+          statusCode: issue.statusCode ?? 500, // to check if this is correctly reported,
+          // as missing status code usually means the page was not reachable
+          recommendationAction: 'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_not_crash',
+        },
+      }),
+      log,
+    });
+  }
+}
+
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
     .then((url) => (getUrlWithoutPath(prependSchema(url)))))
+  .withPostProcessors([convertToOpportunity])
   .build();
