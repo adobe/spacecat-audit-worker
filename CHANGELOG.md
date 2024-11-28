@@ -1,3 +1,10 @@
+## [1.34.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.7...v1.34.8) (2024-11-28)
+
+
+### Bug Fixes
+
+* sorting high-organic-low-ctr opportunities and adding opportunity entities with new data model ([#449](https://github.com/adobe/spacecat-audit-worker/issues/449)) ([49e3ccc](https://github.com/adobe/spacecat-audit-worker/commit/49e3ccc160be7a38947ff1468f7a5c0136f38120))
+
 ## [1.34.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.6...v1.34.7) (2024-11-28)
 
 
