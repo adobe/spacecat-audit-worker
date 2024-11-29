@@ -222,7 +222,7 @@ export default async function syncOpportunityAndSuggestions(
     buildKey,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: metatagsOppty.getId(),
-      type: `${suggestion.tagName.toUpperCase()}_TAG_UPDATE`,
+      type: 'METADATA_UPDATE',
       rank: suggestion.rank,
       data: {
         ...suggestion,

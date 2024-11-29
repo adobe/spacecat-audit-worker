@@ -62,7 +62,7 @@ const testData = {
   expectedSuggestions: [
     {
       opportunityId: 'opportunity-id',
-      type: 'TITLE_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 5,
       data: {
         tagContent: 'Lovesac - 404 Not Found',
@@ -81,7 +81,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'DESCRIPTION_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 9,
       data: {
         tagContent: 'The BigOne Insert',
@@ -96,7 +96,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'H1_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 4,
       data: {
         seoRecommendation: 'Should be present',
@@ -110,7 +110,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'TITLE_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 2,
       data: {
         seoRecommendation: '40-60 characters long',
@@ -124,7 +124,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'H1_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 11,
       data: {
         tagContent: '["We Can All Win Together","We Say As We Do"]',
@@ -141,7 +141,7 @@ const testData = {
   existingSuggestions: [
     {
       opportunityId: 'opportunity-id',
-      type: 'TITLE_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 5,
       data: {
         tagContent: 'Lovesac - 404 Not Found',
@@ -162,7 +162,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'DESCRIPTION_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 9,
       data: {
         tagContent: 'The BigOne Insert modified',
@@ -179,7 +179,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'H1_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 4,
       data: {
         seoRecommendation: 'Should be present',
@@ -198,7 +198,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'H1_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 11,
       data: {
         tagContent: '["We Can All Win Together","We Say As We Do"]',
@@ -217,7 +217,7 @@ const testData = {
   expectedSyncedSuggestion: [
     {
       opportunityId: 'opportunity-id',
-      type: 'TITLE_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 5,
       data: {
         tagContent: 'Lovesac - 404 Not Found',
@@ -236,7 +236,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'DESCRIPTION_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 9,
       data: {
         tagContent: 'The BigOne Insert',
@@ -251,7 +251,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'H1_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 4,
       data: {
         seoRecommendation: 'Should be present',
@@ -269,7 +269,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'TITLE_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 2,
       data: {
         seoRecommendation: '40-60 characters long',
@@ -283,7 +283,7 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'H1_TAG_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 11,
       data: {
         tagContent: '["We Can All Win Together","We Say As We Do"]',
