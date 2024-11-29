@@ -109,7 +109,7 @@ describe('Backlinks Tests', function () {
     title: 'backlink that times out',
     url_from: 'https://from.com/from-4',
     url_to: 'https://foo.com/times-out',
-    domain_traffic: 500,
+    traffic_domain: 500,
   };
 
   const auditResult = {
@@ -118,19 +118,19 @@ describe('Backlinks Tests', function () {
         title: 'backlink that returns 404',
         url_from: 'https://from.com/from-1',
         url_to: 'https://foo.com/returns-404',
-        domain_traffic: 4000,
+        traffic_domain: 4000,
       },
       {
         title: 'backlink that redirects to www and throw connection error',
         url_from: 'https://from.com/from-2',
         url_to: 'https://foo.com/redirects-throws-error',
-        domain_traffic: 2000,
+        traffic_domain: 2000,
       },
       {
         title: 'backlink that returns 429',
         url_from: 'https://from.com/from-3',
         url_to: 'https://foo.com/returns-429',
-        domain_traffic: 1000,
+        traffic_domain: 1000,
       },
     ],
   };
@@ -171,20 +171,20 @@ describe('Backlinks Tests', function () {
         title: 'backlink that redirects to www and throw connection error',
         url_from: 'https://from.com/from-2',
         url_to: 'https://foo.com/redirects-throws-error',
-        domain_traffic: 2000,
+        traffic_domain: 2000,
       },
       {
         title: 'backlink that returns 429',
         url_from: 'https://from.com/from-3',
         url_to: 'https://foo.com/returns-429',
-        domain_traffic: 1000,
+        traffic_domain: 1000,
         url_suggested: 'https://bar.foo.com/bar.html',
       },
       {
         title: 'backlink that is not excluded',
         url_from: 'https://from.com/from-not-excluded',
         url_to: 'https://foo.com/not-excluded',
-        domain_traffic: 5000,
+        traffic_domain: 5000,
       },
     ],
     fullAuditRef: sinon.match.string,
@@ -195,16 +195,63 @@ describe('Backlinks Tests', function () {
       title: 'backlink that is not excluded',
       url_from: 'https://from.com/from-not-excluded',
       url_to: 'https://foo.com/not-excluded',
-      domain_traffic: 5000,
+      traffic_domain: 5000,
     },
   ];
 
+  const audit = {
+    getId: () => 'test-audit-id',
+  };
+
+  let brokenBacklinksOpportunity;
+  let brokenBacklinksSuggestions;
+  let brokenBacklinkExistingSuggestions;
+  let otherOpportunity;
+
   beforeEach(() => {
+    brokenBacklinksOpportunity = {
+      getType: () => 'broken-backlinks',
+      getId: () => 'test-opportunity-id',
+      getSiteId: () => site.getId(),
+      addSuggestions: sinon.stub(),
+      getSuggestions: sinon.stub(),
+      setAuditId: sinon.stub(),
+      save: sinon.stub().resolves(),
+    };
+
+    brokenBacklinksSuggestions = {
+      createdItems: auditResult.backlinks,
+      errorItems: [],
+    };
+
+    brokenBacklinkExistingSuggestions = [{
+      opportunityId: brokenBacklinksOpportunity.getId(),
+      type: 'REDIRECT_UPDATE',
+      rank: 5000,
+      data: {
+        title: 'backlink that is not excluded',
+        url_from: 'https://from.com/from-not-excluded',
+        url_to: 'https://foo.com/not-excluded',
+        traffic_domain: 5000,
+      },
+      remove: sinon.stub(),
+    }];
+
+    brokenBacklinkExistingSuggestions[0].remove.resolves();
+
+    otherOpportunity = {
+      getType: () => 'other',
+    };
+
     mockDataAccess = {
       getSiteByID: sinon.stub(),
-      addAudit: sinon.stub(),
+      addAudit: sinon.stub().resolves(audit),
       getTopPagesForSite: sinon.stub(),
       getConfiguration: sinon.stub(),
+      Opportunity: {
+        allBySiteIdAndStatus: sinon.stub(),
+        create: sinon.stub(),
+      },
     };
 
     message = {
@@ -261,6 +308,12 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(siteWithExcludedUrls);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves(brokenBacklinkExistingSuggestions);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
 
     nock(siteWithExcludedUrls.getBaseURL())
       .get(/.*/)
@@ -290,10 +343,16 @@ describe('Backlinks Tests', function () {
     );
   });
 
-  it('should successfully perform an audit to detect broken backlinks, save and send the proper audit result', async () => {
+  it('should successfully perform an audit to detect broken backlinks, save and add the proper audit result to an existing opportunity', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
     mockDataAccess.getTopPagesForSite.resolves([]);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
 
     nock(site.getBaseURL())
       .get(/.*/)
@@ -320,16 +379,119 @@ describe('Backlinks Tests', function () {
 
     expect(response.status).to.equal(204);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+    expect(brokenBacklinksOpportunity.setAuditId).to.have.been.calledOnce;
+    expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
     expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
   });
 
+  it('should successfully perform an audit to detect broken backlinks, save and add the proper audit result to a new opportunity', async () => {
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
+    mockDataAccess.getTopPagesForSite.resolves([]);
+    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    mockDataAccess.Opportunity.create.resolves(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
+
+    nock(site.getBaseURL())
+      .get(/.*/)
+      .reply(200);
+
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(200, auditResult);
+
+    const expectedMessage = {
+      type: message.type,
+      url: site.getBaseURL(),
+      auditContext: {
+        finalUrl: 'bar.foo.com',
+      },
+      auditResult: {
+        finalUrl: 'bar.foo.com',
+        brokenBacklinks: auditResult.backlinks,
+        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=bar.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
+      },
+    };
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(204);
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+    expect(mockDataAccess.Opportunity.create).to.have.been.calledOnce;
+    expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been
+      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+    expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
+  });
+
+  it('should perform a partial successful audit to detect broken backlinks, save and add the proper audit result to an existing opportunity', async () => {
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
+    mockDataAccess.getTopPagesForSite.resolves([]);
+    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves({
+      createdItems: auditResult.backlinks,
+      errorItems: [{
+        item: auditResult.backlinks[0],
+        error: 'ValidationError',
+      }],
+    });
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
+
+    nock(site.getBaseURL())
+      .get(/.*/)
+      .reply(200);
+
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(200, auditResult);
+
+    const expectedMessage = {
+      type: message.type,
+      url: site.getBaseURL(),
+      auditContext: {
+        finalUrl: 'bar.foo.com',
+      },
+      auditResult: {
+        finalUrl: 'bar.foo.com',
+        brokenBacklinks: auditResult.backlinks,
+        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=bar.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
+      },
+    };
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(204);
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+    expect(brokenBacklinksOpportunity.setAuditId).to.have.been.calledOnce;
+    expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).to.have.been
+      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
+    expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
+    expect(context.log.error).to.have.been.calledWith(
+      'Suggestions for siteId site1 contains 1 items with errors',
+    );
+  });
+
   it('should successfully perform an audit to detect broken backlinks, save and send the proper audit result for message containing siteId', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
     mockDataAccess.getTopPagesForSite.resolves([]);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
     message.siteId = message.url;
     delete message.url;
 
@@ -371,6 +533,12 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
     mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
 
     nock(site.getBaseURL())
       .get(/.*/)
@@ -410,6 +578,12 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
     configuration.disableHandlerForSite('broken-backlinks-auto-suggest', { getId: () => site2.getId(), getOrganizationId: () => org.getId() });
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
 
     nock(site2.getBaseURL())
       .get(/.*/)
@@ -470,6 +644,12 @@ describe('Backlinks Tests', function () {
         }],
     };
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
     nock(site.getBaseURL())
       .get(/.*/)
       .reply(200);
@@ -503,6 +683,12 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
     mockDataAccess.getTopPagesForSite.resolves([]);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
 
     nock(site2.getBaseURL())
       .get(/.*/)
@@ -545,6 +731,12 @@ describe('Backlinks Tests', function () {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
     mockDataAccess.getTopPagesForSite.resolves([]);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
 
     const fixedBacklinks = [
       {
@@ -647,6 +839,84 @@ describe('Backlinks Tests', function () {
     expect(mockLog.error).to.have.been.calledTwice;
   });
 
+  it('should return a 500 if suggestions cannot be added to an opportunity', async () => {
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
+    mockDataAccess.getTopPagesForSite.resolves([]);
+    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves({
+      createdItems: [],
+      errorItems: [{
+        item: auditResult.backlinks[0],
+        error: 'ValidationError',
+      }],
+    });
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
+
+    nock(site.getBaseURL())
+      .get(/.*/)
+      .reply(200);
+
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(200, auditResult);
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(500);
+    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+    expect(brokenBacklinksOpportunity.setAuditId).to.have.been.calledOnce;
+    expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledOnce;
+    expect(context.log.error).to.have.been.calledWith('Suggestions for siteId site1 contains 1 items with errors');
+  });
+
+  it('should return 500 when opportunity fetching fails', async () => {
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
+    mockDataAccess.getTopPagesForSite.resolves([]);
+    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('oppty error'));
+
+    nock(site.getBaseURL())
+      .get(/.*/)
+      .reply(200);
+
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(200, auditResult);
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(500);
+    expect(mockLog.error).to.have.been.calledWith('Fetching opportunities for siteId site1 failed with error: oppty error');
+  });
+
+  it('should return 500 when opportunity saving fails', async () => {
+    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
+    mockDataAccess.getTopPagesForSite.resolves([]);
+    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.save.rejects(new Error('save error'));
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
+
+    nock(site.getBaseURL())
+      .get(/.*/)
+      .reply(200);
+
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(200, auditResult);
+
+    const response = await auditBrokenBacklinks(message, context);
+
+    expect(response.status).to.equal(500);
+    expect(mockLog.error).to.have.been.calledWith('Creating opportunity for siteId site1 failed with error: save error');
+  });
+
   it('returns a 200 when site is not live', async () => {
     const siteWithDisabledAudits = createSite({
       ...siteData,
@@ -665,6 +935,11 @@ describe('Backlinks Tests', function () {
   it('should handle audit api errors gracefully', async () => {
     mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
     mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+    brokenBacklinksOpportunity.setAuditId.returns(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [otherOpportunity, brokenBacklinksOpportunity],
+    );
 
     nock(site.getBaseURL())
       .get(/.*/)
