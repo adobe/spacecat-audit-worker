@@ -36,6 +36,7 @@ export async function syncMetatagsSuggestions({
   log,
 }) {
   const existingSuggestions = await opportunity.getSuggestions();
+  log.info(`Suggestion sample: ${JSON.stringify(existingSuggestions[0])}`);
   const existingSuggestionsMap = new Map(
     existingSuggestions.map((existing) => [buildKey(existing), existing]),
   );
@@ -229,5 +230,5 @@ export default async function syncOpportunityAndSuggestions(
     }),
     log,
   });
-  log.info(`Successfully synced Opportunity And Suggestions for site: ${siteId} and ${auditData.type} audit type.`);
+  log.info(`Successfully synced Opportunity And Suggestions for site: ${siteId} and meta-tags audit type.`);
 }
