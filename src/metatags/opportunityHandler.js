@@ -11,10 +11,74 @@
  */
 
 import { TITLE, DESCRIPTION, H1 } from './constants.js';
-import { syncSuggestions } from '../utils/data-access.js';
 
 function removeTrailingSlash(url) {
   return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+/**
+ * Synchronizes existing suggestions with new data
+ * by removing outdated suggestions and adding new ones.
+ *
+ * @param {Object} params - The parameters for the sync operation.
+ * @param {Object} params.opportunity - The opportunity object to synchronize suggestions for.
+ * @param {Array} params.newData - Array of new data objects to sync.
+ * @param {Function} params.buildKey - Function to generate a unique key for each item.
+ * @param {Function} params.mapNewSuggestion - Function to map new data to suggestion objects.
+ * @param {Object} params.log - Logger object for error reporting.
+ * @returns {Promise<void>} - Resolves when the synchronization is complete.
+ */
+export async function syncSuggestions({
+  opportunity,
+  newData,
+  buildKey,
+  mapNewSuggestion,
+  log,
+}) {
+  const existingSuggestions = await opportunity.getSuggestions();
+  const existingSuggestionsMap = new Map(
+    existingSuggestions.map((existing) => [buildKey(existing), existing]),
+  );
+
+  // Create new suggestions and sync them with existing suggestions
+  const newSuggestions = newData
+    // map new audit data to suggestions format
+    .map(mapNewSuggestion)
+    // update new suggestions with data from existing suggestion of same key
+    .map((newSuggestion) => {
+      const existing = existingSuggestionsMap.get(buildKey(newSuggestion));
+      if (existing) {
+        return {
+          ...newSuggestion,
+          status: existing.getStatus(),
+          data: {
+            ...newSuggestion.data,
+            ...(existing.data.aiSuggestion && { aiSuggestion: existing.data.aiSuggestion }),
+            ...(existing.data.aiRationale && { aiRationale: existing.data.aiRationale }),
+          },
+        };
+      }
+      return newSuggestion;
+    });
+
+  // Remove existing suggestions
+  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+
+  // Add new suggestions
+  if (newSuggestions.length > 0) {
+    const suggestions = await opportunity.addSuggestions(newSuggestions);
+
+    if (suggestions.errorItems?.length > 0) {
+      log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);
+      suggestions.errorItems.forEach((errorItem) => {
+        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+      });
+
+      if (suggestions.createdItems?.length <= 0) {
+        throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+      }
+    }
+  }
 }
 
 const issueRankings = {
@@ -106,8 +170,8 @@ export default async function syncOpportunityAndSuggestions(
         runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7B27CF48AA-5492-435D-B17C-01E38332A5CA%7D&file=Experience_Success_Studio_Metatags_Runbook.docx&action=default&mobileredirect=true',
         type: 'meta-tags',
         origin: 'AUTOMATION',
-        title: 'Metadata issues found, including invalid meta tags. This could impact your SEO.',
-        description: 'Review and optimize your title, description, and H1 tags to improve search engine rankings and enhance user engagement.',
+        title: 'Pages have metadata issues, including missing and invalid tags.',
+        description: 'Fixing metadata issues like missing or invalid tags boosts SEO by improving content visibility, search rankings, and user engagement.',
         guidance: {
           steps: [
             'Review the detected meta-tags with issues, the AI-generated suggestions, and the provided rationale behind each recommendation.',
@@ -117,7 +181,7 @@ export default async function syncOpportunityAndSuggestions(
             'Publish the changes to apply the updates to your live site.',
           ],
         },
-        tags: ['traffic-acquisition'],
+        tags: ['Traffic acquisition'],
       };
       metatagsOppty = await dataAccess.Opportunity.create(opportunityData);
       log.debug('Meta-tags Opportunity created');
@@ -145,10 +209,7 @@ export default async function syncOpportunityAndSuggestions(
     });
   });
 
-  const buildKey = (suggestion) => {
-    const data = suggestion.data || suggestion;
-    return `${data.url}|${data.issue}|${data.tagContent}`;
-  };
+  const buildKey = (suggestion) => `${suggestion.data.url}|${suggestion.data.issue}|${suggestion.data.tagContent}`;
   // Sync the suggestions from new audit with old ones.
   // Keeps existing ones who are overlapping with new ones, deletes outdated ones, creates new ones.
   await syncSuggestions({

@@ -158,6 +158,7 @@ const testData = {
         rank: 5,
       },
       remove: () => {},
+      getStatus: () => 'NEW',
     },
     {
       opportunityId: 'opportunity-id',
@@ -174,6 +175,7 @@ const testData = {
         rank: 9,
       },
       remove: () => {},
+      getStatus: () => 'NEW',
     },
     {
       opportunityId: 'opportunity-id',
@@ -187,7 +189,11 @@ const testData = {
         tagName: 'h1',
         url: 'www.test-site.com/page1',
         rank: 4,
+        aiSuggestion: 'This is an AI generated H1',
+        aiRationale: 'This is why AI generated it',
       },
+      remove: () => {},
+      getStatus: () => 'SKIPPED',
     },
     {
       opportunityId: 'opportunity-id',
@@ -203,6 +209,8 @@ const testData = {
         url: 'www.test-site.com/page2',
         rank: 11,
       },
+      remove: () => {},
+      getStatus: () => 'NEW',
     },
   ],
   expectedSyncedSuggestion: [
@@ -242,6 +250,23 @@ const testData = {
     },
     {
       opportunityId: 'opportunity-id',
+      type: 'H1_TAG_UPDATE',
+      rank: 4,
+      data: {
+        seoRecommendation: 'Should be present',
+        issue: 'Missing H1',
+        issueDetails: 'H1 tag is missing',
+        seoImpact: 'High',
+        tagName: 'h1',
+        url: 'www.test-site.com/page1',
+        rank: 4,
+        aiSuggestion: 'This is an AI generated H1',
+        aiRationale: 'This is why AI generated it',
+      },
+      status: 'SKIPPED',
+    },
+    {
+      opportunityId: 'opportunity-id',
       type: 'TITLE_TAG_UPDATE',
       rank: 2,
       data: {
@@ -254,6 +279,22 @@ const testData = {
         rank: 2,
       },
     },
+    {
+      opportunityId: 'opportunity-id',
+      type: 'H1_TAG_UPDATE',
+      rank: 11,
+      data: {
+        tagContent: '["We Can All Win Together","We Say As We Do"]',
+        seoRecommendation: '1 H1 on a page',
+        issue: 'Multiple H1 on page',
+        issueDetails: '2 H1 detected',
+        seoImpact: 'Moderate',
+        tagName: 'h1',
+        url: 'www.test-site.com/page2',
+        rank: 11,
+      },
+      status: 'NEW',
+    },
   ],
   opportunityData: {
     siteId: 'site-id',
@@ -261,8 +302,8 @@ const testData = {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7B27CF48AA-5492-435D-B17C-01E38332A5CA%7D&file=Experience_Success_Studio_Metatags_Runbook.docx&action=default&mobileredirect=true',
     type: 'meta-tags',
     origin: 'AUTOMATION',
-    title: 'Metadata issues found, including invalid meta tags. This could impact your SEO.',
-    description: 'Review and optimize your title, description, and H1 tags to improve search engine rankings and enhance user engagement.',
+    title: 'Pages have metadata issues, including missing and invalid tags.',
+    description: 'Fixing metadata issues like missing or invalid tags boosts SEO by improving content visibility, search rankings, and user engagement.',
     guidance: {
       steps: [
         'Review the detected meta-tags with issues, the AI-generated suggestions, and the provided rationale behind each recommendation.',
@@ -273,7 +314,7 @@ const testData = {
       ],
     },
     tags: [
-      'traffic-acquisition',
+      'Traffic acquisition',
     ],
   },
 };
