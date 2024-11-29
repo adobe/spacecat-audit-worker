@@ -28,7 +28,7 @@ function removeTrailingSlash(url) {
  * @param {Object} params.log - Logger object for error reporting.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
-export async function syncSuggestions({
+export async function syncMetatagsSuggestions({
   opportunity,
   newData,
   buildKey,
@@ -55,6 +55,7 @@ export async function syncSuggestions({
             ...newSuggestion.data,
             ...(existing.data.aiSuggestion && { aiSuggestion: existing.data.aiSuggestion }),
             ...(existing.data.aiRationale && { aiRationale: existing.data.aiRationale }),
+            ...(existing.data.toOverride && { toOverride: existing.data.toOverride }),
           },
         };
       }
@@ -63,6 +64,9 @@ export async function syncSuggestions({
 
   // Remove existing suggestions
   await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+
+  // TODO: Skip deleting the suggestions created by BO UI
+  //  once the createdBy field is introduced in suggestions schema
 
   // Add new suggestions
   if (newSuggestions.length > 0) {
@@ -212,7 +216,7 @@ export default async function syncOpportunityAndSuggestions(
   const buildKey = (suggestion) => `${suggestion.data.url}|${suggestion.data.issue}|${suggestion.data.tagContent}`;
   // Sync the suggestions from new audit with old ones.
   // Creates and sync new ones with the existing ones, then deletes existing ones.
-  await syncSuggestions({
+  await syncMetatagsSuggestions({
     opportunity: metatagsOppty,
     newData: suggestions,
     buildKey,
