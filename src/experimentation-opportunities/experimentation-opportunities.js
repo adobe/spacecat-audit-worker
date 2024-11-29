@@ -122,7 +122,8 @@ async function updateRecommendations(oppty, context, site) {
     const lambdaResponseBody = lambdaResponse.body;
     lambdaResult = lambdaResponseBody ? lambdaResponseBody.result : null;
     if (!lambdaResult) {
-      log.error('Invalid lambda result:', lambdaResponseBody);
+      log.error('Invalid lambda result body:', lambdaResponseBody);
+      log.error('Invalid lambda result:', lambdaResult);
       return;
     }
   } catch (error) {
