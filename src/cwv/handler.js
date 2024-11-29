@@ -17,17 +17,20 @@ import { wwwUrlResolver } from '../common/audit.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
+const HANDLER_NAME = 'cwv';
 
 export async function CWVRunner(auditUrl, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
+  const groupedURLs = site.getConfig().getGroupedURLs(HANDLER_NAME);
   const options = {
     domain: auditUrl,
     domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
+    groupedURLs,
   };
-  const cwvData = await rumAPIClient.query('cwv', options);
+  const cwvData = await rumAPIClient.query(HANDLER_NAME, options);
   const auditResult = {
     cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
     auditContext: {
