@@ -237,6 +237,25 @@ describe('Opportunities Tests', () => {
       .find((o) => o.type === 'high-organic-low-ctr');
     expect(opportunity.recommendations).to.be.undefined;
   });
+
+  it('should not add recommendations to high-organic-low-ctr opportunities when lambda returns empty body', async () => {
+    const lambdaResponse = {
+      Payload: new TextEncoder().encode(JSON.stringify({
+        statusCode: 200,
+        body: null,
+      })),
+    };
+    lambdaSendStub.resolves(lambdaResponse);
+    const auditData = await experimentationOpportunities.handler(url, context, site);
+    const opportunity = auditData.auditResult.experimentationOpportunities
+      .find((o) => o.type === 'high-organic-low-ctr');
+    expect(opportunity.recommendations).to.be.undefined;
+  });
+
+  it('should return empty recommendations array when llm response is empty', async () => {
+    const recommendations = getRecommendations();
+    expect(recommendations).to.deep.equal([]);
+  });
 });
 
 describe('Opportunities postProcessor', () => {
