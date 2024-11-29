@@ -72,8 +72,8 @@ function getIssueRanking(tagName, issue) {
 
 /**
  * Updates Meta-tags Opportunity and Suggestions collection with new audit results
- * @param siteId site id
- * @param auditId audit id
+ * @param siteId site id of site being audited
+ * @param auditId audit id of the latest performed audit
  * @param auditData object containing audit results and some metadata
  * @param dataAccess object containing accessor objects
  * @param log logger
