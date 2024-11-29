@@ -1,3 +1,10 @@
+# [1.36.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.35.0...v1.36.0) (2024-11-29)
+
+
+### Features
+
+* introduce Opportunity creation for Broken Backlinks ([#475](https://github.com/adobe/spacecat-audit-worker/issues/475)) ([78ce9a3](https://github.com/adobe/spacecat-audit-worker/commit/78ce9a39def7eb34e78dc24eacb64de50c2de744))
+
 # [1.35.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.8...v1.35.0) (2024-11-29)
 
 

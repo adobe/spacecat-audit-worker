@@ -16,7 +16,7 @@ import {
 import { composeAuditURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { retrieveSiteBySiteId, syncSuggestions } from '../utils/data-access.js';
 import { enhanceBacklinksWithFixes } from '../support/utils.js';
 
 const TIMEOUT = 3000;
@@ -139,14 +139,78 @@ export default async function auditBrokenBacklinks(message, context) {
       auditResult,
     };
 
-    await dataAccess.addAudit(auditData);
-    const data = {
+    const audit = await dataAccess.addAudit(auditData);
+    const result = {
       type,
       url: site.getBaseURL(),
       auditContext,
       auditResult,
     };
-    await sqs.sendMessage(queueUrl, data);
+
+    let brokenBacklinksOppty;
+
+    try {
+      const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+      brokenBacklinksOppty = opportunities.find((oppty) => oppty.getType() === 'broken-backlinks');
+    } catch (e) {
+      log.error(`Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+      return internalServerError(`Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
+    }
+
+    try {
+      if (!brokenBacklinksOppty) {
+        const opportunityData = {
+          siteId: site.getId(),
+          auditId: audit.getId(),
+          runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BAC174971-BA97-44A9-9560-90BE6C7CF789%7D&file=Experience_Success_Studio_Broken_Backlinks_Runbook.docx&action=default&mobileredirect=true',
+          type: 'broken-backlinks',
+          origin: 'AUTOMATION',
+          title: 'Authoritative Domains are linking to invalid URLs. This could impact your SEO.',
+          description: 'Provide the correct target URL that each of the broken backlinks should be redirected to.',
+          guidance: {
+            steps: [
+              'Review the list of broken target URLs and the suggested redirects.',
+              'Manually override redirect URLs as needed.',
+              'Copy redirects.',
+              'Paste new entries in your website redirects file.',
+              'Publish the changes.',
+            ],
+          },
+          tags: ['Traffic acquisition'],
+        };
+
+        brokenBacklinksOppty = await dataAccess.Opportunity.create(opportunityData);
+      } else {
+        brokenBacklinksOppty.setAuditId(audit.getId());
+        await brokenBacklinksOppty.save();
+      }
+    } catch (e) {
+      log.error(`Creating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
+      return internalServerError(`Failed to create opportunity for siteId ${siteId}: ${e.message}`);
+    }
+
+    if (!result.auditResult.error) {
+      const buildKey = (data) => `${data.url_from}|${data.url_to}`;
+
+      await syncSuggestions({
+        opportunity: brokenBacklinksOppty,
+        newData: result.auditResult.brokenBacklinks,
+        buildKey,
+        mapNewSuggestion: (backlink) => ({
+          opportunityId: brokenBacklinksOppty.getId(),
+          type: 'REDIRECT_UPDATE',
+          rank: backlink.traffic_domain,
+          data: {
+            title: backlink.title,
+            url_from: backlink.url_from,
+            url_to: backlink.url_to,
+            traffic_domain: backlink.traffic_domain,
+          },
+        }),
+        log,
+      });
+    }
+    await sqs.sendMessage(queueUrl, result);
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
