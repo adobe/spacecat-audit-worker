@@ -46,7 +46,10 @@ export async function CWVRunner(auditUrl, context, site) {
 }
 
 async function convertToOppty(auditUrl, auditData, context) {
-  const { dataAccess, log } = context;
+  const {
+    dataAccess,
+    log,
+  } = context;
 
   const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
   let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
@@ -57,7 +60,7 @@ async function convertToOppty(auditUrl, auditData, context) {
       auditId: auditData.id,
       runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_CWV_CLS_Runbook.docx?web=1',
       type: AUDIT_TYPE,
-      origin: 'AUTOMATON',
+      origin: 'AUTOMATION',
       title: 'Core Web Vitals',
       description: 'Core Web Vitals are key metrics Google uses to evaluate website performance, impacting SEO rankings by measuring user experience.',
       guidance: {
@@ -83,7 +86,7 @@ async function convertToOppty(auditUrl, auditData, context) {
     await opportunity.save();
   }
 
-  // this logic changes based on the audit type
+  // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
 
   await syncSuggestions({
