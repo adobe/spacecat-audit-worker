@@ -211,7 +211,7 @@ export default async function syncOpportunityAndSuggestions(
 
   const buildKey = (suggestion) => `${suggestion.data.url}|${suggestion.data.issue}|${suggestion.data.tagContent}`;
   // Sync the suggestions from new audit with old ones.
-  // Keeps existing ones who are overlapping with new ones, deletes outdated ones, creates new ones.
+  // Creates and sync new ones with the existing ones, then deletes existing ones.
   await syncSuggestions({
     opportunity: metatagsOppty,
     newData: suggestions,
