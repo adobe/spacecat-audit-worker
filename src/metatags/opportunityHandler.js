@@ -36,7 +36,7 @@ export async function syncMetatagsSuggestions({
   log,
 }) {
   const existingSuggestions = await opportunity.getSuggestions();
-  log.info(`Suggestion sample: ${JSON.stringify(existingSuggestions[0])}`);
+  log.info(`Suggestion sample: ${existingSuggestions.length},\n ${existingSuggestions.seoImpact} \n ${JSON.stringify(existingSuggestions[0])}`);
   const existingSuggestionsMap = new Map(
     existingSuggestions.map((existing) => [buildKey(existing), existing]),
   );
@@ -160,7 +160,7 @@ export default async function syncOpportunityAndSuggestions(
   try {
     // Get all opportunities by site-id and new status
     const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    // Find existing opportunity for meta-tags, if it doesn't create a new one
+    // Find existing opportunity for meta-tags
     metatagsOppty = opportunities.find((oppty) => oppty.getType() === 'meta-tags');
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
