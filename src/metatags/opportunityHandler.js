@@ -36,7 +36,7 @@ export async function syncMetatagsSuggestions({
   log,
 }) {
   const existingSuggestions = await opportunity.getSuggestions();
-  log.info(`Suggestion sample: ${existingSuggestions.length},\n ${existingSuggestions.seoImpact} \n ${JSON.stringify(existingSuggestions[0])}`);
+  log.info(`Suggestion sample: ${existingSuggestions.length},\n ${existingSuggestions.data} \n ${existingSuggestions.url} \n ${JSON.stringify(existingSuggestions[0])}`);
   const existingSuggestionsMap = new Map(
     existingSuggestions.map((existing) => [buildKey(existing), existing]),
   );
