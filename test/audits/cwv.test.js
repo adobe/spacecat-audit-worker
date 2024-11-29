@@ -180,7 +180,7 @@ describe('CWVRunner Tests', () => {
       // make sure that 3 new suggestions are created
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
     });
   });
 });

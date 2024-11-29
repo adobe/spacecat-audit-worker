@@ -82,7 +82,7 @@ export async function syncSuggestions({
   // Prepare new suggestions
   const newSuggestions = newData
     .filter((data) => !existingSuggestions.some(
-      (existing) => buildKey(existing) === buildKey(data),
+      (existing) => buildKey(existing.data) === buildKey(data),
     ))
     .map(mapNewSuggestion);
 
