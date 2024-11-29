@@ -127,7 +127,7 @@ export class Audit {
       };
 
       await this.messageSender(resultMessage, context);
-      // add auditId for the post processing
+      // add auditId for the post-processing
       auditData.id = audit.getId();
       for (const postProcessor of this.postProcessors) {
         // eslint-disable-next-line no-await-in-loop

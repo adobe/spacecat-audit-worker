@@ -14,15 +14,16 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
-const HANDLER_NAME = 'cwv';
+const AUDIT_TYPE = 'cwv';
 
 export async function CWVRunner(auditUrl, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
-  const groupedURLs = site.getConfig().getGroupedURLs(HANDLER_NAME);
+  const groupedURLs = site.getConfig().getGroupedURLs(AUDIT_TYPE);
   const options = {
     domain: auditUrl,
     domainkey,
@@ -30,7 +31,7 @@ export async function CWVRunner(auditUrl, context, site) {
     granularity: 'hourly',
     groupedURLs,
   };
-  const cwvData = await rumAPIClient.query(HANDLER_NAME, options);
+  const cwvData = await rumAPIClient.query(AUDIT_TYPE, options);
   const auditResult = {
     cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
     auditContext: {
@@ -44,7 +45,63 @@ export async function CWVRunner(auditUrl, context, site) {
   };
 }
 
+async function convertToOppty(auditUrl, auditData, context) {
+  const { dataAccess, log } = context;
+
+  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+
+  if (!opportunity) {
+    const opportunityData = {
+      siteId: auditData.siteId,
+      auditId: auditData.id,
+      runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_CWV_CLS_Runbook.docx?web=1',
+      type: AUDIT_TYPE,
+      origin: 'AUTOMATON',
+      title: 'Core Web Vitals',
+      description: 'Core Web Vitals are key metrics Google uses to evaluate website performance, impacting SEO rankings by measuring user experience.',
+      guidance: {
+        steps: [
+          'Analyze CWV data using RUM and PageSpeed Insights to identify performance bottlenecks.',
+          'Optimize CWV metrics (CLS, INP, LCP) by addressing common issues such as slow server response times, unoptimized assets, excessive JavaScript, and layout instability.',
+          'Test the implemented changes with tools like Chrome DevTools or PageSpeed Insights to verify improvements.',
+          'Monitor performance over time to ensure consistent CWV scores across devices.',
+        ],
+      },
+      tags: [
+        'SEO',
+        'Performance Optimization',
+        'User Experience',
+        'Core Web Vitals',
+        'Organic Traffic',
+        'Web Performance',
+      ],
+    };
+    opportunity = await dataAccess.Opportunity.create(opportunityData);
+  } else {
+    opportunity.setAuditId(auditData.id);
+    await opportunity.save();
+  }
+
+  // this logic changes based on the audit type
+  const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
+
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.cwv,
+    buildKey,
+    mapNewSuggestion: (entry) => ({
+      opportunityId: opportunity.getId(),
+      type: 'CODE',
+      rank: entry.pageviews,
+      data: entry,
+    }),
+    log,
+  });
+}
+
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(CWVRunner)
+  .withPostProcessors([convertToOppty])
   .build();
