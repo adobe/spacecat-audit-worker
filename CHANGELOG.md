@@ -1,3 +1,10 @@
+# [1.35.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.8...v1.35.0) (2024-11-29)
+
+
+### Features
+
+* Introduce configurable grouping patterns ([#462](https://github.com/adobe/spacecat-audit-worker/issues/462)) ([cdb297b](https://github.com/adobe/spacecat-audit-worker/commit/cdb297bc78c771d995977ae6a3af6103a710b6f7))
+
 ## [1.34.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.34.7...v1.34.8) (2024-11-28)
 
 
