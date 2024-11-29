@@ -91,7 +91,7 @@ export async function convertToOppty(auditUrl, auditData, context) {
 
   await syncSuggestions({
     opportunity,
-    newData: auditData?.auditResult?.cwv || [],
+    newData: auditData.auditResult.cwv,
     buildKey,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
