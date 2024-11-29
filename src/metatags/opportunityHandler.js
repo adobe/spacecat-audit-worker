@@ -214,8 +214,7 @@ export default async function syncOpportunityAndSuggestions(
   });
 
   const buildKey = (suggestion) => `${suggestion.data.url}|${suggestion.data.issue}|${suggestion.data.tagContent}`;
-  // Sync the suggestions from new audit with old ones.
-  // Creates and sync new ones with the existing ones, then deletes existing ones.
+  // Sync the suggestions from new audit with old ones
   await syncMetatagsSuggestions({
     opportunity: metatagsOppty,
     newData: suggestions,
