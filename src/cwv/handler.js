@@ -95,9 +95,12 @@ async function convertToOppty(auditUrl, auditData, context) {
     buildKey,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
-      type: 'CODE',
+      type: 'CODE_CHANGE',
       rank: entry.pageviews,
-      data: entry,
+      data: {
+        ...entry,
+        text: '', // suggestion text to be filled by back office UI
+      },
     }),
     log,
   });
