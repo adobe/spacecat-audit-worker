@@ -1,0 +1,658 @@
+[
+  {
+    "type": "url",
+    "url": "https://www.aem.live/home",
+    "pageviews": 9620,
+    "organic": 1900,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 2420,
+        "lcp": 2099.699999988079,
+        "lcpCount": 8,
+        "cls": 0.011145537287059668,
+        "clsCount": 7,
+        "inp": 8,
+        "inpCount": 5,
+        "ttfb": 548,
+        "ttfbCount": 16
+      },
+      {
+        "deviceType": "mobile",
+        "pageviews": 100,
+        "lcp": 2454.2,
+        "lcpCount": 1,
+        "cls": 0.26956930913977606,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 807.2999999858439,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/block-collection",
+    "pageviews": 9000,
+    "organic": 100,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 2000,
+        "lcp": 641.2000000476837,
+        "lcpCount": 4,
+        "cls": 0.0005859699349788617,
+        "clsCount": 4,
+        "inp": 24,
+        "inpCount": 3,
+        "ttfb": 173,
+        "ttfbCount": 4
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/",
+    "pageviews": 8910,
+    "organic": 602,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 1804,
+        "lcp": 665.9000000059605,
+        "lcpCount": 11,
+        "cls": 0.012401669733174766,
+        "clsCount": 11,
+        "inp": 32,
+        "inpCount": 8,
+        "ttfb": 253.20000000298023,
+        "ttfbCount": 12
+      },
+      {
+        "deviceType": "mobile",
+        "pageviews": 106,
+        "lcp": 26276.5,
+        "lcpCount": 4,
+        "cls": null,
+        "clsCount": 5,
+        "inp": 48,
+        "inpCount": 1,
+        "ttfb": 86,
+        "ttfbCount": 5
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/tools/rum/explorer.html",
+    "pageviews": 7600,
+    "organic": 700,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 1600,
+        "lcp": 1111.8000000715256,
+        "lcpCount": 9,
+        "cls": 0.00079558170557108,
+        "clsCount": 9,
+        "inp": 184,
+        "inpCount": 6,
+        "ttfb": 312.69999980926514,
+        "ttfbCount": 9
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/tutorial",
+    "pageviews": 1600,
+    "organic": 400,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 1600,
+        "lcp": 1260,
+        "lcpCount": 6,
+        "cls": 0.41610793533928664,
+        "clsCount": 6,
+        "inp": 48,
+        "inpCount": 4,
+        "ttfb": 430.60000002384186,
+        "ttfbCount": 6
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/anatomy-of-a-franklin-project",
+    "pageviews": 1200,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 1200,
+        "lcp": 2179,
+        "lcpCount": 4,
+        "cls": 0.00016292810624583885,
+        "clsCount": 4,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 361.8999999985099,
+        "ttfbCount": 4
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/indexing",
+    "pageviews": 1000,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 900,
+        "lcp": null,
+        "lcpCount": 0,
+        "cls": null,
+        "clsCount": 0,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": null,
+        "ttfbCount": 0
+      },
+      {
+        "deviceType": "mobile",
+        "pageviews": 100,
+        "lcp": null,
+        "lcpCount": 0,
+        "cls": null,
+        "clsCount": 0,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 317,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/custom-headers",
+    "pageviews": 900,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 900,
+        "lcp": null,
+        "lcpCount": 0,
+        "cls": null,
+        "clsCount": 0,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 22.69999998807907,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/dev-collab-and-good-practices",
+    "pageviews": 700,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 700,
+        "lcp": 158.60000000149012,
+        "lcpCount": 1,
+        "cls": null,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 1,
+        "ttfb": 34.70000000298023,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/go-live-checklist",
+    "pageviews": 600,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 600,
+        "lcp": 75.5,
+        "lcpCount": 1,
+        "cls": null,
+        "clsCount": 1,
+        "inp": 8,
+        "inpCount": 1,
+        "ttfb": null,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/keeping-it-100",
+    "pageviews": 500,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 500,
+        "lcp": 300.90000009536743,
+        "lcpCount": 2,
+        "cls": 0.008511456923948437,
+        "clsCount": 2,
+        "inp": 24,
+        "inpCount": 2,
+        "ttfb": 54.09999990463257,
+        "ttfbCount": 2
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/tools/sidekick/",
+    "pageviews": 410,
+    "organic": 100,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 410,
+        "lcp": 2756.899999856949,
+        "lcpCount": 1,
+        "cls": 0.0004926924960464029,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 756.8999998569489,
+        "ttfbCount": 2
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/placeholders",
+    "pageviews": 403,
+    "organic": 1,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 403,
+        "lcp": 857.5,
+        "lcpCount": 2,
+        "cls": 0.0033961481968127383,
+        "clsCount": 2,
+        "inp": 24,
+        "inpCount": 2,
+        "ttfb": 330,
+        "ttfbCount": 2
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/byo-cdn-cloudflare-worker-setup",
+    "pageviews": 400,
+    "organic": 200,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 400,
+        "lcp": 483.69999998807907,
+        "lcpCount": 1,
+        "cls": null,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 155.69999998807907,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/davidsmodel",
+    "pageviews": 300,
+    "organic": 200,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 300,
+        "lcp": 1631,
+        "lcpCount": 3,
+        "cls": 1,
+        "clsCount": 3,
+        "inp": 24,
+        "inpCount": 2,
+        "ttfb": 1050.699999999255,
+        "ttfbCount": 3
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/setup-customer-sharepoint",
+    "pageviews": 300,
+    "organic": 100,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 300,
+        "lcp": 361.09999999403954,
+        "lcpCount": 1,
+        "cls": 0.00017381700304902785,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 12.899999976158142,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/sidekick",
+    "pageviews": 200,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 200,
+        "lcp": null,
+        "lcpCount": 0,
+        "cls": null,
+        "clsCount": 0,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 18,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/web-components",
+    "pageviews": 200,
+    "organic": 200,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 200,
+        "lcp": 612.2000000476837,
+        "lcpCount": 1,
+        "cls": 0.00007814911374216038,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 273.4000000357628,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/authentication-setup-site",
+    "pageviews": 200,
+    "organic": 100,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 200,
+        "lcp": 639.1999999284744,
+        "lcpCount": 1,
+        "cls": null,
+        "clsCount": 1,
+        "inp": 8,
+        "inpCount": 1,
+        "ttfb": 3245,
+        "ttfbCount": 2
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/rum",
+    "pageviews": 200,
+    "organic": 100,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 200,
+        "lcp": 1003,
+        "lcpCount": 2,
+        "cls": null,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 1,
+        "ttfb": 344,
+        "ttfbCount": 2
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/block-collection/section-metadata",
+    "pageviews": 200,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 200,
+        "lcp": null,
+        "lcpCount": 0,
+        "cls": null,
+        "clsCount": 0,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 274.10000002384186,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/vip/intake",
+    "pageviews": 200,
+    "organic": 200,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 200,
+        "lcp": 28,
+        "lcpCount": 1,
+        "cls": null,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 1,
+        "ttfb": null,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/sidekick-extension",
+    "pageviews": 110,
+    "organic": 100,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 110,
+        "lcp": 433.70000000298023,
+        "lcpCount": 1,
+        "cls": null,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 1,
+        "ttfb": 334.30000000447035,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/docs/rum",
+    "pageviews": 110,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 110,
+        "lcp": 78.79999995231628,
+        "lcpCount": 1,
+        "cls": null,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 12.100000023841858,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/block-collection/breadcrumbs",
+    "pageviews": 100,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 100,
+        "lcp": 45.39999997615814,
+        "lcpCount": 1,
+        "cls": 0.000014899872841139986,
+        "clsCount": 1,
+        "inp": 24,
+        "inpCount": 1,
+        "ttfb": 9.100000023841858,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/block-collection/headings",
+    "pageviews": 100,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 100,
+        "lcp": null,
+        "lcpCount": 0,
+        "cls": null,
+        "clsCount": 0,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 288.10000002384186,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/github-actions",
+    "pageviews": 100,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 100,
+        "lcp": null,
+        "lcpCount": 0,
+        "cls": null,
+        "clsCount": 0,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 56.59999999962747,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/importer",
+    "pageviews": 100,
+    "organic": 100,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 100,
+        "lcp": 1345.7999999523163,
+        "lcpCount": 1,
+        "cls": 0.07786671987900227,
+        "clsCount": 1,
+        "inp": 56,
+        "inpCount": 1,
+        "ttfb": 118.89999997615814,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/configuring-aem-assets-sidekick-plugin",
+    "pageviews": 100,
+    "organic": 100,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 100,
+        "lcp": null,
+        "lcpCount": 0,
+        "cls": null,
+        "clsCount": 0,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 22,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/tools/rum/list.html",
+    "pageviews": 100,
+    "organic": 0,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 100,
+        "lcp": 1182.5,
+        "lcpCount": 1,
+        "cls": null,
+        "clsCount": 1,
+        "inp": 8,
+        "inpCount": 1,
+        "ttfb": 433.2999997138977,
+        "ttfbCount": 1
+      }
+    ]
+  },
+  {
+    "type": "url",
+    "url": "https://www.aem.live/developer/forms",
+    "pageviews": 100,
+    "organic": 100,
+    "metrics": [
+      {
+        "deviceType": "desktop",
+        "pageviews": 100,
+        "lcp": 954,
+        "lcpCount": 1,
+        "cls": 0.0005954693086687166,
+        "clsCount": 1,
+        "inp": null,
+        "inpCount": 0,
+        "ttfb": 190.09999999403954,
+        "ttfbCount": 1
+      }
+    ]
+  }
+]

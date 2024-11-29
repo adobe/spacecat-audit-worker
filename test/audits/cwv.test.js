@@ -16,8 +16,10 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { CWVRunner } from '../../src/cwv/handler.js';
-import { rumData } from '../fixtures/rum-data.js';
+import { CWVRunner, convertToOppty } from '../../src/cwv/handler.js';
+import expectedOppty from '../fixtures/cwv/oppty.json' assert { type: 'json' };
+import suggestions from '../fixtures/cwv/suggestions.json' assert { type: 'json' };
+import rumData from '../fixtures/cwv/cwv.json' assert { type: 'json' };
 
 use(sinonChai);
 
@@ -31,7 +33,7 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   interval: 7,
   granularity: 'hourly',
 };
-const HANDLER_NAME = 'cwv';
+const AUDIT_TYPE = 'cwv';
 
 describe('CWVRunner Tests', () => {
   const groupedURLs = [{ test: 'test' }];
@@ -49,6 +51,7 @@ describe('CWVRunner Tests', () => {
     rumApiClient: {
       query: sandbox.stub().resolves(rumData),
     },
+    dataAccess: {},
   };
 
   beforeEach('setup', () => {
@@ -67,12 +70,12 @@ describe('CWVRunner Tests', () => {
   });
 
   it('cwv audit runs rum api client cwv query', async () => {
-    const result = await CWVRunner('www.spacecat.com', context, site);
+    const result = await CWVRunner(auditUrl, context, site);
 
-    expect(siteConfig.getGroupedURLs.calledWith(HANDLER_NAME)).to.be.true;
+    expect(siteConfig.getGroupedURLs.calledWith(AUDIT_TYPE)).to.be.true;
     expect(
       context.rumApiClient.query.calledWith(
-        HANDLER_NAME,
+        AUDIT_TYPE,
         {
           ...DOMAIN_REQUEST_DEFAULT_PARAMS,
           groupedURLs,
@@ -88,6 +91,96 @@ describe('CWVRunner Tests', () => {
         },
       },
       fullAuditRef: auditUrl,
+    });
+  });
+
+  describe('CWV audit to oppty conversion', () => {
+    let addSuggestionsResponse;
+    let oppty;
+    let auditData;
+
+    beforeEach(() => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub(),
+        create: sandbox.stub(),
+      };
+
+      addSuggestionsResponse = {
+        createdItems: [],
+        errorItems: [],
+      };
+
+      oppty = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'oppty-id',
+        getSiteId: () => 'site-id',
+        addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
+        getSuggestions: sandbox.stub().resolves([]),
+        setAuditId: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      auditData = {
+        siteId: 'site-id',
+        id: 'audit-id',
+        isLive: true,
+        auditedAt: new Date().toISOString(),
+        auditType: AUDIT_TYPE,
+        auditResult: {
+          cwv: rumData.filter((data) => data.pageviews >= 7000),
+          auditContext: {
+            interval: 7,
+          },
+        },
+        fullAuditRef: auditUrl,
+      };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('creates a new opportunity object', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+
+      await convertToOppty(auditUrl, auditData, context);
+
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
+
+      // make sure that newly oppty has all 4 new suggestions
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+    });
+
+    it('updates the existing opportunity object', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
+      const existingSuggestions = suggestions.map((suggestion) => ({
+        ...suggestion,
+        opportunityId: oppty.getId(),
+        remove: sinon.stub(),
+        save: sinon.stub(),
+        setData: sinon.stub(),
+      }));
+      oppty.getSuggestions.resolves(existingSuggestions);
+
+      await convertToOppty(auditUrl, auditData, context);
+
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');
+      expect(oppty.save).to.have.been.calledOnce;
+
+      // make sure that 1 old suggestion is removed
+      expect(existingSuggestions[0].remove).to.have.been.calledOnce;
+
+      // make sure that 1 existing suggestion is updated
+      expect(existingSuggestions[1].save).to.have.been.calledOnce;
+
+      // make sure that 3 new suggestions are created
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
     });
   });
 });

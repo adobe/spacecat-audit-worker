@@ -45,7 +45,7 @@ export async function CWVRunner(auditUrl, context, site) {
   };
 }
 
-async function convertToOppty(auditUrl, auditData, context) {
+export async function convertToOppty(auditUrl, auditData, context) {
   const {
     dataAccess,
     log,

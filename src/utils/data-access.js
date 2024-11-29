@@ -69,7 +69,7 @@ export async function syncSuggestions({
   await Promise.all(
     existingSuggestions
       .filter((existing) => {
-        const existingKey = buildKey(existing);
+        const existingKey = buildKey(existing.data);
         return newDataKeys.has(existingKey);
       })
       .map((existing) => {
