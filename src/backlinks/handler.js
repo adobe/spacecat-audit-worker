@@ -176,7 +176,7 @@ export default async function auditBrokenBacklinks(message, context) {
               'Publish the changes.',
             ],
           },
-          tags: ['traffic-acquisition'],
+          tags: ['Traffic acquisition'],
         };
 
         brokenBacklinksOppty = await dataAccess.Opportunity.create(opportunityData);

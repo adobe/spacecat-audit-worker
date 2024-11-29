@@ -105,7 +105,7 @@ describe('data-access', () => {
       });
 
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
-      expect(buildKey.callCount).to.equal(12);
+      expect(buildKey.callCount).to.equal(14);
       expect(mapNewSuggestion.callCount).to.equal(2);
       expect(mockOpportunity.addSuggestions).to.have.been.calledOnceWith(newData);
       expect(mockLogger.error).to.not.have.been.called;
