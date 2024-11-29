@@ -65,6 +65,20 @@ export async function syncSuggestions({
       .map((suggestion) => suggestion.remove()),
   );
 
+  // Update existing suggestions
+  await Promise.all(
+    existingSuggestions
+      .filter((existing) => {
+        const existingKey = buildKey(existing);
+        return newDataKeys.has(existingKey);
+      })
+      .map((existing) => {
+        const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing));
+        existing.setData(newDataItem);
+        return existing.save();
+      }),
+  );
+
   // Prepare new suggestions
   const newSuggestions = newData
     .filter((data) => !existingSuggestions.some(

@@ -111,6 +111,31 @@ describe('data-access', () => {
       expect(mockLogger.error).to.not.have.been.called;
     });
 
+    it('should update suggestions when they are detected again', async () => {
+      const existingSuggestions = [{
+        id: '1', title: 'old title', setData: sinon.stub(), save: sinon.stub(),
+      }, { id: '2', title: 'same title', remove: sinon.stub() }];
+      const newData = [{ id: '1', title: 'new title' }];
+      const buildKey = sinon.stub().callsFake((item) => item.id);
+      const mapNewSuggestion = sinon.stub().callsFake((item) => item);
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        log: mockLogger,
+      });
+
+      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+      expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
+      expect(existingSuggestions[0].save).to.have.been.calledOnce;
+      expect(existingSuggestions[1].remove).to.have.been.calledOnce;
+    });
+
     it('should log errors if there are items with errors', async () => {
       const existingSuggestions = [{ id: '1', remove: sinon.stub() }];
       const newData = [{ id: '2' }];
