@@ -48,7 +48,7 @@ export async function formsAuditRunner(auditUrl, context, site) {
       .map((formVital) => {
         const cwvData = cwvMap.get(formVital.url);
         const filteredCwvData = cwvData
-          ? Object.fromEntries(Object.entries(cwvData).filter(([key]) => key !== 'url' && key !== 'pageviews'))
+          ? Object.fromEntries(Object.entries(cwvData).filter(([key]) => key !== 'url' && key !== 'pageviews' && key !== 'type'))
           : {};
         return {
           ...formVital,
