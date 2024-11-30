@@ -14,9 +14,11 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 const INTERVAL = 30; // days
 const DAILY_PAGEVIEW_THRESHOLD = 100;
+const AUDIT_TYPE = 'broken-internal-links';
 
 /**
  * Determines if the URL has the same host as the current host.
@@ -106,7 +108,67 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
   };
 }
 
+async function convertToOpportunity(auditUrl, auditData, context) {
+  const {
+    dataAccess,
+    log,
+  } = context;
+
+  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+
+  if (!opportunity) {
+    const opportunityData = {
+      siteId: auditData.siteId,
+      auditId: auditData.id,
+      runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
+      type: AUDIT_TYPE,
+      origin: 'AUTOMATION',
+      title: 'Broken Internal Links',
+      description: 'Broken internal links can significantly harm website\'s SEO by preventing search engines from properly indexing site, potentially reducing search rankings',
+      guidance: {
+        steps: [
+          'Update each broken internal link to valid URLs.',
+          'Test the implemented changes manually to ensure they are working as expected.',
+          'Monitor internal links for 404 errors in RUM tool over time to ensure they are functioning correctly.',
+        ],
+      },
+      tags: [
+        'SEO',
+        'Web indexing',
+        'Web crawling',
+        'User Experience',
+        'Organic Traffic',
+      ],
+    };
+    opportunity = await dataAccess.Opportunity.create(opportunityData);
+  } else {
+    opportunity.setAuditId(auditData.id);
+    await opportunity.save();
+  }
+
+  const buildKey = (data) => `${data.siteId}|${data.auditResult.brokenInternalLinks.map((item) => item.url_to)};}`;
+
+  // Sync suggestions
+  await syncSuggestions({
+    opportunity,
+    newData: auditData?.auditResult?.brokenInternalLinks || [],
+    buildKey,
+    mapNewSuggestion: (entry) => ({
+      opportunityId: opportunity.getId(),
+      type: 'CODE_CHANGE',
+      rank: entry.traffic_domain,
+      data: {
+        ...entry,
+        suggestedLink: '', // suggested links would be implemented in future
+      },
+    }),
+    log,
+  });
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(internalLinksAuditRunner)
+  .withPostProcessors([convertToOpportunity])
   .build();
