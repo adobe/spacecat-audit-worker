@@ -1,3 +1,10 @@
+## [1.36.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.0...v1.36.1) (2024-11-30)
+
+
+### Bug Fixes
+
+* handling cwv grouping changes and remove type key ([#499](https://github.com/adobe/spacecat-audit-worker/issues/499)) ([70cf629](https://github.com/adobe/spacecat-audit-worker/commit/70cf62979b5423c92d14f1d74dcb7cb372b1ba33))
+
 # [1.36.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.35.0...v1.36.0) (2024-11-29)
 
 
