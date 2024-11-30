@@ -57,7 +57,7 @@ export async function syncSuggestions({
 }) {
   const newDataKeys = new Set(newData.map(buildKey));
   const existingSuggestions = await opportunity.getSuggestions();
-  log.info(`Suggestion sample backlink: ${existingSuggestions.length},\n ${existingSuggestions.url_from}|${existingSuggestions.url_to} \n ${JSON.stringify(existingSuggestions[0])}`);
+  log.info(`Suggestion sample backlink: ${existingSuggestions.length},\n ${existingSuggestions[0] ? existingSuggestions[0].url_from : ''}|${existingSuggestions[0] ? existingSuggestions[0].url_to : ''} \n ${existingSuggestions[0] ? existingSuggestions[0].data : ''} \n${JSON.stringify(existingSuggestions[0])}`);
   // Remove outdated suggestions
   await Promise.all(
     existingSuggestions
