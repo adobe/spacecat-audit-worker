@@ -6,14 +6,21 @@
     "formVitals": [
       {
         "cwv": {
-          "cls": 0.006370692308102836,
-          "clsCount": 49,
-          "inp": 142,
-          "inpCount": 46,
-          "lcp": 3797.25,
-          "lcpCount": 64,
-          "ttfb": 1542.25,
-          "ttfbCount": 184
+          "metrics": [
+            {
+              "cls": 0.006370692308102836,
+              "clsCount": 49,
+              "deviceType": "desktop",
+              "inp": 142,
+              "inpCount": 46,
+              "lcp": 3797.25,
+              "lcpCount": 64,
+              "pageviews": 27890,
+              "ttfb": 1542.25,
+              "ttfbCount": 184
+            }
+          ],
+          "type": "url"
         },
         "formengagement": {
           "desktop:windows": 100
@@ -27,14 +34,21 @@
       },
       {
         "cwv": {
-          "cls": 0.006370692308102836,
-          "clsCount": 49,
-          "inp": 142,
-          "inpCount": 46,
-          "lcp": 3797.25,
-          "lcpCount": 64,
-          "ttfb": 1542.25,
-          "ttfbCount": 184
+          "metrics": [
+            {
+              "cls": 0.006370692308102836,
+              "clsCount": 49,
+              "deviceType": "desktop",
+              "inp": 142,
+              "inpCount": 46,
+              "lcp": 3797.25,
+              "lcpCount": 64,
+              "pageviews": 27890,
+              "ttfb": 1542.25,
+              "ttfbCount": 184
+            }
+          ],
+          "type": "url"
         },
         "formengagement": {},
         "formsubmit": {},
@@ -65,14 +79,21 @@
       },
       {
         "cwv": {
-          "cls": 0.0036327945232344965,
-          "clsCount": 31,
-          "inp": 40,
-          "inpCount": 19,
-          "lcp": 1239,
-          "lcpCount": 45,
-          "ttfb": 477,
-          "ttfbCount": 79
+          "metrics": [
+            {
+              "cls": 0.0036327945232344965,
+              "clsCount": 31,
+              "deviceType": "desktop",
+              "inp": 40,
+              "inpCount": 19,
+              "lcp": 1239,
+              "lcpCount": 45,
+              "pageviews": 11910,
+              "ttfb": 477,
+              "ttfbCount": 79
+            }
+          ],
+          "type": "url"
         },
         "formengagement": {
           "desktop:windows": 200

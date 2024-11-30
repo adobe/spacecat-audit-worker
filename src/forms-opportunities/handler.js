@@ -34,7 +34,9 @@ export async function formsAuditRunner(auditUrl, context, site) {
 
   const queryResults = await rumAPIClient.queryMulti(FORMS_OPPTY_QUERIES, options);
   const cwvMap = new Map(
-    queryResults.cwv.map((cwv) => [cwv.url, cwv]),
+    queryResults.cwv
+      .filter((cwv) => cwv.type === 'url')
+      .map((cwv) => [cwv.url, cwv]),
   );
 
   const auditResult = {
