@@ -19,8 +19,7 @@
               "ttfb": 1542.25,
               "ttfbCount": 184
             }
-          ],
-          "type": "url"
+          ]
         },
         "formengagement": {
           "desktop:windows": 100
@@ -47,8 +46,7 @@
               "ttfb": 1542.25,
               "ttfbCount": 184
             }
-          ],
-          "type": "url"
+          ]
         },
         "formengagement": {},
         "formsubmit": {},
@@ -92,8 +90,7 @@
               "ttfb": 477,
               "ttfbCount": 79
             }
-          ],
-          "type": "url"
+          ]
         },
         "formengagement": {
           "desktop:windows": 200
