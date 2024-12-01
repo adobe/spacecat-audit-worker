@@ -119,11 +119,12 @@ async function updateRecommendations(oppty, context, site) {
     // eslint-disable-next-line no-await-in-loop
     const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
     log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
-    const lambdaResponseBody = lambdaResponse.body;
+    const lambdaResponseBody = typeof lambdaResponse.body === 'string'
+      ? JSON.parse(lambdaResponse.body)
+      : lambdaResponse.body;
     lambdaResult = lambdaResponseBody ? lambdaResponseBody.result : null;
     if (!lambdaResult) {
       log.error('Invalid lambda result body:', lambdaResponseBody);
-      log.error('Invalid lambda result:', lambdaResult);
       return;
     }
   } catch (error) {
