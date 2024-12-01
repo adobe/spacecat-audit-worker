@@ -123,8 +123,8 @@ async function updateRecommendations(oppty, context, site) {
       ? JSON.parse(lambdaResponse.body)
       : lambdaResponse.body;
     lambdaResult = lambdaResponseBody ? lambdaResponseBody.result : null;
-    if (!lambdaResult) {
-      log.error('Invalid lambda result body:', lambdaResponseBody);
+    if (!lambdaResult || lambdaResult.error) {
+      log.error('Error in LLM insights. LLM Response body:', lambdaResponseBody);
       return;
     }
   } catch (error) {
