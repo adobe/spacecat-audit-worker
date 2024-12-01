@@ -1,3 +1,10 @@
+## [1.36.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.2...v1.36.3) (2024-12-01)
+
+
+### Bug Fixes
+
+* handle error from llm response while updating recommendations in opportunities ([#495](https://github.com/adobe/spacecat-audit-worker/issues/495)) ([e7d49ee](https://github.com/adobe/spacecat-audit-worker/commit/e7d49eed4f423ae0c79b6f05561072ce03019660))
+
 ## [1.36.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.1...v1.36.2) (2024-11-30)
 
 
