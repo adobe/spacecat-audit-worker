@@ -109,7 +109,7 @@ export async function convertToOppty(auditUrl, auditData, context) {
       //   plus the organic for the group
       // 2. if the entry is a URL, then the rank is the max organic for URLs
       // Reason is because UI first shows groups and then URLs
-      rank: entry.type === 'group' ? maxOrganicForUrls + entry.organic : entry.pageviews,
+      rank: entry.type === 'group' ? maxOrganicForUrls + entry.organic : entry.organic,
       data: {
         ...entry,
       },
