@@ -124,8 +124,8 @@ async function convertToOpportunity(auditUrl, auditData, context) {
       runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
       type: AUDIT_TYPE,
       origin: 'AUTOMATION',
-      title: 'Broken Internal Links',
-      description: 'Broken internal links can significantly harm website\'s SEO by preventing search engines from properly indexing site, potentially reducing search rankings',
+      title: 'Broken internal links found',
+      description: 'We\'ve detected broken internal links on your website. Broken links can negatively impact user experience and SEO. Please review and fix these links to ensure smooth navigation and accessibility.',
       guidance: {
         steps: [
           'Update each broken internal link to valid URLs.',
@@ -134,11 +134,8 @@ async function convertToOpportunity(auditUrl, auditData, context) {
         ],
       },
       tags: [
-        'SEO',
-        'Web indexing',
-        'Web crawling',
-        'User Experience',
-        'Organic Traffic',
+        'Traffic acquisition',
+        'Engagement',
       ],
     };
     opportunity = await dataAccess.Opportunity.create(opportunityData);
@@ -147,7 +144,7 @@ async function convertToOpportunity(auditUrl, auditData, context) {
     await opportunity.save();
   }
 
-  const buildKey = (data) => `${data.siteId}|${data.auditResult.brokenInternalLinks.map((item) => `${item.url_from}-${item.url_to}`)};}`;
+  const buildKey = (data) => `${data.auditResult.brokenInternalLinks.map((item) => `${item.url_from}-${item.url_to}`)};}`;
 
   // Sync suggestions
   await syncSuggestions({
@@ -156,11 +153,12 @@ async function convertToOpportunity(auditUrl, auditData, context) {
     buildKey,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
-      type: 'CODE_CHANGE',
+      type: 'CONTENT_UPDATE',
       rank: entry.traffic_domain,
       data: {
         ...entry,
-        suggestedLink: '', // suggested links would be implemented in future
+        /* code commented until implementation of suggested links. TODO: implement suggestions */
+        // suggestedLink: 'some suggestion here',
       },
     }),
     log,
