@@ -1,3 +1,10 @@
+## [1.36.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.3...v1.36.4) (2024-12-02)
+
+
+### Bug Fixes
+
+* syncSuggestions buildKey usage ([#502](https://github.com/adobe/spacecat-audit-worker/issues/502)) ([5071da1](https://github.com/adobe/spacecat-audit-worker/commit/5071da145f91c6714cac8fb43135d7d0d049871c))
+
 ## [1.36.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.2...v1.36.3) (2024-12-01)
 
 
