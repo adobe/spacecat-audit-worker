@@ -74,6 +74,16 @@ describe('data-access', () => {
     let mockOpportunity;
     let mockLogger;
 
+    const buildKey = (data) => `${data.key}`;
+    const mapNewSuggestion = (data) => ({
+      opportunityId: '123',
+      type: 'TYPE',
+      rank: 123,
+      data: {
+        key: data.key,
+      },
+    });
+
     beforeEach(() => {
       mockOpportunity = {
         getSuggestions: sinon.stub(),
@@ -88,10 +98,8 @@ describe('data-access', () => {
     });
 
     it('should remove outdated suggestions and add new ones', async () => {
-      const existingSuggestions = [{ id: '1', remove: sinon.stub() }, { id: '2', remove: sinon.stub() }];
-      const newData = [{ id: '3' }, { id: '4' }];
-      const buildKey = sinon.stub().callsFake((item) => item.id);
-      const mapNewSuggestion = sinon.stub().callsFake((item) => item);
+      const existingSuggestions = [{ id: '1', data: { key: '1' }, remove: sinon.stub() }, { id: '2', data: { key: '2' }, remove: sinon.stub() }];
+      const newData = [{ key: '3' }, { key: '4' }];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
       mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
@@ -105,19 +113,29 @@ describe('data-access', () => {
       });
 
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
-      expect(buildKey.callCount).to.equal(14);
-      expect(mapNewSuggestion.callCount).to.equal(2);
-      expect(mockOpportunity.addSuggestions).to.have.been.calledOnceWith(newData);
+      expect(mockOpportunity.addSuggestions).to.have.been.calledOnceWith([{
+        opportunityId: '123',
+        type: 'TYPE',
+        rank: 123,
+        data: {
+          key: '3',
+        },
+      }, {
+        opportunityId: '123',
+        type: 'TYPE',
+        rank: 123,
+        data: {
+          key: '4',
+        },
+      }]);
       expect(mockLogger.error).to.not.have.been.called;
     });
 
     it('should update suggestions when they are detected again', async () => {
       const existingSuggestions = [{
-        id: '1', title: 'old title', setData: sinon.stub(), save: sinon.stub(),
-      }, { id: '2', title: 'same title', remove: sinon.stub() }];
-      const newData = [{ id: '1', title: 'new title' }];
-      const buildKey = sinon.stub().callsFake((item) => item.id);
-      const mapNewSuggestion = sinon.stub().callsFake((item) => item);
+        id: '1', data: { key: '1', title: 'old title' }, setData: sinon.stub(), save: sinon.stub(),
+      }, { id: '2', data: { key: '2', title: 'same title' }, remove: sinon.stub() }];
+      const newData = [{ key: '1', title: 'new title' }];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
       mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
@@ -137,10 +155,8 @@ describe('data-access', () => {
     });
 
     it('should log errors if there are items with errors', async () => {
-      const existingSuggestions = [{ id: '1', remove: sinon.stub() }];
+      const existingSuggestions = [{ id: '1', data: { key: '1' }, remove: sinon.stub() }];
       const newData = [{ id: '2' }];
-      const buildKey = sinon.stub().callsFake((item) => item.id);
-      const mapNewSuggestion = sinon.stub().callsFake((item) => item);
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
       mockOpportunity.addSuggestions.resolves({
@@ -166,10 +182,8 @@ describe('data-access', () => {
     });
 
     it('should throw an error if all items fail to be created', async () => {
-      const existingSuggestions = [{ id: '1', remove: sinon.stub() }];
+      const existingSuggestions = [{ id: '1', data: { key: '1' }, remove: sinon.stub() }];
       const newData = [{ id: '2' }];
-      const buildKey = sinon.stub().callsFake((item) => item.id);
-      const mapNewSuggestion = sinon.stub().callsFake((item) => item);
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
       mockOpportunity.addSuggestions.resolves({

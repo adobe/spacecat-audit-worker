@@ -61,7 +61,7 @@ export async function syncSuggestions({
   // Remove outdated suggestions
   await Promise.all(
     existingSuggestions
-      .filter((existing) => !newDataKeys.has(buildKey(existing)))
+      .filter((existing) => !newDataKeys.has(buildKey(existing.data)))
       .map((suggestion) => suggestion.remove()),
   );
 
