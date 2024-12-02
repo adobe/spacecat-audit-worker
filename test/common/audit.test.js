@@ -225,7 +225,9 @@ describe('Audit tests', () => {
       context.sqs.sendMessage.resolves();
 
       const postProcessors = [
-        sandbox.stub().resolves(), sandbox.stub().resolves(),
+        sandbox.stub().resolves(),
+        sandbox.stub().rejects(new Error('some nasty error')),
+        sandbox.stub().resolves(),
       ];
 
       nock(baseURL)
@@ -248,11 +250,9 @@ describe('Audit tests', () => {
         .withPostProcessors(postProcessors)
         .build();
 
-      const resp = await audit.run(message, context);
+      await expect(audit.run(message, context)).to.be.rejectedWith('some nasty error');
 
       // Assert
-      expect(resp.status).to.equal(200);
-
       expect(context.dataAccess.addAudit).to.have.been.calledOnce;
       const auditData = {
         siteId: site.getId(),
@@ -278,6 +278,8 @@ describe('Audit tests', () => {
       expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);
       expect(postProcessors[0]).to.have.been.calledWith(finalUrl, auditData);
       expect(postProcessors[1]).to.have.been.calledWith(finalUrl, auditData);
+      expect(postProcessors[2]).to.not.have.been.called;
+      expect(context.log.error).to.have.been.calledOnceWith('Post processor functionStub failed for dummy audit failed for site site-id. Reason: some nasty error');
     });
   });
 
