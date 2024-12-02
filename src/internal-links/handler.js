@@ -147,7 +147,7 @@ async function convertToOpportunity(auditUrl, auditData, context) {
     await opportunity.save();
   }
 
-  const buildKey = (data) => `${data.siteId}|${data.auditResult.brokenInternalLinks.map((item) => item.url_to)};}`;
+  const buildKey = (data) => `${data.siteId}|${data.auditResult.brokenInternalLinks.map((item) => `${item.url_from}-${item.url_to}`)};}`;
 
   // Sync suggestions
   await syncSuggestions({
