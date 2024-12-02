@@ -57,6 +57,9 @@ export async function convertToOppty(auditUrl, auditData, context) {
   const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
   let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
 
+  log.info(`opportunities: ${JSON.stringify(opportunities)}`);
+  log.info(`opportunity: ${JSON.stringify(opportunity)}`);
+
   if (!opportunity) {
     const opportunityData = {
       siteId: auditData.siteId,
