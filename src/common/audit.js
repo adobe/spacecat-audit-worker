@@ -134,7 +134,7 @@ export class Audit {
           // eslint-disable-next-line no-await-in-loop
           await postProcessor(finalUrl, auditData, context);
         } catch (e) {
-          log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}`);
+          log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(auditData)}`);
           throw e;
         }
       }

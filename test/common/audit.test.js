@@ -279,7 +279,7 @@ describe('Audit tests', () => {
       expect(postProcessors[0]).to.have.been.calledWith(finalUrl, auditData);
       expect(postProcessors[1]).to.have.been.calledWith(finalUrl, auditData);
       expect(postProcessors[2]).to.not.have.been.called;
-      expect(context.log.error).to.have.been.calledOnceWith('Post processor functionStub failed for dummy audit failed for site site-id. Reason: some nasty error');
+      expect(context.log.error).to.have.been.calledOnceWith(`Post processor functionStub failed for dummy audit failed for site site-id. Reason: some nasty error.\nAudit data: ${JSON.stringify(auditData)}`);
     });
   });
 
