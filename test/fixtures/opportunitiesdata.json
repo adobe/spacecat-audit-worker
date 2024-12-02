@@ -60,6 +60,21 @@
           "percentage": 8.771929824561402
         }
       ]
+    },
+    {
+      "type": "rageclick",
+      "page": "https://abc.com/dummy-page",
+      "screenshot": "",
+      "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
+      "trackedPageKPIValue": 2.771929824561402,
+      "pageViews": 100,
+      "samples": 1,
+      "metrics": [
+        {
+          "type": "click",
+          "selector": "undefined"
+        }
+      ]
     }
   ],
   "high-organic-low-ctr": [{
