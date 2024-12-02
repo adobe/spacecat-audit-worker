@@ -74,7 +74,10 @@ export async function syncSuggestions({
       })
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.data));
-        existing.setData(newDataItem);
+        existing.setData({
+          ...existing.getData(),
+          ...newDataItem,
+        });
         return existing.save();
       }),
   );

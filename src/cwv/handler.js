@@ -100,7 +100,6 @@ export async function convertToOppty(auditUrl, auditData, context) {
       rank: entry.pageviews,
       data: {
         ...entry,
-        text: '', // suggestion text to be filled by back office UI
       },
     }),
     log,

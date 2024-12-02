@@ -132,9 +132,18 @@ describe('data-access', () => {
     });
 
     it('should update suggestions when they are detected again', async () => {
+      const data1 = { key: '1', title: 'old title' };
       const existingSuggestions = [{
-        id: '1', data: { key: '1', title: 'old title' }, setData: sinon.stub(), save: sinon.stub(),
-      }, { id: '2', data: { key: '2', title: 'same title' }, remove: sinon.stub() }];
+        id: '1',
+        data: data1,
+        getData: sinon.stub().returns(data1),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+      }, {
+        id: '2',
+        data: { key: '2', title: 'same title' },
+        remove: sinon.stub(),
+      }];
       const newData = [{ key: '1', title: 'new title' }];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);

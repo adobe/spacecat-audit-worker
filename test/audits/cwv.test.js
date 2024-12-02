@@ -177,6 +177,7 @@ describe('CWVRunner Tests', () => {
         opportunityId: oppty.getId(),
         remove: sinon.stub(),
         save: sinon.stub(),
+        getData: () => (suggestion.data),
         setData: sinon.stub(),
       }));
       oppty.getSuggestions.resolves(existingSuggestions);
@@ -191,6 +192,7 @@ describe('CWVRunner Tests', () => {
       expect(existingSuggestions[0].remove).to.have.been.calledOnce;
 
       // make sure that 1 existing suggestion is updated
+      expect(existingSuggestions[1].setData).to.have.been.calledOnceWith(suggestions[1].data);
       expect(existingSuggestions[1].save).to.have.been.calledOnce;
 
       // make sure that 3 new suggestions are created
