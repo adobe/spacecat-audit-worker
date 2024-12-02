@@ -95,6 +95,7 @@ export async function convertToOppty(auditUrl, auditData, context) {
 
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
+  const maxOrganicForUrls = Math.max(...auditData.auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews));
 
   await syncSuggestions({
     opportunity,
@@ -103,7 +104,12 @@ export async function convertToOppty(auditUrl, auditData, context) {
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CODE_CHANGE',
-      rank: entry.pageviews,
+      // the rank logic for CWV is as follows:
+      // 1. if the entry is a group, then the rank is the max organic for URLs
+      //   plus the organic for the group
+      // 2. if the entry is a URL, then the rank is the max organic for URLs
+      // Reason is because UI first shows groups and then URLs
+      rank: entry.type === 'group' ? maxOrganicForUrls + entry.organic : entry.pageviews,
       data: {
         ...entry,
       },
