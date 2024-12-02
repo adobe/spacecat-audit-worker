@@ -235,6 +235,8 @@ describe('Backlinks Tests', function () {
         traffic_domain: 5000,
       },
       remove: sinon.stub(),
+      setData: sinon.stub(),
+      save: sinon.stub(),
     }];
 
     brokenBacklinkExistingSuggestions[0].remove.resolves();
@@ -314,6 +316,8 @@ describe('Backlinks Tests', function () {
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
+    brokenBacklinkExistingSuggestions[0].setData.returns();
+    brokenBacklinkExistingSuggestions[0].save.resolves();
 
     nock(siteWithExcludedUrls.getBaseURL())
       .get(/.*/)
@@ -327,6 +331,9 @@ describe('Backlinks Tests', function () {
 
     expect(response.status).to.equal(204);
     expect(mockDataAccess.addAudit).to.have.been.calledOnce;
+    expect(brokenBacklinkExistingSuggestions[0].setData).to.have.been.calledOnceWith(
+      brokenBacklinkExistingSuggestions[0].data,
+    );
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     expect(context.sqs.sendMessage).to.have.been.calledWith(
       context.env.AUDIT_RESULTS_QUEUE_URL,
