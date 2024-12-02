@@ -102,6 +102,11 @@ describe('CWVRunner Tests', () => {
     let auditData;
 
     beforeEach(() => {
+      context.log = {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+      };
+
       context.dataAccess.Opportunity = {
         allBySiteIdAndStatus: sandbox.stub(),
         create: sandbox.stub(),
@@ -159,7 +164,6 @@ describe('CWVRunner Tests', () => {
     it('creating a new opportunity object fails', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
-      context.log = { error: sandbox.stub() };
 
       await expect(convertToOppty(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
 
