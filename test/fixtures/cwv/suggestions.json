@@ -21,8 +21,10 @@
     "type":"CODE_CHANGE",
     "rank":9620,
     "data":{
-      "type":"url",
-      "url":"https://www.aem.live/home",
+      "type": "group",
+      "name": "Some pages",
+      "pattern": "https://www.aem.live/home/*",
+      "organic": 9620,
       "lcp":2099.699999988079,
       "lcpCount":9,
       "cls":0.020660136604802475,

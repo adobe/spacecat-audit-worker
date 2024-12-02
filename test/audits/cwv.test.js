@@ -15,6 +15,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { CWVRunner, convertToOppty } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' assert { type: 'json' };
@@ -22,6 +23,7 @@ import suggestions from '../fixtures/cwv/suggestions.json' assert { type: 'json'
 import rumData from '../fixtures/cwv/cwv.json' assert { type: 'json' };
 
 use(sinonChai);
+use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 
@@ -152,6 +154,20 @@ describe('CWVRunner Tests', () => {
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+    });
+
+    it('creating a new opportunity object fails', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
+      context.log = { error: sandbox.stub() };
+
+      await expect(convertToOppty(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
+
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
+      expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id and auditId audit-id: big error happened');
+
+      // make sure that no new suggestions are added
+      expect(oppty.addSuggestions).to.have.been.to.not.have.been.called;
     });
 
     it('updates the existing opportunity object', async () => {

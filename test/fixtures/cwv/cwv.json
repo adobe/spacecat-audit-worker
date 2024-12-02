@@ -1,7 +1,8 @@
 [
   {
-    "type": "url",
-    "url": "https://www.aem.live/home",
+    "type": "group",
+    "name": "Some pages",
+    "pattern": "https://www.aem.live/home/*",
     "pageviews": 9620,
     "organic": 1900,
     "metrics": [

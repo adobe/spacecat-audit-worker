@@ -72,15 +72,16 @@ export async function convertToOppty(auditUrl, auditData, context) {
         ],
       },
       tags: [
-        'SEO',
-        'Performance Optimization',
-        'User Experience',
-        'Core Web Vitals',
-        'Organic Traffic',
-        'Web Performance',
+        'Traffic acquisition',
+        'Engagement',
       ],
     };
-    opportunity = await dataAccess.Opportunity.create(opportunityData);
+    try {
+      opportunity = await dataAccess.Opportunity.create(opportunityData);
+    } catch (e) {
+      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
+      throw e;
+    }
   } else {
     opportunity.setAuditId(auditData.id);
     await opportunity.save();
