@@ -3,10 +3,10 @@
     "lcov",
     "text"
   ],
-  "check-coverage": false,
-  "lines": 100,
-  "branches": 100,
-  "statements": 100,
+  "check-coverage": true,
+  "lines": 99,
+  "branches": 99,
+  "statements": 99,
   "all": true,
   "include": [
     "src/**/*.js"

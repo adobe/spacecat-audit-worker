@@ -22,6 +22,7 @@ import {
   findSitemap,
   isSitemapContentValid,
   checkRobotsForSitemap, sitemapAuditRunner, fetchContent, getBaseUrlPagesFromSitemaps,
+  convertToOpportunity,
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -734,6 +735,103 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(url);
       expect(result.success).to.equal(false);
+    });
+  });
+
+  describe('convertToOpportunity', () => {
+    let mockDataAccess;
+    let mockLog;
+    let opportunity;
+    let auditData;
+    let otherOpportunity;
+
+    beforeEach(() => {
+      mockLog = {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+      };
+
+      opportunity = {
+        getType: () => 'sitemap-pages-with-issues',
+        getId: () => 'oppty-id',
+        getSiteId: () => 'site-id',
+        addSuggestions: sandbox.stub(),
+        getSuggestions: sandbox.stub(),
+        setAuditId: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      otherOpportunity = {
+        getType: () => 'other',
+      };
+
+      mockDataAccess = {
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub(),
+          create: sandbox.stub(),
+        },
+      };
+
+      context = {
+        log: mockLog,
+        dataAccess: mockDataAccess,
+      };
+
+      auditData = {
+        siteId: 'site-id',
+        id: 'audit-id',
+        auditResult: {
+          details: {
+            issues: {
+              'https://example.com/sitemap1.xml': [
+                {
+                  url: 'https://example.com/page1',
+                  statusCode: 404,
+                },
+                {
+                  url: 'https://example.com/page2',
+                  statusCode: 500,
+                },
+              ],
+            },
+          },
+          reasons: [{ value: 'reason' }],
+        },
+      };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('should handle errors when creating opportunity', async () => {
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
+      mockDataAccess.Opportunity.create.rejects(new Error('Creation failed'));
+
+      await expect(convertToOpportunity('https://example.com', auditData, context))
+        .to.be.rejectedWith('Creation failed');
+
+      expect(mockLog.error).to.have.been.calledWith(
+        'Failed to create new opportunity for siteId site-id and auditId audit-id: Creation failed',
+      );
+    });
+
+    it('should not create opportunity when there are no issues', async () => {
+      const auditDataNoIssues = {
+        ...auditData,
+        auditResult: {
+          details: {
+            issues: {},
+          },
+        },
+      };
+
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
+
+      await convertToOpportunity('https://example.com', auditDataNoIssues, context);
+
+      expect(mockDataAccess.Opportunity.create).to.not.have.been.called;
+      expect(opportunity.addSuggestions).to.not.have.been.called;
     });
   });
 });

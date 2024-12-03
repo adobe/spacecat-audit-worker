@@ -394,7 +394,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   };
 }
 
-async function convertToOpportunity(auditUrl, auditData, context) {
+export async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
 
   const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
