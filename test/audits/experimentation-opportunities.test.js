@@ -36,6 +36,7 @@ describe('Opportunities Tests', () => {
   let lambdaSendStub;
   let experimentationOpportunities;
   let site;
+  const llmHanderResult = JSON.parse(llmHandlerResponse.body).result;
 
   before('setup', () => {
     sandbox = sinon.createSandbox();
@@ -136,7 +137,7 @@ describe('Opportunities Tests', () => {
     const highOrganicLowCtrOpportunity = expected.find((opportunity) => opportunity.type === 'high-organic-low-ctr');
     highOrganicLowCtrOpportunity.opportunityImpact = 1286;
     highOrganicLowCtrOpportunity.recommendations = getRecommendations(
-      llmHandlerResponse.body.result,
+      llmHanderResult,
     );
 
     expect(context.rumApiClient.queryMulti).calledWith([
@@ -225,7 +226,7 @@ describe('Opportunities Tests', () => {
     const opportunity = auditData.auditResult.experimentationOpportunities
       .find((o) => o.type === 'high-organic-low-ctr');
     expect(opportunity.recommendations).to.deep.equal(
-      getRecommendations(llmHandlerResponse.body.result),
+      getRecommendations(llmHanderResult),
     );
   });
 
@@ -236,6 +237,25 @@ describe('Opportunities Tests', () => {
     const opportunity = auditData.auditResult.experimentationOpportunities
       .find((o) => o.type === 'high-organic-low-ctr');
     expect(opportunity.recommendations).to.be.undefined;
+  });
+
+  it('should not add recommendations to high-organic-low-ctr opportunities when lambda returns empty body', async () => {
+    const lambdaResponse = {
+      Payload: new TextEncoder().encode(JSON.stringify({
+        statusCode: 200,
+        body: null,
+      })),
+    };
+    lambdaSendStub.resolves(lambdaResponse);
+    const auditData = await experimentationOpportunities.handler(url, context, site);
+    const opportunity = auditData.auditResult.experimentationOpportunities
+      .find((o) => o.type === 'high-organic-low-ctr');
+    expect(opportunity.recommendations).to.be.undefined;
+  });
+
+  it('should return empty recommendations array when llm response is empty', async () => {
+    const recommendations = getRecommendations();
+    expect(recommendations).to.deep.equal([]);
   });
 });
 

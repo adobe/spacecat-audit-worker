@@ -1,3 +1,38 @@
+## [1.36.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.4...v1.36.5) (2024-12-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.13.2 ([#503](https://github.com/adobe/spacecat-audit-worker/issues/503)) ([528ed90](https://github.com/adobe/spacecat-audit-worker/commit/528ed90bb1f90f2c1b40b5478eeda79b03530376))
+
+## [1.36.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.3...v1.36.4) (2024-12-02)
+
+
+### Bug Fixes
+
+* syncSuggestions buildKey usage ([#502](https://github.com/adobe/spacecat-audit-worker/issues/502)) ([5071da1](https://github.com/adobe/spacecat-audit-worker/commit/5071da145f91c6714cac8fb43135d7d0d049871c))
+
+## [1.36.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.2...v1.36.3) (2024-12-01)
+
+
+### Bug Fixes
+
+* handle error from llm response while updating recommendations in opportunities ([#495](https://github.com/adobe/spacecat-audit-worker/issues/495)) ([e7d49ee](https://github.com/adobe/spacecat-audit-worker/commit/e7d49eed4f423ae0c79b6f05561072ce03019660))
+
+## [1.36.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.1...v1.36.2) (2024-11-30)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#500](https://github.com/adobe/spacecat-audit-worker/issues/500)) ([76d8130](https://github.com/adobe/spacecat-audit-worker/commit/76d8130f9060547b81a0076d259f715737534170))
+
+## [1.36.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.0...v1.36.1) (2024-11-30)
+
+
+### Bug Fixes
+
+* handling cwv grouping changes and remove type key ([#499](https://github.com/adobe/spacecat-audit-worker/issues/499)) ([70cf629](https://github.com/adobe/spacecat-audit-worker/commit/70cf62979b5423c92d14f1d74dcb7cb372b1ba33))
+
 # [1.36.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.35.0...v1.36.0) (2024-11-29)
 
 
