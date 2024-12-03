@@ -191,21 +191,15 @@ function getRageClickOpportunityImpact(oppty) {
 }
 
 function processRageClickOpportunities(opportunities) {
-  const rageClickOpportunities = opportunities.filter((oppty) => oppty.type === 'rageclick');
-  const updatedRageClickOpportunities = rageClickOpportunities.map((oppty) => ({
-    ...oppty,
-    opportunityImpact: getRageClickOpportunityImpact(oppty),
-  }));
-  // update the opportunities list
-  for (const oppty of updatedRageClickOpportunities) {
-    const index = opportunities.findIndex(
-      (opp) => opp.page === oppty.page && opp.type === oppty.type,
-    );
-    if (index !== -1) {
+  opportunities.filter((oppty) => oppty.type === 'rageclick')
+    .forEach((oppty) => {
+      const index = opportunities.indexOf(oppty);
       // eslint-disable-next-line no-param-reassign
-      opportunities[index] = oppty;
-    }
-  }
+      opportunities[index] = {
+        ...oppty,
+        opportunityImpact: getRageClickOpportunityImpact(oppty),
+      };
+    });
 }
 
 async function createOrUpdateOpportunityEntity(opportunity, context, existingOpportunities) {
