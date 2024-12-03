@@ -1,3 +1,10 @@
+# [1.37.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.5...v1.37.0) (2024-12-03)
+
+
+### Features
+
+* **cwv:** core web vitals opportunity ([#497](https://github.com/adobe/spacecat-audit-worker/issues/497)) ([bb8fcf8](https://github.com/adobe/spacecat-audit-worker/commit/bb8fcf8178ecdd6b17a92673aa0a80aa1e8d7895))
+
 ## [1.36.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.4...v1.36.5) (2024-12-02)
 
 
