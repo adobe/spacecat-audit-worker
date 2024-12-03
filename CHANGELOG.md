@@ -1,3 +1,10 @@
+## [1.37.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.37.0...v1.37.1) (2024-12-03)
+
+
+### Bug Fixes
+
+* add opportunityImpact to rage click opportunities ([#504](https://github.com/adobe/spacecat-audit-worker/issues/504)) ([4a0c575](https://github.com/adobe/spacecat-audit-worker/commit/4a0c57583628daa74bb9bf5ca8554321b3b69892))
+
 # [1.37.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.36.5...v1.37.0) (2024-12-03)
 
 
