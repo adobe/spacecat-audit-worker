@@ -216,3 +216,74 @@ export default new AuditBuilder()
   .build();
 
 ```
+
+### How to add Opportunities and Suggestions
+```js
+import { syncSuggestions } from '../utils/data-access.js';
+
+export async function auditRunner(url, context) {
+
+  // your audit logic goes here...
+
+  return {
+    auditResult: results,
+    fullAuditRef: baseURL,
+  };
+}
+
+async function convertToOpportunity(auditUrl, auditData, context) {
+  const { dataAccess } = context;
+
+  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  const opportunity =  opportunities.find((oppty) => oppty.getType() === 'audit-type');
+
+  if (!opportunity) {
+      const opportunityData = {
+        siteId: auditData.siteId,
+        auditId: auditData.id,
+        runbook: 'link-to-runbook',
+        type: 'audit-type',
+        origin: 'AUTOMATON',
+        title: 'Opportunity Title',
+        description: 'Opportunity Description',
+        guidance: {
+          steps: [
+            'Step 1',
+            'Step 2',
+          ],
+        },
+        tags: ['tag1', 'tag2'],
+      };
+      opportunity = await dataAccess.Opportunity.create(opportunityData);
+  } else {
+    opportunity.setAuditId(auditData.id);
+    await opportunity.save();
+  }
+
+  // this logic changes based on the audit type
+  const buildKey = (auditData) => `${auditData.property}|${auditData.anotherProperty}`;
+
+  await syncSuggestions({
+    opportunity,
+    newData: auditData,
+    buildKey,
+    mapNewSuggestion: (issue) => ({
+      opportunityId: opportunity.getId(),
+      type: 'SUGGESTION_TYPE',
+      rank: issue.rankMetric,
+      // data changes based on the audit type
+      data: {
+        property: issue.property,
+        anotherProperty: issue.anotherProperty
+      }
+    }),
+    log
+  }); 
+}
+
+export default new AuditBuilder()
+  .withRunner(auditRunner)
+  .withPostProcessors([ convertToOpportunity ])
+  .build();
+
+```

@@ -420,18 +420,18 @@ async function convertToOpportunity(auditUrl, auditData, context) {
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.id,
-        runbook: 'link-to-runbook',
+        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=FTWy7t',
         type: 'sitemap-pages-with-issues',
         origin: 'AUTOMATON',
-        title: 'Opportunity Title',
-        description: 'Opportunity Description',
+        title: 'Sitemap issues found',
+        description: 'A complete and accurate sitemap helps search engines efficiently crawl and index your website pages,ensuring better visibility in search results.Fixing sitemap issues can improve the discoverability of your content.',
         guidance: {
           steps: [
             'Step 1',
             'Step 2',
           ],
         },
-        tags: ['indexability', 'sitemap'],
+        tags: ['Traffic Acquisition', 'Sitemap'],
       };
       sitemapOpptyPagesWithIssues = await dataAccess.Opportunity.create(opportunityData);
     } else {
@@ -448,14 +448,14 @@ async function convertToOpportunity(auditUrl, auditData, context) {
       buildKey,
       mapNewSuggestion: (issue) => ({
         opportunityId: sitemapOpptyPagesWithIssues.getId(),
-        type: 'SUGGESTION_TYPE',
+        type: 'sitemap',
         rank: issue.rankMetric,
         data: {
           sourceSitemapUrl: issue.sitemapUrl,
           pageUrl: issue.url,
           statusCode: issue.statusCode ?? 500, // to check if this is correctly reported,
           // as missing status code usually means the page was not reachable
-          recommendationAction: 'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_not_crash',
+          recommendationAction: 'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
         },
       }),
       log,

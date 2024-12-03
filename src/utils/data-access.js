@@ -36,8 +36,6 @@ export async function retrieveSiteBySiteId(dataAccess, siteId, log) {
   }
 }
 
-// copied from https://github.com/adobe/spacecat-audit-worker/pull/475/files#diff-74f4c74bec5502c1f20ed840e20b348687c5eeaca9af8a6ecb5df6ae82519f68R39
-// todo delete after merging code from that PR
 /**
  * Synchronizes existing suggestions with new data by removing outdated suggestions
  * and adding new ones.
@@ -63,14 +61,31 @@ export async function syncSuggestions({
   // Remove outdated suggestions
   await Promise.all(
     existingSuggestions
-      .filter((existing) => !newDataKeys.has(buildKey(existing)))
+      .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
       .map((suggestion) => suggestion.remove()),
+  );
+
+  // Update existing suggestions
+  await Promise.all(
+    existingSuggestions
+      .filter((existing) => {
+        const existingKey = buildKey(existing.getData());
+        return newDataKeys.has(existingKey);
+      })
+      .map((existing) => {
+        const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
+        existing.setData({
+          ...existing.getData(),
+          ...newDataItem,
+        });
+        return existing.save();
+      }),
   );
 
   // Prepare new suggestions
   const newSuggestions = newData
     .filter((data) => !existingSuggestions.some(
-      (existing) => buildKey(existing) === buildKey(data),
+      (existing) => buildKey(existing.getData()) === buildKey(data),
     ))
     .map(mapNewSuggestion);
 
