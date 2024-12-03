@@ -424,18 +424,24 @@ async function convertToOpportunity(auditUrl, auditData, context) {
         type: 'sitemap-pages-with-issues',
         origin: 'AUTOMATON',
         title: 'Sitemap issues found',
-        description: 'A complete and accurate sitemap helps search engines efficiently crawl and index your website pages,ensuring better visibility in search results.Fixing sitemap issues can improve the discoverability of your content.',
+        description: 'A complete and accurate sitemap helps search engines efficiently crawl and index your website pages,ensuring better visibility in search results. Fixing sitemap issues can improve the discoverability of your content.',
         guidance: {
           steps: [
-            'Step 1',
-            'Step 2',
+            'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
+            'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
           ],
         },
         tags: ['Traffic Acquisition', 'Sitemap'],
       };
-      sitemapOpptyPagesWithIssues = await dataAccess.Opportunity.create(opportunityData);
+      try {
+        sitemapOpptyPagesWithIssues = await dataAccess.Opportunity.create(opportunityData);
+      } catch (e) {
+        log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
+        throw e;
+      }
     } else {
       sitemapOpptyPagesWithIssues = sitemapOpptyPagesWithIssues.setAuditId(auditData.id);
+      await sitemapOpptyPagesWithIssues.save();
     }
   }
 
@@ -448,8 +454,8 @@ async function convertToOpportunity(auditUrl, auditData, context) {
       buildKey,
       mapNewSuggestion: (issue) => ({
         opportunityId: sitemapOpptyPagesWithIssues.getId(),
-        type: 'sitemap',
-        rank: issue.rankMetric,
+        type: 'CODE_CHANGE',
+        rank: issue.traffic_domain,
         data: {
           sourceSitemapUrl: issue.sitemapUrl,
           pageUrl: issue.url,
