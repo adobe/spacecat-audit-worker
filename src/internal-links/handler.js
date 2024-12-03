@@ -9,8 +9,20 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+/*
+ * Copyright 2024 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { internalServerError } from '@adobe/spacecat-shared-http-utils';
 import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
@@ -108,43 +120,55 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
   };
 }
 
-async function convertToOpportunity(auditUrl, auditData, context) {
+// eslint-disable-next-line consistent-return
+export async function convertToOpportunity(auditUrl, auditData, context) {
   const {
     dataAccess,
     log,
   } = context;
 
-  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-
-  if (!opportunity) {
-    const opportunityData = {
-      siteId: auditData.siteId,
-      auditId: auditData.id,
-      runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
-      type: AUDIT_TYPE,
-      origin: 'AUTOMATION',
-      title: 'Broken internal links found',
-      description: 'We\'ve detected broken internal links on your website. Broken links can negatively impact user experience and SEO. Please review and fix these links to ensure smooth navigation and accessibility.',
-      guidance: {
-        steps: [
-          'Update each broken internal link to valid URLs.',
-          'Test the implemented changes manually to ensure they are working as expected.',
-          'Monitor internal links for 404 errors in RUM tool over time to ensure they are functioning correctly.',
-        ],
-      },
-      tags: [
-        'Traffic acquisition',
-        'Engagement',
-      ],
-    };
-    opportunity = await dataAccess.Opportunity.create(opportunityData);
-  } else {
-    opportunity.setAuditId(auditData.id);
-    await opportunity.save();
+  let opportunity;
+  try {
+    const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+    opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+  } catch (e) {
+    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    return internalServerError(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
-  const buildKey = (data) => `${data.auditResult.brokenInternalLinks.map((item) => `${item.url_from}-${item.url_to}`)};}`;
+  try {
+    if (!opportunity) {
+      const opportunityData = {
+        siteId: auditData.siteId,
+        auditId: auditData.id,
+        runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
+        type: AUDIT_TYPE,
+        origin: 'AUTOMATION',
+        title: 'Broken internal links found',
+        description: 'We\'ve detected broken internal links on your website. Broken links can negatively impact user experience and SEO. Please review and fix these links to ensure smooth navigation and accessibility.',
+        guidance: {
+          steps: [
+            'Update each broken internal link to valid URLs.',
+            'Test the implemented changes manually to ensure they are working as expected.',
+            'Monitor internal links for 404 errors in RUM tool over time to ensure they are functioning correctly.',
+          ],
+        },
+        tags: [
+          'Traffic acquisition',
+          'Engagement',
+        ],
+      };
+      opportunity = await dataAccess.Opportunity.create(opportunityData);
+    } else {
+      opportunity.setAuditId(auditData.id);
+      await opportunity.save();
+    }
+  } catch (e) {
+    log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
+    throw e;
+  }
+
+  const buildKey = (item) => `${item.url_from}-${item.url_to}`;
 
   // Sync suggestions
   await syncSuggestions({

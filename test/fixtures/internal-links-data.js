@@ -66,3 +66,45 @@ export const internalLinksData = [
     top_source: 'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
   },
 ];
+
+export const expectedOpportunity = {
+  siteId: 'site-id-1',
+  auditId: 'audit-id-1',
+  runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
+  type: 'broken-internal-links',
+  origin: 'AUTOMATION',
+  title: 'Broken internal links found',
+  description: 'We\'ve detected broken internal links on your website. Broken links can negatively impact user experience and SEO. Please review and fix these links to ensure smooth navigation and accessibility.',
+  guidance: {
+    steps: [
+      'Update each broken internal link to valid URLs.',
+      'Test the implemented changes manually to ensure they are working as expected.',
+      'Monitor internal links for 404 errors in RUM tool over time to ensure they are functioning correctly.',
+    ],
+  },
+  tags: [
+    'Traffic acquisition',
+    'Engagement',
+  ],
+};
+
+export const expectedSuggestions = [
+  {
+    type: 'CONTENT_UPDATE',
+    rank: 100,
+    data: {
+      url_to: 'https://www.example.com/article/dogs/breeds/choosing-an-irish-setter',
+      url_from: 'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-13-manly-masculine-dog-breeds',
+      traffic_domain: 100,
+    },
+  },
+  {
+    type: 'CONTENT_UPDATE',
+    rank: 100,
+    data: {
+      url_to: 'https://www.example.com/article/dogs/breeds/choosing-a-miniature-poodle',
+      url_from: 'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
+      traffic_domain: 100,
+    },
+  },
+];

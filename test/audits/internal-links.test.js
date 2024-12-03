@@ -17,9 +17,13 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
-import { internalLinksAuditRunner } from '../../src/internal-links/handler.js';
-import { internalLinksData } from '../fixtures/internal-links-data.js';
+import { internalLinksAuditRunner, convertToOpportunity } from '../../src/internal-links/handler.js';
+import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../shared.js';
+// rum data = internalLinksData
+// import expectedOppty from '../fixtures/internal-links-data.js' assert { type: 'json' };
+// import suggestions from '../fixtures/internal-links/suggestions.json' assert { type: 'json' };
+// import rumData from '../fixtures/cwv/cwv.json' assert { type: 'json' };
 
 const AUDIT_RESULT_DATA = [
   {
@@ -93,5 +97,126 @@ describe('Broken internal links audit', () => {
       },
       fullAuditRef: auditUrl,
     });
+  });
+});
+
+describe('broken-internal-links audit to opportunity conversion', () => {
+  let addSuggestionsResponse;
+  let opportunity;
+  let auditData;
+
+  const context = new MockContextBuilder()
+    .withSandbox(sandbox)
+    .withOverrides({
+      runtime: { name: 'aws-lambda', region: 'us-east-1' },
+      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+      rumApiClient: {
+        query: sinon.stub().resolves(internalLinksData),
+      },
+    })
+    .build();
+
+  beforeEach(() => {
+    context.log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    context.dataAccess.Opportunity = {
+      allBySiteIdAndStatus: sandbox.stub(),
+      create: sandbox.stub(),
+    };
+
+    addSuggestionsResponse = {
+      createdItems: [],
+      errorItems: [],
+    };
+
+    opportunity = {
+      getType: () => 'broken-internal-links',
+      getId: () => 'oppty-id-1',
+      getSiteId: () => 'site-id-1',
+      addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
+      getSuggestions: sandbox.stub().resolves([]),
+      setAuditId: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    auditData = {
+      siteId: 'site-id-1',
+      id: 'audit-id-1',
+      isLive: true,
+      auditedAt: new Date().toISOString(),
+      auditType: 'broken-internal-links',
+      auditResult: {
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        auditContext: {
+          interval: 30,
+        },
+      },
+      fullAuditRef: auditUrl,
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('creates a new opportunity object', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
+
+    // make sure that newly oppty has 2 new suggestions
+    expect(opportunity.addSuggestions).to.have.been.calledOnce;
+    const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
+    expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
+  });
+
+  it('creating a new opportunity object fails', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
+
+    await expect(convertToOpportunity(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
+
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
+    expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id-1 and auditId audit-id-1: big error happened');
+
+    // make sure that no new suggestions are added
+    expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
+  });
+
+  it('updates the existing opportunity object', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+    const existingSuggestions = expectedSuggestions.map((suggestion) => ({
+      ...suggestion,
+      opportunityId: opportunity.getId(),
+      remove: sinon.stub(),
+      save: sinon.stub(),
+      getData: () => (suggestion.data),
+      setData: sinon.stub(),
+    }));
+    opportunity.getSuggestions.resolves(existingSuggestions);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(opportunity.setAuditId).to.have.been.calledOnceWith('audit-id-1');
+    expect(opportunity.save).to.have.been.calledOnce;
+
+    // make sure that 1 old suggestion is removed
+    expect(existingSuggestions[0].remove).to.have.been.calledOnce;
+
+    // make sure that 1 existing suggestion is updated
+    expect(existingSuggestions[1].setData).to.have.been.calledOnce();
+    expect(existingSuggestions[1].save).to.have.been.calledOnce;
+
+    // make sure that 3 new suggestions are created
+    expect(opportunity.addSuggestions).to.have.been.calledOnce;
+    const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
+    expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
   });
 });
