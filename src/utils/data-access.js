@@ -60,7 +60,7 @@ export async function syncSuggestions({
   // Remove outdated suggestions
   await Promise.all(
     existingSuggestions
-      .filter((existing) => !newDataKeys.has(buildKey(existing)))
+      .filter((existing) => !newDataKeys.has(buildKey(existing.data)))
       .map((suggestion) => suggestion.remove()),
   );
 
@@ -68,11 +68,11 @@ export async function syncSuggestions({
   await Promise.all(
     existingSuggestions
       .filter((existing) => {
-        const existingKey = buildKey(existing);
+        const existingKey = buildKey(existing.data);
         return newDataKeys.has(existingKey);
       })
       .map((existing) => {
-        const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing));
+        const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.data));
         existing.setData(newDataItem);
         return existing.save();
       }),
@@ -81,7 +81,7 @@ export async function syncSuggestions({
   // Prepare new suggestions
   const newSuggestions = newData
     .filter((data) => !existingSuggestions.some(
-      (existing) => buildKey(existing) === buildKey(data),
+      (existing) => buildKey(existing.data) === buildKey(data),
     ))
     .map(mapNewSuggestion);
 

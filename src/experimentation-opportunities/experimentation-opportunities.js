@@ -82,6 +82,9 @@ function getMetricsByVendor(metrics) {
 
 export function getRecommendations(lambdaResult) {
   const recommendations = [];
+  if (!lambdaResult) {
+    return recommendations;
+  }
   for (const [, guidance] of Object.entries(lambdaResult)) {
     recommendations.push({
       type: 'guidance',
@@ -110,14 +113,20 @@ async function updateRecommendations(oppty, context, site) {
       },
     },
   };
-  log.info('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
+
   let lambdaResult;
   try {
     // eslint-disable-next-line no-await-in-loop
     const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
     log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
-    const lambdaResponseBody = lambdaResponse.body;
-    lambdaResult = lambdaResponseBody.result;
+    const lambdaResponseBody = typeof lambdaResponse.body === 'string'
+      ? JSON.parse(lambdaResponse.body)
+      : lambdaResponse.body;
+    lambdaResult = lambdaResponseBody ? lambdaResponseBody.result : null;
+    if (!lambdaResult || lambdaResult.error) {
+      log.error('Error in LLM insights. LLM Response body:', lambdaResponseBody);
+      return;
+    }
   } catch (error) {
     log.error('Error invoking lambda function: ', error);
     return;
