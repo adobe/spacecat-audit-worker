@@ -37,7 +37,7 @@ export async function syncMetatagsSuggestions({
 }) {
   const existingSuggestions = await opportunity.getSuggestions();
   const existingSuggestionsMap = new Map(
-    existingSuggestions.map((existing) => [buildKey(existing), existing]),
+    existingSuggestions.map((existing) => [buildKey(existing.getData()), existing]),
   );
 
   // Create new suggestions and sync them with existing suggestions
@@ -46,16 +46,17 @@ export async function syncMetatagsSuggestions({
     .map(mapNewSuggestion)
     // update new suggestions with data from existing suggestion of same key
     .map((newSuggestion) => {
-      const existing = existingSuggestionsMap.get(buildKey(newSuggestion));
+      const existing = existingSuggestionsMap.get(buildKey(newSuggestion.data));
       if (existing) {
         return {
           ...newSuggestion,
           status: existing.getStatus(),
           data: {
             ...newSuggestion.data,
-            ...(existing.data.aiSuggestion && { aiSuggestion: existing.data.aiSuggestion }),
-            ...(existing.data.aiRationale && { aiRationale: existing.data.aiRationale }),
-            ...(existing.data.toOverride && { toOverride: existing.data.toOverride }),
+            ...(existing
+              .getData().aiSuggestion && { aiSuggestion: existing.getData().aiSuggestion }),
+            ...(existing.getData().aiRationale && { aiRationale: existing.getData().aiRationale }),
+            ...(existing.getData().toOverride && { toOverride: existing.getData().toOverride }),
           },
         };
       }
@@ -213,7 +214,7 @@ export default async function syncOpportunityAndSuggestions(
     });
   });
 
-  const buildKey = (suggestion) => `${suggestion.data.url}|${suggestion.data.issue}|${suggestion.data.tagContent}`;
+  const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
   // Sync the suggestions from new audit with old ones
   await syncMetatagsSuggestions({
     opportunity: metatagsOppty,
