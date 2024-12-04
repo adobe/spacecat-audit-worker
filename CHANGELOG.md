@@ -1,3 +1,10 @@
+# [1.38.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.37.2...v1.38.0) (2024-12-04)
+
+
+### Features
+
+* add opportunity & suggestions handling for Meta-tags ([#494](https://github.com/adobe/spacecat-audit-worker/issues/494)) ([d8080e6](https://github.com/adobe/spacecat-audit-worker/commit/d8080e64d18908fc6fb8f10c38ca7d404d2f577d))
+
 ## [1.37.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.37.1...v1.37.2) (2024-12-04)
 
 
