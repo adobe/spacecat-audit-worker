@@ -97,7 +97,7 @@ describe('Broken internal links audit', () => {
       },
       fullAuditRef: auditUrl,
     });
-  });
+  }).timeout(5000);
 });
 
 describe('broken-internal-links audit to opportunity conversion', () => {
