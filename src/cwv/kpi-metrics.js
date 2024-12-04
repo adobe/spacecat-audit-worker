@@ -81,6 +81,10 @@ function calculateProjectedTrafficLostForDevice(metrics, organicTraffic) {
 
   // Count the number of "green" metrics (below soft threshold)
   METRICS.forEach(metric => {
+    if (!THRESHOLDS[metric] || !Number.isFinite(value) || value < 0) {
+      return;
+    }
+
     if (metrics[metric] <= THRESHOLDS[metric].soft) {
       greenMetricsCount++;
     }
