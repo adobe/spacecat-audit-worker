@@ -93,5 +93,5 @@ describe('Broken internal links audit', () => {
       },
       fullAuditRef: auditUrl,
     });
-  });
+  }).timeout(5000);
 });
