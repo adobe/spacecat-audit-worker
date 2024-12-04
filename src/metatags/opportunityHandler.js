@@ -47,15 +47,16 @@ export async function syncMetatagsSuggestions({
     // update new suggestions with data from existing suggestion of same key
     .map((newSuggestion) => {
       const existing = existingSuggestionsMap.get(buildKey(newSuggestion));
+      const existingData = existing.getData();
       if (existing) {
         return {
           ...newSuggestion,
           status: existing.getStatus(),
           data: {
             ...newSuggestion.data,
-            ...(existing.data.aiSuggestion && { aiSuggestion: existing.data.aiSuggestion }),
-            ...(existing.data.aiRationale && { aiRationale: existing.data.aiRationale }),
-            ...(existing.data.toOverride && { toOverride: existing.data.toOverride }),
+            ...(existingData.aiSuggestion && { aiSuggestion: existingData.aiSuggestion }),
+            ...(existingData.aiRationale && { aiRationale: existingData.aiRationale }),
+            ...(existingData.toOverride && { toOverride: existingData.toOverride }),
           },
         };
       }
