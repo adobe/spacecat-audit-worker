@@ -98,7 +98,14 @@ describe('data-access', () => {
     });
 
     it('should remove outdated suggestions and add new ones', async () => {
-      const existingSuggestions = [{ id: '1', data: { key: '1' }, remove: sinon.stub() }, { id: '2', data: { key: '2' }, remove: sinon.stub() }];
+      const suggestionsData = [{ key: '1' }, { key: '2' }];
+      const existingSuggestions = [
+        {
+          id: '1', data: suggestionsData[0], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[0]),
+        },
+        {
+          id: '2', data: suggestionsData[1], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[1]),
+        }];
       const newData = [{ key: '3' }, { key: '4' }];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
@@ -132,9 +139,22 @@ describe('data-access', () => {
     });
 
     it('should update suggestions when they are detected again', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title' },
+        { key: '2', title: 'same title' },
+      ];
       const existingSuggestions = [{
-        id: '1', data: { key: '1', title: 'old title' }, setData: sinon.stub(), save: sinon.stub(),
-      }, { id: '2', data: { key: '2', title: 'same title' }, remove: sinon.stub() }];
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+      }, {
+        id: '2',
+        data: suggestionsData[1],
+        getData: sinon.stub().returns(suggestionsData[1]),
+        remove: sinon.stub(),
+      }];
       const newData = [{ key: '1', title: 'new title' }];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
@@ -155,7 +175,10 @@ describe('data-access', () => {
     });
 
     it('should log errors if there are items with errors', async () => {
-      const existingSuggestions = [{ id: '1', data: { key: '1' }, remove: sinon.stub() }];
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1', data: suggestionsData[0], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[0]),
+      }];
       const newData = [{ id: '2' }];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
@@ -182,7 +205,10 @@ describe('data-access', () => {
     });
 
     it('should throw an error if all items fail to be created', async () => {
-      const existingSuggestions = [{ id: '1', data: { key: '1' }, remove: sinon.stub() }];
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1', data: suggestionsData[0], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[0]),
+      }];
       const newData = [{ id: '2' }];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
