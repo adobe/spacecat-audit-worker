@@ -15,6 +15,8 @@ import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import calculateKpiDeltas from './kpi-metrics.js';
+import resolveCpcValue from './cpc-value-resolver.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
@@ -113,6 +115,7 @@ export async function convertToOppty(auditUrl, auditData, context) {
       data: {
         ...entry,
       },
+      kpiDeltas: calculateKpiDeltas(entry, resolveCpcValue(entry)),
     }),
     log,
   });
