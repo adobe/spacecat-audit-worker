@@ -18,4 +18,5 @@ const CPC_VALUE = 1.5;
  * @param {Object} entry - Page data (including page URL)
  * @returns {number} - Cost per click (CPC) Value
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export default (entry) => CPC_VALUE;
