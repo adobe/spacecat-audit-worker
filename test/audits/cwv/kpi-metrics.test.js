@@ -21,7 +21,7 @@ import calculateKpiDeltas from '../../../src/cwv/kpi-metrics.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-const sandbox = sinon.createSandbox();
+// const sandbox = sinon.createSandbox();
 
 describe('CWVRunner Tests', () => {
   beforeEach('setup', () => {
@@ -53,8 +53,8 @@ describe('CWVRunner Tests', () => {
           lcp: 4500,
           cls: 0.3,
           inp: 300,
-        }
-      ]
+        },
+      ],
     };
 
     const cpcValue = 2;
@@ -67,7 +67,7 @@ describe('CWVRunner Tests', () => {
       mobile: {
         projectedTrafficLost: 18,
         projectedTrafficValue: 36,
-      }
+      },
     };
 
     const result = calculateKpiDeltas(samplePageData, cpcValue);
@@ -75,7 +75,12 @@ describe('CWVRunner Tests', () => {
     expect(result).to.deep.equal(expectedKpi);
   });
 
+  it('"Poor" at least one device calculation', async () => {
+  });
+
+  it('"Needs Improvement" at least per one device calculation', async () => {
+  });
+
   it('should handle empty metrics gracefully', async () => {
   });
 });
-
