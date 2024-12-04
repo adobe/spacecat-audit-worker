@@ -39,7 +39,7 @@ describe('calculates KPI deltas correctly', () => {
             deviceType: 'desktop',
             pageviews: 3000,
             organic: 2000,
-            // Needs Improvement (1 "green" metric - lcp)
+            // Needs Improvement (1 "green" metric)
             lcp: 2000, // < 2500 threshold (green)
             cls: 0.2, // > 0.1 threshold (poor)
             inp: 220, // > 200 threshold (poor)

@@ -18,9 +18,9 @@ const METRICS = ['lcp', 'cls', 'inp'];
  * Thresholds for "green" metrics
  */
 const THRESHOLDS = {
-  lcp: { soft: 2500 },
-  cls: { soft: 0.1 },
-  inp: { soft: 200 },
+  lcp: 2500,
+  cls: 0.1,
+  inp: 200,
 };
 
 /**
@@ -51,13 +51,13 @@ const TRAFFIC_MULTIPLIERS = {
 const calculateProjectedTrafficLost = (metrics) => {
   let greenMetricsCount = 0;
 
-  // Count the number of "green" metrics below soft thresholds
+  // Count the number of "green" metrics below thresholds
   METRICS.forEach((metric) => {
     if (!THRESHOLDS[metric] || !Number.isFinite(metrics[metric]) || metrics[metric] < 0) {
       return;
     }
 
-    if (metrics[metric] <= THRESHOLDS[metric].soft) {
+    if (metrics[metric] <= THRESHOLDS[metric]) {
       greenMetricsCount += 1;
     }
   });
@@ -70,8 +70,10 @@ const calculateProjectedTrafficLost = (metrics) => {
   return metrics.organic * trafficMultiplier;
 };
 
-const calculateProjectedTrafficValue = (projectedTrafficLost, cpcValue)
-=> projectedTrafficLost * cpcValue;
+const calculateProjectedTrafficValue = (
+  projectedTrafficLost,
+  cpcValue,
+) => projectedTrafficLost * cpcValue;
 
 /**
  * Calculates kpiDeltas for all devices in an audit entry
