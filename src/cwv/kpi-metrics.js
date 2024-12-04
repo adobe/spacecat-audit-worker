@@ -10,46 +10,48 @@
  * governing permissions and limitations under the License.
  */
 
+import resolveCpcValue from './cpc-value-resolver.js';
+
 const METRICS = ['lcp', 'cls', 'inp'];
 
+/**
+ * Thresholds for "green" metrics
+ */
 const THRESHOLDS = {
-  lcp: { soft: 2500, hard: 4000 },
-  cls: { soft: 0.1, hard: 0.25 },
-  inp: { soft: 200, hard: 500 },
+  lcp: { soft: 2500 },
+  cls: { soft: 0.1 },
+  inp: { soft: 200 },
 };
 
 /**
  * CWV statuses based on the number of "green" metrics:
  *
+ * Statuses not requiring adjustment:
  * 3 Good/Green CWV = Very Fast
  * 2 Good/Green CWV = Good
+ *
+ * Statuses requiring adjustment:
  * 1 Good/Green CWV = Needs Improvement
  * 0 Good/Green CWV = Poor
  */
 const STATUSES = {
-  3: 'Very Fast',
-  2: 'Good',
   1: 'Needs Improvement',
   0: 'Poor',
 };
 
-// Multipliers for CWV status per device
+/**
+ * Multipliers for CWV statuses
+ * These modifiers are applied to statuses that require adjustment
+ */
 const TRAFFIC_MULTIPLIERS = {
-  Poor: 0.015, // +1.5%
   'Needs Improvement': 0.005, // +0.5%
+  Poor: 0.015, // +1.5%
 };
 
-/**
- * Calculates Projected Traffic Lost per device
- *
- * @param {Object} metrics - Metrics object for a specific device
- * @param {number} organicTraffic - Organic traffic for the page
- * @returns {number} - Projected Traffic Lost for the device
- */
-function calculateProjectedTrafficLostForDevice(metrics, organicTraffic) {
+const calculateProjectedTrafficLost = (metrics) => {
   let greenMetricsCount = 0;
 
-  // Count the number of "green" metrics (below soft threshold)
+  // Count the number of "green" metrics below soft thresholds
   METRICS.forEach((metric) => {
     if (!THRESHOLDS[metric] || !Number.isFinite(metrics[metric]) || metrics[metric] < 0) {
       return;
@@ -65,37 +67,28 @@ function calculateProjectedTrafficLostForDevice(metrics, organicTraffic) {
 
   // Calculate projected traffic increase based on CWV status
   const trafficMultiplier = TRAFFIC_MULTIPLIERS[cwvStatus] || 0;
-  return organicTraffic * trafficMultiplier;
-}
+  return metrics.organic * trafficMultiplier;
+};
 
-/**
- * Calculates Projected Traffic Value for a device
- *
- * @param {number} projectedTrafficLost - Projected Traffic Lost
- * @param {number} cpcValue - Cost per click (CPC)
- * @returns {number} - Projected Traffic Value
- */
 const calculateProjectedTrafficValue = (projectedTrafficLost, cpcValue)
 => projectedTrafficLost * cpcValue;
 
 /**
- * Main function to calculate kpiDeltas for all devices
+ * Calculates kpiDeltas for all devices in an audit entry
  *
- * @param {Object} entry - Page data (including organic traffic and metrics)
- * @param {number} cpcValue - Cost per click (CPC)
+ * Metrics contain CWV data, organic traffic and device type
+ *
+ * @param {Object} entry - Audit entry containing metrics
  * @returns {Object} - kpiDeltas object with values for each device
  */
-const calculateKpiDeltas = (entry, cpcValue) => {
+const calculateKpiDeltasForAuditEntryPerDevice = (entry) => {
   const kpiDeltas = {};
+  const cpcValue = resolveCpcValue(entry);
 
-  // Iterate through all devices in metrics
+  // Iterate through all devices in entry metrics
   entry.metrics.forEach((metrics) => {
     const { deviceType } = metrics;
-
-    // Calculate Projected Traffic Lost for the device
-    const projectedTrafficLost = calculateProjectedTrafficLostForDevice(metrics, entry.organic);
-
-    // Calculate Projected Traffic Value for the device
+    const projectedTrafficLost = calculateProjectedTrafficLost(metrics);
     const projectedTrafficValue = calculateProjectedTrafficValue(projectedTrafficLost, cpcValue);
 
     // Store results per device
@@ -108,4 +101,34 @@ const calculateKpiDeltas = (entry, cpcValue) => {
   return kpiDeltas;
 };
 
-export default calculateKpiDeltas;
+/**
+ * Calculate aggregated kpiDeltas for all audit entries
+ *
+ * @param {Array} entries - Array of audit entries
+ * @returns {Object} - Aggregated kpiDeltas for all entries
+ */
+const calculateKpiDeltasForAuditEntries = (entries) => {
+  const aggregatedKpiDeltas = {
+    projectedTrafficLost: 0,
+    projectedTrafficValue: 0,
+  };
+
+  // Iterate through all entries and aggregate (sum) kpiDeltas
+  entries.forEach((entry) => {
+    const kpiDeltasForEntryPerDevice = calculateKpiDeltasForAuditEntryPerDevice(entry);
+
+    Object.values(kpiDeltasForEntryPerDevice).forEach(
+      ({ projectedTrafficLost, projectedTrafficValue }) => {
+        aggregatedKpiDeltas.projectedTrafficLost += projectedTrafficLost;
+        aggregatedKpiDeltas.projectedTrafficValue += projectedTrafficValue;
+      },
+    );
+  });
+
+  return aggregatedKpiDeltas;
+};
+
+export {
+  calculateKpiDeltasForAuditEntryPerDevice,
+  calculateKpiDeltasForAuditEntries,
+};

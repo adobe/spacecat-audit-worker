@@ -16,71 +16,93 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import calculateKpiDeltas from '../../../src/cwv/kpi-metrics.js';
+import { calculateKpiDeltasForAuditEntries } from '../../../src/cwv/kpi-metrics.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
-// const sandbox = sinon.createSandbox();
-
-describe('CWVRunner Tests', () => {
-  beforeEach('setup', () => {
-    // Add any necessary setup here
-  });
-
+describe('calculates KPI deltas correctly', () => {
   afterEach(() => {
     sinon.restore();
   });
 
-  it('should calculate correct KPI deltas per device', async () => {
-    const samplePageData = {
-      type: 'group',
-      name: 'Sample Page',
-      pattern: 'https://www.example.com/home/*',
-      pageviews: 10000,
-      organic: 2000,
-      metrics: [
-        {
-          deviceType: 'desktop',
-          pageviews: 4000,
-          lcp: 3500,
-          cls: 0.2,
-          inp: 250,
-        },
-        {
-          deviceType: 'mobile',
-          pageviews: 6000,
-          lcp: 4500,
-          cls: 0.3,
-          inp: 300,
-        },
-      ],
+  it('with traffic adjustment', async () => {
+    const auditEntries = [
+      {
+        type: 'group',
+        name: 'Some pages',
+        pattern: 'https://www.aem.live/home/*',
+        pageviews: 4000,
+        organic: 2900,
+        metrics: [
+          {
+            deviceType: 'desktop',
+            pageviews: 3000,
+            organic: 2000,
+            // Needs Improvement (1 "green" metric - lcp)
+            lcp: 2000, // < 2500 threshold (green)
+            cls: 0.2, // > 0.1 threshold (poor)
+            inp: 220, // > 200 threshold (poor)
+          },
+          {
+            deviceType: 'mobile',
+            pageviews: 1000,
+            organic: 900,
+            // Poor (0 "green" metrics)
+            lcp: 2700, // > 2500 threshold (poor)
+            cls: 0.2, // > 0.1 threshold (poor)
+            inp: 220, // > 200 threshold (poor)
+          },
+        ],
+      },
+    ];
+
+    const expectedAggregatedKpi = {
+      // (2000 organic per device * 0.005 koeff) + (900 organic per device * 0.015 koeff) = 23.5
+      projectedTrafficLost: 23.5,
+      projectedTrafficValue: 35.25,
     };
 
-    const cpcValue = 2;
+    const result = calculateKpiDeltasForAuditEntries(auditEntries);
+    expect(result).to.deep.equal(expectedAggregatedKpi);
+  });
 
-    const expectedKpi = {
-      desktop: {
-        projectedTrafficLost: 10,
-        projectedTrafficValue: 20,
+  it('without traffic adjustment', async () => {
+    const auditEntries = [
+      {
+        type: 'url',
+        url: 'https://www.aem.live/home/',
+        pageviews: 4000,
+        organic: 2900,
+        metrics: [
+          {
+            deviceType: 'desktop',
+            pageviews: 3000,
+            organic: 2000,
+            // Very Fast (3 "green" metric)
+            lcp: 2000, // < 2500 threshold (green)
+            cls: 0.01, // < 0.1 threshold (green)
+            inp: 190, // < 200 threshold (green)
+          },
+          {
+            deviceType: 'mobile',
+            pageviews: 1000,
+            organic: 900,
+            // Good (2 "green" metrics)
+            lcp: 2000, // < 2500 threshold (green)
+            cls: 0.01, // < 0.1 threshold (green)
+            inp: 220, // > 200 threshold (poor)
+          },
+        ],
       },
-      mobile: {
-        projectedTrafficLost: 18,
-        projectedTrafficValue: 36,
-      },
+    ];
+
+    const expectedAggregatedKpi = {
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
     };
 
-    const result = calculateKpiDeltas(samplePageData, cpcValue);
-
-    expect(result).to.deep.equal(expectedKpi);
-  });
-
-  it('"Poor" at least one device calculation', async () => {
-  });
-
-  it('"Needs Improvement" at least per one device calculation', async () => {
-  });
-
-  it('should handle empty metrics gracefully', async () => {
+    const result = calculateKpiDeltasForAuditEntries(auditEntries);
+    expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 });
