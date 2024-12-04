@@ -127,11 +127,16 @@ export class Audit {
       };
 
       await this.messageSender(resultMessage, context);
-      // add auditId for the post processing
+      // add auditId for the post-processing
       auditData.id = audit.getId();
       for (const postProcessor of this.postProcessors) {
-        // eslint-disable-next-line no-await-in-loop
-        await postProcessor(finalUrl, auditData, context);
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await postProcessor(finalUrl, auditData, context);
+        } catch (e) {
+          log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(auditData)}`);
+          throw e;
+        }
       }
 
       return ok();

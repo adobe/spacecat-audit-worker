@@ -20,6 +20,7 @@ import esmock from 'esmock';
 import { postProcessor, MAX_OPPORTUNITIES, getRecommendations } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/opportunitiesdata.json' with { type: 'json' };
+import expectedOpportunitiesData from '../fixtures/expected-opportunities-data.json' with { type: 'json' };
 import llmHandlerResponse from '../fixtures/statistics-lambda-llm-insights-response.json' with { type: 'json' };
 
 use(sinonChai);
@@ -130,16 +131,6 @@ describe('Opportunities Tests', () => {
 
   it('fetch bundles for base url > process > send opportunities', async () => {
     const auditData = await experimentationOpportunities.handler(url, context, site);
-
-    // Create a deep copy of the data before manipulation
-    const expectedData = structuredClone(opportunitiesData);
-    const expected = Object.values(expectedData).flatMap((data) => data);
-    const highOrganicLowCtrOpportunity = expected.find((opportunity) => opportunity.type === 'high-organic-low-ctr');
-    highOrganicLowCtrOpportunity.opportunityImpact = 1286;
-    highOrganicLowCtrOpportunity.recommendations = getRecommendations(
-      llmHanderResult,
-    );
-
     expect(context.rumApiClient.queryMulti).calledWith([
       'rageclick',
       'high-inorganic-high-bounce-rate',
@@ -152,7 +143,7 @@ describe('Opportunities Tests', () => {
     });
     expect(
       auditData.auditResult.experimentationOpportunities,
-    ).to.deep.equal(expected);
+    ).to.deep.equal(expectedOpportunitiesData);
   });
 
   it('should process configured maximum number of high-organic-low-ctr opportunities', async () => {

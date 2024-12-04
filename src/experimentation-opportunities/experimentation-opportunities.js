@@ -185,6 +185,23 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   }
 }
 
+function getRageClickOpportunityImpact(oppty) {
+  // return the maximum number of samples across all the selectors that have rage click
+  return oppty.metrics.reduce((acc, metric) => Math.max(acc, metric.samples || 0), 0);
+}
+
+function processRageClickOpportunities(opportunities) {
+  opportunities.filter((oppty) => oppty.type === 'rageclick')
+    .forEach((oppty) => {
+      const index = opportunities.indexOf(oppty);
+      // eslint-disable-next-line no-param-reassign
+      opportunities[index] = {
+        ...oppty,
+        opportunityImpact: getRageClickOpportunityImpact(oppty),
+      };
+    });
+}
+
 async function createOrUpdateOpportunityEntity(opportunity, context, existingOpportunities) {
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
@@ -288,6 +305,7 @@ export async function handler(auditUrl, context, site) {
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   await processHighOrganicLowCtrOpportunities(experimentationOpportunities, context, site);
+  await processRageClickOpportunities(experimentationOpportunities);
   log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {

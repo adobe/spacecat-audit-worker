@@ -235,6 +235,7 @@ describe('Backlinks Tests', function () {
         traffic_domain: 5000,
       },
       remove: sinon.stub(),
+      getData: sinon.stub(),
       setData: sinon.stub(),
       save: sinon.stub(),
     }];
@@ -316,6 +317,7 @@ describe('Backlinks Tests', function () {
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
+    brokenBacklinkExistingSuggestions[0].getData.returns(brokenBacklinkExistingSuggestions[0].data);
     brokenBacklinkExistingSuggestions[0].setData.returns();
     brokenBacklinkExistingSuggestions[0].save.resolves();
 

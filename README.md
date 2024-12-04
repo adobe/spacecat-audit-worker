@@ -238,23 +238,28 @@ async function convertToOpportunity(auditUrl, auditData, context) {
   const opportunity =  opportunities.find((oppty) => oppty.getType() === 'audit-type');
 
   if (!opportunity) {
-      const opportunityData = {
-        siteId: auditData.siteId,
-        auditId: auditData.id,
-        runbook: 'link-to-runbook',
-        type: 'audit-type',
-        origin: 'AUTOMATON',
-        title: 'Opportunity Title',
-        description: 'Opportunity Description',
-        guidance: {
-          steps: [
-            'Step 1',
-            'Step 2',
-          ],
-        },
-        tags: ['tag1', 'tag2'],
-      };
+    const opportunityData = {
+      siteId: auditData.siteId,
+      auditId: auditData.id,
+      runbook: 'link-to-runbook',
+      type: 'audit-type',
+      origin: 'AUTOMATION',
+      title: 'Opportunity Title',
+      description: 'Opportunity Description',
+      guidance: {
+        steps: [
+          'Step 1',
+          'Step 2',
+        ],
+      },
+      tags: ['tag1', 'tag2'],
+    };
+    try {
       opportunity = await dataAccess.Opportunity.create(opportunityData);
+    } catch (e) {
+      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
+      throw e;
+    }
   } else {
     opportunity.setAuditId(auditData.id);
     await opportunity.save();
