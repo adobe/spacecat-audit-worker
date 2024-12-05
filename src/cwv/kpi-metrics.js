@@ -57,7 +57,7 @@ const calculateProjectedTrafficLost = (metrics) => {
 
   // Count the number of "green" metrics below thresholds
   METRICS.forEach((metric) => {
-    if (!THRESHOLDS[metric] || !Number.isFinite(metrics[metric]) || metrics[metric] < 0) {
+    if (!Number.isFinite(metrics[metric]) || metrics[metric] <= 0) {
       return;
     }
 
