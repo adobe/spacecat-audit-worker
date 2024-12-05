@@ -1,3 +1,24 @@
+# [1.39.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.38.2...v1.39.0) (2024-12-05)
+
+
+### Features
+
+* Include site level metrics in the CWV response ([#508](https://github.com/adobe/spacecat-audit-worker/issues/508)) ([a8b4fc9](https://github.com/adobe/spacecat-audit-worker/commit/a8b4fc93abe00f31846e0086a57a96bc4e060877))
+
+## [1.38.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.38.1...v1.38.2) (2024-12-05)
+
+
+### Bug Fixes
+
+* modified `getObjectFromKey` to parse non JSON objects ([#512](https://github.com/adobe/spacecat-audit-worker/issues/512)) ([1f47359](https://github.com/adobe/spacecat-audit-worker/commit/1f473593925ddfa0681648856f7e4ae6720a4e22))
+
+## [1.38.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.38.0...v1.38.1) (2024-12-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.15.0 ([#510](https://github.com/adobe/spacecat-audit-worker/issues/510)) ([c8a86bf](https://github.com/adobe/spacecat-audit-worker/commit/c8a86bfaf4e94146bd71e7750f61465bd1f0fe5f))
+
 # [1.38.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.37.2...v1.38.0) (2024-12-04)
 
 

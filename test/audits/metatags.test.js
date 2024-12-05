@@ -313,6 +313,7 @@ describe('Meta Tags', () => {
               },
             }),
           },
+          ContentType: 'application/json',
         });
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
@@ -331,6 +332,7 @@ describe('Meta Tags', () => {
               },
             }),
           },
+          ContentType: 'application/json',
         });
       const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
       dataAccessStub.addAudit = addAuditStub;
@@ -443,6 +445,7 @@ describe('Meta Tags', () => {
               },
             }),
           },
+          ContentType: 'application/json',
         });
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
@@ -462,6 +465,7 @@ describe('Meta Tags', () => {
               },
             }),
           },
+          ContentType: 'application/json',
         });
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
@@ -479,6 +483,7 @@ describe('Meta Tags', () => {
               },
             }),
           },
+          ContentType: 'application/json',
         });
       const addAuditStub = sinon.stub().resolves();
       dataAccessStub.addAudit = addAuditStub;
@@ -601,6 +606,7 @@ describe('Meta Tags', () => {
           Body: {
             transformToString: () => '',
           },
+          ContentType: 'application/json',
         });
       const addAuditStub = sinon.stub().resolves();
       dataAccessStub.addAudit = addAuditStub;
@@ -649,6 +655,7 @@ describe('Meta Tags', () => {
               },
             }),
           },
+          ContentType: 'application/json',
         });
       const result = await auditMetaTags(message, context);
 
