@@ -164,7 +164,7 @@ describe('calculates KPI deltas correctly', () => {
     ];
 
     const expectedAggregatedKpi = {
-      // (2000 * 0.005) + (900 * 0.015) + (900 * 0.015) = 38.5
+      // (2000 * 0.005) + (900 * 0.015) + (900 * 0.015) = 37
       projectedTrafficLost: 37,
       projectedTrafficValue: 55.5,
     };
