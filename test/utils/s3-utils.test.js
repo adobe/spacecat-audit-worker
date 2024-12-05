@@ -121,7 +121,7 @@ describe('S3 Utility Functions', () => {
     it('should return the S3 object when getObject succeeds', async () => {
       const bucketName = 'test-bucket';
       const key = 'test-key';
-      const expectedObject = { Body: { transformToString: () => '{"tags": {"title": "sample-title"}}' } };
+      const expectedObject = { Body: { transformToString: () => '{"tags": {"title": "sample-title"}}' }, ContentType: 'application/json' };
 
       const s3ClientMock = {
         send: () => expectedObject,
@@ -135,7 +135,20 @@ describe('S3 Utility Functions', () => {
       });
     });
 
-    it('should return null and log an error when getObject fails', async () => {
+    it('should return the raw body if the object is not JSON', async () => {
+      const bucketName = 'test-bucket';
+      const key = 'test-key.test';
+      const expectedObject = { Body: { transformToString: () => 'raw body' }, ContentType: 'abc/def' };
+
+      const s3ClientMock = {
+        send: () => expectedObject,
+      };
+
+      const result = await getObjectFromKey(s3ClientMock, bucketName, key, logMock);
+      expect(result).to.equal('raw body');
+    });
+
+    it('should log an error and return null when getObject fails', async () => {
       const bucketName = 'test-bucket';
       const key = 'test-key';
 
