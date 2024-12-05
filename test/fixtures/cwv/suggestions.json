@@ -12,6 +12,7 @@
         {
           "deviceType": "mobile",
           "pageviews": 6200,
+          "organic": 1800,
           "clsCount": 1,
           "ttfbCount": 1,
           "lcp": 2701,
@@ -24,6 +25,7 @@
         {
           "deviceType": "desktop",
           "pageviews": 3600,
+          "organic": 600,
           "clsCount": 0,
           "ttfbCount": 0,
           "lcp": null,
@@ -50,6 +52,7 @@
         {
           "deviceType": "desktop",
           "pageviews": 2420,
+          "organic": 1800,
           "lcp": 2099.699999988079,
           "lcpCount": 8,
           "cls": 0.011145537287059668,
@@ -62,6 +65,7 @@
         {
           "deviceType": "mobile",
           "pageviews": 100,
+          "organic": 100,
           "lcp": 2454.2,
           "lcpCount": 1,
           "cls": 0.26956930913977606,

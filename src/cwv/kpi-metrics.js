@@ -51,6 +51,10 @@ const TRAFFIC_MULTIPLIERS = {
 const calculateProjectedTrafficLost = (metrics) => {
   let greenMetricsCount = 0;
 
+  if (!metrics.organic || !Number.isFinite(metrics.organic) || metrics.organic <= 0) {
+    return 0;
+  }
+
   // Count the number of "green" metrics below thresholds
   METRICS.forEach((metric) => {
     if (!THRESHOLDS[metric] || !Number.isFinite(metrics[metric]) || metrics[metric] < 0) {
