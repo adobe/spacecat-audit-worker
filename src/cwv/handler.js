@@ -16,6 +16,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { calculateKpiDeltasForAuditEntries } from './kpi-metrics.js';
+import resolveCpcValue from './cpc-value-resolver.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
@@ -62,6 +63,10 @@ export async function convertToOppty(auditUrl, auditData, context) {
   log.info(`opportunity: ${JSON.stringify(opportunity)}`);
 
   if (!opportunity) {
+    const kpiDeltas = calculateKpiDeltasForAuditEntries(
+      auditData.auditResult.cwv,
+      resolveCpcValue(auditData.siteId, dataAccess),
+    );
     const opportunityData = {
       siteId: auditData.siteId,
       auditId: auditData.id,
@@ -83,7 +88,7 @@ export async function convertToOppty(auditUrl, auditData, context) {
         'Engagement',
       ],
       data: {
-        ...calculateKpiDeltasForAuditEntries(auditData.auditResult.cwv),
+        ...kpiDeltas,
       },
     };
     try {

@@ -22,6 +22,8 @@ use(sinonChai);
 use(chaiAsPromised);
 
 describe('calculates KPI deltas correctly', () => {
+  const cpcValue = 1.5;
+
   afterEach(() => {
     sinon.restore();
   });
@@ -63,7 +65,10 @@ describe('calculates KPI deltas correctly', () => {
       projectedTrafficValue: 35.25,
     };
 
-    const result = calculateKpiDeltasForAuditEntries(auditEntries);
+    const result = calculateKpiDeltasForAuditEntries(
+      auditEntries,
+      cpcValue,
+    );
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -102,7 +107,10 @@ describe('calculates KPI deltas correctly', () => {
       projectedTrafficValue: 0,
     };
 
-    const result = calculateKpiDeltasForAuditEntries(auditEntries);
+    const result = calculateKpiDeltasForAuditEntries(
+      auditEntries,
+      cpcValue,
+    );
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -169,7 +177,10 @@ describe('calculates KPI deltas correctly', () => {
       projectedTrafficValue: 55.5,
     };
 
-    const result = calculateKpiDeltasForAuditEntries(auditEntries);
+    const result = calculateKpiDeltasForAuditEntries(
+      auditEntries,
+      cpcValue,
+    );
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -190,7 +201,10 @@ describe('calculates KPI deltas correctly', () => {
       projectedTrafficValue: 0,
     };
 
-    const result = calculateKpiDeltasForAuditEntries(auditEntries);
+    const result = calculateKpiDeltasForAuditEntries(
+      auditEntries,
+      cpcValue,
+    );
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -225,7 +239,10 @@ describe('calculates KPI deltas correctly', () => {
       projectedTrafficValue: 0,
     };
 
-    const result = calculateKpiDeltasForAuditEntries(auditEntries);
+    const result = calculateKpiDeltasForAuditEntries(
+      auditEntries,
+      cpcValue,
+    );
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 });

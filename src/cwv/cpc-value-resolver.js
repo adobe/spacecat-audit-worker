@@ -15,8 +15,9 @@ const CPC_VALUE = 1.5;
 /**
  * Resolve Cost per click (CPC) value
  *
- * @param {Object} entry - Page data (including page URL)
+ * @param {string} siteId - Site id
+ * @param {Object} dataAccess - The data access object for database operations
  * @returns {number} - Cost per click (CPC) Value
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default (entry) => CPC_VALUE;
+export default (siteId, dataAccess) => CPC_VALUE;
