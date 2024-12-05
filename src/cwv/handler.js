@@ -61,8 +61,8 @@ export async function convertToOppty(auditUrl, auditData, context) {
   let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
   log.info(`opportunity: ${JSON.stringify(opportunity)}`);
 
+  const kpiDeltas = calculateKpiDeltasForAudit(auditData, dataAccess);
   if (!opportunity) {
-    const kpiDeltas = calculateKpiDeltasForAudit(auditData, dataAccess);
     const opportunityData = {
       siteId: auditData.siteId,
       auditId: auditData.id,
@@ -95,6 +95,10 @@ export async function convertToOppty(auditUrl, auditData, context) {
     }
   } else {
     opportunity.setAuditId(auditData.id);
+    opportunity.setData({
+      ...opportunity.getData(),
+      ...kpiDeltas,
+    });
     await opportunity.save();
   }
 

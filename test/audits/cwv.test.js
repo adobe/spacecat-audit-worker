@@ -99,6 +99,7 @@ describe('CWVRunner Tests', () => {
   describe('CWV audit to oppty conversion', () => {
     let addSuggestionsResponse;
     let oppty;
+    const opptyData = { 0: 'existed-data' };
     let auditData;
 
     beforeEach(() => {
@@ -124,6 +125,8 @@ describe('CWVRunner Tests', () => {
         addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
         getSuggestions: sandbox.stub().resolves([]),
         setAuditId: sandbox.stub(),
+        getData: sandbox.stub().returns(opptyData),
+        setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
 
@@ -190,6 +193,7 @@ describe('CWVRunner Tests', () => {
 
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');
+      expect(oppty.setData).to.have.been.calledOnceWith({ ...opptyData, ...expectedOppty.data });
       expect(oppty.save).to.have.been.calledOnce;
 
       // make sure that 1 old suggestion is removed

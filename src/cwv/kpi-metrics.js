@@ -35,8 +35,8 @@ const THRESHOLDS = {
  * 0 Good/Green CWV = Poor
  */
 const STATUSES = {
-  1: 'Needs Improvement',
   0: 'Poor',
+  1: 'Needs Improvement',
 };
 
 /**
@@ -44,8 +44,8 @@ const STATUSES = {
  * These modifiers are applied to statuses that require adjustment
  */
 const TRAFFIC_MULTIPLIERS = {
-  'Needs Improvement': 0.005, // +0.5%
   Poor: 0.015, // +1.5%
+  'Needs Improvement': 0.005, // +0.5%
 };
 
 const calculateProjectedTrafficLost = (metrics) => {
