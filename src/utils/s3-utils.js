@@ -11,12 +11,22 @@
  */
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
-export async function getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log, maxKeys = 1000) {
+export async function getObjectKeysUsingPrefix(
+  s3Client,
+  bucketName,
+  prefix,
+  log,
+  maxKeys = 1000,
+) {
   const objectKeys = [];
   let continuationToken = null;
   if (!s3Client || !bucketName || !prefix) {
-    log.error(`Invalid input parameters: ensure s3Client, bucketName:${bucketName}, and prefix:${prefix} are provided.`);
-    throw new Error('Invalid input parameters: ensure s3Client, bucketName, and prefix are provided.');
+    log.error(
+      `Invalid input parameters: ensure s3Client, bucketName:${bucketName}, and prefix:${prefix} are provided.`,
+    );
+    throw new Error(
+      'Invalid input parameters: ensure s3Client, bucketName, and prefix are provided.',
+    );
   }
   try {
     const params = {
@@ -35,17 +45,35 @@ export async function getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log
       });
       continuationToken = data?.NextContinuationToken;
     } while (continuationToken);
-    log.info(`Fetched ${objectKeys.length} keys from S3 for bucket ${bucketName} and prefix ${prefix}`);
+    log.info(
+      `Fetched ${objectKeys.length} keys from S3 for bucket ${bucketName} and prefix ${prefix}`,
+    );
   } catch (err) {
-    log.error(`Error while fetching S3 object keys using bucket ${bucketName} and prefix ${prefix}`, err);
+    log.error(
+      `Error while fetching S3 object keys using bucket ${bucketName} and prefix ${prefix}`,
+      err,
+    );
     throw err;
   }
   return objectKeys;
 }
 
+/**
+ * Retrieves an object from S3 by its key and returns its JSON parsed content.
+ * If the object is not JSON, returns the raw body.
+ * If the object is not found, returns null.
+ * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
+ * @param {string} bucketName - the name of the S3 bucket
+ * @param {string} key - the key of the S3 object
+ * @param {import('@azure/logger').Logger} log - a logger instance
+ * @returns {Promise<import('@aws-sdk/client-s3').GetObjectOutput['Body'] | null>}
+ * - the content of the S3 object
+ */
 export async function getObjectFromKey(s3Client, bucketName, key, log) {
   if (!s3Client || !bucketName || !key) {
-    log.error('Invalid input parameters: ensure s3Client, bucketName, and key are provided.');
+    log.error(
+      'Invalid input parameters: ensure s3Client, bucketName, and key are provided.',
+    );
     return null;
   }
   const command = new GetObjectCommand({
@@ -54,10 +82,25 @@ export async function getObjectFromKey(s3Client, bucketName, key, log) {
   });
   try {
     const response = await s3Client.send(command);
+    const contentType = response.ContentType;
     const body = await response.Body.transformToString();
-    return JSON.parse(body);
+
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        return JSON.parse(body);
+      } catch (parseError) {
+        log.error(`Unable to parse content for key ${key}`, parseError);
+        return null;
+      }
+    }
+
+    // Always return body for non-JSON content types
+    return body;
   } catch (err) {
-    log.error(`Error while fetching S3 object from bucket ${bucketName} using key ${key}`, err);
+    log.error(
+      `Error while fetching S3 object from bucket ${bucketName} using key ${key}`,
+      err,
+    );
     return null;
   }
 }
