@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import resolveCpcValue from './cpc-value-resolver.js';
-
 const METRICS = ['lcp', 'cls', 'inp'];
 
 /**
@@ -74,24 +72,17 @@ const calculateProjectedTrafficLost = (metrics) => {
   return metrics.organic * trafficMultiplier;
 };
 
-const calculateProjectedTrafficValue = (
-  projectedTrafficLost,
-  cpcValue,
-) => projectedTrafficLost * cpcValue;
-
-const calculateKpiDeltasForAuditEntryPerDevice = (entry, cpcValue) => {
+const calculateKpiDeltasForAuditEntryPerDevice = (entry) => {
   const kpiDeltas = {};
 
   // Iterate through all devices in entry metrics
   entry.metrics.forEach((metrics) => {
     const { deviceType } = metrics;
     const projectedTrafficLost = calculateProjectedTrafficLost(metrics);
-    const projectedTrafficValue = calculateProjectedTrafficValue(projectedTrafficLost, cpcValue);
 
     // Store results per device
     kpiDeltas[deviceType] = {
       projectedTrafficLost,
-      projectedTrafficValue,
     };
   });
 
@@ -102,27 +93,22 @@ const calculateKpiDeltasForAuditEntryPerDevice = (entry, cpcValue) => {
  * Calculate aggregated kpiDeltas for all audit entries
  *
  * @param {Object} auditData - Audit data
- * @param {Object} dataAccess - The data access object for database operations
  * @returns {Object} - Aggregated kpiDeltas for all audit entries
  */
-const calculateKpiDeltasForAudit = (auditData, dataAccess) => {
+const calculateKpiDeltasForAudit = (auditData) => {
   const aggregatedKpiDeltas = {
     projectedTrafficLost: 0,
-    projectedTrafficValue: 0,
   };
-  const cpcValue = resolveCpcValue(auditData, dataAccess);
 
   // Iterate through all entries and aggregate (sum) kpiDeltas
   auditData.auditResult.cwv.forEach((entry) => {
     const kpiDeltasForAuditEntryPerDevice = calculateKpiDeltasForAuditEntryPerDevice(
       entry,
-      cpcValue,
     );
 
     Object.values(kpiDeltasForAuditEntryPerDevice).forEach(
-      ({ projectedTrafficLost, projectedTrafficValue }) => {
+      ({ projectedTrafficLost }) => {
         aggregatedKpiDeltas.projectedTrafficLost += projectedTrafficLost;
-        aggregatedKpiDeltas.projectedTrafficValue += projectedTrafficValue;
       },
     );
   });
