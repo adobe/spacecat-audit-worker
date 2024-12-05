@@ -1,3 +1,10 @@
+# [1.39.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.38.2...v1.39.0) (2024-12-05)
+
+
+### Features
+
+* Include site level metrics in the CWV response ([#508](https://github.com/adobe/spacecat-audit-worker/issues/508)) ([a8b4fc9](https://github.com/adobe/spacecat-audit-worker/commit/a8b4fc93abe00f31846e0086a57a96bc4e060877))
+
 ## [1.38.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.38.1...v1.38.2) (2024-12-05)
 
 
