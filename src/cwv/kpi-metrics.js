@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import resolveCpcValue from './cpc-value-resolver.js';
+
 const METRICS = ['lcp', 'cls', 'inp'];
 
 /**
@@ -77,15 +79,6 @@ const calculateProjectedTrafficValue = (
   cpcValue,
 ) => projectedTrafficLost * cpcValue;
 
-/**
- * Calculates kpiDeltas for all devices in an audit entry
- *
- * Metrics contain CWV data, organic traffic and device type
- *
- * @param {Object} entry - Audit entry containing metrics
- * @param {number} cpcValue - Cost per click (CPC) Value
- * @returns {Object} - kpiDeltas object with values for each device
- */
 const calculateKpiDeltasForAuditEntryPerDevice = (entry, cpcValue) => {
   const kpiDeltas = {};
 
@@ -108,21 +101,25 @@ const calculateKpiDeltasForAuditEntryPerDevice = (entry, cpcValue) => {
 /**
  * Calculate aggregated kpiDeltas for all audit entries
  *
- * @param {Array} entries - Array of audit entries
- * @param {number} cpcValue - Cost per click (CPC) Value
- * @returns {Object} - Aggregated kpiDeltas for all entries
+ * @param {Object} auditData - Audit data
+ * @param {Object} dataAccess - The data access object for database operations
+ * @returns {Object} - Aggregated kpiDeltas for all audit entries
  */
-const calculateKpiDeltasForAuditEntries = (entries, cpcValue) => {
+const calculateKpiDeltasForAudit = (auditData, dataAccess) => {
   const aggregatedKpiDeltas = {
     projectedTrafficLost: 0,
     projectedTrafficValue: 0,
   };
+  const cpcValue = resolveCpcValue(auditData, dataAccess);
 
   // Iterate through all entries and aggregate (sum) kpiDeltas
-  entries.forEach((entry) => {
-    const kpiDeltasForEntryPerDevice = calculateKpiDeltasForAuditEntryPerDevice(entry, cpcValue);
+  auditData.auditResult.cwv.forEach((entry) => {
+    const kpiDeltasForAuditEntryPerDevice = calculateKpiDeltasForAuditEntryPerDevice(
+      entry,
+      cpcValue,
+    );
 
-    Object.values(kpiDeltasForEntryPerDevice).forEach(
+    Object.values(kpiDeltasForAuditEntryPerDevice).forEach(
       ({ projectedTrafficLost, projectedTrafficValue }) => {
         aggregatedKpiDeltas.projectedTrafficLost += projectedTrafficLost;
         aggregatedKpiDeltas.projectedTrafficValue += projectedTrafficValue;
@@ -133,7 +130,4 @@ const calculateKpiDeltasForAuditEntries = (entries, cpcValue) => {
   return aggregatedKpiDeltas;
 };
 
-export {
-  calculateKpiDeltasForAuditEntryPerDevice,
-  calculateKpiDeltasForAuditEntries,
-};
+export default calculateKpiDeltasForAudit;
