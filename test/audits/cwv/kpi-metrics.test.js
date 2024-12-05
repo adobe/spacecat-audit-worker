@@ -73,7 +73,7 @@ describe('calculates KPI deltas correctly', () => {
     const expectedAggregatedKpi = {
       // (2000 organic per device * 0.005 koeff) + (900 organic per device * 0.015 koeff) = 23.5
       projectedTrafficLost: 23.5,
-      projectedTrafficValue: 35.25,
+      projectedTrafficValue: 23.5,
     };
 
     const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
@@ -187,7 +187,7 @@ describe('calculates KPI deltas correctly', () => {
     const expectedAggregatedKpi = {
       // (2000 * 0.005) + (900 * 0.015) + (900 * 0.015) = 37
       projectedTrafficLost: 37,
-      projectedTrafficValue: 55.5,
+      projectedTrafficValue: 37,
     };
 
     const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);

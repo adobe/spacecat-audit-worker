@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-const CPC_VALUE = 1.5;
+const CPC_DEFAULT_VALUE = 1;
 
 /**
  * Resolve Cost per click (CPC) value
@@ -20,4 +20,4 @@ const CPC_VALUE = 1.5;
  * @returns {number} - Cost per click (CPC) Value
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default (auditData, dataAccess) => CPC_VALUE;
+export default (auditData, dataAccess) => CPC_DEFAULT_VALUE;
