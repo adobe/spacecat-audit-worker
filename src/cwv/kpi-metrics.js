@@ -106,26 +106,25 @@ const calculateKpiDeltasForAuditEntryPerDevice = (entry, cpcValue) => {
  * @returns {Object} - Aggregated kpiDeltas for all audit entries
  */
 const calculateKpiDeltasForAudit = (auditData, dataAccess) => {
-  const aggregatedKpiDeltas = {
-    projectedTrafficLost: 0,
-    projectedTrafficValue: 0,
-  };
   const cpcValue = resolveCpcValue(auditData, dataAccess);
 
-  // Iterate through all entries and aggregate (sum) kpiDeltas
-  auditData.auditResult.cwv.forEach((entry) => {
-    const kpiDeltasForAuditEntryPerDevice = calculateKpiDeltasForAuditEntryPerDevice(
-      entry,
-      cpcValue,
-    );
+  const aggregatedKpiDeltas = auditData.auditResult.cwv.reduce(
+    (aggregated, entry) => {
+      const kpiDeltasForAuditEntryPerDevice = calculateKpiDeltasForAuditEntryPerDevice(
+        entry,
+        cpcValue,
+      );
 
-    Object.values(kpiDeltasForAuditEntryPerDevice).forEach(
-      ({ projectedTrafficLost, projectedTrafficValue }) => {
-        aggregatedKpiDeltas.projectedTrafficLost += projectedTrafficLost;
-        aggregatedKpiDeltas.projectedTrafficValue += projectedTrafficValue;
-      },
-    );
-  });
+      return Object.values(kpiDeltasForAuditEntryPerDevice).reduce(
+        (acc, { projectedTrafficLost, projectedTrafficValue }) => ({
+          projectedTrafficLost: acc.projectedTrafficLost + projectedTrafficLost,
+          projectedTrafficValue: acc.projectedTrafficValue + projectedTrafficValue,
+        }),
+        aggregated,
+      );
+    },
+    { projectedTrafficLost: 0, projectedTrafficValue: 0 },
+  );
 
   return aggregatedKpiDeltas;
 };
