@@ -164,6 +164,8 @@ async function updateRecommendations(oppty, context, site) {
   oppty.recommendations = getRecommendations(lambdaResult);
   // eslint-disable-next-line no-param-reassign
   oppty.screenshot = await getPresignedUrl('screenshot-desktop.png', context, oppty.page, site);
+  // eslint-disable-next-line no-param-reassign
+  oppty.thumbnail = await getPresignedUrl('screenshot-desktop-thumbnail.png', context, oppty.page, site);
 }
 
 async function processHighOrganicLowCtrOpportunities(opportunites, context, site) {
