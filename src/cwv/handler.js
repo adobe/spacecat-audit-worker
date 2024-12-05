@@ -15,6 +15,7 @@ import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import calculateKpiDeltasForAudit from './kpi-metrics.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
@@ -60,6 +61,7 @@ export async function convertToOppty(auditUrl, auditData, context) {
   let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
   log.info(`opportunity: ${JSON.stringify(opportunity)}`);
 
+  const kpiDeltas = calculateKpiDeltasForAudit(auditData);
   if (!opportunity) {
     const opportunityData = {
       siteId: auditData.siteId,
@@ -81,6 +83,9 @@ export async function convertToOppty(auditUrl, auditData, context) {
         'Traffic acquisition',
         'Engagement',
       ],
+      data: {
+        ...kpiDeltas,
+      },
     };
     try {
       opportunity = await dataAccess.Opportunity.create(opportunityData);
@@ -90,6 +95,10 @@ export async function convertToOppty(auditUrl, auditData, context) {
     }
   } else {
     opportunity.setAuditId(auditData.id);
+    opportunity.setData({
+      ...opportunity.getData(),
+      ...kpiDeltas,
+    });
     await opportunity.save();
   }
 
