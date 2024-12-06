@@ -166,7 +166,7 @@ export async function filterValidUrls(urls) {
     try {
       const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
       if (response.status === 200) {
-        return { status: OK, url };
+        return { status: OK, url, statusCode: 200 };
       } else {
         return { status: NOT_OK, url, statusCode: response.status };
       }
@@ -337,10 +337,10 @@ export async function findSitemap(inputUrl) {
           notOkPagesFromSitemap[s] = existingPages.notOk;
         }
 
-        if (!existingPages.ok || existingPages.ok.length === 0) {
-          delete extractedPaths[s];
-        } else {
+        if (existingPages.ok && existingPages.ok.length > 0) {
           extractedPaths[s] = existingPages.ok;
+        } else {
+          delete extractedPaths[s];
         }
       }
     }
