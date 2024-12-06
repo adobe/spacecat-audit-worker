@@ -85,7 +85,6 @@ describe('Opportunities Tests', () => {
           AWS_ACCESS_KEY_ID: 'some-key-id',
           AWS_SECRET_ACCESS_KEY: 'some-secret-key',
           AWS_SESSION_TOKEN: 'some-secret-token',
-          S3_BUCKET_NAME: 'test-bucket',
         },
         runtime: { name: 'aws-lambda', region: 'us-east-1' },
         func: { package: 'spacecat-services', version: 'ci', name: 'test' },
@@ -157,19 +156,6 @@ describe('Opportunities Tests', () => {
       domainkey: 'abc_dummy_key',
       interval: 30,
       granularity: 'hourly',
-    });
-    // add the presigned urls for screenshot and thumbnail
-    expectedOpportunitiesData.forEach((oppty) => {
-      // eslint-disable-next-line no-param-reassign
-      const auditOpportunity = auditData.auditResult.experimentationOpportunities.find(
-        (o) => o.page === oppty.page && o.type === oppty.type && o.screenshot && o.thumbnail,
-      );
-      if (auditOpportunity) {
-        // eslint-disable-next-line no-param-reassign
-        oppty.screenshot = auditOpportunity.screenshot || '';
-        // eslint-disable-next-line no-param-reassign
-        oppty.thumbnail = auditOpportunity.thumbnail || '';
-      }
     });
     expect(
       auditData.auditResult.experimentationOpportunities,
