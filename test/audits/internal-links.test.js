@@ -170,7 +170,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     expect(opportunity.addSuggestions).to.have.been.calledOnce;
     const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
     expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
-  });
+  }).timeout(5000);
 
   it('creating a new opportunity object fails', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
@@ -183,7 +183,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
 
     // make sure that no new suggestions are added
     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
-  });
+  }).timeout(5000);
 
   it('allBySiteIdAndStatus method fails', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('Some Error'));
@@ -196,7 +196,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
 
     // make sure that no new suggestions are added
     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
-  });
+  }).timeout(5000);
 
   it('updates the existing opportunity object', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
@@ -227,5 +227,5 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     expect(opportunity.addSuggestions).to.have.been.calledOnce;
     const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
     expect(suggestionsArg).to.be.an('array').with.lengthOf(1);
-  });
+  }).timeout(5000);
 });

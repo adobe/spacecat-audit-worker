@@ -162,7 +162,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
   // Sync suggestions
   await syncSuggestions({
     opportunity,
-    newData: auditData?.auditResult?.brokenInternalLinks || [],
+    newData: auditData?.auditResult?.brokenInternalLinks,
     buildKey,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
