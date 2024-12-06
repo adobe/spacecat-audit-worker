@@ -22,7 +22,7 @@ import {
   findSitemap,
   isSitemapContentValid,
   checkRobotsForSitemap, sitemapAuditRunner, fetchContent, getBaseUrlPagesFromSitemaps,
-  convertToOpportunity, classifyOpportunities, getSitemapsWithIssues,
+  convertToOpportunity, classifyOpportunities, getSitemapsWithIssues, handleClassifiedOpportunity,
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -1040,6 +1040,51 @@ describe('Sitemap Audit', () => {
       );
     });
 
+    it('should handle creating an opportunity is not already defined', async () => {
+      existingOpportunity = {
+        getType: () => 'sitemap-something-else',
+        setAuditId: sandbox.stub(),
+        save: sandbox.stub(),
+        getId: sandbox.stub(),
+        getSuggestions: sandbox.stub(),
+        addSuggestions: sandbox.stub(),
+      };
+
+      const opp = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        type: 'sitemap-pages-not-found',
+        title: 'Sitemap pages not found',
+        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=FTWy7t',
+        guidance: {
+          steps: [
+            'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
+            'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
+          ],
+        },
+        tags: ['Traffic Acquisition', 'Sitemap'],
+        setAuditId: sandbox.stub(),
+        save: sandbox.stub(),
+        getId: sandbox.stub(),
+        getSuggestions: sandbox.stub(),
+        addSuggestions: sandbox.stub(),
+      };
+
+      opp.getSuggestions.returns([]);
+      opp.addSuggestions.returns({
+        errorItems: [],
+        createdItems: [{ a: 'b' }],
+      });
+      opp.getId.returns('oppty-id');
+
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+      mockDataAccess.Opportunity.create.returns(opp);
+
+      await convertToOpportunity('https://example.com', auditDataFailure, context);
+
+      expect(mockLog.error).to.not.have.been.called;
+    });
+
     it('should not create opportunity when there are no issues', async () => {
       existingOpportunity = {
         getType: () => 'sitemap-no-valid-paths-extracted',
@@ -1086,5 +1131,55 @@ describe('getSitemapsWithIssues', () => {
       auditResult: {},
     };
     expect(getSitemapsWithIssues(auditData)).to.deep.equal([]);
+  });
+});
+
+describe('handleClassifiedOpportunity', () => {
+  let mockDataAccess;
+  let mockLog;
+  let detectedEntry;
+  let existingEntries;
+  const siteId = 'site-id';
+  const auditId = 'audit-id';
+
+  beforeEach(() => {
+    mockLog = {
+      error: sinon.spy(),
+    };
+
+    mockDataAccess = {
+      Opportunity: {
+        create: sinon.stub(),
+      },
+    };
+
+    detectedEntry = {
+      getData: () => [{
+        sourceSitemapUrl: 'https://example.com/sitemap.xml',
+        pageUrl: 'https://example.com/page',
+        statusCode: 404,
+      }],
+      type: 'test-type',
+      title: 'Test Title',
+    };
+
+    existingEntries = [];
+  });
+
+  it('should handle errors when creating opportunity', async () => {
+    mockDataAccess.Opportunity.create.rejects(new Error('Creation failed'));
+
+    await expect(handleClassifiedOpportunity(
+      detectedEntry,
+      existingEntries,
+      mockLog,
+      siteId,
+      auditId,
+      mockDataAccess,
+    )).to.be.rejectedWith('Creation failed');
+
+    expect(mockLog.error).to.have.been.calledWith(
+      'Failed to create new opportunity for siteId site-id and auditId audit-id: Creation failed',
+    );
   });
 });

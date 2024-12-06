@@ -488,6 +488,29 @@ export async function classifyOpportunities(auditUrl, auditData) {
   return response;
 }
 
+async function createOpportunity(dataAccess, type, title, log, siteId, auditId) {
+  const opportunityData = {
+    siteId,
+    auditId,
+    type,
+    title,
+    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=FTWy7t',
+    guidance: {
+      steps: [
+        'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
+        'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
+      ],
+    },
+    tags: ['Traffic Acquisition', 'Sitemap'],
+  };
+  try {
+    return await dataAccess.Opportunity.create(opportunityData);
+  } catch (e) {
+    log.error(`Failed to create new opportunity for siteId ${siteId} and auditId ${auditId}: ${e.message}`);
+    throw e;
+  }
+}
+
 export async function handleClassifiedOpportunity(
   detectedEntry,
   existingEntries,
@@ -499,30 +522,18 @@ export async function handleClassifiedOpportunity(
   const newData = detectedEntry.getData();
   if (newData.length) {
     let opp = existingEntries.find((oppty) => oppty.getType() === detectedEntry.type);
-    if (!opp) {
-      const opportunityData = {
-        siteId,
-        auditId,
-        type: detectedEntry.type,
-        title: detectedEntry.title,
-        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=FTWy7t',
-        guidance: {
-          steps: [
-            'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
-            'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
-          ],
-        },
-        tags: ['Traffic Acquisition', 'Sitemap'],
-      };
-      try {
-        opp = await dataAccess.Opportunity.create(opportunityData);
-      } catch (e) {
-        log.error(`Failed to create new opportunity for siteId ${siteId} and auditId ${auditId}: ${e.message}`);
-        throw e;
-      }
-    } else {
+    if (opp) {
       opp = opp.setAuditId(auditId);
       await opp.save();
+    } else {
+      opp = await createOpportunity(
+        dataAccess,
+        detectedEntry.type,
+        detectedEntry.title,
+        log,
+        siteId,
+        auditId,
+      );
     }
 
     await syncSuggestions({
