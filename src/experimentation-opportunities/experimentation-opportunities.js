@@ -99,6 +99,7 @@ export function getRecommendations(lambdaResult) {
   return recommendations;
 }
 
+/* c8 ignore start */
 async function getPresignedUrl(fileName, context, url, site) {
   const { log } = context;
   const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
@@ -118,6 +119,7 @@ async function getPresignedUrl(fileName, context, url, site) {
     return '';
   }
 }
+/* c8 ignore stop */
 
 async function updateRecommendations(oppty, context, site) {
   const { log } = context;

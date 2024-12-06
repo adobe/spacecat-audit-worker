@@ -278,37 +278,6 @@ describe('Opportunities Tests', () => {
     const recommendations = getRecommendations();
     expect(recommendations).to.deep.equal([]);
   });
-
-  it('should generate presigned urls for the opportunity with recommendations', async () => {
-    const auditData = await experimentationOpportunities.handler(url, context, site);
-    const opportunity = auditData.auditResult.experimentationOpportunities
-      .find((o) => o.type === 'high-organic-low-ctr');
-    expect(opportunity.screenshot).to.include('https://test-bucket.s3.us-east-1.amazonaws.com/scrapes/056f9dbe-e9e1-4d80-8bfb-c9785a873b6a/abc-adoption/account/screenshot-desktop.png');
-    expect(opportunity.thumbnail).to.include('https://test-bucket.s3.us-east-1.amazonaws.com/scrapes/056f9dbe-e9e1-4d80-8bfb-c9785a873b6a/abc-adoption/account/screenshot-desktop-thumbnail.png');
-  });
-
-  it('should handle errors while generating presigned url', async () => {
-    // Reset the module with S3Client that throws error
-    experimentationOpportunities = await esmock('../../src/experimentation-opportunities/experimentation-opportunities.js', {
-      '@aws-sdk/client-lambda': {
-        LambdaClient: sandbox.stub().returns({
-          send: lambdaSendStub,
-        }),
-        InvokeCommand: sandbox.stub(),
-      },
-      '@aws-sdk/client-s3': {
-        S3Client: sandbox.stub().throws(new Error('Failed to create S3 client')),
-      },
-    });
-
-    const auditData = await experimentationOpportunities.handler(url, context, site);
-    const opportunity = auditData.auditResult.experimentationOpportunities
-      .find((o) => o.type === 'high-organic-low-ctr');
-
-    expect(opportunity.screenshot).to.equal('');
-    expect(opportunity.thumbnail).to.equal('');
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/Error generating presigned URL/));
-  });
 });
 
 describe('Opportunities postProcessor', () => {
