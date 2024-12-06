@@ -1,0 +1,110 @@
+{
+  "auditResult": {
+    "auditContext": {
+      "interval": 7
+    },
+    "formVitals": [
+      {
+        "cwv": {
+          "metrics": [
+            {
+              "cls": 0.006370692308102836,
+              "clsCount": 49,
+              "deviceType": "desktop",
+              "inp": 142,
+              "inpCount": 46,
+              "lcp": 3797.25,
+              "lcpCount": 64,
+              "pageviews": 27890,
+              "ttfb": 1542.25,
+              "ttfbCount": 184
+            }
+          ]
+        },
+        "formengagement": {
+          "desktop:windows": 100
+        },
+        "formsubmit": {},
+        "formview": {},
+        "pageview": {
+          "desktop:windows": 7898
+        },
+        "url": "https://business.adobe.com/se/resources/main.html"
+      },
+      {
+        "cwv": {
+          "metrics": [
+            {
+              "cls": 0.006370692308102836,
+              "clsCount": 49,
+              "deviceType": "desktop",
+              "inp": 142,
+              "inpCount": 46,
+              "lcp": 3797.25,
+              "lcpCount": 64,
+              "pageviews": 27890,
+              "ttfb": 1542.25,
+              "ttfbCount": 184
+            }
+          ]
+        },
+        "formengagement": {},
+        "formsubmit": {},
+        "formview": {
+          "desktop:mac": 100
+        },
+        "pageview": {
+          "desktop:linux": 2200,
+          "desktop:mac": 100,
+          "desktop:windows": 5890
+        },
+        "url": "https://business.adobe.com/jp/products/magento/magento-commerce.html"
+      },
+      {
+        "cwv": {},
+        "formengagement": {
+          "desktop:windows": 100
+        },
+        "formsubmit": {},
+        "formview": {},
+        "pageview": {
+          "desktop:mac": 6789,
+          "desktop:windows": 1900,
+          "mobile:android": 300,
+          "mobile:ios": 100
+        },
+        "url": "https://business.adobe.com/"
+      },
+      {
+        "cwv": {
+          "metrics": [
+            {
+              "cls": 0.0036327945232344965,
+              "clsCount": 31,
+              "deviceType": "desktop",
+              "inp": 40,
+              "inpCount": 19,
+              "lcp": 1239,
+              "lcpCount": 45,
+              "pageviews": 11910,
+              "ttfb": 477,
+              "ttfbCount": 79
+            }
+          ]
+        },
+        "formengagement": {
+          "desktop:windows": 200
+        },
+        "formsubmit": {
+          "desktop:windows": 200
+        },
+        "formview": {},
+        "pageview": {
+          "desktop:windows": 8000
+        },
+        "url": "https://business.adobe.com/jp/resources/guides/leading-generative-ai-deployment-for-marketing.html"
+      }
+    ]
+  },
+  "fullAuditRef": "www.example.com"
+}

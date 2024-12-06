@@ -219,11 +219,15 @@ describe('Audit tests', () => {
       context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
       context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
       context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
-      context.dataAccess.addAudit.resolves();
+      context.dataAccess.addAudit.resolves({
+        getId: () => 'some-audit-id',
+      });
       context.sqs.sendMessage.resolves();
 
       const postProcessors = [
-        sandbox.stub().resolves(), sandbox.stub().resolves(),
+        sandbox.stub().resolves(),
+        sandbox.stub().rejects(new Error('some nasty error')),
+        sandbox.stub().resolves(),
       ];
 
       nock(baseURL)
@@ -246,11 +250,9 @@ describe('Audit tests', () => {
         .withPostProcessors(postProcessors)
         .build();
 
-      const resp = await audit.run(message, context);
+      await expect(audit.run(message, context)).to.be.rejectedWith('some nasty error');
 
       // Assert
-      expect(resp.status).to.equal(200);
-
       expect(context.dataAccess.addAudit).to.have.been.calledOnce;
       const auditData = {
         siteId: site.getId(),
@@ -259,6 +261,9 @@ describe('Audit tests', () => {
         auditType: message.type,
         auditResult: { metric: 42 },
         fullAuditRef,
+        // Sinon is comparing against the final state of the object
+        // because JavaScript objects are passed by reference.
+        id: 'some-audit-id',
       };
       expect(context.dataAccess.addAudit).to.have.been.calledWith(auditData);
 
@@ -273,6 +278,8 @@ describe('Audit tests', () => {
       expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);
       expect(postProcessors[0]).to.have.been.calledWith(finalUrl, auditData);
       expect(postProcessors[1]).to.have.been.calledWith(finalUrl, auditData);
+      expect(postProcessors[2]).to.not.have.been.called;
+      expect(context.log.error).to.have.been.calledOnceWith(`Post processor functionStub failed for dummy audit failed for site site-id. Reason: some nasty error.\nAudit data: ${JSON.stringify(auditData)}`);
     });
   });
 
@@ -282,7 +289,9 @@ describe('Audit tests', () => {
     context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
     context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
     context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
-    context.dataAccess.addAudit.resolves();
+    context.dataAccess.addAudit.resolves({
+      getId: () => 'some-audit-id',
+    });
     context.sqs.sendMessage.resolves();
 
     nock(baseURL)
@@ -318,6 +327,9 @@ describe('Audit tests', () => {
       auditType: message.type,
       auditResult: { metric: 42 },
       fullAuditRef,
+      // Sinon is comparing against the final state of the object because JavaScript
+      //  objects are passed by reference.
+      id: 'some-audit-id',
     });
 
     const expectedMessage = {

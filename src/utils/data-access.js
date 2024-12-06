@@ -35,3 +35,72 @@ export async function retrieveSiteBySiteId(dataAccess, siteId, log) {
     throw new Error(`Error getting site ${siteId}: ${e.message}`);
   }
 }
+
+/**
+ * Synchronizes existing suggestions with new data by removing outdated suggestions
+ * and adding new ones.
+ *
+ * @param {Object} params - The parameters for the sync operation.
+ * @param {Object} params.opportunity - The opportunity object to synchronize suggestions for.
+ * @param {Array} params.newData - Array of new data objects to sync.
+ * @param {Function} params.buildKey - Function to generate a unique key for each item.
+ * @param {Function} params.mapNewSuggestion - Function to map new data to suggestion objects.
+ * @param {Object} params.log - Logger object for error reporting.
+ * @returns {Promise<void>} - Resolves when the synchronization is complete.
+ */
+export async function syncSuggestions({
+  opportunity,
+  newData,
+  buildKey,
+  mapNewSuggestion,
+  log,
+}) {
+  const newDataKeys = new Set(newData.map(buildKey));
+  const existingSuggestions = await opportunity.getSuggestions();
+  // Remove outdated suggestions
+  await Promise.all(
+    existingSuggestions
+      .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
+      .map((suggestion) => suggestion.remove()),
+  );
+
+  // Update existing suggestions
+  await Promise.all(
+    existingSuggestions
+      .filter((existing) => {
+        const existingKey = buildKey(existing.getData());
+        return newDataKeys.has(existingKey);
+      })
+      .map((existing) => {
+        const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
+        existing.setData({
+          ...existing.getData(),
+          ...newDataItem,
+        });
+        return existing.save();
+      }),
+  );
+
+  // Prepare new suggestions
+  const newSuggestions = newData
+    .filter((data) => !existingSuggestions.some(
+      (existing) => buildKey(existing.getData()) === buildKey(data),
+    ))
+    .map(mapNewSuggestion);
+
+  // Add new suggestions if any
+  if (newSuggestions.length > 0) {
+    const suggestions = await opportunity.addSuggestions(newSuggestions);
+
+    if (suggestions.errorItems?.length > 0) {
+      log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);
+      suggestions.errorItems.forEach((errorItem) => {
+        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+      });
+
+      if (suggestions.createdItems?.length <= 0) {
+        throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+      }
+    }
+  }
+}
