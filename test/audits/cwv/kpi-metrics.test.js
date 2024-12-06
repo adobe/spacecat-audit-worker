@@ -23,6 +23,13 @@ use(chaiAsPromised);
 
 describe('calculates KPI deltas correctly', () => {
   const sandbox = sinon.createSandbox();
+  let mockDataAccess;
+
+  beforeEach(() => {
+    mockDataAccess = {
+      getSiteByID: sandbox.stub(),
+    };
+  });
 
   afterEach(() => {
     sandbox.restore();
@@ -66,9 +73,10 @@ describe('calculates KPI deltas correctly', () => {
     const expectedAggregatedKpi = {
       // (2000 organic per device * 0.005 koeff) + (900 organic per device * 0.015 koeff) = 23.5
       projectedTrafficLost: 23.5,
+      projectedTrafficValue: 23.5,
     };
 
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -108,9 +116,10 @@ describe('calculates KPI deltas correctly', () => {
 
     const expectedAggregatedKpi = {
       projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
     };
 
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -178,9 +187,10 @@ describe('calculates KPI deltas correctly', () => {
     const expectedAggregatedKpi = {
       // (2000 * 0.005) + (900 * 0.015) + (900 * 0.015) = 37
       projectedTrafficLost: 37,
+      projectedTrafficValue: 37,
     };
 
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -202,9 +212,10 @@ describe('calculates KPI deltas correctly', () => {
 
     const expectedAggregatedKpi = {
       projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
     };
 
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -240,9 +251,10 @@ describe('calculates KPI deltas correctly', () => {
 
     const expectedAggregatedKpi = {
       projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
     };
 
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 });
