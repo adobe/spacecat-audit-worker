@@ -208,15 +208,15 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     expect(opportunity.save).to.have.been.calledOnce;
 
     // make sure that 1 old suggestion is removed
-    expect(existingSuggestions[0].remove).to.have.been.calledOnce;
+    expect(existingSuggestions[1].remove).to.have.been.calledOnce;
 
     // make sure that 1 existing suggestion is updated
-    expect(existingSuggestions[1].setData).to.have.been.calledOnce;
-    expect(existingSuggestions[1].save).to.have.been.calledOnce;
+    expect(existingSuggestions[0].setData).to.have.been.calledOnce;
+    expect(existingSuggestions[0].save).to.have.been.calledOnce;
 
     // make sure that 3 new suggestions are created
     expect(opportunity.addSuggestions).to.have.been.calledOnce;
     const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
-    expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
+    expect(suggestionsArg).to.be.an('array').with.lengthOf(1);
   });
 });

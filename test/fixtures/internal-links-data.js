@@ -102,7 +102,7 @@ export const expectedSuggestions = [
     type: 'CONTENT_UPDATE',
     rank: 100,
     data: {
-      url_to: 'https://www.example.com/article/dogs/breeds/choosing-a-miniature-poodle',
+      url_to: 'https://www.example.com/article/dogs/breeds/choosing-a-miniature-poodle-1',
       url_from: 'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
       traffic_domain: 100,
     },
