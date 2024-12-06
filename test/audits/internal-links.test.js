@@ -20,10 +20,6 @@ import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.j
 import { internalLinksAuditRunner, convertToOpportunity } from '../../src/internal-links/handler.js';
 import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../shared.js';
-// rum data = internalLinksData
-// import expectedOppty from '../fixtures/internal-links-data.js' assert { type: 'json' };
-// import suggestions from '../fixtures/internal-links/suggestions.json' assert { type: 'json' };
-// import rumData from '../fixtures/cwv/cwv.json' assert { type: 'json' };
 
 const AUDIT_RESULT_DATA = [
   {
@@ -184,6 +180,19 @@ describe('broken-internal-links audit to opportunity conversion', () => {
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
     expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id-1 and auditId audit-id-1: big error happened');
+
+    // make sure that no new suggestions are added
+    expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
+  });
+
+  it('allBySiteIdAndStatus method fails', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('Some Error'));
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(context.log.error).to.have.been.calledOnceWith('Fetching opportunities for siteId site-id-1 failed with error: Some Error');
 
     // make sure that no new suggestions are added
     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;

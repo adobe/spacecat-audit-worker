@@ -170,7 +170,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
       rank: entry.traffic_domain,
       data: {
         ...entry,
-        /* code commented until implementation of suggested links. TODO: implement suggestions */
+        /* code commented until implementation of suggested links. TODO: implement suggestions, https://jira.corp.adobe.com/browse/SITES-26545 */
         // suggestedLink: 'some suggestion here',
       },
     }),
