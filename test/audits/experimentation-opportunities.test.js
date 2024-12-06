@@ -49,21 +49,6 @@ describe('Opportunities Tests', () => {
       toFake: ['Date'],
     });
 
-    const mockS3Client = {};
-
-    experimentationOpportunities = await esmock('../../src/experimentation-opportunities/experimentation-opportunities.js', {
-      '@aws-sdk/client-lambda': {
-        LambdaClient: sandbox.stub().returns({
-          send: lambdaSendStub,
-        }),
-        InvokeCommand: sandbox.stub(),
-      },
-      '@aws-sdk/client-s3': {
-        S3Client: sandbox.stub().returns(mockS3Client),
-        GetObjectCommand: sandbox.stub(),
-      },
-    });
-
     messageBodyJson = {
       type: '404',
       url: 'https://abc.com',
