@@ -501,7 +501,7 @@ async function createOpportunity(dataAccess, type, title, log, siteId, auditId) 
         'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
       ],
     },
-    tags: ['Traffic Acquisition', 'Sitemap'],
+    tags: ['Traffic Acquisition'],
   };
   try {
     return await dataAccess.Opportunity.create(opportunityData);
