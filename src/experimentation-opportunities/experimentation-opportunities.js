@@ -101,16 +101,10 @@ export function getRecommendations(lambdaResult) {
 
 async function getPresignedUrl(fileName, context, url, site) {
   const { log } = context;
-  let s3Client;
-  try {
-    s3Client = AWSXray.captureAWSv3Client(new S3Client({ region: process.env.AWS_REGION }));
-  } catch (error) {
-    log.error(`Unable to create S3 client, for ${site.getBaseURL()}`, error);
-    return '';
-  }
   const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
-  log.info(`Generating presigned URL for ${screenshotPath}`);
   try {
+    const s3Client = AWSXray.captureAWSv3Client(new S3Client({ region: process.env.AWS_REGION }));
+    log.info(`Generating presigned URL for ${screenshotPath}`);
     const command = new GetObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
       Key: screenshotPath,
@@ -120,7 +114,7 @@ async function getPresignedUrl(fileName, context, url, site) {
     });
     return signedUrl;
   } catch (error) {
-    context.log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
+    log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
     return '';
   }
 }

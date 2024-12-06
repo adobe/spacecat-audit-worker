@@ -307,7 +307,7 @@ describe('Opportunities Tests', () => {
 
     expect(opportunity.screenshot).to.equal('');
     expect(opportunity.thumbnail).to.equal('');
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/Unable to create S3 client/));
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/Error generating presigned URL/));
   });
 });
 
