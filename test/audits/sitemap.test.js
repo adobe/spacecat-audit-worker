@@ -22,7 +22,7 @@ import {
   findSitemap,
   isSitemapContentValid,
   checkRobotsForSitemap, sitemapAuditRunner, fetchContent, getBaseUrlPagesFromSitemaps,
-  convertToOpportunity,
+  convertToOpportunity, classifyOpportunities,
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -738,12 +738,194 @@ describe('Sitemap Audit', () => {
     });
   });
 
+  describe('classifyOpportunities', () => {
+    const auditAllGood = {
+      siteId: 'site-id',
+      auditId: 'audit-id',
+      auditResult: {
+        success: true,
+        reasons: [{
+          value: 'Sitemaps found and checked.',
+        }],
+        paths: {
+          'https://some-domain.adobe/sitemap.xml': ['https://some-domain.adobe/foo', 'https://some-domain.adobe/bar'],
+        },
+        url: 'https://some-domain.adobe',
+        details: {
+          issues: { },
+        },
+      },
+    };
+
+    const auditDataWithSitemapFoundWithPagesButTheyRespondWith404 = {
+      siteId: 'site-id',
+      id: 'audit-id',
+      auditResult: {
+        success: false,
+        reasons: [
+          {
+            value: 'https://some-domain.adobe/sitemap.xml',
+            error: 'NO VALID URLs FOUND IN SITEMAP',
+          },
+        ],
+        url: 'https://some-domain.adobe',
+        details: {
+          issues: {
+            'https://some-domain.adobe/sitemap.xml': [{
+              url: 'https://some-domain.adobe/foo',
+              statusCode: 404,
+            }, {
+              url: 'https://some-domain.adobe/bar',
+              statusCode: 404,
+            }],
+          },
+        },
+      },
+    };
+
+    const auditDataWithSitemapFoundWithNoPages = {
+      siteId: 'site-id',
+      id: 'audit-id',
+      auditResult: {
+        success: false,
+        reasons: [{
+          value: 'https://some-domain.adobe/sitemap.xml',
+          error: 'NO VALID URLs FOUND IN SITEMAP',
+        }],
+        url: 'https://some-domain.adobe',
+        details: {
+          issues: {},
+        },
+      },
+    };
+
+    const auditNoSitemapsFound = {
+      siteId: 'site-id',
+      id: 'audit-id',
+      auditResult: {
+        success: false,
+        reasons: [{
+          value: 'https://some-domain.adobe/robots.txt',
+          error: 'NO SITEMAP FOUND IN ROBOTS',
+        }],
+        details: {
+          issues: [{
+            url: 'https://some-domain.adobe/sitemap.xml',
+          }, {
+            url: 'https://some-domain.adobe/sitemap_index.xml',
+          }],
+        },
+      },
+    };
+
+    const auditPartiallySuccessfulOnePageNetworkError = {
+      siteId: 'site-id',
+      id: 'audit-id',
+      auditResult: {
+        success: true,
+        reasons: [{
+          value: 'Sitemaps found and checked.',
+        }],
+        paths: {
+          'https://some-domain.adobe/sitemap.xml': ['https://some-domain.adobe/foo'],
+        },
+        url: 'https://some-domain.adobe',
+        details: {
+          issues: {
+            'https://some-domain.adobe/sitemap.xml': [{
+              url: 'https://some-domain.adobe/bar',
+            }],
+          },
+        },
+      },
+    };
+
+    it('should return empty when all is ok', async () => {
+      const response = await classifyOpportunities(url, auditAllGood);
+      expect(response.length)
+        .to
+        .equal(0);
+    });
+
+    it('should report that the expected default sitemap path contains no urls', async () => {
+      const response = await classifyOpportunities(url, auditDataWithSitemapFoundWithNoPages);
+      expect(response.length).to.equal(1);
+      expect(response[0].type).to.equal('sitemap-no-valid-paths-extracted');
+
+      const newData = response[0].getData();
+      expect(newData.length).to.equal(1);
+      expect(newData[0]).deep.equal({
+        sourceSitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+        pageUrl: '',
+        statusCode: 404,
+      });
+
+      const builtKey = response[0].buildKey(newData[0]);
+      expect(builtKey).to.equal('site-id|sitemap-no-valid-paths-extracted|https://some-domain.adobe/sitemap.xml');
+    });
+
+    it('should report that the expected default sitemap path contains only urls that are not found', async () => {
+      const response = await classifyOpportunities(
+        url,
+        auditDataWithSitemapFoundWithPagesButTheyRespondWith404,
+      );
+      expect(response.length).to.equal(1);
+      expect(response[0].type).to.equal('sitemap-no-valid-paths-extracted');
+
+      const newData = response[0].getData();
+      expect(newData.length).to.equal(2);
+
+      expect(newData[0]).deep.equal({
+        sourceSitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+        pageUrl: 'https://some-domain.adobe/foo',
+        statusCode: 404,
+      });
+
+      expect(newData[1]).deep.equal({
+        sourceSitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+        pageUrl: 'https://some-domain.adobe/bar',
+        statusCode: 404,
+      });
+
+      const baseKey = 'site-id|sitemap-no-valid-paths-extracted|https://some-domain.adobe/sitemap.xml';
+      expect(response[0].buildKey(newData[0])).to.equal(`${baseKey}|https://some-domain.adobe/foo`);
+      expect(response[0].buildKey(newData[1])).to.equal(`${baseKey}|https://some-domain.adobe/bar`);
+    });
+
+    it('should report that there are no sitemaps defined in robots.txt and in the fallback', async () => {
+      const response = await classifyOpportunities(url, auditNoSitemapsFound);
+      expect(response.length).to.equal(1);
+      expect(response[0].type).to.equal('sitemap-not-available');
+
+      const newData = response[0].getData();
+      expect(newData.length).to.equal(1);
+      expect(response[0].buildKey(newData[0]))
+        .to
+        .equal('site-id|sitemap-not-available|https://some-domain.adobe/robots.txt');
+    });
+
+    it('should present a opportunity even if the audit is successful as long as there are pages with issues', async () => {
+      // eslint-disable-next-line max-len
+      const response = await classifyOpportunities(url, auditPartiallySuccessfulOnePageNetworkError);
+      expect(response.length).to.equal(1);
+      expect(response[0].type).to.equal('pages-in-sitemap-have-errors');
+
+      const newData = response[0].getData();
+      expect(newData.length).to.equal(1);
+      expect(response[0].buildKey(newData[0]))
+        .to
+        .equal('site-id|pages-in-sitemap-have-errors|https://some-domain.adobe/sitemap.xml|https://some-domain.adobe/bar');
+    });
+  });
+
   describe('convertToOpportunity', () => {
     let mockDataAccess;
     let mockLog;
     let opportunity;
-    let auditData;
+    let auditDataFailure;
+    let auditDataSuccess;
     let otherOpportunity;
+    let existingOpportunity;
 
     beforeEach(() => {
       mockLog = {
@@ -777,25 +959,47 @@ describe('Sitemap Audit', () => {
         dataAccess: mockDataAccess,
       };
 
-      auditData = {
+      auditDataFailure = {
         siteId: 'site-id',
         id: 'audit-id',
         auditResult: {
+          success: false,
+          reasons: [
+            {
+              value: 'https://some-domain.adobe/sitemap.xml',
+              error: 'NO VALID URLs FOUND IN SITEMAP',
+            },
+          ],
+          url: 'https://some-domain.adobe',
           details: {
             issues: {
-              'https://example.com/sitemap1.xml': [
-                {
-                  url: 'https://example.com/page1',
-                  statusCode: 404,
-                },
-                {
-                  url: 'https://example.com/page2',
-                  statusCode: 500,
-                },
-              ],
+              'https://some-domain.adobe/sitemap.xml': [{
+                url: 'https://some-domain.adobe/foo',
+                statusCode: 404,
+              }, {
+                url: 'https://some-domain.adobe/bar',
+                statusCode: 404,
+              }],
             },
           },
-          reasons: [{ value: 'reason' }],
+        },
+      };
+
+      auditDataSuccess = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          success: true,
+          reasons: [{
+            value: 'Sitemaps found and checked.',
+          }],
+          paths: {
+            'https://some-domain.adobe/sitemap.xml': ['https://some-domain.adobe/foo', 'https://some-domain.adobe/bar'],
+          },
+          url: 'https://some-domain.adobe',
+          details: {
+            issues: { },
+          },
         },
       };
     });
@@ -808,7 +1012,7 @@ describe('Sitemap Audit', () => {
       mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
       mockDataAccess.Opportunity.create.rejects(new Error('Creation failed'));
 
-      await expect(convertToOpportunity('https://example.com', auditData, context))
+      await expect(convertToOpportunity('https://example.com', auditDataFailure, context))
         .to.be.rejectedWith('Creation failed');
 
       expect(mockLog.error).to.have.been.calledWith(
@@ -817,19 +1021,48 @@ describe('Sitemap Audit', () => {
     });
 
     it('should not create opportunity when there are no issues', async () => {
-      const auditDataNoIssues = {
-        ...auditData,
-        auditResult: {
-          details: {
-            issues: {},
-          },
-        },
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
+      await convertToOpportunity('https://example.com', auditDataSuccess, context);
+
+      expect(mockDataAccess.Opportunity.create).to.not.have.been.called;
+      expect(opportunity.addSuggestions).to.not.have.been.called;
+    });
+
+    it('should handle updateing when opportunity was already defined', async () => {
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
+      mockDataAccess.Opportunity.create.rejects(new Error('Creation failed'));
+
+      await expect(convertToOpportunity('https://example.com', auditDataFailure, context))
+        .to.be.rejectedWith('Creation failed');
+
+      expect(mockLog.error).to.have.been.calledWith(
+        'Failed to create new opportunity for siteId site-id and auditId audit-id: Creation failed',
+      );
+    });
+
+    it('should not create opportunity when there are no issues', async () => {
+      existingOpportunity = {
+        getType: () => 'sitemap-no-valid-paths-extracted',
+        setAuditId: sandbox.stub(),
+        save: sandbox.stub(),
+        getId: sandbox.stub(),
+        getSuggestions: sandbox.stub(),
+        addSuggestions: sandbox.stub(),
       };
 
-      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
+      existingOpportunity.setAuditId.returns(existingOpportunity);
+      existingOpportunity.getSuggestions.returns([]);
+      existingOpportunity.addSuggestions.returns({
+        errorItems: [],
+        createdItems: [{ a: 'b' }],
+      });
+      existingOpportunity.getId.returns('oppty-id');
 
-      await convertToOpportunity('https://example.com', auditDataNoIssues, context);
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+      await convertToOpportunity('https://example.com', auditDataFailure, context);
 
+      expect(existingOpportunity.setAuditId).to.have.been.calledWith('audit-id');
+      expect(existingOpportunity.save).to.have.been.called;
       expect(mockDataAccess.Opportunity.create).to.not.have.been.called;
       expect(opportunity.addSuggestions).to.not.have.been.called;
     });
