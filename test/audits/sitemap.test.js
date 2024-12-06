@@ -22,7 +22,7 @@ import {
   findSitemap,
   isSitemapContentValid,
   checkRobotsForSitemap, sitemapAuditRunner, fetchContent, getBaseUrlPagesFromSitemaps,
-  convertToOpportunity, classifyOpportunities,
+  convertToOpportunity, classifyOpportunities, getSitemapsWithIssues,
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -1066,5 +1066,25 @@ describe('Sitemap Audit', () => {
       expect(mockDataAccess.Opportunity.create).to.not.have.been.called;
       expect(opportunity.addSuggestions).to.not.have.been.called;
     });
+  });
+});
+
+describe('getSitemapsWithIssues', () => {
+  it('should return empty array when no issues exist', () => {
+    const auditData = {
+      auditResult: {
+        details: {
+          issues: {},
+        },
+      },
+    };
+    expect(getSitemapsWithIssues(auditData)).to.deep.equal([]);
+  });
+
+  it('should return empty array when details is undefined', () => {
+    const auditData = {
+      auditResult: {},
+    };
+    expect(getSitemapsWithIssues(auditData)).to.deep.equal([]);
   });
 });

@@ -400,7 +400,7 @@ export function getSitemapsWithIssues(auditData) {
     : [];
 }
 
-// step 1: identify issue (issue-type) even if we declare the same "sitemap" issue type
+// identify issue (issue-type) even if we declare the same "sitemap" issue type
 export function getPagesWithIssues(auditData) {
   const sitemapsWithPagesWithIssues = getSitemapsWithIssues(auditData);
   const newData = [];
@@ -434,7 +434,7 @@ export async function classifyOpportunities(auditUrl, auditData) {
 
   if (!auditData.auditResult.success) {
     auditData.auditResult.reasons.forEach((reason) => {
-      // scenario 2: sitemaps were found by no valid pages extracted
+      // sitemaps were found by no valid pages extracted
       if (reason.error === ERROR_CODES.NO_SITEMAP_IN_ROBOTS) {
         response.push({
           getData: () => [{
@@ -449,7 +449,7 @@ export async function classifyOpportunities(auditUrl, auditData) {
         });
       }
 
-      // scenario 2: sitemaps were found by no valid pages extracted
+      // sitemaps were found by no valid pages extracted
       if (reason.error === ERROR_CODES.NO_VALID_PATHS_EXTRACTED) {
         response.push({
           getData: () => {
@@ -474,7 +474,7 @@ export async function classifyOpportunities(auditUrl, auditData) {
     const newData = getPagesWithIssues(auditData);
 
     if (newData.length) {
-      // scenario 3: some pages failed, create an opportunity when newData are all failed pages
+      // some pages failed, create an opportunity when newData are all failed pages
       response.push({
         getData: () => newData,
         type: 'pages-in-sitemap-have-errors',
@@ -532,7 +532,6 @@ export async function handleClassifiedOpportunity(
       mapNewSuggestion: (issue) => ({
         opportunityId: opp.getId(),
         type: 'CODE_CHANGE',
-        // todo find from where to set rank because traffic_domain not available
         rank: issue.traffic_domain ?? 0,
         data: issue,
       }),
