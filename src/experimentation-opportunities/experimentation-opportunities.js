@@ -271,6 +271,7 @@ function convertToOpportunityEntity(oppty, auditData) {
       pageViews: oppty.pageViews,
       samples: oppty.samples,
       screenshot: oppty.screenshot,
+      thumbnail: oppty.thumbnail,
       trackedKPISiteAverage: oppty.trackedKPISiteAverage,
       trackedPageKPIName: oppty.trackedPageKPIName,
       trackedPageKPIValue: oppty.trackedPageKPIValue,
