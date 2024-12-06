@@ -48,6 +48,22 @@ describe('Opportunities Tests', () => {
       now: +new Date(mockDate),
       toFake: ['Date'],
     });
+
+    const mockS3Client = {};
+
+    experimentationOpportunities = await esmock('../../src/experimentation-opportunities/experimentation-opportunities.js', {
+      '@aws-sdk/client-lambda': {
+        LambdaClient: sandbox.stub().returns({
+          send: lambdaSendStub,
+        }),
+        InvokeCommand: sandbox.stub(),
+      },
+      '@aws-sdk/client-s3': {
+        S3Client: sandbox.stub().returns(mockS3Client),
+        GetObjectCommand: sandbox.stub(),
+      },
+    });
+
     messageBodyJson = {
       type: '404',
       url: 'https://abc.com',
@@ -69,6 +85,7 @@ describe('Opportunities Tests', () => {
           AWS_ACCESS_KEY_ID: 'some-key-id',
           AWS_SECRET_ACCESS_KEY: 'some-secret-key',
           AWS_SESSION_TOKEN: 'some-secret-token',
+          S3_BUCKET_NAME: 'test-bucket',
         },
         runtime: { name: 'aws-lambda', region: 'us-east-1' },
         func: { package: 'spacecat-services', version: 'ci', name: 'test' },
@@ -140,6 +157,19 @@ describe('Opportunities Tests', () => {
       domainkey: 'abc_dummy_key',
       interval: 30,
       granularity: 'hourly',
+    });
+    // add the presigned urls for screenshot and thumbnail
+    expectedOpportunitiesData.forEach((oppty) => {
+      // eslint-disable-next-line no-param-reassign
+      const auditOpportunity = auditData.auditResult.experimentationOpportunities.find(
+        (o) => o.page === oppty.page && o.type === oppty.type && o.screenshot && o.thumbnail,
+      );
+      if (auditOpportunity) {
+        // eslint-disable-next-line no-param-reassign
+        oppty.screenshot = auditOpportunity.screenshot || '';
+        // eslint-disable-next-line no-param-reassign
+        oppty.thumbnail = auditOpportunity.thumbnail || '';
+      }
     });
     expect(
       auditData.auditResult.experimentationOpportunities,
@@ -247,6 +277,37 @@ describe('Opportunities Tests', () => {
   it('should return empty recommendations array when llm response is empty', async () => {
     const recommendations = getRecommendations();
     expect(recommendations).to.deep.equal([]);
+  });
+
+  it('should generate presigned urls for the opportunity with recommendations', async () => {
+    const auditData = await experimentationOpportunities.handler(url, context, site);
+    const opportunity = auditData.auditResult.experimentationOpportunities
+      .find((o) => o.type === 'high-organic-low-ctr');
+    expect(opportunity.screenshot).to.include('https://test-bucket.s3.us-east-1.amazonaws.com/scrapes/056f9dbe-e9e1-4d80-8bfb-c9785a873b6a/abc-adoption/account/screenshot-desktop.png');
+    expect(opportunity.thumbnail).to.include('https://test-bucket.s3.us-east-1.amazonaws.com/scrapes/056f9dbe-e9e1-4d80-8bfb-c9785a873b6a/abc-adoption/account/screenshot-desktop-thumbnail.png');
+  });
+
+  it('should handle errors while generating presigned url', async () => {
+    // Reset the module with S3Client that throws error
+    experimentationOpportunities = await esmock('../../src/experimentation-opportunities/experimentation-opportunities.js', {
+      '@aws-sdk/client-lambda': {
+        LambdaClient: sandbox.stub().returns({
+          send: lambdaSendStub,
+        }),
+        InvokeCommand: sandbox.stub(),
+      },
+      '@aws-sdk/client-s3': {
+        S3Client: sandbox.stub().throws(new Error('Failed to create S3 client')),
+      },
+    });
+
+    const auditData = await experimentationOpportunities.handler(url, context, site);
+    const opportunity = auditData.auditResult.experimentationOpportunities
+      .find((o) => o.type === 'high-organic-low-ctr');
+
+    expect(opportunity.screenshot).to.equal('');
+    expect(opportunity.thumbnail).to.equal('');
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/Unable to create S3 client/));
   });
 });
 

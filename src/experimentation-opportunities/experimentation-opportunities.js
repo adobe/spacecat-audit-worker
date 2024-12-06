@@ -99,12 +99,13 @@ export function getRecommendations(lambdaResult) {
   return recommendations;
 }
 
-/* c8 ignore start */
 async function getPresignedUrl(fileName, context, url, site) {
   const { log } = context;
-  const s3Client = AWSXray.captureAWSv3Client(new S3Client({ region: process.env.AWS_REGION }));
-  if (!s3Client) {
-    log.info(`Unable to create S3 client, for ${site.getBaseURL()}`);
+  let s3Client;
+  try {
+    s3Client = AWSXray.captureAWSv3Client(new S3Client({ region: process.env.AWS_REGION }));
+  } catch (error) {
+    log.error(`Unable to create S3 client, for ${site.getBaseURL()}`, error);
     return '';
   }
   const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
@@ -123,7 +124,6 @@ async function getPresignedUrl(fileName, context, url, site) {
     return '';
   }
 }
-/* c8 ignore stop */
 
 async function updateRecommendations(oppty, context, site) {
   const { log } = context;
