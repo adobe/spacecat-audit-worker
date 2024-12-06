@@ -48,7 +48,6 @@ describe('Opportunities Tests', () => {
       now: +new Date(mockDate),
       toFake: ['Date'],
     });
-
     messageBodyJson = {
       type: '404',
       url: 'https://abc.com',
