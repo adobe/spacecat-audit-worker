@@ -13,6 +13,9 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import AWSXray from 'aws-xray-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
 import { wwwUrlResolver } from '../common/audit.js';
@@ -96,6 +99,28 @@ export function getRecommendations(lambdaResult) {
   return recommendations;
 }
 
+/* c8 ignore start */
+async function getPresignedUrl(fileName, context, url, site) {
+  const { log } = context;
+  const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
+  try {
+    const s3Client = AWSXray.captureAWSv3Client(new S3Client({ region: process.env.AWS_REGION }));
+    log.info(`Generating presigned URL for ${screenshotPath}`);
+    const command = new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: screenshotPath,
+    });
+    const signedUrl = await getSignedUrl(s3Client, command, {
+      expiresIn: 7 * 24 * 60 * 60, // 7 days in seconds
+    });
+    return signedUrl;
+  } catch (error) {
+    log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
+    return '';
+  }
+}
+/* c8 ignore stop */
+
 async function updateRecommendations(oppty, context, site) {
   const { log } = context;
   log.info(`Generating guidance for ${oppty.page}`);
@@ -133,6 +158,10 @@ async function updateRecommendations(oppty, context, site) {
   }
   // eslint-disable-next-line no-param-reassign
   oppty.recommendations = getRecommendations(lambdaResult);
+  // eslint-disable-next-line no-param-reassign
+  oppty.screenshot = await getPresignedUrl('screenshot-desktop.png', context, oppty.page, site);
+  // eslint-disable-next-line no-param-reassign
+  oppty.thumbnail = await getPresignedUrl('screenshot-desktop-thumbnail.png', context, oppty.page, site);
 }
 
 async function processHighOrganicLowCtrOpportunities(opportunites, context, site) {
@@ -242,6 +271,7 @@ function convertToOpportunityEntity(oppty, auditData) {
       pageViews: oppty.pageViews,
       samples: oppty.samples,
       screenshot: oppty.screenshot,
+      thumbnail: oppty.thumbnail,
       trackedKPISiteAverage: oppty.trackedKPISiteAverage,
       trackedPageKPIName: oppty.trackedPageKPIName,
       trackedPageKPIValue: oppty.trackedPageKPIValue,
