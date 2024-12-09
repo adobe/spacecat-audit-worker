@@ -1,3 +1,10 @@
+# [1.41.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.4...v1.41.0) (2024-12-09)
+
+
+### Features
+
+* introduce opportunity creation for sitemap audit ([#492](https://github.com/adobe/spacecat-audit-worker/issues/492)) ([fb428fb](https://github.com/adobe/spacecat-audit-worker/commit/fb428fb3fd4cc733f03ff56c4d5cc8d598e0fc1e))
+
 ## [1.40.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.3...v1.40.4) (2024-12-08)
 
 
