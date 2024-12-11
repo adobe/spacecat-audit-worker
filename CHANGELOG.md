@@ -1,3 +1,59 @@
+## [1.41.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.41.0...v1.41.1) (2024-12-09)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.15.6 ([#520](https://github.com/adobe/spacecat-audit-worker/issues/520)) ([2332bea](https://github.com/adobe/spacecat-audit-worker/commit/2332bea2dcee8a2c1de76c102ce08934afec7cd8))
+
+# [1.41.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.4...v1.41.0) (2024-12-09)
+
+
+### Features
+
+* introduce opportunity creation for sitemap audit ([#492](https://github.com/adobe/spacecat-audit-worker/issues/492)) ([fb428fb](https://github.com/adobe/spacecat-audit-worker/commit/fb428fb3fd4cc733f03ff56c4d5cc8d598e0fc1e))
+
+## [1.40.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.3...v1.40.4) (2024-12-08)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#519](https://github.com/adobe/spacecat-audit-worker/issues/519)) ([1e178ad](https://github.com/adobe/spacecat-audit-worker/commit/1e178ad5915272bb875342e3112c1506e550bff2))
+
+## [1.40.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.2...v1.40.3) (2024-12-07)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#518](https://github.com/adobe/spacecat-audit-worker/issues/518)) ([cea3a5c](https://github.com/adobe/spacecat-audit-worker/commit/cea3a5c655bf068cbb7e1a38a35c6eb6574d5e8a))
+
+## [1.40.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.1...v1.40.2) (2024-12-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.15.3 ([#517](https://github.com/adobe/spacecat-audit-worker/issues/517)) ([9e25382](https://github.com/adobe/spacecat-audit-worker/commit/9e2538271f8c723c3822a55794826792ec704969))
+
+## [1.40.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.0...v1.40.1) (2024-12-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.15.2 ([#516](https://github.com/adobe/spacecat-audit-worker/issues/516)) ([d5e1ad0](https://github.com/adobe/spacecat-audit-worker/commit/d5e1ad01d4dbd44dd7075a333b20fb871d41200b))
+
+# [1.40.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.39.1...v1.40.0) (2024-12-06)
+
+
+### Features
+
+* opportunity creation for broken-internal-links ([#498](https://github.com/adobe/spacecat-audit-worker/issues/498)) ([9a2d433](https://github.com/adobe/spacecat-audit-worker/commit/9a2d433b6c15eda73572955c88d01d8f19a7236d))
+
+## [1.39.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.39.0...v1.39.1) (2024-12-05)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#513](https://github.com/adobe/spacecat-audit-worker/issues/513)) ([b6592d1](https://github.com/adobe/spacecat-audit-worker/commit/b6592d1cf02ec752d912935ddda1faf4bad1cfe7))
+
 # [1.39.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.38.2...v1.39.0) (2024-12-05)
 
 

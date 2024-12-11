@@ -18,9 +18,9 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { CWVRunner, convertToOppty } from '../../src/cwv/handler.js';
-import expectedOppty from '../fixtures/cwv/oppty.json' assert { type: 'json' };
-import suggestions from '../fixtures/cwv/suggestions.json' assert { type: 'json' };
-import rumData from '../fixtures/cwv/cwv.json' assert { type: 'json' };
+import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
+import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
+import rumData from '../fixtures/cwv/cwv.json' with { type: 'json' };
 
 use(sinonChai);
 use(chaiAsPromised);
