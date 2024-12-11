@@ -202,7 +202,12 @@ function processRageClickOpportunities(opportunities) {
     });
 }
 
-async function createOrUpdateOpportunityEntity(opportunity, context, existingOpportunities) {
+async function createOrUpdateOpportunityEntity(
+  opportunity,
+  context,
+  existingOpportunities,
+  auditId,
+) {
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   const existingOpportunity = existingOpportunities.find(
@@ -210,14 +215,14 @@ async function createOrUpdateOpportunityEntity(opportunity, context, existingOpp
     && (oppty.getData().page === opportunity.data.page),
   );
   if (existingOpportunity) {
-    if (existingOpportunity.getStatus() === 'NEW') {
-      // remove and create a new opportunity entity with new data
-      log.info(`[${opportunity.type}] Opportunity entity with status: NEW for ${opportunity.data.page} exists, so removing it and creating a new opportunity entity`);
-      await existingOpportunity.remove();
-    } else {
-      log.info(`[${opportunity.type}] Opportunity entity already exists with status: ${existingOpportunity.getStatus()} for ${opportunity.data.page}, so skipping`);
-      return false;
-    }
+    console.log('Existing Opportunity:', existingOpportunity);
+    log.info(`Updating opportunity entity for ${opportunity.data.page} with the new data`);
+    existingOpportunity.setAuditId(auditId);
+    existingOpportunity.setData({
+      ...opportunity.data,
+    });
+    await existingOpportunity.save();
+    return true;
   }
   await Opportunity.create(opportunity);
   return true;
@@ -269,6 +274,7 @@ export async function postProcessor(auditUrl, auditData, context) {
         opportunity,
         context,
         existingOpportunities,
+        auditData.id,
       );
       if (status) {
         updatedEntities += 1;
