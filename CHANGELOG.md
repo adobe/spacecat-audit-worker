@@ -1,3 +1,10 @@
+## [1.42.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.1...v1.42.2) (2024-12-11)
+
+
+### Bug Fixes
+
+* Double Counting in CWV Metrics for URLs and Groups ([#522](https://github.com/adobe/spacecat-audit-worker/issues/522)) ([2538f79](https://github.com/adobe/spacecat-audit-worker/commit/2538f790d1d05d910aa31e50ccab1e5fcefdfeae))
+
 ## [1.42.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.0...v1.42.1) (2024-12-11)
 
 
