@@ -14,6 +14,7 @@ import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import URI from 'urijs';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { createAudit } from '@adobe/spacecat-shared-data-access/src/models/audit.js';
 
 export async function defaultMessageSender(resultMessage, context) {
   const { sqs } = context;
@@ -27,6 +28,12 @@ export async function defaultPersister(auditData, context) {
   const audit = await dataAccess.addAudit(auditData);
   return audit;
 }
+
+/* c8 ignore start */
+export async function noopPersister(auditData) {
+  return createAudit(auditData);
+}
+/* c8 ignore end */
 
 export async function defaultSiteProvider(siteId, context) {
   const { log, dataAccess } = context;
