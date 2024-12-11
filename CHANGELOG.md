@@ -1,3 +1,15 @@
+# [1.42.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.41.1...v1.42.0) (2024-12-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.23.6 ([#521](https://github.com/adobe/spacecat-audit-worker/issues/521)) ([1b53be5](https://github.com/adobe/spacecat-audit-worker/commit/1b53be5fd6c9aa592178d989a1993f7b3171545e))
+
+
+### Features
+
+* Include site level metrics in the CWV response (Projected Traffic Value) ([#514](https://github.com/adobe/spacecat-audit-worker/issues/514)) ([2833f0d](https://github.com/adobe/spacecat-audit-worker/commit/2833f0d029e7517c0886e27f17515df65ad8ba1c))
+
 ## [1.41.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.41.0...v1.41.1) (2024-12-09)
 
 
