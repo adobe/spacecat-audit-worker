@@ -79,24 +79,23 @@ const calculateProjectedTrafficValue = (
   cpcValue,
 ) => projectedTrafficLost * cpcValue;
 
-const calculateKpiDeltasForAuditEntryPerDevice = (entry, cpcValue) => {
-  const kpiDeltas = {};
+const calculateKpiDeltasForAuditEntryPerDevice = (entry, cpcValue) => entry.metrics.reduce((
+  kpiDeltas,
+  metrics,
+) => {
+  const { deviceType } = metrics;
+  const projectedTrafficLost = calculateProjectedTrafficLost(metrics);
+  const projectedTrafficValue = calculateProjectedTrafficValue(projectedTrafficLost, cpcValue);
 
-  // Iterate through all devices in entry metrics
-  entry.metrics.forEach((metrics) => {
-    const { deviceType } = metrics;
-    const projectedTrafficLost = calculateProjectedTrafficLost(metrics);
-    const projectedTrafficValue = calculateProjectedTrafficValue(projectedTrafficLost, cpcValue);
-
+  return {
+    ...kpiDeltas,
     // Store results per device
-    kpiDeltas[deviceType] = {
+    [deviceType]: {
       projectedTrafficLost,
       projectedTrafficValue,
-    };
-  });
-
-  return kpiDeltas;
-};
+    },
+  };
+}, {});
 
 /**
  * Calculate aggregated kpiDeltas for all audit entries
@@ -108,25 +107,16 @@ const calculateKpiDeltasForAuditEntryPerDevice = (entry, cpcValue) => {
 const calculateKpiDeltasForAudit = (auditData, dataAccess) => {
   const cpcValue = resolveCpcValue(auditData, dataAccess);
 
-  const aggregatedKpiDeltas = auditData.auditResult.cwv.reduce(
-    (aggregated, entry) => {
-      const kpiDeltasForAuditEntryPerDevice = calculateKpiDeltasForAuditEntryPerDevice(
-        entry,
-        cpcValue,
-      );
-
-      return Object.values(kpiDeltasForAuditEntryPerDevice).reduce(
-        (acc, { projectedTrafficLost, projectedTrafficValue }) => ({
-          projectedTrafficLost: acc.projectedTrafficLost + projectedTrafficLost,
-          projectedTrafficValue: acc.projectedTrafficValue + projectedTrafficValue,
-        }),
-        aggregated,
-      );
-    },
-    { projectedTrafficLost: 0, projectedTrafficValue: 0 },
-  );
-
-  return aggregatedKpiDeltas;
+  return auditData.auditResult.cwv
+    .map((entry) => calculateKpiDeltasForAuditEntryPerDevice(entry, cpcValue))
+    .flatMap(Object.values) // Flatten all device-level values into a single array
+    .reduce(
+      (totals, { projectedTrafficLost, projectedTrafficValue }) => ({
+        projectedTrafficLost: totals.projectedTrafficLost + projectedTrafficLost,
+        projectedTrafficValue: totals.projectedTrafficValue + projectedTrafficValue,
+      }),
+      { projectedTrafficLost: 0, projectedTrafficValue: 0 },
+    );
 };
 
 export default calculateKpiDeltasForAudit;
