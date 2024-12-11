@@ -1,0 +1,9 @@
+[
+  {
+    "opportunityId": "opportunity-id",
+    "type": "url",
+    "rank": 2,
+    "url": "https://example.com/product/1",
+    "errors": ["Missing field 'image'", "Missing field 'shippingDetails'"]
+  }
+]
