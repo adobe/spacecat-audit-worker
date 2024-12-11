@@ -13,8 +13,8 @@
 import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import URI from 'urijs';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { createAudit } from '@adobe/spacecat-shared-data-access/src/models/audit.js';
+import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 export async function defaultMessageSender(resultMessage, context) {
   const { sqs } = context;
