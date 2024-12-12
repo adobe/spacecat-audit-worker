@@ -6,7 +6,10 @@
     "data": {
       "type": "url",
       "url": "https://example.com/product/1",
-      "errors": ["Missing field 'image'", "Missing field 'shippingDetails'"]
+      "errors": [
+        "Missing field 'image'",
+        "Missing field 'shippingDetails'"
+      ]
     }
   },
   {
@@ -16,7 +19,20 @@
     "data": {
       "type": "url",
       "url": "https://example.com/product/2",
-      "errors": ["Missing field 'image'", "Missing field 'shippingDetails'"]
+      "errors": [
+        "Missing field 'image'",
+        "Missing field 'shippingDetails'"
+      ]
+    }
+  },
+  {
+    "opportunityId": "opportunity-id",
+    "type": "STRUCTURED_DATA",
+    "rank": 0,
+    "data": {
+      "type": "url",
+      "url": "https://example.com/product/3",
+      "errors": "Failed to inspect URL"
     }
   }
 ]

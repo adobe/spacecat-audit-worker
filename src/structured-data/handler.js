@@ -71,7 +71,7 @@ export async function processStructuredData(baseURL, context, pages) {
         },
       )?.filter((item) => item.items.length > 0) ?? [];
 
-      if (filteredRichResults.length > 0) {
+      if (filteredRichResults?.length > 0) {
         filteredRichResults.verdict = inspectionResult?.richResultsResult?.verdict;
         log.info(`Found ${filteredRichResults.length} rich results issues for URL: ${page}`);
       } else {
@@ -141,15 +141,15 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     newData: auditData.auditResult,
     buildKey,
     mapNewSuggestion: (data) => {
-      const errors = data?.richResults?.detectedIssues.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.issueMessage.replaceAll('"', "'")}`))).sort();
+      const errors = data?.richResults?.detectedIssues?.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.issueMessage.replaceAll('"', "'")}`))).sort();
       return {
         opportunityId: opportunity.getId(),
         type: 'STRUCTURED_DATA',
-        rank: errors.length,
+        rank: errors ? errors.length : 0,
         data: {
           type: 'url',
           url: data.inspectionUrl,
-          errors,
+          errors: errors || data.error,
         },
       };
     },

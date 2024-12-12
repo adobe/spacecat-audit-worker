@@ -60,7 +60,7 @@ describe('URLInspect Audit', () => {
     siteStub = {
       getId: () => '123',
       getConfig: () => ({
-        getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2'],
+        getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2', 'https://example.com/product/3'],
       }),
     };
 
@@ -88,7 +88,10 @@ describe('URLInspect Audit', () => {
 
   it('should successfully return a filtered result of the url inspection result', async () => {
     sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
+    // for the first call, return the full inspection result
     urlInspectStub.resolves(fullUrlInspectionResult);
+    urlInspectStub.onSecondCall().resolves(fullUrlInspectionResult);
+    urlInspectStub.onThirdCall().rejects(new Error('Failed to inspect URL'));
 
     const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
@@ -97,8 +100,7 @@ describe('URLInspect Audit', () => {
 
   it('returns no rich results when there are no rich results errors', async () => {
     sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
-    // delete mockFullInspectionResult.inspectionResult.richResultsResult;
-    mockFullInspectionResult.inspectionResult.richResultsResult = null;
+    delete mockFullInspectionResult.inspectionResult.richResultsResult;
     urlInspectStub.resolves(mockFullInspectionResult);
 
     const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);

@@ -89,6 +89,10 @@
           }
         ]
       }
+    },
+    {
+      "error": "Failed to inspect URL",
+      "inspectionUrl": "https://example.com/product/3"
     }
   ]
 }
