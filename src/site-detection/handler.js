@@ -21,7 +21,7 @@ async function fetchXFWHosts(authorization, log) {
   const endDate = new Date();
   const startDate = new Date(endDate.getTime() - 60 * 60 * 1000);
 
-  const response = await fetch(CORALOGIX_API_URL, {
+  const options = {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${authorization}`,
@@ -34,10 +34,15 @@ async function fetchXFWHosts(authorization, log) {
         endDate: endDate.toISOString(),
       },
     },
-  });
+  };
+  const response = await fetch(CORALOGIX_API_URL, options);
 
   if (!response.ok) {
-    throw new Error(`Network response was not ok. Status: ${response.status}. Status text: ${response.statusText}. Headers: ${response.headers.plain()}`);
+    // eslint-disable-next-line no-console
+    console.info(`URL: ${CORALOGIX_API_URL}`);
+    // eslint-disable-next-line no-console
+    console.info(`Options: ${JSON.stringify(options)}`);
+    throw new Error(`Network response was not ok. Status: ${response.status}. Status text: ${response.statusText}. Headers: ${JSON.stringify(response.headers.plain())}`);
   }
 
   const data = await response.text(); // Since response is NDJSON, treat it as text initially
