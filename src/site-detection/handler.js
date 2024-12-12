@@ -10,12 +10,12 @@
  * governing permissions and limitations under the License.
  */
 /* c8 ignore start */
-import { fetch, stripWWW } from '@adobe/spacecat-shared-utils';
+import { fetch, hasText, stripWWW } from '@adobe/spacecat-shared-utils';
 import { noopPersister, noopUrlResolver } from '../common/audit.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 
 const CORALOGIX_API_URL = 'https://ng-api-http.coralogix.com/api/v1/dataprime/query';
-const CORALOGIX_QUERY = 'source logs | create $d.split_hosts from arraySplit($d.request_x_forwarded_host, \',\') | create $d.xFwHost from $d.split_hosts[0] | distinct $d.xFwHost';
+const CORALOGIX_QUERY = 'source logs | create $d.split_hosts from arraySplit($d.request_x_forwarded_host, \',\') | create $d.xFwHost from $d.split_hosts[0] | distinct $d.xFwHost, $l.subsystemname';
 
 async function fetchXFWHosts(authorization, log) {
   const endDate = new Date();
@@ -38,11 +38,7 @@ async function fetchXFWHosts(authorization, log) {
   const response = await fetch(CORALOGIX_API_URL, options);
 
   if (!response.ok) {
-    // eslint-disable-next-line no-console
-    console.info(`URL: ${CORALOGIX_API_URL}`);
-    // eslint-disable-next-line no-console
-    console.info(`Options: ${JSON.stringify(options)}`);
-    throw new Error(`Network response was not ok. Status: ${response.status}. Status text: ${response.statusText}. Headers: ${JSON.stringify(response.headers.plain())}`);
+    throw new Error(`Coralogix API request was not successful. Status: ${response.status}.`);
   }
 
   const data = await response.text(); // Since response is NDJSON, treat it as text initially
@@ -52,36 +48,50 @@ async function fetchXFWHosts(authorization, log) {
   return batches.reduce((acc, batch) => {
     try {
       const jsonData = JSON.parse(batch);
+      if (!jsonData.result?.results) return acc;
 
-      if (jsonData.result?.results) {
-        jsonData.result.results.forEach((item) => {
-          const userData = item.userData ? JSON.parse(item.userData) : null;
-          if (userData?.xFwHost) {
-            acc.push(userData.xFwHost);
+      jsonData.result.results.forEach(({ userData }) => {
+        if (!userData) return;
+
+        try {
+          const { xFwHost, subsystemname } = JSON.parse(userData);
+          if (hasText(xFwHost) && hasText(subsystemname)) {
+            acc.push({
+              xFwHost: stripWWW(xFwHost),
+              hlxVersion: subsystemname,
+            });
           }
-        });
-      }
+        } catch (error) {
+          log.error('Error parsing userData:', error);
+        }
+      });
     } catch (error) {
-      log.error('Error parsing batch data:', error);
+      log.error('Error parsing batch coralogix data:', error);
     }
+
     return acc;
   }, []);
 }
 
-// Standalone function to send the xFwHost values
-async function refeed(host, webhook) {
+async function refeed(xFwHost, hlxVersion, webhook) {
+  const hlxVersions = {
+    helix5: 5,
+    helix4: 4,
+  };
+
   const response = await fetch(webhook, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: {
-      domain: host,
+      requestXForwardedHost: xFwHost,
+      hlxVersion: hlxVersions[hlxVersion],
     },
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to send ${host}: ${response.statusText}`);
+    throw new Error(`Failed to re-feed site ${xFwHost}: ${response.statusText}`);
   }
 }
 
@@ -109,15 +119,13 @@ export async function siteDetectionRunner(_, context) {
 
   const xFwHosts = await fetchXFWHosts(authorization, log);
   log.info(`xFwHosts: ${JSON.stringify(xFwHosts)}`);
-  const unknownHosts = xFwHosts
-    .map((host) => stripWWW(host))
-    .filter((host) => !knownHosts.has(host));
+  const unknownHosts = xFwHosts.filter((host) => !knownHosts.has(host.xFwHost));
   log.info(`Unknown hosts: ${JSON.stringify(unknownHosts)}`);
 
   for (const unknownHost of unknownHosts) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      await refeed(unknownHost, siteDetectionWebHook);
+      await refeed(unknownHost.xFwHost, unknownHost.hlxVersion, siteDetectionWebHook);
     } catch (e) {
       log.warn(`Failed to re-feed ${unknownHost}: ${e.message}`);
     }
