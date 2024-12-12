@@ -1,7 +1,7 @@
 [
   {
     "opportunityId": "opportunity-id",
-    "type": "STRUCTURED_DATA",
+    "type": "CODE_CHANGE",
     "rank": 2,
     "data": {
       "type": "url",
@@ -14,7 +14,7 @@
   },
   {
     "opportunityId": "opportunity-id",
-    "type": "STRUCTURED_DATA",
+    "type": "CODE_CHANGE",
     "rank": 2,
     "data": {
       "type": "url",
@@ -27,7 +27,7 @@
   },
   {
     "opportunityId": "opportunity-id",
-    "type": "STRUCTURED_DATA",
+    "type": "CODE_CHANGE",
     "rank": 0,
     "data": {
       "type": "url",
