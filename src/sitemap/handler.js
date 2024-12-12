@@ -429,13 +429,14 @@ export function buildKeyOptionalPage(auditData, issue, oppTitle) {
  * @returns {Promise<{opportunityType: string, getData: (): {sitemapUrl: string | null,
  * url: string, statusCode: number}[] => { }[]>}
  */
-export async function classifyOpportunities(auditUrl, auditData) {
+export async function classifyOpportunities(auditUrl, auditData, log) {
   const response = [];
 
   if (!auditData.auditResult.success) {
     auditData.auditResult.reasons.forEach((reason) => {
       // sitemaps were found by no valid pages extracted
       if (reason.error === ERROR_CODES.NO_SITEMAP_IN_ROBOTS) {
+        log.info(`No sitemap found in robots.txt for ${auditUrl}`);
         response.push({
           getData: () => [{
             sourceSitemapUrl: '',
@@ -451,6 +452,7 @@ export async function classifyOpportunities(auditUrl, auditData) {
 
       // sitemaps were found by no valid pages extracted
       if (reason.error === ERROR_CODES.NO_VALID_PATHS_EXTRACTED) {
+        log.info(`No valid paths extracted from sitemap for ${auditUrl}`);
         response.push({
           getData: () => {
             const newData = getPagesWithIssues(auditData);
@@ -484,7 +486,7 @@ export async function classifyOpportunities(auditUrl, auditData) {
       });
     }
   }
-
+  log.debug(`Classified opportunities: ${JSON.stringify(response)}`);
   return response;
 }
 
@@ -535,6 +537,7 @@ export async function handleClassifiedOpportunity(
         auditId,
       );
     }
+    log.info(`Created opportunity ${opp.getId()} for siteId ${siteId} and auditId ${auditId}`);
 
     await syncSuggestions({
       opportunity: opp,
@@ -554,7 +557,9 @@ export async function handleClassifiedOpportunity(
 export async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
 
-  const classifiedOpportunities = await classifyOpportunities(auditUrl, auditData);
+  log.debug('Converting SITEMAP audit to opportunity...');
+
+  const classifiedOpportunities = await classifyOpportunities(auditUrl, auditData, log);
   if (!classifiedOpportunities.length) {
     return;
   }
