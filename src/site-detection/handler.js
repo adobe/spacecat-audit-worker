@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 /* c8 ignore start */
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { tracingFetch as fetch, stripWWW } from '@adobe/spacecat-shared-utils';
 import { noopPersister, noopUrlResolver } from '../common/audit.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 
@@ -92,21 +92,21 @@ export async function siteDetectionRunner(_, context) {
   } = env;
 
   const sites = await dataAccess.getSites();
-  log.info(`Sites: ${JSON.stringify(sites)}`);
-  const siteCandidates = [];
-  // await dataAccess.getSiteCandidates();
-  // const siteCandidates = await dataAccess.getSiteCandidates();
-  log.info(`Site candidates: ${JSON.stringify(siteCandidates)}`);
+  log.info(`Sites: ${sites.length}`);
+  const siteCandidates = await dataAccess.getSiteCandidates();
+  log.info(`Site candidates: ${siteCandidates.length}`);
 
   const knownHosts = new Set([...sites, ...siteCandidates]
     .map((s) => s.getBaseURL())
     .map((url) => url.replace(/^https?:\/\//, '')));
 
-  log.info(`Known hosts: ${JSON.stringify(knownHosts)}`);
+  log.info(`Known hosts: ${knownHosts.size}`);
 
   const xFwHosts = await fetchXFWHosts(authorization, log);
   log.info(`xFwHosts: ${JSON.stringify(xFwHosts)}`);
-  const unknownHosts = xFwHosts.filter((host) => !knownHosts.has(host));
+  const unknownHosts = xFwHosts
+    .map((host) => stripWWW(host))
+    .filter((host) => !knownHosts.has(host));
   log.info(`Unknown hosts: ${JSON.stringify(unknownHosts)}`);
 
   for (const unknownHost of unknownHosts) {
