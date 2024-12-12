@@ -37,7 +37,7 @@ async function fetchXFWHosts(authorization, log) {
   });
 
   if (!response.ok) {
-    throw new Error(`Network response was not ok ${response.statusText}`);
+    throw new Error(`Network response was not ok. Status: ${response.status}. Status text: ${response.statusText}. Headers: ${response.headers.plain()}`);
   }
 
   const data = await response.text(); // Since response is NDJSON, treat it as text initially
