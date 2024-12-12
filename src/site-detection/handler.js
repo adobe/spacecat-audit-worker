@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 /* c8 ignore start */
-import { tracingFetch as fetch, stripWWW } from '@adobe/spacecat-shared-utils';
+import { fetch, stripWWW } from '@adobe/spacecat-shared-utils';
 import { noopPersister, noopUrlResolver } from '../common/audit.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 
