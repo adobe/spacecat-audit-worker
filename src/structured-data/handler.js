@@ -141,7 +141,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     newData: auditData.auditResult,
     buildKey,
     mapNewSuggestion: (data) => {
-      const errors = data.richResults.detectedIssues.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.issueMessage.replaceAll('"', "'")}`))).sort();
+      const errors = data?.richResults?.detectedIssues.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.issueMessage.replaceAll('"', "'")}`))).sort();
       return {
         opportunityId: opportunity.getId(),
         type: 'STRUCTURED_DATA',
@@ -165,7 +165,7 @@ export async function structuredDataHandler(baseURL, context, site) {
   const siteId = site.getId();
 
   const structuredDataURLs = await site.getConfig().getIncludedURLs('structured-data');
-  if (isArray(structuredDataURLs) && structuredDataURLs.length === 0) {
+  if (structuredDataURLs && isArray(structuredDataURLs) && structuredDataURLs.length === 0) {
     log.error(`No product detail pages found for site ID: ${siteId}`);
     throw new Error(`No product detail pages found for site: ${baseURL}`);
   }
