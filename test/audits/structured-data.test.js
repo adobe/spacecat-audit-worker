@@ -22,6 +22,7 @@ import { MockContextBuilder } from '../shared.js';
 import fullUrlInspectionResult from '../fixtures/structured-data/structured-data.json' assert { type: 'json' };
 import expectedOppty from '../fixtures/structured-data/oppty.json' assert { type: 'json' };
 import auditDataMock from '../fixtures/structured-data/audit.json' assert { type: 'json' };
+import suggestions from '../fixtures/structured-data/suggestions.json' assert { type: 'json' };
 
 use(sinonChai);
 
@@ -37,6 +38,7 @@ describe('URLInspect Audit', () => {
   let urlInspectStub;
   let siteStub;
   let structuredDataSuggestions;
+  let mockFullInspectionResult;
 
   beforeEach(() => {
     context = new MockContextBuilder()
@@ -61,6 +63,8 @@ describe('URLInspect Audit', () => {
         getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2'],
       }),
     };
+
+    mockFullInspectionResult = JSON.parse(JSON.stringify(fullUrlInspectionResult));
 
     structuredDataSuggestions = {
       createdItems: [
@@ -88,13 +92,14 @@ describe('URLInspect Audit', () => {
 
     const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
-    expect(auditData.auditResult).to.deep.equal(auditData.auditData);
+    expect(auditData.auditResult).to.deep.equal(auditDataMock.auditResult);
   });
 
   it('returns no rich results when there are no rich results errors', async () => {
     sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
-    delete fullUrlInspectionResult.inspectionResult.richResultsResult;
-    urlInspectStub.resolves(fullUrlInspectionResult);
+    // delete mockFullInspectionResult.inspectionResult.richResultsResult;
+    mockFullInspectionResult.inspectionResult.richResultsResult = null;
+    urlInspectStub.resolves(mockFullInspectionResult);
 
     const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
@@ -103,11 +108,12 @@ describe('URLInspect Audit', () => {
 
   it('returns no rich results when there are no errors in rich results', async () => {
     sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
-    fullUrlInspectionResult.inspectionResult
+    mockFullInspectionResult.inspectionResult
       .richResultsResult.detectedItems[0].items[0].issues = [];
-    delete fullUrlInspectionResult.inspectionResult
+    delete mockFullInspectionResult.inspectionResult
       .richResultsResult.detectedItems[1].items[0].issues[1];
-    urlInspectStub.resolves(fullUrlInspectionResult);
+
+    urlInspectStub.resolves(mockFullInspectionResult);
 
     const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
@@ -157,5 +163,6 @@ describe('URLInspect Audit', () => {
     await convertToOpportunity('', auditDataMock, context);
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
+    expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
   });
 });

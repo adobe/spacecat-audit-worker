@@ -1,9 +1,22 @@
 [
   {
     "opportunityId": "opportunity-id",
-    "type": "url",
+    "type": "STRUCTURED_DATA",
     "rank": 2,
-    "url": "https://example.com/product/1",
-    "errors": ["Missing field 'image'", "Missing field 'shippingDetails'"]
+    "data": {
+      "type": "url",
+      "url": "https://example.com/product/1",
+      "errors": ["Missing field 'image'", "Missing field 'shippingDetails'"]
+    }
+  },
+  {
+    "opportunityId": "opportunity-id",
+    "type": "STRUCTURED_DATA",
+    "rank": 2,
+    "data": {
+      "type": "url",
+      "url": "https://example.com/product/2",
+      "errors": ["Missing field 'image'", "Missing field 'shippingDetails'"]
+    }
   }
 ]

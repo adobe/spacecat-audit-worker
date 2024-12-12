@@ -141,7 +141,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     newData: auditData.auditResult,
     buildKey,
     mapNewSuggestion: (data) => {
-      const errors = data.richResults.detectedIssues.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.richResultType}: ${i.issueMessage.replaceAll('"', "'")}`))).sort();
+      const errors = data.richResults.detectedIssues.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.issueMessage.replaceAll('"', "'")}`))).sort();
       return {
         opportunityId: opportunity.getId(),
         type: 'STRUCTURED_DATA',
