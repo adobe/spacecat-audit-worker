@@ -92,14 +92,20 @@ export async function siteDetectionRunner(_, context) {
   } = env;
 
   const sites = await dataAccess.getSites();
+  log.info(`Sites: ${JSON.stringify(sites)}`);
   const siteCandidates = await dataAccess.getSiteCandidates();
+  log.info(`Site candidates: ${JSON.stringify(siteCandidates)}`);
 
   const knownHosts = new Set([...sites, ...siteCandidates]
     .map((s) => s.getBaseURL())
     .map((url) => url.replace(/^https?:\/\//, '')));
 
+  log.info(`Known hosts: ${JSON.stringify(knownHosts)}`);
+
   const xFwHosts = await fetchXFWHosts(authorization, log);
+  log.info(`xFwHosts: ${JSON.stringify(xFwHosts)}`);
   const unknownHosts = xFwHosts.filter((host) => !knownHosts.has(host));
+  log.info(`Unknown hosts: ${JSON.stringify(unknownHosts)}`);
 
   for (const unknownHost of unknownHosts) {
     try {
