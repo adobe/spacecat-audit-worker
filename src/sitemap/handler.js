@@ -486,7 +486,7 @@ export async function classifyOpportunities(auditUrl, auditData, log) {
       });
     }
   }
-  log.debug(`Classified opportunities: ${JSON.stringify(response)}`);
+  log.info(`Classified opportunities: ${JSON.stringify(response)}`);
   return response;
 }
 
@@ -557,7 +557,7 @@ export async function handleClassifiedOpportunity(
 export async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
 
-  log.debug('Converting SITEMAP audit to opportunity...');
+  log.info('Converting SITEMAP audit to opportunity...');
 
   const classifiedOpportunities = await classifyOpportunities(auditUrl, auditData, log);
   if (!classifiedOpportunities.length) {

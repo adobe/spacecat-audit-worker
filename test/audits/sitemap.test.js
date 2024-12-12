@@ -841,14 +841,18 @@ describe('Sitemap Audit', () => {
     };
 
     it('should return empty when all is ok', async () => {
-      const response = await classifyOpportunities(url, auditAllGood);
+      const response = await classifyOpportunities(url, auditAllGood, context.log);
       expect(response.length)
         .to
         .equal(0);
     });
 
     it('should report that the expected default sitemap path contains no urls', async () => {
-      const response = await classifyOpportunities(url, auditDataWithSitemapFoundWithNoPages);
+      const response = await classifyOpportunities(
+        url,
+        auditDataWithSitemapFoundWithNoPages,
+        context.log,
+      );
       expect(response.length).to.equal(1);
       expect(response[0].type).to.equal('sitemap-no-valid-paths-extracted');
 
@@ -868,6 +872,7 @@ describe('Sitemap Audit', () => {
       const response = await classifyOpportunities(
         url,
         auditDataWithSitemapFoundWithPagesButTheyRespondWith404,
+        context.log,
       );
       expect(response.length).to.equal(1);
       expect(response[0].type).to.equal('sitemap-no-valid-paths-extracted');
@@ -893,7 +898,7 @@ describe('Sitemap Audit', () => {
     });
 
     it('should report that there are no sitemaps defined in robots.txt and in the fallback', async () => {
-      const response = await classifyOpportunities(url, auditNoSitemapsFound);
+      const response = await classifyOpportunities(url, auditNoSitemapsFound, context.log);
       expect(response.length).to.equal(1);
       expect(response[0].type).to.equal('sitemap-not-available');
 
@@ -906,7 +911,7 @@ describe('Sitemap Audit', () => {
 
     it('should present a opportunity even if the audit is successful as long as there are pages with issues', async () => {
       // eslint-disable-next-line max-len
-      const response = await classifyOpportunities(url, auditPartiallySuccessfulOnePageNetworkError);
+      const response = await classifyOpportunities(url, auditPartiallySuccessfulOnePageNetworkError, context.log);
       expect(response.length).to.equal(1);
       expect(response[0].type).to.equal('pages-in-sitemap-have-errors');
 
