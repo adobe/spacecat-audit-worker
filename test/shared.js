@@ -34,10 +34,13 @@ export class MockContextBuilder {
       addAudit: this.sandbox.stub(),
       Opportunity: {
         getId: this.sandbox.stub(),
+        getType: this.sandbox.stub(),
         allBySiteIdAndStatus: this.sandbox.stub(),
         create: this.sandbox.stub(),
         getSuggestions: this.sandbox.stub(),
         addSuggestions: this.sandbox.stub(),
+        setAuditId: this.sandbox.stub(),
+        save: this.sandbox.stub(),
       },
     };
 

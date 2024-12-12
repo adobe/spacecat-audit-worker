@@ -165,4 +165,32 @@ describe('URLInspect Audit', () => {
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
     expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
   });
+
+  it('should transform the audit result into opportunities and suggestions in the post processor and add the audit to an existing opportunity', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([context.dataAccess.Opportunity]);
+    context.dataAccess.Opportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.getType.returns('structured-data');
+    context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
+    await convertToOpportunity('', auditDataMock, context);
+
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(context.dataAccess.Opportunity.setAuditId).to.have.been.calledOnceWith('audit-id');
+    expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
+    expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
+  });
+
+  it('should throw an error if creating a new opportunity fails', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.throws('opportunity-error');
+    try {
+      await convertToOpportunity('', auditDataMock, context);
+    } catch (error) {
+      expect(error.message).to.equal('Sinon-provided opportunity-error');
+    }
+
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
+    expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;
+    expect(context.log.error).to.have.been.calledWith('Failed to create new opportunity for siteId site-id and auditId audit-id: Sinon-provided opportunity-error');
+  });
 });
