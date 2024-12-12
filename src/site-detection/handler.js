@@ -93,7 +93,9 @@ export async function siteDetectionRunner(_, context) {
 
   const sites = await dataAccess.getSites();
   log.info(`Sites: ${JSON.stringify(sites)}`);
-  const siteCandidates = await dataAccess.getSiteCandidates();
+  const siteCandidates = [];
+  // await dataAccess.getSiteCandidates();
+  // const siteCandidates = await dataAccess.getSiteCandidates();
   log.info(`Site candidates: ${JSON.stringify(siteCandidates)}`);
 
   const knownHosts = new Set([...sites, ...siteCandidates]
