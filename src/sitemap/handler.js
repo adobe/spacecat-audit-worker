@@ -431,6 +431,7 @@ export function buildKeyOptionalPage(auditData, issue, oppTitle) {
  */
 export async function classifyOpportunities(auditUrl, auditData, log) {
   const response = [];
+  log.info(`Classifying opportunities for ${JSON.stringify(auditData)}`);
 
   if (!auditData.auditResult.success) {
     auditData.auditResult.reasons.forEach((reason) => {
