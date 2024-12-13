@@ -103,7 +103,7 @@ export function getRecommendations(lambdaResult) {
 
 /* c8 ignore start */
 async function getPresignedUrl(fileName, context, url, site) {
-  const { log, s3ClientObj } = context;
+  const { log, s3Client: s3ClientObj } = context;
   const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
   try {
     log.info(`Generating presigned URL for ${screenshotPath}`);
