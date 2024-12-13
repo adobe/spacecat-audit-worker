@@ -1,3 +1,24 @@
+# [1.43.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.5...v1.43.0) (2024-12-13)
+
+
+### Features
+
+* add presigned screenshot url for opportunity ([#511](https://github.com/adobe/spacecat-audit-worker/issues/511)) ([c693f21](https://github.com/adobe/spacecat-audit-worker/commit/c693f21f2d8dc601b23d6afd628938c217421170))
+
+## [1.42.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.4...v1.42.5) (2024-12-13)
+
+
+### Bug Fixes
+
+* update the existing opportunity instead of removing ([#525](https://github.com/adobe/spacecat-audit-worker/issues/525)) ([1e66eb0](https://github.com/adobe/spacecat-audit-worker/commit/1e66eb0736612ca7322df2c64f08dffcd6a0a1ee))
+
+## [1.42.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.3...v1.42.4) (2024-12-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.23.7 ([#529](https://github.com/adobe/spacecat-audit-worker/issues/529)) ([0882c26](https://github.com/adobe/spacecat-audit-worker/commit/0882c2676fa19762136115a15d8d585d86830872))
+
 ## [1.42.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.2...v1.42.3) (2024-12-12)
 
 
