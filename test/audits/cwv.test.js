@@ -18,9 +18,9 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { CWVRunner, convertToOppty } from '../../src/cwv/handler.js';
-import expectedOppty from '../fixtures/cwv/oppty.json' assert { type: 'json' };
-import suggestions from '../fixtures/cwv/suggestions.json' assert { type: 'json' };
-import rumData from '../fixtures/cwv/cwv.json' assert { type: 'json' };
+import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
+import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
+import rumData from '../fixtures/cwv/cwv.json' with { type: 'json' };
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -38,7 +38,7 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
 const AUDIT_TYPE = 'cwv';
 
 describe('CWVRunner Tests', () => {
-  const groupedURLs = [{ test: 'test' }];
+  const groupedURLs = [{ name: 'test', pattern: 'test/*' }];
   const siteConfig = {
     getGroupedURLs: sandbox.stub().returns(groupedURLs),
   };
@@ -99,6 +99,7 @@ describe('CWVRunner Tests', () => {
   describe('CWV audit to oppty conversion', () => {
     let addSuggestionsResponse;
     let oppty;
+    const opptyData = { 0: 'existed-data' };
     let auditData;
 
     beforeEach(() => {
@@ -124,6 +125,8 @@ describe('CWVRunner Tests', () => {
         addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
         getSuggestions: sandbox.stub().resolves([]),
         setAuditId: sandbox.stub(),
+        getData: sandbox.stub().returns(opptyData),
+        setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
 
@@ -151,7 +154,9 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
 
-      await convertToOppty(auditUrl, auditData, context);
+      await convertToOppty(auditUrl, auditData, context, site);
+
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(AUDIT_TYPE);
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
 
@@ -165,7 +170,7 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
 
-      await expect(convertToOppty(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
+      await expect(convertToOppty(auditUrl, auditData, context, site)).to.be.rejectedWith('big error happened');
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
       expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id and auditId audit-id: big error happened');
@@ -186,17 +191,21 @@ describe('CWVRunner Tests', () => {
       }));
       oppty.getSuggestions.resolves(existingSuggestions);
 
-      await convertToOppty(auditUrl, auditData, context);
+      await convertToOppty(auditUrl, auditData, context, site);
+
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(AUDIT_TYPE);
 
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');
+      expect(oppty.setData).to.have.been.calledOnceWith({ ...opptyData, ...expectedOppty.data });
       expect(oppty.save).to.have.been.calledOnce;
 
       // make sure that 1 old suggestion is removed
       expect(existingSuggestions[0].remove).to.have.been.calledOnce;
 
       // make sure that 1 existing suggestion is updated
-      expect(existingSuggestions[1].setData).to.have.been.calledOnceWith(suggestions[1].data);
+      expect(existingSuggestions[1].setData).to.have.been.calledOnce;
+      expect(existingSuggestions[1].setData.firstCall.args[0]).to.deep.equal(suggestions[1].data);
       expect(existingSuggestions[1].save).to.have.been.calledOnce;
 
       // make sure that 3 new suggestions are created

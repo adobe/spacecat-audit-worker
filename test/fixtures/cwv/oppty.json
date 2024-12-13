@@ -17,5 +17,9 @@
   "tags": [
     "Traffic acquisition",
     "Engagement"
-  ]
+  ],
+  "data": {
+    "projectedTrafficLost": 0.51,
+    "projectedTrafficValue": 0.51
+  }
 }

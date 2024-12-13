@@ -275,7 +275,10 @@ describe('Opportunities postProcessor', () => {
       getType: () => 'high-organic-low-ctr',
       getData: () => ({ page: 'https://example.com/page1' }),
       getStatus: () => 'NEW',
+      setAuditId: () => 'test-audit-id-2',
+      setData: sandbox.stub(),
       remove: sandbox.stub().resolves(),
+      save: sandbox.stub().resolves(),
     };
 
     auditData = {
@@ -372,14 +375,14 @@ describe('Opportunities postProcessor', () => {
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
   });
 
-  it('should remove high-organic-low-ctr opportunity and recreate if status is NEW', async () => {
+  it('should update and save high-organic-low-ctr opportunity if the opportunity already exists', async () => {
     context.dataAccess.Opportunity.allBySiteId.resolves([existingOpportunity]);
-    context.dataAccess.Opportunity.create.resolves();
+    // context.dataAccess.Opportunity.save.resolves();
 
     await postProcessor('https://example.com', auditData, context);
 
-    expect(existingOpportunity.remove).to.have.been.calledOnce;
-    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+    expect(existingOpportunity.save).to.have.been.calledOnce;
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
   });
 
   it('should skip removal of high-organic-low-ctr opportunity if existing opportunity status is not NEW', async () => {

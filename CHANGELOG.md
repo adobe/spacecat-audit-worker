@@ -1,3 +1,113 @@
+## [1.42.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.3...v1.42.4) (2024-12-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.23.7 ([#529](https://github.com/adobe/spacecat-audit-worker/issues/529)) ([0882c26](https://github.com/adobe/spacecat-audit-worker/commit/0882c2676fa19762136115a15d8d585d86830872))
+
+## [1.42.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.2...v1.42.3) (2024-12-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.59.1 ([#526](https://github.com/adobe/spacecat-audit-worker/issues/526)) ([9daa00f](https://github.com/adobe/spacecat-audit-worker/commit/9daa00f0e668817beef54aefbdff2b8ade4e8c63))
+
+## [1.42.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.1...v1.42.2) (2024-12-11)
+
+
+### Bug Fixes
+
+* Double Counting in CWV Metrics for URLs and Groups ([#522](https://github.com/adobe/spacecat-audit-worker/issues/522)) ([2538f79](https://github.com/adobe/spacecat-audit-worker/commit/2538f790d1d05d910aa31e50ccab1e5fcefdfeae))
+
+## [1.42.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.0...v1.42.1) (2024-12-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.59.0 ([#524](https://github.com/adobe/spacecat-audit-worker/issues/524)) ([9d3c1ce](https://github.com/adobe/spacecat-audit-worker/commit/9d3c1cef9e15fdad3c5d2a470996a917b1c2f0c2))
+
+# [1.42.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.41.1...v1.42.0) (2024-12-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.23.6 ([#521](https://github.com/adobe/spacecat-audit-worker/issues/521)) ([1b53be5](https://github.com/adobe/spacecat-audit-worker/commit/1b53be5fd6c9aa592178d989a1993f7b3171545e))
+
+
+### Features
+
+* Include site level metrics in the CWV response (Projected Traffic Value) ([#514](https://github.com/adobe/spacecat-audit-worker/issues/514)) ([2833f0d](https://github.com/adobe/spacecat-audit-worker/commit/2833f0d029e7517c0886e27f17515df65ad8ba1c))
+
+## [1.41.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.41.0...v1.41.1) (2024-12-09)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.15.6 ([#520](https://github.com/adobe/spacecat-audit-worker/issues/520)) ([2332bea](https://github.com/adobe/spacecat-audit-worker/commit/2332bea2dcee8a2c1de76c102ce08934afec7cd8))
+
+# [1.41.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.4...v1.41.0) (2024-12-09)
+
+
+### Features
+
+* introduce opportunity creation for sitemap audit ([#492](https://github.com/adobe/spacecat-audit-worker/issues/492)) ([fb428fb](https://github.com/adobe/spacecat-audit-worker/commit/fb428fb3fd4cc733f03ff56c4d5cc8d598e0fc1e))
+
+## [1.40.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.3...v1.40.4) (2024-12-08)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#519](https://github.com/adobe/spacecat-audit-worker/issues/519)) ([1e178ad](https://github.com/adobe/spacecat-audit-worker/commit/1e178ad5915272bb875342e3112c1506e550bff2))
+
+## [1.40.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.2...v1.40.3) (2024-12-07)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#518](https://github.com/adobe/spacecat-audit-worker/issues/518)) ([cea3a5c](https://github.com/adobe/spacecat-audit-worker/commit/cea3a5c655bf068cbb7e1a38a35c6eb6574d5e8a))
+
+## [1.40.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.1...v1.40.2) (2024-12-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.15.3 ([#517](https://github.com/adobe/spacecat-audit-worker/issues/517)) ([9e25382](https://github.com/adobe/spacecat-audit-worker/commit/9e2538271f8c723c3822a55794826792ec704969))
+
+## [1.40.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.40.0...v1.40.1) (2024-12-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.15.2 ([#516](https://github.com/adobe/spacecat-audit-worker/issues/516)) ([d5e1ad0](https://github.com/adobe/spacecat-audit-worker/commit/d5e1ad01d4dbd44dd7075a333b20fb871d41200b))
+
+# [1.40.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.39.1...v1.40.0) (2024-12-06)
+
+
+### Features
+
+* opportunity creation for broken-internal-links ([#498](https://github.com/adobe/spacecat-audit-worker/issues/498)) ([9a2d433](https://github.com/adobe/spacecat-audit-worker/commit/9a2d433b6c15eda73572955c88d01d8f19a7236d))
+
+## [1.39.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.39.0...v1.39.1) (2024-12-05)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#513](https://github.com/adobe/spacecat-audit-worker/issues/513)) ([b6592d1](https://github.com/adobe/spacecat-audit-worker/commit/b6592d1cf02ec752d912935ddda1faf4bad1cfe7))
+
+# [1.39.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.38.2...v1.39.0) (2024-12-05)
+
+
+### Features
+
+* Include site level metrics in the CWV response ([#508](https://github.com/adobe/spacecat-audit-worker/issues/508)) ([a8b4fc9](https://github.com/adobe/spacecat-audit-worker/commit/a8b4fc93abe00f31846e0086a57a96bc4e060877))
+
+## [1.38.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.38.1...v1.38.2) (2024-12-05)
+
+
+### Bug Fixes
+
+* modified `getObjectFromKey` to parse non JSON objects ([#512](https://github.com/adobe/spacecat-audit-worker/issues/512)) ([1f47359](https://github.com/adobe/spacecat-audit-worker/commit/1f473593925ddfa0681648856f7e4ae6720a4e22))
+
 ## [1.38.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.38.0...v1.38.1) (2024-12-04)
 
 
