@@ -29,11 +29,9 @@ export async function defaultPersister(auditData, context) {
   return audit;
 }
 
-/* c8 ignore start */
 export async function noopPersister(auditData) {
   return createAudit(auditData);
 }
-/* c8 ignore end */
 
 export async function defaultSiteProvider(siteId, context) {
   const { log, dataAccess } = context;

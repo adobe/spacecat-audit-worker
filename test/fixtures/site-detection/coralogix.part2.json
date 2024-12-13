@@ -40,6 +40,11 @@
         "metadata": [],
         "labels": [],
         "userData": "{\"domain\":\"www.spacecat4.com\",\"request_x_forwarded_host\":\"www.adobe.com, main--cc--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"a.spacecat4.com\",\"request_x_forwarded_host\":\"www.adobe.com, main--cc--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
       }
     ]
   }

@@ -50,6 +50,12 @@ function isValidCandidate(config, domain, log) {
     return false;
   }
 
+  // ignore on-character subdomains
+  if (uri.subdomain().length === 1) {
+    log.info(`Rejected ${domain} because it contains an on-character subdomain`);
+    return false;
+  }
+
   // disregard unwanted domains
   if (ignoredDomains.some((ignored) => uri.domain().match(ignored))) {
     log.info(`Rejected ${domain} because it contains an ignored domain`);
@@ -191,6 +197,11 @@ export async function siteDetectionRunner(_, context) {
       log.warn(`Failed to re-feed ${candidate.domain}: ${e.message}`);
     }
   }
+
+  return {
+    auditResult: candidates,
+    fullAuditRef: 'site-detection',
+  };
 }
 
 export default new AuditBuilder()
