@@ -1,0 +1,26 @@
+{
+  "result": {
+    "results": [
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"www.adobe.com\",\"request_x_forwarded_host\":\"www.adobe.com, main--homepage--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"main--adobe--somerepo.hlx.live\",\"request_x_forwarded_host\":\"www.adobe.com, main--homepage--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"some-site.workers.dev\",\"request_x_forwarded_host\":\"www.adobe.com, main--homepage--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"127.0.0.1\",\"request_x_forwarded_host\":\"www.adobe.com, main--homepage--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      }
+    ]
+  }
+}

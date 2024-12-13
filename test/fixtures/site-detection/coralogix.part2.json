@@ -1,0 +1,46 @@
+{
+  "result": {
+    "results": [
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"business.adobe.com\",\"request_x_forwarded_host\":\"business.adobe.com, main--bacom-blog--somerepo.hlx.live, main--bacom-blog--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"www.adobe.com\",\"request_x_forwarded_host\":\"www.adobe.com, main--cc--somerepo.hlx.live, main--cc--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"business.adobe.com\",\"request_x_forwarded_host\":\"business.adobe.com, main--bacom--somerepo.hlx.live, main--bacom--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"www.adobe.com\",\"request_x_forwarded_host\":\"www.adobe.com, main--cc--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"www.spacecat1.com\",\"request_x_forwarded_host\":\"www.adobe.com, main--cc--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"www.spacecat2.com\",\"request_x_forwarded_host\":\"www.adobe.com, main--cc--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"www.spacecat3.com\",\"request_x_forwarded_host\":\"www.adobe.com, main--cc--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"www.spacecat4.com\",\"request_x_forwarded_host\":\"www.adobe.com, main--cc--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      }
+    ]
+  }
+}
