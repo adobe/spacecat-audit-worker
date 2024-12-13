@@ -13,9 +13,8 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
-import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import AWSXray from 'aws-xray-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
 import s3Client from '../support/s3-client.js';
@@ -104,12 +103,9 @@ export function getRecommendations(lambdaResult) {
 
 /* c8 ignore start */
 async function getPresignedUrl(fileName, context, url, site) {
-  const { log } = context;
+  const { log, s3ClientObj } = context;
   const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
   try {
-    const s3ClientObj = AWSXray.captureAWSv3Client(
-      new S3Client({ region: process.env.AWS_REGION }),
-    );
     log.info(`Generating presigned URL for ${screenshotPath}`);
     const command = new GetObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
@@ -221,13 +217,14 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   }));
   // create urls which are not scraped early
   const unscrapedUrls = await getUnscrapedUrls(context, site, topHighOrganicUrls);
-  console.log('unscrapedUrls', unscrapedUrls);
-  log.info(`Triggering scrape for [${JSON.stringify(topHighOrganicUrls, null, 2)}]`);
-  await sqs.sendMessage(process.env.SCRAPING_JOBS_QUEUE_URL, {
-    processingType: 'default',
-    jobId: site.getId(),
-    urls: topHighOrganicUrls,
-  });
+  log.info(`Triggering scrape for [${JSON.stringify(unscrapedUrls, null, 2)}]`);
+  if (unscrapedUrls.length > 0) {
+    await sqs.sendMessage(process.env.SCRAPING_JOBS_QUEUE_URL, {
+      processingType: 'default',
+      jobId: site.getId(),
+      urls: unscrapedUrls,
+    });
+  }
   // wait for the scrape to complete
   // TODO: replace this with a SQS message to run another handler to process the scraped content,
   // to eliminate duplicate lambda run time
