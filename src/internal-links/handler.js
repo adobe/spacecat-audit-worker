@@ -22,7 +22,7 @@ const AUDIT_TYPE = 'broken-internal-links';
 
 /**
  * Classifies links into priority categories based on views
- * High: top 50%, Medium: next 25%, Low: bottom 25%
+ * High: top 25%, Medium: next 25%, Low: bottom 50%
  * @param {Array} links - Array of objects with views property
  * @returns {Array} - Links with priority classifications included
  */
@@ -38,9 +38,9 @@ function calculatePriority(links) {
     const contributionPercentage = (link.views / totalViews) * 100;
 
     let priority;
-    if (contributionPercentage >= 50) {
+    if (contributionPercentage >= 75) {
       priority = 'high';
-    } else if (contributionPercentage >= 25) {
+    } else if (contributionPercentage >= 50) {
       priority = 'medium';
     } else {
       priority = 'low';
