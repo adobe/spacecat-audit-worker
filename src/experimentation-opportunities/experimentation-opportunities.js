@@ -215,7 +215,6 @@ async function createOrUpdateOpportunityEntity(
     && (oppty.getData().page === opportunity.data.page),
   );
   if (existingOpportunity) {
-    console.log('Existing Opportunity:', existingOpportunity);
     log.info(`Updating opportunity entity for ${opportunity.data.page} with the new data`);
     existingOpportunity.setAuditId(auditId);
     existingOpportunity.setData({
