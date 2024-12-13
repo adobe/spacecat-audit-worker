@@ -435,8 +435,8 @@ export async function classifyOpportunities(auditUrl, auditData, log) {
 
   if (!auditData.auditResult.success) {
     auditData.auditResult.reasons.forEach((reason) => {
-      // sitemaps were found by no valid pages extracted
       if (reason.error === ERROR_CODES.NO_SITEMAP_IN_ROBOTS) {
+        // sitemaps were found by no valid pages extracted
         log.info(`No sitemap found in robots.txt for ${auditUrl}`);
         response.push({
           getData: () => [{
@@ -449,10 +449,8 @@ export async function classifyOpportunities(auditUrl, auditData, log) {
           title: 'No valid sitemap found in robots.txt',
           description: 'Robots.txt does not contain a sitemap reference, fallback could not find useable sitemap',
         });
-      }
-
-      // sitemaps were found by no valid pages extracted
-      if (reason.error === ERROR_CODES.NO_VALID_PATHS_EXTRACTED) {
+      } else if (reason.error === ERROR_CODES.NO_VALID_PATHS_EXTRACTED) {
+        // sitemaps were found by no valid pages extracted
         log.info(`No valid paths extracted from sitemap for ${auditUrl}`);
         response.push({
           getData: () => {
@@ -470,6 +468,19 @@ export async function classifyOpportunities(auditUrl, auditData, log) {
           buildKey: (issue) => buildKeyOptionalPage(auditData, issue, 'sitemap-no-valid-paths-extracted'),
           title: 'Sitemap issues found',
           description: 'A complete and accurate sitemap helps search engines efficiently crawl and index your website pages,ensuring better visibility in search results. Fixing sitemap issues can improve the discoverability of your content.',
+        });
+      } else {
+        log.info(`Error in sitemap audit for ${auditUrl}: ${reason.error}`);
+        response.push({
+          getData: () => [{
+            sourceSitemapUrl: '',
+            pageUrl: '',
+            statusCode: 500,
+          }],
+          type: 'sitemap-audit-error',
+          buildKey: (issue) => `${auditData.siteId}|sitemap-audit-error|${issue.pageUrl}`,
+          title: 'Error in sitemap audit',
+          description: 'An error occurred while auditing the sitemap. Please try again later.',
         });
       }
     });

@@ -764,22 +764,11 @@ describe('Sitemap Audit', () => {
         success: false,
         reasons: [
           {
-            value: 'https://some-domain.adobe/sitemap.xml',
+            value: 'Fetch error for https://maidenform.com/robots.txt Status: 403',
             error: 'NO VALID URLs FOUND IN SITEMAP',
           },
         ],
-        url: 'https://some-domain.adobe',
-        details: {
-          issues: {
-            'https://some-domain.adobe/sitemap.xml': [{
-              url: 'https://some-domain.adobe/foo',
-              statusCode: 404,
-            }, {
-              url: 'https://some-domain.adobe/bar',
-              statusCode: 404,
-            }],
-          },
-        },
+        scores: {},
       },
     };
 
