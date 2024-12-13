@@ -19,6 +19,7 @@
     "Engagement"
   ],
   "data": {
-    "projectedTrafficLost": 0.51
+    "projectedTrafficLost": 0.51,
+    "projectedTrafficValue": 0.51
   }
 }

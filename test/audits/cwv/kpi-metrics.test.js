@@ -23,6 +23,13 @@ use(chaiAsPromised);
 
 describe('calculates KPI deltas correctly', () => {
   const sandbox = sinon.createSandbox();
+  let mockDataAccess;
+
+  beforeEach(() => {
+    mockDataAccess = {
+      getSiteByID: sandbox.stub(),
+    };
+  });
 
   afterEach(() => {
     sandbox.restore();
@@ -66,9 +73,10 @@ describe('calculates KPI deltas correctly', () => {
     const expectedAggregatedKpi = {
       // (2000 organic per device * 0.005 koeff) + (900 organic per device * 0.015 koeff) = 23.5
       projectedTrafficLost: 23.5,
+      projectedTrafficValue: 23.5,
     };
 
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -108,9 +116,10 @@ describe('calculates KPI deltas correctly', () => {
 
     const expectedAggregatedKpi = {
       projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
     };
 
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -147,7 +156,7 @@ describe('calculates KPI deltas correctly', () => {
           },
           {
             type: 'url',
-            url: 'https://www.aem.live/home/',
+            url: 'https://www.aem.live/info/',
             pageviews: 4000,
             organic: 2900,
             metrics: [
@@ -178,9 +187,10 @@ describe('calculates KPI deltas correctly', () => {
     const expectedAggregatedKpi = {
       // (2000 * 0.005) + (900 * 0.015) + (900 * 0.015) = 37
       projectedTrafficLost: 37,
+      projectedTrafficValue: 37,
     };
 
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -202,9 +212,10 @@ describe('calculates KPI deltas correctly', () => {
 
     const expectedAggregatedKpi = {
       projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
     };
 
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 
@@ -240,9 +251,78 @@ describe('calculates KPI deltas correctly', () => {
 
     const expectedAggregatedKpi = {
       projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
     };
 
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
+    expect(result).to.deep.equal(expectedAggregatedKpi);
+  });
+
+  it('prevents double traffic adjustment for URLs already included in groups', async () => {
+    const auditData = {
+      auditResult: {
+        cwv: [
+          {
+            type: 'group',
+            name: 'Some pages',
+            pattern: 'https://www.aem.live/pages/*',
+            pageviews: 4000,
+            organic: 2900,
+            metrics: [
+              {
+                deviceType: 'desktop',
+                pageviews: 3000,
+                organic: 2000,
+                // Needs Improvement (1 "green" metric)
+                lcp: 2000, // < 2500 threshold (green)
+                cls: 0.2, // > 0.1 threshold (poor)
+                inp: 220, // > 200 threshold (poor)
+              },
+              {
+                deviceType: 'mobile',
+                pageviews: 1000,
+                organic: 900,
+                // Poor (0 "green" metrics)
+                lcp: 2700, // > 2500 threshold (poor)
+                cls: 0.2, // > 0.1 threshold (poor)
+                inp: 220, // > 200 threshold (poor)
+              },
+            ],
+          },
+          // Should be skipped (not affect the result),
+          // because the URL is already included in the group above
+          {
+            type: 'url',
+            url: 'https://www.aem.live/pages/page-1',
+            pageviews: 4000,
+            organic: 2900,
+            metrics: [
+              {
+                deviceType: 'mobile',
+                pageviews: 1000,
+                organic: 900,
+                // Poor (0 "green" metrics)
+                lcp: 2700, // > 2500 threshold (poor)
+                cls: 0.2, // > 0.1 threshold (poor)
+                inp: 220, // > 200 threshold (poor)
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    const groupedURLs = [
+      { name: 'Pages', pattern: 'https://www.aem.live/pages/*' },
+    ];
+
+    const expectedAggregatedKpi = {
+      // (2000 * 0.005) + (900 * 0.015)  = 23.5
+      projectedTrafficLost: 23.5,
+      projectedTrafficValue: 23.5,
+    };
+
+    const result = calculateKpiDeltasForAudit(auditData, mockDataAccess, groupedURLs);
     expect(result).to.deep.equal(expectedAggregatedKpi);
   });
 });

@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import resolveCpcValue from './cpc-value-resolver.js';
+
 const METRICS = ['lcp', 'cls', 'inp'];
 
 /**
@@ -72,48 +74,65 @@ const calculateProjectedTrafficLost = (metrics) => {
   return metrics.organic * trafficMultiplier;
 };
 
-const calculateKpiDeltasForAuditEntryPerDevice = (entry) => {
-  const kpiDeltas = {};
+const calculateProjectedTrafficValue = (
+  projectedTrafficLost,
+  cpcValue,
+) => projectedTrafficLost * cpcValue;
 
-  // Iterate through all devices in entry metrics
-  entry.metrics.forEach((metrics) => {
-    const { deviceType } = metrics;
-    const projectedTrafficLost = calculateProjectedTrafficLost(metrics);
+const calculateKpiDeltasForAuditEntryPerDevice = (entry, cpcValue) => entry.metrics.reduce((
+  kpiDeltas,
+  metrics,
+) => {
+  const { deviceType } = metrics;
+  const projectedTrafficLost = calculateProjectedTrafficLost(metrics);
+  const projectedTrafficValue = calculateProjectedTrafficValue(projectedTrafficLost, cpcValue);
 
+  return {
+    ...kpiDeltas,
     // Store results per device
-    kpiDeltas[deviceType] = {
+    [deviceType]: {
       projectedTrafficLost,
-    };
-  });
+      projectedTrafficValue,
+    },
+  };
+}, {});
 
-  return kpiDeltas;
-};
+const isUrlMatchPattern = (url, groupedURLs) => groupedURLs.some(
+  ({ pattern }) => {
+    const regex = new RegExp(`^${pattern.replace(/\*/g, '.*')}$`);
+    return regex.test(url);
+  },
+);
 
 /**
  * Calculate aggregated kpiDeltas for all audit entries
  *
  * @param {Object} auditData - Audit data
+ * @param {Object} dataAccess - The data access object for database operations
+ * @param {Object} groupedURLs - List of URL patterns for categorization.
+ * Consists of a name and a URL pattern
  * @returns {Object} - Aggregated kpiDeltas for all audit entries
  */
-const calculateKpiDeltasForAudit = (auditData) => {
-  const aggregatedKpiDeltas = {
-    projectedTrafficLost: 0,
-  };
+const calculateKpiDeltasForAudit = (auditData, dataAccess, groupedURLs) => {
+  const cpcValue = resolveCpcValue(auditData, dataAccess);
+  const groupedURLsList = groupedURLs || [];
 
-  // Iterate through all entries and aggregate (sum) kpiDeltas
-  auditData.auditResult.cwv.forEach((entry) => {
-    const kpiDeltasForAuditEntryPerDevice = calculateKpiDeltasForAuditEntryPerDevice(
-      entry,
+  return auditData.auditResult.cwv
+    // Should not affect the result if URL is already included in a group calculation
+    .filter(
+      (entry) => (
+        !(groupedURLsList.length > 0 && entry?.type === 'url' && isUrlMatchPattern(entry.url, groupedURLsList))
+      ),
+    )
+    .map((entry) => calculateKpiDeltasForAuditEntryPerDevice(entry, cpcValue))
+    .flatMap(Object.values) // Flatten all device-level values into a single array
+    .reduce(
+      (totals, { projectedTrafficLost, projectedTrafficValue }) => ({
+        projectedTrafficLost: totals.projectedTrafficLost + projectedTrafficLost,
+        projectedTrafficValue: totals.projectedTrafficValue + projectedTrafficValue,
+      }),
+      { projectedTrafficLost: 0, projectedTrafficValue: 0 },
     );
-
-    Object.values(kpiDeltasForAuditEntryPerDevice).forEach(
-      ({ projectedTrafficLost }) => {
-        aggregatedKpiDeltas.projectedTrafficLost += projectedTrafficLost;
-      },
-    );
-  });
-
-  return aggregatedKpiDeltas;
 };
 
 export default calculateKpiDeltasForAudit;

@@ -46,11 +46,12 @@ export async function CWVRunner(auditUrl, context, site) {
   };
 }
 
-export async function convertToOppty(auditUrl, auditData, context) {
+export async function convertToOppty(auditUrl, auditData, context, site) {
   const {
     dataAccess,
     log,
   } = context;
+  const groupedURLs = site.getConfig().getGroupedURLs(AUDIT_TYPE);
 
   log.info(`auditUrl: ${auditUrl}`);
   log.info(`auditData: ${JSON.stringify(auditData)}`);
@@ -61,7 +62,7 @@ export async function convertToOppty(auditUrl, auditData, context) {
   let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
   log.info(`opportunity: ${JSON.stringify(opportunity)}`);
 
-  const kpiDeltas = calculateKpiDeltasForAudit(auditData);
+  const kpiDeltas = calculateKpiDeltasForAudit(auditData, dataAccess, groupedURLs);
   if (!opportunity) {
     const opportunityData = {
       siteId: auditData.siteId,
