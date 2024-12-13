@@ -69,6 +69,7 @@
     "@aws-sdk/client-secrets-manager": "3.699.0",
     "@aws-sdk/client-sqs": "3.699.0",
     "aws-xray-sdk": "3.10.2",
+    "@aws-sdk/s3-request-presigner": "3.705.0",
     "diff": "7.0.0",
     "jsdom": "25.0.1",
     "urijs": "1.19.11"

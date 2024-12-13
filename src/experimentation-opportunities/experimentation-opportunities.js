@@ -13,8 +13,11 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
+import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
+import s3Client from '../support/s3-client.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
 const DAYS = 30;
@@ -27,6 +30,8 @@ export const MAX_OPPORTUNITIES = 10;
  */
 const CTR_THRESHOLD_MARGIN = 0.04;
 const VENDOR_METRICS_PAGEVIEW_THRESHOLD = 10000;
+
+const EXPIRY_IN_DAYS = 7 * 24 * 60 * 60;
 
 const OPPTY_QUERIES = [
   'rageclick',
@@ -96,6 +101,51 @@ export function getRecommendations(lambdaResult) {
   return recommendations;
 }
 
+/* c8 ignore start */
+async function getPresignedUrl(fileName, context, url, site) {
+  const { log, s3Client: s3ClientObj } = context;
+  const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
+  try {
+    log.info(`Generating presigned URL for ${screenshotPath}`);
+    const command = new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: screenshotPath,
+    });
+    const signedUrl = await getSignedUrl(s3ClientObj, command, {
+      expiresIn: EXPIRY_IN_DAYS,
+    });
+    return signedUrl;
+  } catch (error) {
+    log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
+    return '';
+  }
+}
+
+async function getUnscrapedUrls(context, site, urls) {
+  const { log, s3Client: s3ClientObj } = context;
+  const unscrapedUrls = [];
+  for (const url of urls) {
+    const screenshotPath = `${getS3PathPrefix(
+      url.url,
+      site,
+    )}/screenshot-desktop.png`;
+    const command = new HeadObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: screenshotPath,
+    });
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await s3ClientObj.send(command);
+      log.info(`URL ${url.url} is already scraped`);
+    } catch (error) {
+      log.info(`URL ${url.url} is not scraped yet`, error);
+      unscrapedUrls.push(url);
+    }
+  }
+  return unscrapedUrls;
+}
+/* c8 ignore stop */
+
 async function updateRecommendations(oppty, context, site) {
   const { log } = context;
   log.info(`Generating guidance for ${oppty.page}`);
@@ -133,10 +183,19 @@ async function updateRecommendations(oppty, context, site) {
   }
   // eslint-disable-next-line no-param-reassign
   oppty.recommendations = getRecommendations(lambdaResult);
+  // eslint-disable-next-line no-param-reassign
+  oppty.screenshot = await getPresignedUrl('screenshot-desktop.png', context, oppty.page, site);
+  // eslint-disable-next-line no-param-reassign
+  oppty.thumbnail = await getPresignedUrl('screenshot-desktop-thumbnail.png', context, oppty.page, site);
 }
 
 async function processHighOrganicLowCtrOpportunities(opportunites, context, site) {
   const { sqs, log } = context;
+  // add s3 client to the context
+  const wrappedFunction = s3Client(() => Promise.resolve());
+  await wrappedFunction({}, context);
+  log.info(`s3 client added to the context: ${context.s3Client}`);
+
   const highOrganicLowCtrOpportunities = opportunites.filter((oppty) => oppty.type === 'high-organic-low-ctr')
     .map((oppty) => {
       const { pageViews, trackedPageKPIValue, trackedKPISiteAverage } = oppty;
@@ -156,12 +215,16 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => ({
     url: oppty.page,
   }));
-  log.info(`Triggering scrape for [${JSON.stringify(topHighOrganicUrls, null, 2)}]`);
-  await sqs.sendMessage(process.env.SCRAPING_JOBS_QUEUE_URL, {
-    processingType: 'default',
-    jobId: site.getId(),
-    urls: topHighOrganicUrls,
-  });
+  // create urls which are not scraped early
+  const unscrapedUrls = await getUnscrapedUrls(context, site, topHighOrganicUrls);
+  log.info(`Triggering scrape for [${JSON.stringify(unscrapedUrls, null, 2)}]`);
+  if (unscrapedUrls.length > 0) {
+    await sqs.sendMessage(process.env.SCRAPING_JOBS_QUEUE_URL, {
+      processingType: 'default',
+      jobId: site.getId(),
+      urls: unscrapedUrls,
+    });
+  }
   // wait for the scrape to complete
   // TODO: replace this with a SQS message to run another handler to process the scraped content,
   // to eliminate duplicate lambda run time
@@ -246,6 +309,7 @@ function convertToOpportunityEntity(oppty, auditData) {
       pageViews: oppty.pageViews,
       samples: oppty.samples,
       screenshot: oppty.screenshot,
+      thumbnail: oppty.thumbnail,
       trackedKPISiteAverage: oppty.trackedKPISiteAverage,
       trackedPageKPIName: oppty.trackedPageKPIName,
       trackedPageKPIValue: oppty.trackedPageKPIValue,

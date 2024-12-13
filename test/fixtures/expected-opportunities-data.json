@@ -82,6 +82,7 @@
       "type": "high-organic-low-ctr",
       "page": "https://abc.com/abc-adoption/account",
       "screenshot": "",
+      "thumbnail": "",
       "trackedPageKPIName": "Click Through Rate",
       "trackedKPISiteAverage": "0.24",
       "trackedPageKPIValue": "0.14",
