@@ -1,3 +1,10 @@
+# [1.43.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.5...v1.43.0) (2024-12-13)
+
+
+### Features
+
+* add presigned screenshot url for opportunity ([#511](https://github.com/adobe/spacecat-audit-worker/issues/511)) ([c693f21](https://github.com/adobe/spacecat-audit-worker/commit/c693f21f2d8dc601b23d6afd628938c217421170))
+
 ## [1.42.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.4...v1.42.5) (2024-12-13)
 
 
