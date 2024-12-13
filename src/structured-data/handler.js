@@ -137,7 +137,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
   const buildKey = (data) => `${data.inspectionUrl}`;
 
   const filteredAuditResult = auditData.auditResult
-    .filter((result) => result.richResults?.detectedIssues);
+    .filter((result) => result.richResults?.detectedIssues?.length > 0);
 
   await syncSuggestions({
     opportunity,
