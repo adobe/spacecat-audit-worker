@@ -1,3 +1,10 @@
+## [1.42.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.4...v1.42.5) (2024-12-13)
+
+
+### Bug Fixes
+
+* update the existing opportunity instead of removing ([#525](https://github.com/adobe/spacecat-audit-worker/issues/525)) ([1e66eb0](https://github.com/adobe/spacecat-audit-worker/commit/1e66eb0736612ca7322df2c64f08dffcd6a0a1ee))
+
 ## [1.42.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.3...v1.42.4) (2024-12-13)
 
 
