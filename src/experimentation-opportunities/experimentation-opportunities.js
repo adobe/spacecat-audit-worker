@@ -13,11 +13,12 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import AWSXray from 'aws-xray-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
+import s3Client from '../support/s3-client.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
 const DAYS = 30;
@@ -30,6 +31,8 @@ export const MAX_OPPORTUNITIES = 10;
  */
 const CTR_THRESHOLD_MARGIN = 0.04;
 const VENDOR_METRICS_PAGEVIEW_THRESHOLD = 10000;
+
+const EXPIRY_IN_DAYS = 7 * 24 * 60 * 60;
 
 const OPPTY_QUERIES = [
   'rageclick',
@@ -104,20 +107,46 @@ async function getPresignedUrl(fileName, context, url, site) {
   const { log } = context;
   const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
   try {
-    const s3Client = AWSXray.captureAWSv3Client(new S3Client({ region: process.env.AWS_REGION }));
+    const s3ClientObj = AWSXray.captureAWSv3Client(
+      new S3Client({ region: process.env.AWS_REGION }),
+    );
     log.info(`Generating presigned URL for ${screenshotPath}`);
     const command = new GetObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
       Key: screenshotPath,
     });
-    const signedUrl = await getSignedUrl(s3Client, command, {
-      expiresIn: 7 * 24 * 60 * 60, // 7 days in seconds
+    const signedUrl = await getSignedUrl(s3ClientObj, command, {
+      expiresIn: EXPIRY_IN_DAYS,
     });
     return signedUrl;
   } catch (error) {
     log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
     return '';
   }
+}
+
+async function getUnscrapedUrls(context, site, urls) {
+  const { log, s3Client: s3ClientObj } = context;
+  const unscrapedUrls = [];
+  for (const url of urls) {
+    const screenshotPath = `${getS3PathPrefix(
+      url.url,
+      site,
+    )}/screenshot-desktop.png`;
+    const command = new HeadObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: screenshotPath,
+    });
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await s3ClientObj.send(command);
+      log.info(`URL ${url.url} is already scraped`);
+    } catch (error) {
+      log.info(`URL ${url.url} is not scraped yet`, error);
+      unscrapedUrls.push(url);
+    }
+  }
+  return unscrapedUrls;
 }
 /* c8 ignore stop */
 
@@ -166,6 +195,11 @@ async function updateRecommendations(oppty, context, site) {
 
 async function processHighOrganicLowCtrOpportunities(opportunites, context, site) {
   const { sqs, log } = context;
+  // add s3 client to the context
+  const wrappedFunction = s3Client(() => Promise.resolve());
+  await wrappedFunction({}, context);
+  log.info(`s3 client added to the context: ${context.s3Client}`);
+
   const highOrganicLowCtrOpportunities = opportunites.filter((oppty) => oppty.type === 'high-organic-low-ctr')
     .map((oppty) => {
       const { pageViews, trackedPageKPIValue, trackedKPISiteAverage } = oppty;
@@ -185,6 +219,9 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   const topHighOrganicUrls = topHighOrganicLowCtrOpportunities.map((oppty) => ({
     url: oppty.page,
   }));
+  // create urls which are not scraped early
+  const unscrapedUrls = await getUnscrapedUrls(context, site, topHighOrganicUrls);
+  console.log('unscrapedUrls', unscrapedUrls);
   log.info(`Triggering scrape for [${JSON.stringify(topHighOrganicUrls, null, 2)}]`);
   await sqs.sendMessage(process.env.SCRAPING_JOBS_QUEUE_URL, {
     processingType: 'default',
