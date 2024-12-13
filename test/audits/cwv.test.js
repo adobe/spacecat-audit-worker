@@ -38,7 +38,7 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
 const AUDIT_TYPE = 'cwv';
 
 describe('CWVRunner Tests', () => {
-  const groupedURLs = [{ test: 'test' }];
+  const groupedURLs = [{ name: 'test', pattern: 'test/*' }];
   const siteConfig = {
     getGroupedURLs: sandbox.stub().returns(groupedURLs),
   };
@@ -154,7 +154,9 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
 
-      await convertToOppty(auditUrl, auditData, context);
+      await convertToOppty(auditUrl, auditData, context, site);
+
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(AUDIT_TYPE);
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
 
@@ -168,7 +170,7 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
 
-      await expect(convertToOppty(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
+      await expect(convertToOppty(auditUrl, auditData, context, site)).to.be.rejectedWith('big error happened');
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
       expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id and auditId audit-id: big error happened');
@@ -189,7 +191,9 @@ describe('CWVRunner Tests', () => {
       }));
       oppty.getSuggestions.resolves(existingSuggestions);
 
-      await convertToOppty(auditUrl, auditData, context);
+      await convertToOppty(auditUrl, auditData, context, site);
+
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(AUDIT_TYPE);
 
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');

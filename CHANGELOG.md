@@ -1,3 +1,31 @@
+## [1.42.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.3...v1.42.4) (2024-12-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.23.7 ([#529](https://github.com/adobe/spacecat-audit-worker/issues/529)) ([0882c26](https://github.com/adobe/spacecat-audit-worker/commit/0882c2676fa19762136115a15d8d585d86830872))
+
+## [1.42.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.2...v1.42.3) (2024-12-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.59.1 ([#526](https://github.com/adobe/spacecat-audit-worker/issues/526)) ([9daa00f](https://github.com/adobe/spacecat-audit-worker/commit/9daa00f0e668817beef54aefbdff2b8ade4e8c63))
+
+## [1.42.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.1...v1.42.2) (2024-12-11)
+
+
+### Bug Fixes
+
+* Double Counting in CWV Metrics for URLs and Groups ([#522](https://github.com/adobe/spacecat-audit-worker/issues/522)) ([2538f79](https://github.com/adobe/spacecat-audit-worker/commit/2538f790d1d05d910aa31e50ccab1e5fcefdfeae))
+
+## [1.42.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.42.0...v1.42.1) (2024-12-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.59.0 ([#524](https://github.com/adobe/spacecat-audit-worker/issues/524)) ([9d3c1ce](https://github.com/adobe/spacecat-audit-worker/commit/9d3c1cef9e15fdad3c5d2a470996a917b1c2f0c2))
+
 # [1.42.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.41.1...v1.42.0) (2024-12-11)
 
 
