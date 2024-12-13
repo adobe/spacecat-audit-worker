@@ -136,20 +136,27 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 
   const buildKey = (data) => `${data.inspectionUrl}`;
 
+  const filteredAuditResult = auditData.auditResult
+    .filter((result) => result.richResults?.detectedIssues);
+
   await syncSuggestions({
     opportunity,
-    newData: auditData.auditResult,
+    newData: filteredAuditResult,
     buildKey,
     mapNewSuggestion: (data) => {
-      const errors = data?.richResults?.detectedIssues?.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.issueMessage.replaceAll('"', "'")}`))).sort();
+      const errors = data.richResults.detectedIssues.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.issueMessage}`))).sort();
       return {
         opportunityId: opportunity.getId(),
         type: 'CODE_CHANGE',
-        rank: errors ? errors.length : 0,
+        rank: errors.length,
         data: {
           type: 'url',
           url: data.inspectionUrl,
-          errors: errors || data.error,
+          errors: errors.map((error) => ({
+            id: error.replaceAll(/["\s]/g, '').toLowerCase(),
+            errorTitle: error.replaceAll('"', "'"),
+            fix: '', // todo: implement for auto-suggest
+          })),
         },
       };
     },
