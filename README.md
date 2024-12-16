@@ -232,10 +232,10 @@ export async function auditRunner(url, context) {
 }
 
 async function convertToOpportunity(auditUrl, auditData, context) {
-  const { dataAccess } = context;
+  const { dataAccess, log } = context;
 
   const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  const opportunity =  opportunities.find((oppty) => oppty.getType() === 'audit-type');
+  let opportunity = opportunities.find((oppty) => oppty.getType() === 'audit-type');
 
   if (!opportunity) {
     const opportunityData = {
@@ -279,10 +279,10 @@ async function convertToOpportunity(auditUrl, auditData, context) {
       // data changes based on the audit type
       data: {
         property: issue.property,
-        anotherProperty: issue.anotherProperty
-      }
+        anotherProperty: issue.anotherProperty,
+      },
     }),
-    log
+    log,
   }); 
 }
 
