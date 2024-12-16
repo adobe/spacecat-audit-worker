@@ -1,3 +1,10 @@
+# [1.45.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.44.0...v1.45.0) (2024-12-16)
+
+
+### Features
+
+* **site-detection:** site-detection audit ([#523](https://github.com/adobe/spacecat-audit-worker/issues/523)) ([40bf4f9](https://github.com/adobe/spacecat-audit-worker/commit/40bf4f96afbee37a251687978be84e1ffa656fa2))
+
 # [1.44.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.43.2...v1.44.0) (2024-12-16)
 
 
