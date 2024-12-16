@@ -19,13 +19,14 @@ import nock from 'nock';
 import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
 import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
-import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, hasText, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
   defaultMessageSender,
   defaultOrgProvider,
   defaultPersister,
   defaultSiteProvider,
   defaultUrlResolver,
+  noopPersister,
   noopUrlResolver,
   wwwUrlResolver,
 } from '../../src/common/audit.js';
@@ -349,5 +350,17 @@ describe('Audit tests', () => {
     expect(wwwUrlResolver(createSite({ baseURL: 'https://www.spacecat.com' }))).to.equal('www.spacecat.com');
     expect(wwwUrlResolver(createSite({ baseURL: 'http://blog.spacecat.com' }))).to.equal('blog.spacecat.com');
     expect(wwwUrlResolver(createSite({ baseURL: 'https://blog.spacecat.com' }))).to.equal('blog.spacecat.com');
+  });
+
+  it('noop persister', async () => {
+    const audit = await noopPersister({
+      siteId: 'site-id',
+      isLive: true,
+      auditedAt: new Date().toISOString(),
+      auditType: 'some-type',
+      auditResult: { metric: 42 },
+      fullAuditRef: 'hmm',
+    });
+    expect(hasText(audit.getId())).to.be.true;
   });
 });
