@@ -1,3 +1,10 @@
+## [1.45.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.45.0...v1.45.1) (2024-12-16)
+
+
+### Bug Fixes
+
+* **site-detection:** extra logs ([1522d69](https://github.com/adobe/spacecat-audit-worker/commit/1522d69a868605b0c4953e953c2360b80fb4aa24))
+
 # [1.45.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.44.0...v1.45.0) (2024-12-16)
 
 
