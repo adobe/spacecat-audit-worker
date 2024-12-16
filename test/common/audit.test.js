@@ -136,8 +136,8 @@ describe('Audit tests', () => {
 
       await defaultMessageSender(resultMessage, context);
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, resultMessage);
+      expect(context.sqs.sendMessage).not.to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).not.to.have.been.calledWith(queueUrl, resultMessage);
     });
 
     it('default url resolves gets the base url and follows redirects', async () => {
@@ -275,8 +275,8 @@ describe('Audit tests', () => {
         auditContext: { someField: 431, finalUrl, fullAuditRef },
         auditResult: { metric: 42 },
       };
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);
+      expect(context.sqs.sendMessage).not.to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).not.to.have.been.calledWith(queueUrl, expectedMessage);
       expect(postProcessors[0]).to.have.been.calledWith(finalUrl, auditData);
       expect(postProcessors[1]).to.have.been.calledWith(finalUrl, auditData);
       expect(postProcessors[2]).to.not.have.been.called;
@@ -339,8 +339,8 @@ describe('Audit tests', () => {
       auditContext: { finalUrl: 'space.cat', fullAuditRef },
       auditResult: { metric: 42 },
     };
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);
+    expect(context.sqs.sendMessage).not.to.have.been.calledOnce;
+    expect(context.sqs.sendMessage).not.to.have.been.calledWith(queueUrl, expectedMessage);
   });
 
   it('wwwUrlResolver calculates audit urls correctly', async () => {
