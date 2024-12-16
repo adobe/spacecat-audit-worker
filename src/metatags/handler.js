@@ -18,6 +18,8 @@ import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import syncOpportunityAndSuggestions from './opportunityHandler.js';
+import { AuditBuilder } from '../common/audit-builder.js';
+import { noopUrlResolver } from '../common/audit.js';
 
 async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -35,7 +37,7 @@ async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)
   };
 }
 
-export default async function auditMetaTags(message, context) {
+export async function auditMetaTags(message, context) {
   const { type, auditContext = {} } = message;
   const siteId = message.siteId || message.url;
   const {
@@ -120,3 +122,8 @@ export default async function auditMetaTags(message, context) {
     return internalServerError(`Internal server error: ${e.message}`);
   }
 }
+
+export default new AuditBuilder()
+  .withUrlResolver(noopUrlResolver)
+  .withRunner(auditMetaTags)
+  .build();

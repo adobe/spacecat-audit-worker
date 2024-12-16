@@ -27,7 +27,7 @@ import {
   SEO_RECOMMENDATION, MULTIPLE_H1_ON_PAGE, SHOULD_BE_PRESENT, TAG_LENGTHS, ONE_H1_ON_A_PAGE,
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
-import auditMetaTags from '../../src/metatags/handler.js';
+import { auditMetaTags } from '../../src/metatags/handler.js';
 import syncOpportunityAndSuggestions from '../../src/metatags/opportunityHandler.js';
 import testData from '../fixtures/meta-tags-data.js';
 
