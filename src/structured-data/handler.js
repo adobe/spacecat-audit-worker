@@ -13,6 +13,7 @@
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { isArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -70,7 +71,7 @@ export async function processStructuredData(baseURL, context, pages) {
         },
       )?.filter((item) => item.items.length > 0) ?? [];
 
-      if (filteredRichResults.length > 0) {
+      if (filteredRichResults?.length > 0) {
         filteredRichResults.verdict = inspectionResult?.richResultsResult?.verdict;
         log.info(`Found ${filteredRichResults.length} rich results issues for URL: ${page}`);
       } else {
@@ -102,6 +103,67 @@ export async function processStructuredData(baseURL, context, pages) {
     .map((result) => result.value);
 }
 
+export async function convertToOpportunity(auditUrl, auditData, context) {
+  const { dataAccess, log } = context;
+
+  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  let opportunity = opportunities.find((oppty) => oppty.getType() === 'structured-data');
+
+  if (!opportunity) {
+    const opportunityData = {
+      siteId: auditData.siteId,
+      auditId: auditData.id,
+      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Structured_Data_Runbook.docx?d=wf814159992be44a58b72ce1950c0c9ab&csf=1&web=1&e=5Qq6vm',
+      type: 'structured-data',
+      origin: 'AUTOMATION',
+      title: 'Missing or invalid structured data',
+      description: 'Structured data (JSON-LD) is a way to organize and label important information on your website so that search engines can understand it more easily. It\'s important because it can lead to improved visibility in search.',
+      guidance: {
+        steps: [],
+      },
+      tags: ['Traffic acquisition'],
+    };
+    try {
+      opportunity = await dataAccess.Opportunity.create(opportunityData);
+    } catch (e) {
+      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
+      throw e;
+    }
+  } else {
+    opportunity.setAuditId(auditData.id);
+    await opportunity.save();
+  }
+
+  const buildKey = (data) => `${data.inspectionUrl}`;
+
+  const filteredAuditResult = auditData.auditResult
+    .filter((result) => result.richResults?.detectedIssues?.length > 0);
+
+  await syncSuggestions({
+    opportunity,
+    newData: filteredAuditResult,
+    buildKey,
+    mapNewSuggestion: (data) => {
+      const errors = data.richResults.detectedIssues.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.issueMessage}`))).sort();
+      return {
+        opportunityId: opportunity.getId(),
+        type: 'CODE_CHANGE',
+        rank: errors.length,
+        data: {
+          type: 'url',
+          url: data.inspectionUrl,
+          errors: errors.map((error) => ({
+            id: error.replaceAll(/["\s]/g, '').toLowerCase(),
+            errorTitle: error.replaceAll('"', "'"),
+            fix: '', // todo: implement for auto-suggest
+          })),
+        },
+      };
+    },
+    log,
+  });
+}
+
 export async function structuredDataHandler(baseURL, context, site) {
   const { log } = context;
   log.info(`Received structured data audit request for ${baseURL}`);
@@ -110,7 +172,7 @@ export async function structuredDataHandler(baseURL, context, site) {
   const siteId = site.getId();
 
   const structuredDataURLs = await site.getConfig().getIncludedURLs('structured-data');
-  if (isArray(structuredDataURLs) && structuredDataURLs.length === 0) {
+  if (structuredDataURLs && isArray(structuredDataURLs) && structuredDataURLs.length === 0) {
     log.error(`No product detail pages found for site ID: ${siteId}`);
     throw new Error(`No product detail pages found for site: ${baseURL}`);
   }
@@ -132,4 +194,5 @@ export async function structuredDataHandler(baseURL, context, site) {
 export default new AuditBuilder()
   .withRunner(structuredDataHandler)
   .withUrlResolver((site) => site.getBaseURL())
+  .withPostProcessors([convertToOpportunity])
   .build();

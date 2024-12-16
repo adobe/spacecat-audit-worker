@@ -13,6 +13,7 @@
 import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import URI from 'urijs';
+import { createAudit } from '@adobe/spacecat-shared-data-access/src/models/audit.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 export async function defaultMessageSender(resultMessage, context) {
@@ -26,6 +27,10 @@ export async function defaultPersister(auditData, context) {
   const { dataAccess } = context;
   const audit = await dataAccess.addAudit(auditData);
   return audit;
+}
+
+export async function noopPersister(auditData) {
+  return createAudit(auditData);
 }
 
 export async function defaultSiteProvider(siteId, context) {
