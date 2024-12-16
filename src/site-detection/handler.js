@@ -180,17 +180,18 @@ export async function siteDetectionRunner(_, context) {
     .map((s) => s.getBaseURL())
     .map((url) => url.replace(/^https?:\/\//, '')));
 
-  let candidates = await fetchCandidates(authorization, log);
+  const unfilteredCandidates = await fetchCandidates(authorization, log);
 
-  candidates = candidates
+  const candidates = unfilteredCandidates
     .filter((candidate) => !knownHosts.has(candidate.domain))
     .filter((candidate) => isValidCandidate(config, candidate.domain, log));
 
-  log.info(`Found ${candidates.length} valid candidates`);
+  log.info(`Out of ${unfilteredCandidates.length} candidates, found ${candidates.length} valid candidates`);
 
   // TODO: replace the HOOK call with a proper post-processing step
   for (const candidate of candidates) {
     try {
+      log.info(`Re-feeding ${candidate.domain}; x-fw: ${candidate.xFwHost}, v: ${candidate.hlxVersion}`);
       // eslint-disable-next-line no-await-in-loop
       await refeed(candidate.xFwHost, candidate.hlxVersion, siteDetectionWebHook);
     } catch (e) {
