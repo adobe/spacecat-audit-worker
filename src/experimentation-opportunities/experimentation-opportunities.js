@@ -116,7 +116,7 @@ async function getPresignedUrl(fileName, context, url, site) {
     });
     return signedUrl;
   } catch (error) {
-    log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
+    log.error(`Error2 generating presigned URL for ${screenshotPath}:`, error);
     return '';
   }
 }
