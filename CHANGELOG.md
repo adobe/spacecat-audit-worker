@@ -1,3 +1,10 @@
+# [1.44.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.43.2...v1.44.0) (2024-12-16)
+
+
+### Features
+
+* introduce structured data to opportunity and suggestions ([#527](https://github.com/adobe/spacecat-audit-worker/issues/527)) ([e5894c5](https://github.com/adobe/spacecat-audit-worker/commit/e5894c56104a426d390e98eae6014c5eb189c6ba))
+
 ## [1.43.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.43.1...v1.43.2) (2024-12-15)
 
 
