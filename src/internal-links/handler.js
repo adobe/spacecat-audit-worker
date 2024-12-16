@@ -27,11 +27,6 @@ const AUDIT_TYPE = 'broken-internal-links';
  * @returns {Array} - Links with priority classifications included
  */
 function calculatePriority(links) {
-  // If no links, return empty array
-  if (!links || links.length === 0) {
-    return [];
-  }
-
   // Sort links by views in descending order
   const sortedLinks = [...links].sort((a, b) => b.views - a.views);
 
