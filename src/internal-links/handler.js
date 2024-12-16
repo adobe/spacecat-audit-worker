@@ -27,20 +27,25 @@ const AUDIT_TYPE = 'broken-internal-links';
  * @returns {Array} - Links with priority classifications included
  */
 function calculatePriority(links) {
-  // Sort links by views
+  // If no links, return empty array
+  if (!links || links.length === 0) {
+    return [];
+  }
+
+  // Sort links by views in descending order
   const sortedLinks = [...links].sort((a, b) => b.views - a.views);
 
-  // Calculate total views
-  const totalViews = sortedLinks.reduce((sum, link) => sum + link.views, 0);
+  // Calculate indices for the 25% and 50% marks
+  const quarterIndex = Math.ceil(sortedLinks.length * 0.25);
+  const halfIndex = Math.ceil(sortedLinks.length * 0.5);
 
-  // Map through sorted links and assign priority based on contribution percentage
-  return sortedLinks.map((link) => {
-    const contributionPercentage = (link.views / totalViews) * 100;
-
+  // Map through sorted links and assign priority
+  return sortedLinks.map((link, index) => {
     let priority;
-    if (contributionPercentage >= 75) {
+
+    if (index < quarterIndex) {
       priority = 'high';
-    } else if (contributionPercentage >= 50) {
+    } else if (index < halfIndex) {
       priority = 'medium';
     } else {
       priority = 'low';
