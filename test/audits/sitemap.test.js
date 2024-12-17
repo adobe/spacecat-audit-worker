@@ -22,7 +22,7 @@ import {
   findSitemap,
   isSitemapContentValid,
   checkRobotsForSitemap, sitemapAuditRunner, fetchContent, getBaseUrlPagesFromSitemaps,
-  convertToOpportunity, classifyOpportunities, getSitemapsWithIssues, handleClassifiedOpportunity,
+  convertToOpportunity, classifySuggestions, getSitemapsWithIssues,
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -738,7 +738,7 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe('classifyOpportunities', () => {
+  describe('classifySuggestions', () => {
     const auditAllGood = {
       siteId: 'site-id',
       auditId: 'audit-id',
@@ -830,129 +830,63 @@ describe('Sitemap Audit', () => {
     };
 
     it('should return empty when all is ok', async () => {
-      const response = await classifyOpportunities(url, auditAllGood, context.log);
+      const response = classifySuggestions(url, auditAllGood, context.log);
       expect(response.length)
         .to
         .equal(0);
     });
 
     it('should report that the expected default sitemap path contains no urls', async () => {
-      const response = await classifyOpportunities(
+      const response = classifySuggestions(
         url,
         auditDataWithSitemapFoundWithNoPages,
         context.log,
       );
       expect(response.length).to.equal(1);
-      expect(response[0].type).to.equal('sitemap-no-valid-paths-extracted');
-
-      const newData = response[0].getData();
-      expect(newData.length).to.equal(1);
-      expect(newData[0]).deep.equal({
-        sourceSitemapUrl: 'https://some-domain.adobe/sitemap.xml',
-        pageUrl: '',
-        statusCode: 404,
-      });
-
-      const builtKey = response[0].buildKey(newData[0]);
-      expect(builtKey).to.equal('site-id|sitemap-no-valid-paths-extracted|https://some-domain.adobe/sitemap.xml');
+      expect(response[0].type).to.equal('error');
+      expect(response[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
 
     it('should report that the expected default sitemap path contains only urls that are not found', async () => {
-      const response = await classifyOpportunities(
+      const response = classifySuggestions(
         url,
         auditDataWithSitemapFoundWithPagesButTheyRespondWith404,
         context.log,
       );
       expect(response.length).to.equal(1);
-      expect(response[0].type).to.equal('sitemap-no-valid-paths-extracted');
-
-      const newData = response[0].getData();
-      expect(newData.length).to.equal(2);
-
-      expect(newData[0]).deep.equal({
-        sourceSitemapUrl: 'https://some-domain.adobe/sitemap.xml',
-        pageUrl: 'https://some-domain.adobe/foo',
-        statusCode: 404,
-      });
-
-      expect(newData[1]).deep.equal({
-        sourceSitemapUrl: 'https://some-domain.adobe/sitemap.xml',
-        pageUrl: 'https://some-domain.adobe/bar',
-        statusCode: 404,
-      });
-
-      const baseKey = 'site-id|sitemap-no-valid-paths-extracted|https://some-domain.adobe/sitemap.xml';
-      expect(response[0].buildKey(newData[0])).to.equal(`${baseKey}|https://some-domain.adobe/foo`);
-      expect(response[0].buildKey(newData[1])).to.equal(`${baseKey}|https://some-domain.adobe/bar`);
+      expect(response[0].type).to.equal('error');
+      expect(response[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
 
     it('should report that there are no sitemaps defined in robots.txt and in the fallback', async () => {
-      const response = await classifyOpportunities(url, auditNoSitemapsFound, context.log);
+      const response = classifySuggestions(url, auditNoSitemapsFound, context.log);
       expect(response.length).to.equal(1);
-      expect(response[0].type).to.equal('sitemap-not-available');
-
-      const newData = response[0].getData();
-      expect(newData.length).to.equal(1);
-      expect(response[0].buildKey(newData[0]))
-        .to
-        .equal('site-id|sitemap-not-available|https://some-domain.adobe/robots.txt');
+      expect(response[0].type).to.equal('error');
+      expect(response[0].error).to.equal(ERROR_CODES.NO_SITEMAP_IN_ROBOTS);
     });
 
-    it('should present a opportunity even if the audit is successful as long as there are pages with issues', async () => {
-      // eslint-disable-next-line max-len
-      const response = await classifyOpportunities(url, auditPartiallySuccessfulOnePageNetworkError, context.log);
+    it('should present a suggestion even if the audit is successful as long as there are pages with issues', async () => {
+      const sitemap = Object.keys(auditPartiallySuccessfulOnePageNetworkError.auditResult.paths)[0];
+      const response = classifySuggestions(
+        url,
+        auditPartiallySuccessfulOnePageNetworkError,
+        context.log,
+      );
       expect(response.length).to.equal(1);
-      expect(response[0].type).to.equal('pages-in-sitemap-have-errors');
-
-      const newData = response[0].getData();
-      expect(newData.length).to.equal(1);
-      expect(response[0].buildKey(newData[0]))
-        .to
-        .equal('site-id|pages-in-sitemap-have-errors|https://some-domain.adobe/sitemap.xml|https://some-domain.adobe/bar');
+      expect(response[0].type).to.equal('url');
+      expect(response[0].sitemapUrl).to.equal(sitemap);
+      expect(response[0].pageUrl).to.equal(
+        auditPartiallySuccessfulOnePageNetworkError.auditResult.details.issues[sitemap][0].url,
+      );
+      expect(response[0].statusCode).to.equal(500);
     });
   });
 
   describe('convertToOpportunity', () => {
-    let mockDataAccess;
-    let mockLog;
-    let opportunity;
     let auditDataFailure;
     let auditDataSuccess;
-    let otherOpportunity;
-    let existingOpportunity;
 
     beforeEach(() => {
-      mockLog = {
-        info: sandbox.stub(),
-        error: sandbox.stub(),
-      };
-
-      opportunity = {
-        getType: () => 'sitemap-pages-with-issues',
-        getId: () => 'oppty-id',
-        getSiteId: () => 'site-id',
-        addSuggestions: sandbox.stub(),
-        getSuggestions: sandbox.stub(),
-        setAuditId: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-
-      otherOpportunity = {
-        getType: () => 'other',
-      };
-
-      mockDataAccess = {
-        Opportunity: {
-          allBySiteIdAndStatus: sandbox.stub(),
-          create: sandbox.stub(),
-        },
-      };
-
-      context = {
-        log: mockLog,
-        dataAccess: mockDataAccess,
-      };
-
       auditDataFailure = {
         siteId: 'site-id',
         id: 'audit-id',
@@ -1003,107 +937,112 @@ describe('Sitemap Audit', () => {
     });
 
     it('should handle errors when creating opportunity', async () => {
-      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
-      mockDataAccess.Opportunity.create.rejects(new Error('Creation failed'));
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+        [context.dataAccess.Opportunity],
+      );
+      context.dataAccess.Opportunity.create.rejects(new Error('Creation failed'));
 
       await expect(convertToOpportunity('https://example.com', auditDataFailure, context))
         .to.be.rejectedWith('Creation failed');
 
-      expect(mockLog.error).to.have.been.calledWith(
+      expect(context.log.error).to.have.been.calledWith(
         'Failed to create new opportunity for siteId site-id and auditId audit-id: Creation failed',
       );
     });
 
     it('should not create opportunity when there are no issues', async () => {
-      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+        [context.dataAccess.Opportunity],
+      );
+
       await convertToOpportunity('https://example.com', auditDataSuccess, context);
 
-      expect(mockDataAccess.Opportunity.create).to.not.have.been.called;
-      expect(opportunity.addSuggestions).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;
     });
 
-    it('should handle updateing when opportunity was already defined', async () => {
-      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
-      mockDataAccess.Opportunity.create.rejects(new Error('Creation failed'));
+    it('should create a new opportunity when there is not an existing one', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+      context.dataAccess.Opportunity.getSuggestions.resolves([]);
+      context.dataAccess.Opportunity.addSuggestions.resolves({
+        createdItems: [],
+      });
 
-      await expect(convertToOpportunity('https://example.com', auditDataFailure, context))
-        .to.be.rejectedWith('Creation failed');
+      await convertToOpportunity('https://example.com', auditDataFailure, context);
 
-      expect(mockLog.error).to.have.been.calledWith(
-        'Failed to create new opportunity for siteId site-id and auditId audit-id: Creation failed',
-      );
-    });
-
-    it('should handle creating an opportunity is not already defined', async () => {
-      existingOpportunity = {
-        getType: () => 'sitemap-something-else',
-        setAuditId: sandbox.stub(),
-        save: sandbox.stub(),
-        getId: sandbox.stub(),
-        getSuggestions: sandbox.stub(),
-        addSuggestions: sandbox.stub(),
-      };
-
-      const opp = {
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith({
         siteId: 'site-id',
         auditId: 'audit-id',
-        type: 'sitemap-pages-not-found',
-        title: 'Sitemap pages not found',
-        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=FTWy7t',
+        type: 'sitemap',
+        title: 'Sitemap issues found',
+        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
         guidance: {
           steps: [
             'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
             'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
           ],
         },
-        tags: ['Traffic Acquisition', 'Sitemap'],
-        setAuditId: sandbox.stub(),
-        save: sandbox.stub(),
-        getId: sandbox.stub(),
-        getSuggestions: sandbox.stub(),
-        addSuggestions: sandbox.stub(),
-      };
-
-      opp.getSuggestions.returns([]);
-      opp.addSuggestions.returns({
-        errorItems: [],
-        createdItems: [{ a: 'b' }],
+        tags: [
+          'Traffic Acquisition',
+        ],
       });
-      opp.getId.returns('oppty-id');
-
-      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
-      mockDataAccess.Opportunity.create.returns(opp);
-
-      await convertToOpportunity('https://example.com', auditDataFailure, context);
-
-      expect(mockLog.error).to.not.have.been.called;
     });
 
-    it('should not create opportunity when there are no issues', async () => {
-      existingOpportunity = {
-        getType: () => 'sitemap-no-valid-paths-extracted',
-        setAuditId: sandbox.stub(),
-        save: sandbox.stub(),
-        getId: sandbox.stub(),
-        getSuggestions: sandbox.stub(),
-        addSuggestions: sandbox.stub(),
-      };
-
-      existingOpportunity.setAuditId.returns(existingOpportunity);
-      existingOpportunity.getSuggestions.returns([]);
-      existingOpportunity.addSuggestions.returns({
-        errorItems: [],
-        createdItems: [{ a: 'b' }],
+    it('should handle updating when opportunity was already defined', async () => {
+      const opptyId = 'oppty-id';
+      const errorItems = [
+        {
+          type: 'error',
+          error: 'NO VALID URLs FOUND IN SITEMAP',
+        },
+        {
+          type: 'url',
+          sitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+          pageUrl: 'https://some-domain.adobe/foo',
+          statusCode: 404,
+        },
+        {
+          type: 'url',
+          sitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+          pageUrl: 'https://some-domain.adobe/bar',
+          statusCode: 404,
+        },
+      ];
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+        [context.dataAccess.Opportunity],
+      );
+      context.dataAccess.Opportunity.getType.returns('sitemap');
+      context.dataAccess.Opportunity.getId.returns(opptyId);
+      context.dataAccess.Opportunity.save.resolves();
+      context.dataAccess.Opportunity.getSuggestions.resolves([]);
+      context.dataAccess.Opportunity.addSuggestions.resolves({
+        createdItems: errorItems,
       });
-      existingOpportunity.getId.returns('oppty-id');
-
-      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
       await convertToOpportunity('https://example.com', auditDataFailure, context);
 
-      expect(existingOpportunity.setAuditId).to.have.been.calledWith('audit-id');
-      expect(existingOpportunity.save).to.have.been.called;
-      expect(mockDataAccess.Opportunity.create).to.not.have.been.called;
-      expect(opportunity.addSuggestions).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.setAuditId).to.have.been.calledOnceWith('audit-id');
+      expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
+      expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith([
+        {
+          opportunityId: opptyId,
+          type: 'REDIRECT_UPDATE',
+          rank: 0,
+          data: errorItems[0],
+        },
+        {
+          opportunityId: opptyId,
+          type: 'REDIRECT_UPDATE',
+          rank: 0,
+          data: errorItems[1],
+        },
+        {
+          opportunityId: opptyId,
+          type: 'REDIRECT_UPDATE',
+          rank: 0,
+          data: errorItems[2],
+        },
+      ]);
     });
   });
 });
@@ -1125,55 +1064,5 @@ describe('getSitemapsWithIssues', () => {
       auditResult: {},
     };
     expect(getSitemapsWithIssues(auditData)).to.deep.equal([]);
-  });
-});
-
-describe('handleClassifiedOpportunity', () => {
-  let mockDataAccess;
-  let mockLog;
-  let detectedEntry;
-  let existingEntries;
-  const siteId = 'site-id';
-  const auditId = 'audit-id';
-
-  beforeEach(() => {
-    mockLog = {
-      error: sinon.spy(),
-    };
-
-    mockDataAccess = {
-      Opportunity: {
-        create: sinon.stub(),
-      },
-    };
-
-    detectedEntry = {
-      getData: () => [{
-        sourceSitemapUrl: 'https://example.com/sitemap.xml',
-        pageUrl: 'https://example.com/page',
-        statusCode: 404,
-      }],
-      type: 'test-type',
-      title: 'Test Title',
-    };
-
-    existingEntries = [];
-  });
-
-  it('should handle errors when creating opportunity', async () => {
-    mockDataAccess.Opportunity.create.rejects(new Error('Creation failed'));
-
-    await expect(handleClassifiedOpportunity(
-      detectedEntry,
-      existingEntries,
-      mockLog,
-      siteId,
-      auditId,
-      mockDataAccess,
-    )).to.be.rejectedWith('Creation failed');
-
-    expect(mockLog.error).to.have.been.calledWith(
-      'Failed to create new opportunity for siteId site-id and auditId audit-id: Creation failed',
-    );
   });
 });
