@@ -975,6 +975,7 @@ describe('Sitemap Audit', () => {
         siteId: 'site-id',
         auditId: 'audit-id',
         type: 'sitemap',
+        origin: 'AUTOMATION',
         title: 'Sitemap issues found',
         runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
         guidance: {
