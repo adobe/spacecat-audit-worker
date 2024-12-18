@@ -371,8 +371,9 @@ export async function handler(auditUrl, context, site) {
     interval: DAYS,
     granularity: 'hourly',
   };
-
+  log.info('Starting Experimentation Opportunities Audit');
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
+  log.info('query result size: ', Object.values(queryResults).length);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   await processHighOrganicLowCtrOpportunities(experimentationOpportunities, context, site);
   await processRageClickOpportunities(experimentationOpportunities);
