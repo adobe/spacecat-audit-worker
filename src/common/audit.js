@@ -16,12 +16,8 @@ import URI from 'urijs';
 import { createAudit } from '@adobe/spacecat-shared-data-access/src/models/audit.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
-export async function defaultMessageSender(resultMessage, context) {
-  const { sqs } = context;
-  const { AUDIT_RESULTS_QUEUE_URL: queueUrl } = context.env;
-
-  await sqs.sendMessage(queueUrl, resultMessage);
-}
+// eslint-disable-next-line no-empty-function
+export async function defaultMessageSender() {}
 
 export async function defaultPersister(auditData, context) {
   const { dataAccess } = context;
