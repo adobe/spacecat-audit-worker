@@ -26,7 +26,7 @@ const AUDIT_TYPE = 'broken-internal-links';
  * @param {Array} links - Array of objects with views property
  * @returns {Array} - Links with priority classifications included
  */
-function calculatePriority(links) {
+function calculatePriority(links, log) {
   // Sort links by views in descending order
   const sortedLinks = [...links].sort((a, b) => b.views - a.views);
 
@@ -46,6 +46,7 @@ function calculatePriority(links) {
       priority = 'low';
     }
 
+    log.info(`Link: ${JSON.stringify(link)}, priority: ${priority}`);
     return {
       ...link,
       priority,
@@ -79,7 +80,8 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
   log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
 
   const internal404Links = await rumAPIClient.query('404-internal-links', options);
-  const priorityLinks = calculatePriority(internal404Links);
+  const priorityLinks = calculatePriority(internal404Links, log);
+  log.info(`Priority links: ${JSON.stringify(priorityLinks)}`);
   const auditResult = {
     brokenInternalLinks: priorityLinks,
     fullAuditRef: auditUrl,
