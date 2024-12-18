@@ -12,58 +12,22 @@
 
 export const internalLinksData = [
   {
-    url: 'https://www.example.com/article/dogs/breeds/choosing-an-irish-setter',
-    views: 100,
-    all_sources: [
-      'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-13-manly-masculine-dog-breeds',
-    ],
-    source_count: 1,
-    top_source: 'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-13-manly-masculine-dog-breeds',
+    traffic_domain: 1800,
+    url_to: 'https://www.petplace.com/a01',
+    url_from: 'https://www.petplace.com/a02nf',
+    priority: 'high',
   },
   {
-    url: 'https://www.example.com/article/dogs/breeds/choosing-an-german-dog',
-    views: 5,
-    all_sources: [
-      'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-8',
-    ],
-    source_count: 1,
-    top_source: 'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-8',
+    traffic_domain: 1200,
+    url_to: 'https://www.petplace.com/ax02',
+    url_from: 'https://www.petplace.com/ax02nf',
+    priority: 'medium',
   },
   {
-    url: 'x',
-    views: 100,
-    all_sources: [
-      'invalid-url',
-    ],
-    source_count: 1,
-    top_source: '',
-  },
-  {
-    url: 'https://www.example.com/dogs/the-stages-of-canine-reproduction',
-    views: 100,
-    all_sources: [
-      'android-app://com.google.android.googlequicksearchbox/',
-    ],
-    source_count: 1,
-    top_source: 'android-app://com.google.android.googlequicksearchbox/',
-  },
-  {
-    url: 'https://www.example.com/article/reptiles/general/unusual-pets-praying-mantis',
-    views: 100,
-    all_sources: [
-      'https://www.google.com/',
-    ],
-    source_count: 1,
-    top_source: 'https://www.google.com/',
-  },
-  {
-    url: 'https://www.example.com/article/dogs/breeds/choosing-a-miniature-poodle',
-    views: 100,
-    all_sources: [
-      'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
-    ],
-    source_count: 1,
-    top_source: 'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
+    traffic_domain: 200,
+    url_to: 'https://www.petplace.com/a01',
+    url_from: 'https://www.petplace.com/a01nf',
+    priority: 'low',
   },
 ];
 
@@ -93,18 +57,30 @@ export const expectedSuggestions = [
     type: 'CONTENT_UPDATE',
     rank: 100,
     data: {
-      url_to: 'https://www.example.com/article/dogs/breeds/choosing-an-irish-setter',
-      url_from: 'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-13-manly-masculine-dog-breeds',
-      traffic_domain: 100,
+      traffic_domain: 1800,
+      url_to: 'https://www.petplace.com/a01',
+      url_from: 'https://www.petplace.com/a02nf',
+      priority: 'high',
     },
   },
   {
     type: 'CONTENT_UPDATE',
     rank: 100,
     data: {
-      url_to: 'https://www.example.com/article/dogs/breeds/choosing-a-miniature-poodle-1',
-      url_from: 'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
-      traffic_domain: 100,
+      traffic_domain: 1200,
+      url_to: 'https://www.petplace.com/ax02-changed',
+      url_from: 'https://www.petplace.com/ax02nf',
+      priority: 'medium',
+    },
+  },
+  {
+    type: 'CONTENT_UPDATE',
+    rank: 100,
+    data: {
+      traffic_domain: 200,
+      url_to: 'https://www.petplace.com/a01',
+      url_from: 'https://www.petplace.com/a01nf',
+      priority: 'low',
     },
   },
 ];
