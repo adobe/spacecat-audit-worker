@@ -27,7 +27,7 @@ import {
   SEO_RECOMMENDATION, MULTIPLE_H1_ON_PAGE, SHOULD_BE_PRESENT, TAG_LENGTHS, ONE_H1_ON_A_PAGE,
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
-import { auditMetaTags } from '../../src/metatags/handler.js';
+import { auditMetaTagsRunner } from '../../src/metatags/handler.js';
 import syncOpportunityAndSuggestions from '../../src/metatags/opportunityHandler.js';
 import testData from '../fixtures/meta-tags-data.js';
 
@@ -227,7 +227,7 @@ describe('Meta Tags', () => {
     it('should return notFound if site is not found', async () => {
       dataAccessStub.getSiteByID.resolves(null);
 
-      const result = await auditMetaTags(message, context);
+      const result = await auditMetaTagsRunner(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(notFound('Site not found')));
       expect(logStub.info.calledOnce).to.be.true;
     });
@@ -235,7 +235,7 @@ describe('Meta Tags', () => {
     it('should return ok if site is not live', async () => {
       dataAccessStub.getSiteByID.resolves({ isLive: sinon.stub().returns(false) });
 
-      const result = await auditMetaTags(message, context);
+      const result = await auditMetaTagsRunner(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(ok()));
       expect(logStub.info.calledTwice).to.be.true;
     });
@@ -244,7 +244,7 @@ describe('Meta Tags', () => {
       dataAccessStub.getConfiguration.resolves({
         isHandlerEnabledForSite: sinon.stub().returns(false),
       });
-      const result = await auditMetaTags(message, context);
+      const result = await auditMetaTagsRunner(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(ok()));
       expect(logStub.info.calledTwice).to.be.true;
     });
@@ -255,7 +255,7 @@ describe('Meta Tags', () => {
       });
       s3ClientStub.send.returns([]);
 
-      const result = await auditMetaTags(message, context);
+      const result = await auditMetaTagsRunner(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(notFound('Site tags data not available')));
       expect(logStub.error.calledOnce).to.be.true;
     });
@@ -337,7 +337,7 @@ describe('Meta Tags', () => {
       const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
       dataAccessStub.addAudit = addAuditStub;
 
-      const result = await auditMetaTags(message, context);
+      const result = await auditMetaTagsRunner(message, context);
 
       expect(JSON.stringify(result)).to.equal(JSON.stringify(noContent()));
       expect(addAuditStub.calledWithMatch({
@@ -488,7 +488,7 @@ describe('Meta Tags', () => {
       const addAuditStub = sinon.stub().resolves();
       dataAccessStub.addAudit = addAuditStub;
 
-      const result = await auditMetaTags(message, context);
+      const result = await auditMetaTagsRunner(message, context);
 
       expect(JSON.stringify(result)).to.equal(JSON.stringify(noContent()));
       expect(addAuditStub.calledWithMatch({
@@ -567,7 +567,7 @@ describe('Meta Tags', () => {
       dataAccessStub.getSiteByID.withArgs('test-site').rejects(new Error('Some error'));
       delete message.url;
       message.siteId = 'test-site';
-      const result = await auditMetaTags(message, context);
+      const result = await auditMetaTagsRunner(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(internalServerError('Internal server error: Some error')));
       expect(logStub.error.calledOnce).to.be.true;
     });
@@ -611,7 +611,7 @@ describe('Meta Tags', () => {
       const addAuditStub = sinon.stub().resolves();
       dataAccessStub.addAudit = addAuditStub;
 
-      const result = await auditMetaTags(message, context);
+      const result = await auditMetaTagsRunner(message, context);
 
       expect(JSON.stringify(result)).to.equal(JSON.stringify(notFound('Site tags data not available')));
       expect(addAuditStub.calledOnce).to.be.false;
@@ -657,7 +657,7 @@ describe('Meta Tags', () => {
           },
           ContentType: 'application/json',
         });
-      const result = await auditMetaTags(message, context);
+      const result = await auditMetaTagsRunner(message, context);
 
       expect(JSON.stringify(result)).to.equal(JSON.stringify(notFound('Site tags data not available')));
       expect(logStub.error.calledTwice).to.be.true;

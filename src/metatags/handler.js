@@ -10,14 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import {
-  internalServerError, noContent, notFound, ok,
-} from '@adobe/spacecat-shared-http-utils';
-import { composeAuditURL } from '@adobe/spacecat-shared-utils';
-import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { notFound } from '@adobe/spacecat-shared-http-utils';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
-import syncOpportunityAndSuggestions from './opportunityHandler.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 
@@ -37,93 +32,50 @@ async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)
   };
 }
 
-export async function auditMetaTags(message, context) {
-  const { type, auditContext = {} } = message;
-  const siteId = message.siteId || message.url;
-  const {
-    dataAccess, log, s3Client,
-  } = context;
+export async function auditMetaTagsRunner(baseURL, context) {
+  const { log, s3Client } = context;
 
-  try {
-    log.info(`Received ${type} audit request for siteId: ${siteId}`);
-    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    if (!site) {
-      return notFound('Site not found');
+  // Fetch site's scraped content from S3
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const prefix = `scrapes/${baseURL.siteId}/`;
+  const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
+  const extractedTags = {};
+  const pageMetadataResults = await Promise.all(scrapedObjectKeys.map(
+    (key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log),
+  ));
+  pageMetadataResults.forEach((pageMetadata) => {
+    if (pageMetadata) {
+      Object.assign(extractedTags, pageMetadata);
     }
-    if (!site.isLive()) {
-      log.info(`Site ${siteId} is not live`);
-      return ok();
-    }
-    const configuration = await dataAccess.getConfiguration();
-    if (!configuration.isHandlerEnabledForSite(type, site)) {
-      log.info(`Audit type ${type} disabled for site ${siteId}`);
-      return ok();
-    }
-    try {
-      auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
-    } catch (e) {
-      log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
-      return internalServerError(`Internal server error: ${e.message}`);
-    }
-    // Fetch site's scraped content from S3
-    const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-    const prefix = `scrapes/${siteId}/`;
-    const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
-    const extractedTags = {};
-    const pageMetadataResults = await Promise.all(scrapedObjectKeys.map(
-      (key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log),
-    ));
-    pageMetadataResults.forEach((pageMetadata) => {
-      if (pageMetadata) {
-        Object.assign(extractedTags, pageMetadata);
-      }
-    });
-    const extractedTagsCount = Object.entries(extractedTags).length;
-    if (extractedTagsCount === 0) {
-      log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
-      return notFound('Site tags data not available');
-    }
-    log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
-    // Perform SEO checks
-    const seoChecks = new SeoChecks(log);
-    for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
-      seoChecks.performChecks(pageUrl || '/', pageTags);
-    }
-    seoChecks.finalChecks();
-    const detectedTags = seoChecks.getDetectedTags();
-    // Prepare Audit result
-    const auditResult = {
-      detectedTags,
-      sourceS3Folder: `${bucketName}/${prefix}`,
-      fullAuditRef: 'na',
-      finalUrl: auditContext.finalUrl,
-    };
-    const auditData = {
-      siteId: site.getId(),
-      isLive: site.isLive(),
-      auditedAt: new Date().toISOString(),
-      auditType: type,
-      fullAuditRef: auditResult?.fullAuditRef,
-      auditResult,
-    };
-    // Persist Audit result
-    const audit = await dataAccess.addAudit(auditData);
-    log.info(`Successfully audited ${siteId} for ${type} type audit`);
-    await syncOpportunityAndSuggestions(
-      siteId,
-      audit.getId(),
-      auditData,
-      dataAccess,
-      log,
-    );
-    return noContent();
-  } catch (e) {
-    log.error(`${type} type audit for ${siteId} failed with error: ${e.message}`, e);
-    return internalServerError(`Internal server error: ${e.message}`);
+  });
+  const extractedTagsCount = Object.entries(extractedTags).length;
+  if (extractedTagsCount === 0) {
+    log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
+    return notFound('Site tags data not available');
   }
+  log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
+  // Perform SEO checks
+  const seoChecks = new SeoChecks(log);
+  for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
+    seoChecks.performChecks(pageUrl || '/', pageTags);
+  }
+  seoChecks.finalChecks();
+  const detectedTags = seoChecks.getDetectedTags();
+
+  const results = {
+    detectedTags,
+    sourceS3Folder: `${bucketName}/${prefix}`,
+    fullAuditRef: 'na',
+    finalUrl: baseURL,
+  };
+
+  return {
+    auditResult: results,
+    fullAuditRef: baseURL,
+  };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .withRunner(auditMetaTags)
+  .withRunner(auditMetaTagsRunner)
   .build();
