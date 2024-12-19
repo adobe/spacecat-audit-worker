@@ -23,14 +23,22 @@ import { MockContextBuilder } from '../shared.js';
 
 const AUDIT_RESULT_DATA = [
   {
-    url_to: 'https://www.example.com/article/dogs/breeds/choosing-an-irish-setter',
-    url_from: 'https://www.example.com/article/dogs/just-for-fun/dogs-good-for-men-13-manly-masculine-dog-breeds',
-    traffic_domain: 100,
+    traffic_domain: 1800,
+    url_to: 'https://www.petplace.com/a01',
+    url_from: 'https://www.petplace.com/a02nf',
+    priority: 'high',
   },
   {
-    url_to: 'https://www.example.com/article/dogs/breeds/choosing-a-miniature-poodle',
-    url_from: 'https://www.example.com/article/dogs/pet-care/when-is-a-dog-considered-senior',
-    traffic_domain: 100,
+    traffic_domain: 1200,
+    url_to: 'https://www.petplace.com/ax02',
+    url_from: 'https://www.petplace.com/ax02nf',
+    priority: 'medium',
+  },
+  {
+    traffic_domain: 200,
+    url_to: 'https://www.petplace.com/a01',
+    url_from: 'https://www.petplace.com/a01nf',
+    priority: 'low',
   },
 ];
 
@@ -76,7 +84,7 @@ describe('Broken internal links audit', () => {
       context,
       site,
     );
-    expect(context.rumApiClient.query).calledWith('404', {
+    expect(context.rumApiClient.query).calledWith('404-internal-links', {
       domain: 'www.example.com',
       domainkey: 'test-key',
       interval: 30,
@@ -166,10 +174,10 @@ describe('broken-internal-links audit to opportunity conversion', () => {
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
 
-    // make sure that newly oppty has 2 new suggestions
+    // make sure that newly oppty has 3 new suggestions
     expect(opportunity.addSuggestions).to.have.been.calledOnce;
     const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
-    expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
+    expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
   }).timeout(5000);
 
   it('creating a new opportunity object fails', async () => {
