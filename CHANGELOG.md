@@ -1,3 +1,10 @@
+## [1.45.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.45.3...v1.45.4) (2024-12-19)
+
+
+### Bug Fixes
+
+* Increase memory for audit worker to avoid OOM with big RUM bundles ([#532](https://github.com/adobe/spacecat-audit-worker/issues/532)) ([a0643b2](https://github.com/adobe/spacecat-audit-worker/commit/a0643b287e742abb0e3818e494a4c6636e76f5da))
+
 ## [1.45.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.45.2...v1.45.3) (2024-12-18)
 
 
