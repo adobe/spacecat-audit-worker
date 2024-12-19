@@ -15,13 +15,21 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 import URI from 'urijs';
 import { createAudit } from '@adobe/spacecat-shared-data-access/src/models/audit.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import syncOpportunityAndSuggestions from '../metatags/opportunityHandler.js';
 
 // eslint-disable-next-line no-empty-function
 export async function defaultMessageSender() {}
 
+// replace with syncOpportunityAndSuggestions
 export async function defaultPersister(auditData, context) {
-  const { dataAccess } = context;
-  const audit = await dataAccess.addAudit(auditData);
+  const { dataAccess, log } = context;
+  const audit = await syncOpportunityAndSuggestions(
+    auditData.siteId,
+    auditData.id,
+    auditData,
+    dataAccess,
+    log,
+  );
   return audit;
 }
 
