@@ -167,6 +167,7 @@ async function updateRecommendations(oppty, context, site) {
   let lambdaResult;
   try {
     // eslint-disable-next-line no-await-in-loop
+    log.info('Invoking lambda function with payload: ', JSON.stringify(lambdaPayload, null, 2));
     const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
     log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
     const lambdaResponseBody = typeof lambdaResponse.body === 'string'
@@ -370,7 +371,6 @@ export async function handler(auditUrl, context, site) {
     interval: DAYS,
     granularity: 'hourly',
   };
-
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   await processHighOrganicLowCtrOpportunities(experimentationOpportunities, context, site);
