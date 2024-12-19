@@ -22,7 +22,7 @@
   "wsk": {
     "target": "aws",
     "name": "spacecat-services/audit-worker@${version}",
-    "memory": 4096,
+    "memory": 6144,
     "awsRole!important": "arn:aws:iam::282898975672:role/spacecat-role-services",
     "testUrl": "/_status_check/healthcheck.json",
     "awsAttachAuthorizer": "",
