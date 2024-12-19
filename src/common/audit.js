@@ -20,7 +20,6 @@ import syncOpportunityAndSuggestions from '../metatags/opportunityHandler.js';
 // eslint-disable-next-line no-empty-function
 export async function defaultMessageSender() {}
 
-// replace with syncOpportunityAndSuggestions
 export async function defaultPersister(auditData, context) {
   const { dataAccess, log } = context;
   const audit = await syncOpportunityAndSuggestions(
