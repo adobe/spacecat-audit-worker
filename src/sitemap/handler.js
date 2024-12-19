@@ -10,7 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL, prependSchema, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import {
+  composeAuditURL, isArray, prependSchema, tracingFetch as fetch,
+} from '@adobe/spacecat-shared-utils';
 import {
   extractDomainAndProtocol,
   getBaseUrlPagesFromSitemapContents,
@@ -30,6 +32,8 @@ export const ERROR_CODES = Object.freeze({
   SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
   FETCH_ERROR: 'ERROR FETCHING DATA',
 });
+
+const AUDIT_TYPE = 'sitemap';
 
 const VALID_MIME_TYPES = Object.freeze([
   'application/xml',
@@ -395,182 +399,135 @@ export async function sitemapAuditRunner(baseURL, context) {
 }
 
 export function getSitemapsWithIssues(auditData) {
-  return auditData.auditResult?.details?.issues
-    ? Object.keys(auditData.auditResult?.details?.issues)
-    : [];
+  return Object.keys(auditData?.auditResult?.details?.issues ?? {});
 }
 
-// identify issue (issue-type) even if we declare the same "sitemap" issue type
+/**
+ * Retrieves a list of pages with issues from the audit data.
+ *
+ * @param {Object} auditData - The audit data containing sitemap and issue details.
+ * @returns {Array} An array of objects representing pages with issues.
+ *
+ * @example
+ * const auditData = {
+ *   auditResult: {
+ *     details: {
+ *       issues: {
+ *         "https://site.url/sitemap.xml": [
+ *           { url: "https://site.url/page1", statusCode: 404 },
+ *           { url: "https://site.url/page2" },
+ *         ]
+ *       }
+ *     }
+ *   }
+ * };
+ * const result = getPagesWithIssues(auditData);
+ * console.log(result);
+ * // Output:
+ * // [
+ * //   { type: 'url', sitemapUrl: 'https://site.url/sitemap.xml', pageUrl: 'https://site.url/page1', statusCode: 404 },
+ * //   { type: 'url', sitemapUrl: 'https://site.url/sitemap.xml', pageUrl: 'https://site.url/page2', statusCode: 500 }
+ * // ]
+ */
 export function getPagesWithIssues(auditData) {
   const sitemapsWithPagesWithIssues = getSitemapsWithIssues(auditData);
-  const newData = [];
-  sitemapsWithPagesWithIssues.forEach((sitemapUrl) => {
-    const pagesWithIssues = auditData.auditResult.details.issues[sitemapUrl];
-    pagesWithIssues.forEach((page) => {
-      newData.push({
-        sourceSitemapUrl: sitemapUrl,
-        pageUrl: page.url,
-        statusCode: page.statusCode ?? 500,
-      });
-    });
-  });
-  return newData;
-}
 
-export function buildKeyOptionalPage(auditData, issue, oppTitle) {
-  const key = `${auditData.siteId}|${oppTitle}|${issue.sourceSitemapUrl}`;
-  return (issue.pageUrl) ? `${key}|${issue.pageUrl}` : key;
+  return sitemapsWithPagesWithIssues.flatMap((sitemapUrl) => {
+    const issues = auditData.auditResult.details.issues[sitemapUrl];
+
+    if (!isArray(issues)) {
+      return [];
+    }
+
+    return issues.map((page) => ({
+      type: 'url',
+      sitemapUrl,
+      pageUrl: page.url,
+      statusCode: page.statusCode ?? 500,
+    }));
+  });
 }
 
 /**
  *
- * @param auditUrl
- * @param auditData
- * @returns {Promise<{opportunityType: string, getData: (): {sitemapUrl: string | null,
- * url: string, statusCode: number}[] => { }[]>}
+ * @param auditUrl - The URL of the audit
+ * @param auditData - The audit data containing the audit result and additional details.
+ * @param log - Logger object for logging information.
+ * @returns {Array} An array of suggestions or error objects.
  */
-export async function classifyOpportunities(auditUrl, auditData) {
-  const response = [];
+export function classifySuggestions(auditUrl, auditData, log) {
+  log.info(`Classifying suggestions for ${JSON.stringify(auditData)}`);
 
-  if (!auditData.auditResult.success) {
-    auditData.auditResult.reasons.forEach((reason) => {
-      // sitemaps were found by no valid pages extracted
-      if (reason.error === ERROR_CODES.NO_SITEMAP_IN_ROBOTS) {
-        response.push({
-          getData: () => [{
-            sourceSitemapUrl: '',
-            pageUrl: `${auditUrl}/robots.txt`,
-            statusCode: 404,
-          }],
-          type: 'sitemap-not-available',
-          buildKey: (issue) => `${auditData.siteId}|sitemap-not-available|${issue.pageUrl}`,
-          title: 'No valid sitemap found in robots.txt',
-          description: 'Robots.txt does not contain a sitemap reference, fallback could not find useable sitemap',
-        });
-      }
+  const { success, reasons } = auditData.auditResult;
+  const response = success
+    ? []
+    : reasons.map(({ error }) => ({ type: 'error', error }));
 
-      // sitemaps were found by no valid pages extracted
-      if (reason.error === ERROR_CODES.NO_VALID_PATHS_EXTRACTED) {
-        response.push({
-          getData: () => {
-            const newData = getPagesWithIssues(auditData);
-            if (newData.length === 0) {
-              newData.push({
-                sourceSitemapUrl: reason.value,
-                pageUrl: '',
-                statusCode: 404,
-              });
-            }
-            return newData;
-          },
-          type: 'sitemap-no-valid-paths-extracted',
-          buildKey: (issue) => buildKeyOptionalPage(auditData, issue, 'sitemap-no-valid-paths-extracted'),
-          title: 'Sitemap issues found',
-          description: 'A complete and accurate sitemap helps search engines efficiently crawl and index your website pages,ensuring better visibility in search results. Fixing sitemap issues can improve the discoverability of your content.',
-        });
-      }
-    });
-  } else {
-    const newData = getPagesWithIssues(auditData);
+  const pagesWithIssues = getPagesWithIssues(auditData);
+  const suggestions = [...response, ...pagesWithIssues].filter(Boolean);
 
-    if (newData.length) {
-      // some pages failed, create an opportunity when newData are all failed pages
-      response.push({
-        getData: () => newData,
-        type: 'pages-in-sitemap-have-errors',
-        buildKey: (issue) => buildKeyOptionalPage(auditData, issue, 'pages-in-sitemap-have-errors'),
-        title: 'Issues regarding pages in sitemaps',
-        description: 'All pages from sitemap should be available, with no redirects in place.',
-      });
-    }
-  }
-
-  return response;
-}
-
-async function createOpportunity(dataAccess, type, title, log, siteId, auditId) {
-  const opportunityData = {
-    siteId,
-    auditId,
-    type,
-    title,
-    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=FTWy7t',
-    guidance: {
-      steps: [
-        'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
-        'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
-      ],
-    },
-    tags: ['Traffic Acquisition'],
-  };
-  try {
-    return await dataAccess.Opportunity.create(opportunityData);
-  } catch (e) {
-    log.error(`Failed to create new opportunity for siteId ${siteId} and auditId ${auditId}: ${e.message}`);
-    throw e;
-  }
-}
-
-export async function handleClassifiedOpportunity(
-  detectedEntry,
-  existingEntries,
-  log,
-  siteId,
-  auditId,
-  dataAccess,
-) {
-  const newData = detectedEntry.getData();
-  if (newData.length) {
-    let opp = existingEntries.find((oppty) => oppty.getType() === detectedEntry.type);
-    if (opp) {
-      opp = opp.setAuditId(auditId);
-      await opp.save();
-    } else {
-      opp = await createOpportunity(
-        dataAccess,
-        detectedEntry.type,
-        detectedEntry.title,
-        log,
-        siteId,
-        auditId,
-      );
-    }
-
-    await syncSuggestions({
-      opportunity: opp,
-      newData,
-      buildKey: detectedEntry.buildKey,
-      mapNewSuggestion: (issue) => ({
-        opportunityId: opp.getId(),
-        type: 'CODE_CHANGE',
-        rank: issue.traffic_domain ?? 0,
-        data: issue,
-      }),
-      log,
-    });
-  }
+  log.info(`Classified suggestions: ${JSON.stringify(suggestions)}`);
+  return suggestions;
 }
 
 export async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
 
-  const classifiedOpportunities = await classifyOpportunities(auditUrl, auditData);
-  if (!classifiedOpportunities.length) {
+  log.info('Converting SITEMAP audit to opportunity...');
+
+  const classifiedSuggestions = classifySuggestions(auditUrl, auditData, log);
+  if (!classifiedSuggestions.length) {
+    // If there are no issues, no need to create an opportunity
     return;
   }
 
   const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  for (const item of classifiedOpportunities) {
-    // eslint-disable-next-line no-await-in-loop
-    await handleClassifiedOpportunity(
-      item,
-      opportunities,
-      log,
-      auditData.siteId,
-      auditData.id,
-      dataAccess,
-    );
+  log.info(`opportunities: ${JSON.stringify(opportunities)}`);
+
+  let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+  log.info(`opportunity: ${JSON.stringify(opportunity)}`);
+
+  if (!opportunity) {
+    const opportunityData = {
+      siteId: auditData.siteId,
+      auditId: auditData.id,
+      type: AUDIT_TYPE,
+      origin: 'AUTOMATION',
+      title: 'Sitemap issues found',
+      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
+      guidance: {
+        steps: [
+          'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
+          'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
+        ],
+      },
+      tags: ['Traffic Acquisition'],
+    };
+    try {
+      opportunity = await dataAccess.Opportunity.create(opportunityData);
+    } catch (e) {
+      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`, e);
+      throw e;
+    }
+  } else {
+    opportunity.setAuditId(auditData.id);
+    await opportunity.save();
   }
+
+  const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);
+
+  await syncSuggestions({
+    opportunity,
+    newData: classifiedSuggestions,
+    buildKey,
+    mapNewSuggestion: (issue) => ({
+      opportunityId: opportunity.getId(),
+      type: 'REDIRECT_UPDATE',
+      rank: 0, // how can we rank this?
+      data: issue,
+    }),
+    log,
+  });
 }
 
 export default new AuditBuilder()
