@@ -36,6 +36,7 @@ import formsOpportunities from './forms-opportunities/handler.js';
 import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
+import siteDetection from './site-detection/handler.js';
 
 const HANDLERS = {
   apex,
@@ -56,6 +57,7 @@ const HANDLERS = {
   costs,
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
+  'site-detection': siteDetection,
   dummy: (message) => ok(message),
 };
 

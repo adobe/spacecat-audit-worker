@@ -19,10 +19,10 @@ import sinon from 'sinon';
 import { convertToOpportunity, structuredDataHandler } from '../../src/structured-data/handler.js';
 import { MockContextBuilder } from '../shared.js';
 
-import fullUrlInspectionResult from '../fixtures/structured-data/structured-data.json' assert { type: 'json' };
-import expectedOppty from '../fixtures/structured-data/oppty.json' assert { type: 'json' };
-import auditDataMock from '../fixtures/structured-data/audit.json' assert { type: 'json' };
-import suggestions from '../fixtures/structured-data/suggestions.json' assert { type: 'json' };
+import fullUrlInspectionResult from '../fixtures/structured-data/structured-data.json' with { type: 'json' };
+import expectedOppty from '../fixtures/structured-data/oppty.json' with { type: 'json' };
+import auditDataMock from '../fixtures/structured-data/audit.json' with { type: 'json' };
+import suggestions from '../fixtures/structured-data/suggestions.json' with { type: 'json' };
 
 use(sinonChai);
 

@@ -9,8 +9,14 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import dotenv from 'dotenv';
+
 // eslint-disable-next-line no-console
 console.log('Forcing HTTP/1.1 for Adobe Fetch');
 process.env.HELIX_FETCH_FORCE_HTTP1 = 'true';
 process.env.AWS_ACCESS_KEY_ID = 'fake-key-id';
 process.env.AWS_SECRET_ACCESS_KEY = 'fake-secret';
+process.env.AWS_XRAY_SDK_ENABLED = 'false';
+process.env.AWS_XRAY_CONTEXT_MISSING = 'IGNORE_ERROR';
+
+dotenv.config({ override: true });

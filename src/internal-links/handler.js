@@ -18,56 +18,41 @@ import { noopUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
 
 const INTERVAL = 30; // days
-const DAILY_PAGEVIEW_THRESHOLD = 100;
 const AUDIT_TYPE = 'broken-internal-links';
 
 /**
- * Determines if the URL has the same host as the current host.
- * @param {*} url
- * @param {*} currentHost
- * @returns
+ * Classifies links into priority categories based on views
+ * High: top 25%, Medium: next 25%, Low: bottom 50%
+ * @param {Array} links - Array of objects with views property
+ * @returns {Array} - Links with priority classifications included
  */
-function hasSameHost(url, currentHost) {
-  const host = new URL(url).hostname;
-  return host === currentHost;
-}
+function calculatePriority(links) {
+  // Sort links by views in descending order
+  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
 
-/**
- * Filter out the 404 links that:
- * - have less than 100 views and do not have a URL.
- * - do not have any sources from the same domain.
- * @param {*} links - all 404 links Data
- * @param {*} hostUrl - the host URL of the domain
- * @param {*} auditUrl - the URL to run audit against
- * @param {*} log - the logger object
- * @returns {Array} - Returns an array of 404 links that meet the criteria.
- */
+  // Calculate indices for the 25% and 50% marks
+  const quarterIndex = Math.ceil(sortedLinks.length * 0.25);
+  const halfIndex = Math.ceil(sortedLinks.length * 0.5);
 
-function transform404LinksData(responseData, hostUrl, auditUrl, log) {
-  return responseData.reduce((result, { url, views, all_sources: allSources }) => {
-    try {
-      if (!url || views < DAILY_PAGEVIEW_THRESHOLD) {
-        return result;
-      }
-      const sameDomainSources = allSources.filter(
-        (source) => source && hasSameHost(source, hostUrl),
-      );
+  // Map through sorted links and assign priority
+  return sortedLinks.map((link, index) => {
+    let priority;
 
-      for (const source of sameDomainSources) {
-        result.push({
-          url_to: url,
-          url_from: source,
-          traffic_domain: views,
-        });
-      }
-    } catch {
-      log.error(
-        `Error occurred for audit type broken-internal-links for url ${auditUrl}, while processing sources for link ${url}`,
-      );
+    if (index < quarterIndex) {
+      priority = 'high';
+    } else if (index < halfIndex) {
+      priority = 'medium';
+    } else {
+      priority = 'low';
     }
-    return result;
-  }, []);
+
+    return {
+      ...link,
+      priority,
+    };
+  });
 }
+
 /**
  * Perform an audit to check which internal links for domain are broken.
  *
@@ -93,9 +78,10 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
 
   log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
 
-  const all404Links = await rumAPIClient.query('404', options);
+  const internal404Links = await rumAPIClient.query('404-internal-links', options);
+  const priorityLinks = calculatePriority(internal404Links);
   const auditResult = {
-    brokenInternalLinks: transform404LinksData(all404Links, finalUrl, auditUrl, log),
+    brokenInternalLinks: priorityLinks,
     fullAuditRef: auditUrl,
     finalUrl,
     auditContext: {

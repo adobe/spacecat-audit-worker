@@ -1,3 +1,31 @@
+## [1.45.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.45.2...v1.45.3) (2024-12-18)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#537](https://github.com/adobe/spacecat-audit-worker/issues/537)) ([2ae262f](https://github.com/adobe/spacecat-audit-worker/commit/2ae262fb66c448614e0440fe03f7a5d6a76aa04b))
+
+## [1.45.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.45.1...v1.45.2) (2024-12-16)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.15.7 ([#534](https://github.com/adobe/spacecat-audit-worker/issues/534)) ([be60c61](https://github.com/adobe/spacecat-audit-worker/commit/be60c617c8b7f4eb5bf08f925696e4140f8ab2a0))
+
+## [1.45.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.45.0...v1.45.1) (2024-12-16)
+
+
+### Bug Fixes
+
+* **site-detection:** extra logs ([1522d69](https://github.com/adobe/spacecat-audit-worker/commit/1522d69a868605b0c4953e953c2360b80fb4aa24))
+
+# [1.45.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.44.0...v1.45.0) (2024-12-16)
+
+
+### Features
+
+* **site-detection:** site-detection audit ([#523](https://github.com/adobe/spacecat-audit-worker/issues/523)) ([40bf4f9](https://github.com/adobe/spacecat-audit-worker/commit/40bf4f96afbee37a251687978be84e1ffa656fa2))
+
 # [1.44.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.43.2...v1.44.0) (2024-12-16)
 
 

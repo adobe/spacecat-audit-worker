@@ -1,0 +1,21 @@
+{
+  "result": {
+    "results": [
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"preprod.adobe.com\",\"request_x_forwarded_host\":\"www.adobe.com, main--homepage--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"somedomain.com:3000\",\"request_x_forwarded_host\":\"www.adobe.com, main--homepage--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      },
+      {
+        "metadata": [],
+        "labels": [],
+        "userData": "{\"domain\":\"somedomain.com/somepath\",\"request_x_forwarded_host\":\"www.adobe.com, main--homepage--somerepo.hlx.live\",\"subsystemname\":\"helix4\"}"
+      }
+    ]
+  }
+}
