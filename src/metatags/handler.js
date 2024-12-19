@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { notFound } from '@adobe/spacecat-shared-http-utils';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -51,7 +50,6 @@ export async function auditMetaTagsRunner(baseURL, context) {
   const extractedTagsCount = Object.entries(extractedTags).length;
   if (extractedTagsCount === 0) {
     log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
-    return notFound('Site tags data not available');
   }
   log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
   // Perform SEO checks
@@ -62,7 +60,7 @@ export async function auditMetaTagsRunner(baseURL, context) {
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
 
-  const results = {
+  const auditResult = {
     detectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: 'na',
@@ -70,7 +68,7 @@ export async function auditMetaTagsRunner(baseURL, context) {
   };
 
   return {
-    auditResult: results,
+    auditResult,
     fullAuditRef: baseURL,
   };
 }
