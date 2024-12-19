@@ -116,7 +116,7 @@ async function getPresignedUrl(fileName, context, url, site) {
     });
     return signedUrl;
   } catch (error) {
-    log.error(`Error2 generating presigned URL for ${screenshotPath}:`, error);
+    log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
     return '';
   }
 }
@@ -371,9 +371,7 @@ export async function handler(auditUrl, context, site) {
     interval: DAYS,
     granularity: 'hourly',
   };
-  log.info('Starting Experimentation Opportunities Audit');
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
-  log.info('query result size: ', Object.values(queryResults).length);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   await processHighOrganicLowCtrOpportunities(experimentationOpportunities, context, site);
   await processRageClickOpportunities(experimentationOpportunities);
