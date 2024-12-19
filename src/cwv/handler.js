@@ -67,7 +67,7 @@ export async function convertToOppty(auditUrl, auditData, context, site) {
     const opportunityData = {
       siteId: auditData.siteId,
       auditId: auditData.id,
-      runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_CWV_CLS_Runbook.docx?web=1',
+      runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_CWV_Runbook.docx?web=1',
       type: AUDIT_TYPE,
       origin: 'AUTOMATION',
       title: 'Core Web Vitals',
