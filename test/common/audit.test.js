@@ -117,7 +117,7 @@ describe('Audit tests', () => {
       expect(context.dataAccess.getOrganizationByID).to.have.been.calledOnce;
     });
 
-    xit('default persister saves the audit result to data access', async () => {
+    it('default persister saves the audit result to data access', async () => {
       context.dataAccess.addAudit.resolves();
       const auditData = { result: 'hebele' };
 
@@ -213,7 +213,7 @@ describe('Audit tests', () => {
       expect(context.log.warn).to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
     });
 
-    xit('audit runs as expected with post processors', async () => {
+    it('audit runs as expected with post processors', async () => {
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
@@ -276,7 +276,7 @@ describe('Audit tests', () => {
     });
   });
 
-  xit('audit runs as expected when receiving siteId instead of message ', async () => {
+  it('audit runs as expected when receiving siteId instead of message ', async () => {
     const queueUrl = 'some-queue-url';
     context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
     context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);

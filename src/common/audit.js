@@ -22,9 +22,10 @@ export async function defaultMessageSender() {}
 
 export async function defaultPersister(auditData, context) {
   const { dataAccess, log } = context;
-  const audit = await syncOpportunityAndSuggestions(
-    auditData.siteId,
-    auditData.id,
+  const audit = await dataAccess.addAudit(auditData);
+  await syncOpportunityAndSuggestions(
+    audit.siteId,
+    audit.auditId,
     auditData,
     dataAccess,
     log,
