@@ -205,11 +205,18 @@ describe('Meta Tags', () => {
       message = { type: 'seo', url: 'site-id' };
       logStub = { info: sinon.stub(), error: sinon.stub(), warn: sinon.stub() };
       dataAccessStub = {
-        getConfiguration: sinon.stub(),
-        getTopPagesForSite: sinon.stub(),
-        addAudit: sinon.stub(),
-        retrieveSiteBySiteId: sinon.stub(),
-        getSiteByID: sinon.stub().resolves({ isLive: sinon.stub().returns(true) }),
+        Audit: {
+          create: sinon.stub(),
+        },
+        Configuration: {
+          findLatest: sinon.stub(),
+        },
+        Site: {
+          findById: sinon.stub().resolves({ getIsLive: sinon.stub().returns(true) }),
+        },
+        SiteTopPage: {
+          allBySiteId: sinon.stub(),
+        },
       };
       s3ClientStub = {
         send: sinon.stub(),
@@ -225,7 +232,7 @@ describe('Meta Tags', () => {
     });
 
     it('should return notFound if site is not found', async () => {
-      dataAccessStub.getSiteByID.resolves(null);
+      dataAccessStub.Site.findById.resolves(null);
 
       const result = await auditMetaTags(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(notFound('Site not found')));
@@ -233,7 +240,7 @@ describe('Meta Tags', () => {
     });
 
     it('should return ok if site is not live', async () => {
-      dataAccessStub.getSiteByID.resolves({ isLive: sinon.stub().returns(false) });
+      dataAccessStub.Site.findById.resolves({ getIsLive: sinon.stub().returns(false) });
 
       const result = await auditMetaTags(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(ok()));
@@ -241,7 +248,7 @@ describe('Meta Tags', () => {
     });
 
     it('should return ok if audit type is disabled for site', async () => {
-      dataAccessStub.getConfiguration.resolves({
+      dataAccessStub.Configuration.findLatest.resolves({
         isHandlerEnabledForSite: sinon.stub().returns(false),
       });
       const result = await auditMetaTags(message, context);
@@ -250,7 +257,7 @@ describe('Meta Tags', () => {
     });
 
     it('should return notFound if extracted tags are not available', async () => {
-      dataAccessStub.getConfiguration.resolves({
+      dataAccessStub.Configuration.findLatest.resolves({
         isHandlerEnabledForSite: sinon.stub().returns(true),
       });
       s3ClientStub.send.returns([]);
@@ -270,18 +277,18 @@ describe('Meta Tags', () => {
         getType: () => 'meta-tags',
       };
       const site = {
-        isLive: sinon.stub().returns(true),
+        getIsLive: sinon.stub().returns(true),
         getId: sinon.stub().returns('site-id'),
         getBaseURL: sinon.stub().returns('http://example.com'),
       };
       const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') }];
 
-      dataAccessStub.getSiteByID.resolves(site);
-      dataAccessStub.getConfiguration.resolves({
+      dataAccessStub.Site.findById.resolves(site);
+      dataAccessStub.Configuration.findLatest.resolves({
         isHandlerEnabledForSite: sinon.stub().returns(true),
       });
-      dataAccessStub.getTopPagesForSite.resolves(topPages);
+      dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
       dataAccessStub.Opportunity = {
         allBySiteIdAndStatus: sinon.stub().returns([metatagsOppty]),
       };
@@ -335,7 +342,7 @@ describe('Meta Tags', () => {
           ContentType: 'application/json',
         });
       const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
-      dataAccessStub.addAudit = addAuditStub;
+      dataAccessStub.Audit.create = addAuditStub;
 
       const result = await auditMetaTags(message, context);
 
@@ -398,7 +405,7 @@ describe('Meta Tags', () => {
 
     it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
       const site = {
-        isLive: sinon.stub().returns(true),
+        getIsLive: sinon.stub().returns(true),
         getId: sinon.stub().returns('site-id'),
         getBaseURL: sinon.stub().returns('http://example.com'),
       };
@@ -406,11 +413,11 @@ describe('Meta Tags', () => {
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') },
         { getURL: 'http://example.com/', getTopKeyword: sinon.stub().returns('Test') }];
 
-      dataAccessStub.getSiteByID.resolves(site);
-      dataAccessStub.getConfiguration.resolves({
+      dataAccessStub.Site.findById.resolves(site);
+      dataAccessStub.Configuration.findLatest.resolves({
         isHandlerEnabledForSite: sinon.stub().returns(true),
       });
-      dataAccessStub.getTopPagesForSite.resolves(topPages);
+      dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
 
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
@@ -486,7 +493,7 @@ describe('Meta Tags', () => {
           ContentType: 'application/json',
         });
       const addAuditStub = sinon.stub().resolves();
-      dataAccessStub.addAudit = addAuditStub;
+      dataAccessStub.Audit.create = addAuditStub;
 
       const result = await auditMetaTags(message, context);
 
@@ -564,7 +571,7 @@ describe('Meta Tags', () => {
     });
 
     it('should handle errors and return internalServerError', async () => {
-      dataAccessStub.getSiteByID.withArgs('test-site').rejects(new Error('Some error'));
+      dataAccessStub.Site.findById.withArgs('test-site').rejects(new Error('Some error'));
       delete message.url;
       message.siteId = 'test-site';
       const result = await auditMetaTags(message, context);
@@ -574,17 +581,17 @@ describe('Meta Tags', () => {
 
     it('should handle gracefully if S3 object has no rawbody', async () => {
       const site = {
-        isLive: sinon.stub().returns(true),
+        getIsLive: sinon.stub().returns(true),
         getId: sinon.stub().returns('site-id'),
         getBaseURL: sinon.stub().returns('http://example.com'),
       };
       const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') }];
 
-      dataAccessStub.getSiteByID.resolves(site);
-      dataAccessStub.getConfiguration.resolves({
+      dataAccessStub.Site.findById.resolves(site);
+      dataAccessStub.Configuration.findLatest.resolves({
         isHandlerEnabledForSite: sinon.stub().returns(true),
       });
-      dataAccessStub.getTopPagesForSite.resolves(topPages);
+      dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
 
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
@@ -620,18 +627,18 @@ describe('Meta Tags', () => {
 
     it('should handle gracefully if S3 tags object is not valid', async () => {
       const site = {
-        isLive: sinon.stub().returns(true),
+        getIsLive: sinon.stub().returns(true),
         getId: sinon.stub().returns('site-id'),
         getBaseURL: sinon.stub().returns('http://example.com'),
       };
       const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') }];
 
-      dataAccessStub.getSiteByID.resolves(site);
-      dataAccessStub.getConfiguration.resolves({
+      dataAccessStub.Site.findById.resolves(site);
+      dataAccessStub.Configuration.findLatest.resolves({
         isHandlerEnabledForSite: sinon.stub().returns(true),
       });
-      dataAccessStub.getTopPagesForSite.resolves(topPages);
+      dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
 
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {

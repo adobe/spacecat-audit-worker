@@ -41,7 +41,7 @@ describe('Canonical URL Tests', () => {
   describe('getTopPagesForSiteId', () => {
     it('should return top pages for a given site ID', async () => {
       const dataAccess = {
-        getTopPagesForSite: sinon.stub().resolves([{ getURL: () => 'http://example.com/page1' }]),
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getURL: () => 'http://example.com/page1' }]) },
       };
       const siteId = 'testSiteId';
       const context = { log };
@@ -54,7 +54,7 @@ describe('Canonical URL Tests', () => {
 
     it('should handle null result and return an empty array', async () => {
       const dataAccess = {
-        getTopPagesForSite: sinon.stub().resolves(null),
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves(null) },
       };
       const siteId = 'testSiteId';
       const context = { log };
@@ -67,7 +67,7 @@ describe('Canonical URL Tests', () => {
 
     it('should log the error and propagate the exception when retrieving top pages fails', async () => {
       const dataAccess = {
-        getTopPagesForSite: sinon.stub().rejects(new Error('Test error')),
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().rejects(new Error('Test error')) },
       };
       const siteId = 'testSiteId';
       const context = { log };
@@ -83,7 +83,7 @@ describe('Canonical URL Tests', () => {
 
     it('should log and return an empty array if no top pages are found', async () => {
       const dataAccess = {
-        getTopPagesForSite: sinon.stub().resolves([]),
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
       };
       const siteId = 'testSiteId';
       const context = { log };
@@ -543,7 +543,7 @@ describe('Canonical URL Tests', () => {
       const context = {
         log,
         dataAccess: {
-          getTopPagesForSite: getTopPagesForSiteStub,
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
         },
       };
       const site = { getId: () => 'testSiteId' };
@@ -572,7 +572,7 @@ describe('Canonical URL Tests', () => {
       const context = {
         log,
         dataAccess: {
-          getTopPagesForSite: sinon.stub().resolves([]),
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
         },
       };
       const site = { getId: () => 'testSiteId' };
@@ -592,7 +592,12 @@ describe('Canonical URL Tests', () => {
 
     it('should log a simplified error and return a failed audit result if an exception occurs', async () => {
       const baseURL = 'http://example.com';
-      const context = { log, dataAccess: { getTopPagesForSite: sinon.stub().rejects(new Error('Test Error')) } };
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().rejects(new Error('Test Error')) },
+        },
+      };
       const site = { getId: () => 'testSiteId' };
 
       const result = await canonicalAuditRunner(baseURL, context, site);

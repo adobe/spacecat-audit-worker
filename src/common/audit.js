@@ -13,7 +13,6 @@
 import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import URI from 'urijs';
-import { createAudit } from '@adobe/spacecat-shared-data-access/src/models/audit.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 // eslint-disable-next-line no-empty-function
@@ -21,12 +20,13 @@ export async function defaultMessageSender() {}
 
 export async function defaultPersister(auditData, context) {
   const { dataAccess } = context;
-  const audit = await dataAccess.addAudit(auditData);
-  return audit;
+  const { Audit } = dataAccess;
+
+  return Audit.create(auditData);
 }
 
 export async function noopPersister(auditData) {
-  return createAudit(auditData);
+  return { getId: () => auditData.id || 'noop' };
 }
 
 export async function defaultSiteProvider(siteId, context) {
@@ -42,8 +42,9 @@ export async function defaultSiteProvider(siteId, context) {
 
 export async function defaultOrgProvider(orgId, context) {
   const { dataAccess } = context;
+  const { Organization } = dataAccess;
 
-  const org = await dataAccess.getOrganizationByID(orgId);
+  const org = await Organization.findById(orgId);
   if (!org) {
     throw new Error(`Org with id ${orgId} not found`);
   }
@@ -88,6 +89,7 @@ export class Audit {
 
   async run(message, context) {
     const { log, dataAccess } = context;
+    const { Configuration } = dataAccess;
     const {
       type,
       auditContext = {},
@@ -96,7 +98,7 @@ export class Audit {
 
     try {
       const site = await this.siteProvider(siteId, context);
-      const configuration = await dataAccess.getConfiguration();
+      const configuration = await Configuration.findLatest();
       if (!configuration.isHandlerEnabledForSite(type, site)) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();
@@ -110,7 +112,7 @@ export class Audit {
       } = await this.runner(finalUrl, context, site);
       const auditData = {
         siteId: site.getId(),
-        isLive: site.isLive(),
+        isLive: site.getIsLive(),
         auditedAt: new Date().toISOString(),
         auditType: type,
         auditResult,

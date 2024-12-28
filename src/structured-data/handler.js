@@ -105,8 +105,9 @@ export async function processStructuredData(baseURL, context, pages) {
 
 export async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
+  const { Opportunity } = dataAccess;
 
-  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
   let opportunity = opportunities.find((oppty) => oppty.getType() === 'structured-data');
 
   if (!opportunity) {
@@ -124,7 +125,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
       tags: ['Traffic acquisition'],
     };
     try {
-      opportunity = await dataAccess.Opportunity.create(opportunityData);
+      opportunity = await Opportunity.create(opportunityData);
     } catch (e) {
       log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
       throw e;

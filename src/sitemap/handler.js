@@ -472,6 +472,7 @@ export function classifySuggestions(auditUrl, auditData, log) {
 
 export async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
+  const { Opportunity } = dataAccess;
 
   log.info('Converting SITEMAP audit to opportunity...');
 
@@ -481,7 +482,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     return;
   }
 
-  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
   log.info(`opportunities: ${JSON.stringify(opportunities)}`);
 
   let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
@@ -504,7 +505,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
       tags: ['Traffic Acquisition'],
     };
     try {
-      opportunity = await dataAccess.Opportunity.create(opportunityData);
+      opportunity = await Opportunity.create(opportunityData);
     } catch (e) {
       log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`, e);
       throw e;

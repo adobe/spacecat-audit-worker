@@ -41,6 +41,7 @@ export default async function auditMetaTags(message, context) {
   const {
     dataAccess, log, s3Client,
   } = context;
+  const { Audit, Configuration } = dataAccess;
 
   try {
     log.info(`Received ${type} audit request for siteId: ${siteId}`);
@@ -48,11 +49,11 @@ export default async function auditMetaTags(message, context) {
     if (!site) {
       return notFound('Site not found');
     }
-    if (!site.isLive()) {
+    if (!site.getIsLive()) {
       log.info(`Site ${siteId} is not live`);
       return ok();
     }
-    const configuration = await dataAccess.getConfiguration();
+    const configuration = await Configuration.findLatest();
     if (!configuration.isHandlerEnabledForSite(type, site)) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
       return ok();
@@ -98,14 +99,14 @@ export default async function auditMetaTags(message, context) {
     };
     const auditData = {
       siteId: site.getId(),
-      isLive: site.isLive(),
+      isLive: site.getIsLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
       fullAuditRef: auditResult?.fullAuditRef,
       auditResult,
     };
     // Persist Audit result
-    const audit = await dataAccess.addAudit(auditData);
+    const audit = await Audit.create(auditData);
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     await syncOpportunityAndSuggestions(
       siteId,

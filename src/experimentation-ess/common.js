@@ -666,12 +666,13 @@ export async function processAudit(auditURL, context, site, days) {
 
 export async function postProcessor(auditUrl, auditData, context) {
   const { dataAccess } = context;
+  const { Experiment } = dataAccess;
   log = context.log;
   // iterate array auditData.auditResult
   for (const experiment of auditData.auditResult) {
     const experimentData = {
       siteId: auditData.siteId,
-      experimentId: experiment.id,
+      expId: experiment.id,
       name: experiment.label,
       url: experiment.url,
       startDate: experiment.startDate,
@@ -683,7 +684,10 @@ export async function postProcessor(auditUrl, auditData, context) {
       conversionEventValue: experiment.conversionEventValue,
     };
     // eslint-disable-next-line no-await-in-loop
-    const existingExperiments = await dataAccess.getExperiments(auditData.siteId, experiment.id);
+    const existingExperiments = await Experiment.allBySiteIdAndExpId(
+      auditData.siteId,
+      experiment.id,
+    );
     let existingExperiment;
     if (existingExperiments) {
       if (existingExperiments.length === 1) {
@@ -720,7 +724,7 @@ export async function postProcessor(auditUrl, auditData, context) {
       }
     }
     // eslint-disable-next-line no-await-in-loop
-    await dataAccess.upsertExperiment(experimentData);
+    await Experiment.create(experimentData);
   }
   log.info(`Experiments data for site ${auditData.siteId} has been upserted`);
 }

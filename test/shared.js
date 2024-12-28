@@ -29,9 +29,18 @@ export class MockContextBuilder {
     };
 
     const mockDataAccess = {
-      getSiteByID: this.sandbox.stub(),
-      getOrganizationByID: this.sandbox.stub(),
-      addAudit: this.sandbox.stub(),
+      Configuration: {
+        findLatest: this.sandbox.stub(),
+      },
+      Audit: {
+        create: this.sandbox.stub(),
+      },
+      Site: {
+        findById: this.sandbox.stub(),
+      },
+      Organization: {
+        findById: this.sandbox.stub(),
+      },
       Opportunity: {
         getId: this.sandbox.stub(),
         getType: this.sandbox.stub(),
