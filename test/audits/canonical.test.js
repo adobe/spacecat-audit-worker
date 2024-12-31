@@ -41,7 +41,7 @@ describe('Canonical URL Tests', () => {
   describe('getTopPagesForSiteId', () => {
     it('should return top pages for a given site ID', async () => {
       const dataAccess = {
-        SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getURL: () => 'http://example.com/page1' }]) },
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => 'http://example.com/page1' }]) },
       };
       const siteId = 'testSiteId';
       const context = { log };
@@ -538,7 +538,7 @@ describe('Canonical URL Tests', () => {
 
       nock('http://example.com').get('/page1').reply(200, html);
       nock(baseURL).get('/').reply(200, html);
-      const getTopPagesForSiteStub = sinon.stub().resolves([{ getURL: () => 'http://example.com/page1' }]);
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => 'http://example.com/page1' }]);
 
       const context = {
         log,
