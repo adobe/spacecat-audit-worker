@@ -323,9 +323,10 @@ function convertToOpportunityEntity(oppty, auditData) {
 export async function postProcessor(auditUrl, auditData, context) {
   const { log } = context;
   const { dataAccess } = context;
+  const { Opportunity } = dataAccess;
   let updatedEntities = 0;
   log.info(`Experimentation Opportunities post processing started for ${auditUrl} from audit ${auditData.id}`);
-  const existingOpportunities = await dataAccess.Opportunity.allBySiteId(auditData.siteId);
+  const existingOpportunities = await Opportunity.allBySiteId(auditData.siteId);
 
   // Get opportunities with recommendations
   const opportunities = auditData.auditResult.experimentationOpportunities

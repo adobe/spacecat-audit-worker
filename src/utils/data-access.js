@@ -25,7 +25,8 @@ import { isObject } from '@adobe/spacecat-shared-utils';
  */
 export async function retrieveSiteBySiteId(dataAccess, siteId, log) {
   try {
-    const site = await dataAccess.getSiteByID(siteId);
+    const { Site } = dataAccess;
+    const site = await Site.findById(siteId);
     if (!isObject(site)) {
       log.warn(`Site not found for site: ${siteId}`);
       return null;

@@ -64,6 +64,9 @@ export default async function auditBrokenBacklinks(message, context) {
   const { type, auditContext = {} } = message;
   const { dataAccess, log, sqs } = context;
   const {
+    Audit, Configuration, Opportunity, SiteTopPage,
+  } = dataAccess;
+  const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
   const siteId = message.url || message.siteId;
@@ -73,11 +76,11 @@ export default async function auditBrokenBacklinks(message, context) {
     if (!site) {
       return notFound('Site not found');
     }
-    if (!site.isLive()) {
+    if (!site.getIsLive()) {
       log.info(`Site ${siteId} is not live`);
       return ok();
     }
-    const configuration = await dataAccess.getConfiguration();
+    const configuration = await Configuration.findLatest();
     if (!configuration.isHandlerEnabledForSite(type, site)) {
       log.info(`Audit type ${type} disabled for site ${siteId}`);
       return ok();
@@ -104,10 +107,10 @@ export default async function auditBrokenBacklinks(message, context) {
 
       if (configuration.isHandlerEnabledForSite(`${type}-auto-suggest`, site)) {
         try {
-          const topPages = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
+          const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
           const keywords = topPages.map(
             (page) => ({
-              url: page.getURL(),
+              url: page.getUrl(),
               keyword: page.getTopKeyword(),
               traffic: page.getTraffic(),
             }),
@@ -132,14 +135,14 @@ export default async function auditBrokenBacklinks(message, context) {
     }
     const auditData = {
       siteId: site.getId(),
-      isLive: site.isLive(),
+      isLive: site.getIsLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
       fullAuditRef: auditResult?.fullAuditRef,
       auditResult,
     };
 
-    const audit = await dataAccess.addAudit(auditData);
+    const audit = await Audit.create(auditData);
     const result = {
       type,
       url: site.getBaseURL(),
@@ -150,7 +153,7 @@ export default async function auditBrokenBacklinks(message, context) {
     let brokenBacklinksOppty;
 
     try {
-      const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+      const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
       brokenBacklinksOppty = opportunities.find((oppty) => oppty.getType() === 'broken-backlinks');
     } catch (e) {
       log.error(`Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
@@ -179,7 +182,7 @@ export default async function auditBrokenBacklinks(message, context) {
           tags: ['Traffic acquisition'],
         };
 
-        brokenBacklinksOppty = await dataAccess.Opportunity.create(opportunityData);
+        brokenBacklinksOppty = await Opportunity.create(opportunityData);
       } else {
         brokenBacklinksOppty.setAuditId(audit.getId());
         await brokenBacklinksOppty.save();

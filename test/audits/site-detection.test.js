@@ -44,8 +44,12 @@ describe('site-detection runner tests', () => {
 
   const context = {
     dataAccess: {
-      getSites: sandbox.stub(),
-      getSiteCandidates: sandbox.stub(),
+      Site: {
+        all: sandbox.stub(),
+      },
+      SiteCandidate: {
+        all: sandbox.stub(),
+      },
     },
     log: {
       info: sandbox.stub(),
@@ -66,8 +70,8 @@ describe('site-detection runner tests', () => {
       createSiteCandidate({ baseURL: 'https://spacecat3.com' }),
       createSiteCandidate({ baseURL: 'https://spacecat4.com' }),
     ];
-    context.dataAccess.getSites.resolves(sites);
-    context.dataAccess.getSiteCandidates.resolves(siteCandidates);
+    context.dataAccess.Site.all.resolves(sites);
+    context.dataAccess.SiteCandidate.all.resolves(siteCandidates);
   });
 
   afterEach(() => {

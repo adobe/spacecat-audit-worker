@@ -11,14 +11,12 @@
  */
 
 /* eslint-env mocha */
+import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
-import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
-import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
 import { composeAuditURL, hasText, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
   defaultMessageSender,
@@ -62,8 +60,17 @@ describe('Audit tests', () => {
       .withSandbox(sandbox)
       .build(message);
 
-    org = createOrganization({ name: 'some-org' });
-    site = createSite({ baseURL, organizationId: org.getId() });
+    org = {
+      getId: () => 'some-org-id',
+      getName: () => 'some-org',
+    };
+    site = {
+      getId: () => 'site-id',
+      getBaseURL: () => baseURL,
+      getOrganizationId: () => org.getId(),
+      getIsLive: () => true,
+      getIsError: () => false,
+    };
     const configurationData = {
       version: '1.0',
       queues: {},
@@ -88,43 +95,43 @@ describe('Audit tests', () => {
 
   describe('default components', () => {
     it('default site provider throws error when site is not found', async () => {
-      context.dataAccess.getSiteByID.withArgs(message.url).resolves(null);
+      context.dataAccess.Site.findById.withArgs(message.url).resolves(null);
       await expect(defaultSiteProvider(message.url, context))
         .to.be.rejectedWith(`Site with id ${message.url} not found`);
     });
 
     it('default site provider returns site', async () => {
-      context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
+      context.dataAccess.Site.findById.withArgs(message.url).resolves(site);
 
       const result = await defaultSiteProvider(message.url, context);
       expect(result.getBaseURL()).to.equal(baseURL);
 
-      expect(context.dataAccess.getSiteByID).to.have.been.calledOnce;
+      expect(context.dataAccess.Site.findById).to.have.been.calledOnce;
     });
 
     it('default org provider throws error when org is not found', async () => {
-      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(null);
+      context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(null);
       await expect(defaultOrgProvider(site.getOrganizationId(), context))
         .to.be.rejectedWith(`Org with id ${site.getOrganizationId()} not found`);
     });
 
     it('default org provider returns org', async () => {
-      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
+      context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
 
       const result = await defaultOrgProvider(site.getOrganizationId(), context);
       expect(result.getId()).to.equal(site.getOrganizationId());
 
-      expect(context.dataAccess.getOrganizationByID).to.have.been.calledOnce;
+      expect(context.dataAccess.Organization.findById).to.have.been.calledOnce;
     });
 
     it('default persister saves the audit result to data access', async () => {
-      context.dataAccess.addAudit.resolves();
+      context.dataAccess.Audit.create.resolves();
       const auditData = { result: 'hebele' };
 
       await defaultPersister(auditData, context);
 
-      expect(context.dataAccess.addAudit).to.have.been.calledOnce;
-      expect(context.dataAccess.addAudit).to.have.been.calledWith(auditData);
+      expect(context.dataAccess.Audit.create).to.have.been.calledOnce;
+      expect(context.dataAccess.Audit.create).to.have.been.calledWith(auditData);
     });
 
     it('default message sender sends the audit to sqs', async () => {
@@ -185,7 +192,7 @@ describe('Audit tests', () => {
         .get('/blog')
         .reply(200, () => 'hello world', {});
 
-      const testsite = createSite({ baseURL: 'https://spacekitty.cat/blog', organizationId: org.getId() });
+      const testsite = { getBaseURL: () => 'https://spacekitty.cat/blog', getOrganizationId: () => org.getId() };
       const initialBaseURL = testsite.getBaseURL();
       const auditURL = await composeAuditURL(initialBaseURL);
       const urlWithSchema = prependSchema(auditURL);
@@ -199,9 +206,9 @@ describe('Audit tests', () => {
       configuration.disableHandlerForOrg('dummy', org);
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
-      context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
-      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
-      context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
+      context.dataAccess.Site.findById.withArgs(message.url).resolves(site);
+      context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
+      context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
 
       const audit = new AuditBuilder()
         .withRunner(() => 123)
@@ -216,10 +223,10 @@ describe('Audit tests', () => {
     it('audit runs as expected with post processors', async () => {
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
-      context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
-      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
-      context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
-      context.dataAccess.addAudit.resolves({
+      context.dataAccess.Site.findById.withArgs(message.url).resolves(site);
+      context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
+      context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
+      context.dataAccess.Audit.create.resolves({
         getId: () => 'some-audit-id',
       });
       context.sqs.sendMessage.resolves();
@@ -253,10 +260,10 @@ describe('Audit tests', () => {
       await expect(audit.run(message, context)).to.be.rejectedWith('some nasty error');
 
       // Assert
-      expect(context.dataAccess.addAudit).to.have.been.calledOnce;
+      expect(context.dataAccess.Audit.create).to.have.been.calledOnce;
       const auditData = {
         siteId: site.getId(),
-        isLive: site.isLive(),
+        isLive: site.getIsLive(),
         auditedAt: mockDate,
         auditType: message.type,
         auditResult: { metric: 42 },
@@ -265,7 +272,7 @@ describe('Audit tests', () => {
         // because JavaScript objects are passed by reference.
         id: 'some-audit-id',
       };
-      expect(context.dataAccess.addAudit).to.have.been.calledWith(auditData);
+      expect(context.dataAccess.Audit.create).to.have.been.calledWith(auditData);
 
       const finalUrl = 'space.cat';
       expect(context.sqs.sendMessage).not.to.have.been.calledOnce;
@@ -279,10 +286,10 @@ describe('Audit tests', () => {
   it('audit runs as expected when receiving siteId instead of message ', async () => {
     const queueUrl = 'some-queue-url';
     context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
-    context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
-    context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
-    context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
-    context.dataAccess.addAudit.resolves({
+    context.dataAccess.Site.findById.withArgs(message.url).resolves(site);
+    context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
+    context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
+    context.dataAccess.Audit.create.resolves({
       getId: () => 'some-audit-id',
     });
     context.sqs.sendMessage.resolves();
@@ -312,10 +319,10 @@ describe('Audit tests', () => {
     // Assert
     expect(resp.status).to.equal(200);
 
-    expect(context.dataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.dataAccess.addAudit).to.have.been.calledWith({
+    expect(context.dataAccess.Audit.create).to.have.been.calledOnce;
+    expect(context.dataAccess.Audit.create).to.have.been.calledWith({
       siteId: site.getId(),
-      isLive: site.isLive(),
+      isLive: site.getIsLive(),
       auditedAt: mockDate,
       auditType: message.type,
       auditResult: { metric: 42 },
@@ -329,12 +336,12 @@ describe('Audit tests', () => {
   });
 
   it('wwwUrlResolver calculates audit urls correctly', async () => {
-    expect(wwwUrlResolver(createSite({ baseURL: 'http://spacecat.com' }))).to.equal('www.spacecat.com');
-    expect(wwwUrlResolver(createSite({ baseURL: 'https://spacecat.com' }))).to.equal('www.spacecat.com');
-    expect(wwwUrlResolver(createSite({ baseURL: 'http://www.spacecat.com' }))).to.equal('www.spacecat.com');
-    expect(wwwUrlResolver(createSite({ baseURL: 'https://www.spacecat.com' }))).to.equal('www.spacecat.com');
-    expect(wwwUrlResolver(createSite({ baseURL: 'http://blog.spacecat.com' }))).to.equal('blog.spacecat.com');
-    expect(wwwUrlResolver(createSite({ baseURL: 'https://blog.spacecat.com' }))).to.equal('blog.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'http://spacecat.com' })).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'https://spacecat.com' })).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'http://www.spacecat.com' })).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'https://www.spacecat.com' })).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'http://blog.spacecat.com' })).to.equal('blog.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'https://blog.spacecat.com' })).to.equal('blog.spacecat.com');
   });
 
   it('noop persister', async () => {
