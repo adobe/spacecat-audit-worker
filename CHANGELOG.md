@@ -1,3 +1,10 @@
+# [1.46.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.45.23...v1.46.0) (2025-01-03)
+
+
+### Features
+
+* migrate to v2 data access ([#552](https://github.com/adobe/spacecat-audit-worker/issues/552)) ([dc5963c](https://github.com/adobe/spacecat-audit-worker/commit/dc5963ca98c28182e5e4973df38ccb69adc79afa))
+
 ## [1.45.23](https://github.com/adobe/spacecat-audit-worker/compare/v1.45.22...v1.45.23) (2025-01-03)
 
 
