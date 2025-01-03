@@ -76,7 +76,6 @@ export async function experimentationAuditRunner(baseURL, context) {
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
   log.info(`Experimentation Audit completed in ${formattedElapsed} seconds for ${baseURL}`);
-  log.info(`EXPERIMENTATION AUDOT DATA: ${JSON.stringify(auditData)}`);
   return auditData;
 }
 

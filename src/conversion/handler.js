@@ -65,7 +65,6 @@ export async function conversionAuditRunner(baseURL, context) {
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
   log.info(`Conversion Audit completed in ${formattedElapsed} seconds for ${baseURL}`);
-  log.info(`CONVERSION AUDIT DATA: ${JSON.stringify(auditData)}`);
   return auditData;
 }
 
