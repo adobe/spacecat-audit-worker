@@ -118,6 +118,8 @@ export class Audit {
         auditResult,
         fullAuditRef,
       };
+
+      log.info(`AUDIT DATA FOR TYPE ${type}: ${JSON.stringify(auditData)}`);
       const audit = await this.persister(auditData, context);
       auditContext.finalUrl = finalUrl;
       auditContext.fullAuditRef = fullAuditRef;
