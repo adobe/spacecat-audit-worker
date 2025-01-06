@@ -22,13 +22,6 @@ export async function defaultMessageSender() {}
 export async function defaultPersister(auditData, context) {
   const { dataAccess } = context;
   const { Audit } = dataAccess;
-  await syncOpportunityAndSuggestions(
-    Audit.siteId,
-    Audit.auditId,
-    auditData,
-    dataAccess,
-    Audit.log,
-  );
   return Audit.create(auditData);
 }
 
@@ -126,6 +119,13 @@ export class Audit {
         fullAuditRef,
       };
       const audit = await this.persister(auditData, context);
+      await syncOpportunityAndSuggestions(
+        audit.siteId,
+        audit.auditId,
+        auditData,
+        dataAccess,
+        log,
+      );
       auditContext.finalUrl = finalUrl;
       auditContext.fullAuditRef = fullAuditRef;
 
