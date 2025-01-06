@@ -155,11 +155,12 @@ export default async function syncOpportunityAndSuggestions(
   dataAccess,
   log,
 ) {
+  const { Opportunity } = dataAccess;
   log.info(`Syncing opportunity and suggestions for ${siteId}`);
   let metatagsOppty;
   try {
     // Get all opportunities by site-id and new status
-    const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
     // Find existing opportunity for meta-tags
     metatagsOppty = opportunities.find((oppty) => oppty.getType() === 'meta-tags');
   } catch (e) {
@@ -188,7 +189,7 @@ export default async function syncOpportunityAndSuggestions(
         },
         tags: ['Traffic acquisition'],
       };
-      metatagsOppty = await dataAccess.Opportunity.create(opportunityData);
+      metatagsOppty = await Opportunity.create(opportunityData);
       log.debug('Meta-tags Opportunity created');
     } else {
       metatagsOppty.setAuditId(auditId);

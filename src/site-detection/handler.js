@@ -161,6 +161,7 @@ export async function siteDetectionRunner(_, context) {
     env,
     log,
   } = context;
+  const { Site, SiteCandidate } = dataAccess;
   const {
     CORALOGIX_API_KEY: authorization,
     SITE_DETECTION_WEBHOOK: siteDetectionWebHook,
@@ -173,8 +174,8 @@ export async function siteDetectionRunner(_, context) {
     ignoredSubdomains,
   };
 
-  const sites = await dataAccess.getSites();
-  const siteCandidates = await dataAccess.getSiteCandidates();
+  const sites = await Site.all();
+  const siteCandidates = await SiteCandidate.all();
 
   const knownHosts = new Set([...sites, ...siteCandidates]
     .map((s) => s.getBaseURL())

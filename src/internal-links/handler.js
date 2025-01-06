@@ -101,10 +101,11 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     dataAccess,
     log,
   } = context;
+  const { Opportunity } = dataAccess;
 
   let opportunity;
   try {
-    const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
     opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
@@ -133,7 +134,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
           'Engagement',
         ],
       };
-      opportunity = await dataAccess.Opportunity.create(opportunityData);
+      opportunity = await Opportunity.create(opportunityData);
     } else {
       opportunity.setAuditId(auditData.id);
       await opportunity.save();

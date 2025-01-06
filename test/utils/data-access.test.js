@@ -28,7 +28,9 @@ describe('data-access', () => {
 
     beforeEach(() => {
       mockDataAccess = {
-        getSiteByID: sinon.stub(),
+        Site: {
+          findById: sinon.stub(),
+        },
       };
 
       mockLog = {
@@ -40,32 +42,32 @@ describe('data-access', () => {
       sinon.restore();
     });
 
-    it('returns site when getSiteByID returns a valid object', async () => {
+    it('returns site when Site.findById returns a valid object', async () => {
       const site = { id: 'site1' };
-      mockDataAccess.getSiteByID.resolves(site);
+      mockDataAccess.Site.findById.resolves(site);
 
       const result = await retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog);
 
       expect(result).to.equal(site);
-      expect(mockDataAccess.getSiteByID).to.have.been.calledOnceWith('site1');
+      expect(mockDataAccess.Site.findById).to.have.been.calledOnceWith('site1');
       expect(mockLog.warn).to.not.have.been.called;
     });
 
-    it('returns null and logs a warning when getSiteByID returns a non-object', async () => {
-      mockDataAccess.getSiteByID.resolves('not an object');
+    it('returns null and logs a warning when Site.findById returns a non-object', async () => {
+      mockDataAccess.Site.findById.resolves('not an object');
 
       const result = await retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog);
 
       expect(result).to.be.null;
-      expect(mockDataAccess.getSiteByID).to.have.been.calledOnceWith('site1');
+      expect(mockDataAccess.Site.findById).to.have.been.calledOnceWith('site1');
       expect(mockLog.warn).to.have.been.calledOnceWith('Site not found for site: site1');
     });
 
-    it('throws an error when getSiteByID throws an error', async () => {
-      mockDataAccess.getSiteByID.rejects(new Error('database error'));
+    it('throws an error when Site.findById throws an error', async () => {
+      mockDataAccess.Site.findById.rejects(new Error('database error'));
 
       await expect(retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog)).to.be.rejectedWith('Error getting site site1: database error');
-      expect(mockDataAccess.getSiteByID).to.have.been.calledOnceWith('site1');
+      expect(mockDataAccess.Site.findById).to.have.been.calledOnceWith('site1');
       expect(mockLog.warn).to.not.have.been.called;
     });
   });

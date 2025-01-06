@@ -102,12 +102,13 @@ export const CANONICAL_CHECKS = Object.freeze({
  */
 export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
   try {
-    const result = await dataAccess.getTopPagesForSite(siteId, 'ahrefs', 'global');
+    const { SiteTopPage } = dataAccess;
+    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
     const topPages = result || [];
     if (topPages.length > 0) {
-      const topPagesUrls = topPages.map((page) => ({ url: page.getURL() }));
+      const topPagesUrls = topPages.map((page) => ({ url: page.getUrl() }));
       log.info(`Found ${topPagesUrls.length} top pages`);
       return topPagesUrls;
     } else {

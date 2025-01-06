@@ -51,12 +51,13 @@ export async function convertToOppty(auditUrl, auditData, context, site) {
     dataAccess,
     log,
   } = context;
+  const { Opportunity } = dataAccess;
   const groupedURLs = site.getConfig().getGroupedURLs(AUDIT_TYPE);
 
   log.info(`auditUrl: ${auditUrl}`);
   log.info(`auditData: ${JSON.stringify(auditData)}`);
 
-  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
   log.info(`opportunities: ${JSON.stringify(opportunities)}`);
 
   let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
@@ -67,7 +68,7 @@ export async function convertToOppty(auditUrl, auditData, context, site) {
     const opportunityData = {
       siteId: auditData.siteId,
       auditId: auditData.id,
-      runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_CWV_CLS_Runbook.docx?web=1',
+      runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_CWV_Runbook.docx?web=1',
       type: AUDIT_TYPE,
       origin: 'AUTOMATION',
       title: 'Core Web Vitals',
@@ -89,7 +90,7 @@ export async function convertToOppty(auditUrl, auditData, context, site) {
       },
     };
     try {
-      opportunity = await dataAccess.Opportunity.create(opportunityData);
+      opportunity = await Opportunity.create(opportunityData);
     } catch (e) {
       log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
       throw e;
