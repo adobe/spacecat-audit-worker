@@ -63,7 +63,6 @@ async function processAudit(baseURL, context) {
 
 export async function experimentationAuditRunner(baseURL, context) {
   const { log } = context;
-  log.info(`Received Experimentation audit request for ${baseURL}`);
   const startTime = process.hrtime();
 
   const auditData = await processAudit(

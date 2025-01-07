@@ -75,9 +75,9 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
-  const { type, url } = message;
+  const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for: ${url}`);
+  log.info(`Received ${type} audit request for: ${siteId}`);
 
   const handler = HANDLERS[type];
   if (!handler) {
@@ -91,11 +91,11 @@ async function run(message, context) {
   try {
     const result = await (typeof handler.run === 'function' ? handler.run(message, context) : handler(message, context));
 
-    log.info(`${type} audit for ${url} completed in ${getElapsedSeconds(startTime)} seconds`);
+    log.info(`${type} audit for ${siteId} completed in ${getElapsedSeconds(startTime)} seconds`);
 
     return result;
   } catch (e) {
-    log.error(`${type} audit for ${url} failed after ${getElapsedSeconds(startTime)} seconds`, e);
+    log.error(`${type} audit for ${siteId} failed after ${getElapsedSeconds(startTime)} seconds`, e);
     return internalServerError();
   }
 }

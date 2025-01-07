@@ -236,7 +236,6 @@ describe('Meta Tags', () => {
 
       const result = await auditMetaTags(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(notFound('Site not found')));
-      expect(logStub.info.calledOnce).to.be.true;
     });
 
     it('should return ok if site is not live', async () => {
@@ -244,7 +243,7 @@ describe('Meta Tags', () => {
 
       const result = await auditMetaTags(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(ok()));
-      expect(logStub.info.calledTwice).to.be.true;
+      expect(logStub.info.calledOnce).to.be.true;
     });
 
     it('should return ok if audit type is disabled for site', async () => {
@@ -253,7 +252,7 @@ describe('Meta Tags', () => {
       });
       const result = await auditMetaTags(message, context);
       expect(JSON.stringify(result)).to.equal(JSON.stringify(ok()));
-      expect(logStub.info.calledTwice).to.be.true;
+      expect(logStub.info.calledOnce).to.be.true;
     });
 
     it('should return notFound if extracted tags are not available', async () => {
@@ -400,7 +399,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(6);
+      expect(logStub.info.callCount).to.equal(5);
     }).timeout(3000);
 
     it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
@@ -567,7 +566,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(4);
+      expect(logStub.info.callCount).to.equal(3);
     });
 
     it('should handle errors and return internalServerError', async () => {

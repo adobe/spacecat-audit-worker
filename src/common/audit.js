@@ -92,9 +92,9 @@ export class Audit {
     const { Configuration } = dataAccess;
     const {
       type,
+      siteId,
       auditContext = {},
     } = message;
-    const siteId = message.url || message.siteId;
 
     try {
       const site = await this.siteProvider(siteId, context);

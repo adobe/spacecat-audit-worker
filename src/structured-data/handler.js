@@ -167,7 +167,6 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 
 export async function structuredDataHandler(baseURL, context, site) {
   const { log } = context;
-  log.info(`Received structured data audit request for ${baseURL}`);
   const startTime = process.hrtime();
 
   const siteId = site.getId();
