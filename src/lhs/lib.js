@@ -253,8 +253,6 @@ async function lhsAuditRunner(baseURL, strategy, context, site) {
     throw new Error('Invalid PageSpeed API base URL');
   }
 
-  log.info(`Received ${strategy} audit request for: ${baseURL}`);
-
   const services = initServices({
     psiApiKey,
     psiApiBaseUrl,

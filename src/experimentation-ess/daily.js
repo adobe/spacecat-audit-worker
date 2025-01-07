@@ -21,7 +21,6 @@ let log = console;
 
 export async function essExperimentationDailyAuditRunner(auditUrl, context, site) {
   log = context.log;
-  log.info(`Received ESS Experimentation Daily audit request for ${auditUrl}`);
   const startTime = process.hrtime();
 
   const auditData = await processAudit(

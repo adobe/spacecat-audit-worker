@@ -44,7 +44,6 @@ export default async function auditMetaTags(message, context) {
   const { Audit, Configuration } = dataAccess;
 
   try {
-    log.info(`Received ${type} audit request for siteId: ${siteId}`);
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
     if (!site) {
       return notFound('Site not found');

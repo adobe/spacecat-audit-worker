@@ -38,7 +38,7 @@ use(chaiAsPromised);
 const baseURL = 'https://space.cat';
 const message = {
   type: 'dummy',
-  url: 'site-id',
+  siteId: 'site-id',
   auditContext: { someField: 431 },
 };
 const mockDate = '2023-03-12T15:24:51.231Z';
@@ -180,7 +180,7 @@ describe('Audit tests', () => {
         .build();
 
       await expect(audit.run(message, context))
-        .to.be.rejectedWith(`${message.type} audit failed for site ${message.url}. Reason: Site with id ${message.url} not found`);
+        .to.be.rejectedWith(`${message.type} audit failed for site ${message.siteId}. Reason: Site with id ${message.siteId} not found`);
     });
 
     it('should follow redirection and return final URL', async () => {
@@ -206,7 +206,7 @@ describe('Audit tests', () => {
       configuration.disableHandlerForOrg('dummy', org);
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
-      context.dataAccess.Site.findById.withArgs(message.url).resolves(site);
+      context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
       context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
       context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
 
@@ -223,7 +223,7 @@ describe('Audit tests', () => {
     it('audit runs as expected with post processors', async () => {
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
-      context.dataAccess.Site.findById.withArgs(message.url).resolves(site);
+      context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
       context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
       context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
       context.dataAccess.Audit.create.resolves({
