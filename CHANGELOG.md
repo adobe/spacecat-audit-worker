@@ -1,3 +1,10 @@
+## [1.46.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.2...v1.46.3) (2025-01-07)
+
+
+### Bug Fixes
+
+* **core:** unify info logs & siteId vs url ([#567](https://github.com/adobe/spacecat-audit-worker/issues/567)) ([c773bc1](https://github.com/adobe/spacecat-audit-worker/commit/c773bc1c7e98ddc8979b84525a7c6febb54180f4))
+
 ## [1.46.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.1...v1.46.2) (2025-01-06)
 
 
