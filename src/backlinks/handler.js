@@ -62,7 +62,7 @@ export async function filterOutValidBacklinks(backlinks, log) {
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
-export default async function auditBrokenBacklinks(message, context) {
+export async function auditBrokenBacklinks(message, context) {
   const { type, siteId, auditContext = {} } = message;
   const { dataAccess, log, sqs } = context;
   const {
