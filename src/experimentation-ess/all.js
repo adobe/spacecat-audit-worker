@@ -35,7 +35,6 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
   const { dataAccess } = context;
   const { Experiment, LatestAudit } = dataAccess;
   const siteId = site.getId();
-  log.info(`Received ESS Experimentation All audit request for ${auditUrl}`);
   const startTime = process.hrtime();
 
   const latestAudit = await LatestAudit.findBySiteIdAndAuditType(siteId, 'experimentation-ess-all');

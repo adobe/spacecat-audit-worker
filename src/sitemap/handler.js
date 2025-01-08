@@ -382,7 +382,6 @@ export async function findSitemap(inputUrl) {
  */
 export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
-  log.info(`Received sitemap audit request for ${baseURL}`);
   const startTime = process.hrtime();
   const auditResult = await findSitemap(baseURL);
   const endTime = process.hrtime(startTime);

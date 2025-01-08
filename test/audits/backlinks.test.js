@@ -280,7 +280,7 @@ describe('Backlinks Tests', function () {
 
     message = {
       type: 'broken-backlinks',
-      url: 'site1',
+      siteId: 'site1',
     };
 
     mockLog = {
@@ -522,8 +522,6 @@ describe('Backlinks Tests', function () {
     mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves(
       [otherOpportunity, brokenBacklinksOpportunity],
     );
-    message.siteId = message.url;
-    delete message.url;
 
     nock(site.getBaseURL())
       .get(/.*/)
@@ -554,8 +552,6 @@ describe('Backlinks Tests', function () {
     expect(context.sqs.sendMessage).to.have.been
       .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
     expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
-    message.url = message.siteId;
-    delete message.siteId;
   });
 
   it('should successfully perform an audit to detect broken backlinks and suggest fixes based on keywords from top pages if auto-suggest'
@@ -656,7 +652,7 @@ describe('Backlinks Tests', function () {
     };
 
     const response = await auditBrokenBacklinks({
-      url: site2.getId(), type: 'broken-backlinks',
+      siteId: site2.getId(), type: 'broken-backlinks',
     }, context);
 
     expect(response.status).to.equal(204);
@@ -761,7 +757,7 @@ describe('Backlinks Tests', function () {
     };
 
     const response = await auditBrokenBacklinks({
-      url: site2.getId(), type: 'broken-backlinks',
+      siteId: site2.getId(), type: 'broken-backlinks',
     }, context);
 
     expect(response.status).to.equal(204);
@@ -833,7 +829,7 @@ describe('Backlinks Tests', function () {
     };
 
     const response = await auditBrokenBacklinks({
-      url: site2.getId(), type: 'broken-backlinks',
+      siteId: site2.getId(), type: 'broken-backlinks',
     }, context);
 
     expect(response.status).to.equal(204);
@@ -861,7 +857,7 @@ describe('Backlinks Tests', function () {
     }); */
     message = {
       type: 'broken-backlinks',
-      url: 'site3',
+      siteId: 'site3',
     };
 
     mockDataAccess.Site.findById.resolves(site3);
@@ -871,7 +867,7 @@ describe('Backlinks Tests', function () {
     const response = await auditBrokenBacklinks(message, context);
 
     expect(response.status).to.equal(200);
-    expect(mockLog.info).to.have.been.calledTwice;
+    expect(mockLog.info).to.have.been.calledOnce;
     expect(mockLog.info).to.have.been.calledWith('Audit type broken-backlinks disabled for site site3');
   });
 

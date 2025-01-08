@@ -325,7 +325,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(6);
+      expect(logStub.info.callCount).to.equal(5);
     }).timeout(3000);
 
     xit('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
@@ -489,7 +489,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(4);
+      expect(logStub.info.callCount).to.equal(3);
     });
 
     it('should handle gracefully if S3 object has no rawbody', async () => {

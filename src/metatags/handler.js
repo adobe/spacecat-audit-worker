@@ -34,7 +34,6 @@ async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)
 
 export async function auditMetaTagsRunner(baseURL, context) {
   const { log, s3Client } = context;
-
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const prefix = `scrapes/${baseURL.siteId}/`;

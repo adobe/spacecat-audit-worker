@@ -1,3 +1,31 @@
+## [1.46.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.4...v1.46.5) (2025-01-08)
+
+
+### Bug Fixes
+
+* **experimentation-opportunities:** decrease the interval to 7 days ([#569](https://github.com/adobe/spacecat-audit-worker/issues/569)) ([8935cb1](https://github.com/adobe/spacecat-audit-worker/commit/8935cb1efe5a6dad820d612a51793840005e3fe7))
+
+## [1.46.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.3...v1.46.4) (2025-01-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v1.61.17 ([#568](https://github.com/adobe/spacecat-audit-worker/issues/568)) ([b3aa4a3](https://github.com/adobe/spacecat-audit-worker/commit/b3aa4a3cd7986c824b9688985f6abd8fa1a86a16))
+
+## [1.46.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.2...v1.46.3) (2025-01-07)
+
+
+### Bug Fixes
+
+* **core:** unify info logs & siteId vs url ([#567](https://github.com/adobe/spacecat-audit-worker/issues/567)) ([c773bc1](https://github.com/adobe/spacecat-audit-worker/commit/c773bc1c7e98ddc8979b84525a7c6febb54180f4))
+
+## [1.46.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.1...v1.46.2) (2025-01-06)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#565](https://github.com/adobe/spacecat-audit-worker/issues/565)) ([f015952](https://github.com/adobe/spacecat-audit-worker/commit/f015952d608d679fcb01d1537b6992dadb3b30c7))
+
 ## [1.46.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.0...v1.46.1) (2025-01-04)
 
 

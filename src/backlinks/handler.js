@@ -62,8 +62,8 @@ export async function filterOutValidBacklinks(backlinks, log) {
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
-export async function auditBrokenBacklinks(message, context) {
-  const { type, auditContext = {} } = message;
+export default async function auditBrokenBacklinks(message, context) {
+  const { type, siteId, auditContext = {} } = message;
   const { dataAccess, log, sqs } = context;
   const {
     Audit, Configuration, Opportunity, SiteTopPage,
@@ -71,9 +71,7 @@ export async function auditBrokenBacklinks(message, context) {
   const {
     AUDIT_RESULTS_QUEUE_URL: queueUrl,
   } = context.env;
-  const siteId = message.url || message.siteId;
   try {
-    log.info(`Received ${type} audit request for siteId: ${siteId}`);
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
     if (!site) {
       return notFound('Site not found');

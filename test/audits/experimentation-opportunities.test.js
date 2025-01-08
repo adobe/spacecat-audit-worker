@@ -138,7 +138,7 @@ describe('Opportunities Tests', () => {
     ], {
       domain: 'https://abc.com',
       domainkey: 'abc_dummy_key',
-      interval: 30,
+      interval: 7,
       granularity: 'hourly',
     });
     expect(
