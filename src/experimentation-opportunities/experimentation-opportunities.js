@@ -20,7 +20,7 @@ import { getRUMDomainkey } from '../support/utils.js';
 import s3Client from '../support/s3-client.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
-const DAYS = 30;
+const DAYS = 7;
 export const MAX_OPPORTUNITIES = 10;
 /**
  * Even if the pages with high views have low CTR difference (from site wide CTR), those will be
