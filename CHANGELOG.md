@@ -1,3 +1,10 @@
+## [1.46.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.4...v1.46.5) (2025-01-08)
+
+
+### Bug Fixes
+
+* **experimentation-opportunities:** decrease the interval to 7 days ([#569](https://github.com/adobe/spacecat-audit-worker/issues/569)) ([8935cb1](https://github.com/adobe/spacecat-audit-worker/commit/8935cb1efe5a6dad820d612a51793840005e3fe7))
+
 ## [1.46.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.3...v1.46.4) (2025-01-07)
 
 
