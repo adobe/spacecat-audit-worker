@@ -14,7 +14,6 @@ import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import URI from 'urijs';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import syncOpportunityAndSuggestions from '../metatags/opportunityHandler.js';
 
 // eslint-disable-next-line no-empty-function
 export async function defaultMessageSender() {}
@@ -119,13 +118,6 @@ export class Audit {
         fullAuditRef,
       };
       const audit = await this.persister(auditData, context);
-      await syncOpportunityAndSuggestions(
-        audit.siteId,
-        audit.auditId,
-        auditData,
-        dataAccess,
-        log,
-      );
       auditContext.finalUrl = finalUrl;
       auditContext.fullAuditRef = fullAuditRef;
 

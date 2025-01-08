@@ -139,40 +139,43 @@ function getIssueRanking(tagName, issue) {
   return -1;
 }
 
+// /**
+//  * Updates Meta-tags Opportunity and Suggestions collection with new audit results
+//  * @param siteId site id of site being audited
+//  * @param auditId audit id of the latest performed audit
+//  * @param auditData object containing audit results and some metadata
+//  * @param auditUrl - The URL of the audit
+//  * @param dataAccess object containing accessor objects
+//  * @param log logger
+//  * @returns {Promise<void>}
+//  */
+
 /**
- * Updates Meta-tags Opportunity and Suggestions collection with new audit results
- * @param siteId site id of site being audited
- * @param auditId audit id of the latest performed audit
- * @param auditData object containing audit results and some metadata
- * @param dataAccess object containing accessor objects
- * @param log logger
- * @returns {Promise<void>}
+ * @param auditUrl - The URL of the audit
+ * @param auditData - The audit data containing the audit result and additional details.
+ * @param context
  */
-export default async function syncOpportunityAndSuggestions(
-  siteId,
-  auditId,
-  auditData,
-  dataAccess,
-  log,
-) {
+export default async function convertToOpportunity(auditUrl, auditData, context) {
+  const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
-  log.info(`Syncing opportunity and suggestions for ${siteId}`);
+
+  log.info(`Syncing opportunity and suggestions for ${auditData.siteId}`);
   let metatagsOppty;
+
   try {
-    // Get all opportunities by site-id and new status
-    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    // Find existing opportunity for meta-tags
+    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+
     metatagsOppty = opportunities.find((oppty) => oppty.getType() === 'meta-tags');
   } catch (e) {
-    log.error(`Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
-    throw new Error(`Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
+    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
   try {
     if (!metatagsOppty) {
       const opportunityData = {
-        siteId,
-        auditId,
+        siteId: auditData.siteId,
+        auditId: auditData.id,
         runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7B27CF48AA-5492-435D-B17C-01E38332A5CA%7D&file=Experience_Success_Studio_Metatags_Runbook.docx&action=default&mobileredirect=true',
         type: 'meta-tags',
         origin: 'AUTOMATION',
@@ -192,13 +195,14 @@ export default async function syncOpportunityAndSuggestions(
       metatagsOppty = await Opportunity.create(opportunityData);
       log.debug('Meta-tags Opportunity created');
     } else {
-      metatagsOppty.setAuditId(auditId);
+      metatagsOppty.setAuditId(auditData.siteId);
       await metatagsOppty.save();
     }
   } catch (e) {
-    log.error(`Creating meta-tags opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
-    throw new Error(`Failed to create meta-tags opportunity for siteId ${siteId}: ${e.message}`);
+    log.error(`Creating meta-tags opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
+    throw new Error(`Failed to create meta-tags opportunity for siteId ${auditData.siteId}: ${e.message}`);
   }
+
   const { detectedTags } = auditData.auditResult;
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
@@ -216,6 +220,7 @@ export default async function syncOpportunityAndSuggestions(
   });
 
   const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
+
   // Sync the suggestions from new audit with old ones
   await syncMetatagsSuggestions({
     opportunity: metatagsOppty,
@@ -225,11 +230,9 @@ export default async function syncOpportunityAndSuggestions(
       opportunityId: metatagsOppty.getId(),
       type: 'METADATA_UPDATE',
       rank: suggestion.rank,
-      data: {
-        ...suggestion,
-      },
+      data: { ...suggestion },
     }),
     log,
   });
-  log.info(`Successfully synced Opportunity And Suggestions for site: ${siteId} and meta-tags audit type.`);
+  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and meta-tags audit type.`);
 }
