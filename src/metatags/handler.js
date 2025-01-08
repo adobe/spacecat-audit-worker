@@ -32,11 +32,11 @@ async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)
   };
 }
 
-export async function auditMetaTagsRunner(baseURL, context) {
+export async function auditMetaTagsRunner(baseURL, context, site) {
   const { log, s3Client } = context;
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-  const prefix = `scrapes/${baseURL.siteId}/`;
+  const prefix = `scrapes/${site.getId()}/`;
   const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
   const extractedTags = {};
   const pageMetadataResults = await Promise.all(scrapedObjectKeys.map(
