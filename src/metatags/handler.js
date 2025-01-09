@@ -135,7 +135,7 @@ export default async function auditMetaTags(message, context) {
     let projectedTraffic = 0;
     const detectedTags = seoChecks.getDetectedTags();
     Object.keys(detectedTags).forEach((endpoint) => {
-      projectedTraffic += getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap);
+      projectedTraffic += getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
     });
     // Prepare Audit result
     const auditResult = {
