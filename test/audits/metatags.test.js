@@ -22,6 +22,8 @@ import {
   SEO_RECOMMENDATION, MULTIPLE_H1_ON_PAGE, SHOULD_BE_PRESENT, TAG_LENGTHS, ONE_H1_ON_A_PAGE,
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
+import testData from '../fixtures/meta-tags-data.js';
+import convertToOpportunity from '../../src/metatags/opportunityHandler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -212,14 +214,11 @@ describe('Meta Tags', () => {
         getObject: sinon.stub(),
       };
     });
-
-    xit('should process site tags and perform SEO checks', async () => {
+    it('should process site tags and perform SEO checks', async () => {
       const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') }];
-      dataAccessStub.getConfiguration.resolves({
-        isHandlerEnabledForSite: sinon.stub().returns(true),
-      });
       dataAccessStub.getTopPagesForSite.resolves(topPages);
+      dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
           Bucket: 'test-bucket',
@@ -328,7 +327,7 @@ describe('Meta Tags', () => {
       expect(logStub.info.callCount).to.equal(5);
     }).timeout(3000);
 
-    xit('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
+    it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
       const site = {
         getIsLive: sinon.stub().returns(true),
         getId: sinon.stub().returns('site-id'),
@@ -573,6 +572,123 @@ describe('Meta Tags', () => {
           },
           ContentType: 'application/json',
         });
+    });
+  });
+  describe('opportunities handler method', () => {
+    let logStub;
+    let dataAccessStub;
+    let auditData;
+    let auditUrl;
+    let metatagsOppty;
+    let context;
+
+    beforeEach(() => {
+      sinon.restore();
+      auditUrl = 'https://example.com';
+      metatagsOppty = {
+        getId: () => 'opportunity-id',
+        setAuditId: sinon.stub(),
+        save: sinon.stub(),
+        getSuggestions: sinon.stub().returns(testData.existingSuggestions),
+        addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
+        getType: () => 'meta-tags',
+      };
+      logStub = {
+        info: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+      };
+      dataAccessStub = {
+        Opportunity: {
+          allBySiteIdAndStatus: sinon.stub().resolves([]),
+          create: sinon.stub(),
+        },
+      };
+      context = {
+        log: logStub,
+        dataAccess: dataAccessStub,
+      };
+      auditData = testData.auditData;
+    });
+
+    it('should create new opportunity and add suggestions', async () => {
+      metatagsOppty.getType = () => 'backlinks';
+      dataAccessStub.Opportunity.create = sinon.stub().returns(metatagsOppty);
+      await convertToOpportunity(auditUrl, auditData, context);
+      expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+      expect(metatagsOppty.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
+      expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+    });
+
+    it('should use existing opportunity and add suggestions', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
+      await convertToOpportunity(auditUrl, auditData, context);
+      expect(metatagsOppty.save).to.be.calledOnce;
+      expect(metatagsOppty.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
+      expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+    });
+
+    it('should throw error if fetching opportunity fails', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
+      try {
+        await convertToOpportunity(auditUrl, auditData, context);
+      } catch (err) {
+        expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id: some-error');
+      }
+      expect(logStub.error).to.be.calledWith('Fetching opportunities for siteId site-id failed with error: some-error');
+    });
+
+    it('should throw error if creating opportunity fails', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
+      dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
+      try {
+        await convertToOpportunity(auditUrl, auditData, context);
+      } catch (err) {
+        expect(err.message).to.equal('Failed to create meta-tags opportunity for siteId site-id: some-error');
+      }
+      expect(logStub.error).to.be.calledWith('Creating meta-tags opportunity for siteId site-id failed with error: some-error');
+    });
+
+    it('should sync existing suggestions with new suggestions', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
+      metatagsOppty.getSuggestions.returns(testData.existingSuggestions);
+      await convertToOpportunity(auditUrl, auditData, context);
+      expect(metatagsOppty.save).to.be.calledOnce;
+      expect(metatagsOppty.addSuggestions).to.be.calledWith(testData.expectedSyncedSuggestion);
+      expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+    });
+
+    it('should throw error if suggestions fail to create', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
+      metatagsOppty.getSiteId = () => 'site-id';
+      metatagsOppty.addSuggestions = sinon.stub().returns({ errorItems: [{ item: 1, error: 'some-error' }], createdItems: [] });
+      try {
+        await convertToOpportunity(auditUrl, auditData, context);
+      } catch (err) {
+        expect(err.message).to.equal('Failed to create suggestions for siteId site-id');
+      }
+      expect(metatagsOppty.save).to.be.calledOnce;
+      expect(metatagsOppty.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
+      expect(logStub.error).to.be.calledWith('Suggestions for siteId site-id contains 1 items with errors');
+      expect(logStub.error).to.be.calledTwice;
+    });
+
+    it('should take rank as -1 if issue is not known', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
+      const auditDataModified = {
+        ...testData.auditData,
+      };
+      auditDataModified.auditResult.detectedTags['/page1'].title.issue = 'some random issue';
+      const expectedSuggestionModified = [
+        ...testData.expectedSuggestions,
+      ];
+      expectedSuggestionModified[0].data.issue = 'some random issue';
+      expectedSuggestionModified[0].data.rank = -1;
+      expectedSuggestionModified[0].rank = -1;
+      await convertToOpportunity(auditUrl, auditData, context);
+      expect(metatagsOppty.save).to.be.calledOnce;
+      expect(metatagsOppty.addSuggestions).to.be.calledWith(expectedSuggestionModified);
+      expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
   });
 });
