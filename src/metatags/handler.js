@@ -99,7 +99,7 @@ export default async function auditMetaTags(message, context) {
       interval: 7,
       granularity: 'hourly',
     };
-    const queryResults = await rumAPIClient.queryMulti('traffic-acquisition', options);
+    const queryResults = await rumAPIClient.query('traffic-acquisition', options);
     log.info(`Traffic acquisition data: ${JSON.stringify(queryResults)}`);
     const detectedTags = seoChecks.getDetectedTags();
     // Prepare Audit result
