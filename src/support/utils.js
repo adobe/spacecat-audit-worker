@@ -284,6 +284,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   );
   const headerLinks = _extractLinksFromHeader(indexFileContent, site.getBaseURL());
 
+  log.info(`siteData: ${JSON.stringify(extractedData)}`);
   return {
     headerLinks,
     siteData: extractedData.filter(Boolean),

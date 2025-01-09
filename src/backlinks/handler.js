@@ -158,7 +158,7 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   );
   // TODO maybe add verification step to check if the suggested URLs are valid (return 200)
 
-  log.info(`Suggestions generated successfully: ${promises}`);
+  log.info(`Suggestions generated successfully: ${JSON.stringify(promises)}`);
   return {
     ...auditData,
     auditResult: {
