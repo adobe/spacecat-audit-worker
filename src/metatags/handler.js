@@ -38,6 +38,36 @@ async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)
   };
 }
 
+function extractEndpoint(url) {
+  const urlObj = new URL(url);
+  return urlObj.pathname.replace(/\/$/, ''); // Removes trailing slash if present
+}
+
+// Preprocess data into a map with endpoint as the key
+function preprocessRumData(rumTrafficData) {
+  const dataMap = new Map();
+  rumTrafficData.forEach((item) => {
+    const endpoint = extractEndpoint(item.url);
+    dataMap.set(endpoint, item);
+  });
+  return dataMap;
+}
+
+// Get organic traffic for a given endpoint
+function getOrganicTrafficForEndpoint(endpoint, dataMap) {
+  if (endpoint === '/') {
+    // eslint-disable-next-line no-param-reassign
+    endpoint = '';
+  }
+  const target = dataMap.get(endpoint);
+  if (!target) {
+    return 0;
+  }
+  return target.sources
+    .filter((source) => source.type.startsWith('earned:search'))
+    .reduce((sum, source) => sum + source.views, 0);
+}
+
 export default async function auditMetaTags(message, context) {
   const { type, auditContext = {} } = message;
   const siteId = message.siteId || message.url;
@@ -100,21 +130,24 @@ export default async function auditMetaTags(message, context) {
       granularity: 'hourly',
     };
     const queryResults = await rumAPIClient.query('traffic-acquisition', options);
-    log.info(`Traffic acquisition data: ${JSON.stringify(queryResults)}`);
+    const rumTrafficDataMap = preprocessRumData(queryResults);
+    let projectedTraffic = 0;
     const detectedTags = seoChecks.getDetectedTags();
+    Object.keys(detectedTags).forEach((endpoint) => {
+      projectedTraffic += getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap);
+    });
     // Prepare Audit result
     const auditResult = {
       detectedTags,
       sourceS3Folder: `${bucketName}/${prefix}`,
-      fullAuditRef: 'na',
       finalUrl: auditContext.finalUrl,
+      projectedTraffic,
     };
     const auditData = {
       siteId: site.getId(),
       isLive: site.getIsLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
-      fullAuditRef: auditResult?.fullAuditRef,
       auditResult,
     };
     // Persist Audit result
