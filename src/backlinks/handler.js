@@ -13,8 +13,11 @@
 import { composeAuditURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
+import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { getScrapedDataForSiteId } from '../support/utils.js';
+import { backlinksSuggestionPrompt, brokenBacklinksPrompt } from '../support/prompts/backlinks.js';
 
 const TIMEOUT = 3000;
 
@@ -91,6 +94,61 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
   }
 }
 
+const generateSuggestionData = async (auditData, site, context) => {
+  const { log } = context;
+  const firefallClient = FirefallClient.createFrom(context);
+
+  const BATCH_SIZE = 300;
+  const data = await getScrapedDataForSiteId(site, context);
+  const totalBatches = Math.ceil(data.siteData.length / BATCH_SIZE);
+  log.info(`Processing ${data.siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
+
+  const dataBatches = [];
+  for (let i = 0; i < data.siteData.length; i += BATCH_SIZE) {
+    dataBatches.push(data.siteData.slice(i, i + BATCH_SIZE));
+  }
+
+  const headerSuggestionsResults = await Promise.all(
+    auditData.auditResult.brokenBacklinks.map(async (backlink) => {
+      const requestBody = brokenBacklinksPrompt(data.headerLinks, backlink.url_to);
+      const response = await firefallClient.fetch(requestBody);
+      log.info(`Found header suggestions: ${response}`);
+      return JSON.parse(response);
+    }),
+  );
+
+  return Promise.all(
+    auditData.auditResult.brokenBacklinks.map(async (backlink, index) => {
+      log.info(`Trying to find redirect for: ${backlink.url_to}`);
+      const suggestions = [];
+
+      const batchResults = await Promise.all(
+        dataBatches.map(async (batch, batchIndex) => {
+          log.info(`Processing batch ${batchIndex + 1}/${totalBatches}...`);
+          const requestBody = brokenBacklinksPrompt(batch, backlink.url_to);
+          const response = await firefallClient.fetch(requestBody);
+          log.info(`Found suggestions: ${response}`);
+          return JSON.parse(response);
+        }),
+      );
+      suggestions.push(...batchResults);
+
+      log.info(`Evaluating final suggestions for: ${backlink.url_to}`);
+      const finalRequestBody = backlinksSuggestionPrompt(
+        backlink.url_to,
+        suggestions,
+        headerSuggestionsResults[index],
+      );
+      const finalResponse = await firefallClient.fetch(finalRequestBody);
+      const finalSuggestion = JSON.parse(finalResponse);
+
+      const newBacklink = { ...backlink };
+      newBacklink.urls_suggested = finalSuggestion.suggested_urls || [];
+      return newBacklink;
+    }),
+  );
+};
+
 export const convertToOpportunity = async (auditUrl, auditData, context) => {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
@@ -143,6 +201,7 @@ export const convertToOpportunity = async (auditUrl, auditData, context) => {
         title: backlink.title,
         url_from: backlink.url_from,
         url_to: backlink.url_to,
+        urls_suggested: backlink.urls_suggested || [],
         traffic_domain: backlink.traffic_domain,
       },
     }),
@@ -153,5 +212,5 @@ export const convertToOpportunity = async (auditUrl, auditData, context) => {
 export default new AuditBuilder()
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL()))
   .withRunner(brokenBacklinksAuditRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([generateSuggestionData, convertToOpportunity])
   .build();

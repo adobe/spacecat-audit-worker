@@ -19,6 +19,7 @@ import {
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 URI.preventInvalidHostname = true;
 
@@ -174,3 +175,115 @@ export async function getRUMDomainkey(baseURL, context) {
     throw new Error(`Error retrieving the domain key for ${baseURL}. Error: ${error.message}`);
   }
 }
+
+const getFileContentFromS3 = async (s3Client, bucket, key) => {
+  const getCommand = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key,
+  });
+  const data = await s3Client.send(getCommand);
+  const content = await data.Body.transformToString();
+  return JSON.parse(content);
+};
+
+export const extractScrapedMetadataFromJson = (data, log) => {
+  try {
+    log.info(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
+    const finalUrl = data.finalUrl || '';
+    const title = data.scrapeResult.tags?.title || '';
+    const description = data.scrapeResult.tags?.description || '';
+    const h1Tags = data.scrapeResult.tags?.h1 || [];
+    const h1Tag = h1Tags.length > 0 ? h1Tags[0] : '';
+
+    return {
+      url: finalUrl,
+      title,
+      description,
+      h1: h1Tag,
+    };
+  } catch (error) {
+    log.error('Error extracting data:', error);
+    return null;
+  }
+};
+
+// eslint-disable-next-line no-underscore-dangle
+const _extractLinksFromHeader = (rawHtml, baseUrl) => {
+  const dom = new JSDOM(rawHtml);
+  const { document } = dom.window;
+
+  const header = document.querySelector('header');
+  if (!header) {
+    return [];
+  }
+
+  const links = [];
+  header.querySelectorAll('a[href]').forEach((aTag) => {
+    const href = aTag.getAttribute('href');
+    const fullUrl = new URL(href, baseUrl).href;
+    links.push(fullUrl);
+  });
+
+  return links;
+};
+
+export const getScrapedDataForSiteId = async (site, context) => {
+  const { s3Client, env, log } = context;
+  const siteId = site.getId();
+
+  let allFiles = [];
+  let isTruncated = true;
+  let continuationToken = null;
+
+  async function fetchFiles() {
+    const listCommand = new ListObjectsV2Command({
+      Bucket: env.S3_SCRAPER_BUCKET_NAME,
+      Prefix: `scrapes/${siteId}`,
+      ContinuationToken: continuationToken,
+    });
+
+    const listResponse = await s3Client.send(listCommand);
+    allFiles = allFiles.concat(listResponse.Contents);
+    isTruncated = listResponse.IsTruncated;
+    continuationToken = listResponse.NextContinuationToken;
+
+    if (isTruncated) {
+      await fetchFiles();
+    }
+  }
+
+  await fetchFiles();
+
+  if (allFiles.length === 0) {
+    return {
+      headerLinks: [],
+      siteData: [],
+    };
+  }
+
+  const extractedData = await Promise.all(
+    allFiles.map(async (file) => {
+      const fileContent = await getFileContentFromS3(
+        s3Client,
+        env.S3_SCRAPER_BUCKET_NAME,
+        file.Key,
+      );
+      const jsonData = extractScrapedMetadataFromJson(fileContent, log);
+
+      return jsonData || null;
+    }),
+  );
+
+  const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
+  const indexFileContent = await getFileContentFromS3(
+    s3Client,
+    env.S3_SCRAPER_BUCKET_NAME,
+    indexFile.Key,
+  );
+  const headerLinks = _extractLinksFromHeader(indexFileContent, site.getBaseURL());
+
+  return {
+    headerLinks,
+    siteData: extractedData.filter(Boolean),
+  };
+};

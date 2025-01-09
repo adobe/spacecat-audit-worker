@@ -132,15 +132,15 @@ export class Audit {
       await this.messageSender(resultMessage, context);
       // add auditId for the post-processing
       auditData.id = audit.getId();
-      for (const postProcessor of this.postProcessors) {
+      await this.postProcessors.reduce(async (promise, postProcessor) => {
+        await promise;
         try {
-          // eslint-disable-next-line no-await-in-loop
           await postProcessor(finalUrl, auditData, context, site);
         } catch (e) {
           log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(auditData)}`);
           throw e;
         }
-      }
+      }, Promise.resolve());
 
       return ok();
     } catch (e) {
