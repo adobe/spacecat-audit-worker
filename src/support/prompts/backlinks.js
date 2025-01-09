@@ -26,49 +26,14 @@ const userRequest = (brokenUrl) => (`For the broken URL ${brokenUrl}, suggest up
   + 'If no suitable match exists, return an empty array for "suggested_urls". '
   + 'If only 1 or 2 suitable URLs exist, return only those.');
 
-export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => JSON.stringify({
-  messages: [
-    {
-      role: 'system',
-      content: systemContentBase,
-    },
-    {
-      role: 'system',
-      content: jsonFormatContent,
-    },
-    {
-      role: 'system',
-      content: `List of alternative URLs: ${JSON.stringify(alternativeURLs)}`,
-    },
-    {
-      role: 'user',
-      content: userRequest(brokenUrl),
-    },
-  ],
-});
+export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => (
+  `${systemContentBase} ${jsonFormatContent}. `
+  + `List of alternative URLs: ${JSON.stringify(alternativeURLs)} ${userRequest(brokenUrl)}`
+);
 
-export const backlinksSuggestionPrompt = (brokenUrl, suggestedUrls, headerLinks) => JSON.stringify({
-  messages: [
-    {
-      role: 'system',
-      content: `${systemContentBase} The provided list consists of suggestions from previous requests. `
-        + 'You are supposed to take up to 3 suggestions from the list.',
-    },
-    {
-      role: 'system',
-      content: jsonFormatContent,
-    },
-    {
-      role: 'system',
-      content: `List of suggested URLs: ${JSON.stringify(suggestedUrls)}`,
-    },
-    {
-      role: 'system',
-      content: `List of URLs from the menu, navigation and footer or breadcrumbs: 'header_links': ${JSON.stringify(headerLinks)}`,
-    },
-    {
-      role: 'user',
-      content: userRequest(brokenUrl),
-    },
-  ],
-});
+export const backlinksSuggestionPrompt = (brokenUrl, suggestedUrls, headerLinks) => (
+  `${systemContentBase} The provided list consists of suggestions from previous requests. `
+  + `You are supposed to take up to 3 suggestions from the list. ${jsonFormatContent}. `
+  + `List of suggested URLs: ${JSON.stringify(suggestedUrls)}. `
+  + `List of URLs from the menu, navigation and footer or breadcrumbs: 'header_links': ${JSON.stringify(headerLinks)}. ${userRequest(brokenUrl)}`
+);

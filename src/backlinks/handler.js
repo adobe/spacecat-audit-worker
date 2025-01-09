@@ -95,7 +95,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
 }
 
 const generateSuggestionData = async (finalUrl, auditData, context, site) => {
-  const { dataAccess, log } = context;
+  const { dataAccess, env, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
@@ -106,6 +106,10 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   log.info(`Generating suggestions for site ${finalUrl}`);
 
   const firefallClient = FirefallClient.createFrom(context);
+  const firefallOptions = {
+    responseFormat: 'json_object',
+    model: env.FIREFALL_MODEL,
+  };
 
   const BATCH_SIZE = 300;
   const data = await getScrapedDataForSiteId(site, context);
@@ -120,7 +124,7 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const headerSuggestionsResults = await Promise.all(
     auditData.auditResult.brokenBacklinks.map(async (backlink) => {
       const requestBody = brokenBacklinksPrompt(data.headerLinks, backlink.url_to);
-      const response = await firefallClient.fetch(requestBody);
+      const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
       log.info(`Found header suggestions: ${response}`);
       return JSON.parse(response);
     }),
@@ -130,13 +134,12 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
     auditData.auditResult.brokenBacklinks.map(async (backlink, index) => {
       log.info(`Trying to find redirect for: ${backlink.url_to}`);
       const suggestions = [];
-
       const batchResults = await Promise.all(
         dataBatches.map(async (batch, batchIndex) => {
           log.info(`Processing batch ${batchIndex + 1}/${totalBatches}...`);
           log.info(`URLS: ${batch} ${JSON.stringify(batch)}`);
           const requestBody = brokenBacklinksPrompt(batch, backlink.url_to);
-          const response = await firefallClient.fetch(requestBody);
+          const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
           log.info(`Found suggestions: ${response}`);
           return JSON.parse(response);
         }),
@@ -149,7 +152,10 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
         suggestions,
         headerSuggestionsResults[index],
       );
-      const finalResponse = await firefallClient.fetch(finalRequestBody);
+      const finalResponse = await firefallClient.fetchChatCompletion(
+        finalRequestBody,
+        firefallOptions,
+      );
       const finalSuggestion = JSON.parse(finalResponse);
 
       const newBacklink = { ...backlink };
