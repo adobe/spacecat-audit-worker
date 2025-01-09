@@ -44,12 +44,15 @@ function extractEndpoint(url) {
 }
 
 // Preprocess data into a map with endpoint as the key
-function preprocessRumData(rumTrafficData) {
+function preprocessRumData(rumTrafficData, log) {
   const dataMap = new Map();
+  let urls = '';
   rumTrafficData.forEach((item) => {
     const endpoint = extractEndpoint(item.url);
+    urls += `${endpoint}, `;
     dataMap.set(endpoint, item);
   });
+  log.info(`Rum data urls: ${urls}`);
   return dataMap;
 }
 
@@ -131,7 +134,7 @@ export default async function auditMetaTags(message, context) {
       granularity: 'hourly',
     };
     const queryResults = await rumAPIClient.query('traffic-acquisition', options);
-    const rumTrafficDataMap = preprocessRumData(queryResults);
+    const rumTrafficDataMap = preprocessRumData(queryResults, log);
     let projectedTraffic = 0;
     const detectedTags = seoChecks.getDetectedTags();
     Object.keys(detectedTags).forEach((endpoint) => {
