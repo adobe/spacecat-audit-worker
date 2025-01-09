@@ -14,10 +14,13 @@ import {
   internalServerError, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL } from '@adobe/spacecat-shared-utils';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import syncOpportunityAndSuggestions from './opportunityHandler.js';
+import { getRUMDomainkey } from '../support/utils.js';
+import { wwwUrlResolver } from '../common/audit.js';
 
 async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -88,6 +91,16 @@ export default async function auditMetaTags(message, context) {
       seoChecks.performChecks(pageUrl || '/', pageTags);
     }
     seoChecks.finalChecks();
+    const rumAPIClient = RUMAPIClient.createFrom(context);
+    const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
+    const options = {
+      domain: wwwUrlResolver(site),
+      domainkey,
+      interval: 7,
+      granularity: 'hourly',
+    };
+    const queryResults = await rumAPIClient.queryMulti('traffic-acquisition', options);
+    log.info(`Traffic acquisition data: ${JSON.stringify(queryResults)}`);
     const detectedTags = seoChecks.getDetectedTags();
     // Prepare Audit result
     const auditResult = {
