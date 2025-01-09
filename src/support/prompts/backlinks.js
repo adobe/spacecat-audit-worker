@@ -37,7 +37,7 @@ export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => JSON.string
     },
     {
       role: 'system',
-      content: `List of alternative URLs: ${alternativeURLs}`,
+      content: `List of alternative URLs: ${JSON.stringify(alternativeURLs)}`,
     },
     {
       role: 'user',
