@@ -11,15 +11,19 @@
  */
 
 const systemContentBase = 'You are tasked with identifying a suitable alternative URL for a broken backlink. '
-  + 'You are an expert SEO consultant. Your goal is to suggest a new URL from the same website that closely matches the original intent of the broken link. '
-  + 'Focus on finding a URL that semantically aligns with the keywords in the broken link. '
-  + 'Important: Redirecting users to a related category page or the main page is preferable to redirecting them to a page that is not a direct alternative. '
-  + 'Avoid selecting URLs that are unrelated to the original content. IMPORTANT: THE SUGGESTED URL MUST BE FROM THE PROVIDED LIST.';
+  + 'You are an expert SEO consultant. Your goal is to suggest new URLs from the provided list that closely match the original intent of the broken link. '
+  + 'You must strictly adhere to the provided list of alternative URLs. '
+  + 'Under no circumstances should you suggest URLs not present in the provided list. '
+  + 'If no suitable URLs are found in the list, return an empty array for "suggested_urls". '
+  + 'If fewer than 3 suitable URLs are available, return only the appropriate number (1 or 2).';
 
-const jsonFormatContent = 'You have to provide the output in the following Format, where suggestedUrls is the top 3 suggestions. '
-  + 'The confidence_score should be a number between 1-100 that reflects the percentage of how likely this url matches the broken url: '
-  + 'IT SHOULD BE VALID JSON. RETURN JUST THE JSON OBJECT AND NO OTHER FORMATTING! '
-  + '{ "broken_url": "string", "suggested_urls": ["string"], "ai_rationale": "string", "confidence_score": number }';
+const jsonFormatContent = 'Your response must be valid JSON with the following structure: '
+  + '{ "broken_url": "string", "suggested_urls": ["string"], "ai_rationale": "string", "confidence_score": number }. '
+  + 'Ensure that all suggested URLs are present in the provided list.';
+
+const userRequest = (brokenUrl) => (`For the broken URL ${brokenUrl}, suggest up to 3 alternative URLs strictly from the provided list. `
+  + 'If no suitable match exists, return an empty array for "suggested_urls". '
+  + 'If only 1 or 2 suitable URLs exist, return only those.');
 
 export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => JSON.stringify({
   messages: [
@@ -33,11 +37,11 @@ export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => JSON.string
     },
     {
       role: 'system',
-      content: `Retrieved Information: **List of alternative URLs**: ${alternativeURLs}`,
+      content: `List of alternative URLs: ${alternativeURLs}`,
     },
     {
       role: 'user',
-      content: `What is your proposal for the following broken URL. I ONLY WANT RESULTS FROM THE PROVIDED ALTERNATIVE URLs LIST: ${brokenUrl}`,
+      content: userRequest(brokenUrl),
     },
   ],
 });
@@ -47,7 +51,7 @@ export const backlinksSuggestionPrompt = (brokenUrl, suggestedUrls, headerLinks)
     {
       role: 'system',
       content: `${systemContentBase} The provided list consists of suggestions from previous requests. `
-        + 'You are supposed to take the best 3 suggestions from the list.',
+        + 'You are supposed to take up to 3 suggestions from the list.',
     },
     {
       role: 'system',
@@ -55,15 +59,15 @@ export const backlinksSuggestionPrompt = (brokenUrl, suggestedUrls, headerLinks)
     },
     {
       role: 'system',
-      content: `**List of suggested URLs**: ${JSON.stringify(suggestedUrls)}`,
+      content: `List of suggested URLs: ${JSON.stringify(suggestedUrls)}`,
     },
     {
       role: 'system',
-      content: `**List of URLs from the menu, navigation and footer or breadcrumbs**: 'header_links': ${JSON.stringify(headerLinks)}`,
+      content: `List of URLs from the menu, navigation and footer or breadcrumbs: 'header_links': ${JSON.stringify(headerLinks)}`,
     },
     {
       role: 'user',
-      content: `What is your proposal for the following broken URL. I ONLY WANT RESULTS FROM THE PROVIDED ALTERNATIVE URLs LIST: ${brokenUrl}`,
+      content: userRequest(brokenUrl),
     },
   ],
 });

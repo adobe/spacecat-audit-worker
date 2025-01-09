@@ -134,6 +134,7 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
       const batchResults = await Promise.all(
         dataBatches.map(async (batch, batchIndex) => {
           log.info(`Processing batch ${batchIndex + 1}/${totalBatches}...`);
+          log.info(`URLS: ${batch} ${JSON.stringify(batch)}`);
           const requestBody = brokenBacklinksPrompt(batch, backlink.url_to);
           const response = await firefallClient.fetch(requestBody);
           log.info(`Found suggestions: ${response}`);
