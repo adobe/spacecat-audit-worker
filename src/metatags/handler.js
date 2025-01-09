@@ -137,7 +137,7 @@ export default async function auditMetaTags(message, context) {
     Object.keys(detectedTags).forEach((endpoint) => {
       const organicTraffic = getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
       Object.keys((detectedTags[endpoint])).forEach((tag) => {
-        if (detectedTags[endpoint][tag]?.issue?.contains('Missing')) {
+        if (detectedTags[endpoint][tag]?.issue?.includes('Missing')) {
           projectedTraffic += organicTraffic * 0.01;
         } else {
           projectedTraffic += organicTraffic * 0.005;
