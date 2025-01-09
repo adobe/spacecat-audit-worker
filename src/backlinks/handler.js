@@ -126,7 +126,7 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
     }),
   );
 
-  return Promise.all(
+  const promises = await Promise.all(
     auditData.auditResult.brokenBacklinks.map(async (backlink, index) => {
       log.info(`Trying to find redirect for: ${backlink.url_to}`);
       const suggestions = [];
@@ -156,6 +156,15 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
       return newBacklink;
     }),
   );
+  // TODO maybe add verification step to check if the suggested URLs are valid (return 200)
+
+  log.info(`Suggestions generated successfully: ${promises}`);
+  return {
+    ...auditData,
+    auditResult: {
+      brokenBacklinks: promises,
+    },
+  };
 };
 
 export const convertToOpportunity = async (auditUrl, auditData, context) => {

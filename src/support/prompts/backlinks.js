@@ -37,7 +37,7 @@ export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => JSON.string
     },
     {
       role: 'user',
-      content: `What is your proposal for the following broken URL: ${brokenUrl}`,
+      content: `What is your proposal for the following broken URL. I ONLY WANT RESULTS FROM THE PROVIDED ALTERNATIVE URLs LIST: ${brokenUrl}`,
     },
   ],
 });
@@ -63,7 +63,7 @@ export const backlinksSuggestionPrompt = (brokenUrl, suggestedUrls, headerLinks)
     },
     {
       role: 'user',
-      content: `What is your proposal for the following broken URL: ${brokenUrl}`,
+      content: `What is your proposal for the following broken URL. I ONLY WANT RESULTS FROM THE PROVIDED ALTERNATIVE URLs LIST: ${brokenUrl}`,
     },
   ],
 });
