@@ -38,6 +38,9 @@ export class MockContextBuilder {
       Site: {
         findById: this.sandbox.stub(),
       },
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: this.sandbox.stub(),
+      },
       Organization: {
         findById: this.sandbox.stub(),
       },

@@ -10,18 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import {
-  internalServerError, noContent, notFound, ok,
-} from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
-import { retrieveSiteBySiteId, syncSuggestions } from '../utils/data-access.js';
-import { enhanceBacklinksWithFixes } from '../support/utils.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { AuditBuilder } from '../common/audit-builder.js';
 
 const TIMEOUT = 3000;
 
-export async function filterOutValidBacklinks(backlinks, log) {
+async function filterOutValidBacklinks(backlinks, log) {
   const fetchWithTimeout = async (url, timeout) => {
     const controller = new AbortController();
     const { signal } = controller;
@@ -60,163 +57,101 @@ export async function filterOutValidBacklinks(backlinks, log) {
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
-export default async function auditBrokenBacklinks(message, context) {
-  const { type, siteId, auditContext = {} } = message;
-  const { dataAccess, log, sqs } = context;
-  const {
-    Audit, Configuration, Opportunity, SiteTopPage,
-  } = dataAccess;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
+export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
+  const { log } = context;
+  const siteId = site.getId();
+
   try {
-    const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
-    if (!site) {
-      return notFound('Site not found');
-    }
-    if (!site.getIsLive()) {
-      log.info(`Site ${siteId} is not live`);
-      return ok();
-    }
-    const configuration = await Configuration.findLatest();
-    if (!configuration.isHandlerEnabledForSite(type, site)) {
-      log.info(`Audit type ${type} disabled for site ${siteId}`);
-      return ok();
-    }
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    try {
-      auditContext.finalUrl = await composeAuditURL(site.getBaseURL());
-    } catch (e) {
-      log.error(`Get final URL for siteId ${siteId} failed with error: ${e.message}`, e);
-      return internalServerError(`Internal server error: ${e.message}`);
-    }
-    let auditResult;
-    try {
-      const {
-        result,
-        fullAuditRef,
-      } = await ahrefsAPIClient.getBrokenBacklinks(auditContext.finalUrl);
-      log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditContext.finalUrl}`);
-      const excludedURLs = site.getConfig().getExcludedURLs(type);
-      const filteredBacklinks = result?.backlinks?.filter(
-        (backlink) => !excludedURLs?.includes(backlink.url_to),
-      );
-      let brokenBacklinks = await filterOutValidBacklinks(filteredBacklinks, log);
+    const {
+      result,
+      fullAuditRef,
+    } = await ahrefsAPIClient.getBrokenBacklinks(auditUrl);
+    log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
+    const excludedURLs = site.getConfig().getExcludedURLs('broken-backlinks');
+    const filteredBacklinks = result?.backlinks?.filter(
+      (backlink) => !excludedURLs?.includes(backlink.url_to),
+    );
 
-      if (configuration.isHandlerEnabledForSite(`${type}-auto-suggest`, site)) {
-        try {
-          const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-          const keywords = topPages.map(
-            (page) => ({
-              url: page.getUrl(),
-              keyword: page.getTopKeyword(),
-              traffic: page.getTraffic(),
-            }),
-          );
-          brokenBacklinks = enhanceBacklinksWithFixes(brokenBacklinks, keywords, log);
-        } catch (e) {
-          log.error(`Enhancing backlinks with fixes for siteId ${siteId} failed with error: ${e.message}`, e);
-        }
-      }
-
-      auditResult = {
-        finalUrl: auditContext.finalUrl,
-        brokenBacklinks,
-        fullAuditRef,
-      };
-    } catch (e) {
-      log.error(`${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error: ${e.message}`, e);
-      auditResult = {
-        finalUrl: auditContext.finalUrl,
-        error: `${type} type audit for ${siteId} with url ${auditContext.finalUrl} failed with error`,
-      };
-    }
-    const auditData = {
-      siteId: site.getId(),
-      isLive: site.getIsLive(),
-      auditedAt: new Date().toISOString(),
-      auditType: type,
-      fullAuditRef: auditResult?.fullAuditRef,
-      auditResult,
+    return {
+      fullAuditRef,
+      auditResult: {
+        brokenBacklinks: await filterOutValidBacklinks(filteredBacklinks, log),
+      },
     };
-
-    const audit = await Audit.create(auditData);
-    const result = {
-      type,
-      url: site.getBaseURL(),
-      auditContext,
-      auditResult,
-    };
-
-    let brokenBacklinksOppty;
-
-    try {
-      const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-      brokenBacklinksOppty = opportunities.find((oppty) => oppty.getType() === 'broken-backlinks');
-    } catch (e) {
-      log.error(`Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
-      return internalServerError(`Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
-    }
-
-    try {
-      if (!brokenBacklinksOppty) {
-        const opportunityData = {
-          siteId: site.getId(),
-          auditId: audit.getId(),
-          runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BAC174971-BA97-44A9-9560-90BE6C7CF789%7D&file=Experience_Success_Studio_Broken_Backlinks_Runbook.docx&action=default&mobileredirect=true',
-          type: 'broken-backlinks',
-          origin: 'AUTOMATION',
-          title: 'Authoritative Domains are linking to invalid URLs. This could impact your SEO.',
-          description: 'Provide the correct target URL that each of the broken backlinks should be redirected to.',
-          guidance: {
-            steps: [
-              'Review the list of broken target URLs and the suggested redirects.',
-              'Manually override redirect URLs as needed.',
-              'Copy redirects.',
-              'Paste new entries in your website redirects file.',
-              'Publish the changes.',
-            ],
-          },
-          tags: ['Traffic acquisition'],
-        };
-
-        brokenBacklinksOppty = await Opportunity.create(opportunityData);
-      } else {
-        brokenBacklinksOppty.setAuditId(audit.getId());
-        await brokenBacklinksOppty.save();
-      }
-    } catch (e) {
-      log.error(`Creating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
-      return internalServerError(`Failed to create opportunity for siteId ${siteId}: ${e.message}`);
-    }
-
-    if (!result.auditResult.error) {
-      const buildKey = (data) => `${data.url_from}|${data.url_to}`;
-
-      await syncSuggestions({
-        opportunity: brokenBacklinksOppty,
-        newData: result.auditResult.brokenBacklinks,
-        buildKey,
-        mapNewSuggestion: (backlink) => ({
-          opportunityId: brokenBacklinksOppty.getId(),
-          type: 'REDIRECT_UPDATE',
-          rank: backlink.traffic_domain,
-          data: {
-            title: backlink.title,
-            url_from: backlink.url_from,
-            url_to: backlink.url_to,
-            traffic_domain: backlink.traffic_domain,
-          },
-        }),
-        log,
-      });
-    }
-    await sqs.sendMessage(queueUrl, result);
-
-    log.info(`Successfully audited ${siteId} for ${type} type audit`);
-    return noContent();
   } catch (e) {
-    log.error(`${type} type audit for ${siteId} failed with error: ${e.message}`, e);
-    return internalServerError(`Internal server error: ${e.message}`);
+    log.error(`Broken Backlinks audit for ${siteId} with url ${auditUrl} failed with error: ${e.message}`, e);
+    return {
+      fullAuditRef: auditUrl,
+      auditResult: {
+        error: `Broken Backlinks audit for ${siteId} with url ${auditUrl} failed with error: ${e.message}`,
+        success: false,
+      },
+    };
   }
 }
+
+export const convertToOpportunity = async (auditUrl, auditData, context) => {
+  const { dataAccess, log } = context;
+  const { Opportunity } = dataAccess;
+
+  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  let opportunity = opportunities.find((oppty) => oppty.getType() === 'broken-backlinks');
+
+  if (!opportunity) {
+    const opportunityData = {
+      siteId: auditData.siteId,
+      auditId: auditData.id,
+      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BAC174971-BA97-44A9-9560-90BE6C7CF789%7D&file=Experience_Success_Studio_Broken_Backlinks_Runbook.docx&action=default&mobileredirect=true',
+      type: 'broken-backlinks',
+      origin: 'AUTOMATION',
+      title: 'Authoritative Domains are linking to invalid URLs. This could impact your SEO.',
+      description: 'Provide the correct target URL that each of the broken backlinks should be redirected to.',
+      guidance: {
+        steps: [
+          'Review the list of broken target URLs and the suggested redirects.',
+          'Manually override redirect URLs as needed.',
+          'Copy redirects.',
+          'Paste new entries in your website redirects file.',
+          'Publish the changes.',
+        ],
+      },
+      tags: ['Traffic acquisition'],
+    };
+    try {
+      opportunity = await Opportunity.create(opportunityData);
+    } catch (e) {
+      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
+      throw e;
+    }
+  } else {
+    opportunity.setAuditId(auditData.id);
+    await opportunity.save();
+  }
+
+  const buildKey = (data) => `${data.url_from}|${data.url_to}`;
+
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.auditResult.brokenBacklinks,
+    buildKey,
+    mapNewSuggestion: (backlink) => ({
+      opportunityId: opportunity.getId(),
+      type: 'REDIRECT_UPDATE',
+      rank: backlink.traffic_domain,
+      data: {
+        title: backlink.title,
+        url_from: backlink.url_from,
+        url_to: backlink.url_to,
+        traffic_domain: backlink.traffic_domain,
+      },
+    }),
+    log,
+  });
+};
+
+export default new AuditBuilder()
+  .withUrlResolver((site) => composeAuditURL(site.getBaseURL()))
+  .withRunner(brokenBacklinksAuditRunner)
+  .withPostProcessors([convertToOpportunity])
+  .build();
