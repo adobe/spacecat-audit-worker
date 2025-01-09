@@ -94,7 +94,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
   }
 }
 
-const generateSuggestionData = async (auditData, site, context) => {
+const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
@@ -102,6 +102,8 @@ const generateSuggestionData = async (auditData, site, context) => {
     log.info('Auto-suggest is disabled for site');
     return { ...auditData };
   }
+
+  log.info(`Generating suggestions for site ${finalUrl}`);
 
   const firefallClient = FirefallClient.createFrom(context);
 
