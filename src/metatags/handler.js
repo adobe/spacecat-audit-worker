@@ -54,13 +54,14 @@ function preprocessRumData(rumTrafficData) {
 }
 
 // Get organic traffic for a given endpoint
-function getOrganicTrafficForEndpoint(endpoint, dataMap) {
+function getOrganicTrafficForEndpoint(endpoint, dataMap, log) {
   if (endpoint === '/') {
     // eslint-disable-next-line no-param-reassign
     endpoint = '';
   }
   const target = dataMap.get(endpoint);
   if (!target) {
+    log.warn(`No rum data found for ${endpoint}`);
     return 0;
   }
   return target.sources
