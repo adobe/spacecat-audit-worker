@@ -135,7 +135,14 @@ export default async function auditMetaTags(message, context) {
     let projectedTraffic = 0;
     const detectedTags = seoChecks.getDetectedTags();
     Object.keys(detectedTags).forEach((endpoint) => {
-      projectedTraffic += getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
+      const organicTraffic = getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
+      Object.keys((detectedTags[endpoint])).forEach((tag) => {
+        if (detectedTags[endpoint][tag]?.issue?.contains('Missing')) {
+          projectedTraffic += organicTraffic * 0.01;
+        } else {
+          projectedTraffic += organicTraffic * 0.005;
+        }
+      });
     });
     // Prepare Audit result
     const auditResult = {
