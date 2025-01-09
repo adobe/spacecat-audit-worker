@@ -19,6 +19,7 @@ const systemContentBase = 'You are tasked with identifying a suitable alternativ
 
 const jsonFormatContent = 'Your response must be valid JSON with the following structure: '
   + '{ "broken_url": "string", "suggested_urls": ["string"], "ai_rationale": "string", "confidence_score": number }. '
+  + 'IMPORTANT: RETURN ONLY THE JSON OBJECT. DO NOT ADD ANY EXPLANATION, TEXT, OR FORMATTING OUTSIDE OF THE JSON OBJECT.'
   + 'Ensure that all suggested URLs are present in the provided list.';
 
 const userRequest = (brokenUrl) => (`For the broken URL ${brokenUrl}, suggest up to 3 alternative URLs strictly from the provided list. `
