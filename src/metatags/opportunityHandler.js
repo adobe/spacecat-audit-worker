@@ -139,21 +139,10 @@ function getIssueRanking(tagName, issue) {
   return -1;
 }
 
-// /**
-//  * Updates Meta-tags Opportunity and Suggestions collection with new audit results
-//  * @param siteId site id of site being audited
-//  * @param auditId audit id of the latest performed audit
-//  * @param auditData object containing audit results and some metadata
-//  * @param auditUrl - The URL of the audit
-//  * @param dataAccess object containing accessor objects
-//  * @param log logger
-//  * @returns {Promise<void>}
-//  */
-
 /**
  * @param auditUrl - The URL of the audit
  * @param auditData - The audit data containing the audit result and additional details.
- * @param context
+ * @param context - The context object containing the data access and logger objects.
  */
 export default async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
