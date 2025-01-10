@@ -124,8 +124,8 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
     auditData.auditResult.brokenBacklinks.map(async (backlink) => {
       const requestBody = brokenBacklinksPrompt(data.headerLinks, backlink.url_to);
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
-      log.info(`Found header suggestions: ${response}`);
-      return JSON.parse(response);
+      log.info(`Found header suggestions: ${JSON.stringify(response)}`);
+      return response;
     }),
   );
 
@@ -139,8 +139,8 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
           log.info(`URLS: ${batch} ${JSON.stringify(batch)}`);
           const requestBody = brokenBacklinksPrompt(batch, backlink.url_to);
           const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
-          log.info(`Found suggestions: ${response}`);
-          return JSON.parse(response);
+          log.info(`Found suggestions: ${JSON.parse(response)}`);
+          return response;
         }),
       );
       suggestions.push(...batchResults);
@@ -155,7 +155,8 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
         finalRequestBody,
         firefallOptions,
       );
-      const finalSuggestion = JSON.parse(finalResponse);
+      log.info(`Final suggestions: ${JSON.stringify(finalResponse)}`);
+      const finalSuggestion = finalResponse;
 
       const newBacklink = { ...backlink };
       newBacklink.urls_suggested = finalSuggestion.suggested_urls || [];
