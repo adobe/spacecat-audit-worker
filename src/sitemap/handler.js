@@ -355,7 +355,7 @@ export async function findSitemap(inputUrl) {
     return {
       success: true,
       reasons: [{ value: 'Sitemaps found and checked.' }],
-      paths: extractedPaths,
+      // paths: extractedPaths,
       url: inputUrl,
       details: { issues: notOkPagesFromSitemap },
     };
