@@ -68,7 +68,7 @@ function getOrganicTrafficForEndpoint(endpoint, dataMap, log) {
     return 0;
   }
   return target.sources
-    .filter((source) => source.type.startsWith('earned:search'))
+    .filter((source) => source.type.startsWith('earned:'))
     .reduce((sum, source) => sum + source.views, 0);
 }
 
