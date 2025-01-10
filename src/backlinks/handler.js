@@ -95,7 +95,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
 }
 
 const generateSuggestionData = async (finalUrl, auditData, context, site) => {
-  const { dataAccess, env, log } = context;
+  const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
@@ -108,7 +108,6 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const firefallClient = FirefallClient.createFrom(context);
   const firefallOptions = {
     responseFormat: 'json_object',
-    model: env.FIREFALL_MODEL,
   };
 
   const BATCH_SIZE = 300;
