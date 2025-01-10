@@ -16,7 +16,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import convertToOpportunity from './opportunityHandler.js';
 
-async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
+export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`No Scraped tags found in S3 ${key} object`);
