@@ -523,9 +523,6 @@ describe('Meta Tags', () => {
     it('should handle gracefully if S3 object has no rawbody', async () => {
       const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') }];
 
-      dataAccessStub.Configuration.findLatest.resolves({
-        isHandlerEnabledForSite: sinon.stub().returns(true),
-      });
       dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
 
       s3ClientStub.send
@@ -554,6 +551,7 @@ describe('Meta Tags', () => {
       dataAccessStub.addAudit = addAuditStub;
 
       auditMetaTagsRunner('http://example.com', { log: sinon.stub(), s3Client: s3ClientStub }, { getId: () => 'site-id' });
+      fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page1/scrape.json', 'scrapes/site-id/', sinon.stub());
 
       expect(addAuditStub.calledOnce).to.be.false;
     });
