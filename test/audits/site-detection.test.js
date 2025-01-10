@@ -92,7 +92,7 @@ describe('site-detection runner tests', () => {
       .post('/api/v1/dataprime/query')
       .reply(200, 'asd');
 
-    await expect(siteDetectionRunner('', context)).to.be.rejectedWith('Unexpected token a in JSON at position 0');
+    await expect(siteDetectionRunner('', context)).to.be.rejectedWith('Unexpected token \'a\', "asd" is not valid JSON');
   });
 
   it('valid coralogix response two sites re-fed, one successful', async () => {
