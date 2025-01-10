@@ -12,7 +12,7 @@
 
 import { TITLE, DESCRIPTION, H1 } from './constants.js';
 
-function removeTrailingSlash(url) {
+export function removeTrailingSlash(url) {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 

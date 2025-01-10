@@ -33,7 +33,7 @@ import {
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import testData from '../fixtures/meta-tags-data.js';
-import convertToOpportunity from '../../src/metatags/opportunityHandler.js';
+import convertToOpportunity, { removeTrailingSlash } from '../../src/metatags/opportunityHandler.js';
 import { auditMetaTagsRunner, fetchAndProcessPageObject } from '../../src/metatags/handler.js';
 
 use(sinonChai);
@@ -235,6 +235,7 @@ describe('Meta Tags', () => {
         { getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') },
         { getURL: 'http://example.com/blog/page3', getTopKeyword: sinon.stub().returns('') },
+        { getURL: 'http://example.com/', getTopKeyword: sinon.stub().returns('Home') },
       ];
       dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
       s3ClientStub.send
@@ -248,6 +249,7 @@ describe('Meta Tags', () => {
             { Key: 'scrapes/site-id/blog/page1/scrape.json' },
             { Key: 'scrapes/site-id/blog/page2/scrape.json' },
             { Key: 'scrapes/site-id/blog/page3/scrape.json' },
+            { Key: 'scrapes/site-id/scrape.json' },
           ],
         });
 
@@ -294,7 +296,22 @@ describe('Meta Tags', () => {
         }))).returns({
           Body: {
             transformToString: () => JSON.stringify({
+            }),
+          },
+          ContentType: 'application/json',
+        });
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Key: 'scrapes/site-id/scrape.json',
+        }))).returns({
+          Body: {
+            transformToString: () => JSON.stringify({
               scrapeResult: {
+                tags: {
+                  title: 'Home Page',
+                  description: 'Home page description',
+                },
               },
             }),
           },
@@ -358,6 +375,28 @@ describe('Meta Tags', () => {
             issue: 'H1 too long',
             issueDetails: '17 chars over limit',
             seoRecommendation: 'Below 70 characters',
+          },
+        },
+        '/': {
+          title: {
+            tagContent: 'Home Page',
+            seoImpact: 'High',
+            issue: 'Duplicate Title',
+            issueDetails: '2 pages share same title',
+            seoRecommendation: 'Unique across pages',
+            duplicates: [
+              '/blog/page1',
+            ],
+          },
+          description: {
+            tagContent: 'Home page description',
+            seoImpact: 'High',
+            issue: 'Duplicate Description',
+            issueDetails: '2 pages share same description',
+            seoRecommendation: 'Unique across pages',
+            duplicates: [
+              '/blog/page1',
+            ],
           },
         },
       }));
@@ -706,6 +745,26 @@ describe('Meta Tags', () => {
       expect(metatagsOppty.save).to.be.calledOnce;
       expect(metatagsOppty.addSuggestions).to.be.calledWith(expectedSuggestionModified);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+    });
+  });
+
+  describe('removeTrailingSlash', () => {
+    it('should remove trailing slash from URL', () => {
+      const url = 'http://example.com/';
+      const result = removeTrailingSlash(url);
+      expect(result).to.equal('http://example.com');
+    });
+
+    it('should not modify URL without trailing slash', () => {
+      const url = 'http://example.com';
+      const result = removeTrailingSlash(url);
+      expect(result).to.equal(url);
+    });
+
+    it('should handle empty string', () => {
+      const url = '';
+      const result = removeTrailingSlash(url);
+      expect(result).to.equal('');
     });
   });
 });
