@@ -121,10 +121,6 @@ describe('Sitemap Audit', () => {
             issues: {},
           },
           success: true,
-          // paths: {
-          //   [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
-          //   [`${url}/sitemap_bar.xml`]: [`${url}/baz`, `${url}/cux`],
-          // },
           reasons: [{
             value: 'Sitemaps found and checked.',
           }],
@@ -175,10 +171,6 @@ describe('Sitemap Audit', () => {
             issues: {},
           },
           success: true,
-          // paths: {
-          //   [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
-          //   [`${url}/sitemap_bar.xml`]: [`${url}/baz`, `${url}/cux`],
-          // },
           reasons: [{
             value: 'Sitemaps found and checked.',
           }],
@@ -225,10 +217,6 @@ describe('Sitemap Audit', () => {
             issues: {},
           },
           success: true,
-          // paths: {
-          //   [`${url}/sitemap_foo.txt`]: [`${url}/foo`, `${url}/bar`],
-          //   [`${url}/sitemap_bar.txt`]: [`${url}/baz`, `${url}/cux`],
-          // },
           reasons: [{
             value: 'Sitemaps found and checked.',
           }],
