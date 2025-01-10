@@ -61,7 +61,7 @@
     "@adobe/helix-universal": "5.0.8",
     "@adobe/helix-universal-logger": "3.0.23",
     "@adobe/spacecat-shared-ahrefs-client": "1.6.2",
-    "@adobe/spacecat-shared-data-access": "1.61.18",
+    "@adobe/spacecat-shared-data-access": "1.61.19",
     "@adobe/spacecat-shared-google-client": "1.4.3",
     "@adobe/spacecat-shared-http-utils": "1.9.3",
     "@adobe/spacecat-shared-rum-api-client": "2.18.0",
