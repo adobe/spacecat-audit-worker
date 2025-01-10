@@ -153,14 +153,13 @@ export default async function auditMetaTags(message, context) {
       sourceS3Folder: `${bucketName}/${prefix}`,
       finalUrl: auditContext.finalUrl,
       projectedTraffic,
-      fullAuditRef: 'na',
     };
     const auditData = {
       siteId: site.getId(),
       isLive: site.getIsLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
-      fullAuditRef: auditResult.fullAuditRef,
+      fullAuditRef: null,
       auditResult,
     };
     // Persist Audit result
