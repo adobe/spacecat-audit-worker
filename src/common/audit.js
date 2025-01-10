@@ -132,17 +132,21 @@ export class Audit {
       await this.messageSender(resultMessage, context);
       // add auditId for the post-processing
       auditData.id = audit.getId();
-      await this.postProcessors.reduce(async (promise, postProcessor) => {
-        await promise;
+      await this.postProcessors.reduce(async (previousProcessor, postProcessor) => {
+        const updatedAuditData = await previousProcessor;
+
         try {
           log.info(`Running post processor ${postProcessor.name} for ${type} audit for site ${siteId}`);
-          log.info(`Audit data: ${JSON.stringify(auditData)}`);
-          await postProcessor(finalUrl, auditData, context, site);
+          log.info(`Audit data: ${JSON.stringify(updatedAuditData)}`);
+
+          const result = await postProcessor(finalUrl, updatedAuditData, context, site);
+
+          return result || updatedAuditData;
         } catch (e) {
-          log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(auditData)}`);
+          log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(updatedAuditData)}`);
           throw e;
         }
-      }, Promise.resolve());
+      }, Promise.resolve(auditData));
 
       return ok();
     } catch (e) {

@@ -188,7 +188,7 @@ const getFileContentFromS3 = async (s3Client, bucket, key) => {
 
 export const extractScrapedMetadataFromJson = (data, log) => {
   try {
-    log.info(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
+    log.debug(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
     const finalUrl = data.finalUrl || '';
     const title = data.scrapeResult.tags?.title || '';
     const description = data.scrapeResult.tags?.description || '';
