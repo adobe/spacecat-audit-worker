@@ -98,6 +98,11 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
 
+  if (auditData.auditResult.success === false) {
+    log.info('Audit failed, skipping suggestions generation');
+    return { ...auditData };
+  }
+
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
     log.info('Auto-suggest is disabled for site');
@@ -197,12 +202,14 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   );
 
   log.info('Suggestions generation complete.');
-  return {
+  const updatedAuditData = {
     ...auditData,
     auditResult: {
       brokenBacklinks: updatedBacklinks,
     },
   };
+  log.info(`UPDATED AUDIT DATA: ${JSON.stringify(updatedAuditData)}`);
+  return updatedAuditData;
 };
 
 export const convertToOpportunity = async (auditUrl, auditData, context) => {

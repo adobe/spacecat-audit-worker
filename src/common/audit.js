@@ -135,6 +135,8 @@ export class Audit {
       await this.postProcessors.reduce(async (promise, postProcessor) => {
         await promise;
         try {
+          log.info(`Running post processor ${postProcessor.name} for ${type} audit for site ${siteId}`);
+          log.info(`Audit data: ${JSON.stringify(auditData)}`);
           await postProcessor(finalUrl, auditData, context, site);
         } catch (e) {
           log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(auditData)}`);
