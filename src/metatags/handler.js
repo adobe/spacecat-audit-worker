@@ -130,7 +130,7 @@ export default async function auditMetaTags(message, context) {
     const options = {
       domain: wwwUrlResolver(site),
       domainkey,
-      interval: 7,
+      interval: 14,
       granularity: 'hourly',
     };
     const queryResults = await rumAPIClient.query('traffic-acquisition', options);
