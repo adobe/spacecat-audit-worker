@@ -258,7 +258,7 @@ export const convertToOpportunity = async (auditUrl, auditData, context) => {
         url_from: backlink.url_from,
         url_to: backlink.url_to,
         urls_suggested: backlink.urls_suggested || [],
-        ai_rationale: backlink.ai_rationale,
+        ai_rationale: backlink.ai_rationale || '',
         traffic_domain: backlink.traffic_domain,
       },
     }),
