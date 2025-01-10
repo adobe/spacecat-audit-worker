@@ -1,3 +1,10 @@
+## [1.46.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.7...v1.46.8) (2025-01-10)
+
+
+### Bug Fixes
+
+* remove path containing accessible urls ([#575](https://github.com/adobe/spacecat-audit-worker/issues/575)) ([128303e](https://github.com/adobe/spacecat-audit-worker/commit/128303ed706bbe1a19545cca2281d28acce0297b))
+
 ## [1.46.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.6...v1.46.7) (2025-01-10)
 
 
