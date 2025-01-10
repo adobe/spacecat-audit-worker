@@ -67,9 +67,11 @@ function getOrganicTrafficForEndpoint(endpoint, dataMap, log) {
     log.warn(`No rum data found for ${endpoint}`);
     return 0;
   }
-  return target.sources
+  const trafficSum = target.sources
     .filter((source) => source.type.startsWith('earned:'))
     .reduce((sum, source) => sum + source.views, 0);
+  log.info(`Found ${trafficSum} views for ${endpoint}`);
+  return trafficSum;
 }
 
 export default async function auditMetaTags(message, context) {
@@ -130,7 +132,7 @@ export default async function auditMetaTags(message, context) {
     const options = {
       domain: wwwUrlResolver(site),
       domainkey,
-      interval: 14,
+      interval: 30,
       granularity: 'hourly',
     };
     const queryResults = await rumAPIClient.query('traffic-acquisition', options);
