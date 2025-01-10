@@ -124,8 +124,19 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
     auditData.auditResult.brokenBacklinks.map(async (backlink) => {
       const requestBody = brokenBacklinksPrompt(data.headerLinks, backlink.url_to);
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
-      log.info(`Found header suggestions: ${JSON.stringify(response)}`);
-      return response;
+      log.info(`Firefall token usage: ${JSON.stringify(response.usage)}`);
+      if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
+        log.error(`No header suggestions found for ${backlink.url_to}`);
+        return {};
+      }
+      try {
+        const anwswer = JSON.parse(response.choices[0].message.content);
+        log.info(`Found header suggestions: ${JSON.stringify(anwswer)}`);
+        return anwswer;
+      } catch (e) {
+        log.error(`Failed to parse header response: ${e.message}`);
+        return {};
+      }
     }),
   );
 
@@ -136,11 +147,22 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
       const batchResults = await Promise.all(
         dataBatches.map(async (batch, batchIndex) => {
           log.info(`Processing batch ${batchIndex + 1}/${totalBatches}...`);
-          log.info(`URLS: ${batch} ${JSON.stringify(batch)}`);
+          log.info(`URLS: ${JSON.stringify(batch)}`);
           const requestBody = brokenBacklinksPrompt(batch, backlink.url_to);
           const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
-          log.info(`Found suggestions: ${JSON.parse(response)}`);
-          return response;
+          log.info(`Firefall token usage: ${JSON.stringify(response.usage)}`);
+          if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
+            log.error(`No suggestions found for ${backlink.url_to}`);
+            return {};
+          }
+          try {
+            const anwswer = JSON.parse(response.choices[0].message.content);
+            log.info(`Found suggestions: ${JSON.stringify(anwswer)}`);
+            return anwswer;
+          } catch (e) {
+            log.error(`Failed to parse response: ${e.message}`);
+            return {};
+          }
         }),
       );
       suggestions.push(...batchResults);
@@ -155,12 +177,21 @@ const generateSuggestionData = async (finalUrl, auditData, context, site) => {
         finalRequestBody,
         firefallOptions,
       );
-      log.info(`Final suggestions: ${JSON.stringify(finalResponse)}`);
-      const finalSuggestion = finalResponse;
-
-      const newBacklink = { ...backlink };
-      newBacklink.urls_suggested = finalSuggestion.suggested_urls || [];
-      return newBacklink;
+      log.info(`Firefall token usage: ${JSON.stringify(finalResponse.usage)}`);
+      if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
+        log.error(`No final suggestions found for ${backlink.url_to}`);
+        return { ...backlink };
+      }
+      try {
+        const anwswer = JSON.parse(finalResponse.choices[0].message.content);
+        log.info(`Final suggestions: ${JSON.stringify(anwswer)}`);
+        const newBacklink = { ...backlink };
+        newBacklink.urls_suggested = anwswer.suggested_urls || [];
+        return newBacklink;
+      } catch (e) {
+        log.error(`Failed to parse final response: ${e.message}`);
+        return { ...backlink };
+      }
     }),
   );
   // TODO maybe add verification step to check if the suggested URLs are valid (return 200)
