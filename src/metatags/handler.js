@@ -159,7 +159,7 @@ export default async function auditMetaTags(message, context) {
       isLive: site.getIsLive(),
       auditedAt: new Date().toISOString(),
       auditType: type,
-      fullAuditRef: null,
+      fullAuditRef: '',
       auditResult,
     };
     // Persist Audit result
