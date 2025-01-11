@@ -1,3 +1,10 @@
+## [1.46.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.8...v1.46.9) (2025-01-11)
+
+
+### Bug Fixes
+
+* **deps:** update adobe major to v2 (major) ([#576](https://github.com/adobe/spacecat-audit-worker/issues/576)) ([2ae677b](https://github.com/adobe/spacecat-audit-worker/commit/2ae677b877f42772624006bf528c687d9c72c014))
+
 ## [1.46.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.7...v1.46.8) (2025-01-10)
 
 
