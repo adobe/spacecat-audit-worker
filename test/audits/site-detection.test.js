@@ -17,8 +17,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
-import { createSiteCandidate } from '@adobe/spacecat-shared-data-access/src/models/site-candidate.js';
 import { readFileSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -64,11 +62,11 @@ describe('site-detection runner tests', () => {
 
   beforeEach('setup', () => {
     sites = [
-      createSite({ baseURL: 'https://spacecat1.com' }),
-      createSite({ baseURL: 'https://spacecat2.com' })];
+      { getBaseURL: () => 'https://spacecat1.com' },
+      { getBaseURL: () => 'https://spacecat2.com' }];
     siteCandidates = [
-      createSiteCandidate({ baseURL: 'https://spacecat3.com' }),
-      createSiteCandidate({ baseURL: 'https://spacecat4.com' }),
+      { getBaseURL: () => 'https://spacecat3.com' },
+      { getBaseURL: () => 'https://spacecat4.com' },
     ];
     context.dataAccess.Site.all.resolves(sites);
     context.dataAccess.SiteCandidate.all.resolves(siteCandidates);
