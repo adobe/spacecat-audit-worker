@@ -75,7 +75,7 @@
     "aws-xray-sdk": "3.10.2",
     "@aws-sdk/s3-request-presigner": "3.726.1",
     "diff": "7.0.0",
-    "jsdom": "25.0.1",
+    "jsdom": "26.0.0",
     "urijs": "1.19.11"
   },
   "devDependencies": {
