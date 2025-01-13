@@ -67,7 +67,7 @@ function getOrganicTrafficForEndpoint(endpoint, dataMap, log) {
     log.warn(`No rum data found for ${endpoint}`);
     return 0;
   }
-  const trafficSum = target.earned + target.paid;
+  const trafficSum = target.total;
   log.info(`Found ${trafficSum} views for ${endpoint}`);
   return trafficSum;
 }
