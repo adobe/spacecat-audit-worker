@@ -121,10 +121,6 @@ describe('Sitemap Audit', () => {
             issues: {},
           },
           success: true,
-          paths: {
-            [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
-            [`${url}/sitemap_bar.xml`]: [`${url}/baz`, `${url}/cux`],
-          },
           reasons: [{
             value: 'Sitemaps found and checked.',
           }],
@@ -175,10 +171,6 @@ describe('Sitemap Audit', () => {
             issues: {},
           },
           success: true,
-          paths: {
-            [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
-            [`${url}/sitemap_bar.xml`]: [`${url}/baz`, `${url}/cux`],
-          },
           reasons: [{
             value: 'Sitemaps found and checked.',
           }],
@@ -225,10 +217,6 @@ describe('Sitemap Audit', () => {
             issues: {},
           },
           success: true,
-          paths: {
-            [`${url}/sitemap_foo.txt`]: [`${url}/foo`, `${url}/bar`],
-            [`${url}/sitemap_bar.txt`]: [`${url}/baz`, `${url}/cux`],
-          },
           reasons: [{
             value: 'Sitemaps found and checked.',
           }],
@@ -531,9 +519,6 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(url);
       expect(result.success).to.equal(true);
-      expect(result.paths).to.deep.equal({
-        [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
-      });
     });
 
     it('should fail when sitemap contents have a different URL than the base domain (regardless of www. or not)', async () => {
@@ -617,9 +602,6 @@ describe('Sitemap Audit', () => {
         info: () => {},
       });
       expect(result.success).to.equal(true);
-      expect(result.paths).to.deep.equal({
-        [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
-      });
     });
 
     it('should return success when sitemap_index.xml is found', async () => {
@@ -665,10 +647,6 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(url);
       expect(result.success).to.equal(true);
-      expect(result.paths).to.deep.equal({
-        [`${url}/sitemap_foo.xml`]: [`${url}/foo`, `${url}/bar`],
-        [`${url}/sitemap_bar.xml`]: [`${url}/baz`, `${url}/cux`],
-      });
     });
 
     it('should return success when sitemap paths have www', async () => {
@@ -690,9 +668,6 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(`${protocol}://www.${domain}`);
       expect(result.success).to.equal(true);
-      expect(result.paths).to.deep.equal({
-        [`${url}/sitemap.xml`]: [`${protocol}://www.${domain}/foo`, `${protocol}://www.${domain}/bar`],
-      });
     });
 
     it('should return error when no sitemap is found', async () => {

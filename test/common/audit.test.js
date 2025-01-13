@@ -11,7 +11,7 @@
  */
 
 /* eslint-env mocha */
-import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
+
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -71,10 +71,11 @@ describe('Audit tests', () => {
       getIsLive: () => true,
       getIsError: () => false,
     };
-    const configurationData = {
-      version: '1.0',
-      queues: {},
-      handlers: {
+    configuration = {
+      getVersion: () => '1.0',
+      getQueues: () => {
+      },
+      getHandlers: () => ({
         dummy: {
           enabled: {
             sites: ['site-id', 'space.cat', site.getId()],
@@ -83,10 +84,12 @@ describe('Audit tests', () => {
           enabledByDefault: false,
           dependencies: [],
         },
-      },
-      jobs: [],
+      }),
+      getJobs: () => [],
+      isHandlerEnabledForSite: () => true,
+      disableHandlerForSite: () => true,
+      disableHandlerForOrg: () => true,
     };
-    configuration = createConfiguration(configurationData);
   });
 
   afterEach('clean', () => {
@@ -202,8 +205,7 @@ describe('Audit tests', () => {
     });
 
     it('audit run skips when audit is disabled', async () => {
-      configuration.disableHandlerForSite('dummy', { getId: () => site.getId(), getOrganizationId: () => org.getId() });
-      configuration.disableHandlerForOrg('dummy', org);
+      configuration.isHandlerEnabledForSite = sinon.stub().returns(false);
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);

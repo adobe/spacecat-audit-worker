@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { Configuration } from '@adobe/spacecat-shared-data-access';
-import ConfigurationSchema from '@adobe/spacecat-shared-data-access/src/v2/models/configuration/configuration.schema.js';
+import ConfigurationSchema from '@adobe/spacecat-shared-data-access/src/models/configuration/configuration.schema.js';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';

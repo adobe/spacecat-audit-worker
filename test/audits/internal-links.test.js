@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
+
 import { internalLinksAuditRunner, convertToOpportunity } from '../../src/internal-links/handler.js';
 import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../shared.js';
@@ -50,7 +50,7 @@ const baseURL = 'https://example.com';
 const auditUrl = 'www.example.com';
 
 describe('Broken internal links audit', () => {
-  const site = createSite({ baseURL });
+  const site = { getBaseURL: () => baseURL };
 
   const context = new MockContextBuilder()
     .withSandbox(sandbox)
