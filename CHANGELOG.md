@@ -1,3 +1,10 @@
+## [1.46.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.13...v1.46.14) (2025-01-13)
+
+
+### Bug Fixes
+
+* migrate metatags audit to AuditBuilder ([#535](https://github.com/adobe/spacecat-audit-worker/issues/535)) ([41fc2b0](https://github.com/adobe/spacecat-audit-worker/commit/41fc2b0c6c2d6f3e877c0db95eedca7ea3b9a26a))
+
 ## [1.46.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.12...v1.46.13) (2025-01-13)
 
 
