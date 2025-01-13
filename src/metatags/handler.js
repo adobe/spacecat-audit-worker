@@ -67,9 +67,7 @@ function getOrganicTrafficForEndpoint(endpoint, dataMap, log) {
     log.warn(`No rum data found for ${endpoint}`);
     return 0;
   }
-  const trafficSum = target.sources
-    .filter((source) => source.type.startsWith('earned:') || source.type.startsWith('paid:'))
-    .reduce((sum, source) => sum + source.views, 0);
+  const trafficSum = target.earned + target.paid;
   log.info(`Found ${trafficSum} views for ${endpoint}`);
   return trafficSum;
 }
