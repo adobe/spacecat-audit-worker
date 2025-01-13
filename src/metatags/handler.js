@@ -68,7 +68,7 @@ function getOrganicTrafficForEndpoint(endpoint, dataMap, log) {
     return 0;
   }
   const trafficSum = target.sources
-    .filter((source) => source.type.startsWith('earned:'))
+    .filter((source) => source.type.startsWith('earned:') || source.type.startsWith('paid:'))
     .reduce((sum, source) => sum + source.views, 0);
   log.info(`Found ${trafficSum} views for ${endpoint}`);
   return trafficSum;
