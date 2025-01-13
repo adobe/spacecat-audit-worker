@@ -21,7 +21,6 @@ export async function defaultMessageSender() {}
 export async function defaultPersister(auditData, context) {
   const { dataAccess } = context;
   const { Audit } = dataAccess;
-
   return Audit.create(auditData);
 }
 
