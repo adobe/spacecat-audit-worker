@@ -18,8 +18,6 @@ import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { retrieveSiteBySiteId, syncSuggestions } from '../utils/data-access.js';
 import { enhanceBacklinksWithFixes } from '../support/utils.js';
-import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
 
 const TIMEOUT = 3000;
 
@@ -62,7 +60,7 @@ export async function filterOutValidBacklinks(backlinks, log) {
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
-export async function auditBrokenBacklinks(message, context) {
+export default async function auditBrokenBacklinks(message, context) {
   const { type, siteId, auditContext = {} } = message;
   const { dataAccess, log, sqs } = context;
   const {
@@ -222,8 +220,3 @@ export async function auditBrokenBacklinks(message, context) {
     return internalServerError(`Internal server error: ${e.message}`);
   }
 }
-
-export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
-  .withRunner(auditBrokenBacklinks)
-  .build();

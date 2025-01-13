@@ -19,7 +19,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { auditBrokenBacklinks } from '../../src/backlinks/handler.js';
+import auditBrokenBacklinks from '../../src/backlinks/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
