@@ -186,7 +186,7 @@ const getFileContentFromS3 = async (s3Client, bucket, key) => {
   return JSON.parse(content);
 };
 
-export const extractScrapedMetadataFromJson = (data, log) => {
+const extractScrapedMetadataFromJson = (data, log) => {
   try {
     log.debug(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
     const finalUrl = data.finalUrl || '';
@@ -207,8 +207,7 @@ export const extractScrapedMetadataFromJson = (data, log) => {
   }
 };
 
-// eslint-disable-next-line no-underscore-dangle
-const _extractLinksFromHeader = (rawHtml, baseUrl) => {
+const extractLinksFromHeader = (rawHtml, baseUrl) => {
   const dom = new JSDOM(rawHtml);
   const { document } = dom.window;
 
@@ -282,7 +281,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
     env.S3_SCRAPER_BUCKET_NAME,
     indexFile.Key,
   );
-  const headerLinks = _extractLinksFromHeader(indexFileContent, site.getBaseURL());
+  const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL());
 
   log.info(`siteData: ${JSON.stringify(extractedData)}`);
   return {

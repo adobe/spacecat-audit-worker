@@ -16,8 +16,9 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
-import { brokenBacklinksAuditRunner, convertToOpportunity } from '../../src/backlinks/handler.js';
+import { brokenBacklinksAuditRunner, convertToOpportunity, generateSuggestionData } from '../../src/backlinks/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import {
   brokenBacklinkWithTimeout,
@@ -39,6 +40,8 @@ import {
   suggestions,
 } from '../fixtures/broken-backlinks/suggestion.js';
 import { mockUrlResponses } from '../fixtures/broken-backlinks/urls.js';
+import * as utils from '../../src/support/utils.js';
+import { getScrapedDataForSiteId } from '../../src/support/utils.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -198,6 +201,143 @@ describe('Backlinks Tests', function () {
         error: errorMessage,
         success: false,
       },
+    });
+  });
+  describe('generateSuggestionData', () => {
+    let auditData;
+    let configuration;
+    let firefallClient;
+
+    beforeEach(() => {
+      auditData = {
+        auditResult: {
+          success: true,
+          brokenBacklinks: [
+            { url_to: 'https://example.com/broken1' },
+            { url_to: 'https://example.com/broken2' },
+          ],
+        },
+      };
+      configuration = {
+        isHandlerEnabledForSite: sandbox.stub(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      firefallClient = {
+        fetchChatCompletion: sandbox.stub(),
+      };
+      sandbox.stub(FirefallClient, 'createFrom').returns(firefallClient);
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('returns original auditData if audit result is unsuccessful', async () => {
+      auditData.auditResult.success = false;
+
+      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal(auditData);
+      expect(context.log.info).to.have.been.calledWith('Audit failed, skipping suggestions generation');
+    });
+
+    it('returns original auditData if auto-suggest is disabled for the site', async () => {
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal(auditData);
+      expect(context.log.info).to.have.been.calledWith('Auto-suggest is disabled for site');
+    });
+
+    xit('processes suggestions for broken backlinks', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      firefallClient.fetchChatCompletion.onFirstCall().resolves({
+        choices: [{ message: { content: JSON.stringify({ suggested_urls: ['https://fix1.com'], ai_rationale: 'Rationale 1' }) } }],
+      });
+      firefallClient.fetchChatCompletion.onSecondCall().resolves({
+        choices: [{ message: { content: JSON.stringify({ suggested_urls: ['https://fix2.com'], ai_rationale: 'Rationale 2' }) } }],
+      });
+
+      sandbox.stub(global, getScrapedDataForSiteId).resolves({
+        siteData: ['https://example.com/page1', 'https://example.com/page2'],
+        headerLinks: ['https://headerlink.com'],
+      });
+      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+
+      expect(firefallClient.fetchChatCompletion).to.have.been.calledTwice;
+      expect(result.auditResult.brokenBacklinks).to.deep.equal([
+        {
+          url_to: 'https://example.com/broken1',
+          urls_suggested: ['https://fix1.com'],
+          ai_rationale: 'Rationale 1',
+        },
+        {
+          url_to: 'https://example.com/broken2',
+          urls_suggested: ['https://fix2.com'],
+          ai_rationale: 'Rationale 2',
+        },
+      ]);
+      expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
+    });
+
+    xit('handles Firefall client errors gracefully and continues processing', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      firefallClient.fetchChatCompletion.onFirstCall().rejects(new Error('Firefall error'));
+      firefallClient.fetchChatCompletion.onSecondCall().resolves({
+        choices: [{ message: { content: JSON.stringify({ suggested_urls: ['https://fix2.com'], ai_rationale: 'Rationale 2' }) } }],
+      });
+
+      sandbox.stub(utils, 'getScrapedDataForSiteId').resolves({
+        siteData: ['https://example.com/page1', 'https://example.com/page2'],
+        headerLinks: ['https://headerlink.com'],
+      });
+
+      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+
+      expect(firefallClient.fetchChatCompletion).to.have.been.calledTwice;
+      expect(result.auditResult.brokenBacklinks).to.deep.equal([
+        {
+          url_to: 'https://example.com/broken1',
+        },
+        {
+          url_to: 'https://example.com/broken2',
+          urls_suggested: ['https://fix2.com'],
+          ai_rationale: 'Rationale 2',
+        },
+      ]);
+      expect(context.log.error).to.have.been.calledWith('Batch processing error: Firefall error');
+    });
+
+    xit('handles JSON parsing errors gracefully and continues processing', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      firefallClient.fetchChatCompletion.onFirstCall().resolves({
+        choices: [{ message: { content: '{ invalid json' } }],
+      });
+      firefallClient.fetchChatCompletion.onSecondCall().resolves({
+        choices: [{ message: { content: JSON.stringify({ suggested_urls: ['https://fix2.com'], ai_rationale: 'Rationale 2' }) } }],
+      });
+
+      sandbox.stub(global, getScrapedDataForSiteId).resolves({
+        siteData: ['https://example.com/page1', 'https://example.com/page2'],
+        headerLinks: ['https://headerlink.com'],
+      });
+
+      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+
+      expect(firefallClient.fetchChatCompletion).to.have.been.calledTwice;
+      expect(result.auditResult.brokenBacklinks).to.deep.equal([
+        {
+          url_to: 'https://example.com/broken1',
+        },
+        {
+          url_to: 'https://example.com/broken2',
+          urls_suggested: ['https://fix2.com'],
+          ai_rationale: 'Rationale 2',
+        },
+      ]);
+      expect(context.log.error).to.have.been.calledWith('Batch processing error: Unexpected token i in JSON at position 2');
     });
   });
 });

@@ -23,6 +23,7 @@ export class MockContextBuilder {
 
   build() {
     const mockLog = {
+      debug: this.sandbox.spy(),
       info: this.sandbox.spy(),
       warn: this.sandbox.spy(),
       error: this.sandbox.spy(),
@@ -60,10 +61,20 @@ export class MockContextBuilder {
       sendMessage: this.sandbox.stub().resolves(),
     };
 
+    const mockS3Client = {
+      send: this.sandbox.stub(),
+    };
+
+    const mockEnv = {
+      S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+    };
+
     let context = {
       log: mockLog,
       dataAccess: mockDataAccess,
       sqs: mockSqs,
+      s3Client: mockS3Client,
+      env: mockEnv,
     };
 
     if (this.contextOverrides) {

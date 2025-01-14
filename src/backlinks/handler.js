@@ -94,7 +94,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
   }
 }
 
-const generateSuggestionData = async (finalUrl, auditData, context, site) => {
+export const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
 

@@ -136,9 +136,6 @@ export class Audit {
         const updatedAuditData = await previousProcessor;
 
         try {
-          log.info(`Running post processor ${postProcessor.name} for ${type} audit for site ${siteId}`);
-          log.info(`Audit data: ${JSON.stringify(updatedAuditData)}`);
-
           const result = await postProcessor(finalUrl, updatedAuditData, context, site);
 
           return result || updatedAuditData;
