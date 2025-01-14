@@ -600,14 +600,14 @@ describe('Meta Tags', () => {
         })))
         .resolves({
           Contents: [
-            { Key: 'scrapes/site-id/blog/page1.json' },
+            { Key: 'scrapes/site-id/blog/page1/scrape.json' },
           ],
         });
 
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
           Bucket: 'test-bucket',
-          Key: 'scrapes/site-id/blog/page1.json',
+          Key: 'scrapes/site-id/blog/page1/scrape.json',
         }))).returns({
           Body: {
             transformToString: () => '',
@@ -647,7 +647,7 @@ describe('Meta Tags', () => {
         })))
         .resolves({
           Contents: [
-            { Key: 'page1.json' },
+            { Key: 'page1/scrape.json' },
           ],
         });
 
