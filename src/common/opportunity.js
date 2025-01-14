@@ -12,6 +12,13 @@
 
 import { opportunityData } from '../metatags/opportunityDataMapper.js';
 
+/**
+ * @param auditUrl - The URL of the audit
+ * @param auditData - The audit data containing the audit result and additional details.
+ * @param context - The context object containing the data access and logger objects.
+ * @param AUDIT_TYPE - The type of the audit.
+ */
+
 // eslint-disable-next-line consistent-return
 export async function convertToOpportunity(auditUrl, auditData, context, AUDIT_TYPE) {
   // eslint-disable-next-line new-cap
