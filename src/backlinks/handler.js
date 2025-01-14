@@ -202,6 +202,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     ),
   );
 
+  log.info(`UPDATED BACKLINKS: ${JSON.stringify(updatedBacklinks)}`);
   log.info('Suggestions generation complete.');
   const updatedAuditData = {
     ...auditData,
