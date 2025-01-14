@@ -165,6 +165,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
       }
 
       const answer = JSON.parse(finalResponse.choices[0].message.content);
+      log.info(`Final suggestion for ${backlink.url_to}: ${JSON.stringify(answer)}`);
       return {
         ...backlink,
         urls_suggested: answer.suggested_urls || [],
@@ -215,7 +216,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 export const convertToOpportunity = async (auditUrl, auditData, context) => {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
-
+  // todo: calculate projected traffic lost and value
   const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
   let opportunity = opportunities.find((oppty) => oppty.getType() === 'broken-backlinks');
 
