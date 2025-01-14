@@ -128,6 +128,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   const processBatch = async (batch, urlTo) => {
     try {
       const requestBody = brokenBacklinksPrompt(batch, urlTo);
+      setTimeout(() => log.info(`Processing batch for ${urlTo}`), 2000);
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
@@ -144,7 +145,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 
   const processBacklink = async (backlink, headerSuggestions) => {
     log.info(`Processing backlink: ${backlink.url_to}`);
-
+    // TODO: throttle requests
     const suggestions = (
       await Promise.all(dataBatches.map((batch) => processBatch(batch, backlink.url_to)))
     ).filter(Boolean);
@@ -156,6 +157,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
         suggestions,
         headerSuggestions,
       );
+      setTimeout(() => log.info(`Final suggestions for ${backlink.url_to}`), 2000);
       const finalResponse = await firefallClient
         .fetchChatCompletion(finalRequestBody, firefallOptions);
 
@@ -181,6 +183,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     auditData.auditResult.brokenBacklinks.map(async (backlink) => {
       try {
         const requestBody = brokenBacklinksPrompt(headerLinks, backlink.url_to);
+        setTimeout(() => log.info(`Processing header suggestions for ${backlink.url_to}`), 2000);
         const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
         if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
