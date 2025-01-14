@@ -145,10 +145,16 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 
   const processBacklink = async (backlink, headerSuggestions) => {
     log.info(`Processing backlink: ${backlink.url_to}`);
-    // TODO: throttle requests
-    const suggestions = (
-      await Promise.all(dataBatches.map((batch) => processBatch(batch, backlink.url_to)))
-    ).filter(Boolean);
+    const suggestions = [];
+    for (const batch of dataBatches) {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await processBatch(batch, backlink.url_to);
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(2000);
+      if (result) {
+        suggestions.push(result);
+      }
+    }
 
     log.info(`Compiling final suggestions for: ${backlink.url_to}`);
     try {
@@ -179,25 +185,28 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     }
   };
 
-  const headerSuggestionsResults = await Promise.all(
-    auditData.auditResult.brokenBacklinks.map(async (backlink) => {
-      try {
-        const requestBody = brokenBacklinksPrompt(headerLinks, backlink.url_to);
-        await sleep(2000);
-        const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
+  const headerSuggestionsResults = [];
+  for (const backlink of auditData.auditResult.brokenBacklinks) {
+    try {
+      const requestBody = brokenBacklinksPrompt(headerLinks, backlink.url_to);
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(2000);
+      // eslint-disable-next-line no-await-in-loop
+      const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
-        if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-          log.error(`No header suggestions for ${backlink.url_to}`);
-          return null;
-        }
-
-        return JSON.parse(response.choices[0].message.content);
-      } catch (error) {
-        log.error(`Header suggestion error: ${error.message}`);
-        return null;
+      if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
+        log.error(`No header suggestions for ${backlink.url_to}`);
+        headerSuggestionsResults.push(null);
+        // eslint-disable-next-line no-continue
+        continue;
       }
-    }),
-  );
+
+      headerSuggestionsResults.push(JSON.parse(response.choices[0].message.content));
+    } catch (error) {
+      log.error(`Header suggestion error: ${error.message}`);
+      headerSuggestionsResults.push(null);
+    }
+  }
 
   const updatedBacklinks = await Promise.all(
     auditData.auditResult.brokenBacklinks.map(
