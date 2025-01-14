@@ -41,7 +41,9 @@ export async function getObjectKeysUsingPrefix(
       // eslint-disable-next-line no-await-in-loop
       const data = await s3Client.send(new ListObjectsV2Command(params));
       data?.Contents?.forEach((obj) => {
-        objectKeys.push(obj.Key);
+        if (obj.Key?.endsWith('scrape.json')) {
+          objectKeys.push(obj.Key);
+        }
       });
       continuationToken = data?.NextContinuationToken;
     } while (continuationToken);

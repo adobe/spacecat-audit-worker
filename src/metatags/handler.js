@@ -22,6 +22,8 @@ import syncOpportunityAndSuggestions from './opportunityHandler.js';
 import { getRUMDomainkey } from '../support/utils.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
+const DEFAULT_CPC = 1; // $1
+
 async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
@@ -38,38 +40,59 @@ async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)
   };
 }
 
+// Extract endpoint from a url, removes trailing slash if present
 function extractEndpoint(url) {
   const urlObj = new URL(url);
-  return urlObj.pathname.replace(/\/$/, ''); // Removes trailing slash if present
+  return urlObj.pathname.replace(/\/$/, '');
 }
 
-// Preprocess data into a map with endpoint as the key
-function preprocessRumData(rumTrafficData, log) {
+// Preprocess RUM data into a map with endpoint as the key
+function preprocessRumData(rumTrafficData) {
   const dataMap = new Map();
-  let urls = '';
   rumTrafficData.forEach((item) => {
     const endpoint = extractEndpoint(item.url);
-    urls += `${endpoint}, `;
     dataMap.set(endpoint, item);
   });
-  log.info(`Rum data urls: ${urls}`);
   return dataMap;
 }
 
 // Get organic traffic for a given endpoint
 function getOrganicTrafficForEndpoint(endpoint, dataMap, log) {
-  if (endpoint === '/') {
-    // eslint-disable-next-line no-param-reassign
-    endpoint = '';
-  }
-  const target = dataMap.get(endpoint);
+  // remove trailing slash from endpoint, if present, and then find in the datamap
+  const target = dataMap.get(endpoint.replace(/\/$/, ''));
   if (!target) {
     log.warn(`No rum data found for ${endpoint}`);
     return 0;
   }
   const trafficSum = target.total;
-  log.info(`Found ${trafficSum} views for ${endpoint}`);
+  log.info(`Found ${trafficSum} page views for ${endpoint}`);
   return trafficSum;
+}
+
+async function calculateProjectedTraffic(context, site, detectedTags, log) {
+  const rumAPIClient = RUMAPIClient.createFrom(context);
+  const domainKey = await getRUMDomainkey(site.getBaseURL(), context);
+  const options = {
+    domain: wwwUrlResolver(site),
+    domainKey,
+    interval: 30,
+    granularity: 'hourly',
+  };
+  const queryResults = await rumAPIClient.query('traffic-acquisition', options);
+  const rumTrafficDataMap = preprocessRumData(queryResults, log);
+  let projectedTraffic = 0;
+  Object.entries(detectedTags).forEach(([endpoint, tags]) => {
+    try {
+      const organicTraffic = getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
+      Object.values((tags)).forEach((tagIssueDetails) => {
+        const multiplier = tagIssueDetails.issue.includes('Missing') ? 0.01 : 0.005;
+        projectedTraffic += organicTraffic * multiplier;
+      });
+    } catch (err) {
+      log.warn(`Error while calculating projected traffic for ${endpoint}`, err);
+    }
+  });
+  return projectedTraffic;
 }
 
 export default async function auditMetaTags(message, context) {
@@ -125,34 +148,16 @@ export default async function auditMetaTags(message, context) {
       seoChecks.performChecks(pageUrl || '/', pageTags);
     }
     seoChecks.finalChecks();
-    const rumAPIClient = RUMAPIClient.createFrom(context);
-    const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
-    const options = {
-      domain: wwwUrlResolver(site),
-      domainkey,
-      interval: 30,
-      granularity: 'hourly',
-    };
-    const queryResults = await rumAPIClient.query('traffic-acquisition', options);
-    const rumTrafficDataMap = preprocessRumData(queryResults, log);
-    let projectedTraffic = 0;
     const detectedTags = seoChecks.getDetectedTags();
-    Object.keys(detectedTags).forEach((endpoint) => {
-      const organicTraffic = getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
-      Object.keys((detectedTags[endpoint])).forEach((tag) => {
-        if (detectedTags[endpoint][tag]?.issue?.includes('Missing')) {
-          projectedTraffic += organicTraffic * 0.01;
-        } else {
-          projectedTraffic += organicTraffic * 0.005;
-        }
-      });
-    });
+    const projectedTraffic = calculateProjectedTraffic(context, site, detectedTags, log);
+    const projectedTrafficValue = projectedTraffic * DEFAULT_CPC;
     // Prepare Audit result
     const auditResult = {
       detectedTags,
       sourceS3Folder: `${bucketName}/${prefix}`,
       finalUrl: auditContext.finalUrl,
       projectedTraffic,
+      projectedTrafficValue,
     };
     const auditData = {
       siteId: site.getId(),
