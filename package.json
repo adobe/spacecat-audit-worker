@@ -63,7 +63,7 @@
     "@adobe/spacecat-shared-ahrefs-client": "1.6.2",
     "@adobe/spacecat-shared-data-access": "1.61.19",
     "@adobe/spacecat-shared-google-client": "1.4.3",
-    "@adobe/spacecat-shared-gpt-client": "https://gitpkg.vercel.app/adobe/spacecat-shared/packages/spacecat-shared-gpt-client?fix-firefall-interface",
+    "@adobe/spacecat-shared-gpt-client": "1.4.4",
     "@adobe/spacecat-shared-http-utils": "1.9.3",
     "@adobe/spacecat-shared-rum-api-client": "2.18.0",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
