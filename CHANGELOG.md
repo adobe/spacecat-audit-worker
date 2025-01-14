@@ -1,3 +1,24 @@
+## [1.46.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.14...v1.46.15) (2025-01-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency jsdom to v26 ([#581](https://github.com/adobe/spacecat-audit-worker/issues/581)) ([701a811](https://github.com/adobe/spacecat-audit-worker/commit/701a81151e657de8f1de6afe9f0992942d1da853))
+
+## [1.46.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.13...v1.46.14) (2025-01-13)
+
+
+### Bug Fixes
+
+* migrate metatags audit to AuditBuilder ([#535](https://github.com/adobe/spacecat-audit-worker/issues/535)) ([41fc2b0](https://github.com/adobe/spacecat-audit-worker/commit/41fc2b0c6c2d6f3e877c0db95eedca7ea3b9a26a))
+
+## [1.46.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.12...v1.46.13) (2025-01-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.0.2 ([#580](https://github.com/adobe/spacecat-audit-worker/issues/580)) ([185a5e4](https://github.com/adobe/spacecat-audit-worker/commit/185a5e44c4843166c2a04396f99992ae0ead5c14))
+
 ## [1.46.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.11...v1.46.12) (2025-01-12)
 
 
