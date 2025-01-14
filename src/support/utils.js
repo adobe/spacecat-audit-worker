@@ -289,3 +289,9 @@ export const getScrapedDataForSiteId = async (site, context) => {
     siteData: extractedData.filter(Boolean),
   };
 };
+
+export async function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}

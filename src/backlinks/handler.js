@@ -16,7 +16,7 @@ import { AbortController, AbortError } from '@adobe/fetch';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getScrapedDataForSiteId } from '../support/utils.js';
+import { getScrapedDataForSiteId, sleep } from '../support/utils.js';
 import { backlinksSuggestionPrompt, brokenBacklinksPrompt } from '../support/prompts/backlinks.js';
 
 const TIMEOUT = 3000;
@@ -128,7 +128,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   const processBatch = async (batch, urlTo) => {
     try {
       const requestBody = brokenBacklinksPrompt(batch, urlTo);
-      setTimeout(() => log.info(`Processing batch for ${urlTo}`), 2000);
+      await sleep(2000);
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
@@ -157,7 +157,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
         suggestions,
         headerSuggestions,
       );
-      setTimeout(() => log.info(`Final suggestions for ${backlink.url_to}`), 2000);
+      await sleep(2000);
       const finalResponse = await firefallClient
         .fetchChatCompletion(finalRequestBody, firefallOptions);
 
@@ -183,7 +183,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     auditData.auditResult.brokenBacklinks.map(async (backlink) => {
       try {
         const requestBody = brokenBacklinksPrompt(headerLinks, backlink.url_to);
-        setTimeout(() => log.info(`Processing header suggestions for ${backlink.url_to}`), 2000);
+        await sleep(2000);
         const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
         if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
