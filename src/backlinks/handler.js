@@ -62,13 +62,10 @@ export async function filterOutValidBacklinks(backlinks, log) {
 
 export default async function auditBrokenBacklinks(message, context) {
   const { type, siteId, auditContext = {} } = message;
-  const { dataAccess, log, sqs } = context;
+  const { dataAccess, log } = context;
   const {
     Audit, Configuration, Opportunity, SiteTopPage,
   } = dataAccess;
-  const {
-    AUDIT_RESULTS_QUEUE_URL: queueUrl,
-  } = context.env;
   try {
     const site = await retrieveSiteBySiteId(dataAccess, siteId, log);
     if (!site) {
@@ -211,7 +208,6 @@ export default async function auditBrokenBacklinks(message, context) {
         log,
       });
     }
-    await sqs.sendMessage(queueUrl, result);
 
     log.info(`Successfully audited ${siteId} for ${type} type audit`);
     return noContent();
