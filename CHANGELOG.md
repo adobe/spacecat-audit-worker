@@ -1,3 +1,10 @@
+## [1.46.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.16...v1.46.17) (2025-01-15)
+
+
+### Bug Fixes
+
+* removed sendMessage for broken-backlinks ([#587](https://github.com/adobe/spacecat-audit-worker/issues/587)) ([166d209](https://github.com/adobe/spacecat-audit-worker/commit/166d2097cd38cc7f8601e4bd156e0f426bebc316))
+
 ## [1.46.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.15...v1.46.16) (2025-01-15)
 
 
