@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+// TODO: adjust for language
 const systemContentBase = 'You are tasked with identifying a suitable alternative URL for a broken backlink. '
   + 'You are an expert SEO consultant. Your goal is to suggest new URLs from the provided list that closely match the original intent of the broken link. '
   + 'You must strictly adhere to the provided list of alternative URLs. '
