@@ -19,10 +19,8 @@ import { retrieveSiteBySiteId } from '../utils/data-access.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import syncOpportunityAndSuggestions from './opportunityHandler.js';
-import { getRUMDomainkey } from '../support/utils.js';
+import { calculateCPCValue, getRUMDomainkey } from '../support/utils.js';
 import { wwwUrlResolver } from '../common/audit.js';
-
-const DEFAULT_CPC = 1; // $1
 
 async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -82,15 +80,11 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
   const rumTrafficDataMap = preprocessRumData(queryResults, log);
   let projectedTraffic = 0;
   Object.entries(detectedTags).forEach(([endpoint, tags]) => {
-    try {
-      const organicTraffic = getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
-      Object.values((tags)).forEach((tagIssueDetails) => {
-        const multiplier = tagIssueDetails.issue.includes('Missing') ? 0.01 : 0.005;
-        projectedTraffic += organicTraffic * multiplier;
-      });
-    } catch (err) {
-      log.warn(`Error while calculating projected traffic for ${endpoint}`, err);
-    }
+    const organicTraffic = getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
+    Object.values((tags)).forEach((tagIssueDetails) => {
+      const multiplier = tagIssueDetails.issue.includes('Missing') ? 0.01 : 0.005;
+      projectedTraffic += organicTraffic * multiplier;
+    });
   });
   return projectedTraffic;
 }
@@ -149,8 +143,9 @@ export default async function auditMetaTags(message, context) {
     }
     seoChecks.finalChecks();
     const detectedTags = seoChecks.getDetectedTags();
-    const projectedTraffic = calculateProjectedTraffic(context, site, detectedTags, log);
-    const projectedTrafficValue = projectedTraffic * DEFAULT_CPC;
+    const projectedTraffic = await calculateProjectedTraffic(context, site, detectedTags, log);
+    const cpcValue = await calculateCPCValue(context, siteId);
+    const projectedTrafficValue = projectedTraffic * cpcValue;
     // Prepare Audit result
     const auditResult = {
       detectedTags,

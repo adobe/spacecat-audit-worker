@@ -95,7 +95,6 @@ export async function getObjectFromKey(s3Client, bucketName, key, log) {
         return null;
       }
     }
-
     // Always return body for non-JSON content types
     return body;
   } catch (err) {

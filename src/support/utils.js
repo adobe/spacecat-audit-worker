@@ -19,8 +19,10 @@ import {
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 
 URI.preventInvalidHostname = true;
+const DEFAULT_CPC_VALUE = 1; // $1
 
 // weekly pageview threshold to eliminate urls with lack of samples
 
@@ -288,4 +290,34 @@ export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
     result.push(newBacklink);
   }
   return result;
+};
+
+export const calculateCPCValue = (context, siteId) => {
+  if (!context?.env?.S3_IMPORTER_BUCKET_NAME) {
+    throw new Error('S3 importer bucket name is required');
+  }
+  if (!context.s3Client) {
+    throw new Error('S3 client is required');
+  }
+  if (!context.log) {
+    throw new Error('Logger is required');
+  }
+  if (!siteId) {
+    throw new Error('SiteId is required');
+  }
+  const { s3Client, log } = context;
+  const bucketName = context.env.S3_IMPORTER_BUCKET_NAME;
+  const key = `metrics/${siteId}/ahrefs/organic-traffic.json`;
+  try {
+    const organicTrafficData = getObjectFromKey(s3Client, bucketName, key, log);
+    if (!Array.isArray(organicTrafficData) || organicTrafficData.length === 0) {
+      log.info(`Organic traffic data not available for ${siteId}. Using Default CPC value.`);
+      return DEFAULT_CPC_VALUE;
+    }
+    const lastTraffic = organicTrafficData[organicTrafficData.length - 1];
+    return lastTraffic.cost / lastTraffic.value;
+  } catch (err) {
+    log.error(`Error fetching organic traffic data for site ${siteId}. Using Default CPC value.`, err);
+    return DEFAULT_CPC_VALUE;
+  }
 };

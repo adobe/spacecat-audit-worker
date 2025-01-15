@@ -15,6 +15,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
+import esmock from 'esmock';
 import {
   enhanceBacklinksWithFixes,
   extractKeywordsFromUrl, getBaseUrlPagesFromSitemapContents,
@@ -175,5 +176,93 @@ describe('getBaseUrlPagesFromSitemapContents', () => {
   it('should return an empty array when the sitemap content is empty', () => {
     const result = getBaseUrlPagesFromSitemapContents('https://my-site.adbe', undefined);
     expect(result).to.deep.equal([]);
+  });
+});
+
+describe('utils.calculateCPCValue', () => {
+  let context;
+  let utils;
+  beforeEach(async () => {
+    sinon.restore();
+    const getObjectFromKey = sinon.stub().returns([
+      {
+        cost: 200,
+        value: 100,
+      },
+    ]);
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    context = {
+      env: {
+        S3_IMPORTER_BUCKET_NAME: 'my-bucket',
+      },
+      s3Client: {},
+      log: {
+        info: sinon.stub(),
+        error: sinon.stub(),
+      },
+    };
+  });
+  it('should throw an error if S3_IMPORTER_BUCKET_NAME is missing', () => {
+    context.env.S3_IMPORTER_BUCKET_NAME = null;
+    expect(() => utils.calculateCPCValue(context, 'siteId')).to.throw('S3 importer bucket name is required');
+  });
+
+  it('should throw an error if s3Client is missing', () => {
+    context.s3Client = null;
+    expect(() => utils.calculateCPCValue(context, 'siteId')).to.throw('S3 client is required');
+  });
+
+  it('should throw an error if logger is missing', () => {
+    context.log = null;
+    expect(() => utils.calculateCPCValue(context, 'siteId')).to.throw('Logger is required');
+  });
+
+  it('should throw an error if siteId is missing', () => {
+    expect(() => utils.calculateCPCValue(context)).to.throw('SiteId is required');
+  });
+
+  it('should return 1 if organicTrafficData array is empty', async () => {
+    const getObjectFromKey = sinon.stub().returns([]);
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    const result = utils.calculateCPCValue(context, 'siteId');
+    expect(result).to.equal(1);
+    expect(context.log.info.calledOnce).to.be.true;
+    expect(context.log.info.calledWith('Organic traffic data not available for siteId. Using Default CPC value.')).to.be.true;
+  });
+
+  it('should return 1 if organicTrafficData is not an array', async () => {
+    const getObjectFromKey = sinon.stub().returns('dummy');
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    const result = utils.calculateCPCValue(context, 'siteId');
+    expect(result).to.equal(1);
+  });
+
+  it('should calculate CPC correctly if organicTrafficData is valid', async () => {
+    const getObjectFromKey = sinon.stub().returns([
+      { cost: 100, value: 50 },
+      { cost: 200, value: 100 },
+    ]);
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    const result = utils.calculateCPCValue(context, 'siteId');
+    expect(result).to.equal(2); // (200 / 100)
+  });
+
+  it('should handle errors during data fetching and return 1', async () => {
+    const getObjectFromKey = sinon.stub().throws(new Error('Fetch error'));
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    const result = utils.calculateCPCValue(context, 'siteId');
+    expect(result).to.equal(1);
+    expect(context.log.error.calledOnce).to.be.true;
+    expect(context.log.error.calledWith('Error fetching organic traffic data for site siteId. Using Default CPC value.', sinon.match.instanceOf(Error))).to.be.true;
   });
 });

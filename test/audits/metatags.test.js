@@ -22,6 +22,7 @@ import {
   internalServerError,
 } from '@adobe/spacecat-shared-http-utils';
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import esmock from 'esmock';
 import {
   TITLE, DESCRIPTION, H1, SEO_IMPACT, HIGH, MODERATE, ISSUE,
   SEO_RECOMMENDATION, MULTIPLE_H1_ON_PAGE, SHOULD_BE_PRESENT, TAG_LENGTHS, ONE_H1_ON_A_PAGE,
@@ -227,7 +228,7 @@ describe('Meta Tags', () => {
         log: logStub,
         dataAccess: dataAccessStub,
         s3Client: s3ClientStub,
-        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket', S3_IMPORTER_BUCKET_NAME: 'test-importer-bucket' },
       };
     });
 
@@ -266,7 +267,26 @@ describe('Meta Tags', () => {
       expect(logStub.error.calledOnce).to.be.true;
     });
 
-    xit('should process site tags and perform SEO checks', async () => {
+    it('should process site tags and perform SEO checks', async () => {
+      const RUMAPIClientStub = {
+        createFrom: sinon.stub().returns({
+          query: sinon.stub().resolves([
+            {
+              url: 'http://example.com/blog/page1',
+              total: 100,
+              earned: 20,
+              owned: 70,
+              paid: 10,
+            },
+          ]),
+        }),
+      };
+      const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+      const mockCalculateCPCValue = sinon.stub().resolves(2);
+      const auditStub = await esmock('../../src/metatags/handler.js', {
+        '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+        '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+      });
       const metatagsOppty = {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
@@ -343,7 +363,7 @@ describe('Meta Tags', () => {
       const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
       dataAccessStub.Audit.create = addAuditStub;
 
-      const result = await auditMetaTags(message, context);
+      const result = await auditStub(message, context);
 
       expect(JSON.stringify(result)).to.equal(JSON.stringify(noContent()));
       expect(addAuditStub.calledWithMatch({
@@ -399,10 +419,29 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(5);
-    }).timeout(3000);
+      expect(logStub.info.callCount).to.equal(6);
+    }).timeout(10000);
 
-    xit('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
+    it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
+      const RUMAPIClientStub = {
+        createFrom: sinon.stub().returns({
+          query: sinon.stub().resolves([
+            {
+              url: 'http://example.com/blog/page1',
+              total: 100,
+              earned: 20,
+              owned: 70,
+              paid: 10,
+            },
+          ]),
+        }),
+      };
+      const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+      const mockCalculateCPCValue = sinon.stub().resolves(2);
+      const auditStub = await esmock('../../src/metatags/handler.js', {
+        '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+        '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+      });
       const site = {
         getIsLive: sinon.stub().returns(true),
         getId: sinon.stub().returns('site-id'),
@@ -494,7 +533,7 @@ describe('Meta Tags', () => {
       const addAuditStub = sinon.stub().resolves();
       dataAccessStub.Audit.create = addAuditStub;
 
-      const result = await auditMetaTags(message, context);
+      const result = await auditStub(message, context);
 
       expect(JSON.stringify(result)).to.equal(JSON.stringify(noContent()));
       expect(addAuditStub.calledWithMatch({
@@ -566,7 +605,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(3);
+      expect(logStub.info.callCount).to.equal(4);
     });
 
     it('should handle errors and return internalServerError', async () => {
@@ -668,6 +707,161 @@ describe('Meta Tags', () => {
       expect(JSON.stringify(result)).to.equal(JSON.stringify(notFound('Site tags data not available')));
       expect(logStub.error.calledTwice).to.be.true;
     });
+
+    it('should calculate projected traffic for detected tags', async () => {
+      const RUMAPIClientStub = {
+        createFrom: sinon.stub().returns({
+          query: sinon.stub().resolves([
+            {
+              url: 'http://example.com/blog/page1',
+              total: 100,
+              earned: 20,
+              owned: 70,
+              paid: 10,
+            },
+          ]),
+        }),
+      };
+      const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+      const auditStub = await esmock('../../src/metatags/handler.js', {
+        '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey },
+        '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+      });
+      const metatagsOppty = {
+        getId: () => 'opportunity-id',
+        setAuditId: sinon.stub(),
+        save: sinon.stub(),
+        getSuggestions: sinon.stub().returns([]),
+        addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
+        getType: () => 'meta-tags',
+      };
+      const site = {
+        getIsLive: sinon.stub().returns(true),
+        getId: sinon.stub().returns('site-id'),
+        getBaseURL: sinon.stub().returns('http://example.com'),
+      };
+      const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
+        { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') }];
+
+      dataAccessStub.Site.findById.resolves(site);
+      dataAccessStub.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      });
+      dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
+      dataAccessStub.Opportunity = {
+        allBySiteIdAndStatus: sinon.stub().returns([metatagsOppty]),
+      };
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Prefix: 'scrapes/site-id/',
+          MaxKeys: 1000,
+        })))
+        .resolves({
+          Contents: [
+            { Key: 'scrapes/site-id/blog/page1/scrape.json' },
+            { Key: 'scrapes/site-id/blog/page2/scrape.json' },
+          ],
+        });
+
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Key: 'scrapes/site-id/blog/page1/scrape.json',
+        }))).returns({
+          Body: {
+            transformToString: () => JSON.stringify({
+              scrapeResult: {
+                tags: {
+                  title: 'Test Page',
+                  description: '',
+                },
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        });
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Key: 'scrapes/site-id/blog/page2/scrape.json',
+        }))).returns({
+          Body: {
+            transformToString: () => JSON.stringify({
+              scrapeResult: {
+                tags: {
+                  title: 'Test Page',
+                  h1: [
+                    'This is a dummy H1 that is intentionally made to be overly lengthy from SEO perspective',
+                  ],
+                },
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        });
+      const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
+      dataAccessStub.Audit.create = addAuditStub;
+      await auditStub(message, context);
+      expect(addAuditStub.calledWithMatch({
+        auditResult: {
+          projectedTraffic: 200,
+          projectedTrafficValue: 200,
+          detectedTags: {
+            '/blog/page1': {
+              h1: {
+                seoImpact: 'High',
+                issue: 'Missing H1',
+                issueDetails: 'H1 tag is missing',
+                seoRecommendation: 'Should be present',
+              },
+              title: {
+                tagContent: 'Test Page',
+                seoImpact: 'High',
+                issue: 'Duplicate Title',
+                issueDetails: '2 pages share same title',
+                seoRecommendation: 'Unique across pages',
+                duplicates: [
+                  '/blog/page2',
+                ],
+              },
+              description: {
+                tagContent: '',
+                seoImpact: 'High',
+                issue: 'Empty Description',
+                issueDetails: 'Description tag is empty',
+                seoRecommendation: '140-160 characters long',
+              },
+            },
+            '/blog/page2': {
+              description: {
+                seoImpact: 'High',
+                issue: 'Missing Description',
+                issueDetails: 'Description tag is missing',
+                seoRecommendation: 'Should be present',
+              },
+              title: {
+                tagContent: 'Test Page',
+                seoImpact: 'High',
+                issue: 'Duplicate Title',
+                issueDetails: '2 pages share same title',
+                seoRecommendation: 'Unique across pages',
+                duplicates: [
+                  '/blog/page1',
+                ],
+              },
+              h1: {
+                tagContent: 'This is a dummy H1 that is intentionally made to be overly lengthy from SEO perspective',
+                seoImpact: 'Moderate',
+                issue: 'H1 too long',
+                issueDetails: '17 chars over limit',
+                seoRecommendation: 'Below 70 characters',
+              },
+            },
+          },
+        },
+      }));
+    }).timeout(5000);
   });
 
   describe('opportunities handler method', () => {
