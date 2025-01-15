@@ -97,10 +97,7 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
 
 // eslint-disable-next-line consistent-return
 export async function convertToOpportunity(auditUrl, auditData, context) {
-  const {
-    dataAccess,
-    log,
-  } = context;
+  const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 
   let opportunity;

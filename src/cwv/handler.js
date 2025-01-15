@@ -47,10 +47,7 @@ export async function CWVRunner(auditUrl, context, site) {
 }
 
 export async function convertToOppty(auditUrl, auditData, context, site) {
-  const {
-    dataAccess,
-    log,
-  } = context;
+  const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
   const groupedURLs = site.getConfig().getGroupedURLs(AUDIT_TYPE);
 
