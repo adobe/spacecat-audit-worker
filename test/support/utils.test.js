@@ -194,7 +194,7 @@ describe('utils.calculateCPCValue', () => {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
     });
     context = {
-      S3_IMPORTER_BUCKET_NAME: 'my-bucket',
+      env: { S3_IMPORTER_BUCKET_NAME: 'my-bucket' },
       s3Client: {},
       log: {
         info: sinon.stub(),
@@ -203,7 +203,7 @@ describe('utils.calculateCPCValue', () => {
     };
   });
   it('should throw an error if S3_IMPORTER_BUCKET_NAME is missing', async () => {
-    context.S3_IMPORTER_BUCKET_NAME = null;
+    context.env.S3_IMPORTER_BUCKET_NAME = null;
     await expect(utils.calculateCPCValue(context, 'siteId')).to.be.rejectedWith('S3 importer bucket name is required');
   });
 

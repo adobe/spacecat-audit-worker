@@ -300,7 +300,7 @@ export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
  * @returns {number} CPC value
  */
 export async function calculateCPCValue(context, siteId) {
-  if (!context?.S3_IMPORTER_BUCKET_NAME) {
+  if (!context?.env?.S3_IMPORTER_BUCKET_NAME) {
     throw new Error('S3 importer bucket name is required');
   }
   if (!context.s3Client) {
@@ -313,7 +313,7 @@ export async function calculateCPCValue(context, siteId) {
     throw new Error('SiteId is required');
   }
   const { s3Client, log } = context;
-  const bucketName = context.S3_IMPORTER_BUCKET_NAME;
+  const bucketName = context.env.S3_IMPORTER_BUCKET_NAME;
   const key = `metrics/${siteId}/ahrefs/organic-traffic.json`;
   try {
     const organicTrafficData = await getObjectFromKey(s3Client, bucketName, key, log);

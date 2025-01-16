@@ -364,8 +364,10 @@ describe('Meta Tags', () => {
       await auditInstance.runner('http://example.com', {
         log: logStub,
         s3Client: s3ClientStub,
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        },
       }, site);
       const result = await fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page3/scrape.json', 'scrapes/site-id/', logStub);
       expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
@@ -564,8 +566,10 @@ describe('Meta Tags', () => {
       await auditInstance.runner('http://example.com', {
         log: logStub,
         s3Client: s3ClientStub,
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        },
       }, site);
       await fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page1/scrape.json', 'scrapes/site-id/', sinon.stub());
 
@@ -735,8 +739,10 @@ describe('Meta Tags', () => {
       await auditInstance.runner('http://example.com', {
         log: logStub,
         s3Client: s3ClientStub,
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        },
       }, site);
       expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
     });
@@ -840,8 +846,10 @@ describe('Meta Tags', () => {
       await auditInstance.runner('http://example.com', {
         log: logStub,
         s3Client: s3ClientStub,
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        },
       }, site);
       expect(addAuditStub.calledWithMatch({
         auditResult: {
