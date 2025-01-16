@@ -292,3 +292,17 @@ export default new AuditBuilder()
   .build();
 
 ```
+
+### How to add auto-suggest to an audit
+A new auto-suggest feature can be added as a post processor step to the existing audit.
+
+The `AuditBuilder` is chaining all post processors together and passing the `auditData` object to each post processor.
+The `auditData` object can be updated by each post processor and the updated `auditData` object will be passed to the next post processor.
+If the `auditData` object is not updated by a post processor, the previous `auditData` object will be used.
+
+```js
+export default new AuditBuilder()
+  .withRunner(auditRunner)
+  .withPostProcessors([ generateSuggestionData, convertToOpportunity ])
+  .build();
+```
