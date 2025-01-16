@@ -18,6 +18,8 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { getIssueRanking, removeTrailingSlash, syncMetatagsSuggestions } from './opportunityHandler.js';
 import { DESCRIPTION, H1, TITLE } from './constants.js';
 
+const AUDIT_TYPE = 'meta-tags';
+
 export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
@@ -74,8 +76,6 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
     fullAuditRef: baseURL,
   };
 }
-
-const AUDIT_TYPE = 'meta-tags';
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const opportunity = await convertToOpportunity(auditUrl, auditData, context, AUDIT_TYPE);
