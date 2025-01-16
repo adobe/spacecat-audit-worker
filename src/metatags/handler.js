@@ -66,10 +66,10 @@ function getOrganicTrafficForEndpoint(endpoint, dataMap, log) {
 // Calculate the projected traffic lost for a site
 async function calculateProjectedTraffic(context, site, detectedTags, log) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainKey = await getRUMDomainkey(site.getBaseURL(), context);
+  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: wwwUrlResolver(site),
-    domainKey,
+    domainkey,
     interval: 30,
     granularity: 'hourly',
   };
