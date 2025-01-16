@@ -16,30 +16,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Check out
         uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: 22.12
+          persist-credentials: 'false'
+      - name: Setup Node & NPM
+        uses: ./.github/actions/setup-node-npm
 
-      - name: Update NPM
-        run: npm install -g npm@10.9.2
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Getting Code Coverage
-        run: npm run test
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+      - name: Lint, Test, Coverage Upload
+        uses: ./.github/actions/lint-test-coverage
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          upload_coverage: "true"
+          codecov_token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Semantic Release (Dry Run)
         if: github.ref != 'refs/heads/main'
@@ -53,39 +41,19 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     steps:
-      - name: Checkout code
+      - name: Check out
         uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: 22.12
-
-      - name: Update NPM
-        run: npm install -g npm@10.9.2
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Revert changes to package-lock.json
-        run: git checkout -- package-lock.json
+          persist-credentials: 'false'
 
       - name: Configure Environment
         run: echo -e "LOG_LEVEL=info\n" > .env
 
-      - name: Configure AWS Credentials
-        id: creds
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: us-east-1
-          role-to-assume: arn:aws:iam::282898975672:role/spacecat-role-github-actions
+      - name: Setup Node & NPM
+        uses: ./.github/actions/setup-node-npm
 
-      - name: Fetch AWS Secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@v2
-        with:
-          parse-json-secrets: true
-          secret-ids: |
-            /spacecat/github-action-secrets
+      - name: Configure AWS
+        uses: ./.github/actions/configure-aws
 
       - name: Semantic Release
         run: npm run semantic-release
@@ -98,36 +66,16 @@ jobs:
     needs: build
     if: github.ref != 'refs/heads/main'
     steps:
-      - name: Checkout code
+      - name: Check out
         uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: 22.12
+          persist-credentials: 'false'
 
-      - name: Update NPM
-        run: npm install -g npm@10.9.2
+      - name: Setup Node & NPM
+        uses: ./.github/actions/setup-node-npm
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Revert changes to package-lock.json
-        run: git checkout -- package-lock.json
-
-      - name: Configure AWS Credentials
-        id: creds
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: us-east-1
-          role-to-assume: arn:aws:iam::282898975672:role/spacecat-role-github-actions
-
-      - name: Fetch AWS Secrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@v2
-        with:
-          parse-json-secrets: true
-          secret-ids: |
-            /spacecat/github-action-secrets
+      - name: Configure AWS
+        uses: ./.github/actions/configure-aws
 
       - name: Branch Deployment
         run: npm run deploy-ci
@@ -136,8 +84,3 @@ jobs:
 
       - name: Post-Deployment Integration Test
         run: npm run test-postdeploy
-
-      - name: Upload post-deployment coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
