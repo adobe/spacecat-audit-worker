@@ -148,6 +148,18 @@ describe('S3 Utility Functions', () => {
       expect(result).to.equal('raw body');
     });
 
+    it('should log an error and return null when JSON parsing fails', async () => {
+      const bucketName = 'test-bucket';
+      const key = 'test-key';
+
+      const s3ClientMock = {
+        send: () => ({ Body: { transformToString: () => 'invalid-json' }, ContentType: 'application/json' }),
+      };
+
+      const result = await getObjectFromKey(s3ClientMock, bucketName, key, logMock);
+      expect(result).to.be.null;
+    });
+
     it('should log an error and return null when getObject fails', async () => {
       const bucketName = 'test-bucket';
       const key = 'test-key';

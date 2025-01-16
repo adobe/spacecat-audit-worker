@@ -194,9 +194,7 @@ describe('utils.calculateCPCValue', () => {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
     });
     context = {
-      env: {
-        S3_IMPORTER_BUCKET_NAME: 'my-bucket',
-      },
+      S3_IMPORTER_BUCKET_NAME: 'my-bucket',
       s3Client: {},
       log: {
         info: sinon.stub(),
@@ -204,23 +202,23 @@ describe('utils.calculateCPCValue', () => {
       },
     };
   });
-  it('should throw an error if S3_IMPORTER_BUCKET_NAME is missing', () => {
-    context.env.S3_IMPORTER_BUCKET_NAME = null;
-    expect(() => utils.calculateCPCValue(context, 'siteId')).to.throw('S3 importer bucket name is required');
+  it('should throw an error if S3_IMPORTER_BUCKET_NAME is missing', async () => {
+    context.S3_IMPORTER_BUCKET_NAME = null;
+    await expect(utils.calculateCPCValue(context, 'siteId')).to.be.rejectedWith('S3 importer bucket name is required');
   });
 
-  it('should throw an error if s3Client is missing', () => {
+  it('should throw an error if s3Client is missing', async () => {
     context.s3Client = null;
-    expect(() => utils.calculateCPCValue(context, 'siteId')).to.throw('S3 client is required');
+    await expect(utils.calculateCPCValue(context, 'siteId')).to.be.rejectedWith('S3 client is required');
   });
 
-  it('should throw an error if logger is missing', () => {
+  it('should throw an error if logger is missing', async () => {
     context.log = null;
-    expect(() => utils.calculateCPCValue(context, 'siteId')).to.throw('Logger is required');
+    await expect(utils.calculateCPCValue(context, 'siteId')).to.be.rejectedWith('Logger is required');
   });
 
-  it('should throw an error if siteId is missing', () => {
-    expect(() => utils.calculateCPCValue(context)).to.throw('SiteId is required');
+  it('should throw an error if siteId is missing', async () => {
+    await expect(utils.calculateCPCValue(context)).to.be.rejectedWith('SiteId is required');
   });
 
   it('should return 1 if organicTrafficData array is empty', async () => {
@@ -228,7 +226,7 @@ describe('utils.calculateCPCValue', () => {
     utils = await esmock('../../src/support/utils.js', {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
     });
-    const result = utils.calculateCPCValue(context, 'siteId');
+    const result = await utils.calculateCPCValue(context, 'siteId');
     expect(result).to.equal(1);
     expect(context.log.info.calledOnce).to.be.true;
     expect(context.log.info.calledWith('Organic traffic data not available for siteId. Using Default CPC value.')).to.be.true;
@@ -239,7 +237,7 @@ describe('utils.calculateCPCValue', () => {
     utils = await esmock('../../src/support/utils.js', {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
     });
-    const result = utils.calculateCPCValue(context, 'siteId');
+    const result = await utils.calculateCPCValue(context, 'siteId');
     expect(result).to.equal(1);
   });
 
@@ -251,7 +249,7 @@ describe('utils.calculateCPCValue', () => {
     utils = await esmock('../../src/support/utils.js', {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
     });
-    const result = utils.calculateCPCValue(context, 'siteId');
+    const result = await utils.calculateCPCValue(context, 'siteId');
     expect(result).to.equal(2); // (200 / 100)
   });
 
@@ -260,7 +258,7 @@ describe('utils.calculateCPCValue', () => {
     utils = await esmock('../../src/support/utils.js', {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
     });
-    const result = utils.calculateCPCValue(context, 'siteId');
+    const result = await utils.calculateCPCValue(context, 'siteId');
     expect(result).to.equal(1);
     expect(context.log.error.calledOnce).to.be.true;
     expect(context.log.error.calledWith('Error fetching organic traffic data for site siteId. Using Default CPC value.', sinon.match.instanceOf(Error))).to.be.true;
