@@ -292,6 +292,13 @@ export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
   return result;
 };
 
+/**
+ * Fetches the organic traffic data for a site and calculate the CPC value as per
+ * https://wiki.corp.adobe.com/pages/viewpage.action?spaceKey=AEMSites&title=Success+Studio+Projected+Business+Impact+Metrics#SuccessStudioProjectedBusinessImpactMetrics-IdentifyingCPCvalueforadomain
+ * @param context
+ * @param siteId
+ * @returns {number} CPC value
+ */
 export const calculateCPCValue = (context, siteId) => {
   if (!context?.env?.S3_IMPORTER_BUCKET_NAME) {
     throw new Error('S3 importer bucket name is required');

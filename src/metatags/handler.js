@@ -62,11 +62,12 @@ function getOrganicTrafficForEndpoint(endpoint, dataMap, log) {
     log.warn(`No rum data found for ${endpoint}`);
     return 0;
   }
-  const trafficSum = target.total;
+  const trafficSum = target.earned + target.paid;
   log.info(`Found ${trafficSum} page views for ${endpoint}`);
   return trafficSum;
 }
 
+// Calculate the projected traffic lost for a site
 async function calculateProjectedTraffic(context, site, detectedTags, log) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainKey = await getRUMDomainkey(site.getBaseURL(), context);
