@@ -1,3 +1,10 @@
+## [1.47.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.47.0...v1.47.1) (2025-01-16)
+
+
+### Bug Fixes
+
+* update gh workflow ([#589](https://github.com/adobe/spacecat-audit-worker/issues/589)) ([2eb6a91](https://github.com/adobe/spacecat-audit-worker/commit/2eb6a91b6134803942d657f4ccfc5986295a13cd))
+
 # [1.47.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.18...v1.47.0) (2025-01-16)
 
 
