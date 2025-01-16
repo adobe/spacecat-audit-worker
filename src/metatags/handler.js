@@ -17,6 +17,7 @@ import { noopUrlResolver } from '../common/audit.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getIssueRanking, removeTrailingSlash, syncMetatagsSuggestions } from './opportunityHandler.js';
 import { DESCRIPTION, H1, TITLE } from './constants.js';
+import { opportunityData } from './opportunityDataMapper.js';
 
 const AUDIT_TYPE = 'meta-tags';
 
@@ -78,7 +79,13 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
-  const opportunity = await convertToOpportunity(auditUrl, auditData, context, AUDIT_TYPE);
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    opportunityData,
+    AUDIT_TYPE,
+  );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
   const suggestions = [];
