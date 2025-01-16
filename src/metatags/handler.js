@@ -14,7 +14,9 @@ import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
-import convertToOpportunity from './opportunityHandler.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { getIssueRanking, removeTrailingSlash, syncMetatagsSuggestions } from './opportunityHandler.js';
+import { DESCRIPTION, H1, TITLE } from './constants.js';
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -73,8 +75,48 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   };
 }
 
+const AUDIT_TYPE = 'meta-tags';
+
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const opportunity = await convertToOpportunity(auditUrl, auditData, context, AUDIT_TYPE);
+  const { log } = context;
+  const { detectedTags } = auditData.auditResult;
+  const suggestions = [];
+  // Generate suggestions data to be inserted in meta-tags opportunity suggestions
+  Object.keys(detectedTags)
+    .forEach((endpoint) => {
+      [TITLE, DESCRIPTION, H1].forEach((tag) => {
+        if (detectedTags[endpoint]?.[tag]?.issue) {
+          suggestions.push({
+            ...detectedTags[endpoint][tag],
+            tagName: tag,
+            url: removeTrailingSlash(auditData.auditResult.finalUrl) + endpoint,
+            rank: getIssueRanking(tag, detectedTags[endpoint][tag].issue),
+          });
+        }
+      });
+    });
+
+  const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
+
+  // Sync the suggestions from new audit with old ones
+  await syncMetatagsSuggestions({
+    opportunity,
+    newData: suggestions,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: 'METADATA_UPDATE',
+      rank: suggestion.rank,
+      data: { ...suggestion },
+    }),
+    log,
+  });
+  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and meta-tags audit type.`);
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditMetaTagsRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([opportunityAndSuggestions])
   .build();

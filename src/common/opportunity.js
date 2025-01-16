@@ -11,12 +11,6 @@
  */
 
 import { opportunityData } from '../metatags/opportunityDataMapper.js';
-import { DESCRIPTION, H1, TITLE } from '../metatags/constants.js';
-import {
-  getIssueRanking,
-  removeTrailingSlash,
-  syncMetatagsSuggestions,
-} from '../metatags/opportunityHandler.js';
 
 /**
  * @param auditUrl - The URL of the audit
@@ -25,7 +19,6 @@ import {
  * @param AUDIT_TYPE - The type of the audit.
  */
 
-// eslint-disable-next-line consistent-return
 export async function convertToOpportunity(auditUrl, auditData, context, AUDIT_TYPE) {
   // eslint-disable-next-line new-cap
   const opportunityInstance = new opportunityData();
@@ -59,42 +52,10 @@ export async function convertToOpportunity(auditUrl, auditData, context, AUDIT_T
     } else {
       opportunity.setAuditId(auditData.id);
       await opportunity.save();
+      return opportunity;
     }
   } catch (e) {
     log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
     throw e;
   }
-
-  const { detectedTags } = auditData.auditResult;
-  const suggestions = [];
-  // Generate suggestions data to be inserted in meta-tags opportunity suggestions
-  Object.keys(detectedTags).forEach((endpoint) => {
-    [TITLE, DESCRIPTION, H1].forEach((tag) => {
-      if (detectedTags[endpoint]?.[tag]?.issue) {
-        suggestions.push({
-          ...detectedTags[endpoint][tag],
-          tagName: tag,
-          url: removeTrailingSlash(auditData.auditResult.finalUrl) + endpoint,
-          rank: getIssueRanking(tag, detectedTags[endpoint][tag].issue),
-        });
-      }
-    });
-  });
-
-  const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
-
-  // Sync the suggestions from new audit with old ones
-  await syncMetatagsSuggestions({
-    opportunity,
-    newData: suggestions,
-    buildKey,
-    mapNewSuggestion: (suggestion) => ({
-      opportunityId: opportunity.getId(),
-      type: 'METADATA_UPDATE',
-      rank: suggestion.rank,
-      data: { ...suggestion },
-    }),
-    log,
-  });
-  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and meta-tags audit type.`);
 }
