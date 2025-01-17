@@ -89,7 +89,6 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
 export async function auditMetaTagsRunner(baseURL, context, site) {
   const { log, s3Client } = context;
   // Fetch site's scraped content from S3
-  log.warn(`Environment vars: ${context.env.S3_BUCKET_NAME}, ${context.S3_BUCKET_NAME}`);
   const bucketName = context.env.S3_BUCKET_NAME;
   const prefix = `scrapes/${site.getId()}/`;
   const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
