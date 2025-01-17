@@ -224,6 +224,16 @@ describe('Audit tests', () => {
 
     it('audit runs as expected with post processors', async () => {
       const queueUrl = 'some-queue-url';
+      const fullAuditRef = 'hebele';
+      const auditData = {
+        siteId: site.getId(),
+        isLive: site.getIsLive(),
+        auditedAt: mockDate,
+        auditType: message.type,
+        auditResult: { metric: 42 },
+        fullAuditRef,
+        id: 'some-audit-id',
+      };
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
       context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
@@ -233,17 +243,27 @@ describe('Audit tests', () => {
       });
       context.sqs.sendMessage.resolves();
 
+      // Stubs for post processors
+      const updatedAuditData1 = {
+        ...auditData,
+        auditResult: { ...auditData.auditResult, extraMetric: 100 },
+      };
+      const updatedAuditData2 = {
+        ...updatedAuditData1,
+        auditResult: { ...updatedAuditData1.auditResult, anotherMetric: 200 },
+      };
+
       const postProcessors = [
-        sandbox.stub().resolves(),
-        sandbox.stub().rejects(new Error('some nasty error')),
-        sandbox.stub().resolves(),
+        sandbox.stub().resolves(updatedAuditData1), // First post processor modifies auditData
+        sandbox.stub().resolves(), // second post processor does not return anything
+        sandbox.stub().rejects(new Error('some nasty error')), // Third post processor throws an error
+        sandbox.stub().resolves(updatedAuditData2), // Fourth post processor should not be called
       ];
 
       nock(baseURL)
         .get('/')
         .reply(200);
 
-      const fullAuditRef = 'hebele';
       const dummyRunner = (url, _context) => ({
         auditResult: typeof url === 'string' && typeof _context === 'object' ? { metric: 42 } : null,
         fullAuditRef,
@@ -263,25 +283,20 @@ describe('Audit tests', () => {
 
       // Assert
       expect(context.dataAccess.Audit.create).to.have.been.calledOnce;
-      const auditData = {
-        siteId: site.getId(),
-        isLive: site.getIsLive(),
-        auditedAt: mockDate,
-        auditType: message.type,
-        auditResult: { metric: 42 },
-        fullAuditRef,
-        // Sinon is comparing against the final state of the object
-        // because JavaScript objects are passed by reference.
-        id: 'some-audit-id',
-      };
+
       expect(context.dataAccess.Audit.create).to.have.been.calledWith(auditData);
 
       const finalUrl = 'space.cat';
       expect(context.sqs.sendMessage).not.to.have.been.calledOnce;
-      expect(postProcessors[0]).to.have.been.calledWith(finalUrl, auditData);
-      expect(postProcessors[1]).to.have.been.calledWith(finalUrl, auditData);
-      expect(postProcessors[2]).to.not.have.been.called;
-      expect(context.log.error).to.have.been.calledOnceWith(`Post processor functionStub failed for dummy audit failed for site site-id. Reason: some nasty error.\nAudit data: ${JSON.stringify(auditData)}`);
+
+      expect(postProcessors[0]).to.have.been.calledWith(finalUrl, auditData, context, site);
+      expect(postProcessors[1]).to.have.been.called;
+      expect(postProcessors[2]).to.have.been.calledWith(finalUrl, updatedAuditData1, context, site);
+      expect(postProcessors[3]).to.not.have.been.called;
+
+      expect(context.log.error).to.have.been.calledOnceWith(
+        `Post processor functionStub failed for dummy audit failed for site site-id. Reason: some nasty error.\nAudit data: ${JSON.stringify(updatedAuditData1)}`,
+      );
     });
   });
 

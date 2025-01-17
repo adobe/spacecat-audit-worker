@@ -1,3 +1,38 @@
+## [1.47.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.47.2...v1.47.3) (2025-01-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.18.4 ([#591](https://github.com/adobe/spacecat-audit-worker/issues/591)) ([b225985](https://github.com/adobe/spacecat-audit-worker/commit/b2259852c7229f474d920ccd56865866daca1465))
+
+## [1.47.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.47.1...v1.47.2) (2025-01-16)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#590](https://github.com/adobe/spacecat-audit-worker/issues/590)) ([cebd227](https://github.com/adobe/spacecat-audit-worker/commit/cebd2270e9789bb2948f612c6a6fd8f3ea3a14aa))
+
+## [1.47.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.47.0...v1.47.1) (2025-01-16)
+
+
+### Bug Fixes
+
+* update gh workflow ([#589](https://github.com/adobe/spacecat-audit-worker/issues/589)) ([2eb6a91](https://github.com/adobe/spacecat-audit-worker/commit/2eb6a91b6134803942d657f4ccfc5986295a13cd))
+
+# [1.47.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.18...v1.47.0) (2025-01-16)
+
+
+### Features
+
+* adding auto-suggest instructions and chain post processors ([#586](https://github.com/adobe/spacecat-audit-worker/issues/586)) ([cd0d57a](https://github.com/adobe/spacecat-audit-worker/commit/cd0d57a5ec37b79b7a5796f23ad8ac9c96f35ad0))
+
+## [1.46.18](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.17...v1.46.18) (2025-01-16)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.26.4 ([#588](https://github.com/adobe/spacecat-audit-worker/issues/588)) ([d54a1ad](https://github.com/adobe/spacecat-audit-worker/commit/d54a1ad3538d1b45cbceaa7cc1452394cb232115))
+
 ## [1.46.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.46.16...v1.46.17) (2025-01-15)
 
 

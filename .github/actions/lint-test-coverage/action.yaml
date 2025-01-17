@@ -1,0 +1,29 @@
+name: "Lint, Test, and Coverage"
+description: "Runs lint and test commands, plus coverage"
+
+inputs:
+  codecov_token:
+    description: "Codecov Token (optional)"
+    required: false
+    default: ""
+  upload_coverage:
+    description: "Whether to upload coverage to Codecov (true/false). Default false."
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Lint
+      run: npm run lint
+      shell: bash
+
+    - name: Test
+      run: npm run test
+      shell: bash
+
+    - name: Upload coverage to Codecov
+      if: ${{ inputs.upload_coverage == 'true' }}
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ inputs.codecov_token }}

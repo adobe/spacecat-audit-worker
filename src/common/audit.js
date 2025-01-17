@@ -21,6 +21,7 @@ export async function defaultMessageSender() {}
 export async function defaultPersister(auditData, context) {
   const { dataAccess } = context;
   const { Audit } = dataAccess;
+
   return Audit.create(auditData);
 }
 
@@ -131,15 +132,18 @@ export class Audit {
       await this.messageSender(resultMessage, context);
       // add auditId for the post-processing
       auditData.id = audit.getId();
-      for (const postProcessor of this.postProcessors) {
+      await this.postProcessors.reduce(async (previousProcessor, postProcessor) => {
+        const updatedAuditData = await previousProcessor;
+
         try {
-          // eslint-disable-next-line no-await-in-loop
-          await postProcessor(finalUrl, auditData, context, site);
+          const result = await postProcessor(finalUrl, updatedAuditData, context, site);
+
+          return result || updatedAuditData;
         } catch (e) {
-          log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(auditData)}`);
+          log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(updatedAuditData)}`);
           throw e;
         }
-      }
+      }, Promise.resolve(auditData));
 
       return ok();
     } catch (e) {
