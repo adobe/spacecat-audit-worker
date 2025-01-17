@@ -365,7 +365,7 @@ describe('Meta Tags', () => {
         log: logStub,
         s3Client: s3ClientStub,
         env: {
-          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_BUCKET_NAME: 'test-bucket',
           S3_IMPORTER_BUCKET_NAME: 'test-bucket',
         },
       }, site);
@@ -567,7 +567,7 @@ describe('Meta Tags', () => {
         log: logStub,
         s3Client: s3ClientStub,
         env: {
-          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_BUCKET_NAME: 'test-bucket',
           S3_IMPORTER_BUCKET_NAME: 'test-bucket',
         },
       }, site);
@@ -740,7 +740,7 @@ describe('Meta Tags', () => {
         log: logStub,
         s3Client: s3ClientStub,
         env: {
-          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_BUCKET_NAME: 'test-bucket',
           S3_IMPORTER_BUCKET_NAME: 'test-bucket',
         },
       }, site);
@@ -847,7 +847,7 @@ describe('Meta Tags', () => {
         log: logStub,
         s3Client: s3ClientStub,
         env: {
-          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_BUCKET_NAME: 'test-bucket',
           S3_IMPORTER_BUCKET_NAME: 'test-bucket',
         },
       }, site);
