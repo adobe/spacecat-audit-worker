@@ -199,6 +199,7 @@ describe('utils.calculateCPCValue', () => {
       log: {
         info: sinon.stub(),
         error: sinon.stub(),
+        warn: sinon.stub(),
       },
     };
   });
