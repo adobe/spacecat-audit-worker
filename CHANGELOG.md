@@ -1,3 +1,10 @@
+## [1.47.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.47.4...v1.47.5) (2025-01-17)
+
+
+### Bug Fixes
+
+* scraper bucket env variable for meta-tags ([#594](https://github.com/adobe/spacecat-audit-worker/issues/594)) ([527c7b8](https://github.com/adobe/spacecat-audit-worker/commit/527c7b870b3a09b7ee308557bcc3222b2675d912))
+
 ## [1.47.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.47.3...v1.47.4) (2025-01-17)
 
 
