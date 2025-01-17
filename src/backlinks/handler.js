@@ -156,33 +156,45 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
       }
     }
 
-    log.info(`Compiling final suggestions for: ${backlink.url_to}`);
-    try {
-      const finalRequestBody = backlinksSuggestionPrompt(
-        backlink.url_to,
-        suggestions,
-        headerSuggestions,
-      );
-      await sleep(2000);
-      const finalResponse = await firefallClient
-        .fetchChatCompletion(finalRequestBody, firefallOptions);
+    if (totalBatches >= 1) {
+      log.info(`Compiling final suggestions for: ${backlink.url_to}`);
+      try {
+        const finalRequestBody = backlinksSuggestionPrompt(
+          backlink.url_to,
+          suggestions,
+          headerSuggestions,
+        );
+        await sleep(2000);
+        const finalResponse = await firefallClient
+          .fetchChatCompletion(finalRequestBody, firefallOptions);
 
-      if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
-        log.error(`No final suggestions found for ${backlink.url_to}`);
+        if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
+          log.error(`No final suggestions found for ${backlink.url_to}`);
+          return { ...backlink };
+        }
+
+        const answer = JSON.parse(finalResponse.choices[0].message.content);
+        log.info(`Final suggestion for ${backlink.url_to}: ${JSON.stringify(answer)}`);
+        return {
+          ...backlink,
+          urls_suggested: answer.suggested_urls || [],
+          ai_rationale: answer.ai_rationale || '',
+        };
+      } catch (error) {
+        log.error(`Final suggestion error for ${backlink.url_to}: ${error.message}`);
         return { ...backlink };
       }
-
-      const answer = JSON.parse(finalResponse.choices[0].message.content);
-      log.info(`Final suggestion for ${backlink.url_to}: ${JSON.stringify(answer)}`);
-      return {
-        ...backlink,
-        urls_suggested: answer.suggested_urls || [],
-        ai_rationale: answer.ai_rationale || '',
-      };
-    } catch (error) {
-      log.error(`Final suggestion error for ${backlink.url_to}: ${error.message}`);
-      return { ...backlink };
     }
+
+    const urlsSuggested = suggestions[0]?.suggested_urls || [];
+    const aiRationale = suggestions[0]?.ai_rationale || '';
+
+    log.info(`Suggestions for ${backlink.url_to}: ${JSON.stringify(urlsSuggested)}`);
+    return {
+      ...backlink,
+      urls_suggested: urlsSuggested.length > 0 ? urlsSuggested : [finalUrl],
+      ai_rationale: aiRationale.length > 0 ? aiRationale : 'No suitable suggestions found',
+    };
   };
 
   const headerSuggestionsResults = [];
