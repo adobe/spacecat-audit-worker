@@ -322,7 +322,7 @@ export async function calculateCPCValue(context, siteId) {
       return DEFAULT_CPC_VALUE;
     }
     const lastTraffic = organicTrafficData[organicTrafficData.length - 1];
-    log.warn(`Expected traffic estimates: ${lastTraffic.cost} / ${lastTraffic.value}`);
+    log.warn(`Expected traffic estimates: bucket:${bucketName}, key:${key}, ${lastTraffic.cost} / ${lastTraffic.value}, ${JSON.stringify(organicTrafficData)}`);
     return lastTraffic.cost / lastTraffic.value;
   } catch (err) {
     log.error(`Error fetching organic traffic data for site ${siteId}. Using Default CPC value.`, err);
