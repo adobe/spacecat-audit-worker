@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client-v1';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import convertToOpportunity from './opportunityHandler.js';
