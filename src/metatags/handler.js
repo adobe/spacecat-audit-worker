@@ -116,6 +116,7 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   const detectedTags = seoChecks.getDetectedTags();
   const projectedTraffic = await calculateProjectedTraffic(context, site, detectedTags, log);
   const cpcValue = await calculateCPCValue(context, site.getId());
+  log.warn(`Expected cpc value: ${cpcValue}`);
   const projectedTrafficValue = projectedTraffic * cpcValue;
   const auditResult = {
     detectedTags,
