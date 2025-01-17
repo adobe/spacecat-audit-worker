@@ -12,6 +12,8 @@
 const testData = {
   auditData: {
     type: 'meta-tags',
+    siteId: 'site-id',
+    id: 'audit-id',
     auditResult: {
       finalUrl: 'www.test-site.com/',
       detectedTags: {
@@ -106,7 +108,11 @@ const testData = {
         tagName: 'h1',
         url: 'www.test-site.com/page1',
         rank: 4,
+        aiSuggestion: 'This is an AI generated H1',
+        aiRationale: 'This is why AI generated it',
+        toOverride: 'user entered data',
       },
+      status: 'SKIPPED',
     },
     {
       opportunityId: 'opportunity-id',
@@ -136,6 +142,7 @@ const testData = {
         url: 'www.test-site.com/page2',
         rank: 11,
       },
+      status: 'NEW',
     },
   ],
   existingSuggestions: [

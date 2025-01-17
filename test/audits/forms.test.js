@@ -16,7 +16,6 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
 import { formsAuditRunner } from '../../src/forms-opportunities/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import formVitalsData from '../fixtures/formvitalsdata.json' with { type: 'json' };
@@ -29,7 +28,7 @@ const sandbox = sinon.createSandbox();
 const baseURL = 'https://example.com';
 
 describe('Forms Vitals audit', () => {
-  const site = createSite({ baseURL });
+  const site = { getBaseURL: () => baseURL };
 
   const context = new MockContextBuilder()
     .withSandbox(sandbox)
