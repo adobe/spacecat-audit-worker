@@ -321,7 +321,7 @@ describe('Meta Tags', () => {
       const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
       dataAccessStub.Audit.create = await addAuditStub();
 
-      await auditMetaTagsRunner('http://example.com', { log: logStub, s3Client: s3ClientStub, S3_SCRAPER_BUCKET_NAME: 'test-bucket' }, { getId: () => 'site-id' });
+      await auditMetaTagsRunner('http://example.com', { log: logStub, s3Client: s3ClientStub, env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' } }, { getId: () => 'site-id' });
       const result = await fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page3/scrape.json', 'scrapes/site-id/', logStub);
       expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
       expect(result).to.be.null;
@@ -625,7 +625,7 @@ describe('Meta Tags', () => {
           },
           ContentType: 'application/json',
         });
-      await auditMetaTagsRunner('http://example.com', { log: logStub, s3Client: s3ClientStub, S3_SCRAPER_BUCKET_NAME: 'test-bucket' }, { getId: () => 'site-id' });
+      await auditMetaTagsRunner('http://example.com', { log: logStub, s3Client: s3ClientStub, env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' } }, { getId: () => 'site-id' });
       expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
     });
   });
@@ -663,6 +663,9 @@ describe('Meta Tags', () => {
       context = {
         log: logStub,
         dataAccess: dataAccessStub,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        },
       };
       auditData = testData.auditData;
     });
