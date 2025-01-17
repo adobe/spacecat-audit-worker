@@ -22,10 +22,10 @@ export async function getObjectKeysUsingPrefix(
   let continuationToken = null;
   if (!s3Client || !bucketName || !prefix) {
     log.error(
-      `Invalid input parameters: ensure s3Client, bucketName:${bucketName}, and prefix:${prefix} are provided.`,
+      `Invalid input parameters in getObjectKeysUsingPrefix: ensure s3Client, bucketName:${bucketName}, and prefix:${prefix} are provided.`,
     );
     throw new Error(
-      'Invalid input parameters: ensure s3Client, bucketName, and prefix are provided.',
+      'Invalid input parameters in getObjectKeysUsingPrefix: ensure s3Client, bucketName, and prefix are provided.',
     );
   }
   try {
@@ -74,7 +74,7 @@ export async function getObjectKeysUsingPrefix(
 export async function getObjectFromKey(s3Client, bucketName, key, log) {
   if (!s3Client || !bucketName || !key) {
     log.error(
-      'Invalid input parameters: ensure s3Client, bucketName, and key are provided.',
+      'Invalid input parameters in getObjectFromKey: ensure s3Client, bucketName, and key are provided.',
     );
     return null;
   }
