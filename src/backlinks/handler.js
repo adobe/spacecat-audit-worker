@@ -156,7 +156,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
       }
     }
 
-    if (totalBatches >= 1) {
+    if (totalBatches > 1) {
       log.info(`Compiling final suggestions for: ${backlink.url_to}`);
       try {
         const finalRequestBody = backlinksSuggestionPrompt(
