@@ -15,7 +15,7 @@ const systemContentBase = 'You are tasked with identifying a suitable alternativ
   + 'You are an expert SEO consultant. Your goal is to suggest new URLs from the provided list that closely match the original intent of the broken link. '
   + 'You must strictly adhere to the provided list of alternative URLs. '
   + 'Under no circumstances should you suggest URLs not present in the provided list. '
-  + 'If no suitable URLs are found in the list, suggest the root URL instead. '
+  + 'If no suitable URLs are found in the list, suggest the base URL instead. '
   + 'If fewer than 3 suitable URLs are available, return only the appropriate number (1 or 2).';
 
 const jsonFormatContent = 'Your response must be valid JSON with the following structure: '
