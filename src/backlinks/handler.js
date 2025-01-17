@@ -208,11 +208,16 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     }
   }
 
-  const updatedBacklinks = await Promise.all(
-    auditData.auditResult.brokenBacklinks.map(
-      (backlink, index) => processBacklink(backlink, headerSuggestionsResults[index]),
-    ),
-  );
+  const updatedBacklinks = [];
+  for (let index = 0; index < auditData.auditResult.brokenBacklinks.length; index += 1) {
+    const backlink = auditData.auditResult.brokenBacklinks[index];
+    const headerSuggestions = headerSuggestionsResults[index];
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(2000);
+    // eslint-disable-next-line no-await-in-loop
+    const updatedBacklink = await processBacklink(backlink, headerSuggestions);
+    updatedBacklinks.push(updatedBacklink);
+  }
 
   log.info(`UPDATED BACKLINKS: ${JSON.stringify(updatedBacklinks)}`);
   log.info('Suggestions generation complete.');
