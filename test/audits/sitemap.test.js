@@ -94,15 +94,10 @@ describe('Sitemap Audit', () => {
         );
 
       nock(url).head('/sitemap_foo.xml').reply(200);
-
       nock(url).head('/sitemap_bar.xml').reply(200);
-
       nock(url).head('/foo').reply(200);
-
       nock(url).head('/bar').reply(200);
-
       nock(url).head('/baz').reply(200);
-
       nock(url).head('/cux').reply(200);
 
       const result = await sitemapAuditRunner(url, context);
@@ -130,17 +125,11 @@ describe('Sitemap Audit', () => {
         .reply(200, `Sitemap: ${url}/sitemap_index.xml`);
 
       nock(url).get('/sitemap_index.xml').reply(200, sitemapIndex);
-
       nock(url).head('/sitemap_foo.xml').reply(200);
-
       nock(url).head('/sitemap_bar.xml').reply(200);
-
       nock(url).head('/foo').reply(200);
-
       nock(url).head('/bar').reply(200);
-
       nock(url).head('/baz').reply(200);
-
       nock(url).head('/cux').reply(200);
 
       const result = await sitemapAuditRunner(url, context);
@@ -179,11 +168,8 @@ describe('Sitemap Audit', () => {
         .reply(200, `${url}/baz\n${url}/cux`, { 'content-type': 'text/plain' });
 
       nock(url).head('/foo').reply(200);
-
       nock(url).head('/bar').reply(200);
-
       nock(url).head('/baz').reply(200);
-
       nock(url).head('/cux').reply(200);
 
       const result = await sitemapAuditRunner(url, context);
@@ -450,11 +436,8 @@ describe('Sitemap Audit', () => {
 
     it('should return error when no valid pages exist', async () => {
       nock(url).get('/robots.txt').reply(200, `Sitemap: ${url}/sitemap.xml`);
-
       nock(url).get('/sitemap.xml').reply(200, sampleSitemap);
-
       nock(url).head('/foo').reply(404);
-
       nock(url).head('/bar').reply(404);
 
       const result = await findSitemap(url);
@@ -471,11 +454,8 @@ describe('Sitemap Audit', () => {
 
     it('should return success when sitemap is found in robots.txt', async () => {
       nock(url).get('/robots.txt').reply(200, `Sitemap: ${url}/sitemap.xml`);
-
       nock(url).get('/sitemap.xml').reply(200, sampleSitemap);
-
       nock(url).head('/foo').reply(200);
-
       nock(url).head('/bar').reply(200);
 
       const result = await findSitemap(url);
@@ -508,7 +488,6 @@ describe('Sitemap Audit', () => {
 
     it('should fail when sitemap is empty (', async () => {
       nock(url).get('/robots.txt').reply(200, `Sitemap: ${url}/sitemap.xml`);
-
       nock(url)
         .get('/sitemap.xml')
         .reply(200, () => undefined);
@@ -519,11 +498,8 @@ describe('Sitemap Audit', () => {
 
     it('should return success when sitemap.xml is found', async () => {
       nock(url).get('/robots.txt').reply(200, 'Allow: /');
-
       nock(url).head('/sitemap.xml').reply(200);
-
       nock(url).head('/sitemap_index.xml').reply(200);
-
       nock(url)
         .get('/sitemap.xml')
         .reply(
@@ -538,11 +514,8 @@ describe('Sitemap Audit', () => {
         );
 
       nock(url).head('/foo').reply(200);
-
       nock(url).head('/bar').reply(200);
-
       nock(url).head('/zzz').replyWithError('Network error');
-
       nock(url)
         .head('/baz')
         .reply(301, '', { Location: `${url}/zzz` });
@@ -555,23 +528,14 @@ describe('Sitemap Audit', () => {
 
     it('should return success when sitemap_index.xml is found', async () => {
       nock(url).get('/robots.txt').reply(200, 'Allow: /');
-
       nock(url).head('/sitemap.xml').reply(404);
-
       nock(url).head('/sitemap_index.xml').reply(200);
-
       nock(url).get('/sitemap_index.xml').reply(200, sitemapIndex);
-
       nock(url).head('/sitemap_foo.xml').reply(200);
-
       nock(url).head('/sitemap_bar.xml').reply(200);
-
       nock(url).head('/foo').reply(200);
-
       nock(url).head('/bar').reply(200);
-
       nock(url).head('/baz').reply(200);
-
       nock(url).head('/cux').reply(200);
 
       const result = await findSitemap(url);
@@ -582,11 +546,8 @@ describe('Sitemap Audit', () => {
       nock(`${protocol}://www.${domain}`)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap.xml`);
-
       nock(url).get('/sitemap.xml').reply(200, sampleSitemapMoreUrlsWWW);
-
       nock(`${protocol}://www.${domain}`).head('/foo').reply(200);
-
       nock(`${protocol}://www.${domain}`).head('/bar').reply(200);
 
       const result = await findSitemap(`${protocol}://www.${domain}`);
@@ -595,9 +556,7 @@ describe('Sitemap Audit', () => {
 
     it('should return error when no sitemap is found', async () => {
       nock(url).get('/robots.txt').reply(200, 'Allow: /');
-
       nock(url).head('/sitemap.xml').reply(404);
-
       nock(url).head('/sitemap_index.xml').reply(404);
 
       const result = await findSitemap(url);
@@ -610,11 +569,8 @@ describe('Sitemap Audit', () => {
         + '<url> <loc>invalid-url</loc></url>\n'
         + '</urlset>';
       nock(url).get('/robots.txt').reply(200, 'Allow: /');
-
       nock(url).head('/sitemap.xml').reply(200);
-
       nock(url).head('/sitemap_index.xml').reply(404);
-
       nock(url).get('/sitemap.xml').reply(200, sitemapInvalidPaths);
 
       const result = await findSitemap(url);
@@ -1079,27 +1035,21 @@ describe('filterValidUrls with redirect handling', () => {
     ];
 
     nock('https://example.com').head('/ok').reply(200);
-
     nock('https://example.com')
       .head('/permanent-redirect')
       .reply(301, '', { Location: 'https://example.com/new-location' });
-
     nock('https://example.com')
       .get('/permanent-redirect')
       .reply(301, '', { Location: 'https://example.com/new-location' });
-
     nock('https://example.com').get('/new-location').reply(200);
 
     nock('https://example.com')
       .head('/temporary-redirect')
       .reply(302, '', { Location: 'https://example.com/temp-location' });
-
     nock('https://example.com')
       .get('/temporary-redirect')
       .reply(302, '', { Location: 'https://example.com/temp-location' });
-
     nock('https://example.com').get('/temp-location').reply(200);
-
     nock('https://example.com').head('/not-found').reply(404);
 
     const result = await filterValidUrls(urls);
