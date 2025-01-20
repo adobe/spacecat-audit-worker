@@ -226,7 +226,7 @@ export async function filterValidUrls(urls) {
       acc.notOk.push({
         url: result.url,
         statusCode: result.statusCode,
-        ...(result.finalUrl && { finalUrl: result.finalUrl }),
+        ...(result.finalUrl && { suggestedFix: result.finalUrl }),
       });
     }
     return acc;
@@ -484,10 +484,18 @@ export function classifySuggestions(auditUrl, auditData, log) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
-  const suggestions = [...response, ...pagesWithIssues].filter(Boolean);
+  const suggestions = [...response, ...pagesWithIssues].filter(Boolean).map((issue) => ({
+    ...issue,
+    recommendedAction: issue.suggestedFix
+      ? `redirect_to_${issue.suggestedFix}`
+      : 'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
+  }));
 
   log.info(`Classified suggestions: ${JSON.stringify(suggestions)}`);
-  return suggestions;
+  return {
+    ...auditData,
+    suggestions,
+  };
 }
 
 export async function convertToOpportunity(auditUrl, auditData, context) {
@@ -496,9 +504,9 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 
   log.info('Converting SITEMAP audit to opportunity...');
 
-  const classifiedSuggestions = classifySuggestions(auditUrl, auditData, log);
-  if (!classifiedSuggestions.length) {
-    // If there are no issues, no need to create an opportunity
+  // suggestions are now in auditData.suggestions
+  if (!auditData.suggestions || !auditData.suggestions.length) {
+    log.info('No sitemap issues found, skipping opportunity creation');
     return;
   }
 
@@ -539,7 +547,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 
   await syncSuggestions({
     opportunity,
-    newData: classifiedSuggestions,
+    newData: auditData.suggestions,
     buildKey,
     mapNewSuggestion: (issue) => ({
       opportunityId: opportunity.getId(),
@@ -551,48 +559,9 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
   });
 }
 
-export async function enhanceWithRedirectSuggestions(auditUrl, auditData, context) {
-  const { log } = context;
-  log.info('Sitemap audit with redirect suggestions...');
-
-  if (!auditData?.auditResult?.details?.issues) {
-    return auditData;
-  }
-
-  const enhancedIssues = {};
-  const { issues } = auditData.auditResult.details;
-
-  // check if any of the pages have a 301 or 302 status code
-  for (const [sitemapUrl, pagesWithIssues] of Object.entries(issues)) {
-    enhancedIssues[sitemapUrl] = pagesWithIssues.map((page) => {
-      if (
-        (page.statusCode === 301 || page.statusCode === 302)
-        && page.finalUrl
-      ) {
-        return {
-          ...page,
-          suggestedFix: page.finalUrl,
-        };
-      }
-      return page;
-    });
-  }
-
-  return {
-    ...auditData,
-    auditResult: {
-      ...auditData.auditResult,
-      details: {
-        ...auditData.auditResult.details,
-        issues: enhancedIssues,
-      },
-    },
-  };
-}
-
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
     .then((url) => getUrlWithoutPath(prependSchema(url))))
-  .withPostProcessors([enhanceWithRedirectSuggestions, convertToOpportunity])
+  .withPostProcessors([classifySuggestions, convertToOpportunity])
   .build();

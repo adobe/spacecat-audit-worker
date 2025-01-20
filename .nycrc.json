@@ -3,9 +3,9 @@
     "lcov",
     "text"
   ],
-  "check-coverage": false,
+  "check-coverage": true,
   "lines": 100,
-  "branches": 100,
+  "branches": 99,
   "statements": 100,
   "all": true,
   "include": [
