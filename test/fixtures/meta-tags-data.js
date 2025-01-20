@@ -59,6 +59,8 @@ const testData = {
           },
         },
       },
+      projectedTrafficLost: 100,
+      projectedTrafficValue: 50,
     },
   },
   expectedSuggestions: [
@@ -371,6 +373,10 @@ const testData = {
     tags: [
       'Traffic acquisition',
     ],
+    data: {
+      projectedTrafficLost: 100,
+      projectedTrafficValue: 50,
+    },
   },
 };
 

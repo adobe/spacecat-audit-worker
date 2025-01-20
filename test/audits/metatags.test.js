@@ -930,6 +930,7 @@ describe('Meta Tags', () => {
         getSuggestions: sinon.stub().returns(testData.existingSuggestions),
         addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
         getType: () => 'meta-tags',
+        setData: () => {},
       };
       logStub = {
         info: sinon.stub(),
@@ -950,7 +951,7 @@ describe('Meta Tags', () => {
     });
 
     it('should create new opportunity and add suggestions', async () => {
-      metatagsOppty.getType = () => 'backlinks';
+      metatagsOppty.getType = () => 'meta-tags';
       dataAccessStub.Opportunity.create = sinon.stub().returns(metatagsOppty);
       await convertToOpportunity(auditUrl, auditData, context);
       expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);

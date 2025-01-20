@@ -113,16 +113,16 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   }
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
-  const projectedTraffic = await calculateProjectedTraffic(context, site, detectedTags, log);
+  const projectedTrafficLost = await calculateProjectedTraffic(context, site, detectedTags, log);
   const cpcValue = await calculateCPCValue(context, site.getId());
   log.warn(`Expected cpc value: ${cpcValue}`);
-  const projectedTrafficValue = projectedTraffic * cpcValue;
+  const projectedTrafficValue = projectedTrafficLost * cpcValue;
   const auditResult = {
     detectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: '',
     finalUrl: baseURL,
-    projectedTraffic,
+    projectedTrafficLost,
     projectedTrafficValue,
   };
   return {
