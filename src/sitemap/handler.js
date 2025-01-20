@@ -508,7 +508,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 
   log.info('Converting SITEMAP audit to opportunity...');
 
-  // suggestions are now in auditData.suggestions
+  // suggestions are in auditData.suggestions
   if (!auditData.suggestions || !auditData.suggestions.length) {
     log.info('No sitemap issues found, skipping opportunity creation');
     return;
@@ -556,7 +556,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     mapNewSuggestion: (issue) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',
-      rank: 0, // how can we rank this?
+      rank: 0,
       data: issue,
     }),
     log,

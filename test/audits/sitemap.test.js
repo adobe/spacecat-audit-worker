@@ -74,7 +74,6 @@ describe('Sitemap Audit', () => {
 
   beforeEach('setup', () => {
     context = new MockContextBuilder().withSandbox(sandbox).build(message);
-
     nock(url).get('/sitemap_foo.xml').reply(200, sampleSitemap);
     nock(url).get('/sitemap_bar.xml').reply(200, sampleSitemapTwo);
   });
@@ -155,10 +154,7 @@ describe('Sitemap Audit', () => {
     it('runs successfully for text sitemap extracted from robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
-        .reply(
-          200,
-          `Sitemap: ${url}/sitemap_foo.txt\nSitemap: ${url}/sitemap_bar.txt`,
-        );
+        .reply(200, `Sitemap: ${url}/sitemap_foo.txt\nSitemap: ${url}/sitemap_bar.txt`);
 
       nock(url)
         .get('/sitemap_foo.txt')
@@ -206,8 +202,7 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
-              value:
-                'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
+              value: 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
           ],
           success: false,
@@ -233,8 +228,7 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
-              value:
-                'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
+              value: 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
           ],
           success: false,
@@ -407,14 +401,11 @@ describe('Sitemap Audit', () => {
     it('should return nothing when sitemap does not contain urls', async () => {
       nock(url)
         .get('/sitemap.xml')
-        .reply(
-          200,
-          '<?xml version="1.0" encoding="UTF-8"?>\n'
+        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
             + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
             + '<url></url>\n'
             + '<url></url>\n'
-            + '</urlset>',
-        );
+            + '</urlset>');
 
       const resp = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
@@ -468,13 +459,10 @@ describe('Sitemap Audit', () => {
 
       nock(url)
         .get('/sitemap.xml')
-        .reply(
-          200,
-          '<?xml version="1.0" encoding="UTF-8"?>\n'
+        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
             + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
             + '<url> <loc>https://another-url.test/baz</loc></url>\n'
-            + '</urlset>',
-        );
+            + '</urlset>');
 
       const result = await findSitemap(url);
       expect(result.success).to.equal(false);
@@ -503,16 +491,13 @@ describe('Sitemap Audit', () => {
       nock(url).head('/sitemap_index.xml').reply(200);
       nock(url)
         .get('/sitemap.xml')
-        .reply(
-          200,
-          '<?xml version="1.0" encoding="UTF-8"?>\n'
+        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
             + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
             + `<url> <loc>${url}/foo</loc></url>\n`
             + `<url> <loc>${url}/bar</loc></url>\n`
             + `<url> <loc>${url}/baz</loc></url>\n`
             + `<url> <loc>${url}/zzz</loc></url>\n`
-            + '</urlset>',
-        );
+            + '</urlset>');
 
       nock(url).head('/foo').reply(200);
       nock(url).head('/bar').reply(200);
@@ -950,10 +935,7 @@ describe('Sitemap Audit', () => {
         addSuggestions: sinon.stub().resolves({ createdItems: [] }),
       };
 
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([
-        mockOpportunity,
-      ]);
-
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
       await convertToOpportunity(
         'https://example.com',
         auditDataSuccess,
@@ -966,9 +948,7 @@ describe('Sitemap Audit', () => {
 
     it('should create a new opportunity when there is not an existing one', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-      context.dataAccess.Opportunity.create.resolves(
-        context.dataAccess.Opportunity,
-      );
+      context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
       context.dataAccess.Opportunity.getSuggestions.resolves([]);
       context.dataAccess.Opportunity.addSuggestions.resolves({
         createdItems: [],
@@ -1018,9 +998,7 @@ describe('Sitemap Audit', () => {
         context,
       );
 
-      expect(
-        context.dataAccess.Opportunity.setAuditId,
-      ).to.have.been.calledOnceWith('audit-id');
+      expect(context.dataAccess.Opportunity.setAuditId).to.have.been.calledOnceWith('audit-id');
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
       expect(
         context.dataAccess.Opportunity.addSuggestions,
