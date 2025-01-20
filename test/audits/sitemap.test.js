@@ -17,18 +17,19 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import chaiAsPromised from 'chai-as-promised';
 import {
-  checkSitemap,
   ERROR_CODES,
-  findSitemap,
-  isSitemapContentValid,
-  checkRobotsForSitemap,
   sitemapAuditRunner,
+  isSitemapContentValid,
+  checkSitemap,
+  checkRobotsForSitemap,
   fetchContent,
-  getBaseUrlPagesFromSitemaps,
   convertToOpportunity,
   classifySuggestions,
-  getSitemapsWithIssues,
+  findSitemap,
   filterValidUrls,
+  getBaseUrlPagesFromSitemaps,
+  getPagesWithIssues,
+  getSitemapsWithIssues,
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -193,12 +194,12 @@ describe('Sitemap Audit', () => {
 
     it('should return 404 when robots.txt not found', async () => {
       nock(url).get('/robots.txt').reply(404);
-
       nock(url).head('/sitemap_index.xml').reply(404);
       nock(url).head('/sitemap.xml').reply(200);
       nock(url).get('/sitemap.xml').reply(200, sampleSitemap);
       nock(url).head('/foo').reply(200);
       nock(url).head('/bar').reply(200);
+
       const result = await sitemapAuditRunner(url, context);
       expect(result).to.eql({
         auditResult: {
@@ -743,11 +744,7 @@ describe('Sitemap Audit', () => {
     });
 
     it('should report that there are no sitemaps defined in robots.txt and in the fallback', async () => {
-      const response = classifySuggestions(
-        url,
-        auditNoSitemapsFound,
-        context,
-      );
+      const response = classifySuggestions(url, auditNoSitemapsFound, context);
       expect(response.suggestions.length).to.equal(1);
       expect(response.suggestions[0].type).to.equal('error');
       expect(response.suggestions[0].error).to.equal(
@@ -791,12 +788,50 @@ describe('Sitemap Audit', () => {
             type: 'url',
             sitemapUrl: sitemap,
             pageUrl:
-            auditPartiallySuccessfulOnePageNetworkError.auditResult.details
-              .issues[sitemap][0].url,
+              auditPartiallySuccessfulOnePageNetworkError.auditResult.details
+                .issues[sitemap][0].url,
             statusCode: 500,
-            recommendedAction: 'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
+            recommendedAction:
+              'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
           },
         ],
+      });
+    });
+
+    it('should create redirect recommendation when suggestedFix is present', () => {
+      const auditDataWithRedirect = {
+        siteId: 'site-id',
+        id: 'audit-id',
+        auditResult: {
+          success: true,
+          reasons: [{ value: 'Sitemaps found and checked.' }],
+          details: {
+            issues: {
+              'https://example.com/sitemap.xml': [
+                {
+                  url: 'https://example.com/old-page',
+                  statusCode: 301,
+                  suggestedFix: 'https://example.com/new-page',
+                },
+              ],
+            },
+          },
+        },
+      };
+
+      const response = classifySuggestions(
+        'https://example.com',
+        auditDataWithRedirect,
+        context,
+      );
+      expect(response.suggestions).to.have.lengthOf(1);
+      expect(response.suggestions[0]).to.deep.include({
+        type: 'url',
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        pageUrl: 'https://example.com/old-page',
+        statusCode: 301,
+        suggestedFix: 'https://example.com/new-page',
+        recommendedAction: 'redirect_to_https://example.com/new-page',
       });
     });
   });
@@ -1092,5 +1127,56 @@ describe('filterValidUrls with redirect handling', () => {
         statusCode: 301,
       },
     ]);
+  });
+});
+
+describe('getPagesWithIssues', () => {
+  it('should include suggestedFix in the output when present in the input', () => {
+    const auditData = {
+      auditResult: {
+        details: {
+          issues: {
+            'https://example.com/sitemap.xml': [
+              {
+                url: 'https://example.com/old-page',
+                statusCode: 301,
+                suggestedFix: 'https://example.com/new-page',
+              },
+              {
+                url: 'https://example.com/not-found',
+                statusCode: 404,
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = getPagesWithIssues(auditData);
+    expect(result).to.have.lengthOf(2);
+    expect(result[0]).to.deep.equal({
+      type: 'url',
+      sitemapUrl: 'https://example.com/sitemap.xml',
+      pageUrl: 'https://example.com/old-page',
+      statusCode: 301,
+      suggestedFix: 'https://example.com/new-page',
+    });
+    expect(result[1]).to.deep.equal({
+      type: 'url',
+      sitemapUrl: 'https://example.com/sitemap.xml',
+      pageUrl: 'https://example.com/not-found',
+      statusCode: 404,
+    });
+  });
+
+  it('should handle empty issues array', () => {
+    const auditData = {
+      auditResult: {
+        details: {
+          issues: {},
+        },
+      },
+    };
+    expect(getPagesWithIssues(auditData)).to.deep.equal([]);
   });
 });

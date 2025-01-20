@@ -464,6 +464,7 @@ export function getPagesWithIssues(auditData) {
       sitemapUrl,
       pageUrl: page.url,
       statusCode: page.statusCode ?? 500,
+      ...(page.suggestedFix && { suggestedFix: page.suggestedFix }),
     }));
   });
 }
