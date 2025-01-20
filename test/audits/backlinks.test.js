@@ -66,6 +66,9 @@ describe('Backlinks Tests', function () {
           AHREFS_API_BASE_URL: 'https://ahrefs.com',
           AHREFS_API_KEY: 'ahrefs-api',
         },
+        s3Client: {
+          send: sandbox.stub(),
+        },
       })
       .build(message);
 

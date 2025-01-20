@@ -61,10 +61,6 @@ export class MockContextBuilder {
       sendMessage: this.sandbox.stub().resolves(),
     };
 
-    const mockS3Client = {
-      send: this.sandbox.stub(),
-    };
-
     const mockEnv = {
       S3_SCRAPER_BUCKET_NAME: 'test-bucket',
     };
@@ -73,7 +69,6 @@ export class MockContextBuilder {
       log: mockLog,
       dataAccess: mockDataAccess,
       sqs: mockSqs,
-      s3Client: mockS3Client,
       env: mockEnv,
     };
 

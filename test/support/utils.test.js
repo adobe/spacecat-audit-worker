@@ -73,6 +73,11 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     context = new MockContextBuilder()
       .withSandbox(sandbox)
+      .withOverrides({
+        s3Client: {
+          send: sandbox.stub(),
+        },
+      })
       .build();
   });
 
