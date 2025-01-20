@@ -22,7 +22,8 @@ import {
   findSitemap,
   isSitemapContentValid,
   checkRobotsForSitemap, sitemapAuditRunner, fetchContent, getBaseUrlPagesFromSitemaps,
-  convertToOpportunity, classifySuggestions, getSitemapsWithIssues,
+  convertToOpportunity, classifySuggestions, getSitemapsWithIssues, enhanceWithRedirectSuggestions,
+  filterValidUrls,
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -1040,5 +1041,192 @@ describe('getSitemapsWithIssues', () => {
       auditResult: {},
     };
     expect(getSitemapsWithIssues(auditData)).to.deep.equal([]);
+  });
+});
+
+describe('enhanceWithRedirectSuggestions', () => {
+  let context;
+
+  beforeEach(() => {
+    context = {
+      log: {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+      },
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should add suggested fixes for redirect status codes', async () => {
+    const auditData = {
+      auditResult: {
+        details: {
+          issues: {
+            'https://example.com/sitemap.xml': [
+              {
+                url: 'https://example.com/old-page',
+                statusCode: 301,
+                finalUrl: 'https://example.com/new-page',
+              },
+              {
+                url: 'https://example.com/temp-redirect',
+                statusCode: 302,
+                finalUrl: 'https://example.com/final-page',
+              },
+              {
+                url: 'https://example.com/not-found',
+                statusCode: 404,
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const enhancedData = await enhanceWithRedirectSuggestions(
+      'https://example.com',
+      auditData,
+      context,
+    );
+
+    const issues = enhancedData.auditResult.details.issues['https://example.com/sitemap.xml'];
+    expect(issues[0].suggestedFix).to.equal('https://example.com/new-page');
+    expect(issues[1].suggestedFix).to.equal('https://example.com/final-page');
+    expect(issues[2].suggestedFix).to.be.undefined;
+  });
+
+  it('should handle missing finalUrl for redirect status codes', async () => {
+    const auditData = {
+      auditResult: {
+        details: {
+          issues: {
+            'https://example.com/sitemap.xml': [
+              {
+                url: 'https://example.com/broken-redirect',
+                statusCode: 301,
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const enhancedData = await enhanceWithRedirectSuggestions(
+      'https://example.com',
+      auditData,
+      context,
+    );
+
+    const issues = enhancedData.auditResult.details.issues['https://example.com/sitemap.xml'];
+    expect(issues[0].suggestedFix).to.be.undefined;
+  });
+
+  it('should return original audit data when no issues exist', async () => {
+    const auditData = {
+      auditResult: {
+        details: {
+          issues: {},
+        },
+      },
+    };
+
+    const enhancedData = await enhanceWithRedirectSuggestions(
+      'https://example.com',
+      auditData,
+      context,
+    );
+
+    expect(enhancedData).to.deep.equal(auditData);
+  });
+});
+
+describe('filterValidUrls with redirect handling', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+
+  it('should capture final redirect URLs for 301/302 responses', async () => {
+    const urls = [
+      'https://example.com/ok',
+      'https://example.com/permanent-redirect',
+      'https://example.com/temporary-redirect',
+      'https://example.com/not-found',
+    ];
+
+    nock('https://example.com')
+      .head('/ok')
+      .reply(200);
+
+    nock('https://example.com')
+      .head('/permanent-redirect')
+      .reply(301, '', { Location: 'https://example.com/new-location' });
+
+    nock('https://example.com')
+      .get('/permanent-redirect')
+      .reply(301, '', { Location: 'https://example.com/new-location' });
+
+    nock('https://example.com')
+      .get('/new-location')
+      .reply(200);
+
+    nock('https://example.com')
+      .head('/temporary-redirect')
+      .reply(302, '', { Location: 'https://example.com/temp-location' });
+
+    nock('https://example.com')
+      .get('/temporary-redirect')
+      .reply(302, '', { Location: 'https://example.com/temp-location' });
+
+    nock('https://example.com')
+      .get('/temp-location')
+      .reply(200);
+
+    nock('https://example.com')
+      .head('/not-found')
+      .reply(404);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/ok']);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/permanent-redirect',
+        statusCode: 301,
+        finalUrl: 'https://example.com/new-location',
+      },
+      {
+        url: 'https://example.com/temporary-redirect',
+        statusCode: 302,
+        finalUrl: 'https://example.com/temp-location',
+      },
+      {
+        url: 'https://example.com/not-found',
+        statusCode: 404,
+      },
+    ]);
+  });
+
+  it('should handle failed redirect follows', async () => {
+    const urls = ['https://example.com/broken-redirect'];
+
+    nock('https://example.com')
+      .head('/broken-redirect')
+      .reply(301, '', { Location: 'https://example.com/error' });
+
+    nock('https://example.com')
+      .get('/broken-redirect')
+      .replyWithError('Network error');
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/broken-redirect',
+        statusCode: 301,
+      },
+    ]);
   });
 });

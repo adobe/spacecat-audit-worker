@@ -169,12 +169,30 @@ export async function filterValidUrls(urls) {
 
   const fetchUrl = async (url) => {
     try {
+      // use manual redirect to capture the status code
       const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
+
       if (response.status === 200) {
         return { status: OK, url };
-      } else {
-        return { status: NOT_OK, url, statusCode: response.status };
       }
+
+      // if it's a redirect, follow it to get the final URL
+      if (response.status === 301 || response.status === 302) {
+        try {
+          const redirectResponse = await fetch(url, { redirect: 'follow' });
+          return {
+            status: NOT_OK,
+            url,
+            statusCode: response.status,
+            finalUrl: redirectResponse.url,
+          };
+        } catch {
+          // if following redirect fails, return just the status code
+          return { status: NOT_OK, url, statusCode: response.status };
+        }
+      }
+
+      return { status: NOT_OK, url, statusCode: response.status };
     } catch {
       return { status: NOT_OK, url };
     }
@@ -205,7 +223,11 @@ export async function filterValidUrls(urls) {
     if (result.status === OK) {
       acc.ok.push(result.url);
     } else {
-      acc.notOk.push({ url: result.url, statusCode: result.statusCode });
+      acc.notOk.push({
+        url: result.url,
+        statusCode: result.statusCode,
+        ...(result.finalUrl && { finalUrl: result.finalUrl }),
+      });
     }
     return acc;
   }, { ok: [], notOk: [] });
@@ -529,9 +551,48 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
   });
 }
 
+export async function enhanceWithRedirectSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
+  log.info('Sitemap audit with redirect suggestions...');
+
+  if (!auditData?.auditResult?.details?.issues) {
+    return auditData;
+  }
+
+  const enhancedIssues = {};
+  const { issues } = auditData.auditResult.details;
+
+  // check if any of the pages have a 301 or 302 status code
+  for (const [sitemapUrl, pagesWithIssues] of Object.entries(issues)) {
+    enhancedIssues[sitemapUrl] = pagesWithIssues.map((page) => {
+      if (
+        (page.statusCode === 301 || page.statusCode === 302)
+        && page.finalUrl
+      ) {
+        return {
+          ...page,
+          suggestedFix: page.finalUrl,
+        };
+      }
+      return page;
+    });
+  }
+
+  return {
+    ...auditData,
+    auditResult: {
+      ...auditData.auditResult,
+      details: {
+        ...auditData.auditResult.details,
+        issues: enhancedIssues,
+      },
+    },
+  };
+}
+
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
-    .then((url) => (getUrlWithoutPath(prependSchema(url)))))
-  .withPostProcessors([convertToOpportunity])
+    .then((url) => getUrlWithoutPath(prependSchema(url))))
+  .withPostProcessors([enhanceWithRedirectSuggestions, convertToOpportunity])
   .build();
