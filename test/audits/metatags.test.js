@@ -946,6 +946,9 @@ describe('Meta Tags', () => {
       context = {
         log: logStub,
         dataAccess: dataAccessStub,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        },
       };
       auditData = testData.auditData;
     });
