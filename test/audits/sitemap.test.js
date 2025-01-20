@@ -756,7 +756,7 @@ describe('Sitemap Audit', () => {
             type: 'error',
             error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             recommendedAction:
-              'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
+              'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
           },
         ],
       });
@@ -780,7 +780,7 @@ describe('Sitemap Audit', () => {
             type: 'error',
             error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             recommendedAction:
-              'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
+              'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
           },
         ],
       });
@@ -804,7 +804,7 @@ describe('Sitemap Audit', () => {
             type: 'error',
             error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
             recommendedAction:
-              'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
+              'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
           },
         ],
       });
@@ -835,11 +835,10 @@ describe('Sitemap Audit', () => {
             type: 'url',
             sitemapUrl: sitemap,
             pageUrl:
-              auditPartiallySuccessfulOnePageNetworkError.auditResult.details
-                .issues[sitemap][0].url,
+            auditPartiallySuccessfulOnePageNetworkError.auditResult.details
+              .issues[sitemap][0].url,
             statusCode: 500,
-            recommendedAction:
-              'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
+            recommendedAction: 'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
           },
         ],
       });

@@ -484,12 +484,14 @@ export function classifySuggestions(auditUrl, auditData, log) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
-  const suggestions = [...response, ...pagesWithIssues].filter(Boolean).map((issue) => ({
-    ...issue,
-    recommendedAction: issue.suggestedFix
-      ? `redirect_to_${issue.suggestedFix}`
-      : 'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
-  }));
+  const suggestions = [...response, ...pagesWithIssues]
+    .filter(Boolean)
+    .map((issue) => ({
+      ...issue,
+      recommendedAction: issue.suggestedFix
+        ? `redirect_to_${issue.suggestedFix}`
+        : 'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
+    }));
 
   log.info(`Classified suggestions: ${JSON.stringify(suggestions)}`);
   return {
