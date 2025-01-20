@@ -149,8 +149,6 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     for (const batch of dataBatches) {
       // eslint-disable-next-line no-await-in-loop
       const result = await processBatch(batch, backlink.url_to);
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(2000);
       if (result) {
         suggestions.push(result);
       }
@@ -177,8 +175,8 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
         log.info(`Final suggestion for ${backlink.url_to}: ${JSON.stringify(answer)}`);
         return {
           ...backlink,
-          urls_suggested: answer.suggested_urls || [],
-          ai_rationale: answer.ai_rationale || '',
+          urls_suggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
+          ai_rationale: answer.ai_rationale?.length > 0 ? answer.ai_rationale : 'No suitable suggestions found',
         };
       } catch (error) {
         log.error(`Final suggestion error for ${backlink.url_to}: ${error.message}`);
@@ -186,14 +184,13 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
       }
     }
 
-    const urlsSuggested = suggestions[0]?.suggested_urls || [];
-    const aiRationale = suggestions[0]?.ai_rationale || '';
-
-    log.info(`Suggestions for ${backlink.url_to}: ${JSON.stringify(urlsSuggested)}`);
+    log.info(`Suggestions for ${backlink.url_to}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
     return {
       ...backlink,
-      urls_suggested: urlsSuggested.length > 0 ? urlsSuggested : [finalUrl],
-      ai_rationale: aiRationale.length > 0 ? aiRationale : 'No suitable suggestions found',
+      urls_suggested:
+        suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
+      ai_rationale:
+        suggestions[0]?.ai_rationale?.length > 0 ? suggestions[0]?.ai_rationale : 'No suitable suggestions found',
     };
   };
 
@@ -201,8 +198,6 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   for (const backlink of auditData.auditResult.brokenBacklinks) {
     try {
       const requestBody = brokenBacklinksPrompt(headerLinks, backlink.url_to);
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(2000);
       // eslint-disable-next-line no-await-in-loop
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
@@ -224,8 +219,6 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   for (let index = 0; index < auditData.auditResult.brokenBacklinks.length; index += 1) {
     const backlink = auditData.auditResult.brokenBacklinks[index];
     const headerSuggestions = headerSuggestionsResults[index];
-    // eslint-disable-next-line no-await-in-loop
-    await sleep(2000);
     // eslint-disable-next-line no-await-in-loop
     const updatedBacklink = await processBacklink(backlink, headerSuggestions);
     updatedBacklinks.push(updatedBacklink);

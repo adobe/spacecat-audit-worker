@@ -18,7 +18,7 @@ import sinon from 'sinon';
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import {
   getBaseUrlPagesFromSitemapContents, getScrapedDataForSiteId,
-  getUrlWithoutPath,
+  getUrlWithoutPath, sleep,
 } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -80,19 +80,135 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     sandbox.restore();
   });
 
-  xit('processes S3 files and extracts metadata and links', async () => {
-    // Mock S3 response with file metadata
+  it('processes S3 files, filters by json files, and extracts metadata and links', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [
-        { Key: 'scrapes/site-id/file1.json' },
+        { Key: 'scrapes/site-id/scrape.json' },
+      ],
+      IsTruncated: true,
+      NextContinuationToken: 'token',
+    });
+
+    context.s3Client.send.onCall(1).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/screenshot.png' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+
+    const mockFileResponse = {
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: '<html lang="en"><body><header><a href="/home">Home</a><a href="/about">About</a></header></body></html>',
+            tags: {
+              title: 'Page 1 Title',
+              description: 'Page 1 Description',
+              h1: ['Page 1 H1'],
+            },
+          },
+        })),
+      },
+    };
+
+    context.s3Client.send.resolves(mockFileResponse);
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: ['https://example.com/home', 'https://example.com/about'],
+      siteData: [
+        {
+          url: 'https://example.com/page1',
+          title: 'Page 1 Title',
+          description: 'Page 1 Description',
+          h1: 'Page 1 H1',
+        },
+      ],
+    });
+
+    expect(context.s3Client.send)
+      .to
+      .have
+      .been
+      .calledWith(sinon.match.instanceOf(ListObjectsV2Command));
+    expect(context.s3Client.send).to.have.been.calledWith(sinon.match.instanceOf(GetObjectCommand));
+    expect(context.s3Client.send)
+      .to
+      .have
+      .been
+      .callCount(4); // 1. get list of files, 2. get meta tags, 3. non json file, 4. header links
+  });
+
+  it('returns empty arrays when no files are found', async () => {
+    context.s3Client.send.resolves({
+      Contents: [],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      siteData: [],
+    });
+  });
+
+  it('returns only the metadata if there are not header links', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
         { Key: 'scrapes/site-id/scrape.json' },
       ],
       IsTruncated: false,
       NextContinuationToken: null,
     });
 
-    // Mock GetObjectCommand results
-    const mockFile1Response = {
+    const mockFileResponse = {
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: '<html lang="en"><body></body></html>',
+            tags: {
+              title: 'Page 1 Title',
+              description: 'Page 1 Description',
+              h1: ['Page 1 H1'],
+            },
+          },
+        })),
+      },
+    };
+
+    context.s3Client.send.resolves(mockFileResponse);
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      siteData: [
+        {
+          url: 'https://example.com/page1',
+          title: 'Page 1 Title',
+          description: 'Page 1 Description',
+          h1: 'Page 1 H1',
+        },
+      ],
+    });
+  });
+
+  it('returns only the metadata if there is no root file', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/page/scrape.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    const mockFileResponse = {
       Body: {
         transformToString: sandbox.stub().resolves(JSON.stringify({
           finalUrl: 'https://example.com/page1',
@@ -107,27 +223,12 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
       },
     };
 
-    // const mockScrapeResponse = {
-    //   Body: {
-    //     transformToString: sandbox.stub().resolves(JSON.stringify({
-    //       title: 'Page 1 Title',
-    //       description: 'Page 1 Description',
-    //       h1: ['Page 1 H1'],
-    //     })),
-    //   },
-    // };
+    context.s3Client.send.resolves(mockFileResponse);
 
-    // Stub specific calls to GetObjectCommand
-    context.s3Client.send.onCall(1).resolves(mockFile1Response);
-    context.s3Client.send.onCall(2).resolves(mockFile1Response);
-    context.s3Client.send.onCall(3).resolves(mockFile1Response);
-
-    // Act
     const result = await getScrapedDataForSiteId(site, context);
 
-    // Assert
     expect(result).to.deep.equal({
-      headerLinks: ['https://example.com/home', 'https://example.com/about'],
+      headerLinks: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -137,90 +238,92 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
         },
       ],
     });
-
-    // Verify S3 interactions
-    expect(context.s3Client.send)
-      .to
-      .have
-      .been
-      .calledWith(sinon.match.instanceOf(ListObjectsV2Command));
-    expect(context.s3Client.send).to.have.been.calledWith(sinon.match.instanceOf(GetObjectCommand));
-    expect(context.s3Client.send).to.have.been.calledTwice;
   });
 
-  xit('handles JSON parsing errors and excludes invalid files', async () => {
-    // Mock S3 response with file metadata
-    context.s3Client.send.resolves({
+  it('handles JSON parsing errors and excludes invalid files', async () => {
+    context.s3Client.send.onCall(0).resolves({
       Contents: [
-        { Key: 'scrapes/site-id/file1.json' },
-        { Key: 'scrapes/site-id/file2.json' },
         { Key: 'scrapes/site-id/scrape.json' },
+        { Key: 'scrapes/site-id/invalid.json' },
       ],
       IsTruncated: false,
       NextContinuationToken: null,
     });
 
-    // Mock GetObjectCommand results
-    const mockFile1Response = {
-      Body: {
-        transformToString: sandbox.stub().resolves('{ invalid json'),
-      },
-    };
-
-    const mockFile2Response = {
+    const mockFileResponse = {
       Body: {
         transformToString: sandbox.stub().resolves(JSON.stringify({
-          finalUrl: 'https://example.com/page2',
           scrapeResult: {
-            tags: {
-              title: 'Page 2 Title',
-              description: 'Page 2 Description',
-              h1: ['Page 2 H1'],
-            },
+            tags: {},
           },
         })),
       },
     };
 
-    const mockScrapeResponse = {
+    const mockInvalidFileResponse = {
       Body: {
-        transformToString: sandbox.stub().resolves(`
-          <html>
-            <body>
-              <header>
-                <a href="/contact">Contact</a>
-              </header>
-            </body>
-          </html>
-        `),
+        transformToString: sandbox.stub().resolves('invalid json'),
       },
     };
 
-    context.s3Client.send
-      .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('Key', 'scrapes/site-id/file1.json')))
-      .resolves(mockFile1Response)
-      .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('Key', 'scrapes/site-id/file2.json')))
-      .resolves(mockFile2Response)
-      .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('Key', 'scrapes/site-id/scrape.json')))
-      .resolves(mockScrapeResponse);
+    context.s3Client.send.onCall(1).resolves(mockFileResponse);
+    context.s3Client.send.onCall(2).resolves(mockInvalidFileResponse);
+    context.s3Client.send.onCall(3).resolves(mockFileResponse);
 
-    // Act
     const result = await getScrapedDataForSiteId(site, context);
 
-    // Assert
     expect(result).to.deep.equal({
-      headerLinks: ['https://example.com/contact'],
+      headerLinks: [],
       siteData: [
         {
-          url: 'https://example.com/page2',
-          title: 'Page 2 Title',
-          description: 'Page 2 Description',
-          h1: 'Page 2 H1',
+          url: '',
+          title: '',
+          description: '',
+          h1: '',
         },
       ],
     });
+  });
+});
 
-    // Verify error logging
-    expect(context.log.error).to.have.been.calledWithMatch('SyntaxError');
+describe('sleep', () => {
+  let clock;
+
+  beforeEach(() => {
+    clock = sinon.useFakeTimers();
+  });
+
+  afterEach(() => {
+    clock.restore();
+  });
+
+  it('should resolve after the specified time', async () => {
+    const ms = 1000;
+    const promise = sleep(ms);
+
+    clock.tick(ms);
+
+    await expect(promise).to.be.fulfilled;
+  });
+
+  it('should not resolve before the specified time', async () => {
+    const ms = 1000;
+    const promise = sleep(ms);
+
+    clock.tick(ms - 1);
+
+    await clock.runAllAsync();
+
+    let isFulfilled = false;
+    promise.then(() => {
+      isFulfilled = true;
+    });
+
+    expect(isFulfilled).to.be.false;
+
+    clock.tick(1);
+    await clock.runAllAsync();
+
+    expect(isFulfilled).to.be.true;
   });
 });

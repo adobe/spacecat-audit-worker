@@ -10,22 +10,24 @@
  * governing permissions and limitations under the License.
  */
 
-// TODO: adjust for language
-const systemContentBase = 'You are tasked with identifying a suitable alternative URL for a broken backlink. '
+const systemContentBase = 'You are tasked with identifying suitable alternative URLs for a broken backlink. '
   + 'You are an expert SEO consultant. Your goal is to suggest new URLs from the provided list that closely match the original intent of the broken link. '
-  + 'You must strictly adhere to the provided list of alternative URLs. '
+  + 'Strictly adhere to the provided list of alternative URLs and language-specific requirements. '
   + 'Under no circumstances should you suggest URLs not present in the provided list. '
-  + 'If no suitable URLs are found in the list, suggest the base URL instead. '
-  + 'If fewer than 3 suitable URLs are available, return only the appropriate number (1 or 2).';
+  + 'If no suitable URLs match the language or context of the broken link, suggest only the base URL. '
+  + 'If fewer than 3 suitable URLs exist, return only the available number (1 or 2).';
 
 const jsonFormatContent = 'Your response must be valid JSON with the following structure: '
   + '{ "broken_url": "string", "suggested_urls": ["string"], "ai_rationale": "string", "confidence_score": number }. '
-  + 'IMPORTANT: RETURN ONLY THE JSON OBJECT. DO NOT ADD ANY EXPLANATION, TEXT, OR FORMATTING OUTSIDE OF THE JSON OBJECT.'
-  + 'Ensure that all suggested URLs are present in the provided list.';
+  + 'IMPORTANT: RETURN ONLY THE JSON OBJECT. DO NOT ADD ANY EXPLANATION, TEXT, OR FORMATTING OUTSIDE OF THE JSON OBJECT. '
+  + 'Ensure that all suggested URLs come from the provided list and match the required language context.';
 
-const userRequest = (brokenUrl) => (`For the broken URL ${brokenUrl}, suggest up to 3 alternative URLs strictly from the provided list. `
-  + 'If no suitable match exists, return an empty array for "suggested_urls". '
-  + 'If only 1 or 2 suitable URLs exist, return only those.');
+const userRequest = (brokenUrl) => (
+  `For the broken URL ${brokenUrl}, suggest up to 3 alternative URLs strictly from the provided list. `
+  + 'If no suitable match exists, suggest only the base URL. '
+  + 'Ensure that alternative URLs match the language context of the broken URL (e.g., if the URL contains "/de/", suggest URLs containing "/de/" whenever possible). '
+  + 'If no language-specific match is found, suggest the base URL as the fallback.'
+);
 
 export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => (
   `${systemContentBase} ${jsonFormatContent}. `
@@ -34,7 +36,8 @@ export const brokenBacklinksPrompt = (alternativeURLs, brokenUrl) => (
 
 export const backlinksSuggestionPrompt = (brokenUrl, suggestedUrls, headerLinks) => (
   `${systemContentBase} The provided list consists of suggestions from previous requests. `
-  + `You are supposed to take up to 3 suggestions from the list. ${jsonFormatContent}. `
+  + 'You are required to suggest up to 3 URLs from the list while adhering to language and context requirements. '
+  + `${jsonFormatContent}. `
   + `List of suggested URLs: ${JSON.stringify(suggestedUrls)}. `
-  + `List of URLs from the menu, navigation and footer or breadcrumbs: 'header_links': ${JSON.stringify(headerLinks)}. ${userRequest(brokenUrl)}`
+  + `List of URLs from the menu, navigation, and footer or breadcrumbs: 'header_links': ${JSON.stringify(headerLinks)}. ${userRequest(brokenUrl)}`
 );

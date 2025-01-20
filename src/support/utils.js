@@ -11,10 +11,7 @@
  */
 
 import {
-  hasText,
-  prependSchema,
-  resolveCustomerSecretsName,
-  tracingFetch as fetch,
+  hasText, prependSchema, resolveCustomerSecretsName, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
@@ -176,14 +173,19 @@ export async function getRUMDomainkey(baseURL, context) {
   }
 }
 
-const getFileContentFromS3 = async (s3Client, bucket, key) => {
+const getFileContentFromS3 = async (s3Client, bucket, key, log) => {
   const getCommand = new GetObjectCommand({
     Bucket: bucket,
     Key: key,
   });
   const data = await s3Client.send(getCommand);
-  const content = await data.Body.transformToString();
-  return JSON.parse(content);
+  try {
+    const content = await data.Body.transformToString();
+    return JSON.parse(content);
+  } catch (error) {
+    log.error('Error parsing S3 object:', error);
+    return null;
+  }
 };
 
 const extractScrapedMetadataFromJson = (data, log) => {
@@ -207,7 +209,11 @@ const extractScrapedMetadataFromJson = (data, log) => {
   }
 };
 
-const extractLinksFromHeader = (rawHtml, baseUrl) => {
+const extractLinksFromHeader = (data, baseUrl) => {
+  if (!data || !data.scrapeResult || !data.scrapeResult.rawBody) {
+    return [];
+  }
+  const rawHtml = data.scrapeResult.rawBody;
   const dom = new JSDOM(rawHtml);
   const { document } = dom.window;
 
@@ -268,10 +274,9 @@ export const getScrapedDataForSiteId = async (site, context) => {
         s3Client,
         env.S3_SCRAPER_BUCKET_NAME,
         file.Key,
+        log,
       );
-      const jsonData = extractScrapedMetadataFromJson(fileContent, log);
-
-      return jsonData || null;
+      return extractScrapedMetadataFromJson(fileContent, log);
     }),
   );
 
@@ -279,7 +284,8 @@ export const getScrapedDataForSiteId = async (site, context) => {
   const indexFileContent = await getFileContentFromS3(
     s3Client,
     env.S3_SCRAPER_BUCKET_NAME,
-    indexFile.Key,
+    indexFile?.Key,
+    log,
   );
   const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL());
 
