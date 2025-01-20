@@ -689,7 +689,7 @@ describe('Sitemap Audit', () => {
     };
 
     it('should return empty suggestions when all is ok', async () => {
-      const response = classifySuggestions(url, auditAllGood, context.log);
+      const response = classifySuggestions(url, auditAllGood, context);
       expect(response.suggestions.length).to.equal(0);
       expect(response).to.deep.equal({ ...auditAllGood, suggestions: [] });
     });
@@ -698,7 +698,7 @@ describe('Sitemap Audit', () => {
       const response = classifySuggestions(
         url,
         auditDataWithSitemapFoundWithNoPages,
-        context.log,
+        context,
       );
       expect(response.suggestions.length).to.equal(1);
       expect(response.suggestions[0].type).to.equal('error');
@@ -722,7 +722,7 @@ describe('Sitemap Audit', () => {
       const response = classifySuggestions(
         url,
         auditDataWithSitemapFoundWithPagesButTheyRespondWith404,
-        context.log,
+        context,
       );
       expect(response.suggestions.length).to.equal(1);
       expect(response.suggestions[0].type).to.equal('error');
@@ -746,7 +746,7 @@ describe('Sitemap Audit', () => {
       const response = classifySuggestions(
         url,
         auditNoSitemapsFound,
-        context.log,
+        context,
       );
       expect(response.suggestions.length).to.equal(1);
       expect(response.suggestions[0].type).to.equal('error');
@@ -773,7 +773,7 @@ describe('Sitemap Audit', () => {
       const response = classifySuggestions(
         url,
         auditPartiallySuccessfulOnePageNetworkError,
-        context.log,
+        context,
       );
       expect(response.suggestions.length).to.equal(1);
       expect(response.suggestions[0].type).to.equal('url');

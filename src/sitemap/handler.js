@@ -472,10 +472,11 @@ export function getPagesWithIssues(auditData) {
  *
  * @param auditUrl - The URL of the audit
  * @param auditData - The audit data containing the audit result and additional details.
- * @param log - Logger object for logging information.
+ * @param context - The context object containing the logger
  * @returns {Array} An array of suggestions or error objects.
  */
-export function classifySuggestions(auditUrl, auditData, log) {
+export function classifySuggestions(auditUrl, auditData, context) {
+  const { log } = context;
   log.info(`Classifying suggestions for ${JSON.stringify(auditData)}`);
 
   const { success, reasons } = auditData.auditResult;
