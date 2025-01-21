@@ -64,6 +64,7 @@ describe('Backlinks Tests', function () {
         env: {
           AHREFS_API_BASE_URL: 'https://ahrefs.com',
           AHREFS_API_KEY: 'ahrefs-api',
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         },
         s3Client: {
           send: sandbox.stub(),
@@ -228,6 +229,7 @@ describe('Backlinks Tests', function () {
     let firefallClient;
 
     const mockFileResponse = {
+      ContentType: 'application/json',
       Body: {
         transformToString: sandbox.stub().resolves(JSON.stringify({
           finalUrl: 'https://example.com/page1',
@@ -289,7 +291,7 @@ describe('Backlinks Tests', function () {
     it('processes suggestions for broken backlinks, defaults to base URL if none found', async () => {
       context.s3Client.send.onCall(0).resolves({
         Contents: [
-          { Key: 'scrapes/site-id/scrape.json' },
+          { Key: 'scrapes/site1/scrape.json' },
         ],
         IsTruncated: false,
         NextContinuationToken: 'token',

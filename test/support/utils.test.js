@@ -105,6 +105,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     });
 
     const mockFileResponse = {
+      ContentType: 'application/json',
       Body: {
         transformToString: sandbox.stub().resolves(JSON.stringify({
           finalUrl: 'https://example.com/page1',
@@ -174,6 +175,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     });
 
     const mockFileResponse = {
+      ContentType: 'application/json',
       Body: {
         transformToString: sandbox.stub().resolves(JSON.stringify({
           finalUrl: 'https://example.com/page1',
@@ -216,6 +218,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     });
 
     const mockFileResponse = {
+      ContentType: 'application/json',
       Body: {
         transformToString: sandbox.stub().resolves(JSON.stringify({
           finalUrl: 'https://example.com/page1',
@@ -258,6 +261,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     });
 
     const mockFileResponse = {
+      ContentType: 'application/json',
       Body: {
         transformToString: sandbox.stub().resolves(JSON.stringify({
           scrapeResult: {

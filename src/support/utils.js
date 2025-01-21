@@ -21,7 +21,8 @@ import {
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
-import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 
 URI.preventInvalidHostname = true;
 
@@ -178,21 +179,6 @@ export async function getRUMDomainkey(baseURL, context) {
   }
 }
 
-const getFileContentFromS3 = async (s3Client, bucket, key, log) => {
-  const getCommand = new GetObjectCommand({
-    Bucket: bucket,
-    Key: key,
-  });
-  const data = await s3Client.send(getCommand);
-  try {
-    const content = await data.Body.transformToString();
-    return JSON.parse(content);
-  } catch (error) {
-    log.error('Error parsing S3 object:', error);
-    return null;
-  }
-};
-
 const extractScrapedMetadataFromJson = (data, log) => {
   try {
     log.debug(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
@@ -286,7 +272,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
 
   const extractedData = await Promise.all(
     allFiles.map(async (file) => {
-      const fileContent = await getFileContentFromS3(
+      const fileContent = await getObjectFromKey(
         s3Client,
         env.S3_SCRAPER_BUCKET_NAME,
         file.Key,
@@ -297,7 +283,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   );
 
   const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
-  const indexFileContent = await getFileContentFromS3(
+  const indexFileContent = await getObjectFromKey(
     s3Client,
     env.S3_SCRAPER_BUCKET_NAME,
     indexFile?.Key,
