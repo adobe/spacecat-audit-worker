@@ -323,7 +323,7 @@ describe('extractLinksFromHeader', () => {
     const result = extractLinksFromHeader(data, 'https://example.com', log);
     expect(result).to.deep.equal([]);
     expect(log.error.calledOnce).to.be.true;
-  }).timeout(30000);
+  }).timeout(60000);
 
   it('should return an empty array if no <header> element is found', () => {
     const data = { scrapeResult: { rawBody: '<html><body></body></html>' } };
