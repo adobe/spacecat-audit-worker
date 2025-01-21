@@ -35,7 +35,11 @@
     },
     "fastlyServiceId!important": "",
     "timeout": 900000,
-    "nodeVersion": 22
+    "nodeVersion": 22,
+    "static": [
+      "static/prompts/broken-backlinks.prompt",
+      "static/prompts/broken-backlinks-followup.prompt"
+    ]
   },
   "repository": {
     "type": "git",
@@ -63,6 +67,7 @@
     "@adobe/spacecat-shared-ahrefs-client": "1.6.4",
     "@adobe/spacecat-shared-data-access": "2.0.4",
     "@adobe/spacecat-shared-google-client": "1.4.6",
+    "@adobe/spacecat-shared-gpt-client": "1.4.4",
     "@adobe/spacecat-shared-http-utils": "1.9.6",
     "@adobe/spacecat-shared-rum-api-client": "2.18.6",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
@@ -96,8 +101,8 @@
     "chai-as-promised": "8.0.1",
     "dotenv": "16.4.7",
     "eslint": "8.57.1",
-    "husky": "9.1.7",
     "esmock": "2.6.9",
+    "husky": "9.1.7",
     "junit-report-builder": "5.1.1",
     "lint-staged": "15.4.1",
     "mocha": "11.0.1",
