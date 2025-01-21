@@ -127,7 +127,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   const processBatch = async (batch, urlTo) => {
     try {
       const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
-      await sleep(2000);
+      await sleep(1000);
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
@@ -157,7 +157,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
       log.info(`Compiling final suggestions for: ${backlink.url_to}`);
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: backlink.url_to }, 'broken-backlinks-followup', log);
-        await sleep(2000);
+        await sleep(1000);
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
 
