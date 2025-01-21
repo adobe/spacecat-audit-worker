@@ -17,7 +17,9 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import {
-  getBaseUrlPagesFromSitemapContents, getScrapedDataForSiteId,
+  extractLinksFromHeader,
+  getBaseUrlPagesFromSitemapContents,
+  getScrapedDataForSiteId,
   getUrlWithoutPath, sleep,
 } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -288,6 +290,67 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
         },
       ],
     });
+  });
+});
+
+describe('extractLinksFromHeader', () => {
+  let log;
+
+  beforeEach(() => {
+    log = {
+      warn: sinon.stub(),
+      error: sinon.stub(),
+      info: sinon.stub(),
+    };
+  });
+
+  it('should return an empty array if data is not a non-empty object', () => {
+    const result = extractLinksFromHeader({}, 'https://example.com', log);
+    expect(result).to.deep.equal([]);
+    expect(log.warn.calledOnce).to.be.true;
+  });
+
+  it('should return an empty array if rawBody is not present', () => {
+    const data = { scrapeResult: {} };
+    const result = extractLinksFromHeader(data, 'https://example.com', log);
+    expect(result).to.deep.equal([]);
+    expect(log.warn.calledOnce).to.be.true;
+  });
+
+  it('should log an error and return an empty array if HTML parsing fails', () => {
+    // JSDOM is very lenient and accepts every string. This is the only way to make it throw.
+    const data = { scrapeResult: { rawBody: '<div>'.repeat(1e6) + '</div>'.repeat(1e6) } };
+    const result = extractLinksFromHeader(data, 'https://example.com', log);
+    expect(result).to.deep.equal([]);
+    expect(log.error.calledOnce).to.be.true;
+  }).timeout(30000);
+
+  it('should return an empty array if no <header> element is found', () => {
+    const data = { scrapeResult: { rawBody: '<html><body></body></html>' } };
+    const result = extractLinksFromHeader(data, 'https://example.com', log);
+    expect(result).to.deep.equal([]);
+    expect(log.info.calledOnce).to.be.true;
+  });
+
+  it('should return an array of valid URLs found in the <header>', () => {
+    const data = {
+      scrapeResult: {
+        rawBody: '<html><body><header><a href="/home">Home</a><a href="https://example.com/about">About</a></header></body></html>',
+      },
+    };
+    const result = extractLinksFromHeader(data, 'https://example.com', log);
+    expect(result).to.deep.equal(['https://example.com/home', 'https://example.com/about']);
+  });
+
+  it('should log a warning and exclude invalid URLs', () => {
+    const data = {
+      scrapeResult: {
+        rawBody: '<html><body><header><a href="invalid-url">Invalid</a></header></body></html>',
+      },
+    };
+    const result = extractLinksFromHeader(data, 'https://example.com', log);
+    expect(result).to.deep.equal([]);
+    expect(log.error.calledOnce).to.be.true;
   });
 });
 

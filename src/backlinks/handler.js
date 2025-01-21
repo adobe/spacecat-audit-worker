@@ -10,14 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, getPrompt, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getScrapedDataForSiteId, sleep } from '../support/utils.js';
-import { backlinksSuggestionPrompt, brokenBacklinksPrompt } from '../support/prompts/backlinks.js';
 
 const TIMEOUT = 3000;
 
@@ -127,7 +126,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 
   const processBatch = async (batch, urlTo) => {
     try {
-      const requestBody = brokenBacklinksPrompt(batch, urlTo);
+      const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
       await sleep(2000);
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
@@ -157,11 +156,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     if (totalBatches > 1) {
       log.info(`Compiling final suggestions for: ${backlink.url_to}`);
       try {
-        const finalRequestBody = backlinksSuggestionPrompt(
-          backlink.url_to,
-          suggestions,
-          headerSuggestions,
-        );
+        const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: backlink.url_to }, 'broken-backlinks-followup', log);
         await sleep(2000);
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
@@ -197,7 +192,8 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   const headerSuggestionsResults = [];
   for (const backlink of auditData.auditResult.brokenBacklinks) {
     try {
-      const requestBody = brokenBacklinksPrompt(headerLinks, backlink.url_to);
+      // eslint-disable-next-line no-await-in-loop
+      const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: backlink.url_to }, 'broken-backlinks', log);
       // eslint-disable-next-line no-await-in-loop
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 

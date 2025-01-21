@@ -11,7 +11,12 @@
  */
 
 import {
-  hasText, prependSchema, resolveCustomerSecretsName, tracingFetch as fetch,
+  hasText,
+  isNonEmptyArray,
+  isNonEmptyObject,
+  prependSchema,
+  resolveCustomerSecretsName,
+  tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
@@ -209,26 +214,42 @@ const extractScrapedMetadataFromJson = (data, log) => {
   }
 };
 
-const extractLinksFromHeader = (data, baseUrl) => {
-  if (!data || !data.scrapeResult || !data.scrapeResult.rawBody) {
+export const extractLinksFromHeader = (data, baseUrl, log) => {
+  if (!isNonEmptyObject(data?.scrapeResult) && !hasText(data?.scrapeResult?.rawBody)) {
+    log.warn(`No content found in index file for site ${baseUrl}`);
     return [];
   }
   const rawHtml = data.scrapeResult.rawBody;
-  const dom = new JSDOM(rawHtml);
+  let dom;
+  try {
+    dom = new JSDOM(rawHtml);
+  } catch (error) {
+    log.error(`Failed to parse HTML for site ${baseUrl}: ${error.message}`);
+    return [];
+  }
   const { document } = dom.window;
 
   const header = document.querySelector('header');
   if (!header) {
+    log.info(`No <header> element found for site ${baseUrl}`);
     return [];
   }
 
   const links = [];
   header.querySelectorAll('a[href]').forEach((aTag) => {
     const href = aTag.getAttribute('href');
-    const fullUrl = new URL(href, baseUrl).href;
-    links.push(fullUrl);
-  });
 
+    try {
+      const url = href.startsWith('/')
+        ? new URL(href, baseUrl)
+        : new URL(href);
+
+      const fullUrl = url.href;
+      links.push(fullUrl);
+    } catch (error) {
+      log.error(`Failed to process URL in <header> for site ${baseUrl}: ${href}, Error: ${error.message}`);
+    }
+  });
   return links;
 };
 
@@ -261,7 +282,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
 
   await fetchFiles();
 
-  if (allFiles.length === 0) {
+  if (!isNonEmptyArray(allFiles)) {
     return {
       headerLinks: [],
       siteData: [],
@@ -287,7 +308,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
     indexFile?.Key,
     log,
   );
-  const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL());
+  const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
 
   log.info(`siteData: ${JSON.stringify(extractedData)}`);
   return {

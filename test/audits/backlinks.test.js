@@ -39,7 +39,6 @@ import {
   brokenBacklinksSuggestions,
   suggestions,
 } from '../fixtures/broken-backlinks/suggestion.js';
-import { mockUrlResponses } from '../fixtures/broken-backlinks/urls.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -72,7 +71,26 @@ describe('Backlinks Tests', function () {
       })
       .build(message);
 
-    mockUrlResponses();
+    nock('https://foo.com')
+      .get('/returns-404')
+      .reply(404);
+
+    nock('https://foo.com')
+      .get('/redirects-throws-error')
+      .reply(301, undefined, { location: 'https://www.foo.com/redirects-throws-error' });
+
+    nock('https://www.foo.com')
+      .get('/redirects-throws-error')
+      .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
+
+    nock('https://foo.com')
+      .get('/returns-429')
+      .reply(429);
+
+    nock('https://foo.com')
+      .get('/times-out')
+      .delay(3010)
+      .reply(200);
   });
   afterEach(() => {
     nock.cleanAll();
