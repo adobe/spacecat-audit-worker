@@ -34,7 +34,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, opportu
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`); // internalServerError
   }
 
-  // TODO present in experimentation-opportunities
+  // TODO present in experimentation-opportunities / classifiedSuggestions in sitemap
   try {
     if (!opportunity) {
       const opportunityDataSchema = {
