@@ -1,3 +1,10 @@
+# [1.48.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.47.9...v1.48.0) (2025-01-21)
+
+
+### Features
+
+* introduce broken backlink auto-suggest ([#571](https://github.com/adobe/spacecat-audit-worker/issues/571)) ([03a1ee2](https://github.com/adobe/spacecat-audit-worker/commit/03a1ee2b72d0f11c1fcd017eeea3b0ce35a236ee))
+
 ## [1.47.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.47.8...v1.47.9) (2025-01-21)
 
 
