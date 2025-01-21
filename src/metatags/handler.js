@@ -79,6 +79,8 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
   Object.entries(detectedTags).forEach(([endpoint, tags]) => {
     const organicTraffic = getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
     Object.values((tags)).forEach((tagIssueDetails) => {
+      // Multiplying by 1% for missing tags, and 0.5% for other tag issues
+      // For duplicate tags, each page's traffic is multiplied by .5% so it amounts to 0.5% * number of duplicates.
       const multiplier = tagIssueDetails.issue.includes('Missing') ? 0.01 : 0.005;
       projectedTraffic += organicTraffic * multiplier;
     });
