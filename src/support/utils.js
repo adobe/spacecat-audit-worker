@@ -220,13 +220,8 @@ export const extractLinksFromHeader = (data, baseUrl, log) => {
     return [];
   }
   const rawHtml = data.scrapeResult.rawBody;
-  let dom;
-  try {
-    dom = new JSDOM(rawHtml);
-  } catch (error) {
-    log.error(`Failed to parse HTML for site ${baseUrl}: ${error.message}`);
-    return [];
-  }
+  const dom = new JSDOM(rawHtml);
+
   const { document } = dom.window;
 
   const header = document.querySelector('header');

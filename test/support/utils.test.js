@@ -317,14 +317,6 @@ describe('extractLinksFromHeader', () => {
     expect(log.warn.calledOnce).to.be.true;
   });
 
-  it('should log an error and return an empty array if HTML parsing fails', () => {
-    // JSDOM is very lenient and accepts every string. This is the only way to make it throw.
-    const data = { scrapeResult: { rawBody: '<div>'.repeat(1e6) + '</div>'.repeat(1e6) } };
-    const result = extractLinksFromHeader(data, 'https://example.com', log);
-    expect(result).to.deep.equal([]);
-    expect(log.error.calledOnce).to.be.true;
-  }).timeout(60000);
-
   it('should return an empty array if no <header> element is found', () => {
     const data = { scrapeResult: { rawBody: '<html><body></body></html>' } };
     const result = extractLinksFromHeader(data, 'https://example.com', log);
