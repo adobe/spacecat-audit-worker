@@ -24,7 +24,7 @@ import {
   checkRobotsForSitemap,
   fetchContent,
   convertToOpportunity,
-  classifySuggestions,
+  generateSuggestions,
   findSitemap,
   filterValidUrls,
   getBaseUrlPagesFromSitemaps,
@@ -675,13 +675,13 @@ describe('Sitemap Audit', () => {
     };
 
     it('should return empty suggestions when all is ok', async () => {
-      const response = classifySuggestions(url, auditAllGood, context);
+      const response = generateSuggestions(url, auditAllGood, context);
       expect(response.suggestions.length).to.equal(0);
       expect(response).to.deep.equal({ ...auditAllGood, suggestions: [] });
     });
 
     it('should report that the expected default sitemap path contains no urls', async () => {
-      const response = classifySuggestions(
+      const response = generateSuggestions(
         url,
         auditDataWithSitemapFoundWithNoPages,
         context,
@@ -698,14 +698,14 @@ describe('Sitemap Audit', () => {
             type: 'error',
             error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             recommendedAction:
-              'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
+              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
           },
         ],
       });
     });
 
     it('should report that the expected default sitemap path contains only urls that are not found', async () => {
-      const response = classifySuggestions(
+      const response = generateSuggestions(
         url,
         auditDataWithSitemapFoundWithPagesButTheyRespondWith404,
         context,
@@ -722,14 +722,14 @@ describe('Sitemap Audit', () => {
             type: 'error',
             error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             recommendedAction:
-              'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
+              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
           },
         ],
       });
     });
 
     it('should report that there are no sitemaps defined in robots.txt and in the fallback', async () => {
-      const response = classifySuggestions(url, auditNoSitemapsFound, context);
+      const response = generateSuggestions(url, auditNoSitemapsFound, context);
       expect(response.suggestions.length).to.equal(1);
       expect(response.suggestions[0].type).to.equal('error');
       expect(response.suggestions[0].error).to.equal(
@@ -742,7 +742,7 @@ describe('Sitemap Audit', () => {
             type: 'error',
             error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
             recommendedAction:
-              'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
+              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
           },
         ],
       });
@@ -752,7 +752,7 @@ describe('Sitemap Audit', () => {
       const sitemap = Object.keys(
         auditPartiallySuccessfulOnePageNetworkError.auditResult.paths,
       )[0];
-      const response = classifySuggestions(
+      const response = generateSuggestions(
         url,
         auditPartiallySuccessfulOnePageNetworkError,
         context,
@@ -777,7 +777,7 @@ describe('Sitemap Audit', () => {
                 .issues[sitemap][0].url,
             statusCode: 500,
             recommendedAction:
-              'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
+              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
           },
         ],
       });
@@ -804,7 +804,7 @@ describe('Sitemap Audit', () => {
         },
       };
 
-      const response = classifySuggestions(
+      const response = generateSuggestions(
         'https://example.com',
         auditDataWithRedirect,
         context,
@@ -816,7 +816,7 @@ describe('Sitemap Audit', () => {
         pageUrl: 'https://example.com/old-page',
         statusCode: 301,
         suggestedFix: 'https://example.com/new-page',
-        recommendedAction: 'redirect_to_https://example.com/new-page',
+        recommendedAction: 'use this url instead: https://example.com/new-page',
       });
     });
   });
@@ -1052,17 +1052,17 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/permanent-redirect')
       .reply(301, '', { Location: 'https://example.com/new-location' });
     nock('https://example.com')
-      .get('/permanent-redirect')
+      .head('/permanent-redirect')
       .reply(301, '', { Location: 'https://example.com/new-location' });
-    nock('https://example.com').get('/new-location').reply(200);
+    nock('https://example.com').head('/new-location').reply(200);
 
     nock('https://example.com')
       .head('/temporary-redirect')
       .reply(302, '', { Location: 'https://example.com/temp-location' });
     nock('https://example.com')
-      .get('/temporary-redirect')
+      .head('/temporary-redirect')
       .reply(302, '', { Location: 'https://example.com/temp-location' });
-    nock('https://example.com').get('/temp-location').reply(200);
+    nock('https://example.com').head('/temp-location').reply(200);
     nock('https://example.com').head('/not-found').reply(404);
 
     const result = await filterValidUrls(urls);

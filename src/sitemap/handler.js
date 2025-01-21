@@ -179,7 +179,7 @@ export async function filterValidUrls(urls) {
       // if it's a redirect, follow it to get the final URL
       if (response.status === 301 || response.status === 302) {
         try {
-          const redirectResponse = await fetch(url, { redirect: 'follow' });
+          const redirectResponse = await fetch(url, { method: 'HEAD', redirect: 'follow' });
           return {
             status: NOT_OK,
             url,
@@ -476,7 +476,7 @@ export function getPagesWithIssues(auditData) {
  * @param context - The context object containing the logger
  * @returns {Array} An array of suggestions or error objects.
  */
-export function classifySuggestions(auditUrl, auditData, context) {
+export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
   log.info(`Classifying suggestions for ${JSON.stringify(auditData)}`);
 
@@ -491,8 +491,8 @@ export function classifySuggestions(auditUrl, auditData, context) {
     .map((issue) => ({
       ...issue,
       recommendedAction: issue.suggestedFix
-        ? `redirect_to_${issue.suggestedFix}`
-        : 'Remove this URL from the sitemap if the page is no longer needed. If the page is still needed, make sure the page is accessible and returns a 200 status code.',
+        ? `use this url instead: ${issue.suggestedFix}`
+        : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 
   log.info(`Classified suggestions: ${JSON.stringify(suggestions)}`);
@@ -567,5 +567,5 @@ export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
     .then((url) => getUrlWithoutPath(prependSchema(url))))
-  .withPostProcessors([classifySuggestions, convertToOpportunity])
+  .withPostProcessors([generateSuggestions, convertToOpportunity])
   .build();
