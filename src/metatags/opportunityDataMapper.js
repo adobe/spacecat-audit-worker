@@ -26,5 +26,6 @@ export class opportunityData {
       ],
     };
     this.tags = ['Traffic acquisition'];
+    this.data = { };
   }
 }

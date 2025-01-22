@@ -48,6 +48,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, opportu
         description: opportunityInstance.description,
         guidance: opportunityInstance.guidance,
         tags: opportunityInstance.tags,
+        data: opportunityInstance.data,
       };
       opportunity = await Opportunity.create(opportunityDataSchema);
       return opportunity;

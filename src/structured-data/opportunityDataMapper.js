@@ -21,5 +21,6 @@ export class opportunityData {
       steps: [],
     };
     this.tags = ['Traffic acquisition'];
+    this.data = { };
   }
 }
