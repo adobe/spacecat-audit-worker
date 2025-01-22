@@ -16,12 +16,13 @@
  * @param context - The context object containing the data access and logger objects.
  * @param AUDIT_TYPE - The type of the audit.
  * @param opportunityData - The opportunity data object.
+ * @param kpiDeltas - The KPI deltas for the audit.
  */
 
 // eslint-disable-next-line max-len
-export async function convertToOpportunity(auditUrl, auditData, context, opportunityData, AUDIT_TYPE) {
+export async function convertToOpportunity(auditUrl, auditData, context, opportunityData, AUDIT_TYPE, kpiDeltas = {}) {
   // eslint-disable-next-line new-cap
-  const opportunityInstance = new opportunityData();
+  const opportunityInstance = new opportunityData(kpiDeltas);
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
   let opportunity;
@@ -52,6 +53,12 @@ export async function convertToOpportunity(auditUrl, auditData, context, opportu
       return opportunity;
     } else {
       opportunity.setAuditId(auditData.id);
+      if (AUDIT_TYPE === 'cwv') {
+        opportunity.setData({
+          ...opportunity.getData(),
+          ...kpiDeltas,
+        });
+      }
       await opportunity.save();
       return opportunity;
     }
