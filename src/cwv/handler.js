@@ -15,7 +15,7 @@ import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
-import { opportunityData } from './opportunityDataMapper.js';
+import { OpportunityData } from './opportunityDataMapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
 
@@ -55,7 +55,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
     auditUrl,
     auditData,
     context,
-    opportunityData,
+    OpportunityData,
     AUDIT_TYPE,
     kpiDeltas,
   );

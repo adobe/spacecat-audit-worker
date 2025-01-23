@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-export class opportunityData {
+export class OpportunityData {
   constructor(kpiDeltas) {
     this.runbook = 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_CWV_Runbook.docx?web=1';
     this.origin = 'AUTOMATION';

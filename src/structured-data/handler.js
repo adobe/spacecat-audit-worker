@@ -15,7 +15,7 @@ import { isArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { opportunityData } from './opportunityDataMapper.js';
+import { OpportunityData } from './opportunityDataMapper.js';
 
 const AUDIT_TYPE = 'structured-data';
 
@@ -112,7 +112,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditUrl,
     auditData,
     context,
-    opportunityData,
+    OpportunityData,
     AUDIT_TYPE,
   );
   const { log } = context;

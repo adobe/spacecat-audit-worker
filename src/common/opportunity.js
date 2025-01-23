@@ -15,14 +15,13 @@
  * @param auditData - The audit data containing the audit result and additional details.
  * @param context - The context object containing the data access and logger objects.
  * @param AUDIT_TYPE - The type of the audit.
- * @param opportunityData - The opportunity data object.
+ * @param OpportunityData - The opportunity data object.
  * @param kpiDeltas - The KPI deltas for the audit.
  */
 
 // eslint-disable-next-line max-len
-export async function convertToOpportunity(auditUrl, auditData, context, opportunityData, AUDIT_TYPE, kpiDeltas = {}) {
-  // eslint-disable-next-line new-cap
-  const opportunityInstance = new opportunityData(kpiDeltas);
+export async function convertToOpportunity(auditUrl, auditData, context, OpportunityData, AUDIT_TYPE, kpiDeltas = {}) {
+  const opportunityInstance = new OpportunityData(kpiDeltas);
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
   let opportunity;
@@ -35,7 +34,6 @@ export async function convertToOpportunity(auditUrl, auditData, context, opportu
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`); // internalServerError
   }
 
-  // TODO present in experimentation-opportunities / classifiedSuggestions in sitemap
   try {
     if (!opportunity) {
       const opportunityDataSchema = {

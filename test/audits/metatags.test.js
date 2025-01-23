@@ -674,7 +674,7 @@ describe('Meta Tags', () => {
       opportunity.getType = () => 'backlinks';
       dataAccessStub.Opportunity.create = sinon.stub().returns(opportunity);
       await opportunityAndSuggestions(auditUrl, auditData, context);
-      expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+      expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.OpportunityData);
       expect(opportunity.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
