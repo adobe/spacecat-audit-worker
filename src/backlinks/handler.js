@@ -18,7 +18,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getScrapedDataForSiteId, sleep } from '../support/utils.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { OpportunityData } from '../internal-links/opportunityDataMapper.js';
+import { OpportunityData } from './opportunityDataMapper.js';
 
 const AUDIT_TYPE = 'broken-backlinks';
 const TIMEOUT = 3000;

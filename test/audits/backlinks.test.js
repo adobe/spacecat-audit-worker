@@ -18,7 +18,7 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
-import { brokenBacklinksAuditRunner, convertToOpportunity, generateSuggestionData } from '../../src/backlinks/handler.js';
+import { brokenBacklinksAuditRunner, opportunityAndSuggestions, generateSuggestionData } from '../../src/backlinks/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import {
   brokenBacklinkWithTimeout,
@@ -132,7 +132,7 @@ describe('Backlinks Tests', function () {
 
     ahrefsMock(site.getBaseURL(), auditDataMock.auditResult);
 
-    await convertToOpportunity(auditUrl, auditDataMock, context);
+    await opportunityAndSuggestions(auditUrl, auditDataMock, context);
 
     expect(context.dataAccess.Opportunity.create)
       .to
@@ -152,7 +152,7 @@ describe('Backlinks Tests', function () {
 
     ahrefsMock(site.getBaseURL(), auditDataMock.auditResult);
 
-    await convertToOpportunity(auditUrl, auditDataMock, context);
+    await opportunityAndSuggestions(auditUrl, auditDataMock, context);
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(brokenBacklinksOpportunity.setAuditId).to.have.been.calledOnceWith(auditDataMock.id);
@@ -177,7 +177,7 @@ describe('Backlinks Tests', function () {
       .reply(200, auditDataMock.auditResult);
 
     try {
-      await convertToOpportunity(auditUrl, auditDataMock, context);
+      await opportunityAndSuggestions(auditUrl, auditDataMock, context);
     } catch (e) {
       expect(e.message).to.equal(errorMessage);
     }

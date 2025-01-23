@@ -25,7 +25,7 @@ export class OpportunityData {
         'Publish the changes.',
       ],
     };
-    this.tags = ['Engagement'];
+    this.tags = ['Traffic acquisition'];
     this.data = { };
   }
 }
