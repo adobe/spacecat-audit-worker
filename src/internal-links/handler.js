@@ -160,9 +160,12 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
       type: 'CONTENT_UPDATE',
       rank: entry.traffic_domain,
       data: {
-        ...entry,
-        /* code commented until implementation of suggested links. TODO: implement suggestions, https://jira.corp.adobe.com/browse/SITES-26545 */
-        // suggestedLink: 'some suggestion here',
+        title: entry.title,
+        url_from: entry.url_from,
+        url_to: entry.url_to,
+        urls_suggested: entry.urls_suggested || [],
+        ai_rationale: entry.ai_rationale || '',
+        traffic_domain: entry.traffic_domain,
       },
     }),
     log,
