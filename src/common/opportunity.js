@@ -26,12 +26,14 @@ export async function convertToOpportunity(auditUrl, auditData, context, Opportu
   const { Opportunity } = dataAccess;
   let opportunity;
 
-  try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-    opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-  } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`); // internalServerError
+  if (AUDIT_TYPE !== 'high-organic-low-ctr') {
+    try {
+      const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+      opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+    } catch (e) {
+      log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+      throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`); // internalServerError
+    }
   }
 
   try {
@@ -49,6 +51,20 @@ export async function convertToOpportunity(auditUrl, auditData, context, Opportu
         data: opportunityInstance.data,
       };
       opportunity = await Opportunity.create(opportunityDataSchema);
+      if (AUDIT_TYPE === 'expreminentation-opportunities') {
+        const opportunities = await Opportunity.allBySiteId(auditData.siteId);
+        opportunity = opportunities.find(
+          (oppty) => (oppty.getType() === opportunity.type) && oppty.getData()
+            && (oppty.getData().page === opportunity.data.page),
+        );
+        if (opportunity) {
+          log.info(`Updating opportunity entity for ${opportunity.data.page} with the new data`);
+          opportunity.setAuditId(opportunity.auditId);
+          opportunity.setData({
+            ...opportunity.data,
+          });
+        }
+      }
       return opportunity;
     } else {
       opportunity.setAuditId(auditData.id);
