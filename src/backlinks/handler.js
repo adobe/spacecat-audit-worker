@@ -17,7 +17,10 @@ import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getScrapedDataForSiteId, sleep } from '../support/utils.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { OpportunityData } from '../internal-links/opportunityDataMapper.js';
 
+const AUDIT_TYPE = 'broken-backlinks';
 const TIMEOUT = 3000;
 
 async function filterOutValidBacklinks(backlinks, log) {
@@ -229,42 +232,15 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   };
 };
 
-export const convertToOpportunity = async (auditUrl, auditData, context) => {
-  const { dataAccess, log } = context;
-  const { Opportunity } = dataAccess;
-  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  let opportunity = opportunities.find((oppty) => oppty.getType() === 'broken-backlinks');
-
-  if (!opportunity) {
-    const opportunityData = {
-      siteId: auditData.siteId,
-      auditId: auditData.id,
-      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BAC174971-BA97-44A9-9560-90BE6C7CF789%7D&file=Experience_Success_Studio_Broken_Backlinks_Runbook.docx&action=default&mobileredirect=true',
-      type: 'broken-backlinks',
-      origin: 'AUTOMATION',
-      title: 'Authoritative Domains are linking to invalid URLs. This could impact your SEO.',
-      description: 'Provide the correct target URL that each of the broken backlinks should be redirected to.',
-      guidance: {
-        steps: [
-          'Review the list of broken target URLs and the suggested redirects.',
-          'Manually override redirect URLs as needed.',
-          'Copy redirects.',
-          'Paste new entries in your website redirects file.',
-          'Publish the changes.',
-        ],
-      },
-      tags: ['Traffic acquisition'],
-    };
-    try {
-      opportunity = await Opportunity.create(opportunityData);
-    } catch (e) {
-      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
-      throw e;
-    }
-  } else {
-    opportunity.setAuditId(auditData.id);
-    await opportunity.save();
-  }
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    OpportunityData,
+    AUDIT_TYPE,
+  );
+  const { log } = context;
 
   const buildKey = (data) => `${data.url_from}|${data.url_to}`;
 
@@ -287,10 +263,10 @@ export const convertToOpportunity = async (auditUrl, auditData, context) => {
     }),
     log,
   });
-};
+}
 
 export default new AuditBuilder()
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL()))
   .withRunner(brokenBacklinksAuditRunner)
-  .withPostProcessors([generateSuggestionData, convertToOpportunity])
+  .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
   .build();
