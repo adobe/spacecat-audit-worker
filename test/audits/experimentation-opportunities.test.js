@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
+import chaiAsPromised from 'chai-as-promised';
 import { opportunityAndSuggestions, MAX_OPPORTUNITIES, getRecommendations } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/opportunitiesdata.json' with { type: 'json' };
@@ -24,6 +25,7 @@ import expectedOpportunitiesData from '../fixtures/expected-opportunities-data.j
 import llmHandlerResponse from '../fixtures/statistics-lambda-llm-insights-response.json' with { type: 'json' };
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('Opportunities Tests', () => {
   const url = 'https://abc.com';
