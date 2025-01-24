@@ -471,13 +471,6 @@ export function classifySuggestions(auditUrl, auditData, log) {
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
-    context,
-    OpportunityData,
-    AUDIT_TYPE,
-  );
   const { log } = context;
 
   const classifiedSuggestions = classifySuggestions(auditUrl, auditData, log);
@@ -485,6 +478,14 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     // If there are no issues, no need to create an opportunity
     return;
   }
+
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    OpportunityData,
+    AUDIT_TYPE,
+  );
 
   const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);
 
@@ -506,5 +507,5 @@ export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
     .then((url) => (getUrlWithoutPath(prependSchema(url)))))
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([opportunityAndSuggestions])
   .build();
