@@ -401,10 +401,11 @@ describe('Opportunities opportunityAndSuggestions', () => {
     context.dataAccess.Opportunity.allBySiteId.resolves([]);
     context.dataAccess.Opportunity.create.rejects(new Error('Test error'));
 
-    await opportunityAndSuggestions('https://example.com', auditData, context);
+    await expect(opportunityAndSuggestions('https://example.com', auditData, context))
+      .to.be.rejectedWith('Test error');
 
     expect(context.log.error).to.have.been.calledWith(
-      sinon.match(/Error creating\/updating opportunity entity/),
+      sinon.match('Failed to create new opportunity for siteId test-site-id and auditId test-audit-id: Test error'),
     );
   });
 

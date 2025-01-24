@@ -11,7 +11,7 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
