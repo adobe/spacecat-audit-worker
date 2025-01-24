@@ -377,7 +377,6 @@ describe('Opportunities opportunityAndSuggestions', () => {
 
   it('should update and save high-organic-low-ctr opportunity if the opportunity already exists', async () => {
     context.dataAccess.Opportunity.allBySiteId.resolves([opportunity]);
-    // context.dataAccess.Opportunity.save.resolves();
 
     await opportunityAndSuggestions('https://example.com', auditData, context);
 

@@ -16,12 +16,12 @@
  * @param context - The context object containing the data access and logger objects.
  * @param AUDIT_TYPE - The type of the audit.
  * @param OpportunityData - The opportunity data object.
- * @param kpiDeltas - The KPI deltas for the audit.
+ * @param props - Either The KPI deltas for the audit or opportunity properties for the mapper.
  */
 
 // eslint-disable-next-line max-len
-export async function convertToOpportunity(auditUrl, auditData, context, OpportunityData, AUDIT_TYPE, kpiDeltas = {}) {
-  const opportunityInstance = new OpportunityData(kpiDeltas);
+export async function convertToOpportunity(auditUrl, auditData, context, OpportunityData, AUDIT_TYPE, props = {}) {
+  const opportunityInstance = new OpportunityData(props);
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
   let opportunity;
@@ -32,7 +32,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, Opportu
       opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
     } catch (e) {
       log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-      throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`); // internalServerError
+      throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
     }
   }
 
@@ -50,28 +50,32 @@ export async function convertToOpportunity(auditUrl, auditData, context, Opportu
         tags: opportunityInstance.tags,
         data: opportunityInstance.data,
       };
-      opportunity = await Opportunity.create(opportunityDataSchema);
-      if (AUDIT_TYPE === 'expreminentation-opportunities') {
+      // opportunity = await Opportunity.create(opportunityDataSchema);
+      if (AUDIT_TYPE === 'high-organic-low-ctr') {
+        opportunityDataSchema.status = 'NEW';
         const opportunities = await Opportunity.allBySiteId(auditData.siteId);
         opportunity = opportunities.find(
-          (oppty) => (oppty.getType() === opportunity.type) && oppty.getData()
-            && (oppty.getData().page === opportunity.data.page),
+          (oppty) => (oppty.getType() === opportunityDataSchema.type) && oppty.getData()
+            && (oppty.getData().page === opportunityDataSchema.data.page),
         );
         if (opportunity) {
-          log.info(`Updating opportunity entity for ${opportunity.data.page} with the new data`);
-          opportunity.setAuditId(opportunity.auditId);
+          log.info(`Updating opportunity entity for ${opportunityDataSchema.data.page} with the new data`);
+          opportunity.setAuditId(opportunityDataSchema.auditId);
           opportunity.setData({
-            ...opportunity.data,
+            ...opportunityDataSchema.data,
           });
+          await opportunity.save();
+          return opportunity;
         }
       }
+      opportunity = await Opportunity.create(opportunityDataSchema);
       return opportunity;
     } else {
       opportunity.setAuditId(auditData.id);
       if (AUDIT_TYPE === 'cwv') {
         opportunity.setData({
           ...opportunity.getData(),
-          ...kpiDeltas,
+          ...props, // kpiDeltas
         });
       }
       await opportunity.save();
