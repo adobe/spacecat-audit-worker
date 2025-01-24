@@ -35,5 +35,3 @@ export class OpportunityData {
     };
   }
 }
-// figure out post processor function and convert to opportunity entity function
-// check where line 332 gets opportunities from - see where its getting them from

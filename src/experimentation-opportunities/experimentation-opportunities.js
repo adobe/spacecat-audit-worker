@@ -393,9 +393,9 @@ export async function handler(auditUrl, context, site) {
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
-  const opportuniti = auditData.auditResult.experimentationOpportunities
+  const opportunity = auditData.auditResult.experimentationOpportunities
     .filter((oppty) => oppty.type === 'high-organic-low-ctr' && oppty.recommendations);
-  await Promise.all(opportuniti.map(async (oppty) => convertToOpportunity(
+  await Promise.all(opportunity.map(async (oppty) => convertToOpportunity(
     auditUrl,
     auditData,
     context,
