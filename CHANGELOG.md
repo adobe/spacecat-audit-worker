@@ -1,3 +1,10 @@
+## [1.48.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.2...v1.48.3) (2025-01-24)
+
+
+### Bug Fixes
+
+* **deps:** bump rum-api-client to 2.18.8 ([#605](https://github.com/adobe/spacecat-audit-worker/issues/605)) ([73d77f4](https://github.com/adobe/spacecat-audit-worker/commit/73d77f47b4a7906d6db0a23552f3ac09851b9905))
+
 ## [1.48.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.1...v1.48.2) (2025-01-23)
 
 
