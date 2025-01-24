@@ -185,6 +185,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 export const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
+  log.info(`XXXXX Generating suggestions for site ${finalUrl}`);
 
   if (auditData.auditResult.success === false) {
     log.info('Audit failed, skipping suggestions generation');
