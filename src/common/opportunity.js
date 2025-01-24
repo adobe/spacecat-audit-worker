@@ -16,7 +16,7 @@
  * @param context - The context object containing the data access and logger objects.
  * @param AUDIT_TYPE - The type of the audit.
  * @param OpportunityData - The opportunity data object.
- * @param props - Either The KPI deltas for the audit or opportunity properties for the mapper.
+ * @param props - Either The KPI deltas for the cwv audit or opportunity properties for the mapper.
  */
 
 // eslint-disable-next-line max-len

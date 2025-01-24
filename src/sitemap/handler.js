@@ -22,6 +22,8 @@ import {
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { OpportunityData } from './dataOpportunityMapper.js';
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -468,49 +470,20 @@ export function classifySuggestions(auditUrl, auditData, log) {
   return suggestions;
 }
 
-export async function convertToOpportunity(auditUrl, auditData, context) {
-  const { dataAccess, log } = context;
-  const { Opportunity } = dataAccess;
-
-  log.info('Converting SITEMAP audit to opportunity...');
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    OpportunityData,
+    AUDIT_TYPE,
+  );
+  const { log } = context;
 
   const classifiedSuggestions = classifySuggestions(auditUrl, auditData, log);
   if (!classifiedSuggestions.length) {
     // If there are no issues, no need to create an opportunity
     return;
-  }
-
-  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  log.info(`opportunities: ${JSON.stringify(opportunities)}`);
-
-  let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-  log.info(`opportunity: ${JSON.stringify(opportunity)}`);
-
-  if (!opportunity) {
-    const opportunityData = {
-      siteId: auditData.siteId,
-      auditId: auditData.id,
-      type: AUDIT_TYPE,
-      origin: 'AUTOMATION',
-      title: 'Sitemap issues found',
-      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
-      guidance: {
-        steps: [
-          'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
-          'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
-        ],
-      },
-      tags: ['Traffic Acquisition'],
-    };
-    try {
-      opportunity = await Opportunity.create(opportunityData);
-    } catch (e) {
-      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`, e);
-      throw e;
-    }
-  } else {
-    opportunity.setAuditId(auditData.id);
-    await opportunity.save();
   }
 
   const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);
