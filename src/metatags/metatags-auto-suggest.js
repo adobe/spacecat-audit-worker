@@ -33,9 +33,53 @@ async function getPresignedUrl(s3Client, log, scrapedData, key) {
   }
 }
 
+/**
+ * Poll an endpoint for a job's status.
+ * @param {string} genvarEndpoint - The Genvar endpoint to poll.
+ * @param {string} jobId - The job ID to send in the request.
+ * @param serviceToken Auth token to call Genvar API
+ * @param orgId organization id
+ * @param log Logger object
+ * @param {number} delay - The delay between polls in milliseconds.
+ * @returns {Promise<object>} - Resolves with the result field when the job is completed.
+ * @throws {Error} - Throws an error if the job fails.
+ */
+async function pollJobStatus(genvarEndpoint, jobId, serviceToken, orgId, log, delay = 3000) {
+  try {
+    const response = await axios.post(genvarEndpoint, {
+      headers: {
+        Authorization: `Bearer ${serviceToken}`,
+        'X-Gw-Ims-Org-Id': orgId,
+      },
+      params: { jobId },
+    });
+    const { status, result } = response.data;
+    log.info(`Metatags job poll status: ${status}`);
+    // Handle different statuses
+    if (status === 'failed') {
+      throw new Error(`Job ${jobId} failed with error ${response.data.error}`);
+    } else if (status === 'completed') {
+      log.info('Job completed successfully.');
+      return result;
+    } else if (status === 'running') {
+      log.info('Job is still running, polling again...');
+      await new Promise((resolve) => {
+        setTimeout(resolve, delay);
+      });
+      return await pollJobStatus(genvarEndpoint, jobId, delay);
+    } else {
+      throw new Error(`Unknown metatags poll job status: ${status}`);
+    }
+  } catch (error) {
+    log.error('Error polling job status:', error.message);
+    throw error;
+  }
+}
+
 export default async function metatagsAutoSuggest(context, detectedTags, extractedTags, baseUrl) {
   const { s3Client, log } = context;
   const genvarEndpoint = context.env.GENVAR_ENDPOINT;
+  const orgId = context.env.IMS_ORG_ID;
   if (!genvarEndpoint) {
     log.error('Metatags Auto-suggest failed: Missing Genvar endpoint');
     throw new Error('Metatags Auto-suggest failed: Missing Genvar endpoint');
@@ -55,13 +99,21 @@ export default async function metatagsAutoSuggest(context, detectedTags, extract
   requestBody.baseUrl = baseUrl;
   const response = await axios.get(genvarEndpoint, {
     Authorization: `Bearer ${serviceToken}`,
-    'X-Gw-Ims-Org-Id': '908936ED5D35CC220A495CD4@AdobeOrg',
+    'X-Gw-Ims-Org-Id': orgId,
   });
   // Check for HTTP status errors
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(`Meta-tags auto suggest failed with HTTP Error: ${response.status} - ${response.statusText}`);
+  if (response.status < 200 || response.status >= 300 || !response.data?.jobId) {
+    throw new Error(`Meta-tags auto suggest call failed: ${response.status} with ${response.statusText}
+     and response body: ${JSON.stringify(response.data)}`);
   }
-  for (const [endpoint, tags] of Object.entries(response.data)) {
+  const responseWithSuggestions = await pollJobStatus(
+    genvarEndpoint,
+    response.data.jobId,
+    serviceToken,
+    orgId,
+    log,
+  );
+  for (const [endpoint, tags] of Object.entries(responseWithSuggestions.data)) {
     ['title', 'description', 'h1'].forEach((tagName) => {
       const tagIssueData = tags[tagName];
       if (tagIssueData?.aiSuggestion && tagIssueData.aiRationale) {
