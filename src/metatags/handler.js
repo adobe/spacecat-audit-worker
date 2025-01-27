@@ -14,7 +14,7 @@ import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
-import convertToOpportunity from './opportunityHandler.js';
+import convertToOpportunity from './opportunity-handler.js';
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -28,6 +28,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
       title: object.scrapeResult.tags.title,
       description: object.scrapeResult.tags.description,
       h1: object.scrapeResult.tags.h1 || [],
+      s3key: key,
     },
   };
 }

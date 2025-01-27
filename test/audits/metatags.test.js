@@ -33,7 +33,7 @@ import {
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import testData from '../fixtures/meta-tags-data.js';
-import convertToOpportunity, { removeTrailingSlash } from '../../src/metatags/opportunityHandler.js';
+import convertToOpportunity, { removeTrailingSlash } from '../../src/metatags/opportunity-handler.js';
 import { auditMetaTagsRunner, fetchAndProcessPageObject } from '../../src/metatags/handler.js';
 
 use(sinonChai);
