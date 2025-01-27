@@ -44,8 +44,19 @@ async function getPresignedUrl(s3Client, log, scrapedData, key) {
  * @returns {Promise<object>} - Resolves with the result field when the job is completed.
  * @throws {Error} - Throws an error if the job fails.
  */
-async function pollJobStatus(genvarEndpoint, jobId, serviceToken, orgId, log, delay = 3000) {
+async function pollJobStatus(
+  genvarEndpoint,
+  jobId,
+  serviceToken,
+  orgId,
+  log,
+  attempt = 0,
+  delay = 5000,
+) {
   try {
+    if (attempt > 20) {
+      throw new Error('Max attempts exhauster to poll Genvar for Metatags.');
+    }
     const response = await axios.post(genvarEndpoint, {
       headers: {
         Authorization: `Bearer ${serviceToken}`,
@@ -66,7 +77,7 @@ async function pollJobStatus(genvarEndpoint, jobId, serviceToken, orgId, log, de
       await new Promise((resolve) => {
         setTimeout(resolve, delay);
       });
-      return await pollJobStatus(genvarEndpoint, jobId, delay);
+      return await pollJobStatus(genvarEndpoint, jobId, serviceToken, orgId, log, attempt + 1);
     } else {
       throw new Error(`Unknown metatags poll job status: ${status}`);
     }
