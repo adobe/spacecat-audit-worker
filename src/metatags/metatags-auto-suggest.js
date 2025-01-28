@@ -17,18 +17,17 @@ import axios from 'axios';
 
 const EXPIRY_IN_DAYS = 7 * 24 * 60 * 60;
 
-async function getPresignedUrl(s3Client, log, scrapedData, key) {
+async function getPresignedUrl(s3Client, log, scrapedData) {
   try {
-    log.info(`Generating presigned URL for ${key}`);
     const command = new GetObjectCommand({
       Bucket: process.env.S3_SCRAPER_BUCKET_NAME,
-      Key: key,
+      Key: scrapedData.s3key,
     });
     return await getSignedUrl(s3Client, command, {
       expiresIn: EXPIRY_IN_DAYS,
     });
   } catch (error) {
-    log.error(`Error generating presigned URL for ${key}:`, error);
+    log.error(`Error generating presigned URL for ${scrapedData.s3key}:`, error);
     return '';
   }
 }
@@ -55,7 +54,7 @@ async function pollJobStatus(
 ) {
   try {
     if (attempt > 20) {
-      throw new Error('Max attempts exhauster to poll Genvar for Metatags.');
+      throw new Error('Max attempts exhausted to poll Genvar for Metatags.');
     }
     const response = await axios.post(genvarEndpoint, {
       headers: {
@@ -65,7 +64,7 @@ async function pollJobStatus(
       params: { jobId },
     });
     const { status, result } = response.data;
-    log.info(`Metatags job poll status: ${status}`);
+    log.info(`Genvar Poll API response: ${JSON.stringify(response.data)}`);
     // Handle different statuses
     if (status === 'failed') {
       throw new Error(`Job ${jobId} failed with error ${response.data.error}`);
@@ -112,6 +111,7 @@ export default async function metatagsAutoSuggest(context, detectedTags, extract
       preSignedUrl,
     };
   }
+  log.info('Generated presigned URLs');
   requestBody.site = { baseUrl };
   requestBody.detectedTags = tagsData;
   const config = {
@@ -121,6 +121,7 @@ export default async function metatagsAutoSuggest(context, detectedTags, extract
     },
   };
   const response = await axios.post(genvarEndpoint, requestBody, config);
+  log.info(`Genvar API response: ${JSON.stringify(response.data)}`);
   if (response.status < 200 || response.status >= 300 || !response.data?.jobId) {
     throw new Error(`Meta-tags auto suggest call failed: ${response.status} with ${response.statusText}
      and response body: ${JSON.stringify(response.data)}`);
