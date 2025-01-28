@@ -108,7 +108,7 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   if (extractedTagsCount === 0) {
     log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
   }
-  log.info(`Performing SEO checks for ${extractedTagsCount} tags.`);
+  log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
   // Perform SEO checks
   const seoChecks = new SeoChecks(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
@@ -118,7 +118,7 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   const detectedTags = seoChecks.getDetectedTags();
   const projectedTrafficLost = await calculateProjectedTraffic(context, site, detectedTags, log);
   const cpcValue = await calculateCPCValue(context, site.getId());
-  log.warn(`Expected cpc value: ${cpcValue}`);
+  log.info(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
   const projectedTrafficValue = projectedTrafficLost * cpcValue;
   const auditResult = {
     detectedTags,
