@@ -145,8 +145,7 @@ export default async function metatagsAutoSuggest(context, detectedTags, extract
         detectedTags[endpoint][tagName].aiSuggestion = tagIssueData.aiSuggestion;
         // eslint-disable-next-line no-param-reassign
         detectedTags[endpoint][tagName].aiRationale = tagIssueData.aiRationale;
-      } else {
-        log.warn(`AI suggestion or rationale not found for ${endpoint}`);
+        log.info(`Found AI suggestion and rationale for ${endpoint}`);
       }
     });
   }
