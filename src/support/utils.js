@@ -12,6 +12,8 @@
 
 import {
   hasText,
+  isNonEmptyArray,
+  isNonEmptyObject,
   prependSchema,
   resolveCustomerSecretsName,
   tracingFetch as fetch,
@@ -19,6 +21,7 @@ import {
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 
 URI.preventInvalidHostname = true;
@@ -177,119 +180,59 @@ export async function getRUMDomainkey(baseURL, context) {
   }
 }
 
-/**
- * Extracts keywords from a given URL's path segments.
- *
- * This function takes a URL as input and processes its pathname to extract
- * keywords. Each segment of the path is treated as a keyword, and segments
- * are ranked based on their position in the path. The keyword closer to the
- * end of the path has a higher rank. File extensions, if present, are removed
- * from the last segment.
- *
- * @param {string} url - The URL from which to extract keywords.
- * @param {Object} log - The logger object for logging messages.
- * @returns {Array<{keyword: string, rank: number}>} An array of objects, each containing
- * the keyword and its rank. The rank is determined by the position of the segment
- * in the URL path, with higher ranks for segments closer to the end.
- *
- * @example
- * // Returns [{ keyword: 'foo', rank: 2 }, { keyword: 'bar', rank: 1 }]
- * extractKeywordsFromUrl('http://www.example.com/foo/bar');
- *
- * @example
- * // Returns [{ keyword: 'foo bar', rank: 2 }, { keyword: 'baz', rank: 1 }]
- * extractKeywordsFromUrl('http://www.example.com/foo-bar/baz.html');
- */
-export const extractKeywordsFromUrl = (url, log) => {
+const extractScrapedMetadataFromJson = (data, log) => {
   try {
-    const urlObjc = new URL(url);
-    const path = urlObjc.pathname;
+    log.debug(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
+    const finalUrl = data.finalUrl || '';
+    const title = data.scrapeResult.tags?.title || '';
+    const description = data.scrapeResult.tags?.description || '';
+    const h1Tags = data.scrapeResult.tags?.h1 || [];
+    const h1Tag = h1Tags.length > 0 ? h1Tags[0] : '';
 
-    const segments = path.split('/').filter((segment) => segment.length > 0);
-
-    // Remove file extensions from the last segment if present
-    if (segments.length > 0) {
-      const lastSegment = segments[segments.length - 1];
-      segments[segments.length - 1] = lastSegment.replace(/\.[^/.]+$/, '');
-    }
-
-    // Map segments to an array of objects with segment and rank
-    return segments.map((segment, index) => ({
-      keyword: segment.replace(/-/g, ' '),
-      rank: segments.length - index, // Rank: higher for segments closer to the end
-    }));
+    return {
+      url: finalUrl,
+      title,
+      description,
+      h1: h1Tag,
+    };
   } catch (error) {
-    log.error('Invalid URL:', error);
-    return [];
+    log.error('Error extracting data:', error);
+    return null;
   }
 };
 
-/**
- * Processes broken backlinks to find suggested URLs based on keywords.
- *
- * @param {Array} brokenBacklinks - The array of broken backlink objects to process.
- * @param {Array} keywords - The array of keyword objects to match against.
- * @param {Object} log - The logger object for logging messages.
- * @returns {Array} A new array of backlink objects with suggested URLs added.
- */
-export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
-  const result = [];
-
-  for (const backlink of brokenBacklinks) {
-    log.info(`trying to find redirect for: ${backlink.url_to}`);
-    const extractedKeywords = extractKeywordsFromUrl(backlink.url_to, log);
-
-    const matchedData = [];
-
-    // Match keywords and include rank in the matched data
-    keywords.forEach((entry) => {
-      const matchingKeyword = extractedKeywords.find(
-        (keywordObj) => {
-          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          return regex.test(entry.keyword);
-        },
-      );
-      if (matchingKeyword) {
-        matchedData.push({ ...entry, rank: matchingKeyword.rank });
-      }
-    });
-
-    // Try again with split keywords if no matches found
-    if (matchedData.length === 0) {
-      const splitKeywords = extractedKeywords
-        .map((keywordObj) => keywordObj.keyword.split(' ').map((k) => ({ keyword: k, rank: keywordObj.rank })))
-        .flat();
-
-      splitKeywords.forEach((keywordObj) => {
-        keywords.forEach((entry) => {
-          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          if (regex.test(entry.keyword)) {
-            matchedData.push({ ...entry, rank: keywordObj.rank });
-          }
-        });
-      });
-    }
-
-    // Sort by rank and then by traffic
-    matchedData.sort((a, b) => {
-      if (b.rank === a.rank) {
-        return b.traffic - a.traffic; // Higher traffic ranks first
-      }
-      return a.rank - b.rank; // Higher rank ranks first (1 is highest)
-    });
-
-    const newBacklink = { ...backlink };
-
-    if (matchedData.length > 0) {
-      log.info(`found ${matchedData.length} keywords for backlink ${backlink.url_to}`);
-      newBacklink.url_suggested = matchedData[0].url;
-    } else {
-      log.info(`could not find suggested URL for backlink ${backlink.url_to} with keywords ${extractedKeywords.map((k) => k.keyword).join(', ')}`);
-    }
-
-    result.push(newBacklink);
+export const extractLinksFromHeader = (data, baseUrl, log) => {
+  if (!isNonEmptyObject(data?.scrapeResult) && !hasText(data?.scrapeResult?.rawBody)) {
+    log.warn(`No content found in index file for site ${baseUrl}`);
+    return [];
   }
-  return result;
+  const rawHtml = data.scrapeResult.rawBody;
+  const dom = new JSDOM(rawHtml);
+
+  const { document } = dom.window;
+
+  const header = document.querySelector('header');
+  if (!header) {
+    log.info(`No <header> element found for site ${baseUrl}`);
+    return [];
+  }
+
+  const links = [];
+  header.querySelectorAll('a[href]').forEach((aTag) => {
+    const href = aTag.getAttribute('href');
+
+    try {
+      const url = href.startsWith('/')
+        ? new URL(href, baseUrl)
+        : new URL(href);
+
+      const fullUrl = url.href;
+      links.push(fullUrl);
+    } catch (error) {
+      log.error(`Failed to process URL in <header> for site ${baseUrl}: ${href}, Error: ${error.message}`);
+    }
+  });
+  return links;
 };
 
 /**
@@ -327,4 +270,74 @@ export async function calculateCPCValue(context, siteId) {
     log.error(`Error fetching organic traffic data for site ${siteId}. Using Default CPC value.`, err);
     return DEFAULT_CPC_VALUE;
   }
+}
+
+export const getScrapedDataForSiteId = async (site, context) => {
+  const { s3Client, env, log } = context;
+  const siteId = site.getId();
+
+  let allFiles = [];
+  let isTruncated = true;
+  let continuationToken = null;
+
+  async function fetchFiles() {
+    const listCommand = new ListObjectsV2Command({
+      Bucket: env.S3_SCRAPER_BUCKET_NAME,
+      Prefix: `scrapes/${siteId}`,
+      ContinuationToken: continuationToken,
+    });
+
+    const listResponse = await s3Client.send(listCommand);
+    allFiles = allFiles.concat(
+      listResponse.Contents.filter((file) => file.Key.endsWith('.json')),
+    );
+    isTruncated = listResponse.IsTruncated;
+    continuationToken = listResponse.NextContinuationToken;
+
+    if (isTruncated) {
+      await fetchFiles();
+    }
+  }
+
+  await fetchFiles();
+
+  if (!isNonEmptyArray(allFiles)) {
+    return {
+      headerLinks: [],
+      siteData: [],
+    };
+  }
+
+  const extractedData = await Promise.all(
+    allFiles.map(async (file) => {
+      const fileContent = await getObjectFromKey(
+        s3Client,
+        env.S3_SCRAPER_BUCKET_NAME,
+        file.Key,
+        log,
+      );
+      return extractScrapedMetadataFromJson(fileContent, log);
+    }),
+  );
+
+  const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
+  const indexFileContent = await getObjectFromKey(
+    s3Client,
+    env.S3_SCRAPER_BUCKET_NAME,
+    indexFile?.Key,
+    log,
+  );
+  const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
+
+  log.info(`siteData: ${JSON.stringify(extractedData)}`);
+  return {
+    headerLinks,
+    siteData: extractedData.filter(Boolean),
+  };
+};
+
+export async function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

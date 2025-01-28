@@ -23,6 +23,7 @@ export class MockContextBuilder {
 
   build() {
     const mockLog = {
+      debug: this.sandbox.spy(),
       info: this.sandbox.spy(),
       warn: this.sandbox.spy(),
       error: this.sandbox.spy(),
@@ -37,6 +38,9 @@ export class MockContextBuilder {
       },
       Site: {
         findById: this.sandbox.stub(),
+      },
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: this.sandbox.stub(),
       },
       Organization: {
         findById: this.sandbox.stub(),
@@ -57,10 +61,15 @@ export class MockContextBuilder {
       sendMessage: this.sandbox.stub().resolves(),
     };
 
+    const mockEnv = {
+      S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+    };
+
     let context = {
       log: mockLog,
       dataAccess: mockDataAccess,
       sqs: mockSqs,
+      env: mockEnv,
     };
 
     if (this.contextOverrides) {

@@ -387,9 +387,6 @@ describe('Meta Tags', () => {
             issue: 'Duplicate Title',
             issueDetails: '2 pages share same title',
             seoRecommendation: 'Unique across pages',
-            duplicates: [
-              '/blog/page2',
-            ],
           },
           description: {
             tagContent: '',
@@ -412,9 +409,6 @@ describe('Meta Tags', () => {
             issue: 'Duplicate Title',
             issueDetails: '2 pages share same title',
             seoRecommendation: 'Unique across pages',
-            duplicates: [
-              '/blog/page1',
-            ],
           },
           h1: {
             tagContent: 'This is a dummy H1 that is intentionally made to be overly lengthy from SEO perspective',
@@ -431,9 +425,6 @@ describe('Meta Tags', () => {
             issue: 'Duplicate Title',
             issueDetails: '2 pages share same title',
             seoRecommendation: 'Unique across pages',
-            duplicates: [
-              '/blog/page1',
-            ],
           },
           description: {
             tagContent: 'Home page description',
@@ -441,9 +432,6 @@ describe('Meta Tags', () => {
             issue: 'Duplicate Description',
             issueDetails: '2 pages share same description',
             seoRecommendation: 'Unique across pages',
-            duplicates: [
-              '/blog/page1',
-            ],
           },
         },
       }));
@@ -588,9 +576,6 @@ describe('Meta Tags', () => {
             issue: 'Duplicate Title',
             issueDetails: '2 pages share same title',
             seoRecommendation: 'Unique across pages',
-            duplicates: [
-              '/',
-            ],
           },
           description: {
             tagContent: 'This is a dummy description that is optimal from SEO perspective for page1. It has the correct length of characters, and is unique across all pages.',
@@ -598,9 +583,6 @@ describe('Meta Tags', () => {
             issue: 'Duplicate Description',
             issueDetails: '2 pages share same description',
             seoRecommendation: 'Unique across pages',
-            duplicates: [
-              '/',
-            ],
           },
         },
         '/blog/page2': {
@@ -625,9 +607,6 @@ describe('Meta Tags', () => {
             issue: 'Duplicate Title',
             issueDetails: '2 pages share same title',
             seoRecommendation: 'Unique across pages',
-            duplicates: [
-              '/blog/page1',
-            ],
           },
           description: {
             tagContent: 'This is a dummy description that is optimal from SEO perspective for page1. It has the correct length of characters, and is unique across all pages.',
@@ -635,9 +614,6 @@ describe('Meta Tags', () => {
             issue: 'Duplicate Description',
             issueDetails: '2 pages share same description',
             seoRecommendation: 'Unique across pages',
-            duplicates: [
-              '/blog/page1',
-            ],
           },
         },
       }));
