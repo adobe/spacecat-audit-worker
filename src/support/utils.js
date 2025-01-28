@@ -261,10 +261,14 @@ export async function calculateCPCValue(context, siteId) {
   try {
     const organicTrafficData = await getObjectFromKey(s3Client, bucketName, key, log);
     if (!Array.isArray(organicTrafficData) || organicTrafficData.length === 0) {
-      log.info(`Organic traffic data not available for ${siteId}. Using Default CPC value.`);
+      log.warn(`Organic traffic data not available for ${siteId}. Using Default CPC value.`);
       return DEFAULT_CPC_VALUE;
     }
     const lastTraffic = organicTrafficData[organicTrafficData.length - 1];
+    if (!lastTraffic.cost || !lastTraffic.value) {
+      log.warn(`Invalid organic traffic data present for ${siteId} - cost:${lastTraffic.cost} value:${lastTraffic.value}, Using Default CPC value.`);
+      return DEFAULT_CPC_VALUE;
+    }
     return lastTraffic.cost / lastTraffic.value;
   } catch (err) {
     log.error(`Error fetching organic traffic data for site ${siteId}. Using Default CPC value.`, err);

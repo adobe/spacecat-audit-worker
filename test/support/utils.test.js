@@ -64,9 +64,10 @@ describe('getBaseUrlPagesFromSitemapContents', () => {
 describe('utils.calculateCPCValue', () => {
   let context;
   let utils;
+  let getObjectFromKey;
   beforeEach(async () => {
     sinon.restore();
-    const getObjectFromKey = sinon.stub().returns([
+    getObjectFromKey = sinon.stub().returns([
       {
         cost: 200,
         value: 100,
@@ -105,18 +106,18 @@ describe('utils.calculateCPCValue', () => {
   });
 
   it('should return 1 if organicTrafficData array is empty', async () => {
-    const getObjectFromKey = sinon.stub().returns([]);
+    getObjectFromKey = sinon.stub().returns([]);
     utils = await esmock('../../src/support/utils.js', {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
     });
     const result = await utils.calculateCPCValue(context, 'siteId');
     expect(result).to.equal(1);
-    expect(context.log.info.calledOnce).to.be.true;
-    expect(context.log.info.calledWith('Organic traffic data not available for siteId. Using Default CPC value.')).to.be.true;
+    expect(context.log.warn.calledOnce).to.be.true;
+    expect(context.log.warn.calledWith('Organic traffic data not available for siteId. Using Default CPC value.')).to.be.true;
   });
 
   it('should return 1 if organicTrafficData is not an array', async () => {
-    const getObjectFromKey = sinon.stub().returns('dummy');
+    getObjectFromKey = sinon.stub().returns('dummy');
     utils = await esmock('../../src/support/utils.js', {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
     });
@@ -125,7 +126,7 @@ describe('utils.calculateCPCValue', () => {
   });
 
   it('should calculate CPC correctly if organicTrafficData is valid', async () => {
-    const getObjectFromKey = sinon.stub().returns([
+    getObjectFromKey = sinon.stub().returns([
       { cost: 100, value: 50 },
       { cost: 200, value: 100 },
     ]);
@@ -137,7 +138,7 @@ describe('utils.calculateCPCValue', () => {
   });
 
   it('should handle errors during data fetching and return 1', async () => {
-    const getObjectFromKey = sinon.stub().throws(new Error('Fetch error'));
+    getObjectFromKey = sinon.stub().throws(new Error('Fetch error'));
     utils = await esmock('../../src/support/utils.js', {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
     });
@@ -145,6 +146,21 @@ describe('utils.calculateCPCValue', () => {
     expect(result).to.equal(1);
     expect(context.log.error.calledOnce).to.be.true;
     expect(context.log.error.calledWith('Error fetching organic traffic data for site siteId. Using Default CPC value.', sinon.match.instanceOf(Error))).to.be.true;
+  });
+
+  it('should return 1 if cost or value not available', async () => {
+    getObjectFromKey = sinon.stub().returns([
+      {
+        value: 100,
+      },
+    ]);
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    const result = await utils.calculateCPCValue(context, 'siteId');
+    expect(result).to.equal(1);
+    expect(context.log.warn.calledOnce).to.be.true;
+    expect(context.log.warn.calledWith('Invalid organic traffic data present for siteId - cost:undefined value:100, Using Default CPC value.')).to.be.true;
   });
 });
 
