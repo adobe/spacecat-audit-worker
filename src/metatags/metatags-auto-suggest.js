@@ -99,7 +99,12 @@ export default async function metatagsAutoSuggest(context, detectedTags, extract
   const serviceToken = (await imsClient.getServiceAccessToken()).access_token;
   const requestBody = {};
   const tagsData = {};
+  let count = 0; // temporary change to limit firefall api calls
   for (const [endpoint, tags] of Object.entries(detectedTags)) {
+    if (count >= 2) {
+      break;
+    }
+    count += 1;
     // eslint-disable-next-line no-await-in-loop
     const preSignedUrl = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
     tagsData[endpoint] = {
@@ -107,11 +112,15 @@ export default async function metatagsAutoSuggest(context, detectedTags, extract
       preSignedUrl,
     };
   }
-  requestBody.baseUrl = baseUrl;
-  const response = await axios.get(genvarEndpoint, {
-    Authorization: `Bearer ${serviceToken}`,
-    'X-Gw-Ims-Org-Id': orgId,
-  });
+  requestBody.site = { baseUrl };
+  requestBody.detectedTags = tagsData;
+  const config = {
+    headers: {
+      Authorization: `Bearer ${serviceToken}`,
+      'X-Gw-Ims-Org-Id': orgId,
+    },
+  };
+  const response = await axios.post(genvarEndpoint, requestBody, config);
   if (response.status < 200 || response.status >= 300 || !response.data?.jobId) {
     throw new Error(`Meta-tags auto suggest call failed: ${response.status} with ${response.statusText}
      and response body: ${JSON.stringify(response.data)}`);
