@@ -56,13 +56,16 @@ async function pollJobStatus(
     if (attempt > 20) {
       throw new Error('Max attempts exhausted to poll Genvar for Metatags.');
     }
-    const response = await axios.post(genvarEndpoint, {
-      headers: {
-        Authorization: `Bearer ${serviceToken}`,
-        'X-Gw-Ims-Org-Id': orgId,
+    const response = await axios.post(
+      genvarEndpoint,
+      { jobId },
+      {
+        headers: {
+          Authorization: `Bearer ${serviceToken}`,
+          'X-Gw-Ims-Org-Id': orgId,
+        },
       },
-      params: { jobId },
-    });
+    );
     const { status, result } = response.data;
     log.info(`Genvar Poll API response: ${JSON.stringify(response.data)}`);
     // Handle different statuses
