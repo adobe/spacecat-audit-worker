@@ -39,6 +39,7 @@ async function getPresignedUrl(s3Client, log, scrapedData) {
  * @param serviceToken Auth token to call Genvar API
  * @param orgId organization id
  * @param log Logger object
+ * @param attempt Retry attempt counter
  * @param {number} delay - The delay between polls in milliseconds.
  * @returns {Promise<object>} - Resolves with the result field when the job is completed.
  * @throws {Error} - Throws an error if the job fails.
@@ -136,7 +137,7 @@ export default async function metatagsAutoSuggest(context, detectedTags, extract
     orgId,
     log,
   );
-  for (const [endpoint, tags] of Object.entries(responseWithSuggestions.data)) {
+  for (const [endpoint, tags] of Object.entries(responseWithSuggestions)) {
     ['title', 'description', 'h1'].forEach((tagName) => {
       const tagIssueData = tags[tagName];
       if (tagIssueData?.aiSuggestion && tagIssueData.aiRationale) {
