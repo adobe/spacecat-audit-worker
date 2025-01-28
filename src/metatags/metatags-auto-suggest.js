@@ -89,8 +89,8 @@ async function pollJobStatus(
 
 export default async function metatagsAutoSuggest(context, detectedTags, extractedTags, baseUrl) {
   const { s3Client, log } = context;
-  const genvarEndpoint = context.env.GENVAR_ENDPOINT;
-  const orgId = context.env.IMS_ORG_ID;
+  const genvarEndpoint = `${context.env.GENVAR_ENDPOINT}/web/aem-genai-variations-appbuilder/metatags`;
+  const orgId = context.env.FIREFALL_IMS_ORG_ID;
   if (!genvarEndpoint) {
     log.error('Metatags Auto-suggest failed: Missing Genvar endpoint');
     throw new Error('Metatags Auto-suggest failed: Missing Genvar endpoint');
@@ -112,7 +112,6 @@ export default async function metatagsAutoSuggest(context, detectedTags, extract
     Authorization: `Bearer ${serviceToken}`,
     'X-Gw-Ims-Org-Id': orgId,
   });
-  // Check for HTTP status errors
   if (response.status < 200 || response.status >= 300 || !response.data?.jobId) {
     throw new Error(`Meta-tags auto suggest call failed: ${response.status} with ${response.statusText}
      and response body: ${JSON.stringify(response.data)}`);
