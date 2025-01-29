@@ -1,3 +1,10 @@
+## [1.48.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.5...v1.48.6) (2025-01-28)
+
+
+### Bug Fixes
+
+* sites-28312 removed duplicates field ([#593](https://github.com/adobe/spacecat-audit-worker/issues/593)) ([185036a](https://github.com/adobe/spacecat-audit-worker/commit/185036ab0786bc2d14aa1f42b19f1a0f848c2d25))
+
 ## [1.48.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.4...v1.48.5) (2025-01-26)
 
 
