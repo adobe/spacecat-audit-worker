@@ -1,0 +1,29 @@
+You are tasked to correct the LD+JSON structured data object for the provided webpage.
+
+### Rules:
+1. If data required to fix the wrong LD-JSON object cannot be retrieved from the makeup, please return an empty JSON object `{}`.
+2. Only correct mistakes in the LD-JSON object. Do not change anything else.
+
+### Response Format:
+Your response must be a valid JSON object with the following structure:
+```json
+{
+  "corrected_ldjson": object,
+  "ai_rationale": "string",
+  "confidence_score": number
+}
+```
+
+**IMPORTANT:**
+- Provide only the JSON object. Do not include any additional text, explanation, or formatting.
+
+### Data:
+- **Entity where the error occurs:** `{{entity}}`
+- **Errors in LD-JSON:** `{{errors}}`
+- **Website URL:** `{{website_url}}`
+- **Wrong LD-JSON object:** ```json
+{{wrong_ld_json}}
+```
+- **Website markup:** ```html
+{{website_markup}}
+```

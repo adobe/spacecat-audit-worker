@@ -11,9 +11,13 @@
  */
 
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { isArray } from '@adobe/spacecat-shared-utils';
+import { isArray, getPrompt } from '@adobe/spacecat-shared-utils';
+import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
+import { promises as fs } from 'fs';
+import * as cheerio from 'cheerio';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { getScrapedDataForSiteId } from '../support/utils.js';
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -33,6 +37,39 @@ import { syncSuggestions } from '../utils/data-access.js';
 export async function processStructuredData(baseURL, context, pages) {
   const { log } = context;
 
+  // Hardcode for development
+  return [
+      {
+          "inspectionUrl": "https://www.revolt.tv/article/2021-09-02/101801/lil-nas-x-drops-pregnancy-photos-before-birth-of-debut-album-montero",
+          "indexStatusResult": {
+              "verdict": "PASS",
+              "lastCrawlTime": "2025-01-29T08:30:18Z"
+          },
+          "richResults": {
+              "verdict": "FAIL",
+              "detectedItemTypes": [
+                  "Breadcrumbs"
+              ],
+              "detectedIssues": [
+                  {
+                      "richResultType": "Breadcrumbs",
+                      "items": [
+                          {
+                              "name": "Unnamed item",
+                              "issues": [
+                                  {
+                                      "issueMessage": "Either \"name\" or \"item.name\" should be specified",
+                                      "severity": "ERROR"
+                                  }
+                              ]
+                          }
+                      ]
+                  }
+              ]
+          }
+      }
+  ];
+
   let google;
   try {
     google = await GoogleClient.createFrom(context, baseURL);
@@ -41,13 +78,17 @@ export async function processStructuredData(baseURL, context, pages) {
     throw new Error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
   }
 
+  // TODO: Hardcode for development
+  pages = ['https://www.revolt.tv/article/2021-09-02/101801/lil-nas-x-drops-pregnancy-photos-before-birth-of-debut-album-montero'];
+
   const urlInspectionResult = pages.map(async (page) => {
     try {
       const { inspectionResult } = await google.urlInspect(page);
       log.info(`Successfully inspected URL: ${page}`);
+      log.info(`Inspection result: ${JSON.stringify(inspectionResult)}`);
 
       const filteredIndexStatusResult = {
-        verdict: inspectionResult?.indexStatusResult?.verdict,
+        verdict: inspectionResult?.indexStatusResult?.verdict, // PASS if indexed
         lastCrawlTime: inspectionResult?.indexStatusResult?.lastCrawlTime,
       };
 
@@ -69,7 +110,7 @@ export async function processStructuredData(baseURL, context, pages) {
             items: filteredItems,
           };
         },
-      )?.filter((item) => item.items.length > 0) ?? [];
+      )?.filter((item) => item.items.length > 0) ?? []; // All pages which have a rich result on them. But only show issues with severity ERROR
 
       if (filteredRichResults?.length > 0) {
         filteredRichResults.verdict = inspectionResult?.richResultsResult?.verdict;
@@ -98,9 +139,12 @@ export async function processStructuredData(baseURL, context, pages) {
   });
 
   const results = await Promise.allSettled(urlInspectionResult);
-  return results
-    .filter((result) => result.status === 'fulfilled')
+  const filteredResults = results.filter((result) => result.status === 'fulfilled')
     .map((result) => result.value);
+
+  console.log('filteredResults', JSON.stringify(filteredResults));
+
+  return filteredResults;
 }
 
 export async function convertToOpportunity(auditUrl, auditData, context) {
@@ -119,7 +163,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
       origin: 'AUTOMATION',
       title: 'Missing or invalid structured data',
       description: 'Structured data (JSON-LD) is a way to organize and label important information on your website so that search engines can understand it more easily. It\'s important because it can lead to improved visibility in search.',
-      guidance: {
+      guidance: { // TODO?
         steps: [],
       },
       tags: ['Traffic acquisition'],
@@ -139,6 +183,8 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 
   const filteredAuditResult = auditData.auditResult
     .filter((result) => result.richResults?.detectedIssues?.length > 0);
+
+  // TODO: Pass actual suggestions data
 
   await syncSuggestions({
     opportunity,
@@ -191,8 +237,154 @@ export async function structuredDataHandler(baseURL, context, site) {
   };
 }
 
+export async function generateSuggestionsData(finalUrl, auditData, context, site) {
+  const { dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+
+  console.info('called generateSuggestionsData', finalUrl, JSON.stringify(auditData));
+
+  // TODO: Check if audit was successful
+
+  // TODO: Check if auto suggest was enabled
+  /* const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('structured-data-auto-suggest', site)) {
+    log.info('Auto suggest is disabled for for site');
+    return { ...auditData };
+  } */
+
+  // Init firefall
+  const firefallClient = FirefallClient.createFrom(context);
+  const firefallOptions = { responseFormat: 'json_object' };
+
+  // Only take results which have actual issues
+  const results = auditData.auditResult
+    .filter((result) => result.richResults?.detectedIssues?.length > 0);
+
+  // Go through audit results, one for each URL
+  for (const auditResult of results) {
+    log.info(`Create suggestion for URL ${auditResult.inspectionUrl}`);
+
+    // TODO: Get crawled version of website from S3 if available.
+    //       This is an issue, because there is no scrape for the site yet.
+    // TODO: Maybe get crawled version adhoc from scraper via HTTP API: curl -v -X POST -H "x-api-key: $SPACECAT_USER_API_KEY_DEV" -H "Content-Type: application/json" -d @scrape-test.json https://spacecat.experiencecloud.live/api/ci/scrape
+
+    // eslint-disable-next-line no-await-in-loop
+    const crawledPage = await fs.readFile('./src/structured-data/crawled-page-example.html', { encoding: 'utf8' });
+
+    // Get .plain.html version of page to pass to the LLM, as crawled version is likely too large
+    // TODO: Alternatively we can extract text only from the crawled page and use it instead
+    let plainPage;
+    try {
+      // TODO: Properly strip extension
+      // eslint-disable-next-line no-await-in-loop
+      const plainPageResponse = await fetch(`${auditResult.inspectionUrl}.plain.html`);
+      // eslint-disable-next-line no-await-in-loop
+      plainPage = await plainPageResponse.text();
+    } catch (e) {
+      log.error(`Could not create suggestion because fetching of plain HTML failed for URL ${auditResult.inspectionUrl}: ${e.message}`);
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
+    let crawledPageParsed;
+    try {
+      crawledPageParsed = cheerio.load(crawledPage);
+    } catch (e) {
+      log.error(`Could not create suggestion because parsing of markup failed for URL ${auditResult.inspectionUrl}: ${e.message}`);
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
+    // Find all LD-JSON structured data in script tags of crawled page
+    // TODO: There might be more structured data on the site using different formats
+    const ldJsonData = [];
+    try {
+      const ldJsonTags = crawledPageParsed('script[type="application/ld+json"]');
+      log.info(`Found ${ldJsonTags.length} LD-JSON tags on page`);
+
+      if (ldJsonTags.length === 0) {
+        log.error(`No structured data found on page ${auditResult.inspectionUrl}`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      ldJsonTags.each((_, tag) => {
+        const jsonData = JSON.parse(crawledPageParsed(tag).html());
+        if (jsonData['@graph']) {
+          // Split individual entities
+          jsonData['@graph'].forEach((entity) => {
+            ldJsonData.push(entity);
+          });
+        } else {
+          ldJsonData.push(jsonData);
+        }
+      });
+    } catch (e) {
+      log.error(`Could not create suggestion because parsing of structured data failed for URL ${auditResult.inspectionUrl}: ${e.message}`);
+    }
+    log.info('Extracted ld+json data:', JSON.stringify(ldJsonData));
+
+    // TODO: Add more mappings based on actual customer issues
+    const entityMapping = {
+      Breadcrumbs: 'BreadcrumbList',
+    };
+
+    // Go through every issue on page
+    for (const issue of auditResult.richResults.detectedIssues) {
+      log.debug(`Handle rich result issue of type ${issue.richResultType}`);
+
+      const entity = entityMapping[issue.richResultType];
+      if (!entity) {
+        log.error(`Could not find entity mapping for issue of type ${issue.richResultType}`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      // Filter structured data relevant to this issue
+      const wrongLdJson = ldJsonData.find((data) => entity === data['@type']);
+      if (!wrongLdJson) {
+        log.error(`Could not find structured data for issue of type ${issue.richResultType}`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      log.info('Filtered structured data:', JSON.stringify(wrongLdJson));
+
+      const firefallInputs = {
+        entity,
+        errors: issue.items.map((item) => item.issues.map((i) => i.issueMessage)).flat(),
+        website_url: auditResult.inspectionUrl,
+        wrong_ld_json: JSON.stringify(wrongLdJson, null, 4),
+        website_markup: plainPage,
+      };
+
+      log.info('Firefall inputs:', JSON.stringify(firefallInputs));
+
+      // Get suggestions from Firefall
+      // eslint-disable-next-line no-await-in-loop
+      const requestBody = await getPrompt(firefallInputs, 'structured-data-suggest', log);
+      // eslint-disable-next-line no-await-in-loop
+      const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
+
+      if (response.choices?.length === 0 || response.choices[0].finish_reason !== 'stop') {
+        log.error(`Could not create suggestion because Firefall did not return any suggestions for issue of type ${issue.richResultType}`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      const suggestion = JSON.parse(response.choices[0].message.content);
+      log.info('Received Firefall response:', JSON.stringify(suggestion));
+
+      issue.suggestion = suggestion;
+    }
+  }
+
+  log.info('Finished generating suggestions data', JSON.stringify(auditData));
+
+  return { ...auditData };
+}
+
 export default new AuditBuilder()
   .withRunner(structuredDataHandler)
   .withUrlResolver((site) => site.getBaseURL())
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([generateSuggestionsData]) // , convertToOpportunity
   .build();

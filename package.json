@@ -21,7 +21,9 @@
     "deploy-routes": "hedy --no-build -no-hints -l major",
     "deploy-ci": "hedy -v --deploy --test --pkgVersion=ci$CI_BUILD_NUM -l ci --cleanup-ci=24h",
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
-    "prepare": "husky"
+    "prepare": "husky",
+    "local-build": "sam build",
+    "local-run": "sam local invoke -l output.txt"
   },
   "wsk": {
     "target": "aws",
@@ -38,7 +40,8 @@
     "nodeVersion": 22,
     "static": [
       "static/prompts/broken-backlinks.prompt",
-      "static/prompts/broken-backlinks-followup.prompt"
+      "static/prompts/broken-backlinks-followup.prompt",
+      "src/structured-data/crawled-page-example.html"
     ]
   },
   "repository": {
@@ -72,13 +75,14 @@
     "@adobe/spacecat-shared-rum-api-client": "2.18.8",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.28.2",
-    "@aws-sdk/client-s3": "3.735.0",
     "@aws-sdk/client-lambda": "3.734.0",
-    "@aws-sdk/credential-provider-node": "3.734.0",
+    "@aws-sdk/client-s3": "3.735.0",
     "@aws-sdk/client-secrets-manager": "3.734.0",
     "@aws-sdk/client-sqs": "3.734.0",
-    "aws-xray-sdk": "3.10.3",
+    "@aws-sdk/credential-provider-node": "3.734.0",
     "@aws-sdk/s3-request-presigner": "3.735.0",
+    "aws-xray-sdk": "3.10.3",
+    "cheerio": "^1.0.0",
     "diff": "7.0.0",
     "jsdom": "26.0.0",
     "urijs": "1.19.11"
