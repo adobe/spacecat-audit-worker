@@ -69,7 +69,7 @@ describe('Forms Vitals audit', () => {
     expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
       domain: 'www.example.com',
       domainkey: 'test-key',
-      interval: 7,
+      interval: 30,
       granularity: 'hourly',
     });
     expect(result).to.deep.equal(expectedFormVitalsData);
