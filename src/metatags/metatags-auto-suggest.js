@@ -90,7 +90,13 @@ async function pollJobStatus(
   }
 }
 
-export default async function metatagsAutoSuggest(context, detectedTags, extractedTags, baseUrl) {
+export default async function metatagsAutoSuggest(
+  context,
+  detectedTags,
+  extractedTags,
+  healthyTags,
+  baseUrl,
+) {
   const { s3Client, log } = context;
   const genvarEndpoint = `${context.env.GENVAR_ENDPOINT}/web/aem-genai-variations-appbuilder/metatags`;
   const orgId = context.env.FIREFALL_IMS_ORG_ID;
@@ -118,6 +124,7 @@ export default async function metatagsAutoSuggest(context, detectedTags, extract
   log.info('Generated presigned URLs');
   requestBody.site = { baseUrl };
   requestBody.detectedTags = tagsData;
+  requestBody.healthyTags = healthyTags;
   const config = {
     headers: {
       Authorization: `Bearer ${serviceToken}`,

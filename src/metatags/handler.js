@@ -61,7 +61,8 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   }
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
-  await metatagsAutoSuggest(context, detectedTags, extractedTags, baseURL);
+  const healthyTags = seoChecks.getFewHealthyTags();
+  await metatagsAutoSuggest(context, detectedTags, extractedTags, healthyTags, baseURL);
 
   const auditResult = {
     detectedTags,
