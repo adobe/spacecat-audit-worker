@@ -128,7 +128,7 @@ async function getUnscrapedUrls(context, site, urls) {
     const screenshotPath = `${getS3PathPrefix(
       url.url,
       site,
-    )}/screenshot-desktop.png`;
+    )}/screenshot-desktop-fullpage.png`;
     const command = new HeadObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
       Key: screenshotPath,
@@ -156,7 +156,7 @@ async function updateRecommendations(oppty, context, site) {
         url: oppty.page,
         s3BucketName: process.env.S3_SCRAPER_BUCKET_NAME,
         promptPath: 'prompts/improving-ctr-guidance-vendor-v2.prompt',
-        screenshotPaths: [`${getS3PathPrefix(oppty.page, site)}/screenshot-desktop.png`],
+        screenshotPaths: [`${getS3PathPrefix(oppty.page, site)}/screenshot-desktop-fullpage.png`],
         scrapeJsonPath: `${getS3PathPrefix(oppty.page, site)}/scrape.json`,
         vendorDetails: getMetricsByVendor(oppty.metrics),
         additionalContext: '',
