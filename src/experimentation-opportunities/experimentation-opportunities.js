@@ -185,7 +185,7 @@ async function updateRecommendations(oppty, context, site) {
   // eslint-disable-next-line no-param-reassign
   oppty.recommendations = getRecommendations(lambdaResult);
   // eslint-disable-next-line no-param-reassign
-  oppty.screenshot = await getPresignedUrl('screenshot-desktop.png', context, oppty.page, site);
+  oppty.screenshot = await getPresignedUrl('screenshot-desktop-fullpage.png', context, oppty.page, site);
   // eslint-disable-next-line no-param-reassign
   oppty.thumbnail = await getPresignedUrl('screenshot-desktop-thumbnail.png', context, oppty.page, site);
 }
