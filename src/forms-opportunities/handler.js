@@ -15,8 +15,8 @@ import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
-const DAILY_THRESHOLD = 200;
-const INTERVAL = 7; // days
+const DAILY_THRESHOLD = 0;
+const INTERVAL = 30; // days
 const FORMS_OPPTY_QUERIES = [
   'cwv',
   'form-vitals',
