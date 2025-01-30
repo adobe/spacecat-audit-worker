@@ -14,6 +14,7 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
+import convertToOpportunity from './opportunityHandler.js';
 
 const DAILY_THRESHOLD = 200;
 const INTERVAL = 7; // days
@@ -69,4 +70,5 @@ export async function formsAuditRunner(auditUrl, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(formsAuditRunner)
+  .withPostProcessors([convertToOpportunity])
   .build();
