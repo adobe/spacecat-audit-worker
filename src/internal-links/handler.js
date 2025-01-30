@@ -179,6 +179,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
         urlsSuggested: entry.urlsSuggested || [],
         aiRationale: entry.aiRationale || '',
         trafficDomain: entry.trafficDomain,
+        priority: entry.priority,
       },
     }),
     log,
