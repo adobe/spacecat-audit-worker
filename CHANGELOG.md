@@ -1,3 +1,17 @@
+# [1.50.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.49.1...v1.50.0) (2025-01-30)
+
+
+### Features
+
+* sitemap auto-suggest ([#597](https://github.com/adobe/spacecat-audit-worker/issues/597)) ([8d5aaca](https://github.com/adobe/spacecat-audit-worker/commit/8d5aacad394053299752201c52081ac37fa5d5ff))
+
+## [1.49.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.49.0...v1.49.1) (2025-01-30)
+
+
+### Bug Fixes
+
+* **deps:** bump rum-api-client to 2.18.9 ([#615](https://github.com/adobe/spacecat-audit-worker/issues/615)) ([80522c4](https://github.com/adobe/spacecat-audit-worker/commit/80522c4cdd7fcd104077467db8e8ebf5ed76fa67))
+
 # [1.49.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.6...v1.49.0) (2025-01-30)
 
 
