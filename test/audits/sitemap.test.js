@@ -1106,6 +1106,44 @@ describe('filterValidUrls with redirect handling', () => {
       },
     ]);
   });
+
+  it('should not include suggestedFix when redirect points to same URL', async () => {
+    const urls = [
+      'https://example.com/self-redirect',
+      'https://example.com/different-redirect',
+    ];
+
+    // Mock a redirect that points to itself
+    nock('https://example.com')
+      .head('/self-redirect')
+      .reply(301, '', { Location: 'https://example.com/self-redirect' });
+
+    // Mock a redirect that points to a different URL
+    nock('https://example.com')
+      .head('/different-redirect')
+      .reply(301, '', { Location: 'https://example.com/new-location' });
+    nock('https://example.com')
+      .head('/different-redirect')
+      .reply(301, '', { Location: 'https://example.com/new-location' });
+    nock('https://example.com')
+      .head('/new-location')
+      .reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/self-redirect',
+        statusCode: 301,
+        // No suggestedFix here since it redirects to itself
+      },
+      {
+        url: 'https://example.com/different-redirect',
+        statusCode: 301,
+        suggestedFix: 'https://example.com/new-location',
+      },
+    ]);
+  });
 });
 
 describe('getPagesWithIssues', () => {
