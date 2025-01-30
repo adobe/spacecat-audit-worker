@@ -207,7 +207,7 @@ class SeoChecks {
   getDetectedTags() {
     // return this.detectedTags;
     // temporary change for demo, will be reverted
-    return Object.fromEntries(Object.entries(this.detectedTags).slice(0, 46));
+    return Object.fromEntries(Object.entries(this.detectedTags).slice(25, 71));
   }
 
   /**
