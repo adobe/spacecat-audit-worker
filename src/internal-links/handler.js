@@ -35,14 +35,14 @@ function transformInternalLinks(links) {
 }
 
 /**
- * Classifies links into priority categories based on views
+ * Classifies links into priority categories based on views (trafficDomain attribute)
  * High: top 25%, Medium: next 25%, Low: bottom 50%
- * @param {Array} links - Array of objects with views property
+ * @param {Array} links - Array of objects with trafficDomain property
  * @returns {Array} - Links with priority classifications included
  */
 function calculatePriority(links) {
   // Sort links by views in descending order
-  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
+  const sortedLinks = [...links].sort((a, b) => b.trafficDomain - a.trafficDomain);
 
   // Calculate indices for the 25% and 50% marks
   const quarterIndex = Math.ceil(sortedLinks.length * 0.25);
@@ -171,7 +171,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
-      rank: entry.traffic_domain,
+      rank: entry.trafficDomain,
       data: {
         title: entry.title,
         urlFrom: entry.urlFrom,
