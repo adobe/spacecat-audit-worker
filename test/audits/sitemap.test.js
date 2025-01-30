@@ -796,7 +796,7 @@ describe('Sitemap Audit', () => {
                 {
                   url: 'https://example.com/old-page',
                   statusCode: 301,
-                  suggestedFix: 'https://example.com/new-page',
+                  suggestedURL: 'https://example.com/new-page',
                 },
               ],
             },
@@ -815,7 +815,7 @@ describe('Sitemap Audit', () => {
         sitemapUrl: 'https://example.com/sitemap.xml',
         pageUrl: 'https://example.com/old-page',
         statusCode: 301,
-        suggestedFix: 'https://example.com/new-page',
+        suggestedURL: 'https://example.com/new-page',
         recommendedAction: 'use this url instead: https://example.com/new-page',
       });
     });
@@ -1072,12 +1072,12 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/permanent-redirect',
         statusCode: 301,
-        suggestedFix: 'https://example.com/new-location',
+        suggestedURL: 'https://example.com/new-location',
       },
       {
         url: 'https://example.com/temporary-redirect',
         statusCode: 302,
-        suggestedFix: 'https://example.com/temp-location',
+        suggestedURL: 'https://example.com/temp-location',
       },
       {
         url: 'https://example.com/not-found',
@@ -1107,7 +1107,7 @@ describe('filterValidUrls with redirect handling', () => {
     ]);
   });
 
-  it('should not include suggestedFix when redirect points to same URL', async () => {
+  it('should not include suggestedURL when redirect points to same URL', async () => {
     const urls = [
       'https://example.com/self-redirect',
       'https://example.com/different-redirect',
@@ -1135,12 +1135,12 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/self-redirect',
         statusCode: 301,
-        // No suggestedFix here since it redirects to itself
+        // No suggestedURL here since it redirects to itself
       },
       {
         url: 'https://example.com/different-redirect',
         statusCode: 301,
-        suggestedFix: 'https://example.com/new-location',
+        suggestedURL: 'https://example.com/new-location',
       },
     ]);
   });
@@ -1167,7 +1167,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/old-path',
         statusCode: 301,
-        suggestedFix: 'https://example.com/new-path',
+        suggestedURL: 'https://example.com/new-path',
       },
     ]);
   });
@@ -1183,7 +1183,7 @@ describe('getPagesWithIssues', () => {
               {
                 url: 'https://example.com/old-page',
                 statusCode: 301,
-                suggestedFix: 'https://example.com/new-page',
+                suggestedURL: 'https://example.com/new-page',
               },
               {
                 url: 'https://example.com/not-found',
@@ -1202,7 +1202,7 @@ describe('getPagesWithIssues', () => {
       sitemapUrl: 'https://example.com/sitemap.xml',
       pageUrl: 'https://example.com/old-page',
       statusCode: 301,
-      suggestedFix: 'https://example.com/new-page',
+      suggestedURL: 'https://example.com/new-page',
     });
     expect(result[1]).to.deep.equal({
       type: 'url',
