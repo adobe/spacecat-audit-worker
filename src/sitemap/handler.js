@@ -14,23 +14,23 @@ import {
   composeAuditURL, isArray, prependSchema, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import {
-  extractDomainAndProtocol,
   getBaseUrlPagesFromSitemapContents,
   getSitemapUrlsFromSitemapIndex,
   getUrlWithoutPath,
+  extractDomainAndProtocol,
   toggleWWW,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 
 export const ERROR_CODES = Object.freeze({
+  FETCH_ERROR: 'ERROR FETCHING DATA',
   INVALID_URL: 'INVALID URL',
   NO_SITEMAP_IN_ROBOTS: 'NO SITEMAP FOUND IN ROBOTS',
   NO_VALID_PATHS_EXTRACTED: 'NO VALID URLs FOUND IN SITEMAP',
   SITEMAP_NOT_FOUND: 'NO SITEMAP FOUND',
   SITEMAP_EMPTY: 'EMPTY SITEMAP',
   SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
-  FETCH_ERROR: 'ERROR FETCHING DATA',
 });
 
 const AUDIT_TYPE = 'sitemap';
