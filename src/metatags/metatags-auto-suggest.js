@@ -100,9 +100,10 @@ export default async function metatagsAutoSuggest(
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
-    log.info('Metatags auto-suggest is disabled for site');
+    log.warn('Metatags auto-suggest is disabled for site');
     return;
   }
+  log.info('Generating suggestions for Meta-tags using Genvar.');
   const genvarEndpoint = `${context.env.GENVAR_ENDPOINT}/web/aem-genai-variations-appbuilder/metatags`;
   const orgId = context.env.FIREFALL_IMS_ORG_ID;
   if (!genvarEndpoint) {
@@ -154,8 +155,9 @@ export default async function metatagsAutoSuggest(
     orgId,
     log,
   );
+  let suggestionsCounter = 0;
   for (const [endpoint, tags] of Object.entries(responseWithSuggestions)) {
-    ['title', 'description', 'h1'].forEach((tagName) => {
+    for (const tagName of ['title', 'description', 'h1']) {
       const tagIssueData = tags[tagName];
       if (tagIssueData?.aiSuggestion && tagIssueData.aiRationale) {
         // eslint-disable-next-line no-param-reassign
@@ -163,7 +165,9 @@ export default async function metatagsAutoSuggest(
         // eslint-disable-next-line no-param-reassign
         detectedTags[endpoint][tagName].aiRationale = tagIssueData.aiRationale;
         log.info(`Found AI suggestion and rationale for ${endpoint}`);
+        suggestionsCounter += 1;
       }
-    });
+    }
   }
+  log.info(`Generated ${suggestionsCounter} suggestions for Meta-tags using Genvar.`);
 }
