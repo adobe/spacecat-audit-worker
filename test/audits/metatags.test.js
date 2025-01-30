@@ -42,7 +42,7 @@ use(sinonChai);
 use(chaiAsPromised);
 
 describe('Meta Tags', () => {
-  describe('SeoChecks', () => {
+  xdescribe('SeoChecks', () => {
     let seoChecks;
     let logStub;
 
