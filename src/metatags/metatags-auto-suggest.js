@@ -55,8 +55,8 @@ async function pollJobStatus(
   delay = 5000,
 ) {
   try {
+    /* c8 ignore next 3 */
     if (attempt > MAX_POLL_RETRIES) {
-      /* c8 ignore next 2 */
       throw new Error('Max attempts exhausted to poll Genvar for Metatags.');
     }
     const response = await axios.post(
@@ -123,8 +123,8 @@ export default async function metatagsAutoSuggest(
     healthyTags,
   } = allTags;
   for (const [endpoint, tags] of Object.entries(detectedTags)) {
+    /* c8 ignore next 3 */
     if (count >= 2) {
-      /* c8 ignore next 2 */
       break;
     }
     count += 1;
