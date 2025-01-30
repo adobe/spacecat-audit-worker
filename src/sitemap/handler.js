@@ -170,7 +170,13 @@ export async function filterValidUrls(urls) {
   const fetchUrl = async (url) => {
     try {
       // use manual redirect to capture the status code
-      const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
+      const response = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        },
+      });
 
       if (response.status === 200) {
         return { status: OK, url };
@@ -179,15 +185,25 @@ export async function filterValidUrls(urls) {
       // if it's a redirect, follow it to get the final URL
       if (response.status === 301 || response.status === 302) {
         try {
-          const redirectResponse = await fetch(url, { method: 'HEAD', redirect: 'follow' });
-          return {
-            status: NOT_OK,
-            url,
-            statusCode: response.status,
-            finalUrl: redirectResponse.url,
-          };
+          const location = response.headers.get('Location');
+          // Only include suggestedFix if Location header points to a different URL
+          if (location && location !== url) {
+            const redirectResponse = await fetch(url, {
+              method: 'HEAD',
+              redirect: 'follow',
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+              },
+            });
+            return {
+              status: NOT_OK,
+              url,
+              statusCode: response.status,
+              finalUrl: redirectResponse.url,
+            };
+          }
+          return { status: NOT_OK, url, statusCode: response.status };
         } catch {
-          // if following redirect fails, return just the status code
           return { status: NOT_OK, url, statusCode: response.status };
         }
       }
