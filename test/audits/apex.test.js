@@ -53,7 +53,7 @@ describe('Apex audit', () => {
     // Arrange
     nock('https://spacecat.com')
       .get('/')
-      .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
+      .replyWithError('connection refused');
 
     nock('https://www.spacecat.com')
       .get('/')
