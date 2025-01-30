@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { TITLE, DESCRIPTION, H1 } from './constants.js';
-
 export function removeTrailingSlash(url) {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
@@ -128,7 +126,7 @@ const issueRankings = {
  * @param issue
  * @param tagName
  */
-function getIssueRanking(tagName, issue) {
+export function getIssueRanking(tagName, issue) {
   const tagIssues = issueRankings[tagName];
   const issueWords = issue.toLowerCase().split(' ');
   for (const word of issueWords) {
@@ -137,91 +135,4 @@ function getIssueRanking(tagName, issue) {
     }
   }
   return -1;
-}
-
-/**
- * @param auditUrl - The URL of the audit
- * @param auditData - The audit data containing the audit result and additional details.
- * @param context - The context object containing the data access and logger objects.
- */
-export default async function convertToOpportunity(auditUrl, auditData, context) {
-  const { dataAccess, log } = context;
-  const { Opportunity } = dataAccess;
-
-  log.info(`Syncing opportunity and suggestions for ${auditData.siteId}`);
-  let metatagsOppty;
-
-  try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-
-    metatagsOppty = opportunities.find((oppty) => oppty.getType() === 'meta-tags');
-  } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
-  }
-
-  try {
-    if (!metatagsOppty) {
-      const opportunityData = {
-        siteId: auditData.siteId,
-        auditId: auditData.id,
-        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7B27CF48AA-5492-435D-B17C-01E38332A5CA%7D&file=Experience_Success_Studio_Metatags_Runbook.docx&action=default&mobileredirect=true',
-        type: 'meta-tags',
-        origin: 'AUTOMATION',
-        title: 'Pages have metadata issues, including missing and invalid tags.',
-        description: 'Fixing metadata issues like missing or invalid tags boosts SEO by improving content visibility, search rankings, and user engagement.',
-        guidance: {
-          steps: [
-            'Review the detected meta-tags with issues, the AI-generated suggestions, and the provided rationale behind each recommendation.',
-            'Customize the AI-suggested tag content if necessary by manually editing it.',
-            'Copy the finalized tag content for the affected page.',
-            'Update the tag in your page authoring source by pasting the content in the appropriate location.',
-            'Publish the changes to apply the updates to your live site.',
-          ],
-        },
-        tags: ['Traffic acquisition'],
-      };
-      metatagsOppty = await Opportunity.create(opportunityData);
-      log.debug('Meta-tags Opportunity created');
-    } else {
-      metatagsOppty.setAuditId(auditData.siteId);
-      await metatagsOppty.save();
-    }
-  } catch (e) {
-    log.error(`Creating meta-tags opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
-    throw new Error(`Failed to create meta-tags opportunity for siteId ${auditData.siteId}: ${e.message}`);
-  }
-
-  const { detectedTags } = auditData.auditResult;
-  const suggestions = [];
-  // Generate suggestions data to be inserted in meta-tags opportunity suggestions
-  Object.keys(detectedTags).forEach((endpoint) => {
-    [TITLE, DESCRIPTION, H1].forEach((tag) => {
-      if (detectedTags[endpoint]?.[tag]?.issue) {
-        suggestions.push({
-          ...detectedTags[endpoint][tag],
-          tagName: tag,
-          url: removeTrailingSlash(auditData.auditResult.finalUrl) + endpoint,
-          rank: getIssueRanking(tag, detectedTags[endpoint][tag].issue),
-        });
-      }
-    });
-  });
-
-  const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
-
-  // Sync the suggestions from new audit with old ones
-  await syncMetatagsSuggestions({
-    opportunity: metatagsOppty,
-    newData: suggestions,
-    buildKey,
-    mapNewSuggestion: (suggestion) => ({
-      opportunityId: metatagsOppty.getId(),
-      type: 'METADATA_UPDATE',
-      rank: suggestion.rank,
-      data: { ...suggestion },
-    }),
-    log,
-  });
-  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and meta-tags audit type.`);
 }

@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 
-import { convertToOpportunity, structuredDataHandler } from '../../src/structured-data/handler.js';
+import { opportunityAndSuggestions, structuredDataHandler } from '../../src/structured-data/handler.js';
 import { MockContextBuilder } from '../shared.js';
 
 import fullUrlInspectionResult from '../fixtures/structured-data/structured-data.json' with { type: 'json' };
@@ -162,7 +162,7 @@ describe('URLInspect Audit', () => {
     context.dataAccess.Opportunity.getSuggestions.resolves([]);
     context.dataAccess.Opportunity.getId.returns('opportunity-id');
     context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
-    await convertToOpportunity('', auditDataMock, context);
+    await opportunityAndSuggestions('', auditDataMock, context);
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
     expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
@@ -174,7 +174,7 @@ describe('URLInspect Audit', () => {
     context.dataAccess.Opportunity.getId.returns('opportunity-id');
     context.dataAccess.Opportunity.getType.returns('structured-data');
     context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
-    await convertToOpportunity('', auditDataMock, context);
+    await opportunityAndSuggestions('', auditDataMock, context);
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(context.dataAccess.Opportunity.setAuditId).to.have.been.calledOnceWith('audit-id');
@@ -186,7 +186,7 @@ describe('URLInspect Audit', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.throws('opportunity-error');
     try {
-      await convertToOpportunity('', auditDataMock, context);
+      await opportunityAndSuggestions('', auditDataMock, context);
     } catch (error) {
       expect(error.message).to.equal('Sinon-provided opportunity-error');
     }

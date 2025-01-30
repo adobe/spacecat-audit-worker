@@ -50,6 +50,7 @@ export const expectedOpportunity = {
     'Traffic acquisition',
     'Engagement',
   ],
+  data: { },
 };
 
 export const expectedSuggestions = [

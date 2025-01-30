@@ -17,13 +17,15 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
-import { postProcessor, MAX_OPPORTUNITIES, getRecommendations } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
+import chaiAsPromised from 'chai-as-promised';
+import { opportunityAndSuggestions, MAX_OPPORTUNITIES, getRecommendations } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/opportunitiesdata.json' with { type: 'json' };
 import expectedOpportunitiesData from '../fixtures/expected-opportunities-data.json' with { type: 'json' };
 import llmHandlerResponse from '../fixtures/statistics-lambda-llm-insights-response.json' with { type: 'json' };
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('Opportunities Tests', () => {
   const url = 'https://abc.com';
@@ -250,10 +252,10 @@ describe('Opportunities Tests', () => {
   });
 });
 
-describe('Opportunities postProcessor', () => {
+describe('Opportunities opportunityAndSuggestions', () => {
   let sandbox;
   let context;
-  let existingOpportunity;
+  let opportunity;
   let auditData;
 
   beforeEach(() => {
@@ -271,7 +273,7 @@ describe('Opportunities postProcessor', () => {
       },
     };
 
-    existingOpportunity = {
+    opportunity = {
       getType: () => 'high-organic-low-ctr',
       getData: () => ({ page: 'https://example.com/page1' }),
       getStatus: () => 'NEW',
@@ -324,7 +326,7 @@ describe('Opportunities postProcessor', () => {
     context.dataAccess.Opportunity.create.resolves();
     const rumOpportunity = auditData.auditResult.experimentationOpportunities[0];
 
-    await postProcessor('https://example.com', auditData, context);
+    await opportunityAndSuggestions('https://example.com', auditData, context);
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
     expect(context.dataAccess.Opportunity.create).to.have.been.calledWith({
@@ -359,7 +361,7 @@ describe('Opportunities postProcessor', () => {
     context.dataAccess.Opportunity.allBySiteId.resolves([]);
     context.dataAccess.Opportunity.create.resolves();
 
-    await postProcessor('https://example.com', {
+    await opportunityAndSuggestions('https://example.com', {
       ...auditData,
       auditResult: {
         experimentationOpportunities: [
@@ -376,23 +378,22 @@ describe('Opportunities postProcessor', () => {
   });
 
   it('should update and save high-organic-low-ctr opportunity if the opportunity already exists', async () => {
-    context.dataAccess.Opportunity.allBySiteId.resolves([existingOpportunity]);
-    // context.dataAccess.Opportunity.save.resolves();
+    context.dataAccess.Opportunity.allBySiteId.resolves([opportunity]);
 
-    await postProcessor('https://example.com', auditData, context);
+    await opportunityAndSuggestions('https://example.com', auditData, context);
 
-    expect(existingOpportunity.save).to.have.been.calledOnce;
+    expect(opportunity.save).to.have.been.calledOnce;
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
   });
 
   it('should skip removal of high-organic-low-ctr opportunity if existing opportunity status is not NEW', async () => {
     const nonNewOpportunity = {
-      ...existingOpportunity,
+      ...opportunity,
       getStatus: () => 'IN_PROGRESS',
     };
     context.dataAccess.Opportunity.allBySiteId.resolves([nonNewOpportunity]);
 
-    await postProcessor('https://example.com', auditData, context);
+    await opportunityAndSuggestions('https://example.com', auditData, context);
 
     expect(nonNewOpportunity.remove).to.not.have.been.called;
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -402,10 +403,11 @@ describe('Opportunities postProcessor', () => {
     context.dataAccess.Opportunity.allBySiteId.resolves([]);
     context.dataAccess.Opportunity.create.rejects(new Error('Test error'));
 
-    await postProcessor('https://example.com', auditData, context);
+    await expect(opportunityAndSuggestions('https://example.com', auditData, context))
+      .to.be.rejectedWith('Test error');
 
     expect(context.log.error).to.have.been.calledWith(
-      sinon.match(/Error creating\/updating opportunity entity/),
+      sinon.match('Failed to create new opportunity for siteId test-site-id and auditId test-audit-id: Test error'),
     );
   });
 
@@ -433,7 +435,7 @@ describe('Opportunities postProcessor', () => {
     context.dataAccess.Opportunity.allBySiteId.resolves([]);
     context.dataAccess.Opportunity.create.resolves();
 
-    await postProcessor('https://example.com', multipleOpportunities, context);
+    await opportunityAndSuggestions('https://example.com', multipleOpportunities, context);
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledTwice;
   });

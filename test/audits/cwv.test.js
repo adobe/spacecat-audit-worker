@@ -17,7 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { CWVRunner, convertToOppty } from '../../src/cwv/handler.js';
+import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
 import rumData from '../fixtures/cwv/cwv.json' with { type: 'json' };
@@ -154,7 +154,7 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
 
-      await convertToOppty(auditUrl, auditData, context, site);
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
       expect(siteConfig.getGroupedURLs).to.have.been.calledWith(AUDIT_TYPE);
 
@@ -170,8 +170,7 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
 
-      await expect(convertToOppty(auditUrl, auditData, context, site)).to.be.rejectedWith('big error happened');
-
+      await expect(opportunityAndSuggestions(auditUrl, auditData, context, site)).to.be.rejectedWith('big error happened');
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
       expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id and auditId audit-id: big error happened');
 
@@ -191,7 +190,7 @@ describe('CWVRunner Tests', () => {
       }));
       oppty.getSuggestions.resolves(existingSuggestions);
 
-      await convertToOppty(auditUrl, auditData, context, site);
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
       expect(siteConfig.getGroupedURLs).to.have.been.calledWith(AUDIT_TYPE);
 
