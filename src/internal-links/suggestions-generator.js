@@ -63,46 +63,46 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     }
   };
 
-  const processBacklink = async (backlink, headerSuggestions) => {
-    log.info(`Processing backlink: ${backlink.url_to}`);
+  const processLink = async (link, headerSuggestions) => {
+    log.info(`Processing link: ${link.url_to}`);
     const suggestions = [];
     for (const batch of dataBatches) {
       // eslint-disable-next-line no-await-in-loop
-      const result = await processBatch(batch, backlink.url_to);
+      const result = await processBatch(batch, link.url_to);
       if (result) {
         suggestions.push(result);
       }
     }
 
     if (totalBatches > 1) {
-      log.info(`Compiling final suggestions for: ${backlink.url_to}`);
+      log.info(`Compiling final suggestions for: ${link.url_to}`);
       try {
-        const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: backlink.url_to }, 'broken-backlinks-followup', log);
+        const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.url_to }, 'broken-backlinks-followup', log);
         await sleep(1000);
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
 
         if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
-          log.error(`No final suggestions found for ${backlink.url_to}`);
-          return { ...backlink };
+          log.error(`No final suggestions found for ${link.url_to}`);
+          return { ...link };
         }
 
         const answer = JSON.parse(finalResponse.choices[0].message.content);
-        log.info(`Final suggestion for ${backlink.url_to}: ${JSON.stringify(answer)}`);
+        log.info(`Final suggestion for ${link.url_to}: ${JSON.stringify(answer)}`);
         return {
-          ...backlink,
+          ...link,
           urls_suggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
           ai_rationale: answer.ai_rationale?.length > 0 ? answer.ai_rationale : 'No suitable suggestions found',
         };
       } catch (error) {
-        log.error(`Final suggestion error for ${backlink.url_to}: ${error.message}`);
-        return { ...backlink };
+        log.error(`Final suggestion error for ${link.url_to}: ${error.message}`);
+        return { ...link };
       }
     }
 
-    log.info(`Suggestions for ${backlink.url_to}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
+    log.info(`Suggestions for ${link.url_to}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
     return {
-      ...backlink,
+      ...link,
       urls_suggested:
         suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
       ai_rationale:
@@ -111,15 +111,15 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   };
 
   const headerSuggestionsResults = [];
-  for (const backlink of auditData.auditResult.brokenInternalLinks) {
+  for (const link of auditData.auditResult.brokenInternalLinks) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: backlink.url_to }, 'broken-backlinks', log);
+      const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: link.url_to }, 'broken-backlinks', log);
       // eslint-disable-next-line no-await-in-loop
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-        log.error(`No header suggestions for ${backlink.url_to}`);
+        log.error(`No header suggestions for ${link.url_to}`);
         headerSuggestionsResults.push(null);
         // eslint-disable-next-line no-continue
         continue;
@@ -134,11 +134,11 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 
   const updatedInternalLinks = [];
   for (let index = 0; index < auditData.auditResult.brokenInternalLinks.length; index += 1) {
-    const backlink = auditData.auditResult.brokenInternalLinks[index];
+    const link = auditData.auditResult.brokenInternalLinks[index];
     const headerSuggestions = headerSuggestionsResults[index];
     // eslint-disable-next-line no-await-in-loop
-    const updatedBacklink = await processBacklink(backlink, headerSuggestions);
-    updatedInternalLinks.push(updatedBacklink);
+    const updatedLink = await processLink(link, headerSuggestions);
+    updatedInternalLinks.push(updatedLink);
   }
 
   log.info('Suggestions generation complete.');

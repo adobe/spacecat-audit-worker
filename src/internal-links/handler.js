@@ -167,16 +167,6 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     }),
     log,
   });
-
-  // TODO: Update opportunity title based on number of broken internal links
-
-  // log.info(`Suggestions count: ${opportunity.getSuggestions().length}`);
-  // const suggestionCount = opportunity.getSuggestions().length;
-  // opportunity.setTitle(`${suggestionCount} broken internal
-  // ${suggestionCount === 1 ? 'link is' : 'links are'}
-  // impairing user experience and SEO crawlability`);
-  // await opportunity.save();
-  // log.info(`Suggestions title: ${opportunity.getTitle()}`);
 }
 
 export default new AuditBuilder()

@@ -21,7 +21,6 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { generateSuggestionData } from '../../../src/internal-links/suggestions-generator.js';
 import { MockContextBuilder } from '../../shared.js';
 
-// import { site } from '../../fixtures/broken-backlinks/sites.js';
 const site = {
   getConfig: () => Config({}),
   getId: () => 'site1',
@@ -55,8 +54,6 @@ describe('generateSuggestionData', async function test() {
       .withSandbox(sandbox)
       .withOverrides({
         env: {
-          AHREFS_API_BASE_URL: 'https://ahrefs.com',
-          AHREFS_API_KEY: 'ahrefs-api',
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         },
         s3Client: {
@@ -64,27 +61,6 @@ describe('generateSuggestionData', async function test() {
         },
       })
       .build(message);
-
-    nock('https://foo.com')
-      .get('/returns-404')
-      .reply(404);
-
-    nock('https://foo.com')
-      .get('/redirects-throws-error')
-      .reply(301, undefined, { location: 'https://www.foo.com/redirects-throws-error' });
-
-    nock('https://www.foo.com')
-      .get('/redirects-throws-error')
-      .replyWithError('connection refused');
-
-    nock('https://foo.com')
-      .get('/returns-429')
-      .reply(429);
-
-    nock('https://foo.com')
-      .get('/times-out')
-      .delay(3010)
-      .reply(200);
   });
   afterEach(() => {
     nock.cleanAll();
