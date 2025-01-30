@@ -20,7 +20,7 @@ import { noopPersister, noopUrlResolver } from '../common/audit.js';
 const INTERVAL = 7; // days
 const OPPTY_QUERIES = [
   'cwv',
-  'form-vitals',
+  'high-organic-low-ctr',
 ];
 
 export async function successReportHandler(baseURL, context, site) {
@@ -42,7 +42,7 @@ export async function successReportHandler(baseURL, context, site) {
   };
 
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
-  log.info('queryResults', JSON.stringify(queryResults));
+  log.info('success report RUM queryResults', JSON.stringify(queryResults));
 
   const opportunities = await Opportunity.allBySiteId(siteId);
   const THIRTY_DAYS_AGO = new Date();
@@ -66,7 +66,7 @@ export async function successReportHandler(baseURL, context, site) {
   const latestAudit = await LatestAuditCollection.allBySiteId(siteId)
     .filter((audit) => new Date(audit.getCreatedAt()) >= SEVEN_DAYS_AGO);
 
-  log.info('latestAudit', JSON.stringify(latestAudit));
+  log.info('success report latestAudit', JSON.stringify(latestAudit));
 
   // For all the fixed suggestions, find the pageUrls
   // For all the fixed suggestions, find the time to fix the suggestion
