@@ -12,7 +12,7 @@
 import { main as universalMain } from './index.js';
 
 export const main = async () => {
-  const messageBody = { type: 'structured-data', siteId: '916e7978-0375-4b8f-a5bd-75d88113b10f' };
+  const messageBody = { type: 'structured-data', siteId: 'c236a20b-c879-4960-b5b2-c0b607ade100' };
 
   const message = {
     Records: [
@@ -27,6 +27,7 @@ export const main = async () => {
     log: {
       info: console.log,
       error: console.error,
+      warn: console.warn,
       debug: () => {},
     },
     runtime: {

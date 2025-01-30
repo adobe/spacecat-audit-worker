@@ -17,7 +17,6 @@ import { promises as fs } from 'fs';
 import * as cheerio from 'cheerio';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
-import { getScrapedDataForSiteId } from '../support/utils.js';
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -38,38 +37,71 @@ export async function processStructuredData(baseURL, context, pages) {
   const { log } = context;
 
   // Hardcode for development
-  return [
-      {
-          "inspectionUrl": "https://www.revolt.tv/article/2021-09-02/101801/lil-nas-x-drops-pregnancy-photos-before-birth-of-debut-album-montero",
-          "indexStatusResult": {
-              "verdict": "PASS",
-              "lastCrawlTime": "2025-01-29T08:30:18Z"
-          },
-          "richResults": {
-              "verdict": "FAIL",
-              "detectedItemTypes": [
-                  "Breadcrumbs"
-              ],
-              "detectedIssues": [
+  /* return [
+    {
+      inspectionUrl: 'https://www.revolt.tv/article/2021-09-02/101801/lil-nas-x-drops-pregnancy-photos-before-birth-of-debut-album-montero',
+      indexStatusResult: {
+        verdict: 'PASS',
+        lastCrawlTime: '2025-01-29T08:30:18Z',
+      },
+      richResults: {
+        verdict: 'FAIL',
+        detectedItemTypes: [
+          'Breadcrumbs',
+        ],
+        detectedIssues: [
+          {
+            richResultType: 'Breadcrumbs',
+            items: [
+              {
+                name: 'Unnamed item',
+                issues: [
                   {
-                      "richResultType": "Breadcrumbs",
-                      "items": [
-                          {
-                              "name": "Unnamed item",
-                              "issues": [
-                                  {
-                                      "issueMessage": "Either \"name\" or \"item.name\" should be specified",
-                                      "severity": "ERROR"
-                                  }
-                              ]
-                          }
-                      ]
-                  }
-              ]
-          }
-      }
+                    issueMessage: 'Either "name" or "item.name" should be specified',
+                    severity: 'ERROR',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ]; */
+
+  return [
+    {
+      inspectionUrl: 'https://www.wilson.com/en-us/product/rf-01-future-3-tennis-racket-bundle',
+      indexStatusResult: {
+        verdict: 'PASS',
+        lastCrawlTime: '2025-01-29T08:30:18Z',
+      },
+      richResults: {
+        verdict: 'FAIL',
+        detectedItemTypes: [
+          'Product',
+        ],
+        detectedIssues: [
+          {
+            richResultType: 'Product',
+            items: [
+              {
+                name: 'Missing item',
+                issues: [
+                  {
+                    issueMessage: 'Either "offers", "review", or "aggregateRating" should be specified',
+                    severity: 'ERROR',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    },
   ];
 
+  // eslint-disable-next-line no-unreachable
   let google;
   try {
     google = await GoogleClient.createFrom(context, baseURL);
@@ -79,8 +111,6 @@ export async function processStructuredData(baseURL, context, pages) {
   }
 
   // TODO: Hardcode for development
-  pages = ['https://www.revolt.tv/article/2021-09-02/101801/lil-nas-x-drops-pregnancy-photos-before-birth-of-debut-album-montero'];
-
   const urlInspectionResult = pages.map(async (page) => {
     try {
       const { inspectionResult } = await google.urlInspect(page);
@@ -93,24 +123,27 @@ export async function processStructuredData(baseURL, context, pages) {
       };
 
       const detectedItemTypes = [];
-      const filteredRichResults = inspectionResult?.richResultsResult?.detectedItems?.map(
-        (item) => {
-          detectedItemTypes.push(item?.richResultType);
-          const filteredItems = item?.items?.filter(
-            (issueItem) => issueItem?.issues?.some(
-              (issue) => issue?.severity === 'ERROR',
-            ),
-          )?.map((issueItem) => ({
-            name: issueItem?.name,
-            issues: issueItem?.issues?.filter((issue) => issue?.severity === 'ERROR'),
-          }));
+      const filteredRichResults = inspectionResult?.richResultsResult?.detectedItems
+        ?.map(
+          (item) => {
+            detectedItemTypes.push(item?.richResultType);
+            const filteredItems = item?.items?.filter(
+              (issueItem) => issueItem?.issues?.some(
+                (issue) => issue?.severity === 'ERROR',
+              ),
+            )?.map((issueItem) => ({
+              name: issueItem?.name,
+              issues: issueItem?.issues?.filter((issue) => issue?.severity === 'ERROR'),
+            }));
 
-          return {
-            richResultType: item?.richResultType,
-            items: filteredItems,
-          };
-        },
-      )?.filter((item) => item.items.length > 0) ?? []; // All pages which have a rich result on them. But only show issues with severity ERROR
+            return {
+              richResultType: item?.richResultType,
+              items: filteredItems,
+            };
+          },
+        )
+        // All pages which have a rich result on them. But only show issues with severity ERROR
+        ?.filter((item) => item.items.length > 0) ?? [];
 
       if (filteredRichResults?.length > 0) {
         filteredRichResults.verdict = inspectionResult?.richResultsResult?.verdict;
@@ -138,6 +171,7 @@ export async function processStructuredData(baseURL, context, pages) {
     }
   });
 
+  // eslint-disable-next-line no-unreachable
   const results = await Promise.allSettled(urlInspectionResult);
   const filteredResults = results.filter((result) => result.status === 'fulfilled')
     .map((result) => result.value);
@@ -237,15 +271,15 @@ export async function structuredDataHandler(baseURL, context, site) {
   };
 }
 
-export async function generateSuggestionsData(finalUrl, auditData, context, site) {
-  const { dataAccess, log } = context;
-  const { Configuration } = dataAccess;
+export async function generateSuggestionsData(finalUrl, auditData, context) {
+  const { log } = context;
 
   console.info('called generateSuggestionsData', finalUrl, JSON.stringify(auditData));
 
-  // TODO: Check if audit was successful
+  // TODO: Check if audit was successful can be skipped for now as the audit throws if it fails.
 
   // TODO: Check if auto suggest was enabled
+  // Need to register structured-data-auto-suggest handler first and activate it for customer
   /* const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('structured-data-auto-suggest', site)) {
     log.info('Auto suggest is disabled for for site');
@@ -265,8 +299,8 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
     log.info(`Create suggestion for URL ${auditResult.inspectionUrl}`);
 
     // TODO: Get crawled version of website from S3 if available.
-    //       This is an issue, because there is no scrape for the site yet.
-    // TODO: Maybe get crawled version adhoc from scraper via HTTP API: curl -v -X POST -H "x-api-key: $SPACECAT_USER_API_KEY_DEV" -H "Content-Type: application/json" -d @scrape-test.json https://spacecat.experiencecloud.live/api/ci/scrape
+    //   Issue: Content scraper strips out all head and script tags which contain structured data.
+    //   Issue: There is no defined dependency between audit and scrape. So scrape might not exist.
 
     // eslint-disable-next-line no-await-in-loop
     const crawledPage = await fs.readFile('./src/structured-data/crawled-page-example.html', { encoding: 'utf8' });
@@ -276,10 +310,12 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
     let plainPage;
     try {
       // TODO: Properly strip extension
+      // TODO: .plain.html is not available for folder mapped pages, so hardcode for now
       // eslint-disable-next-line no-await-in-loop
-      const plainPageResponse = await fetch(`${auditResult.inspectionUrl}.plain.html`);
+      // const plainPageResponse = await fetch(`${auditResult.inspectionUrl}.plain.html`);
+      // plainPage = await plainPageResponse.text();
       // eslint-disable-next-line no-await-in-loop
-      plainPage = await plainPageResponse.text();
+      plainPage = await fs.readFile('./src/structured-data/plain-crawled-page-example.html', { encoding: 'utf8' });
     } catch (e) {
       log.error(`Could not create suggestion because fetching of plain HTML failed for URL ${auditResult.inspectionUrl}: ${e.message}`);
       // eslint-disable-next-line no-continue
@@ -327,6 +363,7 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
     // TODO: Add more mappings based on actual customer issues
     const entityMapping = {
       Breadcrumbs: 'BreadcrumbList',
+      Product: 'Product',
     };
 
     // Go through every issue on page
