@@ -92,12 +92,17 @@ async function pollJobStatus(
 
 export default async function metatagsAutoSuggest(
   context,
-  detectedTags,
-  extractedTags,
-  healthyTags,
+  site,
+  allTags,
   baseUrl,
 ) {
-  const { s3Client, log } = context;
+  const { s3Client, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
+    log.info('Metatags auto-suggest is disabled for site');
+    return;
+  }
   const genvarEndpoint = `${context.env.GENVAR_ENDPOINT}/web/aem-genai-variations-appbuilder/metatags`;
   const orgId = context.env.FIREFALL_IMS_ORG_ID;
   if (!genvarEndpoint) {
@@ -109,6 +114,11 @@ export default async function metatagsAutoSuggest(
   const requestBody = {};
   const tagsData = {};
   let count = 0; // temporary change to limit firefall api calls
+  const {
+    detectedTags,
+    extractedTags,
+    healthyTags,
+  } = allTags;
   for (const [endpoint, tags] of Object.entries(detectedTags)) {
     if (count >= 2) {
       break;
