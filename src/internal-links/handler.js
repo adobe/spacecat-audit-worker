@@ -190,6 +190,9 @@ export async function modifyTitleBasedOnSuggestionsCount(_, auditData, context) 
     dataAccess,
     log,
   } = context;
+
+  log.info('modifyTitleBasedOnSuggestionsCount: auditData: ');
+  log.info('modifyTitleBasedOnSuggestionsCount: auditData: ', JSON.stringify(auditData));
   const { Opportunity } = dataAccess;
 
   let opportunity;
