@@ -1144,6 +1144,33 @@ describe('filterValidUrls with redirect handling', () => {
       },
     ]);
   });
+
+  it('should handle relative URLs in Location header', async () => {
+    const urls = ['https://example.com/old-path'];
+
+    // Mock a redirect with relative Location header
+    nock('https://example.com')
+      .head('/old-path')
+      .reply(301, '', { Location: '/new-path' });
+
+    nock('https://example.com')
+      .head('/old-path')
+      .reply(301, '', { Location: '/new-path' });
+
+    nock('https://example.com')
+      .head('/new-path')
+      .reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/old-path',
+        statusCode: 301,
+        suggestedFix: 'https://example.com/new-path',
+      },
+    ]);
+  });
 });
 
 describe('getPagesWithIssues', () => {

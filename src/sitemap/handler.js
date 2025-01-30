@@ -186,21 +186,24 @@ export async function filterValidUrls(urls) {
       if (response.status === 301 || response.status === 302) {
         try {
           const location = response.headers.get('Location');
-          // Only include suggestedFix if Location header points to a different URL
-          if (location && location !== url) {
-            const redirectResponse = await fetch(url, {
-              method: 'HEAD',
-              redirect: 'follow',
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-              },
-            });
-            return {
-              status: NOT_OK,
-              url,
-              statusCode: response.status,
-              finalUrl: redirectResponse.url,
-            };
+          if (location) {
+            // Handle relative URLs in Location header
+            const redirectUrl = new URL(location, url).href;
+            if (redirectUrl !== url) {
+              const redirectResponse = await fetch(url, {
+                method: 'HEAD',
+                redirect: 'follow',
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+                },
+              });
+              return {
+                status: NOT_OK,
+                url,
+                statusCode: response.status,
+                finalUrl: redirectResponse.url,
+              };
+            }
           }
           return { status: NOT_OK, url, statusCode: response.status };
         } catch {
