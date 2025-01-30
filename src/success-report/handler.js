@@ -41,8 +41,8 @@ export async function successReportHandler(baseURL, context, site) {
     granularity: 'hourly',
   };
 
-  const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
-  log.info('success report RUM queryResults', JSON.stringify(queryResults));
+  // const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
+  // log.info('success report RUM queryResults', JSON.stringify(queryResults));
 
   const opportunities = await Opportunity.allBySiteId(siteId);
   const THIRTY_DAYS_AGO = new Date();
@@ -63,8 +63,7 @@ export async function successReportHandler(baseURL, context, site) {
   const SEVEN_DAYS_AGO = new Date();
   SEVEN_DAYS_AGO.setDate(SEVEN_DAYS_AGO.getDate() - 7);
 
-  const latestAudit = await LatestAuditCollection.allBySiteId(siteId)
-    .filter((audit) => new Date(audit.getCreatedAt()) >= SEVEN_DAYS_AGO);
+  const latestAudit = await LatestAuditCollection.allBySiteId(siteId);
 
   log.info('success report latestAudit', JSON.stringify(latestAudit));
 
