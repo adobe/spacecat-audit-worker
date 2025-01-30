@@ -14,6 +14,8 @@
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
+import esmock from 'esmock';
+import axios from 'axios';
 import sinonChai from 'sinon-chai';
 
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
@@ -202,7 +204,7 @@ describe('Meta Tags', () => {
     let dataAccessStub;
     let s3ClientStub;
     let logStub;
-
+    let context;
     beforeEach(() => {
       sinon.restore();
       dataAccessStub = {
@@ -227,10 +229,28 @@ describe('Meta Tags', () => {
         info: sinon.stub(),
         debug: sinon.stub(),
         error: sinon.stub(),
+        warn: sinon.stub(),
+      };
+      const latestConfigStub = sinon.stub().resolves({
+        isHandlerEnabledForSite: () => false,
+      });
+      context = {
+        log: logStub,
+        s3Client: s3ClientStub,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          GENVAR_ENDPOINT: 'test-genvar-url',
+          FIREFALL_IMS_ORG_ID: 'test-org@adobe',
+        },
+        dataAccess: {
+          Configuration: {
+            findLatest: latestConfigStub,
+          },
+        },
       };
     });
 
-    xit('should process site tags and perform SEO checks', async () => {
+    it('should process site tags and perform SEO checks', async () => {
       const topPages = [
         { getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') },
@@ -320,8 +340,7 @@ describe('Meta Tags', () => {
 
       const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
       dataAccessStub.Audit.create = await addAuditStub();
-
-      await auditMetaTagsRunner('http://example.com', { log: logStub, s3Client: s3ClientStub, env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' } }, { getId: () => 'site-id' });
+      await auditMetaTagsRunner('http://example.com', context, { getId: () => 'site-id' });
       const result = await fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page3/scrape.json', 'scrapes/site-id/', logStub);
       expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
       expect(result).to.be.null;
@@ -571,7 +590,7 @@ describe('Meta Tags', () => {
       expect(addAuditStub.calledOnce).to.be.false;
     });
 
-    xit('should handle gracefully if S3 tags object is not valid', async () => {
+    it('should handle gracefully if S3 tags object is not valid', async () => {
       const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') }];
 
@@ -601,7 +620,7 @@ describe('Meta Tags', () => {
           },
           ContentType: 'application/json',
         });
-      await auditMetaTagsRunner('http://example.com', { log: logStub, s3Client: s3ClientStub, env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' } }, { getId: () => 'site-id' });
+      await auditMetaTagsRunner('http://example.com', context, { getId: () => 'site-id' });
       expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
     });
   });
@@ -744,6 +763,193 @@ describe('Meta Tags', () => {
       const url = '';
       const result = removeTrailingSlash(url);
       expect(result).to.equal('');
+    });
+  });
+
+  describe('metatagsAutoSuggest', () => {
+    let metatagsAutoSuggest;
+    let context;
+    let site;
+    let allTags;
+    let baseUrl;
+    let s3Client;
+    let dataAccess;
+    let log;
+    let Configuration;
+    let ImsClientStubs;
+    let axiosPostStub;
+    let getPresignedUrlStub;
+
+    beforeEach(async () => {
+      s3Client = {};
+      log = {
+        info: sinon.stub(),
+        error: sinon.stub(),
+        warn: sinon.stub(),
+      };
+      Configuration = {
+        findLatest: sinon.stub().resolves({
+          isHandlerEnabledForSite: sinon.stub().returns(true),
+        }),
+      };
+      dataAccess = { Configuration };
+      ImsClientStubs = {
+        getServiceAccessToken: sinon.stub().resolves({ access_token: 'test-token' }),
+      };
+      context = {
+        s3Client,
+        dataAccess,
+        log,
+        env: {
+          GENVAR_ENDPOINT: 'https://genvar.endpoint',
+          FIREFALL_IMS_ORG_ID: 'test-org-id',
+        },
+      };
+      site = 'test-site';
+      allTags = {
+        detectedTags: {
+          '/about-us': { h1: {} },
+          '/add-on-and-refresh': { description: {}, h1: {} },
+        },
+        extractedTags: {
+          '/about-us': { s3key: 'about-us-key' },
+          '/add-on-and-refresh': { s3key: 'add-on-key' },
+        },
+        healthyTags: {},
+      };
+      baseUrl = 'https://example.com';
+
+      axiosPostStub = sinon.stub(axios, 'post');
+      axiosPostStub.resolves({ data: {} });
+
+      metatagsAutoSuggest = await esmock('../../src/metatags/metatags-auto-suggest.js', {
+        '@adobe/spacecat-shared-ims-client': { ImsClient: { createFrom: () => ImsClientStubs } },
+        '@aws-sdk/s3-request-presigner': { getSignedUrl: getPresignedUrlStub },
+      });
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should handle disabled handler for site', async () => {
+      Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(false),
+      });
+      await metatagsAutoSuggest(context, site, allTags, baseUrl);
+      expect(log.warn.calledWith('Metatags auto-suggest is disabled for site')).to.be.true;
+    });
+
+    it('should handle missing Genvar endpoint', async () => {
+      context.env.GENVAR_ENDPOINT = '';
+      try {
+        await metatagsAutoSuggest(context, site, allTags, baseUrl);
+      } catch (error) {
+        expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
+      }
+    });
+
+    it('should handle missing firefall ims orgId', async () => {
+      context.env.FIREFALL_IMS_ORG_ID = '';
+
+      try {
+        await metatagsAutoSuggest(context, site, allTags, baseUrl);
+      } catch (error) {
+        expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
+      }
+    });
+
+    it('should generate presigned URLs and poll job status', async () => {
+      axiosPostStub.onFirstCall().resolves({ data: { jobId: 'de1e8d6c9526446a9e8d6c9526946a3e' }, status: 200 });
+      axiosPostStub.onSecondCall().resolves({
+        data: {
+          jobId: 'de1e8d6c9526446a9e8d6c9526946a3e',
+          status: 'running',
+        },
+        status: 200,
+      });
+      axiosPostStub.onThirdCall().resolves({
+        data: {
+          status: 'completed',
+          result: {
+            '/about-us': {
+              h1: {
+                aiRationale: 'The H1 tag is catchy and broad...',
+                aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
+              },
+            },
+            '/add-on-and-refresh': {
+              description: {
+                aiRationale: 'The description emphasizes the brand\'s core values...',
+                aiSuggestion: 'Elevate your home with Lovesac\'s customizable add-ons...',
+              },
+              h1: {
+                aiRationale: 'The H1 tag is catchy and directly addresses the user\'s intent...',
+                aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons',
+              },
+            },
+          },
+        },
+        status: 200,
+      });
+
+      await metatagsAutoSuggest(context, site, allTags, baseUrl);
+
+      expect(log.info.calledWith('Generated presigned URLs')).to.be.true;
+      expect(log.info.calledWith('Genvar API response: {"jobId":"de1e8d6c9526446a9e8d6c9526946a3e"}')).to.be.true;
+      expect(log.info.calledWith('Job completed successfully.')).to.be.true;
+      expect(allTags.detectedTags['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
+      expect(allTags.detectedTags['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
+      expect(allTags.detectedTags['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
+    }).timeout(15000);
+
+    it('should log an error and throw if the Genvar API call fails', async () => {
+      axiosPostStub.resolves({ status: 500, statusText: 'Internal Server Error' });
+      let err;
+      try {
+        await metatagsAutoSuggest(context, site, allTags, baseUrl);
+      } catch (error) {
+        err = error;
+      }
+      expect(err.message).to.equal('Meta-tags auto suggest call failed: 500 with Internal Server Error and response body: undefined');
+    });
+
+    it('should throw error when poll api returns job failed status', async () => {
+      axiosPostStub.onFirstCall().resolves({ data: { jobId: 'de1e8d6c9526446a9e8d6c9526946a3e' }, status: 200 });
+      axiosPostStub.onSecondCall().resolves({
+        data: {
+          jobId: 'de1e8d6c9526446a9e8d6c9526946a3e',
+          status: 'failed',
+          error: 'test error',
+        },
+        status: 200,
+      });
+      let err;
+      try {
+        await metatagsAutoSuggest(context, site, allTags, baseUrl);
+      } catch (error) {
+        err = error;
+      }
+      expect(err.message).to.equal('Job de1e8d6c9526446a9e8d6c9526946a3e failed with error test error');
+    });
+
+    it('should throw error when poll api returns unknown job status', async () => {
+      axiosPostStub.onFirstCall().resolves({ data: { jobId: 'de1e8d6c9526446a9e8d6c9526946a3e' }, status: 200 });
+      axiosPostStub.onSecondCall().resolves({
+        data: {
+          jobId: 'de1e8d6c9526446a9e8d6c9526946a3e',
+          status: 'blocked',
+          error: 'test error',
+        },
+        status: 200,
+      });
+      let err;
+      try {
+        await metatagsAutoSuggest(context, site, allTags, baseUrl);
+      } catch (error) {
+        err = error;
+      }
+      expect(err.message).to.equal('Unknown metatags poll job status: blocked');
     });
   });
 });

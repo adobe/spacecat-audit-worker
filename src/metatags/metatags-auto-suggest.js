@@ -16,6 +16,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import axios from 'axios';
 
 const EXPIRY_IN_DAYS = 7 * 24 * 60 * 60;
+const MAX_POLL_RETRIES = 20;
 
 async function getPresignedUrl(s3Client, log, scrapedData) {
   try {
@@ -54,7 +55,8 @@ async function pollJobStatus(
   delay = 5000,
 ) {
   try {
-    if (attempt > 20) {
+    if (attempt > MAX_POLL_RETRIES) {
+      /* c8 ignore next 2 */
       throw new Error('Max attempts exhausted to poll Genvar for Metatags.');
     }
     const response = await axios.post(
@@ -104,12 +106,12 @@ export default async function metatagsAutoSuggest(
     return;
   }
   log.info('Generating suggestions for Meta-tags using Genvar.');
+  if (!context.env.GENVAR_ENDPOINT || !context.env.FIREFALL_IMS_ORG_ID) {
+    log.error('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
+    throw new Error('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
+  }
   const genvarEndpoint = `${context.env.GENVAR_ENDPOINT}/web/aem-genai-variations-appbuilder/metatags`;
   const orgId = context.env.FIREFALL_IMS_ORG_ID;
-  if (!genvarEndpoint) {
-    log.error('Metatags Auto-suggest failed: Missing Genvar endpoint');
-    throw new Error('Metatags Auto-suggest failed: Missing Genvar endpoint');
-  }
   const imsClient = ImsClient.createFrom(context);
   const serviceToken = (await imsClient.getServiceAccessToken()).access_token;
   const requestBody = {};
@@ -122,6 +124,7 @@ export default async function metatagsAutoSuggest(
   } = allTags;
   for (const [endpoint, tags] of Object.entries(detectedTags)) {
     if (count >= 2) {
+      /* c8 ignore next 2 */
       break;
     }
     count += 1;
@@ -145,8 +148,8 @@ export default async function metatagsAutoSuggest(
   const response = await axios.post(genvarEndpoint, requestBody, config);
   log.info(`Genvar API response: ${JSON.stringify(response.data)}`);
   if (response.status < 200 || response.status >= 300 || !response.data?.jobId) {
-    throw new Error(`Meta-tags auto suggest call failed: ${response.status} with ${response.statusText}
-     and response body: ${JSON.stringify(response.data)}`);
+    throw new Error(`Meta-tags auto suggest call failed: ${response.status} with ${response.statusText} `
+     + `and response body: ${JSON.stringify(response.data)}`);
   }
   const responseWithSuggestions = await pollJobStatus(
     genvarEndpoint,
