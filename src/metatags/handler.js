@@ -40,7 +40,7 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const prefix = `scrapes/${site.getId()}/`;
   const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
-  const extractedTags = {};
+  let extractedTags = {};
   const pageMetadataResults = await Promise.all(scrapedObjectKeys.map(
     (key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log),
   ));
@@ -49,6 +49,8 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
       Object.assign(extractedTags, pageMetadata);
     }
   });
+  // temporary change for demo, will be reverted
+  extractedTags = Object.fromEntries(Object.entries(extractedTags).slice(0, 80));
   const extractedTagsCount = Object.entries(extractedTags).length;
   if (extractedTagsCount === 0) {
     log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
