@@ -50,7 +50,7 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
     }
   });
   // temporary change for demo, will be reverted
-  extractedTags = Object.fromEntries(Object.entries(extractedTags).slice(0, 80));
+  extractedTags = Object.fromEntries(Object.entries(extractedTags).slice(50, 150));
   const extractedTagsCount = Object.entries(extractedTags).length;
   if (extractedTagsCount === 0) {
     log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
