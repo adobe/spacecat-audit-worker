@@ -28,9 +28,9 @@ export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
   NO_SITEMAP_IN_ROBOTS: 'NO SITEMAP FOUND IN ROBOTS',
   NO_VALID_PATHS_EXTRACTED: 'NO VALID URLs FOUND IN SITEMAP',
-  SITEMAP_NOT_FOUND: 'NO SITEMAP FOUND',
   SITEMAP_EMPTY: 'EMPTY SITEMAP',
   SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
+  SITEMAP_NOT_FOUND: 'NO SITEMAP FOUND',
 });
 
 const AUDIT_TYPE = 'sitemap';
@@ -435,7 +435,7 @@ export function getSitemapsWithIssues(auditData) {
  *       issues: {
  *         "https://site.url/sitemap.xml": [
  *           { url: "https://site.url/page1", statusCode: 404 },
- *           { url: "https://site.url/page2" },
+ *           { url: "https://site.url/page2", statusCode: 301 },
  *         ]
  *       }
  *     }
