@@ -169,12 +169,30 @@ export async function filterValidUrls(urls) {
 
   const fetchUrl = async (url) => {
     try {
+      // use manual redirect to capture the status code
       const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
+
       if (response.status === 200) {
         return { status: OK, url };
-      } else {
-        return { status: NOT_OK, url, statusCode: response.status };
       }
+
+      // if it's a redirect, follow it to get the final URL
+      if (response.status === 301 || response.status === 302) {
+        try {
+          const redirectResponse = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+          return {
+            status: NOT_OK,
+            url,
+            statusCode: response.status,
+            finalUrl: redirectResponse.url,
+          };
+        } catch {
+          // if following redirect fails, return just the status code
+          return { status: NOT_OK, url, statusCode: response.status };
+        }
+      }
+
+      return { status: NOT_OK, url, statusCode: response.status };
     } catch {
       return { status: NOT_OK, url };
     }
@@ -205,7 +223,11 @@ export async function filterValidUrls(urls) {
     if (result.status === OK) {
       acc.ok.push(result.url);
     } else {
-      acc.notOk.push({ url: result.url, statusCode: result.statusCode });
+      acc.notOk.push({
+        url: result.url,
+        statusCode: result.statusCode,
+        ...(result.finalUrl && { suggestedFix: result.finalUrl }),
+      });
     }
     return acc;
   }, { ok: [], notOk: [] });
@@ -442,6 +464,7 @@ export function getPagesWithIssues(auditData) {
       sitemapUrl,
       pageUrl: page.url,
       statusCode: page.statusCode ?? 500,
+      ...(page.suggestedFix && { suggestedFix: page.suggestedFix }),
     }));
   });
 }
@@ -450,10 +473,11 @@ export function getPagesWithIssues(auditData) {
  *
  * @param auditUrl - The URL of the audit
  * @param auditData - The audit data containing the audit result and additional details.
- * @param log - Logger object for logging information.
+ * @param context - The context object containing the logger
  * @returns {Array} An array of suggestions or error objects.
  */
-export function classifySuggestions(auditUrl, auditData, log) {
+export function generateSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
   log.info(`Classifying suggestions for ${JSON.stringify(auditData)}`);
 
   const { success, reasons } = auditData.auditResult;
@@ -462,10 +486,20 @@ export function classifySuggestions(auditUrl, auditData, log) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
-  const suggestions = [...response, ...pagesWithIssues].filter(Boolean);
+  const suggestions = [...response, ...pagesWithIssues]
+    .filter(Boolean)
+    .map((issue) => ({
+      ...issue,
+      recommendedAction: issue.suggestedFix
+        ? `use this url instead: ${issue.suggestedFix}`
+        : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+    }));
 
   log.info(`Classified suggestions: ${JSON.stringify(suggestions)}`);
-  return suggestions;
+  return {
+    ...auditData,
+    suggestions,
+  };
 }
 
 export async function convertToOpportunity(auditUrl, auditData, context) {
@@ -474,9 +508,9 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 
   log.info('Converting SITEMAP audit to opportunity...');
 
-  const classifiedSuggestions = classifySuggestions(auditUrl, auditData, log);
-  if (!classifiedSuggestions.length) {
-    // If there are no issues, no need to create an opportunity
+  // suggestions are in auditData.suggestions
+  if (!auditData.suggestions || !auditData.suggestions.length) {
+    log.info('No sitemap issues found, skipping opportunity creation');
     return;
   }
 
@@ -517,12 +551,12 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 
   await syncSuggestions({
     opportunity,
-    newData: classifiedSuggestions,
+    newData: auditData.suggestions,
     buildKey,
     mapNewSuggestion: (issue) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',
-      rank: 0, // how can we rank this?
+      rank: 0,
       data: issue,
     }),
     log,
@@ -532,6 +566,6 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
-    .then((url) => (getUrlWithoutPath(prependSchema(url)))))
-  .withPostProcessors([convertToOpportunity])
+    .then((url) => getUrlWithoutPath(prependSchema(url))))
+  .withPostProcessors([generateSuggestions, convertToOpportunity])
   .build();
