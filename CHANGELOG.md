@@ -1,3 +1,10 @@
+# [1.49.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.6...v1.49.0) (2025-01-30)
+
+
+### Features
+
+* add high-form-views-low-conversions opportunity ([#612](https://github.com/adobe/spacecat-audit-worker/issues/612)) ([fd47509](https://github.com/adobe/spacecat-audit-worker/commit/fd475091490a73246c348833888e505b5219dfdf))
+
 ## [1.48.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.5...v1.48.6) (2025-01-28)
 
 
