@@ -1,3 +1,10 @@
+# [1.51.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.50.1...v1.51.0) (2025-01-30)
+
+
+### Features
+
+* sitemap demo ([#619](https://github.com/adobe/spacecat-audit-worker/issues/619)) ([b2382f1](https://github.com/adobe/spacecat-audit-worker/commit/b2382f1e6093a22f49bb5a4344c535186039b208))
+
 ## [1.50.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.50.0...v1.50.1) (2025-01-30)
 
 
