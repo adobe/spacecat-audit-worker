@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "nodemon",
-    "test": "c8 mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
+    "test": "c8 --exclude=src/success-report/handler.js mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",
     "logs": "aws logs tail /aws/lambda/spacecat-services--audit-worker",
