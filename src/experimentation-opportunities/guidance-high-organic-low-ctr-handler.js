@@ -60,7 +60,7 @@ export default async function handler(message, context) {
   const { auditId, siteId, data } = message;
   const { url, guidance, suggestions } = data;
 
-  const audit = await Audit.findByAuditId(auditId);
+  const audit = await Audit.findById(auditId);
   if (!audit) {
     log.warn(`No audit found for auditId: ${auditId}`);
     return;
