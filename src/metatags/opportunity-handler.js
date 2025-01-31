@@ -53,9 +53,9 @@ export async function syncMetatagsSuggestions({
           status: existing.getStatus(),
           data: {
             ...newSuggestion.data,
-            ...(existing
-              .getData().aiSuggestion && { aiSuggestion: existing.getData().aiSuggestion }),
-            ...(existing.getData().aiRationale && { aiRationale: existing.getData().aiRationale }),
+            // ...(existing
+            //   .getData().aiSuggestion && { aiSuggestion: existing.getData().aiSuggestion }),
+            // ...(existing.getData().aiRationale && {aiRationale: existing.getData().aiRationale}),
             ...(existing.getData().toOverride && { toOverride: existing.getData().toOverride }),
           },
         };

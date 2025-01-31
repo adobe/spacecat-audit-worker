@@ -26,6 +26,11 @@ class SeoChecks {
       [DESCRIPTION]: {},
       [H1]: {},
     };
+    this.healthyTags = {
+      [TITLE]: [],
+      [DESCRIPTION]: [],
+      [H1]: [],
+    };
   }
 
   /**
@@ -108,6 +113,8 @@ class SeoChecks {
           [SEO_RECOMMENDATION]: recommendation,
           ...(tagContent && { tagContent }),
         });
+      } else {
+        this.healthyTags[tagName].push(tagContent);
       }
     };
     checkTag(TITLE, pageTags[TITLE]);
@@ -198,7 +205,21 @@ class SeoChecks {
    * @returns {object} - The detected tags object.
    */
   getDetectedTags() {
-    return this.detectedTags;
+    // return this.detectedTags;
+    // temporary change for demo, will be reverted
+    return Object.fromEntries(Object.entries(this.detectedTags).slice(25, 40));
+  }
+
+  /**
+   * Gets 20 healthy tags for this site, later to be used to generate brand guidelines
+   * @returns {*|{[p: string]: [], "[DESCRIPTION]": *[], "[H1]": *[], "[TITLE]": *[]}}
+   */
+  getFewHealthyTags() {
+    return {
+      [TITLE]: this.healthyTags[TITLE].slice(0, 20),
+      [DESCRIPTION]: this.healthyTags[DESCRIPTION].slice(0, 20),
+      [H1]: this.healthyTags[H1].slice(0, 20),
+    };
   }
 
   finalChecks() {
