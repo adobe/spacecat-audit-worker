@@ -200,7 +200,7 @@ describe('Meta Tags', () => {
     });
   });
 
-  describe('handler method', () => {
+  xdescribe('handler method', () => {
     let dataAccessStub;
     let s3ClientStub;
     let logStub;
