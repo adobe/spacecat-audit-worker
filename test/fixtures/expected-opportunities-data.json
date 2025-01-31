@@ -1,124 +1,146 @@
 [
-    {
-      "type": "rageclick",
-      "page": "https://abc.com/abc-adoption/survey",
-      "screenshot": "",
-      "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
-      "trackedPageKPIValue": 43.25513196480938,
-      "pageViews": 34100,
-      "samples": 341,
-      "opportunityImpact": 157,
-      "metrics": [
-        {
-          "type": "click",
-          "selector": ".abc-survey",
-          "value": 2111,
-          "targets": {
-            "https://abc.com/in/products/media_1c2c9e62626b7b4df13882c013438725ae05464d6.jpeg": 577,
-            "undefined": 1534
-          },
-          "samples": 138,
-          "mobileSamples": 106,
-          "desktopSamples": 32,
-          "percentage": 40.469208211143695
+  {
+    "type": "rageclick",
+    "page": "https://abc.com/abc-adoption/survey",
+    "screenshot": "",
+    "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
+    "trackedPageKPIValue": 43.25513196480938,
+    "pageViews": 34100,
+    "samples": 341,
+    "metrics": [
+      {
+        "type": "click",
+        "selector": ".abc-survey",
+        "value": 2111,
+        "targets": {
+          "https://abc.com/in/products/media_1c2c9e62626b7b4df13882c013438725ae05464d6.jpeg": 577,
+          "undefined": 1534
         },
-        {
-          "type": "click",
-          "selector": ".abc-survey #abc-survey-next",
-          "value": 2160,
-          "targets": {
-            "https://abc.com/in/images/media_1c2c9e62626b7b4df13882c0134982380923890.jpeg": 141,
-            "https://abc.com/in/images/media_1c2c9e62626b7b4df13882c013498223987923afe.jpeg": 401,
-            "undefined": 1618
-          },
-          "samples": 157,
-          "mobileSamples": 96,
-          "desktopSamples": 61,
-          "percentage": 46.04105571847507
-        }
-      ]
-    },
-    {
-      "type": "rageclick",
-      "page": "https://abc.com/abc-adoption/account",
-      "screenshot": "",
-      "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
-      "trackedPageKPIValue": 8.771929824561402,
-      "pageViews": 11400,
-      "samples": 114,
-      "opportunityImpact": 10,
-      "metrics": [
-        {
-          "type": "click",
-          "selector": ".account #favorites",
-          "value": 138,
-          "targets": {
-            "undefined": 138
-          },
-          "samples": 10,
-          "mobileSamples": 9,
-          "desktopSamples": 1,
-          "percentage": 8.771929824561402
-        }
-      ]
-    },
-    {
-      "type": "rageclick",
-      "page": "https://abc.com/dummy-page",
-      "screenshot": "",
-      "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
-      "trackedPageKPIValue": 2.771929824561402,
-      "pageViews": 100,
-      "samples": 1,
-      "metrics": [
-        {
-          "type": "click",
-          "selector": "undefined"
-        }
-      ],
-      "opportunityImpact": 0
-    },
-    {
-      "type": "high-organic-low-ctr",
-      "page": "https://abc.com/abc-adoption/account",
-      "screenshot": "",
-      "thumbnail": "",
-      "trackedPageKPIName": "Click Through Rate",
-      "trackedKPISiteAverage": "0.24",
-      "trackedPageKPIValue": "0.14",
-      "pageViews": 21450,
-      "samples": 215,
-      "metrics": [],
-      "opportunityImpact": 1286,
-      "recommendations": [
-        {
-          "type": "guidance",
-          "insight": "The visual prominence and clarity of the CTA buttons may be insufficient, especially for mobile users.",
-          "recommendation": "Redesign the CTA buttons to be larger and more visually distinct, with contrasting colors and bold text.",
-          "rationale": "The 'Generate' and 'Upload Image' buttons are visually small and may not stand out enough, especially on mobile devices. Making them larger and using high-contrast colors will draw more attention and likely increase engagement, as evidenced by higher CTR from visually engaging sources like YouTube."
+        "samples": 138,
+        "mobileSamples": 106,
+        "desktopSamples": 32,
+        "percentage": 40.469208211143695
+      },
+      {
+        "type": "click",
+        "selector": ".abc-survey #abc-survey-next",
+        "value": 2160,
+        "targets": {
+          "https://abc.com/in/images/media_1c2c9e62626b7b4df13882c0134982380923890.jpeg": 141,
+          "https://abc.com/in/images/media_1c2c9e62626b7b4df13882c013498223987923afe.jpeg": 401,
+          "undefined": 1618
         },
-        {
-          "type": "guidance",
-          "insight": "The placement of CTAs might not be optimal, potentially causing users to miss them.",
-          "recommendation": "Reposition the primary CTAs to be closer to the top of the page and ensure they are visible without scrolling.",
-          "rationale": "CTAs placed 'above the fold' (visible without scrolling) generally perform better. Currently, some CTAs are placed lower on the page, which might be causing lower engagement from vendors like TikTok and Facebook, where users may not scroll as much."
+        "samples": 157,
+        "mobileSamples": 96,
+        "desktopSamples": 61,
+        "percentage": 46.04105571847507
+      }
+    ],
+    "opportunityImpact": 157
+  },
+  {
+    "type": "rageclick",
+    "page": "https://abc.com/abc-adoption/account",
+    "screenshot": "",
+    "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
+    "trackedPageKPIValue": 8.771929824561402,
+    "pageViews": 11400,
+    "samples": 114,
+    "metrics": [
+      {
+        "type": "click",
+        "selector": ".account #favorites",
+        "value": 138,
+        "targets": {
+          "undefined": 138
         },
-        {
-          "type": "guidance",
-          "insight": "The CTA messaging may not be compelling or clear enough to drive action.",
-          "recommendation": "Revise the CTA text to be more action-oriented and specific, such as 'Start Creating with AI Now' instead of 'Try Generative Fill'.",
-          "rationale": "Action-oriented and specific CTA text tends to drive higher engagement. By clarifying the value proposition and creating a sense of urgency, users are more likely to click through. This aligns with the higher engagement seen from YouTube, where clear and compelling video titles drive clicks."
-        }
-      ]
-    },
-    {
-      "type": "high-inorganic-high-bounce-rate",
-      "page": "https://abc.com/abc-adoption/pricing",
-      "screenshot": "",
-      "trackedPageKPIName": "Bounce Rate",
-      "trackedPageKPIValue": 0.76,
-      "pageViews": 8839,
-      "samples": 89,
-      "metrics": []
-    }
-  ]
+        "samples": 10,
+        "mobileSamples": 9,
+        "desktopSamples": 1,
+        "percentage": 8.771929824561402
+      }
+    ],
+    "opportunityImpact": 10
+  },
+  {
+    "type": "rageclick",
+    "page": "https://abc.com/dummy-page",
+    "screenshot": "",
+    "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
+    "trackedPageKPIValue": 2.771929824561402,
+    "pageViews": 100,
+    "samples": 1,
+    "metrics": [
+      {
+        "type": "click",
+        "selector": "undefined"
+      }
+    ],
+    "opportunityImpact": 0
+  },
+  {
+    "type": "high-organic-low-ctr",
+    "page": "https://abc.com/abc-adoption/account",
+    "screenshot": "",
+    "trackedPageKPIName": "Click Through Rate",
+    "trackedKPISiteAverage": "0.24",
+    "trackedPageKPIValue": "0.14",
+    "pageViews": 21450,
+    "samples": 215,
+    "metrics": [],
+    "opportunityImpact": 1286,
+    "recommendations": [
+      {
+        "type": "guidance",
+        "insight": "The visual prominence and clarity of the CTA buttons may be insufficient, especially for mobile users.",
+        "recommendation": "Redesign the CTA buttons to be larger and more visually distinct, with contrasting colors and bold text.",
+        "rationale": "The 'Generate' and 'Upload Image' buttons are visually small and may not stand out enough, especially on mobile devices. Making them larger and using high-contrast colors will draw more attention and likely increase engagement, as evidenced by higher CTR from visually engaging sources like YouTube."
+      },
+      {
+        "type": "guidance",
+        "insight": "The placement of CTAs might not be optimal, potentially causing users to miss them.",
+        "recommendation": "Reposition the primary CTAs to be closer to the top of the page and ensure they are visible without scrolling.",
+        "rationale": "CTAs placed 'above the fold' (visible without scrolling) generally perform better. Currently, some CTAs are placed lower on the page, which might be causing lower engagement from vendors like TikTok and Facebook, where users may not scroll as much."
+      },
+      {
+        "type": "guidance",
+        "insight": "The CTA messaging may not be compelling or clear enough to drive action.",
+        "recommendation": "Revise the CTA text to be more action-oriented and specific, such as 'Start Creating with AI Now' instead of 'Try Generative Fill'.",
+        "rationale": "Action-oriented and specific CTA text tends to drive higher engagement. By clarifying the value proposition and creating a sense of urgency, users are more likely to click through. This aligns with the higher engagement seen from YouTube, where clear and compelling video titles drive clicks."
+      }
+    ],
+    "thumbnail": ""
+  },
+  {
+    "type": "high-inorganic-high-bounce-rate",
+    "page": "https://abc.com/abc-adoption/pricing",
+    "screenshot": "",
+    "trackedPageKPIName": "Bounce Rate",
+    "trackedPageKPIValue": 0.76,
+    "pageViews": 8839,
+    "samples": 89,
+    "metrics": [],
+    "opportunityImpact": 6717.64,
+    "recommendations": [
+      {
+        "type": "guidance",
+        "insight": "The visual prominence and clarity of the CTA buttons may be insufficient, especially for mobile users.",
+        "recommendation": "Redesign the CTA buttons to be larger and more visually distinct, with contrasting colors and bold text.",
+        "rationale": "The 'Generate' and 'Upload Image' buttons are visually small and may not stand out enough, especially on mobile devices. Making them larger and using high-contrast colors will draw more attention and likely increase engagement, as evidenced by higher CTR from visually engaging sources like YouTube."
+      },
+      {
+        "type": "guidance",
+        "insight": "The placement of CTAs might not be optimal, potentially causing users to miss them.",
+        "recommendation": "Reposition the primary CTAs to be closer to the top of the page and ensure they are visible without scrolling.",
+        "rationale": "CTAs placed 'above the fold' (visible without scrolling) generally perform better. Currently, some CTAs are placed lower on the page, which might be causing lower engagement from vendors like TikTok and Facebook, where users may not scroll as much."
+      },
+      {
+        "type": "guidance",
+        "insight": "The CTA messaging may not be compelling or clear enough to drive action.",
+        "recommendation": "Revise the CTA text to be more action-oriented and specific, such as 'Start Creating with AI Now' instead of 'Try Generative Fill'.",
+        "rationale": "Action-oriented and specific CTA text tends to drive higher engagement. By clarifying the value proposition and creating a sense of urgency, users are more likely to click through. This aligns with the higher engagement seen from YouTube, where clear and compelling video titles drive clicks."
+      }
+    ],
+    "thumbnail": ""
+  }
+]
