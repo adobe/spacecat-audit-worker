@@ -266,91 +266,27 @@ function processRageClickOpportunities(opportunities) {
     });
 }
 
-async function createOrUpdateOpportunityEntity(
-  opportunity,
-  context,
-  existingOpportunities,
-  auditId,
-) {
-  const { log, dataAccess } = context;
-  const { Opportunity } = dataAccess;
-  const existingOpportunity = existingOpportunities.find(
-    (oppty) => (oppty.getType() === opportunity.type) && oppty.getData()
-    && (oppty.getData().page === opportunity.data.page),
-  );
-  if (existingOpportunity) {
-    log.info(`Updating opportunity entity for ${opportunity.data.page} with the new data`);
-    existingOpportunity.setAuditId(auditId);
-    existingOpportunity.setData({
-      ...opportunity.data,
-    });
-    await existingOpportunity.save();
-    return true;
-  }
-  await Opportunity.create(opportunity);
-  return true;
-}
-
-function convertToOpportunityEntity(oppty, auditData) {
-  return {
-    siteId: auditData.siteId,
-    auditId: auditData.id,
-    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/Doc.aspx?sourcedoc=%7B19613D9B-93D4-4112-B7C8-DBE0D9DCC55B%7D&file=Experience_Success_Studio_High_Organic_Traffic_Low_CTR_Runbook.docx&action=default&mobileredirect=true',
-    type: 'high-organic-low-ctr',
-    origin: 'AUTOMATION',
-    title: 'page with high organic traffic but low click through rate detected',
-    description: 'Adjusting the wording, images and/or layout on the page to resonate more with a specific audience should increase the overall engagement on the page and ultimately bump conversion.',
-    status: 'NEW',
-    guidance: {
-      recommendations: oppty.recommendations,
-    },
-    tags: ['Engagement'],
-    data: {
-      page: oppty.page,
-      pageViews: oppty.pageViews,
-      samples: oppty.samples,
-      screenshot: oppty.screenshot,
-      thumbnail: oppty.thumbnail,
-      trackedKPISiteAverage: oppty.trackedKPISiteAverage,
-      trackedPageKPIName: oppty.trackedPageKPIName,
-      trackedPageKPIValue: oppty.trackedPageKPIValue,
-      opportunityImpact: oppty.opportunityImpact,
-      metrics: oppty.metrics,
-    },
-  };
-}
-
 export async function postProcessor(auditUrl, auditData, context) {
-  const { log } = context;
-  const { dataAccess } = context;
-  const { Opportunity } = dataAccess;
-  let updatedEntities = 0;
-  log.info(`Experimentation Opportunities post processing started for ${auditUrl} from audit ${auditData.id}`);
-  const existingOpportunities = await Opportunity.allBySiteId(auditData.siteId);
+  const { log, sqs, env } = context;
 
-  // Get opportunities with recommendations
-  const opportunities = auditData.auditResult.experimentationOpportunities
-    .filter((oppty) => oppty.type === 'high-organic-low-ctr' && oppty.recommendations);
-  // Process all opportunities in parallel and wait for completion
-  await Promise.all(opportunities.map(async (oppty) => {
-    const opportunity = convertToOpportunityEntity(oppty, auditData);
-    try {
-      const status = await createOrUpdateOpportunityEntity(
-        opportunity,
-        context,
-        existingOpportunities,
-        auditData.id,
-      );
-      if (status) {
-        updatedEntities += 1;
-      }
-    } catch (error) {
-      log.error(`Error creating/updating opportunity entity for ${opportunity.data.page}: ${error.message}`);
-    }
-    return opportunity;
-  }));
+  const messages = auditData.auditResult.experimentationOpportunities.filter((oppty) => oppty.type === 'high-organic-low-ctr')
+    .map((oppty) => ({
+      type: 'guidance:high-organic-low-ctr',
+      siteId: auditData.siteId,
+      auditId: auditData.auditId,
+      time: new Date().toISOString(),
+      data: {
+        url: oppty.page,
+        ctr: oppty.trackedPageKPIValue,
+        siteAgerageCtr: oppty.trackedKPISiteAverage,
+      },
+    }));
 
-  log.info(`Created/updated ${updatedEntities} opportunity entities for ${auditUrl}`);
+  for (const message of messages) {
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE);
+    log.info(`Message sent: ${JSON.stringify(message)}`);
+  }
 }
 
 /**

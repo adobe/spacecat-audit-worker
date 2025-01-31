@@ -66,7 +66,7 @@ export default async function handler(message, context) {
     return;
   }
 
-  const rawOpportunity = audit.auditResult.experimentationOpportunities
+  const rawOpportunity = audit.getAuditResult().experimentationOpportunities
     .filter((oppty) => oppty.type === 'high-organic-low-ctr')
     .find((oppty) => oppty.page === url);
 
@@ -96,35 +96,35 @@ export default async function handler(message, context) {
     });
     existingOpportunity.setGuidance(entity.guidance);
     existingOpportunity = await existingOpportunity.save();
-
-    const existingSuggestions = await existingOpportunity.getSuggestions();
-
-    await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
-
-    const variants = suggestions.map((suggestion, index) => ({
-      name: `Variation ${index + 1}`,
-      changes: [],
-      variationEditPageUrl: `https://example.com/edit/variation-${index + 1}`,
-      id: `variation-${index + 1}`,
-      variationPageUrl: suggestion.previewUrl,
-      explanation: 'more to come soon...',
-      projectedImpact: 0.08,
-      previewImage: suggestion.screenshotUrl,
-    }));
-
-    const suggestionData = {
-      opportunityId: existingOpportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: 1,
-      status: 'NEW',
-      data: {
-        variations: variants,
-      },
-      kpiDeltas: {
-        estimatedKPILift: 0,
-      },
-    };
-
-    await Suggestion.create(suggestionData);
   }
+
+  const existingSuggestions = await existingOpportunity.getSuggestions();
+
+  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+
+  const variants = suggestions.map((suggestion, index) => ({
+    name: `Variation ${index + 1}`,
+    changes: [],
+    variationEditPageUrl: `https://example.com/edit/variation-${index + 1}`,
+    id: `variation-${index + 1}`,
+    variationPageUrl: suggestion.previewUrl,
+    explanation: 'more to come soon...',
+    projectedImpact: 0.08,
+    previewImage: suggestion.screenshotUrl,
+  }));
+
+  const suggestionData = {
+    opportunityId: existingOpportunity.getId(),
+    type: 'CONTENT_UPDATE',
+    rank: 1,
+    status: 'NEW',
+    data: {
+      variations: variants,
+    },
+    kpiDeltas: {
+      estimatedKPILift: 0,
+    },
+  };
+
+  await Suggestion.create(suggestionData);
 }
