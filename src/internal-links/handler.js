@@ -16,6 +16,7 @@ import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { generateSuggestionData } from './suggestions-generator.js';
 
 const INTERVAL = 30; // days
 const AUDIT_TYPE = 'broken-internal-links';
@@ -120,7 +121,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
         runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
         type: AUDIT_TYPE,
         origin: 'AUTOMATION',
-        title: 'Broken internal links found',
+        title: 'Broken internal links are impairing user experience and SEO crawlability',
         description: 'We\'ve detected broken internal links on your website. Broken links can negatively impact user experience and SEO. Please review and fix these links to ensure smooth navigation and accessibility.',
         guidance: {
           steps: [
@@ -156,9 +157,12 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
       type: 'CONTENT_UPDATE',
       rank: entry.traffic_domain,
       data: {
-        ...entry,
-        /* code commented until implementation of suggested links. TODO: implement suggestions, https://jira.corp.adobe.com/browse/SITES-26545 */
-        // suggestedLink: 'some suggestion here',
+        title: entry.title,
+        url_from: entry.url_from,
+        url_to: entry.url_to,
+        urls_suggested: entry.urls_suggested || [],
+        ai_rationale: entry.ai_rationale || '',
+        traffic_domain: entry.traffic_domain,
       },
     }),
     log,
@@ -168,5 +172,5 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(internalLinksAuditRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([generateSuggestionData, convertToOpportunity])
   .build();

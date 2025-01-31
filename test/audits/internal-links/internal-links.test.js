@@ -17,9 +17,9 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 
-import { internalLinksAuditRunner, convertToOpportunity } from '../../src/internal-links/handler.js';
-import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../fixtures/internal-links-data.js';
-import { MockContextBuilder } from '../shared.js';
+import { internalLinksAuditRunner, convertToOpportunity } from '../../../src/internal-links/handler.js';
+import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../../fixtures/internal-links-data.js';
+import { MockContextBuilder } from '../../shared.js';
 
 const AUDIT_RESULT_DATA = [
   {
