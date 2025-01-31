@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 const DAILY_PAGEVIEW_THRESHOLD = 200;
-const CR_THRESHOLD_RATIO = 0.2;
+const CR_THRESHOLD_RATIO = 0.3;
 const MOBILE = 'mobile';
 const DESKTOP = 'desktop';
 
