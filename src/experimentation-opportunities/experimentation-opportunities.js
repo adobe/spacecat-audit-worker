@@ -284,7 +284,7 @@ export async function postProcessor(auditUrl, auditData, context) {
 
   for (const message of messages) {
     // eslint-disable-next-line no-await-in-loop
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE);
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(`Message sent: ${JSON.stringify(message)}`);
   }
 }
