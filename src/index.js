@@ -37,6 +37,7 @@ import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
 import siteDetection from './site-detection/handler.js';
+import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 
 const HANDLERS = {
   apex,
@@ -58,6 +59,7 @@ const HANDLERS = {
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
+  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   dummy: (message) => ok(message),
 };
 
