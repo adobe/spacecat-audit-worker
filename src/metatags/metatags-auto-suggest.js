@@ -116,7 +116,7 @@ export default async function metatagsAutoSuggest(
   const serviceToken = (await imsClient.getServiceAccessToken()).access_token;
   const requestBody = {};
   const tagsData = {};
-  let count = 0; // temporary change to limit firefall api calls
+  // let count = 0; // temporary change to limit firefall api calls
   const {
     detectedTags,
     extractedTags,
@@ -125,10 +125,10 @@ export default async function metatagsAutoSuggest(
   for (const [endpoint, tags] of Object.entries(detectedTags)) {
     // temporary change for demo, will be reverted
     /* c8 ignore next 3 */
-    if (count >= 2) {
-      break;
-    }
-    count += 1;
+    // if (count >= 2) {
+    //   break;
+    // }
+    // count += 1;
     // eslint-disable-next-line no-await-in-loop
     const preSignedUrl = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
     tagsData[endpoint] = {
