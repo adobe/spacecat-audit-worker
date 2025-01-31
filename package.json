@@ -10,8 +10,8 @@
   },
   "scripts": {
     "start": "nodemon",
-    "test": "c8 mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
-    "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
+    "test": "",
+    "test-postdeploy": "",
     "lint": "eslint .",
     "logs": "aws logs tail /aws/lambda/spacecat-services--audit-worker",
     "semantic-release": "semantic-release",

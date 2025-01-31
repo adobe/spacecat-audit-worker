@@ -316,7 +316,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   if (!configuration.isHandlerEnabledForSite('[audit-name]-auto-suggest', site)) {
     log.info('Auto-suggest is disabled for site');
     return {...auditData};
-  }x
+  }
 }
 ```
 

@@ -17,27 +17,27 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 
-import { internalLinksAuditRunner, convertToOpportunity } from '../../src/internal-links/handler.js';
-import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../fixtures/internal-links-data.js';
-import { MockContextBuilder } from '../shared.js';
+import { internalLinksAuditRunner, convertToOpportunity } from '../../../src/internal-links/handler.js';
+import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../../fixtures/internal-links-data.js';
+import { MockContextBuilder } from '../../shared.js';
 
 const AUDIT_RESULT_DATA = [
   {
-    traffic_domain: 1800,
-    url_to: 'https://www.petplace.com/a01',
-    url_from: 'https://www.petplace.com/a02nf',
+    trafficDomain: 1800,
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a02nf',
     priority: 'high',
   },
   {
-    traffic_domain: 1200,
-    url_to: 'https://www.petplace.com/ax02',
-    url_from: 'https://www.petplace.com/ax02nf',
+    trafficDomain: 1200,
+    urlTo: 'https://www.petplace.com/ax02',
+    urlFrom: 'https://www.petplace.com/ax02nf',
     priority: 'medium',
   },
   {
-    traffic_domain: 200,
-    url_to: 'https://www.petplace.com/a01',
-    url_from: 'https://www.petplace.com/a01nf',
+    trafficDomain: 200,
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a01nf',
     priority: 'low',
   },
 ];
