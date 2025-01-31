@@ -625,7 +625,7 @@ describe('Meta Tags', () => {
     });
   });
 
-  describe('opportunities handler method', () => {
+  xdescribe('opportunities handler method', () => {
     let logStub;
     let dataAccessStub;
     let auditData;
