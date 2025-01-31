@@ -15,8 +15,8 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import esmock from 'esmock';
 import {
   TITLE,
   DESCRIPTION,
@@ -227,10 +227,43 @@ describe('Meta Tags', () => {
         info: sinon.stub(),
         debug: sinon.stub(),
         error: sinon.stub(),
+        warn: sinon.stub(),
       };
     });
 
     it('should process site tags and perform SEO checks', async () => {
+      const RUMAPIClientStub = {
+        createFrom: sinon.stub().returns({
+          query: sinon.stub().resolves([
+            {
+              url: 'http://example.com/blog/page1',
+              total: 100,
+              earned: 20,
+              owned: 70,
+              paid: 10,
+            },
+          ]),
+        }),
+      };
+      const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+      const mockCalculateCPCValue = sinon.stub().resolves(2);
+      const metatagsOppty = {
+        getId: () => 'opportunity-id',
+        setAuditId: sinon.stub(),
+        save: sinon.stub(),
+        getSuggestions: sinon.stub().returns([]),
+        addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
+        getType: () => 'meta-tags',
+      };
+      const site = {
+        getIsLive: sinon.stub().returns(true),
+        getId: sinon.stub().returns('site-id'),
+        getBaseURL: sinon.stub().returns('http://example.com'),
+      };
+      dataAccessStub.Site.findById.resolves(site);
+      dataAccessStub.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      });
       const topPages = [
         { getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') },
@@ -238,6 +271,9 @@ describe('Meta Tags', () => {
         { getURL: 'http://example.com/', getTopKeyword: sinon.stub().returns('Home') },
       ];
       dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
+      dataAccessStub.Opportunity = {
+        allBySiteIdAndStatus: sinon.stub().returns([metatagsOppty]),
+      };
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
           Bucket: 'test-bucket',
@@ -320,8 +356,19 @@ describe('Meta Tags', () => {
 
       const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
       dataAccessStub.Audit.create = await addAuditStub();
-
-      await auditMetaTagsRunner('http://example.com', { log: logStub, s3Client: s3ClientStub, env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' } }, { getId: () => 'site-id' });
+      const auditStub = await esmock('../../src/metatags/handler.js', {
+        '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+        '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+      });
+      const auditInstance = auditStub.default;
+      await auditInstance.runner('http://example.com', {
+        log: logStub,
+        s3Client: s3ClientStub,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        },
+      }, site);
       const result = await fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page3/scrape.json', 'scrapes/site-id/', logStub);
       expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
       expect(result).to.be.null;
@@ -389,13 +436,42 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-    }).timeout(3000);
+      expect(logStub.info.callCount).to.equal(4);
+    }).timeout(10000);
 
     it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
+      const RUMAPIClientStub = {
+        createFrom: sinon.stub().returns({
+          query: sinon.stub().resolves([
+            {
+              url: 'http://example.com/blog/page1',
+              total: 100,
+              earned: 20,
+              owned: 70,
+              paid: 10,
+            },
+          ]),
+        }),
+      };
+      const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+      const mockCalculateCPCValue = sinon.stub().resolves(2);
+      const auditStub = await esmock('../../src/metatags/handler.js', {
+        '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+        '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+      });
+      const site = {
+        getIsLive: sinon.stub().returns(true),
+        getId: sinon.stub().returns('site-id'),
+        getBaseURL: sinon.stub().returns('http://example.com'),
+      };
       const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') },
         { getURL: 'http://example.com/', getTopKeyword: sinon.stub().returns('Test') }];
 
+      dataAccessStub.Site.findById.resolves(site);
+      dataAccessStub.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      });
       dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
 
       s3ClientStub.send
@@ -473,8 +549,17 @@ describe('Meta Tags', () => {
         });
       const addAuditStub = sinon.stub().resolves();
       dataAccessStub.Audit.create = await addAuditStub();
-      auditMetaTagsRunner('http://example.com', context, { getId: () => 'site-id' });
-      fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page1/scrape.json', 'scrapes/site-id/', sinon.stub());
+
+      const auditInstance = auditStub.default;
+      await auditInstance.runner('http://example.com', {
+        log: logStub,
+        s3Client: s3ClientStub,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        },
+      }, site);
+      await fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page1/scrape.json', 'scrapes/site-id/', sinon.stub());
 
       expect(addAuditStub.calledWithMatch({
         '/blog/page1': {
@@ -533,6 +618,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
+      expect(logStub.info.callCount).to.equal(4);
     });
 
     it('should handle gracefully if S3 object has no rawbody', async () => {
@@ -548,14 +634,14 @@ describe('Meta Tags', () => {
         })))
         .resolves({
           Contents: [
-            { Key: 'scrapes/site-id/blog/page1.json' },
+            { Key: 'scrapes/site-id/blog/page1/scrape.json' },
           ],
         });
 
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
           Bucket: 'test-bucket',
-          Key: 'scrapes/site-id/blog/page1.json',
+          Key: 'scrapes/site-id/blog/page1/scrape.json',
         }))).returns({
           Body: {
             transformToString: () => '',
@@ -585,7 +671,7 @@ describe('Meta Tags', () => {
         })))
         .resolves({
           Contents: [
-            { Key: 'page1.json' },
+            { Key: 'page1/scrape.json' },
           ],
         });
 
@@ -601,9 +687,205 @@ describe('Meta Tags', () => {
           },
           ContentType: 'application/json',
         });
-      await auditMetaTagsRunner('http://example.com', { log: logStub, s3Client: s3ClientStub, env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' } }, { getId: () => 'site-id' });
+      const site = {
+        getIsLive: sinon.stub().returns(true),
+        getId: sinon.stub().returns('site-id'),
+        getBaseURL: sinon.stub().returns('http://example.com'),
+      };
+      const RUMAPIClientStub = {
+        createFrom: sinon.stub().returns({
+          query: sinon.stub().resolves([
+            {
+              url: 'http://example.com/blog/page1',
+              total: 100,
+              earned: 20,
+              owned: 70,
+              paid: 10,
+            },
+          ]),
+        }),
+      };
+      const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+      const mockCalculateCPCValue = sinon.stub().resolves(2);
+      const auditStub = await esmock('../../src/metatags/handler.js', {
+        '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+        '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+      });
+      const auditInstance = auditStub.default;
+      await auditInstance.runner('http://example.com', {
+        log: logStub,
+        s3Client: s3ClientStub,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        },
+      }, site);
       expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
     });
+
+    it('should calculate projected traffic for detected tags', async () => {
+      const RUMAPIClientStub = {
+        createFrom: sinon.stub().returns({
+          query: sinon.stub().resolves([
+            {
+              url: 'http://example.com/blog/page1',
+              total: 100,
+              earned: 20,
+              owned: 70,
+              paid: 10,
+            },
+          ]),
+        }),
+      };
+      const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+      const metatagsOppty = {
+        getId: () => 'opportunity-id',
+        setAuditId: sinon.stub(),
+        save: sinon.stub(),
+        getSuggestions: sinon.stub().returns([]),
+        addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
+        getType: () => 'meta-tags',
+      };
+      const site = {
+        getIsLive: sinon.stub().returns(true),
+        getId: sinon.stub().returns('site-id'),
+        getBaseURL: sinon.stub().returns('http://example.com'),
+      };
+      const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
+        { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') }];
+
+      dataAccessStub.Site.findById.resolves(site);
+      dataAccessStub.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      });
+      dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
+      dataAccessStub.Opportunity = {
+        allBySiteIdAndStatus: sinon.stub().returns([metatagsOppty]),
+      };
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Prefix: 'scrapes/site-id/',
+          MaxKeys: 1000,
+        })))
+        .resolves({
+          Contents: [
+            { Key: 'scrapes/site-id/blog/page1/scrape.json' },
+            { Key: 'scrapes/site-id/blog/page2/scrape.json' },
+          ],
+        });
+
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Key: 'scrapes/site-id/blog/page1/scrape.json',
+        }))).returns({
+          Body: {
+            transformToString: () => JSON.stringify({
+              scrapeResult: {
+                tags: {
+                  title: 'Test Page',
+                  description: '',
+                },
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        });
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+          Bucket: 'test-bucket',
+          Key: 'scrapes/site-id/blog/page2/scrape.json',
+        }))).returns({
+          Body: {
+            transformToString: () => JSON.stringify({
+              scrapeResult: {
+                tags: {
+                  title: 'Test Page',
+                  h1: [
+                    'This is a dummy H1 that is intentionally made to be overly lengthy from SEO perspective',
+                  ],
+                },
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        });
+      const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
+      dataAccessStub.Audit.create = addAuditStub;
+      const mockCalculateCPCValue = sinon.stub().resolves(2);
+      const auditStub = await esmock('../../src/metatags/handler.js', {
+        '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+        '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+      });
+      const auditInstance = auditStub.default;
+      await auditInstance.runner('http://example.com', {
+        log: logStub,
+        s3Client: s3ClientStub,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        },
+      }, site);
+      expect(addAuditStub.calledWithMatch({
+        auditResult: {
+          projectedTraffic: 200,
+          projectedTrafficValue: 200,
+          detectedTags: {
+            '/blog/page1': {
+              h1: {
+                seoImpact: 'High',
+                issue: 'Missing H1',
+                issueDetails: 'H1 tag is missing',
+                seoRecommendation: 'Should be present',
+              },
+              title: {
+                tagContent: 'Test Page',
+                seoImpact: 'High',
+                issue: 'Duplicate Title',
+                issueDetails: '2 pages share same title',
+                seoRecommendation: 'Unique across pages',
+                duplicates: [
+                  '/blog/page2',
+                ],
+              },
+              description: {
+                tagContent: '',
+                seoImpact: 'High',
+                issue: 'Empty Description',
+                issueDetails: 'Description tag is empty',
+                seoRecommendation: '140-160 characters long',
+              },
+            },
+            '/blog/page2': {
+              description: {
+                seoImpact: 'High',
+                issue: 'Missing Description',
+                issueDetails: 'Description tag is missing',
+                seoRecommendation: 'Should be present',
+              },
+              title: {
+                tagContent: 'Test Page',
+                seoImpact: 'High',
+                issue: 'Duplicate Title',
+                issueDetails: '2 pages share same title',
+                seoRecommendation: 'Unique across pages',
+                duplicates: [
+                  '/blog/page1',
+                ],
+              },
+              h1: {
+                tagContent: 'This is a dummy H1 that is intentionally made to be overly lengthy from SEO perspective',
+                seoImpact: 'Moderate',
+                issue: 'H1 too long',
+                issueDetails: '17 chars over limit',
+                seoRecommendation: 'Below 70 characters',
+              },
+            },
+          },
+        },
+      }));
+    }).timeout(5000);
   });
 
   describe('opportunities handler method', () => {
@@ -624,6 +906,7 @@ describe('Meta Tags', () => {
         getSuggestions: sinon.stub().returns(testData.existingSuggestions),
         addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
         getType: () => 'meta-tags',
+        setData: () => {},
       };
       logStub = {
         info: sinon.stub(),
@@ -647,7 +930,7 @@ describe('Meta Tags', () => {
     });
 
     it('should create new opportunity and add suggestions', async () => {
-      metatagsOppty.getType = () => 'backlinks';
+      metatagsOppty.getType = () => 'meta-tags';
       dataAccessStub.Opportunity.create = sinon.stub().returns(metatagsOppty);
       await convertToOpportunity(auditUrl, auditData, context);
       expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
