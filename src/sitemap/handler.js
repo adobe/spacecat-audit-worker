@@ -23,7 +23,7 @@ import {
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { OpportunityData } from './dataOpportunityMapper.js';
+import { OpportunityData } from './opportunity-data-mapper.js';
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',

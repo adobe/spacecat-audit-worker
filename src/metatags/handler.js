@@ -15,9 +15,9 @@ import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getIssueRanking, removeTrailingSlash, syncMetatagsSuggestions } from './opportunityHandler.js';
+import { getIssueRanking, removeTrailingSlash, syncMetatagsSuggestions } from './opportunity-handler.js';
 import { DESCRIPTION, H1, TITLE } from './constants.js';
-import { OpportunityData } from './opportunityDataMapper.js';
+import { OpportunityData } from './opportunity-data-mapper.js';
 
 const AUDIT_TYPE = 'meta-tags';
 

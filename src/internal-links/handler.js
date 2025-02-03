@@ -16,7 +16,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { OpportunityData } from './opportunityDataMapper.js';
+import { OpportunityData } from './opportunity-data-mapper.js';
 
 const INTERVAL = 30; // days
 const AUDIT_TYPE = 'broken-internal-links';

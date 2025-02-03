@@ -20,7 +20,7 @@ import { getRUMDomainkey } from '../support/utils.js';
 import s3Client from '../support/s3-client.js';
 import { wwwUrlResolver } from '../common/audit.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { OpportunityData } from './dataOpportunityMapper.js';
+import { OpportunityData } from './opportunity-data-mapper.js';
 
 const AUDIT_TYPE = 'high-organic-low-ctr';
 const DAYS = 7;
