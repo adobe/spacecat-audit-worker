@@ -178,8 +178,10 @@ export async function filterValidUrls(urls) {
 
       // if it's a redirect, follow it to get the final URL
       if (response.status === 301 || response.status === 302) {
+        const redirectUrl = response.headers.get('location');
+        const finalUrl = new URL(redirectUrl, url).href;
         try {
-          const redirectResponse = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+          const redirectResponse = await fetch(finalUrl, { method: 'HEAD', redirect: 'follow' });
           return {
             status: NOT_OK,
             url,
@@ -188,7 +190,9 @@ export async function filterValidUrls(urls) {
           };
         } catch {
           // if following redirect fails, return just the status code
-          return { status: NOT_OK, url, statusCode: response.status };
+          return {
+            status: NOT_OK, url, statusCode: response.status, finalUrl,
+          };
         }
       }
 

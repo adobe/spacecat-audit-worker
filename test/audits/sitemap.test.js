@@ -1102,6 +1102,7 @@ describe('filterValidUrls with redirect handling', () => {
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/broken-redirect',
+        suggestedFix: 'https://example.com/error',
         statusCode: 301,
       },
     ]);
