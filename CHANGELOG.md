@@ -1,3 +1,10 @@
+## [1.51.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.5...v1.51.6) (2025-02-04)
+
+
+### Bug Fixes
+
+* user agent for sitemap ([#628](https://github.com/adobe/spacecat-audit-worker/issues/628)) ([70eced9](https://github.com/adobe/spacecat-audit-worker/commit/70eced926df663cc01bdf31d4bea79e47e81a446))
+
 ## [1.51.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.4...v1.51.5) (2025-02-03)
 
 
