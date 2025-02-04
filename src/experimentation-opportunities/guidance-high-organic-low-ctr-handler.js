@@ -10,19 +10,33 @@
  * governing permissions and limitations under the License.
  */
 
+function calculateOpptyImpact(organicTraffic, siteAverageCTR, pageCTR) {
+  // assume oppty cannot go over site average CTR
+  if (pageCTR > siteAverageCTR) return 0;
+
+  // total margin in the potential impact
+  return (siteAverageCTR - pageCTR) * organicTraffic;
+}
+
 function convertToOpportunityEntity(siteId, auditId, rawOppty = {}, guidance = []) {
   const {
     page = '',
     pageViews = 0,
     samples = 0,
-    screenshot = null,
-    thumbnail = null,
     trackedKPISiteAverage = 0,
     trackedPageKPIName = '',
     trackedPageKPIValue = 0,
-    opportunityImpact = 0,
     metrics = [],
   } = rawOppty;
+
+  /* c8 ignore next 1 */
+  const organicTraffic = metrics.find((m) => m.type === 'traffic' && m.vendor === '*')?.value?.earned || 0;
+
+  const opportunityImpact = calculateOpptyImpact(
+    organicTraffic,
+    trackedKPISiteAverage,
+    trackedPageKPIValue,
+  );
 
   return {
     siteId,
@@ -31,7 +45,7 @@ function convertToOpportunityEntity(siteId, auditId, rawOppty = {}, guidance = [
       'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/Doc.aspx?sourcedoc=%7B19613D9B-93D4-4112-B7C8-DBE0D9DCC55B%7D&file=Experience_Success_Studio_High_Organic_Traffic_Low_CTR_Runbook.docx&action=default&mobileredirect=true',
     type: 'high-organic-low-ctr',
     origin: 'AUTOMATION',
-    title: 'page with high organic traffic but low click through rate detected',
+    title: 'Page with high organic traffic but low click through rate detected',
     description:
       'Adjusting the wording, images and/or layout on the page to resonate more with a specific audience should increase the overall engagement on the page and ultimately bump conversion.',
     status: 'NEW',
@@ -43,8 +57,6 @@ function convertToOpportunityEntity(siteId, auditId, rawOppty = {}, guidance = [
       page,
       pageViews,
       samples,
-      screenshot,
-      thumbnail,
       trackedKPISiteAverage,
       trackedPageKPIName,
       trackedPageKPIValue,
@@ -66,60 +78,51 @@ export default async function handler(message, context) {
     return;
   }
 
-  const rawOpportunity = audit.getAuditResult().experimentationOpportunities
+  const auditOpportunity = audit.getAuditResult().experimentationOpportunities
     .filter((oppty) => oppty.type === 'high-organic-low-ctr')
     .find((oppty) => oppty.page === url);
 
-  if (!rawOpportunity) {
+  if (!auditOpportunity) {
     log.info(
       `No raw opportunity found of type 'high-organic-low-ctr' for URL: ${url}. Nothing to process.`,
     );
     return;
   }
 
-  const entity = convertToOpportunityEntity(siteId, auditId, rawOpportunity, guidance);
+  const entity = convertToOpportunityEntity(siteId, auditId, auditOpportunity, guidance);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  let existingOpportunity = existingOpportunities.find(
+  let opportunity = existingOpportunities.find(
     (oppty) => oppty.getData()?.page === url,
   );
 
-  if (!existingOpportunity) {
+  if (!opportunity) {
     log.info(`No existing Opportunity found for page: ${url}. Creating a new one.`);
-    await Opportunity.create(entity);
+    opportunity = await Opportunity.create(entity);
   } else {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
-    existingOpportunity.setAuditId(auditId);
-    existingOpportunity.setData({
-      ...existingOpportunity.getData(),
+    opportunity.setAuditId(auditId);
+    opportunity.setData({
+      ...opportunity.getData(),
       ...entity.data,
     });
-    existingOpportunity.setGuidance(entity.guidance);
-    existingOpportunity = await existingOpportunity.save();
+    opportunity.setGuidance(entity.guidance);
+    opportunity = await opportunity.save();
   }
 
-  const existingSuggestions = await existingOpportunity.getSuggestions();
+  const existingSuggestions = await opportunity.getSuggestions();
 
+  // delete previous suggestions if any
   await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
 
-  const variants = suggestions.map((suggestion, index) => ({
-    name: `Variation ${index + 1}`,
-    changes: [],
-    variationEditPageUrl: `https://example.com/edit/variation-${index + 1}`,
-    id: `variation-${index + 1}`,
-    variationPageUrl: suggestion.previewUrl,
-    explanation: 'more to come soon...',
-    projectedImpact: 0.08,
-    previewImage: suggestion.screenshotUrl,
-  }));
-
+  // map the suggestions received from M to PSS
   const suggestionData = {
-    opportunityId: existingOpportunity.getId(),
+    opportunityId: opportunity.getId(),
     type: 'CONTENT_UPDATE',
     rank: 1,
     status: 'NEW',
     data: {
-      variations: variants,
+      variations: suggestions,
     },
     kpiDeltas: {
       estimatedKPILift: 0,
