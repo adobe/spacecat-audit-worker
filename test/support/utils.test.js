@@ -127,14 +127,14 @@ describe('utils.calculateCPCValue', () => {
 
   it('should calculate CPC correctly if organicTrafficData is valid', async () => {
     getObjectFromKey = sinon.stub().returns([
-      { cost: 100, value: 50 },
-      { cost: 200, value: 100 },
+      { cost: 10000, value: 50 },
+      { cost: 20000, value: 100 },
     ]);
     utils = await esmock('../../src/support/utils.js', {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
     });
     const result = await utils.calculateCPCValue(context, 'siteId');
-    expect(result).to.equal(2); // (200 / 100)
+    expect(result).to.equal(2); // (20000 / 100)
   });
 
   it('should handle errors during data fetching and return 1', async () => {

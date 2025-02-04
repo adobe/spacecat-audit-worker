@@ -269,7 +269,8 @@ export async function calculateCPCValue(context, siteId) {
       log.warn(`Invalid organic traffic data present for ${siteId} - cost:${lastTraffic.cost} value:${lastTraffic.value}, Using Default CPC value.`);
       return DEFAULT_CPC_VALUE;
     }
-    return lastTraffic.cost / lastTraffic.value;
+    // dividing by 100 for cents to dollar conversion
+    return lastTraffic.cost / lastTraffic.value / 100;
   } catch (err) {
     log.error(`Error fetching organic traffic data for site ${siteId}. Using Default CPC value.`, err);
     return DEFAULT_CPC_VALUE;
