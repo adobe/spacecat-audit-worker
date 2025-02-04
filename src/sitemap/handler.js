@@ -56,7 +56,12 @@ const VALID_MIME_TYPES = Object.freeze([
  * @throws {Error} If the fetch operation fails or the response status is not OK.
  */
 export async function fetchContent(targetUrl) {
-  const response = await fetch(targetUrl);
+  const response = await fetch(targetUrl, {
+    method: 'GET',
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    },
+  });
   if (!response.ok) {
     throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
   }
@@ -170,7 +175,13 @@ export async function filterValidUrls(urls) {
   const fetchUrl = async (url) => {
     try {
       // use manual redirect to capture the status code
-      const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
+      const response = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        },
+      });
 
       if (response.status === 200) {
         return { status: OK, url };
@@ -181,7 +192,13 @@ export async function filterValidUrls(urls) {
         const redirectUrl = response.headers.get('location');
         const finalUrl = new URL(redirectUrl, url).href;
         try {
-          const redirectResponse = await fetch(finalUrl, { method: 'HEAD', redirect: 'follow' });
+          const redirectResponse = await fetch(finalUrl, {
+            method: 'HEAD',
+            redirect: 'follow',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            },
+          });
           return {
             status: NOT_OK,
             url,
