@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
+
 function calculateOpptyImpact(organicTraffic, siteAverageCTR, pageCTR) {
   // assume oppty cannot go over site average CTR
   if (pageCTR > siteAverageCTR) return 0;
@@ -75,7 +77,7 @@ export default async function handler(message, context) {
   const audit = await Audit.findById(auditId);
   if (!audit) {
     log.warn(`No audit found for auditId: ${auditId}`);
-    return;
+    return notFound();
   }
 
   const auditOpportunity = audit.getAuditResult().experimentationOpportunities
@@ -86,7 +88,7 @@ export default async function handler(message, context) {
     log.info(
       `No raw opportunity found of type 'high-organic-low-ctr' for URL: ${url}. Nothing to process.`,
     );
-    return;
+    return notFound();
   }
 
   const entity = convertToOpportunityEntity(siteId, auditId, auditOpportunity, guidance);
@@ -130,4 +132,6 @@ export default async function handler(message, context) {
   };
 
   await Suggestion.create(suggestionData);
+
+  return ok();
 }
