@@ -1,3 +1,10 @@
+## [1.51.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.6...v1.51.7) (2025-02-04)
+
+
+### Bug Fixes
+
+* use urls_suggested as the suggested fix for sitemap redirects ([#629](https://github.com/adobe/spacecat-audit-worker/issues/629)) ([3ef076b](https://github.com/adobe/spacecat-audit-worker/commit/3ef076b3dc1ceaeeefcd5cdf620b46acb6fc1785))
+
 ## [1.51.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.5...v1.51.6) (2025-02-04)
 
 
