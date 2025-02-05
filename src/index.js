@@ -37,6 +37,7 @@ import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
 import siteDetection from './site-detection/handler.js';
+import rumTraffic from './rum-traffic/rum-traffic.js';
 
 const HANDLERS = {
   apex,
@@ -58,6 +59,7 @@ const HANDLERS = {
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
+  'rum-traffic': rumTraffic,
   dummy: (message) => ok(message),
 };
 
