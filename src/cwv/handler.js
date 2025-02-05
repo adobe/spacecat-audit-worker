@@ -11,22 +11,23 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
-import { OpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
-const AUDIT_TYPE = 'cwv';
+const auditType = Audit.AUDIT_TYPES.CWV;
 
 export async function CWVRunner(auditUrl, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
-  const groupedURLs = site.getConfig().getGroupedURLs(AUDIT_TYPE);
+  const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const options = {
     domain: auditUrl,
     domainkey,
@@ -34,7 +35,7 @@ export async function CWVRunner(auditUrl, context, site) {
     granularity: 'hourly',
     groupedURLs,
   };
-  const cwvData = await rumAPIClient.query(AUDIT_TYPE, options);
+  const cwvData = await rumAPIClient.query(auditType, options);
   const auditResult = {
     cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
     auditContext: {
@@ -49,14 +50,14 @@ export async function CWVRunner(auditUrl, context, site) {
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
-  const groupedURLs = site.getConfig().getGroupedURLs(AUDIT_TYPE);
+  const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const kpiDeltas = calculateKpiDeltasForAudit(auditData, context, groupedURLs);
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
     context,
-    OpportunityData,
-    AUDIT_TYPE,
+    createOpportunityData,
+    auditType,
     kpiDeltas,
   );
   const { log } = context;

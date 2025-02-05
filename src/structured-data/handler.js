@@ -12,12 +12,13 @@
 
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { isArray } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { OpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
-const AUDIT_TYPE = 'structured-data';
+const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -112,8 +113,8 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditUrl,
     auditData,
     context,
-    OpportunityData,
-    AUDIT_TYPE,
+    createOpportunityData,
+    auditType,
   );
   const { log } = context;
 
@@ -153,7 +154,7 @@ export async function structuredDataHandler(baseURL, context, site) {
 
   const siteId = site.getId();
 
-  const structuredDataURLs = await site.getConfig().getIncludedURLs('structured-data');
+  const structuredDataURLs = await site.getConfig().getIncludedURLs(auditType);
   if (structuredDataURLs && isArray(structuredDataURLs) && structuredDataURLs.length === 0) {
     log.error(`No product detail pages found for site ID: ${siteId}`);
     throw new Error(`No product detail pages found for site: ${baseURL}`);

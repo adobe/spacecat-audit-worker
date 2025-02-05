@@ -31,7 +31,7 @@ import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
-import experimentationOpportunities from './experimentation-opportunities/experimentation-opportunities.js';
+import experimentationOpportunities from './experimentation-opportunities/handler.js';
 import formsOpportunities from './forms-opportunities/handler.js';
 import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';

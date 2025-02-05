@@ -13,6 +13,7 @@
 import {
   composeAuditURL, isArray, prependSchema, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
   extractDomainAndProtocol,
   getBaseUrlPagesFromSitemapContents,
@@ -23,7 +24,9 @@ import {
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { OpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+
+const auditType = Audit.AUDIT_TYPES.SITEMAP;
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -34,8 +37,6 @@ export const ERROR_CODES = Object.freeze({
   SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
   FETCH_ERROR: 'ERROR FETCHING DATA',
 });
-
-const AUDIT_TYPE = 'sitemap';
 
 const VALID_MIME_TYPES = Object.freeze([
   'application/xml',
@@ -483,8 +484,8 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditUrl,
     auditData,
     context,
-    OpportunityData,
-    AUDIT_TYPE,
+    createOpportunityData,
+    auditType,
   );
 
   const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);

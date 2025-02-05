@@ -18,7 +18,7 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
 import chaiAsPromised from 'chai-as-promised';
-import { opportunityAndSuggestions, MAX_OPPORTUNITIES, getRecommendations } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
+import { opportunityAndSuggestions, MAX_OPPORTUNITIES, getRecommendations } from '../../src/experimentation-opportunities/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/opportunitiesdata.json' with { type: 'json' };
 import expectedOpportunitiesData from '../fixtures/expected-opportunities-data.json' with { type: 'json' };
@@ -113,7 +113,7 @@ describe('Opportunities Tests', () => {
     }));
 
     // Mock AWS SDK using esmock
-    experimentationOpportunities = await esmock('../../src/experimentation-opportunities/experimentation-opportunities.js', {
+    experimentationOpportunities = await esmock('../../src/experimentation-opportunities/handler.js', {
       '@aws-sdk/client-lambda': { LambdaClient: LambdaClientMock },
       '@aws-sdk/credential-provider-node': { defaultProvider: defaultProviderStub },
     });

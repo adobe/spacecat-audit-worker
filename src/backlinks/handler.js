@@ -14,13 +14,14 @@ import { composeAuditURL, getPrompt, tracingFetch as fetch } from '@adobe/spacec
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getScrapedDataForSiteId, sleep } from '../support/utils.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { OpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
-const AUDIT_TYPE = 'broken-backlinks';
+const auditType = Audit.AUDIT_TYPES.BROKEN_BACKLINKS;
 const TIMEOUT = 3000;
 
 async function filterOutValidBacklinks(backlinks, log) {
@@ -232,13 +233,21 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   };
 };
 
+/**
+  * Converts audit data to an opportunity and synchronizes suggestions.
+  *
+  * @param {string} auditUrl - The URL of the audit.
+  * @param {Object} auditData - The data from the audit.
+  * @param {Object} context - The context contains logging and data access utilities.
+  */
+
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
     context,
-    OpportunityData,
-    AUDIT_TYPE,
+    createOpportunityData,
+    auditType,
   );
   const { log } = context;
 

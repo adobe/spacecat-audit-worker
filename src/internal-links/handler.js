@@ -11,15 +11,16 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { OpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const INTERVAL = 30; // days
-const AUDIT_TYPE = 'broken-internal-links';
+const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
  * Classifies links into priority categories based on views
@@ -77,7 +78,7 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
     granularity: 'hourly',
   };
 
-  log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
+  log.info(`${auditType}: Options for RUM call: `, JSON.stringify(options));
 
   const internal404Links = await rumAPIClient.query('404-internal-links', options);
   const priorityLinks = calculatePriority(internal404Links);
@@ -101,8 +102,8 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditUrl,
     auditData,
     context,
-    OpportunityData,
-    AUDIT_TYPE,
+    createOpportunityData,
+    auditType,
   );
   const { log } = context;
 

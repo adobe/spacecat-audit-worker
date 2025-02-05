@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
@@ -27,6 +28,7 @@ use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 
+const auditType = Audit.auditTypeS.CWV;
 const baseURL = 'https://spacecat.com';
 const auditUrl = 'www.spacecat.com';
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
@@ -35,7 +37,6 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   interval: 7,
   granularity: 'hourly',
 };
-const AUDIT_TYPE = 'cwv';
 
 describe('CWVRunner Tests', () => {
   const groupedURLs = [{ name: 'test', pattern: 'test/*' }];
@@ -74,10 +75,10 @@ describe('CWVRunner Tests', () => {
   it('cwv audit runs rum api client cwv query', async () => {
     const result = await CWVRunner(auditUrl, context, site);
 
-    expect(siteConfig.getGroupedURLs.calledWith(AUDIT_TYPE)).to.be.true;
+    expect(siteConfig.getGroupedURLs.calledWith(auditType)).to.be.true;
     expect(
       context.rumApiClient.query.calledWith(
-        AUDIT_TYPE,
+        auditType,
         {
           ...DOMAIN_REQUEST_DEFAULT_PARAMS,
           groupedURLs,
@@ -119,7 +120,7 @@ describe('CWVRunner Tests', () => {
       };
 
       oppty = {
-        getType: () => AUDIT_TYPE,
+        getType: () => auditType,
         getId: () => 'oppty-id',
         getSiteId: () => 'site-id',
         addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
@@ -135,7 +136,7 @@ describe('CWVRunner Tests', () => {
         id: 'audit-id',
         isLive: true,
         auditedAt: new Date().toISOString(),
-        auditType: AUDIT_TYPE,
+        auditType,
         auditResult: {
           cwv: rumData.filter((data) => data.pageviews >= 7000),
           auditContext: {
@@ -156,7 +157,7 @@ describe('CWVRunner Tests', () => {
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(AUDIT_TYPE);
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(auditType);
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
 
@@ -192,7 +193,7 @@ describe('CWVRunner Tests', () => {
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(AUDIT_TYPE);
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(auditType);
 
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');

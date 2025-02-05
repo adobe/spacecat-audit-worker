@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -17,9 +18,9 @@ import { noopUrlResolver } from '../common/audit.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getIssueRanking, removeTrailingSlash, syncMetatagsSuggestions } from './opportunity-handler.js';
 import { DESCRIPTION, H1, TITLE } from './constants.js';
-import { OpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
-const AUDIT_TYPE = 'meta-tags';
+const auditType = Audit.AUDIT_TYPES.META_TAGS;
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -83,8 +84,8 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditUrl,
     auditData,
     context,
-    OpportunityData,
-    AUDIT_TYPE,
+    createOpportunityData,
+    auditType,
   );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
@@ -119,7 +120,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     }),
     log,
   });
-  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and meta-tags audit type.`);
+  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
 }
 
 export default new AuditBuilder()
