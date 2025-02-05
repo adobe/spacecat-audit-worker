@@ -32,7 +32,7 @@ export async function handler(auditUrl, context, site) {
   log.info(`running rum traffic audit for: ${auditUrl}`);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(auditUrl, context);
+  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: auditUrl,
     domainkey,
