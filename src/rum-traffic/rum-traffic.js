@@ -29,6 +29,7 @@ const DAYS = 30;
 
 export async function handler(auditUrl, context, site) {
   const { log } = context;
+  log.info(`running rum traffic audit for: ${auditUrl}`);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const domainkey = await getRUMDomainkey(auditUrl, context);
