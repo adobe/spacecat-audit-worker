@@ -42,7 +42,7 @@ use(sinonChai);
 use(chaiAsPromised);
 
 describe('Meta Tags', () => {
-  xdescribe('SeoChecks', () => {
+  describe('SeoChecks', () => {
     let seoChecks;
     let logStub;
 
@@ -200,7 +200,7 @@ describe('Meta Tags', () => {
     });
   });
 
-  xdescribe('handler method', () => {
+  describe('handler method', () => {
     let dataAccessStub;
     let s3ClientStub;
     let logStub;
@@ -625,7 +625,7 @@ describe('Meta Tags', () => {
     });
   });
 
-  xdescribe('opportunities handler method', () => {
+  describe('opportunities handler method', () => {
     let logStub;
     let dataAccessStub;
     let auditData;

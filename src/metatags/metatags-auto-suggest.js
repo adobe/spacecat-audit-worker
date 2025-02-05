@@ -123,12 +123,6 @@ export default async function metatagsAutoSuggest(
     healthyTags,
   } = allTags;
   for (const [endpoint, tags] of Object.entries(detectedTags)) {
-    // temporary change for demo, will be reverted
-    /* c8 ignore next 3 */
-    // if (count >= 2) {
-    //   break;
-    // }
-    // count += 1;
     // eslint-disable-next-line no-await-in-loop
     const preSignedUrl = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
     tagsData[endpoint] = {
