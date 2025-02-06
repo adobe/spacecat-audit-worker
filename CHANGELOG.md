@@ -1,3 +1,10 @@
+# [1.52.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.9...v1.52.0) (2025-02-06)
+
+
+### Features
+
+* auto suggest for broken internal links ([#604](https://github.com/adobe/spacecat-audit-worker/issues/604)) ([fd21009](https://github.com/adobe/spacecat-audit-worker/commit/fd21009fd33c56ca1be99c126ded3ffbd3d36ed2))
+
 ## [1.51.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.8...v1.51.9) (2025-02-06)
 
 
