@@ -16,7 +16,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
-/* c8 ignore start */
 const DAYS = 30;
 
 /**
@@ -50,7 +49,6 @@ export async function handler(auditUrl, context, site) {
     return acc;
   }, {});
   log.info(`Traffic data: ${JSON.stringify(trafficData, null, 2)}`);
-  console.log('site id', site.getId());
   const metricsPath = await storeMetrics(
     trafficData,
     { siteId: site.getId(), source: 'rum', metric: 'rum-traffic' },
@@ -63,7 +61,7 @@ export async function handler(auditUrl, context, site) {
     },
   );
 
-  log.info(`Saved ${trafficData.length} urls traffic data for ${auditUrl} into internal S3 storage: ${metricsPath}`);
+  log.info(`Saved ${Object.keys(trafficData).length} urls traffic data for ${auditUrl} into internal S3 storage: ${metricsPath}`);
 
   return {
     auditResult: {
@@ -78,4 +76,3 @@ export default new AuditBuilder()
   .withRunner(handler)
   .withMessageSender(() => true)
   .build();
-/* c8 ignore end */
