@@ -34,6 +34,8 @@ async function filterOutValidBacklinks(backlinks, log) {
       if (error instanceof AbortError) {
         log.warn(`Request to ${url} timed out after ${timeout}ms`);
         return { ok: false, status: 408 };
+      } else {
+        log.warn(`Request to ${url} failed with error: ${error.message}`);
       }
     } finally {
       clearTimeout(id);
