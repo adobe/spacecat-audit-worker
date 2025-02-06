@@ -50,10 +50,10 @@ export async function handler(auditUrl, context, site) {
     return acc;
   }, {});
   log.info(`Traffic data: ${JSON.stringify(trafficData, null, 2)}`);
-  console.log('site id', site.id);
+  console.log('site id', site.getId());
   const metricsPath = await storeMetrics(
     trafficData,
-    { siteId: site.id, source: 'rum', metric: 'rum-traffic' },
+    { siteId: site.getId(), source: 'rum', metric: 'rum-traffic' },
     {
       ...context,
       s3: {
