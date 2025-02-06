@@ -12,7 +12,7 @@
 
 import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
-import { getScrapedDataForSiteId, sleep } from '../support/utils.js';
+import { getScrapedDataForSiteId } from '../support/utils.js';
 
 export const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const { dataAccess, log } = context;
@@ -46,39 +46,47 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   log.info(`Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
 
   const processBatch = async (batch, urlTo) => {
-    try {
-      const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
-      await sleep(1000);
-      const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
+    const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
+    const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
-      if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-        log.error(`No suggestions found for ${urlTo}`);
-        return null;
-      }
-
-      return JSON.parse(response.choices[0].message.content);
-    } catch (error) {
-      log.error(`Batch processing error: ${error.message}`);
+    if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
+      log.error(`No suggestions found for ${urlTo}`);
       return null;
     }
+
+    return JSON.parse(response.choices[0].message.content);
   };
 
-  const processLink = async (link, headerSuggestions) => {
-    log.info(`Processing link: ${link.urlTo}`);
-    const suggestions = [];
-    for (const batch of dataBatches) {
-      // eslint-disable-next-line no-await-in-loop
-      const result = await processBatch(batch, link.urlTo);
-      if (result) {
-        suggestions.push(result);
+  async function processBatches(batches, urlTo) {
+    const results = [];
+    for (const batch of batches) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const result = await processBatch(batch, urlTo);
+        if (result) {
+          results.push(result);
+        }
+      } catch (error) {
+        log.error(`Batch processing error: ${error.message}`);
       }
     }
+    return results;
+  }
+
+  /**
+   * Process a broken internal link to generate URL suggestions
+   * @param {Object} link - The broken internal link object containing url_to and other properties
+   * @param {Object} headerSuggestions - Suggestions generated from header links
+   * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
+   */
+  const processLink = async (link, headerSuggestions) => {
+    log.info(`Processing link: ${link.urlTo}`);
+    const suggestions = await processBatches(dataBatches, link.urlTo);
 
     if (totalBatches > 1) {
       log.info(`Compiling final suggestions for: ${link.urlTo}`);
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.urlTo }, 'broken-backlinks-followup', log);
-        await sleep(1000);
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
 
@@ -100,13 +108,13 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
       }
     }
 
-    log.info(`Suggestions for ${link.urlTo}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
+    log.info(`Suggestions for ${link.urlTo}: ${JSON.stringify(suggestions[0]?.suggestedUrls)}`);
     return {
       ...link,
       urlsSuggested:
-        suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
+        suggestions[0]?.suggestedUrls?.length > 0 ? suggestions[0]?.suggestedUrls : [finalUrl],
       aiRationale:
-        suggestions[0]?.ai_rationale?.length > 0 ? suggestions[0]?.ai_rationale : 'No suitable suggestions found',
+        suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
     };
   };
 

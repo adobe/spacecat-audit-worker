@@ -31,6 +31,7 @@ function transformInternalLinks(links) {
     trafficDomain: link.traffic_domain,
     urlTo: link.url_to,
     urlFrom: link.url_from,
+    title: link.title,
   }));
 }
 
