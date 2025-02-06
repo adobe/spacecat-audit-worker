@@ -34,25 +34,22 @@ async function filterOutValidBacklinks(backlinks, log) {
       if (error instanceof AbortError) {
         log.warn(`Request to ${url} timed out after ${timeout}ms`);
         return { ok: false, status: 408 };
+      } else {
+        log.warn(`Request to ${url} failed with error: ${error.message}`);
       }
     } finally {
       clearTimeout(id);
     }
-    return null;
+    return { ok: false, status: 500 };
   };
 
   const isStillBrokenBacklink = async (backlink) => {
-    try {
-      const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
-      if (!response.ok && response.status !== 404
+    const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
+    if (!response.ok && response.status !== 404
         && response.status >= 400 && response.status < 500) {
-        log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
-      }
-      return !response.ok;
-    } catch (error) {
-      log.error(`Failed to check backlink ${backlink.url_to}: ${error.message}`);
-      return true;
+      log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
     }
+    return !response.ok;
   };
 
   const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
