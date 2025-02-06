@@ -1,3 +1,17 @@
+## [1.51.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.8...v1.51.9) (2025-02-06)
+
+
+### Bug Fixes
+
+* error propagation in handlers ([#632](https://github.com/adobe/spacecat-audit-worker/issues/632)) ([2105c77](https://github.com/adobe/spacecat-audit-worker/commit/2105c7771f397b9f61bc92b27d646835b46360e0))
+
+## [1.51.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.7...v1.51.8) (2025-02-06)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#635](https://github.com/adobe/spacecat-audit-worker/issues/635)) ([4f2e49f](https://github.com/adobe/spacecat-audit-worker/commit/4f2e49f2caf9335ab75260a2ebbf0adc6dc7ec0f))
+
 ## [1.51.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.6...v1.51.7) (2025-02-04)
 
 
