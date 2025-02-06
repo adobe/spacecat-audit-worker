@@ -12,7 +12,7 @@
 
 import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
-import { getScrapedDataForSiteId, sleep } from '../support/utils.js';
+import { getScrapedDataForSiteId } from '../support/utils.js';
 
 export const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const { dataAccess, log } = context;
@@ -46,39 +46,49 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   log.info(`Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
 
   const processBatch = async (batch, urlTo) => {
-    try {
-      const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
-      await sleep(1000);
-      const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
+    const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
+    // await sleep(1000);
+    const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
-      if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-        log.error(`No suggestions found for ${urlTo}`);
-        return null;
-      }
-
-      return JSON.parse(response.choices[0].message.content);
-    } catch (error) {
-      log.error(`Batch processing error: ${error.message}`);
+    if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
+      log.error(`No suggestions found for ${urlTo}`);
       return null;
     }
+
+    return JSON.parse(response.choices[0].message.content);
   };
 
-  const processLink = async (link, headerSuggestions) => {
-    log.info(`Processing link: ${link.url_to}`);
-    const suggestions = [];
-    for (const batch of dataBatches) {
-      // eslint-disable-next-line no-await-in-loop
-      const result = await processBatch(batch, link.url_to);
-      if (result) {
-        suggestions.push(result);
+  async function processBatches(batches, urlTo) {
+    const results = [];
+    for (const batch of batches) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const result = await processBatch(batch, urlTo);
+        if (result) {
+          results.push(result);
+        }
+      } catch (error) {
+        log.error(`Batch processing error: ${error.message}`);
       }
     }
+    return results;
+  }
 
-    if (totalBatches > 1) {
+  /**
+   * Process a broken internal link to generate URL suggestions
+   * @param {Object} link - The broken internal link object containing url_to and other properties
+   * @param {Object} headerSuggestions - Suggestions generated from header links
+   * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
+   */
+  const processLink = async (link, headerSuggestions, batches, batchesCount) => {
+    log.info(`Processing link: ${link.url_to}`);
+    const suggestions = await processBatches(batches, link.url_to);
+
+    if (batchesCount > 1) {
       log.info(`Compiling final suggestions for: ${link.url_to}`);
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.url_to }, 'broken-backlinks-followup', log);
-        await sleep(1000);
+        // await sleep(1000);
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
 
@@ -137,7 +147,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     const link = auditData.auditResult.brokenInternalLinks[index];
     const headerSuggestions = headerSuggestionsResults[index];
     // eslint-disable-next-line no-await-in-loop
-    const updatedLink = await processLink(link, headerSuggestions);
+    const updatedLink = await processLink(link, headerSuggestions, dataBatches, totalBatches);
     updatedInternalLinks.push(updatedLink);
   }
 
