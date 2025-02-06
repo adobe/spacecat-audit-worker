@@ -17,7 +17,7 @@ import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 
-const auditType = Audit.AUDIT_TYPES.NOT_FOUND;
+const auditType = Audit.AUDIT_TYPES[404];
 const PAGEVIEW_THRESHOLD = 100;
 
 export function filter404Data(data) {

@@ -28,7 +28,7 @@ use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 
-const auditType = Audit.auditTypeS.CWV;
+const auditType = Audit.AUDIT_TYPES.CWV;
 const baseURL = 'https://spacecat.com';
 const auditUrl = 'www.spacecat.com';
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {

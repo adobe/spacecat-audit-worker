@@ -15,7 +15,6 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getRUMDomainkey } from '../support/utils.js';
 import s3Client from '../support/s3-client.js';
@@ -23,7 +22,6 @@ import { wwwUrlResolver } from '../common/audit.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
-const auditType = Audit.AUDIT_TYPES.HIGH_ORGANIC_LOW_CTR;
 const DAYS = 7;
 export const MAX_OPPORTUNITIES = 10;
 /**
@@ -40,7 +38,7 @@ const EXPIRY_IN_DAYS = 7 * 24 * 60 * 60;
 const OPPTY_QUERIES = [
   'rageclick',
   'high-inorganic-high-bounce-rate',
-  auditType,
+  'high-organic-low-ctr',
 ];
 
 function getS3PathPrefix(url, site) {
@@ -201,7 +199,7 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   await wrappedFunction({}, context);
   log.info(`s3 client added to the context: ${context.s3Client}`);
 
-  const highOrganicLowCtrOpportunities = opportunites.filter((oppty) => oppty.type === auditType)
+  const highOrganicLowCtrOpportunities = opportunites.filter((oppty) => oppty.type === 'high-organic-low-ctr')
     .map((oppty) => {
       const { pageViews, trackedPageKPIValue, trackedKPISiteAverage } = oppty;
       const opportunityImpact = Math.floor(pageViews
@@ -272,13 +270,13 @@ function processRageClickOpportunities(opportunities) {
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const opportunity = auditData.auditResult.experimentationOpportunities
-    .filter((oppty) => oppty.type === auditType && oppty.recommendations);
+    .filter((oppty) => oppty.type === 'high-organic-low-ctr' && oppty.recommendations);
   await Promise.all(opportunity.map(async (oppty) => convertToOpportunity(
     auditUrl,
     auditData,
     context,
     createOpportunityData,
-    auditType,
+    'high-organic-low-ctr',
     oppty,
   )));
 }
@@ -306,7 +304,7 @@ export async function handler(auditUrl, context, site) {
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   await processHighOrganicLowCtrOpportunities(experimentationOpportunities, context, site);
   await processRageClickOpportunities(experimentationOpportunities);
-  log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
+  log.info(`Found ${experimentationOpportunities.length} experimentation opportunities for ${auditUrl}`);
 
   return {
     auditResult: {
