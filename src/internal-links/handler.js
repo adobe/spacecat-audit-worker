@@ -224,6 +224,5 @@ export async function modifyTitleBasedOnSuggestionsCount(_, auditData, context) 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(internalLinksAuditRunner)
-  .withPostProcessors([generateSuggestionData,
-    convertToOpportunity, modifyTitleBasedOnSuggestionsCount])
+  .withPostProcessors([generateSuggestionData, convertToOpportunity])
   .build();
