@@ -112,6 +112,7 @@ export async function convertToOppty(auditUrl, auditData, context, site) {
     opportunity,
     newData: auditData.auditResult.cwv,
     buildKey,
+    isFixed: () => false,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CODE_CHANGE',

@@ -12,7 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError } from '@adobe/spacecat-shared-http-utils';
-import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
+import { getRUMDomainkey, getRUMUrl, isFixedURL } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -151,6 +151,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     opportunity,
     newData: auditData?.auditResult?.brokenInternalLinks,
     buildKey,
+    isFixed: isFixedURL,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',

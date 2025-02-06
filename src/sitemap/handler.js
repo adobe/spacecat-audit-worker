@@ -17,7 +17,7 @@ import {
   extractDomainAndProtocol,
   getBaseUrlPagesFromSitemapContents,
   getSitemapUrlsFromSitemapIndex,
-  getUrlWithoutPath,
+  getUrlWithoutPath, isFixedURL,
   toggleWWW,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -574,6 +574,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     opportunity,
     newData: auditData.suggestions,
     buildKey,
+    isFixed: isFixedURL,
     mapNewSuggestion: (issue) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',

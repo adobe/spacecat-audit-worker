@@ -10,40 +10,22 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL, getPrompt, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, getPrompt } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { AbortController, AbortError } from '@adobe/fetch';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getScrapedDataForSiteId, sleep } from '../support/utils.js';
-
-const TIMEOUT = 3000;
+import {
+  getScrapedDataForSiteId,
+  isFixedURL,
+  sleep,
+  fetchWithTimeout, TIMEOUT,
+} from '../support/utils.js';
 
 async function filterOutValidBacklinks(backlinks, log) {
-  const fetchWithTimeout = async (url, timeout) => {
-    const controller = new AbortController();
-    const { signal } = controller;
-    const id = setTimeout(() => controller.abort(), timeout);
-
-    try {
-      const response = await fetch(url, { signal });
-      clearTimeout(id);
-      return response;
-    } catch (error) {
-      if (error instanceof AbortError) {
-        log.warn(`Request to ${url} timed out after ${timeout}ms`);
-        return { ok: false, status: 408 };
-      }
-    } finally {
-      clearTimeout(id);
-    }
-    return null;
-  };
-
   const isStillBrokenBacklink = async (backlink) => {
     try {
-      const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
+      const response = await fetchWithTimeout(backlink.url_to, TIMEOUT, log);
       if (!response.ok && response.status !== 404
         && response.status >= 400 && response.status < 500) {
         log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
@@ -272,6 +254,7 @@ export const convertToOpportunity = async (auditUrl, auditData, context) => {
     opportunity,
     newData: auditData.auditResult.brokenBacklinks,
     buildKey,
+    isFixed: isFixedURL,
     mapNewSuggestion: (backlink) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',

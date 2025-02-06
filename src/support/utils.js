@@ -22,10 +22,11 @@ import URI from 'urijs';
 import { JSDOM } from 'jsdom';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { AbortController, AbortError } from '@adobe/fetch';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 
 URI.preventInvalidHostname = true;
-
+export const TIMEOUT = 3000;
 // weekly pageview threshold to eliminate urls with lack of samples
 
 export async function getRUMUrl(url) {
@@ -296,6 +297,36 @@ export const getScrapedDataForSiteId = async (site, context) => {
     headerLinks,
     siteData: extractedData.filter(Boolean),
   };
+};
+
+export const fetchWithTimeout = async (url, timeout, log = console) => {
+  const controller = new AbortController();
+  const { signal } = controller;
+  const id = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, { signal });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    if (error instanceof AbortError) {
+      log.warn(`Request to ${url} timed out after ${timeout}ms`);
+      return { ok: false, status: 408 };
+    }
+  } finally {
+    clearTimeout(id);
+  }
+  return null;
+};
+
+export const isFixedURL = async (backlink) => {
+  try {
+    const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
+    return response.ok;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (e) {
+    return false;
+  }
 };
 
 export async function sleep(ms) {
