@@ -299,10 +299,10 @@ export const getScrapedDataForSiteId = async (site, context) => {
   };
 };
 
-export const fetchWithTimeout = async (url, timeout = TIMEOUT, log = console, options = {}) => {
+export const fetchWithTimeout = async (url, log = console, options = {}) => {
   const controller = new AbortController();
   const { signal } = controller;
-  const id = setTimeout(() => controller.abort(), timeout);
+  const id = setTimeout(() => controller.abort(), TIMEOUT);
 
   try {
     const response = await fetch(url, { signal, ...options });
@@ -310,7 +310,7 @@ export const fetchWithTimeout = async (url, timeout = TIMEOUT, log = console, op
     return response;
   } catch (error) {
     if (error instanceof AbortError) {
-      log.warn(`Request to ${url} timed out after ${timeout}ms`);
+      log.warn(`Request to ${url} timed out after ${TIMEOUT}ms`);
       return { ok: false, status: 408 };
     }
   } finally {
