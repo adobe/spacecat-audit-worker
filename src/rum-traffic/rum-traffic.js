@@ -53,7 +53,13 @@ export async function handler(auditUrl, context, site) {
   const metricsPath = await storeMetrics(
     trafficData,
     { siteId: site.id, source: 'rum', metric: 'rum-traffic' },
-    context,
+    {
+      ...context,
+      s3: {
+        s3Client: context.s3Client,
+        s3BucketName: process.env.S3_IMPORTER_BUCKET_NAME,
+      },
+    },
   );
 
   log.info(`Saved ${trafficData.length} urls traffic data for ${auditUrl} into internal S3 storage: ${metricsPath}`);
