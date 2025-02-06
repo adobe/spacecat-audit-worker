@@ -13,7 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError } from '@adobe/spacecat-shared-http-utils';
 import {
-  fetchWithTimeout, getRUMDomainkey, getRUMUrl, TIMEOUT,
+  fetchWithTimeout, getRUMDomainkey, getRUMUrl,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
@@ -24,7 +24,7 @@ const AUDIT_TYPE = 'broken-internal-links';
 
 export const isFixedSuggestion = async (suggestion) => {
   try {
-    const response = await fetchWithTimeout(suggestion?.data?.url_to, TIMEOUT, console, { redirect: 'follow' });
+    const response = await fetchWithTimeout(suggestion?.data?.url_to, console, { redirect: 'follow' });
     return response.ok;
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (e) {

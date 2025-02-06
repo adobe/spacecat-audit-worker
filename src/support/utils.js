@@ -299,7 +299,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   };
 };
 
-export const fetchWithTimeout = async (url, timeout, log = console, options = {}) => {
+export const fetchWithTimeout = async (url, timeout = TIMEOUT, log = console, options = {}) => {
   const controller = new AbortController();
   const { signal } = controller;
   const id = setTimeout(() => controller.abort(), timeout);

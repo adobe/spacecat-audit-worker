@@ -18,12 +18,12 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   getScrapedDataForSiteId,
   sleep,
-  fetchWithTimeout, TIMEOUT,
+  fetchWithTimeout,
 } from '../support/utils.js';
 
 export const isFixedSuggestion = async (suggestion) => {
   try {
-    const response = await fetchWithTimeout(suggestion?.data?.url_to, TIMEOUT, console, { redirect: 'follow' });
+    const response = await fetchWithTimeout(suggestion?.data?.url_to, console, { redirect: 'follow' });
     return response.ok;
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (e) {
@@ -33,7 +33,7 @@ export const isFixedSuggestion = async (suggestion) => {
 
 async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
-    const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
+    const response = await fetchWithTimeout(backlink.url_to);
     if (!response.ok && response.status !== 404
         && response.status >= 400 && response.status < 500) {
       log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);

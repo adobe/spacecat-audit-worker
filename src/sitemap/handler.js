@@ -17,7 +17,7 @@ import {
   extractDomainAndProtocol, fetchWithTimeout,
   getBaseUrlPagesFromSitemapContents,
   getSitemapUrlsFromSitemapIndex,
-  getUrlWithoutPath, TIMEOUT,
+  getUrlWithoutPath,
   toggleWWW,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -44,7 +44,7 @@ const VALID_MIME_TYPES = Object.freeze([
 
 export const isFixedSuggestion = async (suggestion) => {
   try {
-    const response = await fetchWithTimeout(suggestion?.data?.pageUrl, TIMEOUT, console, { redirect: 'manual' });
+    const response = await fetchWithTimeout(suggestion?.data?.pageUrl, console, { redirect: 'manual' });
     return response.ok;
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (e) {
