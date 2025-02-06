@@ -80,11 +80,11 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
    * @param {Object} headerSuggestions - Suggestions generated from header links
    * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
    */
-  const processLink = async (link, headerSuggestions, batches, batchesCount) => {
+  const processLink = async (link, headerSuggestions) => {
     log.info(`Processing link: ${link.url_to}`);
-    const suggestions = await processBatches(batches, link.url_to);
+    const suggestions = await processBatches(dataBatches, link.url_to);
 
-    if (batchesCount > 1) {
+    if (totalBatches > 1) {
       log.info(`Compiling final suggestions for: ${link.url_to}`);
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.url_to }, 'broken-backlinks-followup', log);
@@ -147,7 +147,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     const link = auditData.auditResult.brokenInternalLinks[index];
     const headerSuggestions = headerSuggestionsResults[index];
     // eslint-disable-next-line no-await-in-loop
-    const updatedLink = await processLink(link, headerSuggestions, dataBatches, totalBatches);
+    const updatedLink = await processLink(link, headerSuggestions);
     updatedInternalLinks.push(updatedLink);
   }
 
