@@ -147,7 +147,7 @@ export class Audit {
 
       return ok();
     } catch (e) {
-      throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`);
+      throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`, { cause: e });
     }
   }
 }

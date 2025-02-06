@@ -257,7 +257,7 @@ export async function filterValidUrls(urls) {
       acc.notOk.push({
         url: result.url,
         statusCode: result.statusCode,
-        ...(result.finalUrl && { suggestedFix: result.finalUrl }),
+        ...(result.finalUrl && { urls_suggested: result.finalUrl }),
       });
     }
     return acc;
@@ -495,7 +495,7 @@ export function getPagesWithIssues(auditData) {
       sitemapUrl,
       pageUrl: page.url,
       statusCode: page.statusCode ?? 500,
-      ...(page.suggestedFix && { suggestedFix: page.suggestedFix }),
+      ...(page.urls_suggested && { urls_suggested: page.urls_suggested }),
     }));
   });
 }
@@ -521,8 +521,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
     .filter(Boolean)
     .map((issue) => ({
       ...issue,
-      recommendedAction: issue.suggestedFix
-        ? `use this url instead: ${issue.suggestedFix}`
+      recommendedAction: issue.urls_suggested
+        ? `use this url instead: ${issue.urls_suggested}`
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 

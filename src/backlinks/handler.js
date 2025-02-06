@@ -33,17 +33,12 @@ export const isFixedSuggestion = async (suggestion) => {
 
 async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
-    try {
-      const response = await fetchWithTimeout(backlink.url_to, TIMEOUT, log);
-      if (!response.ok && response.status !== 404
+    const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
+    if (!response.ok && response.status !== 404
         && response.status >= 400 && response.status < 500) {
-        log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
-      }
-      return !response.ok;
-    } catch (error) {
-      log.error(`Failed to check backlink ${backlink.url_to}: ${error.message}`);
-      return true;
+      log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
     }
+    return !response.ok;
   };
 
   const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
