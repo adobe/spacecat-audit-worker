@@ -32,7 +32,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
   const { Opportunity } = dataAccess;
   let opportunity;
 
-  if (auditType !== Audit.AUDIT_TYPES.HIGH_ORGANIC_LOW_CTR) {
+  if (auditType !== 'high-organic-low-ctr') {
     try {
       // eslint-disable-next-line max-len
       const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, Oppty.STATUSES.NEW);
@@ -58,7 +58,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         data: opportunityInstance.data,
       };
 
-      if (auditType === Audit.AUDIT_TYPES.HIGH_ORGANIC_LOW_CTR) {
+      if (auditType === 'high-organic-low-ctr') {
         opportunityData.status = Oppty.STATUSES.NEW;
         const opportunities = await Opportunity.allBySiteId(auditData.siteId);
 
