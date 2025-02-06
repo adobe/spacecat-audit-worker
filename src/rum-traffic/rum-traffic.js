@@ -57,7 +57,7 @@ export async function handler(auditUrl, context, site) {
       ...context,
       s3: {
         s3Client: context.s3Client,
-        s3BucketName: process.env.S3_IMPORTER_BUCKET_NAME,
+        s3Bucket: process.env.S3_IMPORTER_BUCKET_NAME,
       },
     },
   );
