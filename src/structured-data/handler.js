@@ -11,12 +11,14 @@
  */
 
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { isArray, getPrompt } from '@adobe/spacecat-shared-utils';
+import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { promises as fs } from 'fs';
 import * as cheerio from 'cheerio';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
+import { getTopPagesForSiteId } from '../canonical/handler.js';
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -69,38 +71,6 @@ export async function processStructuredData(baseURL, context, pages) {
     },
   ]; */
 
-  return [
-    {
-      inspectionUrl: 'https://www.wilson.com/en-us/product/rf-01-future-3-tennis-racket-bundle',
-      indexStatusResult: {
-        verdict: 'PASS',
-        lastCrawlTime: '2025-01-29T08:30:18Z',
-      },
-      richResults: {
-        verdict: 'FAIL',
-        detectedItemTypes: [
-          'Product',
-        ],
-        detectedIssues: [
-          {
-            richResultType: 'Product',
-            items: [
-              {
-                name: 'Missing item',
-                issues: [
-                  {
-                    issueMessage: 'Either "offers", "review", or "aggregateRating" should be specified',
-                    severity: 'ERROR',
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
-    },
-  ];
-
   // eslint-disable-next-line no-unreachable
   let google;
   try {
@@ -111,7 +81,7 @@ export async function processStructuredData(baseURL, context, pages) {
   }
 
   // TODO: Hardcode for development
-  const urlInspectionResult = pages.map(async (page) => {
+  const urlInspectionResult = pages.map(async ({ url: page }) => {
     try {
       const { inspectionResult } = await google.urlInspect(page);
       log.info(`Successfully inspected URL: ${page}`);
@@ -246,18 +216,25 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 }
 
 export async function structuredDataHandler(baseURL, context, site) {
-  const { log } = context;
+  const { log, dataAccess } = context;
   const startTime = process.hrtime();
 
   const siteId = site.getId();
 
-  const structuredDataURLs = await site.getConfig().getIncludedURLs('structured-data');
-  if (structuredDataURLs && isArray(structuredDataURLs) && structuredDataURLs.length === 0) {
-    log.error(`No product detail pages found for site ID: ${siteId}`);
-    throw new Error(`No product detail pages found for site: ${baseURL}`);
+  // TODO: Replace error throws with audit object and success = false
+
+  let topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+  if (topPages.length === 0) {
+    log.error(`No top pages for site ID ${siteId} found, ending audit.`);
+    throw new Error(`No top pages for site ID ${siteId} found, ending audit.`);
   }
 
-  const auditResult = await processStructuredData(baseURL, context, structuredDataURLs);
+  // For development only take 10, but find some that have issues
+  topPages = topPages.slice(0, 10);
+
+  log.info('Found top pages', JSON.stringify(topPages));
+
+  const auditResult = await processStructuredData(baseURL, context, topPages);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
@@ -271,7 +248,14 @@ export async function structuredDataHandler(baseURL, context, site) {
   };
 }
 
-export async function generateSuggestionsData(finalUrl, auditData, context) {
+async function getScrapeForPage(path, context, site) {
+  const { log, s3Client } = context;
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const prefix = `scrapes/${site.getId()}${path}/scrape.json`;
+  return getObjectFromKey(s3Client, bucketName, prefix, log);
+}
+
+export async function generateSuggestionsData(finalUrl, auditData, context, site) {
   const { log } = context;
 
   console.info('called generateSuggestionsData', finalUrl, JSON.stringify(auditData));
@@ -298,9 +282,18 @@ export async function generateSuggestionsData(finalUrl, auditData, context) {
   for (const auditResult of results) {
     log.info(`Create suggestion for URL ${auditResult.inspectionUrl}`);
 
-    // TODO: Get crawled version of website from S3 if available.
-    //   Issue: Content scraper strips out all head and script tags which contain structured data.
-    //   Issue: There is no defined dependency between audit and scrape. So scrape might not exist.
+    // Issue: There is no defined dependency between audit and scrape. So scrape might not exist.
+
+    // Get crawled version of website from S3 if available.
+    let scrapeResult;
+    const { pathname } = new URL(auditResult.inspectionUrl);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      scrapeResult = await getScrapeForPage(pathname, context, site);
+      log.info('Scrape result:', JSON.stringify(scrapeResult));
+    } catch (e) {
+      log.error(`Could not find scrape for ${pathname}`, e);
+    }
 
     // eslint-disable-next-line no-await-in-loop
     const crawledPage = await fs.readFile('./src/structured-data/crawled-page-example.html', { encoding: 'utf8' });
