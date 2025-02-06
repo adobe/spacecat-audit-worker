@@ -17,10 +17,19 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   getScrapedDataForSiteId,
-  isFixedURL,
   sleep,
   fetchWithTimeout, TIMEOUT,
 } from '../support/utils.js';
+
+export const isFixedSuggestion = async (suggestion) => {
+  try {
+    const response = await fetchWithTimeout(suggestion?.data?.url_to, TIMEOUT, console, { redirect: 'follow' });
+    return response.ok;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (e) {
+    return false;
+  }
+};
 
 async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
@@ -254,7 +263,7 @@ export const convertToOpportunity = async (auditUrl, auditData, context) => {
     opportunity,
     newData: auditData.auditResult.brokenBacklinks,
     buildKey,
-    isFixed: isFixedURL,
+    isFixed: isFixedSuggestion,
     mapNewSuggestion: (backlink) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',

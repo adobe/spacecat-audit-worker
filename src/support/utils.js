@@ -299,13 +299,13 @@ export const getScrapedDataForSiteId = async (site, context) => {
   };
 };
 
-export const fetchWithTimeout = async (url, timeout, log = console) => {
+export const fetchWithTimeout = async (url, timeout, log = console, options = {}) => {
   const controller = new AbortController();
   const { signal } = controller;
   const id = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const response = await fetch(url, { signal });
+    const response = await fetch(url, { signal, ...options });
     clearTimeout(id);
     return response;
   } catch (error) {
@@ -316,17 +316,7 @@ export const fetchWithTimeout = async (url, timeout, log = console) => {
   } finally {
     clearTimeout(id);
   }
-  return null;
-};
-
-export const isFixedURL = async (backlink) => {
-  try {
-    const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
-    return response.ok;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  } catch (e) {
-    return false;
-  }
+  return { ok: false };
 };
 
 export async function sleep(ms) {

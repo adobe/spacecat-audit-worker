@@ -14,10 +14,10 @@ import {
   composeAuditURL, isArray, prependSchema, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import {
-  extractDomainAndProtocol,
+  extractDomainAndProtocol, fetchWithTimeout,
   getBaseUrlPagesFromSitemapContents,
   getSitemapUrlsFromSitemapIndex,
-  getUrlWithoutPath, isFixedURL,
+  getUrlWithoutPath, TIMEOUT,
   toggleWWW,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -41,6 +41,16 @@ const VALID_MIME_TYPES = Object.freeze([
   'text/html',
   'text/plain',
 ]);
+
+export const isFixedSuggestion = async (suggestion) => {
+  try {
+    const response = await fetchWithTimeout(suggestion?.data?.pageUrl, TIMEOUT, console, { redirect: 'manual' });
+    return response.ok;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (e) {
+    return false;
+  }
+};
 
 /**
  * Fetches the content from a given URL.
@@ -574,7 +584,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     opportunity,
     newData: auditData.suggestions,
     buildKey,
-    isFixed: isFixedURL,
+    isFixed: isFixedSuggestion,
     mapNewSuggestion: (issue) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',
