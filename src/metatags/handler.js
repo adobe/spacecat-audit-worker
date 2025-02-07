@@ -75,13 +75,13 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
   };
   const queryResults = await rumAPIClient.query('traffic-acquisition', options);
   const rumTrafficDataMap = preprocessRumData(queryResults, log);
-  log.warn(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(0, 20)}`);
-  log.warn(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(20, 40)}`);
-  log.warn(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(40, 60)}`);
-  log.warn(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(60, 80)}`);
-  log.warn(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(80, 100)}`);
-  log.warn(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(100, 120)}`);
-  log.warn(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(120)}`);
+  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(0, 20))}`);
+  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(20, 40))}`);
+  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(40, 60))}`);
+  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(60, 80))}`);
+  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(80, 100))}`);
+  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(100, 120))}`);
+  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(120))}`);
   let projectedTraffic = 0;
   Object.entries(detectedTags).forEach(([endpoint, tags]) => {
     const organicTraffic = getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
