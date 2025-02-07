@@ -9,11 +9,11 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+/* eslint-disable no-continue, no-await-in-loop */
 
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
-import { promises as fs } from 'fs';
 import * as cheerio from 'cheerio';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -39,12 +39,12 @@ export async function processStructuredData(baseURL, context, pages) {
   const { log } = context;
 
   // Hardcode for development
-  /* return [
+  return [
     {
-      inspectionUrl: 'https://www.revolt.tv/article/2021-09-02/101801/lil-nas-x-drops-pregnancy-photos-before-birth-of-debut-album-montero',
+      inspectionUrl: 'https://www.revolt.tv/article/2021-08-05/47692/fetty-waps-daughters-cause-of-death-revealed',
       indexStatusResult: {
         verdict: 'PASS',
-        lastCrawlTime: '2025-01-29T08:30:18Z',
+        lastCrawlTime: '2025-02-07T04:18:27Z',
       },
       richResults: {
         verdict: 'FAIL',
@@ -69,7 +69,7 @@ export async function processStructuredData(baseURL, context, pages) {
         ],
       },
     },
-  ]; */
+  ];
 
   // eslint-disable-next-line no-unreachable
   let google;
@@ -99,7 +99,7 @@ export async function processStructuredData(baseURL, context, pages) {
             detectedItemTypes.push(item?.richResultType);
             const filteredItems = item?.items?.filter(
               (issueItem) => issueItem?.issues?.some(
-                (issue) => issue?.severity === 'ERROR',
+                (issue) => issue?.severity === 'ERROR', // Only show issues with severity ERROR, lower issues can be enabled later
               ),
             )?.map((issueItem) => ({
               name: issueItem?.name,
@@ -223,16 +223,11 @@ export async function structuredDataHandler(baseURL, context, site) {
 
   // TODO: Replace error throws with audit object and success = false
 
-  let topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+  const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
   if (topPages.length === 0) {
     log.error(`No top pages for site ID ${siteId} found, ending audit.`);
     throw new Error(`No top pages for site ID ${siteId} found, ending audit.`);
   }
-
-  // For development only take 10, but find some that have issues
-  topPages = topPages.slice(0, 10);
-
-  log.info('Found top pages', JSON.stringify(topPages));
 
   const auditResult = await processStructuredData(baseURL, context, topPages);
 
@@ -253,6 +248,10 @@ async function getScrapeForPage(path, context, site) {
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const prefix = `scrapes/${site.getId()}${path}/scrape.json`;
   return getObjectFromKey(s3Client, bucketName, prefix, log);
+}
+
+function stripHtmlTags(html) {
+  return html.replace(/<\/?[^>]+(>|$)/g, '');
 }
 
 export async function generateSuggestionsData(finalUrl, auditData, context, site) {
@@ -282,76 +281,45 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
   for (const auditResult of results) {
     log.info(`Create suggestion for URL ${auditResult.inspectionUrl}`);
 
-    // Issue: There is no defined dependency between audit and scrape. So scrape might not exist.
+    // TODO (SITES-28718): Handle case where scrape might not exist
 
-    // Get crawled version of website from S3 if available.
+    // Get scraped version of website from S3 if available.
     let scrapeResult;
     const { pathname } = new URL(auditResult.inspectionUrl);
     try {
-      // eslint-disable-next-line no-await-in-loop
       scrapeResult = await getScrapeForPage(pathname, context, site);
-      log.info('Scrape result:', JSON.stringify(scrapeResult));
     } catch (e) {
       log.error(`Could not find scrape for ${pathname}`, e);
+      continue;
     }
 
-    // eslint-disable-next-line no-await-in-loop
-    const crawledPage = await fs.readFile('./src/structured-data/crawled-page-example.html', { encoding: 'utf8' });
+    // Try to find structured data from scrape
+    // TODO (SITES-28714): There might be more structured data on the site using different formats
+    const structuredData = scrapeResult?.scrapeResult?.structuredData;
+    if (structuredData.length === 0) {
+      log.error(`No structured data found in scrape result for URL ${auditResult.inspectionUrl}`);
+      continue;
+    }
+    log.info('Found ld+json data:', JSON.stringify(structuredData));
 
-    // Get .plain.html version of page to pass to the LLM, as crawled version is likely too large
-    // TODO: Alternatively we can extract text only from the crawled page and use it instead
     let plainPage;
-    try {
-      // TODO: Properly strip extension
-      // TODO: .plain.html is not available for folder mapped pages, so hardcode for now
-      // eslint-disable-next-line no-await-in-loop
-      // const plainPageResponse = await fetch(`${auditResult.inspectionUrl}.plain.html`);
-      // plainPage = await plainPageResponse.text();
-      // eslint-disable-next-line no-await-in-loop
-      plainPage = await fs.readFile('./src/structured-data/plain-crawled-page-example.html', { encoding: 'utf8' });
-    } catch (e) {
-      log.error(`Could not create suggestion because fetching of plain HTML failed for URL ${auditResult.inspectionUrl}: ${e.message}`);
-      // eslint-disable-next-line no-continue
-      continue;
+    // If plain html version is not available, transform scraped page
+    if (!plainPage) {
+      // Scraper already strips out some HTML tags
+      // Use cheerio to get text from main element only
+      const parsed = cheerio.load(scrapeResult?.scrapeResult?.rawBody);
+      const main = parsed('main').prop('outerHTML');
+      plainPage = stripHtmlTags(main);
     }
 
-    let crawledPageParsed;
-    try {
-      crawledPageParsed = cheerio.load(crawledPage);
+    // ALTERNATIVE: Get .plain.html version of page to pass to the LLM
+    /* try {
+      // .plain.html is not available for folder mapped pages, so this will use the scrape fallback
+      const plainPageResponse = await fetch(`${auditResult.inspectionUrl}.plain.html`);
+      plainPage = stripHtmlTags(await plainPageResponse.text());
     } catch (e) {
-      log.error(`Could not create suggestion because parsing of markup failed for URL ${auditResult.inspectionUrl}: ${e.message}`);
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-
-    // Find all LD-JSON structured data in script tags of crawled page
-    // TODO: There might be more structured data on the site using different formats
-    const ldJsonData = [];
-    try {
-      const ldJsonTags = crawledPageParsed('script[type="application/ld+json"]');
-      log.info(`Found ${ldJsonTags.length} LD-JSON tags on page`);
-
-      if (ldJsonTags.length === 0) {
-        log.error(`No structured data found on page ${auditResult.inspectionUrl}`);
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-
-      ldJsonTags.each((_, tag) => {
-        const jsonData = JSON.parse(crawledPageParsed(tag).html());
-        if (jsonData['@graph']) {
-          // Split individual entities
-          jsonData['@graph'].forEach((entity) => {
-            ldJsonData.push(entity);
-          });
-        } else {
-          ldJsonData.push(jsonData);
-        }
-      });
-    } catch (e) {
-      log.error(`Could not create suggestion because parsing of structured data failed for URL ${auditResult.inspectionUrl}: ${e.message}`);
-    }
-    log.info('Extracted ld+json data:', JSON.stringify(ldJsonData));
+      log.error(`Could not fetch plain HTML for URL ${auditResult.inspectionUrl}`, e);
+    } */
 
     // TODO: Add more mappings based on actual customer issues
     const entityMapping = {
@@ -366,15 +334,13 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
       const entity = entityMapping[issue.richResultType];
       if (!entity) {
         log.error(`Could not find entity mapping for issue of type ${issue.richResultType}`);
-        // eslint-disable-next-line no-continue
         continue;
       }
 
       // Filter structured data relevant to this issue
-      const wrongLdJson = ldJsonData.find((data) => entity === data['@type']);
+      const wrongLdJson = structuredData.find((data) => entity === data['@type']);
       if (!wrongLdJson) {
         log.error(`Could not find structured data for issue of type ${issue.richResultType}`);
-        // eslint-disable-next-line no-continue
         continue;
       }
       log.info('Filtered structured data:', JSON.stringify(wrongLdJson));
@@ -386,18 +352,23 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
         wrong_ld_json: JSON.stringify(wrongLdJson, null, 4),
         website_markup: plainPage,
       };
-
       log.info('Firefall inputs:', JSON.stringify(firefallInputs));
 
       // Get suggestions from Firefall
-      // eslint-disable-next-line no-await-in-loop
-      const requestBody = await getPrompt(firefallInputs, 'structured-data-suggest', log);
-      // eslint-disable-next-line no-await-in-loop
-      const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
+      let response;
+      try {
+        const requestBody = await getPrompt(firefallInputs, 'structured-data-suggest', log);
 
-      if (response.choices?.length === 0 || response.choices[0].finish_reason !== 'stop') {
-        log.error(`Could not create suggestion because Firefall did not return any suggestions for issue of type ${issue.richResultType}`);
-        // eslint-disable-next-line no-continue
+        // TODO: For some reason Firefall does not like
+        // this revolt.tv article and returns a 400 response
+
+        response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
+
+        if (response.choices?.length === 0 || response.choices[0].finish_reason !== 'stop') {
+          throw new Error('No suggestions found');
+        }
+      } catch (e) {
+        log.error(`Could not create suggestion because Firefall did not return any suggestions for issue of type ${issue.richResultType}`, e);
         continue;
       }
 
