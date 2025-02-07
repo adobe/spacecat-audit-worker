@@ -75,6 +75,12 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
   };
   const queryResults = await rumAPIClient.query('traffic-acquisition', options);
   const rumTrafficDataMap = preprocessRumData(queryResults, log);
+  log.info(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(0, 50)}`);
+  log.info(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(50, 100)}`);
+  log.info(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(100, 150)}`);
+  log.info(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(150, 200)}`);
+  log.info(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(200, 250)}`);
+  log.info(`Preprocessed data map: ${Array.from(rumTrafficDataMap.entries()).slice(250, 300)}`);
   let projectedTraffic = 0;
   Object.entries(detectedTags).forEach(([endpoint, tags]) => {
     const organicTraffic = getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
