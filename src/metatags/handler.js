@@ -70,7 +70,7 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
   const options = {
     domain: wwwUrlResolver(site),
     domainkey,
-    interval: 30,
+    interval: 60,
     granularity: 'DAILY',
   };
   const queryResults = await rumAPIClient.query('traffic-acquisition', options);
