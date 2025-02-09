@@ -41,19 +41,28 @@ function extractEndpoint(url) {
 }
 
 // Preprocess RUM data into a map with endpoint as the key
-function preprocessRumData(rumTrafficData) {
-  const dataMap = new Map();
-  rumTrafficData.forEach((item) => {
+function preprocessRumData(rumDataMonthly, rumDataBiMonthly) {
+  const rumDataMapMonthly = new Map();
+  const rumDataMapBiMonthly = new Map();
+  rumDataMonthly.forEach((item) => {
     const endpoint = extractEndpoint(item.url);
-    dataMap.set(endpoint, item);
+    rumDataMapMonthly.set(endpoint, item);
   });
-  return dataMap;
+  rumDataBiMonthly.forEach((item) => {
+    const endpoint = extractEndpoint(item.url);
+    rumDataMapBiMonthly.set(endpoint, item);
+  });
+  return {
+    rumDataMapMonthly,
+    rumDataMapBiMonthly,
+  };
 }
 
 // Get organic traffic for a given endpoint
-function getOrganicTrafficForEndpoint(endpoint, dataMap, log) {
+function getOrganicTrafficForEndpoint(endpoint, rumDataMapMonthly, rumDataMapBiMonthly, log) {
   // remove trailing slash from endpoint, if present, and then find in the datamap
-  const target = dataMap.get(endpoint.replace(/\/$/, ''));
+  const target = rumDataMapMonthly.get(endpoint.replace(/\/$/, ''))
+    || rumDataMapBiMonthly.get(endpoint.replace(/\/$/, ''));
   if (!target) {
     log.warn(`No rum data found for ${endpoint}.`);
     return 0;
@@ -70,23 +79,28 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
   const options = {
     domain: wwwUrlResolver(site),
     domainkey,
-    interval: 90,
+    interval: 30,
     granularity: 'DAILY',
   };
-  const queryResults = await rumAPIClient.query('traffic-acquisition', options);
-  const rumTrafficDataMap = preprocessRumData(queryResults, log);
-  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(0, 20))}`);
-  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(20, 40))}`);
-  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(40, 60))}`);
-  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(60, 80))}`);
-  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(80, 100))}`);
-  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(100, 120))}`);
-  log.warn(`Preprocessed data map: ${JSON.stringify(Array.from(rumTrafficDataMap.entries()).slice(120))}`);
+  const queryResultsMonthly = await rumAPIClient.query('traffic-acquisition', options);
+  const queryResultsBiMonthly = await rumAPIClient.query('traffic-acquisition', {
+    ...options,
+    interval: 60,
+  });
+  const { rumDataMapMonthly, rumDataMapBiMonthly } = preprocessRumData(
+    queryResultsMonthly,
+    queryResultsBiMonthly,
+  );
   let projectedTraffic = 0;
   log.warn(`Detected Tags: ${JSON.stringify(detectedTags)}`);
   Object.entries(detectedTags).forEach(([endpoint, tags]) => {
     log.warn(`Checking for endpoint: ${endpoint} !!`);
-    const organicTraffic = getOrganicTrafficForEndpoint(endpoint, rumTrafficDataMap, log);
+    const organicTraffic = getOrganicTrafficForEndpoint(
+      endpoint,
+      rumDataMapMonthly,
+      rumDataMapBiMonthly,
+      log,
+    );
     log.warn(`traffic for endpoint: ${endpoint} : ${organicTraffic} !!`);
     Object.values((tags)).forEach((tagIssueDetails) => {
       // Multiplying by 1% for missing tags, and 0.5% for other tag issues
