@@ -1,3 +1,164 @@
+## [1.52.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.3...v1.52.4) (2025-02-09)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#640](https://github.com/adobe/spacecat-audit-worker/issues/640)) ([23e274e](https://github.com/adobe/spacecat-audit-worker/commit/23e274e8293479d83c9d4975ff6bd9d98092bc0a))
+
+## [1.52.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.2...v1.52.3) (2025-02-08)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#639](https://github.com/adobe/spacecat-audit-worker/issues/639)) ([d1ebf81](https://github.com/adobe/spacecat-audit-worker/commit/d1ebf8182f032b4b42b0e3b655a37477b2f802f9))
+
+## [1.52.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.1...v1.52.2) (2025-02-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.20.1 ([#638](https://github.com/adobe/spacecat-audit-worker/issues/638)) ([01d2ce6](https://github.com/adobe/spacecat-audit-worker/commit/01d2ce62106fd09ac9cfb619c984c82955ea7fcd))
+
+## [1.52.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.0...v1.52.1) (2025-02-06)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#636](https://github.com/adobe/spacecat-audit-worker/issues/636)) ([3af4d33](https://github.com/adobe/spacecat-audit-worker/commit/3af4d333b544fc61e22f297ffae96a26df591478))
+
+# [1.52.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.9...v1.52.0) (2025-02-06)
+
+
+### Features
+
+* auto suggest for broken internal links ([#604](https://github.com/adobe/spacecat-audit-worker/issues/604)) ([fd21009](https://github.com/adobe/spacecat-audit-worker/commit/fd21009fd33c56ca1be99c126ded3ffbd3d36ed2))
+
+## [1.51.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.8...v1.51.9) (2025-02-06)
+
+
+### Bug Fixes
+
+* error propagation in handlers ([#632](https://github.com/adobe/spacecat-audit-worker/issues/632)) ([2105c77](https://github.com/adobe/spacecat-audit-worker/commit/2105c7771f397b9f61bc92b27d646835b46360e0))
+
+## [1.51.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.7...v1.51.8) (2025-02-06)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#635](https://github.com/adobe/spacecat-audit-worker/issues/635)) ([4f2e49f](https://github.com/adobe/spacecat-audit-worker/commit/4f2e49f2caf9335ab75260a2ebbf0adc6dc7ec0f))
+
+## [1.51.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.6...v1.51.7) (2025-02-04)
+
+
+### Bug Fixes
+
+* use urls_suggested as the suggested fix for sitemap redirects ([#629](https://github.com/adobe/spacecat-audit-worker/issues/629)) ([3ef076b](https://github.com/adobe/spacecat-audit-worker/commit/3ef076b3dc1ceaeeefcd5cdf620b46acb6fc1785))
+
+## [1.51.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.5...v1.51.6) (2025-02-04)
+
+
+### Bug Fixes
+
+* user agent for sitemap ([#628](https://github.com/adobe/spacecat-audit-worker/issues/628)) ([70eced9](https://github.com/adobe/spacecat-audit-worker/commit/70eced926df663cc01bdf31d4bea79e47e81a446))
+
+## [1.51.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.4...v1.51.5) (2025-02-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.29.0 ([32186c2](https://github.com/adobe/spacecat-audit-worker/commit/32186c2a9fe661073f67518385c80cf1e7618c39))
+
+## [1.51.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.3...v1.51.4) (2025-02-02)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#623](https://github.com/adobe/spacecat-audit-worker/issues/623)) ([48a97c3](https://github.com/adobe/spacecat-audit-worker/commit/48a97c35f14ec8e0f69100a645afe782207f46c9))
+
+## [1.51.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.2...v1.51.3) (2025-02-02)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#622](https://github.com/adobe/spacecat-audit-worker/issues/622)) ([71810dc](https://github.com/adobe/spacecat-audit-worker/commit/71810dc1ef8bc9c64627e96ab97ae5ffa8151b28))
+
+## [1.51.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.1...v1.51.2) (2025-01-31)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.19.1 ([#621](https://github.com/adobe/spacecat-audit-worker/issues/621)) ([bfcb1e1](https://github.com/adobe/spacecat-audit-worker/commit/bfcb1e182dc7c2660a65f4a4a7ab37898b3f9fb8))
+
+## [1.51.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.51.0...v1.51.1) (2025-01-31)
+
+
+### Bug Fixes
+
+* minor fixes to forms opportunity ([#614](https://github.com/adobe/spacecat-audit-worker/issues/614)) ([4f408b6](https://github.com/adobe/spacecat-audit-worker/commit/4f408b6c9ea9fdeb8f021fdb99ce10e360cc668a))
+
+# [1.51.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.50.1...v1.51.0) (2025-01-30)
+
+
+### Features
+
+* sitemap demo ([#619](https://github.com/adobe/spacecat-audit-worker/issues/619)) ([b2382f1](https://github.com/adobe/spacecat-audit-worker/commit/b2382f1e6093a22f49bb5a4344c535186039b208))
+
+## [1.50.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.50.0...v1.50.1) (2025-01-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.19.0 ([#616](https://github.com/adobe/spacecat-audit-worker/issues/616)) ([ed603e7](https://github.com/adobe/spacecat-audit-worker/commit/ed603e78c00ce5a88e28547b2dd412641fccc0ca))
+
+# [1.50.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.49.1...v1.50.0) (2025-01-30)
+
+
+### Features
+
+* sitemap auto-suggest ([#597](https://github.com/adobe/spacecat-audit-worker/issues/597)) ([8d5aaca](https://github.com/adobe/spacecat-audit-worker/commit/8d5aacad394053299752201c52081ac37fa5d5ff))
+
+## [1.49.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.49.0...v1.49.1) (2025-01-30)
+
+
+### Bug Fixes
+
+* **deps:** bump rum-api-client to 2.18.9 ([#615](https://github.com/adobe/spacecat-audit-worker/issues/615)) ([80522c4](https://github.com/adobe/spacecat-audit-worker/commit/80522c4cdd7fcd104077467db8e8ebf5ed76fa67))
+
+# [1.49.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.6...v1.49.0) (2025-01-30)
+
+
+### Features
+
+* add high-form-views-low-conversions opportunity ([#612](https://github.com/adobe/spacecat-audit-worker/issues/612)) ([fd47509](https://github.com/adobe/spacecat-audit-worker/commit/fd475091490a73246c348833888e505b5219dfdf))
+
+## [1.48.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.5...v1.48.6) (2025-01-28)
+
+
+### Bug Fixes
+
+* sites-28312 removed duplicates field ([#593](https://github.com/adobe/spacecat-audit-worker/issues/593)) ([185036a](https://github.com/adobe/spacecat-audit-worker/commit/185036ab0786bc2d14aa1f42b19f1a0f848c2d25))
+
+## [1.48.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.4...v1.48.5) (2025-01-26)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#603](https://github.com/adobe/spacecat-audit-worker/issues/603)) ([6108ba9](https://github.com/adobe/spacecat-audit-worker/commit/6108ba9af103928fcd15ddddc6dd05b80977fe74))
+
+## [1.48.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.3...v1.48.4) (2025-01-25)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#606](https://github.com/adobe/spacecat-audit-worker/issues/606)) ([bd7094e](https://github.com/adobe/spacecat-audit-worker/commit/bd7094e33a9882796d31926d661b3449f7e64cfe))
+
+## [1.48.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.2...v1.48.3) (2025-01-24)
+
+
+### Bug Fixes
+
+* **deps:** bump rum-api-client to 2.18.8 ([#605](https://github.com/adobe/spacecat-audit-worker/issues/605)) ([73d77f4](https://github.com/adobe/spacecat-audit-worker/commit/73d77f47b4a7906d6db0a23552f3ac09851b9905))
+
 ## [1.48.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.48.1...v1.48.2) (2025-01-23)
 
 

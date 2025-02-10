@@ -59,7 +59,12 @@ const VALID_MIME_TYPES = Object.freeze([
  * @throws {Error} If the fetch operation fails or the response status is not OK.
  */
 export async function fetchContent(targetUrl) {
-  const response = await fetch(targetUrl);
+  const response = await fetch(targetUrl, {
+    method: 'GET',
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    },
+  });
   if (!response.ok) {
     throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
   }
@@ -172,12 +177,46 @@ export async function filterValidUrls(urls) {
 
   const fetchUrl = async (url) => {
     try {
-      const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
+      // use manual redirect to capture the status code
+      const response = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        },
+      });
+
       if (response.status === 200) {
         return { status: OK, url };
-      } else {
-        return { status: NOT_OK, url, statusCode: response.status };
       }
+
+      // if it's a redirect, follow it to get the final URL
+      if (response.status === 301 || response.status === 302) {
+        const redirectUrl = response.headers.get('location');
+        const finalUrl = new URL(redirectUrl, url).href;
+        try {
+          const redirectResponse = await fetch(finalUrl, {
+            method: 'HEAD',
+            redirect: 'follow',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            },
+          });
+          return {
+            status: NOT_OK,
+            url,
+            statusCode: response.status,
+            finalUrl: redirectResponse.url,
+          };
+        } catch {
+          // if following redirect fails, return just the status code
+          return {
+            status: NOT_OK, url, statusCode: response.status, finalUrl,
+          };
+        }
+      }
+
+      return { status: NOT_OK, url, statusCode: response.status };
     } catch {
       return { status: NOT_OK, url };
     }
@@ -208,7 +247,11 @@ export async function filterValidUrls(urls) {
     if (result.status === OK) {
       acc.ok.push(result.url);
     } else {
-      acc.notOk.push({ url: result.url, statusCode: result.statusCode });
+      acc.notOk.push({
+        url: result.url,
+        statusCode: result.statusCode,
+        ...(result.finalUrl && { urls_suggested: result.finalUrl }),
+      });
     }
     return acc;
   }, { ok: [], notOk: [] });
@@ -445,6 +488,7 @@ export function getPagesWithIssues(auditData) {
       sitemapUrl,
       pageUrl: page.url,
       statusCode: page.statusCode ?? 500,
+      ...(page.urls_suggested && { urls_suggested: page.urls_suggested }),
     }));
   });
 }
@@ -453,10 +497,11 @@ export function getPagesWithIssues(auditData) {
  *
  * @param auditUrl - The URL of the audit
  * @param auditData - The audit data containing the audit result and additional details.
- * @param log - Logger object for logging information.
+ * @param context - The context object containing the logger
  * @returns {Array} An array of suggestions or error objects.
  */
-export function classifySuggestions(auditUrl, auditData, log) {
+export function generateSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
   log.info(`Classifying suggestions for ${JSON.stringify(auditData)}`);
 
   const { success, reasons } = auditData.auditResult;
@@ -465,18 +510,28 @@ export function classifySuggestions(auditUrl, auditData, log) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
-  const suggestions = [...response, ...pagesWithIssues].filter(Boolean);
+  const suggestions = [...response, ...pagesWithIssues]
+    .filter(Boolean)
+    .map((issue) => ({
+      ...issue,
+      recommendedAction: issue.urls_suggested
+        ? `use this url instead: ${issue.urls_suggested}`
+        : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+    }));
 
   log.info(`Classified suggestions: ${JSON.stringify(suggestions)}`);
-  return suggestions;
+  return {
+    ...auditData,
+    suggestions,
+  };
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
-  const classifiedSuggestions = classifySuggestions(auditUrl, auditData, log);
-  if (!classifiedSuggestions.length) {
-    // If there are no issues, no need to create an opportunity
+  // suggestions are in auditData.suggestions
+  if (!auditData.suggestions || !auditData.suggestions.length) {
+    log.info('No sitemap issues found, skipping opportunity creation');
     return;
   }
 
@@ -492,12 +547,12 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
   await syncSuggestions({
     opportunity,
-    newData: classifiedSuggestions,
+    newData: auditData.suggestions,
     buildKey,
     mapNewSuggestion: (issue) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',
-      rank: 0, // how can we rank this?
+      rank: 0,
       data: issue,
     }),
     log,
@@ -507,6 +562,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
-    .then((url) => (getUrlWithoutPath(prependSchema(url)))))
-  .withPostProcessors([opportunityAndSuggestions])
+    .then((url) => getUrlWithoutPath(prependSchema(url))))
+  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();

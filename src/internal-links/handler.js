@@ -18,6 +18,7 @@ import { noopUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { generateSuggestionData } from './suggestions-generator.js';
 
 const INTERVAL = 30; // days
 const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
@@ -118,9 +119,12 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
       type: 'CONTENT_UPDATE',
       rank: entry.traffic_domain,
       data: {
-        ...entry,
-        /* code commented until implementation of suggested links. TODO: implement suggestions, https://jira.corp.adobe.com/browse/SITES-26545 */
-        // suggestedLink: 'some suggestion here',
+        title: entry.title,
+        url_from: entry.url_from,
+        url_to: entry.url_to,
+        urls_suggested: entry.urls_suggested || [],
+        ai_rationale: entry.ai_rationale || '',
+        traffic_domain: entry.traffic_domain,
       },
     }),
     log,
@@ -130,5 +134,5 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(internalLinksAuditRunner)
-  .withPostProcessors([opportunityAndSuggestions])
+  .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
   .build();

@@ -82,7 +82,7 @@ describe('Backlinks Tests', function () {
 
     nock('https://www.foo.com')
       .get('/redirects-throws-error')
-      .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
+      .replyWithError('connection refused');
 
     nock('https://foo.com')
       .get('/returns-429')
@@ -210,7 +210,7 @@ describe('Backlinks Tests', function () {
     const errorMessage = 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 404';
     nock(site.getBaseURL())
       .get(/.*/)
-      .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
+      .replyWithError('connection refused');
 
     const auditResult = await brokenBacklinksAuditRunner(auditUrl, context, site);
 
