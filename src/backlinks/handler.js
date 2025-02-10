@@ -82,7 +82,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
     log.error(`Broken Backlinks audit for ${siteId} with url ${auditUrl} failed with error: ${e.message}`, e);
     return {
       fullAuditRef: auditUrl,
-      finalUrl: site.getBaseURL(),
+      finalUrl: auditUrl,
       auditResult: {
         error: `Broken Backlinks audit for ${siteId} with url ${auditUrl} failed with error: ${e.message}`,
         success: false,
