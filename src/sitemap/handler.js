@@ -177,7 +177,6 @@ export async function filterValidUrls(urls) {
 
   const fetchUrl = async (url) => {
     try {
-      // use manual redirect to capture the status code
       const response = await fetch(url, {
         method: 'HEAD',
         redirect: 'manual',
@@ -209,7 +208,6 @@ export async function filterValidUrls(urls) {
             finalUrl: redirectResponse.url,
           };
         } catch {
-          // if following redirect fails, return just the status code
           return {
             status: NOT_OK,
             url,
@@ -221,7 +219,7 @@ export async function filterValidUrls(urls) {
 
       return { status: NOT_OK, url, statusCode: response.status };
     } catch {
-      return { status: NOT_OK, url };
+      return { status: OK, url };
     }
   };
 
@@ -248,7 +246,7 @@ export async function filterValidUrls(urls) {
 
   return filtered.reduce(
     (acc, result) => {
-      if (result.status === OK) {
+      if (result.status === OK || !result.statusCode) {
         acc.ok.push(result.url);
       } else {
         acc.notOk.push({
