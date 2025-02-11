@@ -101,8 +101,8 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
         log.info(`Final suggestion for ${link.urlTo}:, ${JSON.stringify(answer)}`, answer);
         return {
           ...link,
-          urls_suggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
-          ai_rationale: answer.ai_rationale?.length > 0 ? answer.ai_rationale : 'No suitable suggestions found',
+          urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
+          aiRationale: answer.ai_rationale?.length > 0 ? answer.ai_rationale : 'No suitable suggestions found',
         };
       } catch (error) {
         log.error(`Final suggestion error for ${link.urlTo}: ${error.message}`);
@@ -113,9 +113,9 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     log.info(`Suggestions for ${link.urlTo}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
     return {
       ...link,
-      urls_suggested:
+      urlsSuggested:
         suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
-      ai_rationale:
+      aiRationale:
         suggestions[0]?.ai_rationale?.length > 0 ? suggestions[0]?.ai_rationale : 'No suitable suggestions found',
     };
   };
