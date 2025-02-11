@@ -168,13 +168,13 @@ export async function checkSitemap(sitemapUrl) {
  * @async
  * @param {string[]} urls - An array of URLs to check.
  * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[]}>} -
- * A promise that resolves to a dict of URLs categorized by their status.
+ * A promise that resolves to a dict of URLs categorized by status.
  */
 export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
   const NETWORK_ERROR = 2;
-  const batchSize = 40;
+  const batchSize = 50;
 
   const fetchUrl = async (url) => {
     try {
@@ -509,7 +509,7 @@ export function getPagesWithIssues(auditData) {
       type: 'url',
       sitemapUrl,
       pageUrl: page.url,
-      statusCode: page.statusCode ?? 500,
+      statusCode: page.statusCode ?? 0, // default to 0 if not present
       ...(page.urls_suggested && { urls_suggested: page.urls_suggested }),
     }));
   });
@@ -573,8 +573,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
       type: AUDIT_TYPE,
       origin: 'AUTOMATION',
       title: 'Sitemap issues found',
-      runbook:
-        'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
+      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
       guidance: {
         steps: [
           'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',

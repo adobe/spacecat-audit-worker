@@ -765,7 +765,7 @@ describe('Sitemap Audit', () => {
           sitemap
         ][0].url,
       );
-      expect(response.suggestions[0].statusCode).to.equal(500);
+      expect(response.suggestions[0].statusCode).to.equal(0);
       expect(response).to.deep.equal({
         ...auditPartiallySuccessfulOnePageNetworkError,
         suggestions: [
@@ -775,7 +775,7 @@ describe('Sitemap Audit', () => {
             pageUrl:
               auditPartiallySuccessfulOnePageNetworkError.auditResult.details
                 .issues[sitemap][0].url,
-            statusCode: 500,
+            statusCode: 0,
             recommendedAction:
               'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
           },
