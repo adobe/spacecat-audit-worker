@@ -99,15 +99,26 @@ describe('data-access', () => {
       };
     });
 
-    it('should remove outdated suggestions and add new ones', async () => {
+    it('should remove unfix outdated suggestions keep fixed ones and add the  new ones', async () => {
       const suggestionsData = [{ key: '1' }, { key: '2' }];
       const existingSuggestions = [
         {
-          id: '1', data: suggestionsData[0], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[0]),
+          id: '1',
+          data: suggestionsData[0],
+          remove: sinon.stub(),
+          getData: sinon.stub().returns(suggestionsData[0]),
+          setStatus: (status) => sinon.stub().returns({ ...suggestionsData[0], status }),
+          save: sinon.stub(),
         },
         {
-          id: '2', data: suggestionsData[1], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[1]),
+          id: '2',
+          data: suggestionsData[1],
+          remove: sinon.stub(),
+          getData: sinon.stub().returns(suggestionsData[1]),
+          setStatus: (status) => sinon.stub().returns({ ...suggestionsData[0], status }),
+          save: sinon.stub(),
         }];
+      const isFixed = (suggestion) => suggestion.id === '1';
       const newData = [{ key: '3' }, { key: '4' }];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
@@ -117,6 +128,7 @@ describe('data-access', () => {
         opportunity: mockOpportunity,
         newData,
         buildKey,
+        isFixed,
         mapNewSuggestion,
         log: mockLogger,
       });
@@ -137,6 +149,8 @@ describe('data-access', () => {
           key: '4',
         },
       }]);
+      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(existingSuggestions[1].remove).to.have.been.calledOnce;
       expect(mockLogger.error).to.not.have.been.called;
     });
 
@@ -166,6 +180,7 @@ describe('data-access', () => {
         opportunity: mockOpportunity,
         newData,
         buildKey,
+        isFixed: () => false,
         mapNewSuggestion,
         log: mockLogger,
       });
@@ -193,6 +208,7 @@ describe('data-access', () => {
         await syncSuggestions({
           opportunity: mockOpportunity,
           newData,
+          isFixed: () => false,
           buildKey,
           mapNewSuggestion,
           log: mockLogger,
@@ -222,6 +238,7 @@ describe('data-access', () => {
       await expect(syncSuggestions({
         opportunity: mockOpportunity,
         newData,
+        isFixed: () => false,
         buildKey,
         mapNewSuggestion,
         log: mockLogger,

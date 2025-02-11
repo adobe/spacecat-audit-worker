@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { isObject } from '@adobe/spacecat-shared-utils';
+import { Suggestion } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Fetches site data based on the given base URL. If no site is found for the given
@@ -53,16 +54,23 @@ export async function syncSuggestions({
   opportunity,
   newData,
   buildKey,
+  isFixed,
   mapNewSuggestion,
   log,
 }) {
   const newDataKeys = new Set(newData.map(buildKey));
   const existingSuggestions = await opportunity.getSuggestions();
-  // Remove outdated suggestions
   await Promise.all(
     existingSuggestions
       .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
-      .map((suggestion) => suggestion.remove()),
+      .map(async (suggestion) => {
+        const isSuggestionFixed = await isFixed(suggestion);
+        if (isSuggestionFixed) {
+          suggestion.setStatus(Suggestion.STATUSES.FiXED);
+          return suggestion.save();
+        }
+        return suggestion.remove();
+      }),
   );
 
   // Update existing suggestions

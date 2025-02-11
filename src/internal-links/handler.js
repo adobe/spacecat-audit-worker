@@ -12,7 +12,9 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError } from '@adobe/spacecat-shared-http-utils';
-import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
+import {
+  fetchWithTimeout, getRUMDomainkey, getRUMUrl,
+} from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -20,6 +22,16 @@ import { generateSuggestionData } from './suggestions-generator.js';
 
 const INTERVAL = 30; // days
 const AUDIT_TYPE = 'broken-internal-links';
+
+export const isFixedSuggestion = async (suggestion) => {
+  try {
+    const response = await fetchWithTimeout(suggestion?.data?.url_to, console, { redirect: 'follow' });
+    return response.ok;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (e) {
+    return false;
+  }
+};
 
 /**
  * Classifies links into priority categories based on views
@@ -158,6 +170,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     opportunity,
     newData: auditData?.auditResult?.brokenInternalLinks,
     buildKey,
+    isFixed: isFixedSuggestion,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
