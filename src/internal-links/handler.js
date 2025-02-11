@@ -12,7 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError } from '@adobe/spacecat-shared-http-utils';
-import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
+import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -63,16 +63,14 @@ function calculatePriority(links) {
  * and environment variables.
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
-export async function internalLinksAuditRunner(auditUrl, context, site) {
+export async function internalLinksAuditRunner(auditUrl, context) {
   const { log } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context, auditUrl, log);
 
   const options = {
     domain: finalUrl,
-    domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
   };

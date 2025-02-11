@@ -63,16 +63,6 @@ describe('Broken internal links audit', () => {
     })
     .build();
 
-  beforeEach('setup', () => {
-    nock('https://secretsmanager.us-east-1.amazonaws.com/')
-      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/example_com/ci')
-      .reply(200, {
-        SecretString: JSON.stringify({
-          RUM_DOMAIN_KEY: 'test-key',
-        }),
-      });
-  });
-
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
@@ -86,7 +76,6 @@ describe('Broken internal links audit', () => {
     );
     expect(context.rumApiClient.query).calledWith('404-internal-links', {
       domain: 'www.example.com',
-      domainkey: 'test-key',
       interval: 30,
       granularity: 'hourly',
     });
