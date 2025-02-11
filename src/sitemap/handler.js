@@ -174,7 +174,7 @@ export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
   const NETWORK_ERROR = 2;
-  const batchSize = 50;
+  const batchSize = 40;
 
   const fetchUrl = async (url) => {
     try {
