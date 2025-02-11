@@ -89,8 +89,8 @@ describe('generateSuggestionData', async function test() {
       auditResult: {
         success: true,
         brokenInternalLinks: [
-          { url_to: 'https://example.com/broken1' },
-          { url_to: 'https://example.com/broken2' },
+          { urlTo: 'https://example.com/broken1' },
+          { urlTo: 'https://example.com/broken2' },
         ],
       },
     };
@@ -155,14 +155,14 @@ describe('generateSuggestionData', async function test() {
     expect(firefallClient.fetchChatCompletion).to.have.been.callCount(4);
     expect(result.auditResult.brokenInternalLinks).to.deep.equal([
       {
-        url_to: 'https://example.com/broken1',
-        urls_suggested: ['https://fix.com'],
-        ai_rationale: 'Rationale',
+        urlTo: 'https://example.com/broken1',
+        urlsSuggested: ['https://fix.com'],
+        aiRationale: 'Rationale',
       },
       {
-        url_to: 'https://example.com/broken2',
-        urls_suggested: ['https://example.com'],
-        ai_rationale: 'No suitable suggestions found',
+        urlTo: 'https://example.com/broken2',
+        urlsSuggested: ['https://example.com'],
+        aiRationale: 'No suitable suggestions found',
       },
     ]);
     expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
@@ -224,12 +224,12 @@ describe('generateSuggestionData', async function test() {
     expect(firefallClient.fetchChatCompletion).to.have.been.callCount(8);
     expect(result.auditResult.brokenInternalLinks).to.deep.equal([
       {
-        url_to: 'https://example.com/broken1',
-        urls_suggested: ['https://fix.com'],
-        ai_rationale: 'Rationale',
+        urlTo: 'https://example.com/broken1',
+        urlsSuggested: ['https://fix.com'],
+        aiRationale: 'Rationale',
       },
       {
-        url_to: 'https://example.com/broken2',
+        urlTo: 'https://example.com/broken2',
       },
     ]);
     expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
@@ -272,12 +272,12 @@ describe('generateSuggestionData', async function test() {
 
     expect(result.auditResult.brokenInternalLinks).to.deep.equal([
       {
-        url_to: 'https://example.com/broken1',
-        urls_suggested: ['https://example.com'],
-        ai_rationale: 'No suitable suggestions found',
+        urlTo: 'https://example.com/broken1',
+        urlsSuggested: ['https://example.com'],
+        aiRationale: 'No suitable suggestions found',
       },
       {
-        url_to: 'https://example.com/broken2',
+        urlTo: 'https://example.com/broken2',
       },
     ]);
     expect(context.log.error).to.have.been.calledWith('Batch processing error: Firefall error');

@@ -80,7 +80,13 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
   log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
 
   const internal404Links = await rumAPIClient.query('404-internal-links', options);
-  const priorityLinks = calculatePriority(internal404Links);
+  const transformedLinks = internal404Links.map((link) => ({
+    urlFrom: link.url_from,
+    urlTo: link.url_to,
+    trafficDomain: link.traffic_domain,
+  }));
+
+  const priorityLinks = calculatePriority(transformedLinks);
   const auditResult = {
     brokenInternalLinks: priorityLinks,
     fullAuditRef: auditUrl,
@@ -145,7 +151,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     throw e;
   }
 
-  const buildKey = (item) => `${item.url_from}-${item.url_to}`;
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
 
   // Sync suggestions
   await syncSuggestions({
@@ -155,14 +161,14 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
-      rank: entry.traffic_domain,
+      rank: entry.trafficDomain,
       data: {
         title: entry.title,
-        url_from: entry.url_from,
-        url_to: entry.url_to,
-        urls_suggested: entry.urls_suggested || [],
-        ai_rationale: entry.ai_rationale || '',
-        traffic_domain: entry.traffic_domain,
+        urlFrom: entry.urlFrom,
+        urlTo: entry.urlTo,
+        urlsSuggested: entry.urlsSuggested || [],
+        aiRationale: entry.aiRationale || '',
+        trafficDomain: entry.trafficDomain,
       },
     }),
     log,
