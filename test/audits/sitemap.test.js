@@ -1107,6 +1107,122 @@ describe('filterValidUrls with redirect handling', () => {
       },
     ]);
   });
+
+  it('should handle network errors and add them to networkErrors array', async () => {
+    const urls = [
+      'https://example.com/network-error',
+      'https://example.com/ok',
+      'https://example.com/another-error',
+    ];
+
+    nock('https://example.com')
+      .head('/network-error')
+      .replyWithError('Network error');
+
+    nock('https://example.com').head('/ok').reply(200);
+
+    nock('https://example.com')
+      .head('/another-error')
+      .replyWithError('DNS error');
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/ok']);
+    expect(result.notOk).to.deep.equal([]);
+    expect(result.networkErrors).to.deep.equal([
+      {
+        url: 'https://example.com/network-error',
+        error: 'NETWORK_ERROR',
+      },
+      {
+        url: 'https://example.com/another-error',
+        error: 'NETWORK_ERROR',
+      },
+    ]);
+  });
+
+  it('should handle mixed responses including network errors, redirects and success', async () => {
+    const urls = [
+      'https://example.com/ok',
+      'https://example.com/redirect',
+      'https://example.com/network-error',
+      'https://example.com/not-found',
+    ];
+
+    nock('https://example.com').head('/ok').reply(200);
+
+    nock('https://example.com')
+      .head('/redirect')
+      .reply(301, '', { Location: 'https://example.com/new-location' });
+
+    nock('https://example.com').head('/new-location').reply(200);
+
+    nock('https://example.com')
+      .head('/network-error')
+      .replyWithError('Network error');
+
+    nock('https://example.com').head('/not-found').reply(404);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/ok']);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect',
+        statusCode: 301,
+        urls_suggested: 'https://example.com/new-location',
+      },
+      {
+        url: 'https://example.com/not-found',
+        statusCode: 404,
+      },
+    ]);
+    expect(result.networkErrors).to.deep.equal([
+      {
+        url: 'https://example.com/network-error',
+        error: 'NETWORK_ERROR',
+      },
+    ]);
+  });
+
+  it('should handle batch processing with network errors', async () => {
+    // Create an array of 60 URLs (exceeds batchSize of 50)
+    const urls = Array.from(
+      { length: 60 },
+      (_, i) => `https://example.com/url${i + 1}`,
+    );
+
+    // Mock responses for all URLs
+    urls.forEach((url, i) => {
+      if (i % 3 === 0) {
+        // Every third URL is a network error
+        nock('https://example.com')
+          .head(`/url${i + 1}`)
+          .replyWithError('Network error');
+      } else if (i % 3 === 1) {
+        // Every other third URL is OK
+        nock('https://example.com')
+          .head(`/url${i + 1}`)
+          .reply(200);
+      } else {
+        // Remaining URLs are not found
+        nock('https://example.com')
+          .head(`/url${i + 1}`)
+          .reply(404);
+      }
+    });
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok.length).to.equal(20); // Only OK URLs
+    expect(result.notOk.length).to.equal(20);
+    expect(result.networkErrors.length).to.equal(20);
+
+    result.networkErrors.forEach((error) => {
+      expect(error).to.have.property('url');
+      expect(error).to.have.property('error', 'NETWORK_ERROR');
+    });
+  });
 });
 
 describe('getPagesWithIssues', () => {
