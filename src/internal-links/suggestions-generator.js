@@ -47,9 +47,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 
   const processBatch = async (batch, urlTo) => {
     const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
-    log.info(`Request body: 50 ${JSON.stringify(requestBody)}`);
     const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
-    log.info(`Response: 52 ${JSON.stringify(response)}`);
     if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
       log.error(`No suggestions found for ${urlTo}`);
       return null;
@@ -88,7 +86,6 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
       log.info(`Compiling final suggestions for: ${link.urlTo}`);
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.urlTo }, 'broken-backlinks-followup', log);
-        log.info(`Final request body: 91 ${JSON.stringify(finalRequestBody)}`);
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
 
@@ -125,10 +122,8 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     try {
       // eslint-disable-next-line no-await-in-loop
       const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: link.urlTo }, 'broken-backlinks', log);
-      log.info(`Final request body: 128 ${JSON.stringify(requestBody)}`);
       // eslint-disable-next-line no-await-in-loop
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
-      log.info(`Response: 131 ${JSON.stringify(response)}`);
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
         log.error(`No header suggestions for ${link.urlTo}`);
         headerSuggestionsResults.push(null);

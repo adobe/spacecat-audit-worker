@@ -96,8 +96,6 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
     },
   };
 
-  log.info('broken-internal-links: Audit result: ', JSON.stringify(auditResult));
-
   return {
     auditResult,
     fullAuditRef: auditUrl,
