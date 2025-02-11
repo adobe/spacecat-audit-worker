@@ -83,7 +83,6 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
   const transformedLinks = internal404Links.map((link) => ({
     urlFrom: link.url_from,
     urlTo: link.url_to,
-    title: link.title,
     trafficDomain: link.traffic_domain,
   }));
 
