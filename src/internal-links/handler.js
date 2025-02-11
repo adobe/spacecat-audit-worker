@@ -80,7 +80,14 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
   log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
 
   const internal404Links = await rumAPIClient.query('404-internal-links', options);
-  const priorityLinks = calculatePriority(internal404Links);
+  const transformedLinks = internal404Links.map((link) => ({
+    urlFrom: link.url_from,
+    urlTo: link.url_to,
+    title: link.title,
+    trafficDomain: link.traffic_domain,
+  }));
+
+  const priorityLinks = calculatePriority(transformedLinks);
   const auditResult = {
     brokenInternalLinks: priorityLinks,
     fullAuditRef: auditUrl,
@@ -89,6 +96,8 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
       interval: INTERVAL,
     },
   };
+
+  log.info('broken-internal-links: Audit result: ', JSON.stringify(auditResult));
 
   return {
     auditResult,
