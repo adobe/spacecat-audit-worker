@@ -43,6 +43,7 @@ async function getPresignedUrl(s3Client, log, scrapedData) {
 
 export default async function metatagsAutoSuggest(auditUrl, auditData, context, site) {
   const { s3Client, dataAccess, log } = context;
+  log.info('Processing Meta-tags auto-suggest');
   const {
     detectedTags,
     extractedTags,
