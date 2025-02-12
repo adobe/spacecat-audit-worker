@@ -67,7 +67,7 @@ export default async function metatagsAutoSuggest(allTags, context, site) {
   log.info('Generated presigned URLs');
   const requestBody = {
     healthyTags,
-    detectedTags,
+    tagsData,
     site: {
       baseUrl: site.getBaseURL(),
     },
