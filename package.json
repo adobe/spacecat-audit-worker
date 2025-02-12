@@ -82,8 +82,7 @@
     "@aws-sdk/s3-request-presigner": "3.735.0",
     "diff": "7.0.0",
     "jsdom": "26.0.0",
-    "urijs": "1.19.11",
-    "axios": "1.7.9"
+    "urijs": "1.19.11"
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "2.0.8",

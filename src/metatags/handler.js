@@ -72,7 +72,6 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
     fullAuditRef: 'na',
     finalUrl: baseURL,
   };
-  log.info(`SEO checks completed for ${extractedTagsCount} tags`);
   return {
     auditResult,
     fullAuditRef: baseURL,

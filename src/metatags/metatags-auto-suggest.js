@@ -15,7 +15,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { isObject } from '@adobe/spacecat-shared-utils';
 
-const EXPIRY_IN_DAYS = 60 * 60;
+const EXPIRY_IN_SECONDS = 60 * 60;
 
 /**
  * Returns the pre-signed url for a AWS S3 object with a defined expiry.
@@ -33,7 +33,7 @@ async function getPresignedUrl(s3Client, log, scrapedData) {
       Key: scrapedData.s3key,
     });
     return await getSignedUrl(s3Client, command, {
-      expiresIn: EXPIRY_IN_DAYS,
+      expiresIn: EXPIRY_IN_SECONDS,
     });
   } catch (error) {
     log.error(`Error generating presigned URL for ${scrapedData.s3key}:`, error);
@@ -43,7 +43,6 @@ async function getPresignedUrl(s3Client, log, scrapedData) {
 
 export default async function metatagsAutoSuggest(allTags, context, site) {
   const { s3Client, dataAccess, log } = context;
-  log.info('Processing Meta-tags auto-suggest');
   const {
     detectedTags,
     extractedTags,

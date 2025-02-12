@@ -118,7 +118,6 @@ export class Audit {
         auditResult,
         fullAuditRef,
       };
-      log.info(`Runner response data: ${JSON.stringify(auditData)}`);
       const audit = await this.persister(auditData, context);
       auditContext.finalUrl = finalUrl;
       auditContext.fullAuditRef = fullAuditRef;
