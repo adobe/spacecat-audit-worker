@@ -23,7 +23,11 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
     log.error(`No Scraped tags found in S3 ${key} object`);
     return null;
   }
-  const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
+  let pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
+  // handling for homepage
+  if (pageUrl === '') {
+    pageUrl = '/';
+  }
   return {
     [pageUrl]: {
       title: object.scrapeResult.tags.title,
@@ -57,7 +61,7 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   // Perform SEO checks
   const seoChecks = new SeoChecks(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
-    seoChecks.performChecks(pageUrl || '/', pageTags);
+    seoChecks.performChecks(pageUrl, pageTags);
   }
   seoChecks.finalChecks();
   const allTags = {
