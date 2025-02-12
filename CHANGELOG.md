@@ -1,3 +1,10 @@
+## [1.52.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.8...v1.52.9) (2025-02-12)
+
+
+### Bug Fixes
+
+* missing statuscodes in the sitemap audit ([#644](https://github.com/adobe/spacecat-audit-worker/issues/644)) ([d6b5015](https://github.com/adobe/spacecat-audit-worker/commit/d6b50156b951362ee91bf62715e5f082f849d215))
+
 ## [1.52.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.7...v1.52.8) (2025-02-12)
 
 
