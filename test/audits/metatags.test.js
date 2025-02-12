@@ -15,7 +15,6 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import esmock from 'esmock';
-import axios from 'axios';
 import sinonChai from 'sinon-chai';
 
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
@@ -769,16 +768,16 @@ describe('Meta Tags', () => {
   describe('metatagsAutoSuggest', () => {
     let metatagsAutoSuggest;
     let context;
-    let site;
-    let allTags;
-    let baseUrl;
     let s3Client;
     let dataAccess;
     let log;
     let Configuration;
     let ImsClientStubs;
-    let axiosPostStub;
     let getPresignedUrlStub;
+    let genvarClientStub;
+    let auditUrl;
+    let siteStub;
+    let auditData;
 
     beforeEach(async () => {
       s3Client = {};
@@ -796,36 +795,58 @@ describe('Meta Tags', () => {
       ImsClientStubs = {
         getServiceAccessToken: sinon.stub().resolves({ access_token: 'test-token' }),
       };
+      genvarClientStub = {
+        generateSuggestions: sinon.stub().resolves({
+          '/about-us': {
+            h1: {
+              aiRationale: 'The H1 tag is catchy and broad...',
+              aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
+            },
+          },
+          '/add-on-and-refresh': {
+            description: {
+              aiRationale: 'The description emphasizes the brand\'s core values...',
+              aiSuggestion: 'Elevate your home with Lovesac\'s customizable add-ons...',
+            },
+            h1: {
+              aiRationale: 'The H1 tag is catchy and directly addresses the user\'s intent...',
+              aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons',
+            },
+          },
+        }),
+      };
       context = {
         s3Client,
         dataAccess,
         log,
         env: {
-          GENVAR_ENDPOINT: 'https://genvar.endpoint',
-          FIREFALL_IMS_ORG_ID: 'test-org-id',
+          GENVARHOST: 'https://genvar.endpoint',
+          GENVAR_IMS_ORG_ID: 'test-org-id',
         },
       };
-      site = 'test-site';
-      allTags = {
-        detectedTags: {
-          '/about-us': { h1: {} },
-          '/add-on-and-refresh': { description: {}, h1: {} },
+      auditData = {
+        allTags: {
+          detectedTags: {
+            '/about-us': { h1: {} },
+            '/add-on-and-refresh': { description: {}, h1: {} },
+          },
+          extractedTags: {
+            '/about-us': { s3key: 'about-us-key' },
+            '/add-on-and-refresh': { s3key: 'add-on-key' },
+          },
+          healthyTags: {},
         },
-        extractedTags: {
-          '/about-us': { s3key: 'about-us-key' },
-          '/add-on-and-refresh': { s3key: 'add-on-key' },
-        },
-        healthyTags: {},
       };
-      baseUrl = 'https://example.com';
-
-      axiosPostStub = sinon.stub(axios, 'post');
-      axiosPostStub.resolves({ data: {} });
 
       metatagsAutoSuggest = await esmock('../../src/metatags/metatags-auto-suggest.js', {
         '@adobe/spacecat-shared-ims-client': { ImsClient: { createFrom: () => ImsClientStubs } },
+        '@adobe/spacecat-shared-gpt-client': { GenvarClient: { createFrom: () => genvarClientStub } },
         '@aws-sdk/s3-request-presigner': { getSignedUrl: getPresignedUrlStub },
       });
+      auditUrl = 'www.audit-url.com';
+      siteStub = {
+        getBaseURL: sinon.stub().returns('https://example.com'),
+      };
     });
 
     afterEach(() => {
@@ -836,14 +857,14 @@ describe('Meta Tags', () => {
       Configuration.findLatest.resolves({
         isHandlerEnabledForSite: sinon.stub().returns(false),
       });
-      await metatagsAutoSuggest(context, site, allTags, baseUrl);
-      expect(log.warn.calledWith('Metatags auto-suggest is disabled for site')).to.be.true;
+      await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
+      expect(log.info.calledWith('Metatags auto-suggest is disabled for site')).to.be.true;
     });
 
     it('should handle missing Genvar endpoint', async () => {
       context.env.GENVAR_ENDPOINT = '';
       try {
-        await metatagsAutoSuggest(context, site, allTags, baseUrl);
+        await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
       } catch (error) {
         expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
       }
@@ -853,103 +874,61 @@ describe('Meta Tags', () => {
       context.env.FIREFALL_IMS_ORG_ID = '';
 
       try {
-        await metatagsAutoSuggest(context, site, allTags, baseUrl);
+        await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
       } catch (error) {
         expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
       }
     });
 
-    it('should generate presigned URLs and poll job status', async () => {
-      axiosPostStub.onFirstCall().resolves({ data: { jobId: 'de1e8d6c9526446a9e8d6c9526946a3e' }, status: 200 });
-      axiosPostStub.onSecondCall().resolves({
-        data: {
-          jobId: 'de1e8d6c9526446a9e8d6c9526946a3e',
-          status: 'running',
-        },
-        status: 200,
-      });
-      axiosPostStub.onThirdCall().resolves({
-        data: {
-          status: 'completed',
-          result: {
-            '/about-us': {
-              h1: {
-                aiRationale: 'The H1 tag is catchy and broad...',
-                aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
-              },
-            },
-            '/add-on-and-refresh': {
-              description: {
-                aiRationale: 'The description emphasizes the brand\'s core values...',
-                aiSuggestion: 'Elevate your home with Lovesac\'s customizable add-ons...',
-              },
-              h1: {
-                aiRationale: 'The H1 tag is catchy and directly addresses the user\'s intent...',
-                aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons',
-              },
-            },
+    it('should generate presigned URLs and call Genvar API', async () => {
+      genvarClientStub.generateSuggestions.resolves({
+        '/about-us': {
+          h1: {
+            aiRationale: 'The H1 tag is catchy and broad...',
+            aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
           },
         },
-        status: 200,
+        '/add-on-and-refresh': {
+          description: {
+            aiRationale: 'The description emphasizes the brand\'s core values...',
+            aiSuggestion: 'Elevate your home with Lovesac\'s customizable add-ons...',
+          },
+          h1: {
+            aiRationale: 'The H1 tag is catchy and directly addresses the user\'s intent...',
+            aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons',
+          },
+        },
       });
 
-      await metatagsAutoSuggest(context, site, allTags, baseUrl);
+      const response = await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
 
       expect(log.info.calledWith('Generated presigned URLs')).to.be.true;
-      expect(log.info.calledWith('Genvar API response: {"jobId":"de1e8d6c9526446a9e8d6c9526946a3e"}')).to.be.true;
-      expect(log.info.calledWith('Job completed successfully.')).to.be.true;
-      expect(allTags.detectedTags['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
-      expect(allTags.detectedTags['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
-      expect(allTags.detectedTags['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
+      expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+      expect(response.auditResult.updatedDetectedTags['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
+      expect(response.auditResult.updatedDetectedTags['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
+      expect(response.auditResult.updatedDetectedTags['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
     }).timeout(15000);
 
     it('should log an error and throw if the Genvar API call fails', async () => {
-      axiosPostStub.resolves({ status: 500, statusText: 'Internal Server Error' });
+      genvarClientStub.generateSuggestions.throws(new Error('Genvar API failed'));
       let err;
       try {
-        await metatagsAutoSuggest(context, site, allTags, baseUrl);
+        await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
       } catch (error) {
         err = error;
       }
-      expect(err.message).to.equal('Meta-tags auto suggest call failed: 500 with Internal Server Error and response body: undefined');
+      expect(err.message).to.equal('Genvar API failed');
     });
 
-    it('should throw error when poll api returns job failed status', async () => {
-      axiosPostStub.onFirstCall().resolves({ data: { jobId: 'de1e8d6c9526446a9e8d6c9526946a3e' }, status: 200 });
-      axiosPostStub.onSecondCall().resolves({
-        data: {
-          jobId: 'de1e8d6c9526446a9e8d6c9526946a3e',
-          status: 'failed',
-          error: 'test error',
-        },
-        status: 200,
-      });
+    it('should log an error and throw if the Genvar API response is invalid', async () => {
+      genvarClientStub.generateSuggestions.resolves(5);
       let err;
       try {
-        await metatagsAutoSuggest(context, site, allTags, baseUrl);
+        await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
       } catch (error) {
         err = error;
       }
-      expect(err.message).to.equal('Job de1e8d6c9526446a9e8d6c9526946a3e failed with error test error');
-    });
-
-    it('should throw error when poll api returns unknown job status', async () => {
-      axiosPostStub.onFirstCall().resolves({ data: { jobId: 'de1e8d6c9526446a9e8d6c9526946a3e' }, status: 200 });
-      axiosPostStub.onSecondCall().resolves({
-        data: {
-          jobId: 'de1e8d6c9526446a9e8d6c9526946a3e',
-          status: 'blocked',
-          error: 'test error',
-        },
-        status: 200,
-      });
-      let err;
-      try {
-        await metatagsAutoSuggest(context, site, allTags, baseUrl);
-      } catch (error) {
-        err = error;
-      }
-      expect(err.message).to.equal('Unknown metatags poll job status: blocked');
+      expect(err.message).to.equal('Invalid response received from Genvar API: 5');
     });
   });
 });

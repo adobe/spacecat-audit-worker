@@ -10,14 +10,22 @@
  * governing permissions and limitations under the License.
  */
 
-import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
-import axios from 'axios';
+import { GenvarClient } from '@adobe/spacecat-shared-gpt-client';
+import { isObject } from '@adobe/spacecat-shared-utils';
 
-const EXPIRY_IN_DAYS = 7 * 24 * 60 * 60;
-const MAX_POLL_RETRIES = 20;
+const EXPIRY_IN_DAYS = 60 * 60;
 
+/**
+ * Returns the pre-signed url for a AWS S3 object with a defined expiry.
+ * This url will be consumed by Genvar API to access the scraped content.
+ * Pre-signed URl format: https://{bucket}.s3.{region}.amazonaws.com/{object-path}?{query-params}
+ * @param s3Client
+ * @param log
+ * @param scrapedData
+ * @returns {Promise<string>} Presigned url
+ */
 async function getPresignedUrl(s3Client, log, scrapedData) {
   try {
     const command = new GetObjectCommand({
@@ -33,95 +41,26 @@ async function getPresignedUrl(s3Client, log, scrapedData) {
   }
 }
 
-/**
- * Poll an endpoint for a job's status.
- * @param {string} genvarEndpoint - The Genvar endpoint to poll.
- * @param {string} jobId - The job ID to send in the request.
- * @param serviceToken Auth token to call Genvar API
- * @param orgId organization id
- * @param log Logger object
- * @param attempt Retry attempt counter
- * @param {number} delay - The delay between polls in milliseconds.
- * @returns {Promise<object>} - Resolves with the result field when the job is completed.
- * @throws {Error} - Throws an error if the job fails.
- */
-async function pollJobStatus(
-  genvarEndpoint,
-  jobId,
-  serviceToken,
-  orgId,
-  log,
-  attempt = 0,
-  delay = 5000,
-) {
-  try {
-    /* c8 ignore next 3 */
-    if (attempt > MAX_POLL_RETRIES) {
-      throw new Error('Max attempts exhausted to poll Genvar for Metatags.');
-    }
-    const response = await axios.post(
-      genvarEndpoint,
-      { jobId },
-      {
-        headers: {
-          Authorization: `Bearer ${serviceToken}`,
-          'X-Gw-Ims-Org-Id': orgId,
-        },
-      },
-    );
-    const { status, result } = response.data;
-    log.info(`Genvar Poll API response: ${JSON.stringify(response.data)}`);
-    // Handle different statuses
-    if (status === 'failed') {
-      throw new Error(`Job ${jobId} failed with error ${response.data.error}`);
-    } else if (status === 'completed') {
-      log.info('Job completed successfully.');
-      return result;
-    } else if (status === 'running') {
-      log.info('Job is still running, polling again...');
-      await new Promise((resolve) => {
-        setTimeout(resolve, delay);
-      });
-      return await pollJobStatus(genvarEndpoint, jobId, serviceToken, orgId, log, attempt + 1);
-    } else {
-      throw new Error(`Unknown metatags poll job status: ${status}`);
-    }
-  } catch (error) {
-    log.error('Error polling job status:', error.message);
-    throw error;
-  }
-}
-
-export default async function metatagsAutoSuggest(
-  context,
-  site,
-  allTags,
-  baseUrl,
-) {
+export default async function metatagsAutoSuggest(auditUrl, auditData, context, site) {
   const { s3Client, dataAccess, log } = context;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
-    log.warn('Metatags auto-suggest is disabled for site');
-    return;
-  }
-  log.info('Generating suggestions for Meta-tags using Genvar.');
-  if (!context.env.GENVAR_ENDPOINT || !context.env.FIREFALL_IMS_ORG_ID) {
-    log.error('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
-    throw new Error('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
-  }
-  const genvarEndpoint = `${context.env.GENVAR_ENDPOINT}/web/aem-genai-variations-appbuilder/metatags`;
-  const orgId = context.env.FIREFALL_IMS_ORG_ID;
-  const imsClient = ImsClient.createFrom(context);
-  const serviceToken = (await imsClient.getServiceAccessToken()).access_token;
-  const requestBody = {};
-  const tagsData = {};
-  // let count = 0; // temporary change to limit firefall api calls
   const {
     detectedTags,
     extractedTags,
     healthyTags,
-  } = allTags;
+  } = auditData.allTags;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
+    log.info('Metatags auto-suggest is disabled for site');
+    return {
+      ...auditData,
+      auditResult: {
+        detectedTags,
+      },
+    };
+  }
+  log.info('Generating suggestions for Meta-tags using Genvar.');
+  const tagsData = {};
   for (const [endpoint, tags] of Object.entries(detectedTags)) {
     // eslint-disable-next-line no-await-in-loop
     const preSignedUrl = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
@@ -131,41 +70,44 @@ export default async function metatagsAutoSuggest(
     };
   }
   log.info('Generated presigned URLs');
-  requestBody.site = { baseUrl };
-  requestBody.detectedTags = tagsData;
-  requestBody.healthyTags = healthyTags;
-  const config = {
-    headers: {
-      Authorization: `Bearer ${serviceToken}`,
-      'X-Gw-Ims-Org-Id': orgId,
+  const requestBody = {
+    healthyTags,
+    detectedTags,
+    site: {
+      baseUrl: site.getBaseURL(),
     },
   };
-  const response = await axios.post(genvarEndpoint, requestBody, config);
-  log.info(`Genvar API response: ${JSON.stringify(response.data)}`);
-  if (response.status < 200 || response.status >= 300 || !response.data?.jobId) {
-    throw new Error(`Meta-tags auto suggest call failed: ${response.status} with ${response.statusText} `
-     + `and response body: ${JSON.stringify(response.data)}`);
+  let responseWithSuggestions;
+  try {
+    const genvarClient = GenvarClient.createFrom(context);
+    responseWithSuggestions = await genvarClient.generateSuggestions(
+      requestBody,
+      context.env.GENVAR_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/metatags',
+    );
+    if (!isObject(responseWithSuggestions)) {
+      throw new Error(`Invalid response received from Genvar API: ${JSON.stringify(responseWithSuggestions)}`);
+    }
+  } catch (err) {
+    log.error('Error while generating AI suggestions using Genvar', err);
+    throw err;
   }
-  const responseWithSuggestions = await pollJobStatus(
-    genvarEndpoint,
-    response.data.jobId,
-    serviceToken,
-    orgId,
-    log,
-  );
-  let suggestionsCounter = 0;
+  const updatedDetectedTags = {
+    ...detectedTags,
+  };
   for (const [endpoint, tags] of Object.entries(responseWithSuggestions)) {
     for (const tagName of ['title', 'description', 'h1']) {
       const tagIssueData = tags[tagName];
       if (tagIssueData?.aiSuggestion && tagIssueData.aiRationale) {
-        // eslint-disable-next-line no-param-reassign
-        detectedTags[endpoint][tagName].aiSuggestion = tagIssueData.aiSuggestion;
-        // eslint-disable-next-line no-param-reassign
-        detectedTags[endpoint][tagName].aiRationale = tagIssueData.aiRationale;
-        log.info(`Found AI suggestion and rationale for ${endpoint}`);
-        suggestionsCounter += 1;
+        updatedDetectedTags[endpoint][tagName].aiSuggestion = tagIssueData.aiSuggestion;
+        updatedDetectedTags[endpoint][tagName].aiRationale = tagIssueData.aiRationale;
       }
     }
   }
-  log.info(`Generated ${suggestionsCounter} suggestions for Meta-tags using Genvar.`);
+  log.info('Generated AI suggestions for Meta-tags using Genvar.');
+  return {
+    ...auditData,
+    auditResult: {
+      updatedDetectedTags,
+    },
+  };
 }

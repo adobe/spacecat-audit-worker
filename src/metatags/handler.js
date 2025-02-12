@@ -62,10 +62,13 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
   const healthyTags = seoChecks.getFewHealthyTags();
-  await metatagsAutoSuggest(context, site, { detectedTags, extractedTags, healthyTags }, baseURL);
 
   const auditResult = {
-    detectedTags,
+    allTags: {
+      detectedTags,
+      extractedTags,
+      healthyTags,
+    },
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: 'na',
     finalUrl: baseURL,
@@ -80,5 +83,5 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditMetaTagsRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([metatagsAutoSuggest, convertToOpportunity])
   .build();
