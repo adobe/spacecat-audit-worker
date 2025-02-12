@@ -772,7 +772,6 @@ describe('Meta Tags', () => {
     let dataAccess;
     let log;
     let Configuration;
-    let ImsClientStubs;
     let getPresignedUrlStub;
     let genvarClientStub;
     let siteStub;
@@ -791,9 +790,6 @@ describe('Meta Tags', () => {
         }),
       };
       dataAccess = { Configuration };
-      ImsClientStubs = {
-        getServiceAccessToken: sinon.stub().resolves({ access_token: 'test-token' }),
-      };
       genvarClientStub = {
         generateSuggestions: sinon.stub().resolves({
           '/about-us': {
@@ -836,7 +832,6 @@ describe('Meta Tags', () => {
       };
 
       metatagsAutoSuggest = await esmock('../../src/metatags/metatags-auto-suggest.js', {
-        '@adobe/spacecat-shared-ims-client': { ImsClient: { createFrom: () => ImsClientStubs } },
         '@adobe/spacecat-shared-gpt-client': { GenvarClient: { createFrom: () => genvarClientStub } },
         '@aws-sdk/s3-request-presigner': { getSignedUrl: getPresignedUrlStub },
       });
