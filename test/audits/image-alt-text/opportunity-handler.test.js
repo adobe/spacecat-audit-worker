@@ -1,0 +1,194 @@
+/*
+ * Copyright 2024 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+/* eslint-env mocha */
+import { expect } from 'chai';
+import sinon from 'sinon';
+import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
+import { OPPORTUNITY_TYPES } from '../../../src/image-alt-text/constants.js';
+
+describe('Image Alt Text Opportunity Handler', () => {
+  let logStub;
+  let dataAccessStub;
+  let auditData;
+  let auditUrl;
+  let altTextOppty;
+  let context;
+
+  beforeEach(() => {
+    sinon.restore();
+    auditUrl = 'https://example.com';
+    altTextOppty = {
+      getId: () => 'opportunity-id',
+      setAuditId: sinon.stub(),
+      save: sinon.stub(),
+      getSuggestions: sinon.stub().returns([]),
+      addSuggestions: sinon
+        .stub()
+        .returns({ errorItems: [], createdItems: [1] }),
+      getType: () => OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+    };
+
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+    };
+
+    dataAccessStub = {
+      Opportunity: {
+        allBySiteIdAndStatus: sinon.stub().resolves([]),
+        create: sinon.stub(),
+      },
+    };
+
+    context = {
+      log: logStub,
+      dataAccess: dataAccessStub,
+    };
+
+    auditData = {
+      siteId: 'site-id',
+      id: 'audit-id',
+      auditResult: {
+        detectedTags: {
+          imagesWithoutAltText: [
+            { url: '/page1', src: 'image1.jpg' },
+            { url: '/page2', src: 'image2.jpg' },
+          ],
+        },
+      },
+    };
+  });
+
+  it('should return null when no images without alt text are found', async () => {
+    const emptyAuditData = {
+      auditResult: {
+        detectedTags: {
+          imagesWithoutAltText: [],
+        },
+      },
+    };
+
+    const result = await convertToOpportunity(
+      auditUrl,
+      emptyAuditData,
+      context,
+    );
+    expect(result).to.be.null;
+  });
+
+  it('should create new opportunity when none exists', async () => {
+    dataAccessStub.Opportunity.create.resolves(altTextOppty);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    expect(dataAccessStub.Opportunity.create).to.have.been.calledWith({
+      siteId: 'site-id',
+      auditId: 'audit-id',
+      runbook:
+        'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
+      type: OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+      origin: 'AUTOMATION',
+      title:
+        'Missing alt text for images decreases accessibility and discoverability of content',
+      description:
+        'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
+      guidance: {
+        steps: [
+          'Review the list of images missing alt text',
+          'For each image, determine appropriate descriptive alt text that conveys the image content and purpose',
+          'Add the alt text attribute to the image tags in your content',
+          'Ensure the alt text is concise but descriptive',
+          'Publish the changes to apply the updates to your live site',
+        ],
+      },
+      tags: ['seo', 'accessibility'],
+    });
+    expect(logStub.debug).to.have.been.calledWith(
+      'Alt-text Opportunity created',
+    );
+  });
+
+  it('should update existing opportunity when one exists', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
+    expect(altTextOppty.save).to.have.been.called;
+    expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
+  });
+
+  it('should handle error when fetching opportunities fails', async () => {
+    const error = new Error('Fetch failed');
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(error);
+
+    try {
+      await convertToOpportunity(auditUrl, auditData, context);
+      expect.fail('Should have thrown an error');
+    } catch (e) {
+      expect(e.message).to.equal(
+        'Failed to fetch opportunities for siteId site-id: Fetch failed',
+      );
+      expect(logStub.error).to.have.been.calledWith(
+        'Fetching opportunities for siteId site-id failed with error: Fetch failed',
+      );
+    }
+  });
+
+  it('should handle error when creating opportunity fails', async () => {
+    const error = new Error('Creation failed');
+    dataAccessStub.Opportunity.create.rejects(error);
+
+    try {
+      await convertToOpportunity(auditUrl, auditData, context);
+      expect.fail('Should have thrown an error');
+    } catch (e) {
+      expect(e.message).to.equal(
+        'Failed to create alt-text opportunity for siteId site-id: Creation failed',
+      );
+      expect(logStub.error).to.have.been.calledWith(
+        'Creating alt-text opportunity for siteId site-id failed with error: Creation failed',
+        error,
+      );
+    }
+  });
+
+  it('should generate correct suggestions from detected tags', async () => {
+    dataAccessStub.Opportunity.create.resolves(altTextOppty);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    const expectedSuggestions = [
+      {
+        url: '/page1',
+        src: 'image1.jpg',
+        issue: 'Missing alt text',
+        suggestion:
+          'Add descriptive alt text to this image to improve accessibility and SEO',
+      },
+      {
+        url: '/page2',
+        src: 'image2.jpg',
+        issue: 'Missing alt text',
+        suggestion:
+          'Add descriptive alt text to this image to improve accessibility and SEO',
+      },
+    ];
+
+    // Verify the suggestions were logged (temporary until syncAltTextSuggestions is implemented)
+    expect(logStub.debug).to.have.been.calledWith(
+      `Suggestions: ${JSON.stringify(expectedSuggestions)}`,
+    );
+  });
+});
