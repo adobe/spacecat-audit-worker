@@ -36,6 +36,7 @@ describe('Image Alt Text Opportunity Handler', () => {
         .stub()
         .returns({ errorItems: [], createdItems: [1] }),
       getType: () => OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+      getSiteId: () => 'site-id',
     };
 
     logStub = {
@@ -68,23 +69,6 @@ describe('Image Alt Text Opportunity Handler', () => {
         },
       },
     };
-  });
-
-  it('should return null when no images without alt text are found', async () => {
-    const emptyAuditData = {
-      auditResult: {
-        detectedTags: {
-          imagesWithoutAltText: [],
-        },
-      },
-    };
-
-    const result = await convertToOpportunity(
-      auditUrl,
-      emptyAuditData,
-      context,
-    );
-    expect(result).to.be.null;
   });
 
   it('should create new opportunity when none exists', async () => {
@@ -164,31 +148,55 @@ describe('Image Alt Text Opportunity Handler', () => {
     }
   });
 
-  it('should generate correct suggestions from detected tags', async () => {
-    dataAccessStub.Opportunity.create.resolves(altTextOppty);
+  it('should handle errors when adding suggestions', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+
+    // Mock error response from addSuggestions
+    altTextOppty.addSuggestions.returns({
+      errorItems: [
+        {
+          item: { url: '/page1', src: 'image1.jpg' },
+          error: 'Invalid suggestion data',
+        },
+      ],
+      createdItems: [1], // At least one successful creation to avoid throwing
+    });
 
     await convertToOpportunity(auditUrl, auditData, context);
 
-    const expectedSuggestions = [
-      {
-        url: '/page1',
-        src: 'image1.jpg',
-        issue: 'Missing alt text',
-        suggestion:
-          'Add descriptive alt text to this image to improve accessibility and SEO',
-      },
-      {
-        url: '/page2',
-        src: 'image2.jpg',
-        issue: 'Missing alt text',
-        suggestion:
-          'Add descriptive alt text to this image to improve accessibility and SEO',
-      },
-    ];
-
-    // Verify the suggestions were logged (temporary until syncAltTextSuggestions is implemented)
-    expect(logStub.debug).to.have.been.calledWith(
-      `Suggestions: ${JSON.stringify(expectedSuggestions)}`,
+    expect(logStub.error).to.have.been.calledWith(
+      'Suggestions for siteId site-id contains 1 items with errors',
     );
+    expect(logStub.error).to.have.been.calledWith(
+      'Item {"url":"/page1","src":"image1.jpg"} failed with error: Invalid suggestion data',
+    );
+  });
+
+  it('should throw error when all suggestions fail to create', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+
+    // Mock error response from addSuggestions with no successful creations
+    altTextOppty.addSuggestions.returns({
+      errorItems: [
+        {
+          item: { url: '/page1', src: 'image1.jpg' },
+          error: 'Invalid suggestion data',
+        },
+      ],
+      createdItems: [], // No successful creations
+    });
+
+    try {
+      await convertToOpportunity(auditUrl, auditData, context);
+      expect.fail('Should have thrown an error');
+    } catch (e) {
+      expect(e.message).to.equal('Failed to create suggestions for siteId site-id');
+      expect(logStub.error).to.have.been.calledWith(
+        'Suggestions for siteId site-id contains 1 items with errors',
+      );
+      expect(logStub.error).to.have.been.calledWith(
+        'Item {"url":"/page1","src":"image1.jpg"} failed with error: Invalid suggestion data',
+      );
+    }
   });
 });

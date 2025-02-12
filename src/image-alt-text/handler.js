@@ -18,7 +18,6 @@ import {
 import AuditEngine from './auditEngine.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
-import generateSuggestions from './suggestion-helper.js';
 import convertToOpportunity from './opportunityHandler.js';
 
 export async function fetchAndProcessPageObject(
@@ -61,12 +60,14 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
     prefix,
     log,
   );
+
   const extractedTags = {};
   const pageAuditResults = await Promise.all(
     scrapedObjectKeys.map(
       (key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log),
     ),
   );
+
   pageAuditResults.forEach((pageAudit) => {
     if (pageAudit) {
       Object.assign(extractedTags, pageAudit);
@@ -105,5 +106,5 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditImageAltTextRunner)
-  .withPostProcessors([generateSuggestions, convertToOpportunity])
+  .withPostProcessors([convertToOpportunity])
   .build();

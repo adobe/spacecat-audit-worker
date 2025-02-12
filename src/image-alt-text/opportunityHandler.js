@@ -18,20 +18,31 @@ import { OPPORTUNITY_TYPES } from './constants.js';
  *
  * @param {Object} params - The parameters for the sync operation.
  * @param {Object} params.opportunity - The opportunity object to synchronize suggestions for.
+ * @param {Array} params.newSuggestions - Array of new data objects to sync.
+ * @param {Object} params.log - Logger object for error reporting.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
-export async function syncAltTextSuggestions() {
-  // export default async function syncAltTextSuggestions({ opportunity }) {
-  // const existingSuggestions = await opportunity.getSuggestions();
+export async function syncAltTextSuggestions({ opportunity, newSuggestions, log }) {
+  const existingSuggestions = await opportunity.getSuggestions();
 
-  // // Remove existing suggestions
-  // await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+  // Remove existing suggestions
+  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
 
   // Add new suggestions to oppty
-  // const newSuggestions = []; // TO-DO: Fetch real suggestions from the audit result.
-  // opportunity.addSuggestions(newSuggestions);
+  if (newSuggestions.length > 0) {
+    const updateResult = await opportunity.addSuggestions(newSuggestions);
 
-  // For now, do nothing.
+    if (updateResult.errorItems?.length > 0) {
+      log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
+      updateResult.errorItems.forEach((errorItem) => {
+        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+      });
+
+      if (updateResult.createdItems?.length <= 0) {
+        throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+      }
+    }
+  }
 }
 
 /**
@@ -99,17 +110,14 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
 
   log.debug(`Suggestions: ${JSON.stringify(suggestions)}`);
 
-  const buildKey = (data) => `${data.url}|${data.src}`; // What if there are multiple instances of the same image on the same page?
-
   await syncAltTextSuggestions({
     opportunity: altTextOppty,
-    newData: suggestions,
-    buildKey,
-    mapNewSuggestion: (suggestion) => ({
+    newSuggestions: suggestions.map((suggestion) => ({
       opportunityId: altTextOppty.getId(),
       type: 'ALT_TEXT_UPDATE', // Is this necessary maybe for the UI?
       data: { ...suggestion },
-    }),
+      rank: 1, // They share all the same importance, so what number should we use here?
+    })),
     log,
   });
 
