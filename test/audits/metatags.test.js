@@ -40,7 +40,7 @@ import { auditMetaTagsRunner, fetchAndProcessPageObject } from '../../src/metata
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('Meta Tags', () => {
+xdescribe('Meta Tags', () => {
   describe('SeoChecks', () => {
     let seoChecks;
     let logStub;

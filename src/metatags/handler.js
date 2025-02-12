@@ -61,18 +61,13 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   }
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
-  const healthyTags = seoChecks.getFewHealthyTags();
+  // const healthyTags = seoChecks.getFewHealthyTags();
 
   const auditResult = {
     detectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: 'na',
     finalUrl: baseURL,
-    allTags: {
-      detectedTags,
-      extractedTags,
-      healthyTags,
-    },
   };
   log.info(`SEO checks completed for ${extractedTagsCount} tags`);
   return {
