@@ -15,7 +15,7 @@ import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import convertToOpportunity from './opportunity-handler.js';
-// import metatagsAutoSuggest from './metatags-auto-suggest.js';
+import metatagsAutoSuggest from './metatags-auto-suggest.js';
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -79,5 +79,5 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditMetaTagsRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([metatagsAutoSuggest, convertToOpportunity])
   .build();
