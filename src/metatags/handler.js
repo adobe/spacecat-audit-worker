@@ -70,13 +70,13 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
       healthyTags,
     },
     sourceS3Folder: `${bucketName}/${prefix}`,
-    fullAuditRef: 'na',
+    fullAuditRef: '',
     finalUrl: baseURL,
   };
   log.info(`SEO checks completed for ${extractedTagsCount} tags`);
   return {
     auditResult,
-    fullAuditRef: baseURL,
+    fullAuditRef: auditResult.fullAuditRef,
   };
 }
 
