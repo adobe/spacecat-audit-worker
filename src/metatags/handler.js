@@ -15,7 +15,7 @@ import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import convertToOpportunity from './opportunity-handler.js';
-import metatagsAutoSuggest from './metatags-auto-suggest.js';
+// import metatagsAutoSuggest from './metatags-auto-suggest.js';
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -61,14 +61,10 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   }
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
-  const healthyTags = seoChecks.getFewHealthyTags();
+  // const healthyTags = seoChecks.getFewHealthyTags();
 
   const auditResult = {
-    allTags: {
-      detectedTags,
-      extractedTags,
-      healthyTags,
-    },
+    detectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: 'na',
     finalUrl: baseURL,
@@ -76,12 +72,12 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   log.info(`SEO checks completed for ${extractedTagsCount} tags`);
   return {
     auditResult,
-    fullAuditRef: 'na',
+    fullAuditRef: baseURL,
   };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditMetaTagsRunner)
-  .withPostProcessors([metatagsAutoSuggest, convertToOpportunity])
+  .withPostProcessors([convertToOpportunity])
   .build();
