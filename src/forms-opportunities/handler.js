@@ -11,7 +11,6 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
 import convertToOpportunity from './opportunityHandler.js';
@@ -23,12 +22,10 @@ const FORMS_OPPTY_QUERIES = [
   'form-vitals',
 ];
 
-export async function formsAuditRunner(auditUrl, context, site) {
+export async function formsAuditRunner(auditUrl, context) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: auditUrl,
-    domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
   };

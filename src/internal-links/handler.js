@@ -12,10 +12,11 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { internalServerError } from '@adobe/spacecat-shared-http-utils';
-import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
+import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { generateSuggestionData } from './suggestions-generator.js';
 
 const INTERVAL = 30; // days
 const AUDIT_TYPE = 'broken-internal-links';
@@ -62,16 +63,14 @@ function calculatePriority(links) {
  * and environment variables.
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
-export async function internalLinksAuditRunner(auditUrl, context, site) {
+export async function internalLinksAuditRunner(auditUrl, context) {
   const { log } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context, auditUrl, log);
 
   const options = {
     domain: finalUrl,
-    domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
   };
@@ -79,7 +78,13 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
   log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
 
   const internal404Links = await rumAPIClient.query('404-internal-links', options);
-  const priorityLinks = calculatePriority(internal404Links);
+  const transformedLinks = internal404Links.map((link) => ({
+    urlFrom: link.url_from,
+    urlTo: link.url_to,
+    trafficDomain: link.traffic_domain,
+  }));
+
+  const priorityLinks = calculatePriority(transformedLinks);
   const auditResult = {
     brokenInternalLinks: priorityLinks,
     fullAuditRef: auditUrl,
@@ -120,7 +125,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
         runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
         type: AUDIT_TYPE,
         origin: 'AUTOMATION',
-        title: 'Broken internal links found',
+        title: 'Broken internal links are impairing user experience and SEO crawlability',
         description: 'We\'ve detected broken internal links on your website. Broken links can negatively impact user experience and SEO. Please review and fix these links to ensure smooth navigation and accessibility.',
         guidance: {
           steps: [
@@ -144,7 +149,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     throw e;
   }
 
-  const buildKey = (item) => `${item.url_from}-${item.url_to}`;
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
 
   // Sync suggestions
   await syncSuggestions({
@@ -154,11 +159,14 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
-      rank: entry.traffic_domain,
+      rank: entry.trafficDomain,
       data: {
-        ...entry,
-        /* code commented until implementation of suggested links. TODO: implement suggestions, https://jira.corp.adobe.com/browse/SITES-26545 */
-        // suggestedLink: 'some suggestion here',
+        title: entry.title,
+        urlFrom: entry.urlFrom,
+        urlTo: entry.urlTo,
+        urlsSuggested: entry.urlsSuggested || [],
+        aiRationale: entry.aiRationale || '',
+        trafficDomain: entry.trafficDomain,
       },
     }),
     log,
@@ -168,5 +176,5 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(internalLinksAuditRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([generateSuggestionData, convertToOpportunity])
   .build();

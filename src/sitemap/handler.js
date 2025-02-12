@@ -11,7 +11,10 @@
  */
 
 import {
-  composeAuditURL, isArray, prependSchema, tracingFetch as fetch,
+  composeAuditURL,
+  isArray,
+  prependSchema,
+  tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import {
   extractDomainAndProtocol,
@@ -56,7 +59,12 @@ const VALID_MIME_TYPES = Object.freeze([
  * @throws {Error} If the fetch operation fails or the response status is not OK.
  */
 export async function fetchContent(targetUrl) {
-  const response = await fetch(targetUrl);
+  const response = await fetch(targetUrl, {
+    method: 'GET',
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    },
+  });
   if (!response.ok) {
     throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
   }
@@ -159,18 +167,24 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
- * @returns {Promise<{ok: string[], notOk: string[], err: string[]}>} -
- * A promise that resolves to a dict of URLs that exist.
+ * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[]}>} -
+ * A promise that resolves to a dict of URLs categorized by status.
  */
 export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
+  const NETWORK_ERROR = 2;
   const batchSize = 50;
 
   const fetchUrl = async (url) => {
     try {
-      // use manual redirect to capture the status code
-      const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
+      const response = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        },
+      });
 
       if (response.status === 200) {
         return { status: OK, url };
@@ -178,8 +192,16 @@ export async function filterValidUrls(urls) {
 
       // if it's a redirect, follow it to get the final URL
       if (response.status === 301 || response.status === 302) {
+        const redirectUrl = response.headers.get('location');
+        const finalUrl = new URL(redirectUrl, url).href;
         try {
-          const redirectResponse = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+          const redirectResponse = await fetch(finalUrl, {
+            method: 'HEAD',
+            redirect: 'follow',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            },
+          });
           return {
             status: NOT_OK,
             url,
@@ -187,14 +209,18 @@ export async function filterValidUrls(urls) {
             finalUrl: redirectResponse.url,
           };
         } catch {
-          // if following redirect fails, return just the status code
-          return { status: NOT_OK, url, statusCode: response.status };
+          return {
+            status: NOT_OK,
+            url,
+            statusCode: response.status,
+            finalUrl,
+          };
         }
       }
 
       return { status: NOT_OK, url, statusCode: response.status };
     } catch {
-      return { status: NOT_OK, url };
+      return { status: NETWORK_ERROR, url, error: 'NETWORK_ERROR' };
     }
   };
 
@@ -219,18 +245,26 @@ export async function filterValidUrls(urls) {
     .filter((result) => result.status === 'fulfilled')
     .map((result) => result.value);
 
-  return filtered.reduce((acc, result) => {
-    if (result.status === OK) {
-      acc.ok.push(result.url);
-    } else {
-      acc.notOk.push({
-        url: result.url,
-        statusCode: result.statusCode,
-        ...(result.finalUrl && { suggestedFix: result.finalUrl }),
-      });
-    }
-    return acc;
-  }, { ok: [], notOk: [] });
+  return filtered.reduce(
+    (acc, result) => {
+      if (result.status === OK) {
+        acc.ok.push(result.url);
+      } else if (result.status === NETWORK_ERROR) {
+        acc.networkErrors.push({
+          url: result.url,
+          error: result.error,
+        });
+      } else {
+        acc.notOk.push({
+          url: result.url,
+          statusCode: result.statusCode,
+          ...(result.finalUrl && { urls_suggested: result.finalUrl }),
+        });
+      }
+      return acc;
+    },
+    { ok: [], notOk: [], networkErrors: [] },
+  );
 }
 
 /**
@@ -332,12 +366,20 @@ export async function findSitemap(inputUrl) {
   }
 
   if (!sitemapUrls.ok.length) {
-    const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
+    const commonSitemapUrls = [
+      `${protocol}://${domain}/sitemap.xml`,
+      `${protocol}://${domain}/sitemap_index.xml`,
+    ];
     sitemapUrls = await filterValidUrls(commonSitemapUrls);
     if (!sitemapUrls.ok || !sitemapUrls.ok.length) {
       return {
         success: false,
-        reasons: [{ value: `${protocol}://${domain}/robots.txt`, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS }],
+        reasons: [
+          {
+            value: `${protocol}://${domain}/robots.txt`,
+            error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+          },
+        ],
         details: {
           issues: sitemapUrls.notOk,
         },
@@ -383,10 +425,12 @@ export async function findSitemap(inputUrl) {
   } else {
     return {
       success: false,
-      reasons: [{
-        value: filteredSitemapUrls[0],
-        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-      }],
+      reasons: [
+        {
+          value: filteredSitemapUrls[0],
+          error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        },
+      ],
       url: inputUrl,
       details: { issues: notOkPagesFromSitemap },
     };
@@ -463,8 +507,8 @@ export function getPagesWithIssues(auditData) {
       type: 'url',
       sitemapUrl,
       pageUrl: page.url,
-      statusCode: page.statusCode ?? 500,
-      ...(page.suggestedFix && { suggestedFix: page.suggestedFix }),
+      statusCode: page.statusCode ?? 0, // default to 0 if not present
+      ...(page.urls_suggested && { urls_suggested: page.urls_suggested }),
     }));
   });
 }
@@ -490,8 +534,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
     .filter(Boolean)
     .map((issue) => ({
       ...issue,
-      recommendedAction: issue.suggestedFix
-        ? `use this url instead: ${issue.suggestedFix}`
+      recommendedAction: issue.urls_suggested
+        ? `use this url instead: ${issue.urls_suggested}`
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 

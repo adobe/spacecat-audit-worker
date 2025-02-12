@@ -765,7 +765,7 @@ describe('Sitemap Audit', () => {
           sitemap
         ][0].url,
       );
-      expect(response.suggestions[0].statusCode).to.equal(500);
+      expect(response.suggestions[0].statusCode).to.equal(0);
       expect(response).to.deep.equal({
         ...auditPartiallySuccessfulOnePageNetworkError,
         suggestions: [
@@ -775,7 +775,7 @@ describe('Sitemap Audit', () => {
             pageUrl:
               auditPartiallySuccessfulOnePageNetworkError.auditResult.details
                 .issues[sitemap][0].url,
-            statusCode: 500,
+            statusCode: 0,
             recommendedAction:
               'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
           },
@@ -783,7 +783,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('should create redirect recommendation when suggestedFix is present', () => {
+    it('should create redirect recommendation when urls_suggested is present', () => {
       const auditDataWithRedirect = {
         siteId: 'site-id',
         id: 'audit-id',
@@ -796,7 +796,7 @@ describe('Sitemap Audit', () => {
                 {
                   url: 'https://example.com/old-page',
                   statusCode: 301,
-                  suggestedFix: 'https://example.com/new-page',
+                  urls_suggested: 'https://example.com/new-page',
                 },
               ],
             },
@@ -815,7 +815,7 @@ describe('Sitemap Audit', () => {
         sitemapUrl: 'https://example.com/sitemap.xml',
         pageUrl: 'https://example.com/old-page',
         statusCode: 301,
-        suggestedFix: 'https://example.com/new-page',
+        urls_suggested: 'https://example.com/new-page',
         recommendedAction: 'use this url instead: https://example.com/new-page',
       });
     });
@@ -1072,12 +1072,12 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/permanent-redirect',
         statusCode: 301,
-        suggestedFix: 'https://example.com/new-location',
+        urls_suggested: 'https://example.com/new-location',
       },
       {
         url: 'https://example.com/temporary-redirect',
         statusCode: 302,
-        suggestedFix: 'https://example.com/temp-location',
+        urls_suggested: 'https://example.com/temp-location',
       },
       {
         url: 'https://example.com/not-found',
@@ -1102,14 +1102,131 @@ describe('filterValidUrls with redirect handling', () => {
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/broken-redirect',
+        urls_suggested: 'https://example.com/error',
         statusCode: 301,
       },
     ]);
   });
+
+  it('should handle network errors and add them to networkErrors array', async () => {
+    const urls = [
+      'https://example.com/network-error',
+      'https://example.com/ok',
+      'https://example.com/another-error',
+    ];
+
+    nock('https://example.com')
+      .head('/network-error')
+      .replyWithError('Network error');
+
+    nock('https://example.com').head('/ok').reply(200);
+
+    nock('https://example.com')
+      .head('/another-error')
+      .replyWithError('DNS error');
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/ok']);
+    expect(result.notOk).to.deep.equal([]);
+    expect(result.networkErrors).to.deep.equal([
+      {
+        url: 'https://example.com/network-error',
+        error: 'NETWORK_ERROR',
+      },
+      {
+        url: 'https://example.com/another-error',
+        error: 'NETWORK_ERROR',
+      },
+    ]);
+  });
+
+  it('should handle mixed responses including network errors, redirects and success', async () => {
+    const urls = [
+      'https://example.com/ok',
+      'https://example.com/redirect',
+      'https://example.com/network-error',
+      'https://example.com/not-found',
+    ];
+
+    nock('https://example.com').head('/ok').reply(200);
+
+    nock('https://example.com')
+      .head('/redirect')
+      .reply(301, '', { Location: 'https://example.com/new-location' });
+
+    nock('https://example.com').head('/new-location').reply(200);
+
+    nock('https://example.com')
+      .head('/network-error')
+      .replyWithError('Network error');
+
+    nock('https://example.com').head('/not-found').reply(404);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/ok']);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect',
+        statusCode: 301,
+        urls_suggested: 'https://example.com/new-location',
+      },
+      {
+        url: 'https://example.com/not-found',
+        statusCode: 404,
+      },
+    ]);
+    expect(result.networkErrors).to.deep.equal([
+      {
+        url: 'https://example.com/network-error',
+        error: 'NETWORK_ERROR',
+      },
+    ]);
+  });
+
+  it('should handle batch processing with network errors', async () => {
+    // Create an array of 60 URLs (exceeds batchSize of 50)
+    const urls = Array.from(
+      { length: 60 },
+      (_, i) => `https://example.com/url${i + 1}`,
+    );
+
+    // Mock responses for all URLs
+    urls.forEach((url, i) => {
+      if (i % 3 === 0) {
+        // Every third URL is a network error
+        nock('https://example.com')
+          .head(`/url${i + 1}`)
+          .replyWithError('Network error');
+      } else if (i % 3 === 1) {
+        // Every other third URL is OK
+        nock('https://example.com')
+          .head(`/url${i + 1}`)
+          .reply(200);
+      } else {
+        // Remaining URLs are not found
+        nock('https://example.com')
+          .head(`/url${i + 1}`)
+          .reply(404);
+      }
+    });
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok.length).to.equal(20); // Only OK URLs
+    expect(result.notOk.length).to.equal(20);
+    expect(result.networkErrors.length).to.equal(20);
+
+    result.networkErrors.forEach((error) => {
+      expect(error).to.have.property('url');
+      expect(error).to.have.property('error', 'NETWORK_ERROR');
+    });
+  });
 });
 
 describe('getPagesWithIssues', () => {
-  it('should include suggestedFix in the output when present in the input', () => {
+  it('should include urls_suggested in the output when present in the input', () => {
     const auditData = {
       auditResult: {
         details: {
@@ -1118,7 +1235,7 @@ describe('getPagesWithIssues', () => {
               {
                 url: 'https://example.com/old-page',
                 statusCode: 301,
-                suggestedFix: 'https://example.com/new-page',
+                urls_suggested: 'https://example.com/new-page',
               },
               {
                 url: 'https://example.com/not-found',
@@ -1137,7 +1254,7 @@ describe('getPagesWithIssues', () => {
       sitemapUrl: 'https://example.com/sitemap.xml',
       pageUrl: 'https://example.com/old-page',
       statusCode: 301,
-      suggestedFix: 'https://example.com/new-page',
+      urls_suggested: 'https://example.com/new-page',
     });
     expect(result[1]).to.deep.equal({
       type: 'url',

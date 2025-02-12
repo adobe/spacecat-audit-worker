@@ -11,7 +11,6 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { getRUMDomainkey } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -23,11 +22,9 @@ const AUDIT_TYPE = 'cwv';
 
 export async function CWVRunner(auditUrl, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const groupedURLs = site.getConfig().getGroupedURLs(AUDIT_TYPE);
   const options = {
     domain: auditUrl,
-    domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
     groupedURLs,

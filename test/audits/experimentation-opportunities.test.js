@@ -84,14 +84,6 @@ describe('Opportunities Tests', () => {
       ...context.env,
     };
 
-    nock('https://secretsmanager.us-east-1.amazonaws.com/')
-      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/abc_com/ci')
-      .reply(200, {
-        SecretString: JSON.stringify({
-          RUM_DOMAIN_KEY: 'abc_dummy_key',
-        }),
-      });
-
     nock('https://abc.com')
       .get('/')
       .reply(200);
@@ -137,7 +129,6 @@ describe('Opportunities Tests', () => {
       'high-organic-low-ctr',
     ], {
       domain: 'https://abc.com',
-      domainkey: 'abc_dummy_key',
       interval: 7,
       granularity: 'hourly',
     });
