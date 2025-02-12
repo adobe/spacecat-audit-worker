@@ -47,6 +47,7 @@ describe('Opportunities Tests', () => {
     site = {
       getBaseURL: () => 'https://abc.com',
       getId: () => '056f9dbe-e9e1-4d80-8bfb-c9785a873b6a',
+      getDeliveryType: () => 'aem_edge',
     };
 
     context = new MockContextBuilder()
@@ -136,7 +137,7 @@ describe('Opportunities Tests', () => {
         },
       };
 
-      await postProcessor(url, auditData, context);
+      await postProcessor(url, auditData, context, site);
 
       expect(context.sqs.sendMessage).to.have.been.calledTwice;
 
@@ -146,6 +147,7 @@ describe('Opportunities Tests', () => {
         type: 'guidance:high-organic-low-ctr',
         siteId: 'some-site-id',
         auditId: 'some-audit-id',
+        deliveryType: 'aem_edge',
       });
       expect(messageArg1.data).to.deep.equal({
         url: 'https://abc.com/oppty-one',

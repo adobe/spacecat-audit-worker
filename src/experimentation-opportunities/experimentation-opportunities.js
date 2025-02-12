@@ -39,7 +39,7 @@ function processRageClickOpportunities(opportunities) {
     });
 }
 
-export async function postProcessor(auditUrl, auditData, context) {
+export async function postProcessor(auditUrl, auditData, context, site) {
   const { log, sqs, env } = context;
   const { auditResult } = auditData;
 
@@ -48,6 +48,7 @@ export async function postProcessor(auditUrl, auditData, context) {
       type: 'guidance:high-organic-low-ctr',
       siteId: auditData.siteId,
       auditId: auditData.id,
+      deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
         url: oppty.page,
