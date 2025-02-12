@@ -137,11 +137,25 @@ describe('Image Alt Text Handler', () => {
       expect(result).to.have.property('fullAuditRef', 'http://example.com');
     });
 
-    xit('should handle case when no pages are found to audit', async () => {
+    it('should handle case when no pages are found to audit', async () => {
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(ListObjectsV2Command))
         .resolves({
-          Contents: [],
+          Contents: [
+            { Key: 'scrapes/site-id/page1/scrape.json' },
+          ],
+        });
+
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand))
+        .resolves({
+          Body: {
+            transformToString: () => JSON.stringify({
+              scrapeResult: {
+                // Empty scrape result to simulate no tags extracted
+              },
+            }),
+          },
         });
 
       const result = await auditImageAltTextRunner(
