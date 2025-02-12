@@ -48,7 +48,7 @@ export default async function metatagsAutoSuggest(auditUrl, auditData, context, 
     detectedTags,
     extractedTags,
     healthyTags,
-  } = auditData.allTags;
+  } = auditData.auditResult.allTags;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
@@ -108,7 +108,7 @@ export default async function metatagsAutoSuggest(auditUrl, auditData, context, 
   return {
     ...auditData,
     auditResult: {
-      updatedDetectedTags,
+      detectedTags: updatedDetectedTags,
     },
   };
 }
