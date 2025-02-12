@@ -1,3 +1,17 @@
+## [1.52.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.5...v1.52.6) (2025-02-11)
+
+
+### Bug Fixes
+
+* change to new rum client ([#645](https://github.com/adobe/spacecat-audit-worker/issues/645)) ([a003304](https://github.com/adobe/spacecat-audit-worker/commit/a0033041171131ec4ef69b78277d2046aa6a6792))
+
+## [1.52.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.4...v1.52.5) (2025-02-10)
+
+
+### Bug Fixes
+
+* finalUrl was removed ([#641](https://github.com/adobe/spacecat-audit-worker/issues/641)) ([dc7b775](https://github.com/adobe/spacecat-audit-worker/commit/dc7b77500b68a49d8420032b664b21487d16a2cc))
+
 ## [1.52.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.3...v1.52.4) (2025-02-09)
 
 

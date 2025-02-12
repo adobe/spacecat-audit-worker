@@ -12,7 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
+import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -65,16 +65,14 @@ function calculatePriority(links) {
  * and environment variables.
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
-export async function internalLinksAuditRunner(auditUrl, context, site) {
+export async function internalLinksAuditRunner(auditUrl, context) {
   const { log } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context, auditUrl, log);
 
   const options = {
     domain: finalUrl,
-    domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
   };
@@ -82,7 +80,13 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
   log.info(`${auditType}: Options for RUM call: `, JSON.stringify(options));
 
   const internal404Links = await rumAPIClient.query('404-internal-links', options);
-  const priorityLinks = calculatePriority(internal404Links);
+  const transformedLinks = internal404Links.map((link) => ({
+    urlFrom: link.url_from,
+    urlTo: link.url_to,
+    trafficDomain: link.traffic_domain,
+  }));
+
+  const priorityLinks = calculatePriority(transformedLinks);
   const auditResult = {
     brokenInternalLinks: priorityLinks,
     fullAuditRef: auditUrl,
@@ -108,7 +112,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   );
   const { log } = context;
 
-  const buildKey = (item) => `${item.url_from}-${item.url_to}`;
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
 
   await syncSuggestions({
     opportunity,
@@ -117,14 +121,14 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
-      rank: entry.traffic_domain,
+      rank: entry.trafficDomain,
       data: {
         title: entry.title,
-        url_from: entry.url_from,
-        url_to: entry.url_to,
-        urls_suggested: entry.urls_suggested || [],
-        ai_rationale: entry.ai_rationale || '',
-        traffic_domain: entry.traffic_domain,
+        urlFrom: entry.urlFrom,
+        urlTo: entry.urlTo,
+        urlsSuggested: entry.urlsSuggested || [],
+        aiRationale: entry.aiRationale || '',
+        trafficDomain: entry.trafficDomain,
       },
     }),
     log,
