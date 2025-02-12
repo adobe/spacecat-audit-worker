@@ -97,7 +97,7 @@ async function run(message, context) {
 
     return result;
   } catch (e) {
-    log.error(`${type} audit for ${siteId} failed after ${getElapsedSeconds(startTime)} seconds`, e);
+    log.error(`${type} audit for ${siteId} failed after ${getElapsedSeconds(startTime)} seconds. `, e);
     return internalServerError();
   }
 }

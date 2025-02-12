@@ -43,16 +43,6 @@ describe('Forms Vitals audit', () => {
     })
     .build();
 
-  beforeEach('setup', () => {
-    nock('https://secretsmanager.us-east-1.amazonaws.com/')
-      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/example_com/ci')
-      .reply(200, {
-        SecretString: JSON.stringify({
-          RUM_DOMAIN_KEY: 'test-key',
-        }),
-      });
-  });
-
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
@@ -70,7 +60,6 @@ describe('Forms Vitals audit', () => {
     );
     expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
       domain: 'www.example.com',
-      domainkey: 'test-key',
       interval: 7,
       granularity: 'hourly',
     });

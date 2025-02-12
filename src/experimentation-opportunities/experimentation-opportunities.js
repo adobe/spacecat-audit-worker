@@ -12,7 +12,6 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getRUMDomainkey } from '../support/utils.js';
 import { wwwUrlResolver } from '../common/audit.js';
 
 const DAYS = 7;
@@ -72,14 +71,12 @@ export async function postProcessor(auditUrl, auditData, context) {
  * @returns
  */
 
-export async function handler(auditUrl, context, site) {
+export async function handler(auditUrl, context) {
   const { log } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: auditUrl,
-    domainkey,
     interval: DAYS,
     granularity: 'hourly',
   };
