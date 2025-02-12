@@ -825,16 +825,18 @@ describe('Meta Tags', () => {
         },
       };
       auditData = {
-        allTags: {
-          detectedTags: {
-            '/about-us': { h1: {} },
-            '/add-on-and-refresh': { description: {}, h1: {} },
+        auditResult: {
+          allTags: {
+            detectedTags: {
+              '/about-us': { h1: {} },
+              '/add-on-and-refresh': { description: {}, h1: {} },
+            },
+            extractedTags: {
+              '/about-us': { s3key: 'about-us-key' },
+              '/add-on-and-refresh': { s3key: 'add-on-key' },
+            },
+            healthyTags: {},
           },
-          extractedTags: {
-            '/about-us': { s3key: 'about-us-key' },
-            '/add-on-and-refresh': { s3key: 'add-on-key' },
-          },
-          healthyTags: {},
         },
       };
 
@@ -904,9 +906,9 @@ describe('Meta Tags', () => {
 
       expect(log.info.calledWith('Generated presigned URLs')).to.be.true;
       expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
-      expect(response.auditResult.updatedDetectedTags['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
-      expect(response.auditResult.updatedDetectedTags['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
-      expect(response.auditResult.updatedDetectedTags['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
+      expect(response.auditResult.detectedTags['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
+      expect(response.auditResult.detectedTags['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
+      expect(response.auditResult.detectedTags['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
     }).timeout(15000);
 
     it('should log an error and throw if the Genvar API call fails', async () => {
