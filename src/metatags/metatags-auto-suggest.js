@@ -41,24 +41,19 @@ async function getPresignedUrl(s3Client, log, scrapedData) {
   }
 }
 
-export default async function metatagsAutoSuggest(auditUrl, auditData, context, site) {
+export default async function metatagsAutoSuggest(allTags, context, site) {
   const { s3Client, dataAccess, log } = context;
   log.info('Processing Meta-tags auto-suggest');
   const {
     detectedTags,
     extractedTags,
     healthyTags,
-  } = auditData.auditResult.allTags;
+  } = allTags;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
     log.info('Metatags auto-suggest is disabled for site');
-    return {
-      ...auditData,
-      auditResult: {
-        detectedTags,
-      },
-    };
+    return detectedTags;
   }
   log.info('Generating suggestions for Meta-tags using Genvar.');
   const tagsData = {};
@@ -105,10 +100,5 @@ export default async function metatagsAutoSuggest(auditUrl, auditData, context, 
     }
   }
   log.info('Generated AI suggestions for Meta-tags using Genvar.');
-  return {
-    ...auditData,
-    auditResult: {
-      detectedTags: updatedDetectedTags,
-    },
-  };
+  return updatedDetectedTags;
 }

@@ -15,7 +15,7 @@ import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/audit.js';
 import convertToOpportunity from './opportunity-handler.js';
-// import metatagsAutoSuggest from './metatags-auto-suggest.js';
+import metatagsAutoSuggest from './metatags-auto-suggest.js';
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -60,20 +60,17 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
     seoChecks.performChecks(pageUrl || '/', pageTags);
   }
   seoChecks.finalChecks();
-  const detectedTags = seoChecks.getDetectedTags();
-  const healthyTags = seoChecks.getFewHealthyTags() || {};
-  log.info(`Healthy tags: ${JSON.stringify(healthyTags)}`);
-
+  const allTags = {
+    detectedTags: seoChecks.getDetectedTags(),
+    healthyTags: seoChecks.getFewHealthyTags(),
+    extractedTags,
+  };
+  const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
   const auditResult = {
-    detectedTags,
+    detectedTags: updatedDetectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: 'na',
     finalUrl: baseURL,
-    allTags: {
-      detectedTags,
-      extractedTags,
-      healthyTags,
-    },
   };
   log.info(`SEO checks completed for ${extractedTagsCount} tags`);
   return {

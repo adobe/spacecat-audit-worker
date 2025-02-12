@@ -40,7 +40,7 @@ import { auditMetaTagsRunner, fetchAndProcessPageObject } from '../../src/metata
 use(sinonChai);
 use(chaiAsPromised);
 
-xdescribe('Meta Tags', () => {
+describe('Meta Tags', () => {
   describe('SeoChecks', () => {
     let seoChecks;
     let logStub;
@@ -775,9 +775,8 @@ xdescribe('Meta Tags', () => {
     let ImsClientStubs;
     let getPresignedUrlStub;
     let genvarClientStub;
-    let auditUrl;
     let siteStub;
-    let auditData;
+    let allTags;
 
     beforeEach(async () => {
       s3Client = {};
@@ -824,20 +823,16 @@ xdescribe('Meta Tags', () => {
           GENVAR_IMS_ORG_ID: 'test-org-id',
         },
       };
-      auditData = {
-        auditResult: {
-          allTags: {
-            detectedTags: {
-              '/about-us': { h1: {} },
-              '/add-on-and-refresh': { description: {}, h1: {} },
-            },
-            extractedTags: {
-              '/about-us': { s3key: 'about-us-key' },
-              '/add-on-and-refresh': { s3key: 'add-on-key' },
-            },
-            healthyTags: {},
-          },
+      allTags = {
+        detectedTags: {
+          '/about-us': { h1: {} },
+          '/add-on-and-refresh': { description: {}, h1: {} },
         },
+        extractedTags: {
+          '/about-us': { s3key: 'about-us-key' },
+          '/add-on-and-refresh': { s3key: 'add-on-key' },
+        },
+        healthyTags: {},
       };
 
       metatagsAutoSuggest = await esmock('../../src/metatags/metatags-auto-suggest.js', {
@@ -845,7 +840,6 @@ xdescribe('Meta Tags', () => {
         '@adobe/spacecat-shared-gpt-client': { GenvarClient: { createFrom: () => genvarClientStub } },
         '@aws-sdk/s3-request-presigner': { getSignedUrl: getPresignedUrlStub },
       });
-      auditUrl = 'www.audit-url.com';
       siteStub = {
         getBaseURL: sinon.stub().returns('https://example.com'),
       };
@@ -859,14 +853,14 @@ xdescribe('Meta Tags', () => {
       Configuration.findLatest.resolves({
         isHandlerEnabledForSite: sinon.stub().returns(false),
       });
-      await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
+      await metatagsAutoSuggest(allTags, context, siteStub);
       expect(log.info.calledWith('Metatags auto-suggest is disabled for site')).to.be.true;
     });
 
     it('should handle missing Genvar endpoint', async () => {
       context.env.GENVAR_ENDPOINT = '';
       try {
-        await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
+        await metatagsAutoSuggest(allTags, context, siteStub);
       } catch (error) {
         expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
       }
@@ -876,7 +870,7 @@ xdescribe('Meta Tags', () => {
       context.env.FIREFALL_IMS_ORG_ID = '';
 
       try {
-        await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
+        await metatagsAutoSuggest(allTags, context, siteStub);
       } catch (error) {
         expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
       }
@@ -902,20 +896,20 @@ xdescribe('Meta Tags', () => {
         },
       });
 
-      const response = await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
+      const response = await metatagsAutoSuggest(allTags, context, siteStub);
 
       expect(log.info.calledWith('Generated presigned URLs')).to.be.true;
       expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
-      expect(response.auditResult.detectedTags['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
-      expect(response.auditResult.detectedTags['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
-      expect(response.auditResult.detectedTags['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
+      expect(response['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
+      expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
+      expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
     }).timeout(15000);
 
     it('should log an error and throw if the Genvar API call fails', async () => {
       genvarClientStub.generateSuggestions.throws(new Error('Genvar API failed'));
       let err;
       try {
-        await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
+        await metatagsAutoSuggest(allTags, context, siteStub);
       } catch (error) {
         err = error;
       }
@@ -926,7 +920,7 @@ xdescribe('Meta Tags', () => {
       genvarClientStub.generateSuggestions.resolves(5);
       let err;
       try {
-        await metatagsAutoSuggest(auditUrl, auditData, context, siteStub);
+        await metatagsAutoSuggest(allTags, context, siteStub);
       } catch (error) {
         err = error;
       }
