@@ -214,9 +214,9 @@ class SeoChecks {
    */
   getFewHealthyTags() {
     return {
-      [TITLE]: this.healthyTags[TITLE].slice(0, 20),
-      [DESCRIPTION]: this.healthyTags[DESCRIPTION].slice(0, 20),
-      [H1]: this.healthyTags[H1].slice(0, 20),
+      [TITLE]: this.healthyTags[TITLE].slice(0, 15),
+      [DESCRIPTION]: this.healthyTags[DESCRIPTION].slice(0, 15),
+      [H1]: this.healthyTags[H1].slice(0, 15),
     };
   }
 

@@ -56,13 +56,9 @@ export default async function metatagsAutoSuggest(allTags, context, site) {
   }
   log.info('Generating suggestions for Meta-tags using Genvar.');
   const tagsData = {};
-  for (const [endpoint, tags] of Object.entries(detectedTags)) {
+  for (const endpoint of Object.keys(detectedTags)) {
     // eslint-disable-next-line no-await-in-loop
-    const preSignedUrl = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
-    tagsData[endpoint] = {
-      ...tags,
-      preSignedUrl,
-    };
+    tagsData[endpoint] = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
   }
   log.info('Generated presigned URLs');
   const requestBody = {

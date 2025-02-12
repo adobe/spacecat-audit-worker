@@ -858,21 +858,21 @@ describe('Meta Tags', () => {
     });
 
     it('should handle missing Genvar endpoint', async () => {
-      context.env.GENVAR_ENDPOINT = '';
+      context.env.GENVAR_HOST = '';
       try {
         await metatagsAutoSuggest(allTags, context, siteStub);
       } catch (error) {
-        expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
+        expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId');
       }
     });
 
-    it('should handle missing firefall ims orgId', async () => {
-      context.env.FIREFALL_IMS_ORG_ID = '';
+    it('should handle missing genvar ims orgId', async () => {
+      context.env.GENVAR_IMS_ORG_ID = '';
 
       try {
         await metatagsAutoSuggest(allTags, context, siteStub);
       } catch (error) {
-        expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or firefall ims orgId');
+        expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId1');
       }
     });
 
