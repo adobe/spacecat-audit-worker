@@ -178,7 +178,9 @@ export async function filterValidUrls(urls) {
   const MAX_RETRIES = 3;
   const RETRY_DELAY = 1000; // 1 second delay before retrying
 
-  async function fetchUrlWithRetry(url, attempt = 1) {
+  async function fetchUrlWithRetry(url, context, attempt = 1) {
+    const { log } = context;
+    log.info(`Attempt ${attempt} for ${url}`);
     try {
       const response = await fetch(url, {
         method: 'HEAD',
@@ -222,6 +224,7 @@ export async function filterValidUrls(urls) {
 
       // Handle 403 Forbidden
       if (response.status === 403 && attempt < MAX_RETRIES) {
+        log.info(`403 Forbidden for ${url}, retrying attempt ${attempt + 1}/${MAX_RETRIES}...`);
         // eslint-disable-next-line max-statements-per-line
         await new Promise((resolve) => { setTimeout(resolve, RETRY_DELAY * attempt); });
         return fetchUrlWithRetry(url, attempt + 1);
@@ -231,7 +234,7 @@ export async function filterValidUrls(urls) {
       if (response.status === 429 && attempt < MAX_RETRIES) {
         let retryAfter = response.headers.get('Retry-After');
         retryAfter = retryAfter ? parseInt(retryAfter, 10) * 1000 : RETRY_DELAY * attempt;
-
+        log.info(`429 Too Many Requests for ${url}, retrying attempt ${attempt + 1}/${MAX_RETRIES} after ${retryAfter}ms...`);
         // eslint-disable-next-line max-statements-per-line
         await new Promise((resolve) => { setTimeout(resolve, retryAfter); });
         return fetchUrlWithRetry(url, attempt + 1);
@@ -239,6 +242,7 @@ export async function filterValidUrls(urls) {
 
       return { status: NOT_OK, url, statusCode: response.status };
     } catch {
+      log.info(`Network error for ${url} on attempt ${attempt}:`);
       return { status: NETWORK_ERROR, url, error: 'NETWORK_ERROR' };
     }
   }
