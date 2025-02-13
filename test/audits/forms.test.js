@@ -20,8 +20,10 @@ import { formsAuditRunner } from '../../src/forms-opportunities/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import formVitalsData from '../fixtures/formvitalsdata.json' with { type: 'json' };
 import testData from '../fixtures/high-form-views-low-conversions.js';
-import convertToOpportunity from '../../src/forms-opportunities/opportunityHandler.js';
+import highFormViewsLowConversionsOpportunity from '../../src/forms-opportunities/highFormViewsLowConversionsOpportunity.js';
+import highPageViewsLowFormCTAOpportunity from '../../src/forms-opportunities/highPageViewsLowFormCTAOpportunity.js';
 import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
+import sendUrlsForScraping from '../../src/forms-opportunities/sendOpportunityUrlsToSQSForScraping.js';
 
 use(sinonChai);
 
@@ -108,14 +110,14 @@ describe('opportunities handler method', () => {
   it('should create new forms opportunity', async () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
-    await convertToOpportunity(auditUrl, auditData, context);
+    await highFormViewsLowConversionsOpportunity(auditUrl, auditData, context);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should use existing opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
-    await convertToOpportunity(auditUrl, auditData, context);
+    await highFormViewsLowConversionsOpportunity(auditUrl, auditData, context);
     expect(formsOppty.save).to.be.calledOnce;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
@@ -123,7 +125,7 @@ describe('opportunities handler method', () => {
   it('should throw error if fetching opportunity fails', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
     try {
-      await convertToOpportunity(auditUrl, auditData, context);
+      await highFormViewsLowConversionsOpportunity(auditUrl, auditData, context);
     } catch (err) {
       expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id: some-error');
     }
@@ -134,10 +136,255 @@ describe('opportunities handler method', () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
     dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
     try {
-      await convertToOpportunity(auditUrl, auditData, context);
+      await highFormViewsLowConversionsOpportunity(auditUrl, auditData, context);
     } catch (err) {
       expect(err.message).to.equal('Failed to create Forms opportunity for siteId site-id: some-error');
     }
     expect(logStub.error).to.be.calledWith('Creating Forms opportunity for siteId site-id failed with error: some-error');
+  });
+});
+
+describe('highPageViewsLowFormCTAOpportunity handler method', () => {
+  let logStub;
+  let dataAccessStub;
+  let auditData;
+  let auditUrl;
+  let formsCTAOppty;
+  let context;
+
+  beforeEach(() => {
+    sinon.restore();
+    auditUrl = 'https://example.com';
+    formsCTAOppty = {
+      getId: () => 'opportunity-id',
+      setAuditId: sinon.stub(),
+      save: sinon.stub(),
+      getType: () => 'high-page-views-low-form-cta',
+    };
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+    };
+    dataAccessStub = {
+      Opportunity: {
+        allBySiteIdAndStatus: sinon.stub().resolves([]),
+        create: sinon.stub(),
+      },
+    };
+    context = {
+      log: logStub,
+      dataAccess: dataAccessStub,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+    };
+    auditData = testData.auditData;
+  });
+
+  it('should create new high page views low form CTA opportunity', async () => {
+    const expectedOpportunityData = {
+      siteId: 'site-id',
+      auditId: 'audit-id',
+      runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
+      type: 'high-page-views-low-form-cta',
+      origin: 'AUTOMATION',
+      title: 'Form has low views but CTA page has high views',
+      description: 'Form has low views but CTA page has high view',
+      tags: [
+        'Forms Conversion',
+      ],
+      data: {
+        form: 'https://www.surest.com/newsletter',
+        screenshot: '',
+        trackedFormKPIName: 'Conversion Rate',
+        trackedFormKPIValue: null,
+        formViews: 300,
+        pageViews: 8670,
+        samples: 8670,
+        metrics: [
+          {
+            type: 'conversionRate',
+            vendor: '*',
+            value: {
+              page: null,
+            },
+          },
+        ],
+      },
+    };
+
+    formsCTAOppty.getType = () => 'high-page-views-low-form-cta';
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
+
+    await highPageViewsLowFormCTAOpportunity(auditUrl, auditData, context);
+
+    const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
+    expect(actualCall).to.deep.equal(expectedOpportunityData);
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form cta audit type.');
+  });
+
+  it('should use existing high page views low form CTA opportunity', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
+
+    await highPageViewsLowFormCTAOpportunity(auditUrl, auditData, context);
+
+    expect(formsCTAOppty.save).to.be.calledOnce;
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form cta audit type.');
+  });
+
+  it('should throw error if fetching high page views low form CTA opportunity fails', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
+
+    try {
+      await highPageViewsLowFormCTAOpportunity(auditUrl, auditData, context);
+    } catch (err) {
+      expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id: some-error');
+    }
+
+    expect(logStub.error).to.be.calledWith('Fetching opportunities for siteId site-id failed with error: some-error');
+  });
+
+  it('should throw error if creating high page views low form CTA opportunity fails', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
+    dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
+
+    try {
+      await highPageViewsLowFormCTAOpportunity(auditUrl, auditData, context);
+    } catch (err) {
+      expect(err.message).to.equal('Failed to create Forms opportunity for high page views low form cta for siteId site-id: some-error');
+    }
+
+    expect(logStub.error).to.be.calledWith('Creating Forms opportunity for high page views low form cta for siteId site-id failed with error: some-error');
+  });
+
+  it('should handle empty form vitals data', async () => {
+    auditData.auditResult.formVitals = [];
+
+    await highPageViewsLowFormCTAOpportunity(auditUrl, auditData, context);
+
+    expect(dataAccessStub.Opportunity.create).to.not.be.called;
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form cta audit type.');
+  });
+});
+
+describe('sendOpportunityUrlsToSQSForScraping handler method', () => {
+  let logStub;
+  let sqsStub;
+  let context;
+  let site;
+  let auditData;
+  let auditUrl;
+
+  beforeEach(() => {
+    sinon.restore();
+    auditUrl = 'https://example.com';
+
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+      warn: sinon.stub(),
+    };
+
+    sqsStub = {
+      sendMessage: sinon.stub().resolves(),
+    };
+
+    site = {
+      getId: () => 'site-123',
+    };
+
+    context = {
+      log: logStub,
+      sqs: sqsStub,
+    };
+
+    // Setup test data
+    auditData = {
+      formOpportunities: [
+        {
+          type: 'high-form-views-low-conversions',
+          url: 'https://example.com/form1',
+          data: { /* form data */ },
+        },
+        {
+          type: 'high-page-views-low-form-cta',
+          url: 'https://example.com/form2',
+          data: { /* form data */ },
+        },
+      ],
+    };
+
+    process.env.SCRAPING_JOBS_QUEUE_URL = 'https://sqs.queue.url';
+  });
+
+  afterEach(() => {
+    delete process.env.SCRAPING_JOBS_QUEUE_URL;
+  });
+
+  it('should send unique URLs to SQS for scraping', async () => {
+    await sendUrlsForScraping(auditUrl, auditData, context, site);
+
+    expect(sqsStub.sendMessage).to.be.calledWith(
+      'https://sqs.queue.url',
+      {
+        processingType: 'default',
+        jobId: 'site-123',
+        urls: new Set([
+          'https://example.com/form1',
+          'https://example.com/form2',
+        ]),
+      },
+    );
+
+    expect(logStub.info).to.be.calledWith(sinon.match(/Triggering scrape for/));
+  });
+
+  it('should handle empty form opportunities array', async () => {
+    auditData.formOpportunities = [];
+
+    await sendUrlsForScraping(auditUrl, auditData, context, site);
+
+    expect(sqsStub.sendMessage).to.not.be.called;
+    expect(logStub.info).to.be.calledWith('No form opportunities to process for scraping');
+  });
+
+  it('should handle undefined form opportunities', async () => {
+    delete auditData.formOpportunities;
+
+    await sendUrlsForScraping(auditUrl, auditData, context, site);
+
+    expect(sqsStub.sendMessage).to.not.be.called;
+    expect(logStub.info).to.be.calledWith('No form opportunities to process for scraping');
+  });
+
+  it('should handle URLs with different cases as unique', async () => {
+    auditData.formOpportunities = [
+      {
+        type: 'high-form-views-low-conversions',
+        url: 'https://example.com/Form1',
+        data: { /* form data */ },
+      },
+      {
+        type: 'high-page-views-low-form-cta',
+        url: 'https://example.com/form1',
+        data: { /* form data */ },
+      },
+    ];
+
+    await sendUrlsForScraping(auditUrl, auditData, context, site);
+
+    const sentMessage = sqsStub.sendMessage.getCall(0).args[1];
+    expect(sentMessage.urls.size).to.equal(2); // Should treat different cases as unique URLs
+  });
+
+  it('should not send a message if there are no unique URLs', async () => {
+    // eslint-disable-next-line no-shadow
+    const auditData = { formOpportunities: [] };
+    await sendUrlsForScraping('https://audit.url', auditData, context, site);
+
+    expect(sqsStub.sendMessage).to.not.have.been.called;
+    expect(logStub.info).to.have.been.calledWith('No form opportunities to process for scraping');
   });
 });

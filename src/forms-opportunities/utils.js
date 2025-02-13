@@ -9,6 +9,11 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
+import {
+  getHighPageViewsLowFormCtrMetrics,
+} from '@adobe/spacecat-shared-utils';
+
 const DAILY_PAGEVIEW_THRESHOLD = 200;
 const CR_THRESHOLD_RATIO = 0.3;
 const MOBILE = 'mobile';
@@ -87,7 +92,8 @@ function convertToOpportunityData(urlObject) {
   const {
     url, pageViews, formViews, formSubmit,
   } = urlObject;
-  const conversionRate = formSubmit / formViews;
+  let conversionRate = formSubmit / formViews;
+  conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
 
   const opportunity = {
     form: url,
@@ -108,11 +114,20 @@ function convertToOpportunityData(urlObject) {
   return opportunity;
 }
 
-export default function generateOpptyData(formVitals) {
+export function generateOpptyData(formVitals) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
   const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
   return getHighFormViewsLowConversion(7, formVitalsByDevice).map(convertToOpportunityData);
+}
+
+export function generateOpptyDataForHighPageViewsLowFormCTA(formVitals) {
+  const formVitalsCollection = formVitals.filter(
+    (row) => row.formengagement && row.formsubmit && row.formview,
+  );
+
+  // const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
+  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map(convertToOpportunityData);
 }

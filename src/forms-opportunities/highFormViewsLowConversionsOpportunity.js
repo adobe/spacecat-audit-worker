@@ -10,14 +10,14 @@
  * governing permissions and limitations under the License.
  */
 
-import generateOpptyData from './utils.js';
+import { generateOpptyData } from './utils.js';
 
 /**
  * @param auditUrl - The URL of the audit
  * @param auditData - The audit data containing the audit result and additional details.
  * @param context - The context object containing the data access and logger objects.
  */
-export default async function convertToOpportunity(auditUrl, auditData, context) {
+export default async function highFormViewsLowConversionsOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 
