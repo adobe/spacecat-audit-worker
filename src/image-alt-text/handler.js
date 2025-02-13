@@ -85,7 +85,7 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
   // Perform Image Alt Text audit
   const auditEngine = new AuditEngine(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
-    auditEngine.performPageAudit(pageUrl || '/', pageTags);
+    auditEngine.performPageAudit(pageUrl, pageTags);
   }
   auditEngine.finalizeAudit();
   const detectedTags = auditEngine.getAuditedTags();
