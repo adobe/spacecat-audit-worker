@@ -55,6 +55,8 @@ jobs:
 
       - name: Configure AWS
         uses: ./.github/actions/configure-aws
+        with:
+          aws_role_to_assume: 'arn:aws:iam::${{env.AWS_ACCOUNT_ID}}:role/spacecat-role-github-actions'
 
       - name: Semantic Release
         run: npm run semantic-release
@@ -77,6 +79,8 @@ jobs:
 
       - name: Configure AWS
         uses: ./.github/actions/configure-aws
+        with:
+          aws_role_to_assume: 'arn:aws:iam::${{env.AWS_ACCOUNT_ID}}:role/spacecat-role-github-actions'
 
       - name: Branch Deployment
         run: npm run deploy-ci
