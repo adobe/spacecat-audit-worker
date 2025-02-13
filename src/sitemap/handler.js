@@ -174,9 +174,11 @@ export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
   const NETWORK_ERROR = 2;
-  const batchSize = 50;
+  const BATCH_SIZE = 50;
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 1000; // 1 second delay before retrying
 
-  const fetchUrl = async (url) => {
+  async function fetchUrlWithRetry(url, attempt = 1) {
     try {
       const response = await fetch(url, {
         method: 'HEAD',
@@ -218,17 +220,34 @@ export async function filterValidUrls(urls) {
         }
       }
 
+      // Handle 403 Forbidden
+      if (response.status === 403 && attempt < MAX_RETRIES) {
+        // eslint-disable-next-line max-statements-per-line
+        await new Promise((resolve) => { setTimeout(resolve, RETRY_DELAY * attempt); });
+        return fetchUrlWithRetry(url, attempt + 1);
+      }
+
+      // Handle 429 Too Many Requests
+      if (response.status === 429 && attempt < MAX_RETRIES) {
+        let retryAfter = response.headers.get('Retry-After');
+        retryAfter = retryAfter ? parseInt(retryAfter, 10) * 1000 : RETRY_DELAY * attempt;
+
+        // eslint-disable-next-line max-statements-per-line
+        await new Promise((resolve) => { setTimeout(resolve, retryAfter); });
+        return fetchUrlWithRetry(url, attempt + 1);
+      }
+
       return { status: NOT_OK, url, statusCode: response.status };
     } catch {
       return { status: NETWORK_ERROR, url, error: 'NETWORK_ERROR' };
     }
-  };
+  }
 
-  const fetchPromises = urls.map(fetchUrl);
+  const fetchPromises = urls.map(fetchUrlWithRetry);
 
   const batches = [];
-  for (let i = 0; i < fetchPromises.length; i += batchSize) {
-    batches.push(fetchPromises.slice(i, i + batchSize));
+  for (let i = 0; i < fetchPromises.length; i += BATCH_SIZE) {
+    batches.push(fetchPromises.slice(i, i + BATCH_SIZE));
   }
 
   const results = [];
