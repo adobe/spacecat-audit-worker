@@ -88,9 +88,9 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-function convertToOpportunityData(urlObject) {
+function convertToOpportunityData(opportunityName, urlObject) {
   const {
-    url, pageViews, formViews, formSubmit,
+    url, pageViews, formViews, formSubmit, CTA,
   } = urlObject;
   let conversionRate = formSubmit / formViews;
   conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
@@ -110,6 +110,7 @@ function convertToOpportunityData(urlObject) {
         page: conversionRate,
       },
     }],
+    ...(opportunityName === 'high-page-views-low-form-ctr' && { cta: CTA }),
   };
   return opportunity;
 }
@@ -120,14 +121,13 @@ export function generateOpptyData(formVitals) {
   );
 
   const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
-  return getHighFormViewsLowConversion(7, formVitalsByDevice).map(convertToOpportunityData);
+  return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion));
 }
 
-export function generateOpptyDataForHighPageViewsLowFormCTA(formVitals) {
+export function generateOpptyDataForHighPageViewsLowFormCTR(formVitals) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
-  // const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
-  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map(convertToOpportunityData);
+  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-ctr', highPageViewsLowFormCtr));
 }

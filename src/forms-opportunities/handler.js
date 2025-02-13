@@ -14,7 +14,7 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/audit.js';
 import highFormViewsLowConversionsOpportunity from './highFormViewsLowConversionsOpportunity.js';
-import highPageViewsLowFormCTAOpportunity from './highPageViewsLowFormCTAOpportunity.js';
+import highPageViewsLowFormCTROpportunity from './highPageViewsLowFormCTAOpportunity.js';
 import sendUrlsForScraping from './sendOpportunityUrlsToSQSForScraping.js';
 
 const DAILY_THRESHOLD = 200;
@@ -71,6 +71,6 @@ export default new AuditBuilder()
   .withRunner(formsAuditRunner)
   .withPostProcessors([
     highFormViewsLowConversionsOpportunity,
-    highPageViewsLowFormCTAOpportunity,
+    highPageViewsLowFormCTROpportunity,
     sendUrlsForScraping])
   .build();

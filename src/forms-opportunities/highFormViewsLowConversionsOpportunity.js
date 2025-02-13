@@ -26,7 +26,6 @@ export default async function highFormViewsLowConversionsOpportunity(auditUrl, a
 
   try {
     const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-
     highFormViewsLowConversionsOppty = opportunities.find((oppty) => oppty.getType() === 'high-form-views-low-conversions');
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
@@ -34,7 +33,7 @@ export default async function highFormViewsLowConversionsOpportunity(auditUrl, a
   }
 
   const { formVitals } = auditData.auditResult;
-
+  const identifiedOpportunities = [];
   const formOpportunities = generateOpptyData(formVitals);
 
   try {
@@ -55,6 +54,7 @@ export default async function highFormViewsLowConversionsOpportunity(auditUrl, a
         };
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
+        identifiedOpportunities.push(opportunityData);
         log.debug('Forms Opportunity created');
       } else {
         highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
@@ -62,9 +62,15 @@ export default async function highFormViewsLowConversionsOpportunity(auditUrl, a
         await highFormViewsLowConversionsOppty.save();
       }
     }
+
+    log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high-form-views-low-conversions audit type.`);
+    // eslint-disable-next-line no-param-reassign
+    auditData.formsOpportunities = identifiedOpportunities;
+    return {
+      ...auditData,
+    };
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
     throw new Error(`Failed to create Forms opportunity for siteId ${auditData.siteId}: ${e.message}`);
   }
-  log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high-form-views-low-conversions audit type.`);
 }

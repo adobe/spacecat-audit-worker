@@ -159,7 +159,7 @@ describe('highPageViewsLowFormCTAOpportunity handler method', () => {
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       save: sinon.stub(),
-      getType: () => 'high-page-views-low-form-cta',
+      getType: () => 'high-page-views-low-form-ctr',
     };
     logStub = {
       info: sinon.stub(),
@@ -186,11 +186,11 @@ describe('highPageViewsLowFormCTAOpportunity handler method', () => {
     const expectedOpportunityData = {
       siteId: 'site-id',
       auditId: 'audit-id',
-      runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
-      type: 'high-page-views-low-form-cta',
+      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/AEM_Forms/_layouts/15/doc.aspx?sourcedoc=%7Bc64ab030-cd49-4812-b8fa-a70bf8d91618%7D',
+      type: 'high-page-views-low-form-ctr',
       origin: 'AUTOMATION',
-      title: 'Form has low views but CTA page has high views',
-      description: 'Form has low views but CTA page has high view',
+      title: 'Form has low views but conversion element has low CTR',
+      description: 'The page containing the form CTA has high views but low CTR for the form CTA',
       tags: [
         'Forms Conversion',
       ],
@@ -211,6 +211,10 @@ describe('highPageViewsLowFormCTAOpportunity handler method', () => {
             },
           },
         ],
+        cta: {
+          source: '#teaser-related02 .cmp-teaser__action-link',
+          url: 'https://www.surest.com/about-us',
+        },
       },
     };
 
@@ -305,13 +309,19 @@ describe('sendOpportunityUrlsToSQSForScraping handler method', () => {
       formOpportunities: [
         {
           type: 'high-form-views-low-conversions',
-          url: 'https://example.com/form1',
-          data: { /* form data */ },
+          data: {
+            form: 'https://example.com/form1',
+          },
         },
         {
-          type: 'high-page-views-low-form-cta',
-          url: 'https://example.com/form2',
-          data: { /* form data */ },
+          type: 'high-page-views-low-form-ctr',
+          data: {
+            form: 'https://example.com/form2',
+            cta: {
+              url: 'https://www.xyz.com/about-us',
+              source: '#teaser-related02 .cmp-teaser__action-link',
+            },
+          },
         },
       ],
     };
@@ -329,11 +339,11 @@ describe('sendOpportunityUrlsToSQSForScraping handler method', () => {
     expect(sqsStub.sendMessage).to.be.calledWith(
       'https://sqs.queue.url',
       {
-        processingType: 'default',
+        processingType: 'form',
         jobId: 'site-123',
         urls: new Set([
           'https://example.com/form1',
-          'https://example.com/form2',
+          'https://www.xyz.com/about-us',
         ]),
       },
     );
@@ -363,13 +373,19 @@ describe('sendOpportunityUrlsToSQSForScraping handler method', () => {
     auditData.formOpportunities = [
       {
         type: 'high-form-views-low-conversions',
-        url: 'https://example.com/Form1',
-        data: { /* form data */ },
+        data: {
+          form: 'https://example.com/Form1',
+        },
       },
       {
-        type: 'high-page-views-low-form-cta',
-        url: 'https://example.com/form1',
-        data: { /* form data */ },
+        type: 'high-page-views-low-form-ctr',
+        data: {
+          form: 'https://example.com/form1',
+          cta: {
+            url: 'https://www.xyz.com/about-us',
+            source: '#teaser-related02 .cmp-teaser__action-link',
+          },
+        },
       },
     ];
 

@@ -29,13 +29,17 @@ export default async function sendUrlsForScraping(auditUrl, auditData, context, 
 
   const uniqueUrls = new Set();
   formOpportunities.forEach((opptyData) => {
-    uniqueUrls.add(opptyData.url);
+    if (opptyData.type === 'high-page-views-low-form-ctr') {
+      uniqueUrls.add(opptyData.data.cta.url);
+    } else {
+      uniqueUrls.add(opptyData.data.form);
+    }
   });
 
   log.info(`Triggering scrape for [${JSON.stringify(uniqueUrls, null, 2)}]`);
   if (uniqueUrls.size > 0) {
     await sqs.sendMessage(process.env.SCRAPING_JOBS_QUEUE_URL, {
-      processingType: 'default',
+      processingType: 'form',
       jobId: site.getId(),
       urls: uniqueUrls,
     });
