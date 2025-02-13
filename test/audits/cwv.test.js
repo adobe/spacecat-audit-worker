@@ -33,7 +33,6 @@ const baseURL = 'https://spacecat.com';
 const auditUrl = 'www.spacecat.com';
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   domain: auditUrl,
-  domainkey: '42',
   interval: 7,
   granularity: 'hourly',
 };
@@ -55,17 +54,8 @@ describe('CWVRunner Tests', () => {
       query: sandbox.stub().resolves(rumData),
     },
     dataAccess: {},
+    env: {},
   };
-
-  beforeEach('setup', () => {
-    nock('https://secretsmanager.us-east-1.amazonaws.com/')
-      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/spacecat_com/ci')
-      .reply(200, {
-        SecretString: JSON.stringify({
-          RUM_DOMAIN_KEY: '42',
-        }),
-      });
-  });
 
   afterEach(() => {
     nock.cleanAll();

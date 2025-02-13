@@ -16,7 +16,6 @@ import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { JSDOM } from 'jsdom';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
-import { getRUMDomainkey } from '../support/utils.js';
 
 const DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD = 500;
 
@@ -653,10 +652,8 @@ export async function processAudit(auditURL, context, site, days) {
   log = context.log;
   log.info(`Processing ESS Experimentation audit for ${auditURL}`);
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: auditURL,
-    domainkey,
     interval: days,
     granularity: 'hourly',
   };

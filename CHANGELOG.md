@@ -1,3 +1,38 @@
+## [1.52.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.8...v1.52.9) (2025-02-12)
+
+
+### Bug Fixes
+
+* missing statuscodes in the sitemap audit ([#644](https://github.com/adobe/spacecat-audit-worker/issues/644)) ([d6b5015](https://github.com/adobe/spacecat-audit-worker/commit/d6b50156b951362ee91bf62715e5f082f849d215))
+
+## [1.52.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.7...v1.52.8) (2025-02-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.2.0 ([#648](https://github.com/adobe/spacecat-audit-worker/issues/648)) ([320bd50](https://github.com/adobe/spacecat-audit-worker/commit/320bd50b22ff2925b4ce70c6a613a7f199b55640))
+
+## [1.52.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.6...v1.52.7) (2025-02-12)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#646](https://github.com/adobe/spacecat-audit-worker/issues/646)) ([82bd9aa](https://github.com/adobe/spacecat-audit-worker/commit/82bd9aa2119aea08c1f44d8ea71103b1eea46773))
+
+## [1.52.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.5...v1.52.6) (2025-02-11)
+
+
+### Bug Fixes
+
+* change to new rum client ([#645](https://github.com/adobe/spacecat-audit-worker/issues/645)) ([a003304](https://github.com/adobe/spacecat-audit-worker/commit/a0033041171131ec4ef69b78277d2046aa6a6792))
+
+## [1.52.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.4...v1.52.5) (2025-02-10)
+
+
+### Bug Fixes
+
+* finalUrl was removed ([#641](https://github.com/adobe/spacecat-audit-worker/issues/641)) ([dc7b775](https://github.com/adobe/spacecat-audit-worker/commit/dc7b77500b68a49d8420032b664b21487d16a2cc))
+
 ## [1.52.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.3...v1.52.4) (2025-02-09)
 
 
