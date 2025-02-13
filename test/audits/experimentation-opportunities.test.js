@@ -17,7 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
-import { postProcessor, MAX_OPPORTUNITIES, getRecommendations } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
+import { postProcessorHighOrganic, MAX_OPPORTUNITIES, getRecommendations } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/opportunitiesdata.json' with { type: 'json' };
 import expectedOpportunitiesData from '../fixtures/expected-opportunities-data.json' with { type: 'json' };
@@ -192,7 +192,7 @@ describe('Opportunities Tests', () => {
 
   it('should include required parameters in lambda payload for high-organic-low-ctr opportunities', async () => {
     await experimentationOpportunities.handler(url, context, site);
-    expect(lambdaSendStub).to.have.been.calledOnce;
+    expect(lambdaSendStub).to.have.been.calledTwice;
     const lambdaPayload = JSON.parse(lambdaSendStub.firstCall.args[0].input.Payload);
     expect(lambdaPayload).to.include.all.keys([
       'type',
@@ -315,7 +315,7 @@ describe('Opportunities postProcessor', () => {
     context.dataAccess.Opportunity.create.resolves();
     const rumOpportunity = auditData.auditResult.experimentationOpportunities[0];
 
-    await postProcessor('https://example.com', auditData, context);
+    await postProcessorHighOrganic('https://example.com', auditData, context);
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
     expect(context.dataAccess.Opportunity.create).to.have.been.calledWith({
@@ -350,7 +350,7 @@ describe('Opportunities postProcessor', () => {
     context.dataAccess.Opportunity.allBySiteId.resolves([]);
     context.dataAccess.Opportunity.create.resolves();
 
-    await postProcessor('https://example.com', {
+    await postProcessorHighOrganic('https://example.com', {
       ...auditData,
       auditResult: {
         experimentationOpportunities: [
@@ -370,7 +370,7 @@ describe('Opportunities postProcessor', () => {
     context.dataAccess.Opportunity.allBySiteId.resolves([existingOpportunity]);
     // context.dataAccess.Opportunity.save.resolves();
 
-    await postProcessor('https://example.com', auditData, context);
+    await postProcessorHighOrganic('https://example.com', auditData, context);
 
     expect(existingOpportunity.save).to.have.been.calledOnce;
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -383,7 +383,7 @@ describe('Opportunities postProcessor', () => {
     };
     context.dataAccess.Opportunity.allBySiteId.resolves([nonNewOpportunity]);
 
-    await postProcessor('https://example.com', auditData, context);
+    await postProcessorHighOrganic('https://example.com', auditData, context);
 
     expect(nonNewOpportunity.remove).to.not.have.been.called;
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -393,7 +393,7 @@ describe('Opportunities postProcessor', () => {
     context.dataAccess.Opportunity.allBySiteId.resolves([]);
     context.dataAccess.Opportunity.create.rejects(new Error('Test error'));
 
-    await postProcessor('https://example.com', auditData, context);
+    await postProcessorHighOrganic('https://example.com', auditData, context);
 
     expect(context.log.error).to.have.been.calledWith(
       sinon.match(/Error creating\/updating opportunity entity/),
@@ -424,7 +424,7 @@ describe('Opportunities postProcessor', () => {
     context.dataAccess.Opportunity.allBySiteId.resolves([]);
     context.dataAccess.Opportunity.create.resolves();
 
-    await postProcessor('https://example.com', multipleOpportunities, context);
+    await postProcessorHighOrganic('https://example.com', multipleOpportunities, context);
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledTwice;
   });

@@ -127,7 +127,7 @@ async function getUnscrapedUrls(context, site, urls) {
     const screenshotPath = `${getS3PathPrefix(
       url.url,
       site,
-    )}/screenshot-desktop.png`;
+    )}/screenshot-desktop-fullpage.png`;
     const command = new HeadObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
       Key: screenshotPath,
@@ -155,7 +155,7 @@ async function updateRecommendations(oppty, context, site) {
         url: oppty.page,
         s3BucketName: process.env.S3_SCRAPER_BUCKET_NAME,
         promptPath: 'prompts/improving-ctr-guidance-vendor-v2.prompt',
-        screenshotPaths: [`${getS3PathPrefix(oppty.page, site)}/screenshot-desktop.png`],
+        screenshotPaths: [`${getS3PathPrefix(oppty.page, site)}/screenshot-desktop-fullpage.png`],
         scrapeJsonPath: `${getS3PathPrefix(oppty.page, site)}/scrape.json`,
         vendorDetails: getMetricsByVendor(oppty.metrics),
         additionalContext: '',
@@ -184,28 +184,23 @@ async function updateRecommendations(oppty, context, site) {
   // eslint-disable-next-line no-param-reassign
   oppty.recommendations = getRecommendations(lambdaResult);
   // eslint-disable-next-line no-param-reassign
-  oppty.screenshot = await getPresignedUrl('screenshot-desktop.png', context, oppty.page, site);
+  oppty.screenshot = await getPresignedUrl('screenshot-desktop-fullpage.png', context, oppty.page, site);
   // eslint-disable-next-line no-param-reassign
   oppty.thumbnail = await getPresignedUrl('screenshot-desktop-thumbnail.png', context, oppty.page, site);
 }
 
-async function processHighOrganicLowCtrOpportunities(opportunites, context, site) {
+async function processOpportunities(type, opportunites, context, site, impactFn) {
   const { sqs, log } = context;
   // add s3 client to the context
   const wrappedFunction = s3Client(() => Promise.resolve());
   await wrappedFunction({}, context);
   log.info(`s3 client added to the context: ${context.s3Client}`);
 
-  const highOrganicLowCtrOpportunities = opportunites.filter((oppty) => oppty.type === 'high-organic-low-ctr')
-    .map((oppty) => {
-      const { pageViews, trackedPageKPIValue, trackedKPISiteAverage } = oppty;
-      const opportunityImpact = Math.floor(pageViews
-          * (trackedKPISiteAverage - CTR_THRESHOLD_MARGIN - trackedPageKPIValue));
-      return {
-        ...oppty,
-        opportunityImpact,
-      };
-    });
+  const highOrganicLowCtrOpportunities = opportunites.filter((oppty) => oppty.type === type)
+    .map((oppty) => ({
+      ...oppty,
+      opportunityImpact: impactFn(oppty),
+    }));
   log.info(`Found ${highOrganicLowCtrOpportunities.length} high organic low CTR opportunities`);
   highOrganicLowCtrOpportunities.sort((a, b) => b.opportunityImpact - a.opportunityImpact);
   const topHighOrganicLowCtrOpportunities = highOrganicLowCtrOpportunities.slice(
@@ -237,7 +232,7 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
   for (const oppty of topHighOrganicLowCtrOpportunities) {
     // eslint-disable-next-line no-await-in-loop
     // await updateRecommendations(oppty, context, site);
-    // update the oppty in the opporrtunities list
+    // update the oppty in the opportunities list
     const index = opportunites.findIndex(
       (opp) => opp.page === oppty.page && opp.type === oppty.type,
     );
@@ -246,6 +241,25 @@ async function processHighOrganicLowCtrOpportunities(opportunites, context, site
       opportunites[index] = oppty;
     }
   }
+}
+
+function getHighOrganicLowCtrImpact(oppty) {
+  const { pageViews, trackedPageKPIValue, trackedKPISiteAverage } = oppty;
+  return Math.floor(pageViews
+    * (trackedKPISiteAverage - CTR_THRESHOLD_MARGIN - trackedPageKPIValue));
+}
+
+async function processHighOrganicLowCtrOpportunities(opportunites, context, site) {
+  return processOpportunities('high-organic-low-ctr', opportunites, context, site, getHighOrganicLowCtrImpact);
+}
+
+function getHighInorganicHighBounceImpact(oppty) {
+  const { pageViews, trackedPageKPIValue } = oppty;
+  return pageViews * trackedPageKPIValue;
+}
+
+async function processHighInorganicHighBounceOpportunities(opportunites, context, site) {
+  return processOpportunities('high-inorganic-high-bounce-rate', opportunites, context, site, getHighInorganicHighBounceImpact);
 }
 
 function getRageClickOpportunityImpact(oppty) {
@@ -290,7 +304,7 @@ async function createOrUpdateOpportunityEntity(
   return true;
 }
 
-function convertToOpportunityEntity(oppty, auditData) {
+function convertToHighOrganicOpportunityEntity(oppty, auditData) {
   return {
     siteId: auditData.siteId,
     auditId: auditData.id,
@@ -319,7 +333,40 @@ function convertToOpportunityEntity(oppty, auditData) {
   };
 }
 
-export async function postProcessor(auditUrl, auditData, context) {
+// skipping tests - workshop purposes
+/* c8 ignore start */
+
+function convertToHighInorganicOpportunityEntity(oppty, auditData) {
+  return {
+    siteId: auditData.siteId,
+    auditId: auditData.id,
+    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/Doc.aspx?sourcedoc=%7B19613D9B-93D4-4112-B7C8-DBE0D9DCC55B%7D&file=Experience_Success_Studio_High_Organic_Traffic_Low_CTR_Runbook.docx&action=default&mobileredirect=true',
+    type: 'high-inorganic-high-bounce-rate',
+    origin: 'AUTOMATION',
+    title: 'Page with High Bounce Rate Detected in Pages Receiving High Inorganic Traffic',
+    description: 'Optimize landing page content, design, and calls-to-action to better align with the expectations and intent of inorganic traffic sources. Enhancing relevance and user experience can reduce bounce rates and boost conversions.',
+    status: 'NEW',
+    guidance: {
+      recommendations: oppty.recommendations,
+    },
+    tags: ['Engagement'],
+    data: {
+      page: oppty.page,
+      pageViews: oppty.pageViews,
+      samples: oppty.samples,
+      screenshot: oppty.screenshot,
+      thumbnail: oppty.thumbnail,
+      trackedPageKPIName: oppty.trackedPageKPIName,
+      trackedPageKPIValue: oppty.trackedPageKPIValue,
+      opportunityImpact: oppty.opportunityImpact,
+      metrics: oppty.metrics,
+    },
+  };
+}
+
+/* c8 ignore stop */
+
+export async function postProcessorHighOrganic(auditUrl, auditData, context) {
   const { log } = context;
   const { dataAccess } = context;
   const { Opportunity } = dataAccess;
@@ -332,7 +379,7 @@ export async function postProcessor(auditUrl, auditData, context) {
     .filter((oppty) => oppty.type === 'high-organic-low-ctr' && oppty.recommendations);
   // Process all opportunities in parallel and wait for completion
   await Promise.all(opportunities.map(async (oppty) => {
-    const opportunity = convertToOpportunityEntity(oppty, auditData);
+    const opportunity = convertToHighOrganicOpportunityEntity(oppty, auditData);
     try {
       const status = await createOrUpdateOpportunityEntity(
         opportunity,
@@ -351,6 +398,43 @@ export async function postProcessor(auditUrl, auditData, context) {
 
   log.info(`Created/updated ${updatedEntities} opportunity entities for ${auditUrl}`);
 }
+
+// skipping tests workshop purposes
+/* c8 ignore start */
+export async function postProcessorHighInOrganic(auditUrl, auditData, context) {
+  const { log } = context;
+  const { dataAccess } = context;
+  const { Opportunity } = dataAccess;
+  let updatedEntities = 0;
+  log.info(`Experimentation Opportunities post processing started for ${auditUrl} from audit ${auditData.id}`);
+  const existingOpportunities = await Opportunity.allBySiteId(auditData.siteId);
+
+  // Get opportunities with recommendations
+  const opportunities = auditData.auditResult.experimentationOpportunities
+    .filter((oppty) => oppty.type === 'high-inorganic-high-bounce-rate' && oppty.recommendations);
+  // Process all opportunities in parallel and wait for completion
+  await Promise.all(opportunities.map(async (oppty) => {
+    const opportunity = convertToHighInorganicOpportunityEntity(oppty, auditData);
+    try {
+      const status = await createOrUpdateOpportunityEntity(
+        opportunity,
+        context,
+        existingOpportunities,
+        auditData.id,
+      );
+      if (status) {
+        updatedEntities += 1;
+      }
+    } catch (error) {
+      log.error(`Error creating/updating opportunity entity for ${opportunity.data.page}: ${error.message}`);
+    }
+    return opportunity;
+  }));
+
+  log.info(`Created/updated ${updatedEntities} opportunity entities for ${auditUrl}`);
+}
+
+/* c8 ignore stop */
 
 /**
  * Audit handler container for all the opportunities
@@ -372,6 +456,7 @@ export async function handler(auditUrl, context, site) {
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   await processHighOrganicLowCtrOpportunities(experimentationOpportunities, context, site);
+  await processHighInorganicHighBounceOpportunities(experimentationOpportunities, context, site);
   await processRageClickOpportunities(experimentationOpportunities);
   log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
@@ -386,6 +471,6 @@ export async function handler(auditUrl, context, site) {
 export default new AuditBuilder()
   .withRunner(handler)
   .withUrlResolver(wwwUrlResolver)
-  .withPostProcessors([postProcessor])
+  .withPostProcessors([postProcessorHighOrganic, postProcessorHighInOrganic])
   .withMessageSender(() => true)
   .build();
