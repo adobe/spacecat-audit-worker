@@ -19,7 +19,7 @@
     "build": "hedy -v --test-bundle",
     "deploy": "hedy -v --deploy --test",
     "deploy-routes": "hedy --no-build -no-hints -l major",
-    "deploy-ci": "hedy -v --deploy --test --pkgVersion=ci$CI_BUILD_NUM -l ci --cleanup-ci=24h",
+    "deploy-ci": "hedy -v --deploy --aws-deploy-bucket spacecat-dev-deploy --aws-account-id 682033462621  --test --pkgVersion=ci$CI_BUILD_NUM -l ci --cleanup-ci=24h --aws-api jg75jg0dv6",
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
     "prepare": "husky"
   },
@@ -27,7 +27,7 @@
     "target": "aws",
     "name": "spacecat-services/audit-worker@${version}",
     "memory": 6144,
-    "awsRole!important": "arn:aws:iam::282898975672:role/spacecat-role-services",
+    "awsRole!important": "arn:aws:iam::682033462621:role/spacecat-role-lambda-generic",
     "testUrl": "/_status_check/healthcheck.json",
     "awsAttachAuthorizer": "",
     "dev": {

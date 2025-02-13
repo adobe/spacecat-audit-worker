@@ -11,6 +11,7 @@ env:
   CI_BUILD_NUM: ${{ github.run_id }}
   CI_BRANCH: ${{ github.ref_name }}
   HLX_AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ github.ref == 'refs/heads/main' && '640168421876' || '682033462621' }}
 
 jobs:
   build:
