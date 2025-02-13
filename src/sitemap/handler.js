@@ -26,6 +26,9 @@ import {
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 
+const AUDIT_TYPE = 'sitemap';
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
   NO_SITEMAP_IN_ROBOTS: 'NO SITEMAP FOUND IN ROBOTS',
@@ -35,8 +38,6 @@ export const ERROR_CODES = Object.freeze({
   SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
   FETCH_ERROR: 'ERROR FETCHING DATA',
 });
-
-const AUDIT_TYPE = 'sitemap';
 
 const VALID_MIME_TYPES = Object.freeze([
   'application/xml',
@@ -62,7 +63,7 @@ export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl, {
     method: 'GET',
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'User-Agent': DEFAULT_USER_AGENT,
     },
   });
   if (!response.ok) {
@@ -182,7 +183,7 @@ export async function filterValidUrls(urls) {
         method: 'HEAD',
         redirect: 'manual',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'User-Agent': DEFAULT_USER_AGENT,
         },
       });
 
@@ -199,7 +200,7 @@ export async function filterValidUrls(urls) {
             method: 'HEAD',
             redirect: 'follow',
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'User-Agent': DEFAULT_USER_AGENT,
             },
           });
           return {
@@ -609,7 +610,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
-  .withUrlResolver((site) => composeAuditURL(site.getBaseURL(), 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
+  .withUrlResolver((site) => composeAuditURL(site.getBaseURL(), DEFAULT_USER_AGENT)
     .then((url) => getUrlWithoutPath(prependSchema(url))))
   .withPostProcessors([generateSuggestions, convertToOpportunity])
   .build();
