@@ -54,13 +54,13 @@ export default async function metatagsAutoSuggest(allTags, context, site) {
     log.info('Metatags auto-suggest is disabled for site');
     return detectedTags;
   }
-  log.info('Generating suggestions for Meta-tags using Genvar.');
+  log.debug('Generating suggestions for Meta-tags using Genvar.');
   const tagsData = {};
   for (const endpoint of Object.keys(detectedTags)) {
     // eslint-disable-next-line no-await-in-loop
     tagsData[endpoint] = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
   }
-  log.info('Generated presigned URLs');
+  log.debug('Generated presigned URLs');
   const requestBody = {
     healthyTags,
     detectedTags: tagsData,
@@ -94,6 +94,6 @@ export default async function metatagsAutoSuggest(allTags, context, site) {
       }
     }
   }
-  log.info('Generated AI suggestions for Meta-tags using Genvar.');
+  log.debug('Generated AI suggestions for Meta-tags using Genvar.');
   return updatedDetectedTags;
 }

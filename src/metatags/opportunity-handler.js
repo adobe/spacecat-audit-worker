@@ -148,7 +148,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 
-  log.info(`Syncing opportunity and suggestions for ${auditData.siteId}`);
+  log.debug(`Syncing opportunity and suggestions for ${auditData.siteId}`);
   let metatagsOppty;
 
   try {
