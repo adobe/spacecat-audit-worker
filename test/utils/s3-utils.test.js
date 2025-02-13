@@ -32,7 +32,7 @@ describe('S3 Utility Functions', () => {
         throw new Error('Expected an error but none was thrown.');
       } catch (error) {
         expect(error).to.be.an('error');
-        expect(error.message).to.equal('Invalid input parameters: ensure s3Client, bucketName, and prefix are provided.');
+        expect(error.message).to.equal('Invalid input parameters in getObjectKeysUsingPrefix: ensure s3Client, bucketName, and prefix are provided.');
       }
     });
 

@@ -160,6 +160,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
+  const { detectedTags, projectedTrafficLost, projectedTrafficValue } = auditData.auditResult;
   try {
     if (!metatagsOppty) {
       const opportunityData = {
@@ -180,19 +181,25 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
           ],
         },
         tags: ['Traffic acquisition'],
+        data: {
+          projectedTrafficLost,
+          projectedTrafficValue,
+        },
       };
       metatagsOppty = await Opportunity.create(opportunityData);
       log.debug('Meta-tags Opportunity created');
     } else {
       metatagsOppty.setAuditId(auditData.siteId);
+      metatagsOppty.setData({
+        projectedTrafficLost,
+        projectedTrafficValue,
+      });
       await metatagsOppty.save();
     }
   } catch (e) {
     log.error(`Creating meta-tags opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
     throw new Error(`Failed to create meta-tags opportunity for siteId ${auditData.siteId}: ${e.message}`);
   }
-
-  const { detectedTags } = auditData.auditResult;
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
   Object.keys(detectedTags).forEach((endpoint) => {
