@@ -11,7 +11,10 @@
  */
 
 import {
-  composeAuditURL, isArray, prependSchema, tracingFetch as fetch,
+  composeAuditURL,
+  isArray,
+  prependSchema,
+  tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import {
   extractDomainAndProtocol,
@@ -164,17 +167,17 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
- * @returns {Promise<{ok: string[], notOk: string[], err: string[]}>} -
- * A promise that resolves to a dict of URLs that exist.
+ * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[]}>} -
+ * A promise that resolves to a dict of URLs categorized by status.
  */
 export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
+  const NETWORK_ERROR = 2;
   const batchSize = 50;
 
   const fetchUrl = async (url) => {
     try {
-      // use manual redirect to capture the status code
       const response = await fetch(url, {
         method: 'HEAD',
         redirect: 'manual',
@@ -206,16 +209,18 @@ export async function filterValidUrls(urls) {
             finalUrl: redirectResponse.url,
           };
         } catch {
-          // if following redirect fails, return just the status code
           return {
-            status: NOT_OK, url, statusCode: response.status, finalUrl,
+            status: NOT_OK,
+            url,
+            statusCode: response.status,
+            finalUrl,
           };
         }
       }
 
       return { status: NOT_OK, url, statusCode: response.status };
     } catch {
-      return { status: NOT_OK, url };
+      return { status: NETWORK_ERROR, url, error: 'NETWORK_ERROR' };
     }
   };
 
@@ -240,18 +245,26 @@ export async function filterValidUrls(urls) {
     .filter((result) => result.status === 'fulfilled')
     .map((result) => result.value);
 
-  return filtered.reduce((acc, result) => {
-    if (result.status === OK) {
-      acc.ok.push(result.url);
-    } else {
-      acc.notOk.push({
-        url: result.url,
-        statusCode: result.statusCode,
-        ...(result.finalUrl && { urls_suggested: result.finalUrl }),
-      });
-    }
-    return acc;
-  }, { ok: [], notOk: [] });
+  return filtered.reduce(
+    (acc, result) => {
+      if (result.status === OK) {
+        acc.ok.push(result.url);
+      } else if (result.status === NETWORK_ERROR) {
+        acc.networkErrors.push({
+          url: result.url,
+          error: result.error,
+        });
+      } else {
+        acc.notOk.push({
+          url: result.url,
+          statusCode: result.statusCode,
+          ...(result.finalUrl && { urls_suggested: result.finalUrl }),
+        });
+      }
+      return acc;
+    },
+    { ok: [], notOk: [], networkErrors: [] },
+  );
 }
 
 /**
@@ -353,12 +366,20 @@ export async function findSitemap(inputUrl) {
   }
 
   if (!sitemapUrls.ok.length) {
-    const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
+    const commonSitemapUrls = [
+      `${protocol}://${domain}/sitemap.xml`,
+      `${protocol}://${domain}/sitemap_index.xml`,
+    ];
     sitemapUrls = await filterValidUrls(commonSitemapUrls);
     if (!sitemapUrls.ok || !sitemapUrls.ok.length) {
       return {
         success: false,
-        reasons: [{ value: `${protocol}://${domain}/robots.txt`, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS }],
+        reasons: [
+          {
+            value: `${protocol}://${domain}/robots.txt`,
+            error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+          },
+        ],
         details: {
           issues: sitemapUrls.notOk,
         },
@@ -404,10 +425,12 @@ export async function findSitemap(inputUrl) {
   } else {
     return {
       success: false,
-      reasons: [{
-        value: filteredSitemapUrls[0],
-        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-      }],
+      reasons: [
+        {
+          value: filteredSitemapUrls[0],
+          error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        },
+      ],
       url: inputUrl,
       details: { issues: notOkPagesFromSitemap },
     };
@@ -484,7 +507,7 @@ export function getPagesWithIssues(auditData) {
       type: 'url',
       sitemapUrl,
       pageUrl: page.url,
-      statusCode: page.statusCode ?? 500,
+      statusCode: page.statusCode ?? 0, // default to 0 if not present
       ...(page.urls_suggested && { urls_suggested: page.urls_suggested }),
     }));
   });
