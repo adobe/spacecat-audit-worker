@@ -45,6 +45,9 @@ const VALID_MIME_TYPES = Object.freeze([
   'text/plain',
 ]);
 
+// Add new constant for status codes we want to track
+const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
+
 /**
  * Fetches the content from a given URL.
  *
@@ -218,7 +221,13 @@ export async function filterValidUrls(urls) {
         }
       }
 
-      return { status: NOT_OK, url, statusCode: response.status };
+      // Only track specific status codes
+      if (TRACKED_STATUS_CODES.includes(response.status)) {
+        return { status: NOT_OK, url, statusCode: response.status };
+      }
+
+      // Any other status code is treated as OK
+      return { status: OK, url };
     } catch {
       return { status: NETWORK_ERROR, url, error: 'NETWORK_ERROR' };
     }
@@ -402,11 +411,20 @@ export async function findSitemap(inputUrl) {
         // eslint-disable-next-line no-await-in-loop
         const existingPages = await filterValidUrls(urlsToCheck);
 
+        // Only collect tracked status codes in issues
         if (existingPages.notOk && existingPages.notOk.length > 0) {
-          notOkPagesFromSitemap[s] = existingPages.notOk;
+          const trackedIssues = existingPages.notOk
+            .filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
+          if (trackedIssues.length > 0) {
+            notOkPagesFromSitemap[s] = trackedIssues;
+          }
         }
 
-        if (!existingPages.ok || existingPages.ok.length === 0) {
+        // Consider the sitemap valid if it has any OK URLs or tracked status codes
+        const hasValidUrls = existingPages.ok.length > 0
+          || existingPages.notOk.some((issue) => [301, 302].includes(issue.statusCode));
+
+        if (!hasValidUrls) {
           delete extractedPaths[s];
         } else {
           extractedPaths[s] = existingPages.ok;
@@ -571,7 +589,8 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
       type: AUDIT_TYPE,
       origin: 'AUTOMATION',
       title: 'Sitemap issues found',
-      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
+      runbook:
+        'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
       guidance: {
         steps: [
           'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
