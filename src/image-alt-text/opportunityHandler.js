@@ -80,12 +80,13 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
         title: 'Missing alt text for images decreases accessibility and discoverability of content',
         description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
         guidance: {
-          steps: [
-            'Review the list of images missing alt text',
-            'For each image, determine appropriate descriptive alt text that conveys the image content and purpose',
-            'Add the alt text attribute to the image tags in your content',
-            'Ensure the alt text is concise but descriptive',
-            'Publish the changes to apply the updates to your live site',
+          recommendations: [
+            {
+              insight: 'Alt text for images decreases accessibility and limits discoverability',
+              recommendation: 'Add meaningful alt text on images that clearly articulate the subject matter of the image',
+              type: null,
+              rationale: 'Alt text for images is vital to ensure your content is discoverable and usable for many people as possible',
+            },
           ],
         },
         tags: ['seo', 'accessibility'],
