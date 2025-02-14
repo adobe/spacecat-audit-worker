@@ -176,7 +176,7 @@ export async function filterValidUrls(urls) {
   const NETWORK_ERROR = 2;
   const BATCH_SIZE = 50;
   const MAX_RETRIES = 3;
-  const RETRY_DELAY = 1000; // 1 second delay before retrying
+  const RETRY_DELAY = 10000; // 10 second delay before retrying
 
   async function fetchUrlWithRetry(url, context, attempt = 1) {
     const { log } = context;
