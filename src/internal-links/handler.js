@@ -20,9 +20,9 @@ import { generateSuggestionData } from './suggestions-generator.js';
 
 const INTERVAL = 30; // days
 const AUDIT_TYPE = 'broken-internal-links';
-const DEFAULT_CPC_VALUE = 1;
-const TRAFFIC_MULTIPLIER = 0.01; // 1%
-const MAX_LINKS_TO_CONSIDER = 10;
+// const DEFAULT_CPC_VALUE = 1;
+// const TRAFFIC_MULTIPLIER = 0.01; // 1%
+// const MAX_LINKS_TO_CONSIDER = 10;
 
 /**
  * Classifies links into priority categories based on views
@@ -108,44 +108,44 @@ export async function internalLinksAuditRunner(auditUrl, context) {
  * @param {Object} auditData - The audit data containing results
  * @returns {Object} KPI delta calculations
  */
-function calculateKpiDeltasForAudit(auditData) {
-  const brokenLinks = auditData?.auditResult?.brokenInternalLinks || [];
+// function calculateKpiDeltasForAudit(auditData) {
+//   const brokenLinks = auditData?.auditResult?.brokenInternalLinks || [];
 
-  const groups = {};
+//   const groups = {};
 
-  for (const link of brokenLinks) {
-    if (!groups[link.urlTo]) {
-      groups[link.urlTo] = [];
-    }
-    groups[link.urlTo].push(link);
-  }
+//   for (const link of brokenLinks) {
+//     if (!groups[link.urlTo]) {
+//       groups[link.urlTo] = [];
+//     }
+//     groups[link.urlTo].push(link);
+//   }
 
-  let projectedTrafficLost = 0;
+//   let projectedTrafficLost = 0;
 
-  Object.keys(groups).forEach((url) => {
-    const links = groups[url];
-    let linksToBeIncremented;
-    // Sort links by traffic domain if there are more than MAX_LINKS_TO_CONSIDER
-    // and only consider top MAX_LINKS_TO_CONSIDER for calculating deltas
-    if (links.length > MAX_LINKS_TO_CONSIDER) {
-      links.sort((a, b) => b.trafficDomain - a.trafficDomain);
-      linksToBeIncremented = links.slice(0, MAX_LINKS_TO_CONSIDER);
-    } else {
-      linksToBeIncremented = links;
-    }
+//   Object.keys(groups).forEach((url) => {
+//     const links = groups[url];
+//     let linksToBeIncremented;
+//     // Sort links by traffic domain if there are more than MAX_LINKS_TO_CONSIDER
+//     // and only consider top MAX_LINKS_TO_CONSIDER for calculating deltas
+//     if (links.length > MAX_LINKS_TO_CONSIDER) {
+//       links.sort((a, b) => b.trafficDomain - a.trafficDomain);
+//       linksToBeIncremented = links.slice(0, MAX_LINKS_TO_CONSIDER);
+//     } else {
+//       linksToBeIncremented = links;
+//     }
 
-    projectedTrafficLost += linksToBeIncremented.reduce(
-      (acc, link) => acc + (link.trafficDomain * TRAFFIC_MULTIPLIER),
-      0,
-    );
-  });
+//     projectedTrafficLost += linksToBeIncremented.reduce(
+//       (acc, link) => acc + (link.trafficDomain * TRAFFIC_MULTIPLIER),
+//       0,
+//     );
+//   });
 
-  const projectedTrafficValue = projectedTrafficLost * DEFAULT_CPC_VALUE;
-  return {
-    projectedTrafficLost,
-    projectedTrafficValue,
-  };
-}
+//   const projectedTrafficValue = projectedTrafficLost * DEFAULT_CPC_VALUE;
+//   return {
+//     projectedTrafficLost,
+//     projectedTrafficValue,
+//   };
+// }
 
 // eslint-disable-next-line consistent-return
 export async function convertToOpportunity(auditUrl, auditData, context) {
@@ -165,7 +165,7 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
   }
 
   try {
-    const kpiDeltas = calculateKpiDeltasForAudit(auditData);
+    // const kpiDeltas = {}; // calculateKpiDeltasForAudit(auditData);
     if (!opportunity) {
       const opportunityData = {
         siteId: auditData.siteId,
@@ -186,14 +186,14 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
           'Traffic acquisition',
           'Engagement',
         ],
-        data: kpiDeltas,
+        // data: kpiDeltas,
       };
       opportunity = await Opportunity.create(opportunityData);
     } else {
       opportunity.setAuditId(auditData.id);
       opportunity.setData({
         ...opportunity.getData(),
-        data: kpiDeltas,
+        // data: kpiDeltas,
       });
       await opportunity.save();
     }
