@@ -10,10 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { hasText, isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
+import {
+  hasText, isObject, isValidUrl, tracingFetch as fetch,
+} from '@adobe/spacecat-shared-utils';
 
 import { createUrl } from '@adobe/fetch';
-import { fetch } from './utils.js';
 
 /**
  * The PSI strategies.

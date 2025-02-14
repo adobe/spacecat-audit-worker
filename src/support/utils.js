@@ -10,24 +10,30 @@
  * governing permissions and limitations under the License.
  */
 
-import { context as h2, h1 } from '@adobe/fetch';
-import { hasText, prependSchema, resolveCustomerSecretsName } from '@adobe/spacecat-shared-utils';
+import {
+  hasText,
+  isNonEmptyArray,
+  isNonEmptyObject,
+  prependSchema,
+  tracingFetch as fetch,
+} from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 import { JSDOM } from 'jsdom';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 
 URI.preventInvalidHostname = true;
-
-/* c8 ignore next 3 */
-export const { fetch } = process.env.HELIX_FETCH_FORCE_HTTP1
-  ? h1()
-  : h2();
 
 // weekly pageview threshold to eliminate urls with lack of samples
 
 export async function getRUMUrl(url) {
   const urlWithScheme = prependSchema(url);
-  const resp = await fetch(urlWithScheme);
+  const resp = await fetch(urlWithScheme, {
+    method: 'GET',
+    headers: {
+      'User-Agent': 'curl/7.88.1', // Set the same User-Agent
+    },
+  });
   const finalUrl = resp.url.split('://')[1];
   return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
 }
@@ -83,15 +89,16 @@ export function extractDomainAndProtocol(inputUrl) {
 /**
  * Extracts URLs from a sitemap XML content based on a specified tag name.
  *
- * @param {Object} content - The content of the sitemap.
+ * @param {String} payload - The sitemap contents.
  * @param {string} tagName - The name of the tag to extract URLs from.
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
-export function extractUrlsFromSitemap(content, tagName = 'url') {
-  const dom = new JSDOM(content.payload, { contentType: 'text/xml' });
+export function extractUrlsFromSitemap(payload, tagName = 'url') {
+  const dom = new JSDOM(payload, { contentType: 'text/xml' });
   const { document } = dom.window;
 
   const elements = document.getElementsByTagName(tagName);
+
   // Filter out any nulls if 'loc' element is missing
   return Array.from(elements).map((element) => {
     const loc = element.getElementsByTagName('loc')[0];
@@ -111,19 +118,21 @@ export function extractUrlsFromSitemap(content, tagName = 'url') {
  * @returns {string[]} URLs from the sitemap that start with the base URL or its www variant.
  */
 export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
+  if (!baseUrl?.length || !sitemapDetails?.sitemapContent?.payload?.length) {
+    return [];
+  }
+
   const baseUrlVariant = toggleWWW(baseUrl);
 
   const filterPages = (pages) => pages.filter(
-    (url) => url.startsWith(baseUrl) || url.startsWith(baseUrlVariant),
+    (url) => url && (url.startsWith(baseUrl) || url.startsWith(baseUrlVariant)),
   );
 
   if (sitemapDetails.isText) {
     const lines = sitemapDetails.sitemapContent.payload.split('\n').map((line) => line.trim());
-
     return filterPages(lines.filter((line) => line.length > 0));
   } else {
-    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent);
-
+    const sitemapPages = extractUrlsFromSitemap(sitemapDetails.sitemapContent.payload);
     return filterPages(sitemapPages);
   }
 }
@@ -136,7 +145,7 @@ export function getBaseUrlPagesFromSitemapContents(baseUrl, sitemapDetails) {
  * @returns {Array<string>} An array of sitemap URLs extracted from the sitemap index.
  */
 export function getSitemapUrlsFromSitemapIndex(content) {
-  return extractUrlsFromSitemap(content, 'sitemap');
+  return extractUrlsFromSitemap(content.payload, 'sitemap');
 }
 
 export function getUrlWithoutPath(url) {
@@ -144,141 +153,127 @@ export function getUrlWithoutPath(url) {
   return `${urlObj.protocol}//${urlObj.host}`;
 }
 
-/**
- * Retrieves the RUM domain key for the specified base URL from the customer secrets.
- *
- * @param {string} baseURL - The base URL for which the RUM domain key is to be retrieved.
- * @param {UniversalContext} context - Helix Universal Context. See https://github.com/adobe/helix-universal/blob/main/src/adapter.d.ts#L120
- * @returns {Promise<string>} - A promise that resolves to the RUM domain key.
- * @throws {Error} Throws an error if no domain key is found for the specified base URL.
- */
-export async function getRUMDomainkey(baseURL, context) {
-  const customerSecretName = resolveCustomerSecretsName(baseURL, context);
-  const { runtime } = context;
-
+const extractScrapedMetadataFromJson = (data, log) => {
   try {
-    const client = new SecretsManagerClient({ region: runtime.region });
-    const command = new GetSecretValueCommand({
-      SecretId: customerSecretName,
-    });
-    const response = await client.send(command);
-    return JSON.parse(response.SecretString)?.RUM_DOMAIN_KEY;
+    log.debug(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
+    const finalUrl = data.finalUrl || '';
+    const title = data.scrapeResult.tags?.title || '';
+    const description = data.scrapeResult.tags?.description || '';
+    const h1Tags = data.scrapeResult.tags?.h1 || [];
+    const h1Tag = h1Tags.length > 0 ? h1Tags[0] : '';
+
+    return {
+      url: finalUrl,
+      title,
+      description,
+      h1: h1Tag,
+    };
   } catch (error) {
-    throw new Error(`Error retrieving the domain key for ${baseURL}. Error: ${error.message}`);
+    log.error('Error extracting data:', error);
+    return null;
   }
-}
+};
 
-/**
- * Extracts keywords from a given URL's path segments.
- *
- * This function takes a URL as input and processes its pathname to extract
- * keywords. Each segment of the path is treated as a keyword, and segments
- * are ranked based on their position in the path. The keyword closer to the
- * end of the path has a higher rank. File extensions, if present, are removed
- * from the last segment.
- *
- * @param {string} url - The URL from which to extract keywords.
- * @param {Object} log - The logger object for logging messages.
- * @returns {Array<{keyword: string, rank: number}>} An array of objects, each containing
- * the keyword and its rank. The rank is determined by the position of the segment
- * in the URL path, with higher ranks for segments closer to the end.
- *
- * @example
- * // Returns [{ keyword: 'foo', rank: 2 }, { keyword: 'bar', rank: 1 }]
- * extractKeywordsFromUrl('http://www.example.com/foo/bar');
- *
- * @example
- * // Returns [{ keyword: 'foo bar', rank: 2 }, { keyword: 'baz', rank: 1 }]
- * extractKeywordsFromUrl('http://www.example.com/foo-bar/baz.html');
- */
-export const extractKeywordsFromUrl = (url, log) => {
-  try {
-    const urlObjc = new URL(url);
-    const path = urlObjc.pathname;
-
-    const segments = path.split('/').filter((segment) => segment.length > 0);
-
-    // Remove file extensions from the last segment if present
-    if (segments.length > 0) {
-      const lastSegment = segments[segments.length - 1];
-      segments[segments.length - 1] = lastSegment.replace(/\.[^/.]+$/, '');
-    }
-
-    // Map segments to an array of objects with segment and rank
-    return segments.map((segment, index) => ({
-      keyword: segment.replace(/-/g, ' '),
-      rank: segments.length - index, // Rank: higher for segments closer to the end
-    }));
-  } catch (error) {
-    log.error('Invalid URL:', error);
+export const extractLinksFromHeader = (data, baseUrl, log) => {
+  if (!isNonEmptyObject(data?.scrapeResult) && !hasText(data?.scrapeResult?.rawBody)) {
+    log.warn(`No content found in index file for site ${baseUrl}`);
     return [];
   }
-};
+  const rawHtml = data.scrapeResult.rawBody;
+  const dom = new JSDOM(rawHtml);
 
-/**
- * Processes broken backlinks to find suggested URLs based on keywords.
- *
- * @param {Array} brokenBacklinks - The array of broken backlink objects to process.
- * @param {Array} keywords - The array of keyword objects to match against.
- * @param {Object} log - The logger object for logging messages.
- * @returns {Array} A new array of backlink objects with suggested URLs added.
- */
-export const enhanceBacklinksWithFixes = (brokenBacklinks, keywords, log) => {
-  const result = [];
+  const { document } = dom.window;
 
-  for (const backlink of brokenBacklinks) {
-    log.info(`trying to find redirect for: ${backlink.url_to}`);
-    const extractedKeywords = extractKeywordsFromUrl(backlink.url_to, log);
-
-    const matchedData = [];
-
-    // Match keywords and include rank in the matched data
-    keywords.forEach((entry) => {
-      const matchingKeyword = extractedKeywords.find(
-        (keywordObj) => {
-          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          return regex.test(entry.keyword);
-        },
-      );
-      if (matchingKeyword) {
-        matchedData.push({ ...entry, rank: matchingKeyword.rank });
-      }
-    });
-
-    // Try again with split keywords if no matches found
-    if (matchedData.length === 0) {
-      const splitKeywords = extractedKeywords
-        .map((keywordObj) => keywordObj.keyword.split(' ').map((k) => ({ keyword: k, rank: keywordObj.rank })))
-        .flat();
-
-      splitKeywords.forEach((keywordObj) => {
-        keywords.forEach((entry) => {
-          const regex = new RegExp(`\\b${keywordObj.keyword}\\b`, 'i');
-          if (regex.test(entry.keyword)) {
-            matchedData.push({ ...entry, rank: keywordObj.rank });
-          }
-        });
-      });
-    }
-
-    // Sort by rank and then by traffic
-    matchedData.sort((a, b) => {
-      if (b.rank === a.rank) {
-        return b.traffic - a.traffic; // Higher traffic ranks first
-      }
-      return a.rank - b.rank; // Higher rank ranks first (1 is highest)
-    });
-
-    const newBacklink = { ...backlink };
-
-    if (matchedData.length > 0) {
-      log.info(`found ${matchedData.length} keywords for backlink ${backlink.url_to}`);
-      newBacklink.url_suggested = matchedData[0].url;
-    } else {
-      log.info(`could not find suggested URL for backlink ${backlink.url_to} with keywords ${extractedKeywords.map((k) => k.keyword).join(', ')}`);
-    }
-
-    result.push(newBacklink);
+  const header = document.querySelector('header');
+  if (!header) {
+    log.info(`No <header> element found for site ${baseUrl}`);
+    return [];
   }
-  return result;
+
+  const links = [];
+  header.querySelectorAll('a[href]').forEach((aTag) => {
+    const href = aTag.getAttribute('href');
+
+    try {
+      const url = href.startsWith('/')
+        ? new URL(href, baseUrl)
+        : new URL(href);
+
+      const fullUrl = url.href;
+      links.push(fullUrl);
+    } catch (error) {
+      log.error(`Failed to process URL in <header> for site ${baseUrl}: ${href}, Error: ${error.message}`);
+    }
+  });
+  return links;
 };
+
+export const getScrapedDataForSiteId = async (site, context) => {
+  const { s3Client, env, log } = context;
+  const siteId = site.getId();
+
+  let allFiles = [];
+  let isTruncated = true;
+  let continuationToken = null;
+
+  async function fetchFiles() {
+    const listCommand = new ListObjectsV2Command({
+      Bucket: env.S3_SCRAPER_BUCKET_NAME,
+      Prefix: `scrapes/${siteId}`,
+      ContinuationToken: continuationToken,
+    });
+
+    const listResponse = await s3Client.send(listCommand);
+    allFiles = allFiles.concat(
+      listResponse.Contents.filter((file) => file.Key.endsWith('.json')),
+    );
+    isTruncated = listResponse.IsTruncated;
+    continuationToken = listResponse.NextContinuationToken;
+
+    if (isTruncated) {
+      await fetchFiles();
+    }
+  }
+
+  await fetchFiles();
+
+  if (!isNonEmptyArray(allFiles)) {
+    return {
+      headerLinks: [],
+      siteData: [],
+    };
+  }
+
+  const extractedData = await Promise.all(
+    allFiles.map(async (file) => {
+      const fileContent = await getObjectFromKey(
+        s3Client,
+        env.S3_SCRAPER_BUCKET_NAME,
+        file.Key,
+        log,
+      );
+      return extractScrapedMetadataFromJson(fileContent, log);
+    }),
+  );
+
+  const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
+  const indexFileContent = await getObjectFromKey(
+    s3Client,
+    env.S3_SCRAPER_BUCKET_NAME,
+    indexFile?.Key,
+    log,
+  );
+  const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
+
+  log.info(`siteData: ${JSON.stringify(extractedData)}`);
+  return {
+    headerLinks,
+    siteData: extractedData.filter(Boolean),
+  };
+};
+
+export async function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}

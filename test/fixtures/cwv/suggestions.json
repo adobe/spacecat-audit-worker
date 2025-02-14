@@ -1,0 +1,81 @@
+[
+  {
+    "type":"CODE_CHANGE",
+    "rank":5000,
+    "data":{
+      "type":"url",
+      "url":"NON_EXISTING_URL",
+      "pageviews":11620,
+      "organic":2400,
+      "text":"",
+      "metrics": [
+        {
+          "deviceType": "mobile",
+          "pageviews": 6200,
+          "organic": 1800,
+          "clsCount": 1,
+          "ttfbCount": 1,
+          "lcp": 2701,
+          "inpCount": 0,
+          "inp": null,
+          "ttfb": 682,
+          "cls": 0.0012521097892875688,
+          "lcpCount": 1
+        },
+        {
+          "deviceType": "desktop",
+          "pageviews": 3600,
+          "organic": 600,
+          "clsCount": 0,
+          "ttfbCount": 0,
+          "lcp": null,
+          "inpCount": 0,
+          "inp": null,
+          "ttfb": null,
+          "cls": null,
+          "lcpCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "type":"CODE_CHANGE",
+    "rank":9620,
+    "data":{
+      "type": "group",
+      "name": "Some pages",
+      "pattern": "https://www.aem.live/home/*",
+      "pageviews": 9620,
+      "organic": 1900,
+      "text":"PREVIOUSLY ADDED BY BACKOFFICE UI",
+      "metrics": [
+        {
+          "deviceType": "desktop",
+          "pageviews": 2420,
+          "organic": 1800,
+          "lcp": 2099.699999988079,
+          "lcpCount": 8,
+          "cls": 0.011145537287059668,
+          "clsCount": 7,
+          "inp": 8,
+          "inpCount": 5,
+          "ttfb": 548,
+          "ttfbCount": 16
+        },
+        {
+          "deviceType": "mobile",
+          "pageviews": 100,
+          "organic": 100,
+          "lcp": 2454.2,
+          "lcpCount": 1,
+          "cls": 0.26956930913977606,
+          "clsCount": 1,
+          "inp": null,
+          "inpCount": 0,
+          "ttfb": 807.2999999858439,
+          "ttfbCount": 1
+        }
+      ]
+    }
+  }
+]

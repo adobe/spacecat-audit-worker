@@ -11,224 +11,66 @@
  */
 
 /* eslint-env mocha */
-
-import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
-import { createSiteTopPage } from '@adobe/spacecat-shared-data-access/src/models/site-top-page.js';
-import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
-import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
-
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import auditBrokenBacklinks from '../../src/backlinks/handler.js';
+import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
+import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
+import { brokenBacklinksAuditRunner, convertToOpportunity, generateSuggestionData } from '../../src/backlinks/handler.js';
+import { MockContextBuilder } from '../shared.js';
+import {
+  brokenBacklinkWithTimeout,
+  excludedUrl,
+  fixedBacklinks,
+  site,
+  site2,
+  siteWithExcludedUrls,
+} from '../fixtures/broken-backlinks/sites.js';
+import { ahrefsMock, mockFixedBacklinks } from '../fixtures/broken-backlinks/ahrefs.js';
+import {
+  brokenBacklinksOpportunity,
+  opportunityData,
+  otherOpportunity,
+} from '../fixtures/broken-backlinks/opportunity.js';
+import {
+  brokenBacklinkExistingSuggestions,
+  brokenBacklinksSuggestions,
+  suggestions,
+} from '../fixtures/broken-backlinks/suggestion.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
+// eslint-disable-next-line func-names
 describe('Backlinks Tests', function () {
   this.timeout(10000);
   let message;
   let context;
-  let mockLog;
-  let mockDataAccess;
+  const auditUrl = 'https://audit.url';
 
   const sandbox = sinon.createSandbox();
 
-  const siteData = {
-    id: 'site1',
-    baseURL: 'https://bar.foo.com',
-    isLive: true,
-  };
-
-  const site = createSite(siteData);
-
-  const configurationData = {
-    version: '1.0',
-    queues: {},
-    handlers: {
-      'broken-backlinks': {
-        enabled: {
-          sites: ['site1', 'site2', 'site3', 'site'],
-          orgs: ['org1', 'org2', 'org3'],
-        },
-        enabledByDefault: false,
-        dependencies: [],
-      },
-      'broken-backlinks-auto-suggest': {
-        enabled: {
-          sites: ['site1', 'site2', 'site3', 'site'],
-          orgs: ['org1', 'org2', 'org3'],
-        },
-        enabledByDefault: false,
-        dependencies: [],
-      },
-    },
-    jobs: [],
-  };
-
-  const configuration = createConfiguration(configurationData);
-
-  const siteTopPage = createSiteTopPage({
-    siteId: site.getId(),
-    url: `${site.getBaseURL()}/foo.html`,
-    traffic: 1000,
-    source: 'ahrefs',
-    geo: 'global',
-    importedAt: new Date('2024-06-18').toISOString(),
-    topKeyword: '404',
-  });
-
-  const siteTopPage2 = createSiteTopPage({
-    siteId: site.getId(),
-    url: `${site.getBaseURL()}/bar.html`,
-    traffic: 500,
-    source: 'ahrefs',
-    geo: 'global',
-    importedAt: new Date('2024-06-18').toISOString(),
-    topKeyword: '429',
-  });
-
-  const site2 = createSite({
-    id: 'site2',
-    baseURL: 'https://foo.com',
-    isLive: true,
-  });
-
-  const site3 = createSite({
-    id: 'site3',
-    baseURL: 'https://foo.com',
-    isLive: true,
-  });
-
-  const org = createOrganization({ name: 'org4' });
-
-  const brokenBacklinkWithTimeout = {
-    title: 'backlink that times out',
-    url_from: 'https://from.com/from-4',
-    url_to: 'https://foo.com/times-out',
-    domain_traffic: 500,
-  };
-
-  const auditResult = {
-    backlinks: [
-      {
-        title: 'backlink that returns 404',
-        url_from: 'https://from.com/from-1',
-        url_to: 'https://foo.com/returns-404',
-        domain_traffic: 4000,
-      },
-      {
-        title: 'backlink that redirects to www and throw connection error',
-        url_from: 'https://from.com/from-2',
-        url_to: 'https://foo.com/redirects-throws-error',
-        domain_traffic: 2000,
-      },
-      {
-        title: 'backlink that returns 429',
-        url_from: 'https://from.com/from-3',
-        url_to: 'https://foo.com/returns-429',
-        domain_traffic: 1000,
-      },
-    ],
-  };
-
-  const excludedUrl = 'https://foo.com/returns-404';
-
-  const siteWithExcludedUrls = createSite({
-    ...siteData,
-    config: {
-      slack: {
-        workspace: 'my-workspace',
-        channel: 'general',
-        invitedUserCount: 10,
-      },
-      handlers: {
-        404: {
-          mentions: {
-            slack: ['user1', 'user2'],
-            email: ['user1@example.com'],
-          },
-          excludedURLs: [excludedUrl],
-        },
-        'broken-backlinks': {
-          mentions: {
-            slack: ['user3'],
-            email: ['user2@example.com'],
-          },
-          excludedURLs: [excludedUrl],
-        },
-      },
-    },
-  });
-
-  const expectedAuditResult = {
-    finalUrl: 'https://bar.foo.com',
-    brokenBacklinks: [
-      {
-        title: 'backlink that redirects to www and throw connection error',
-        url_from: 'https://from.com/from-2',
-        url_to: 'https://foo.com/redirects-throws-error',
-        domain_traffic: 2000,
-      },
-      {
-        title: 'backlink that returns 429',
-        url_from: 'https://from.com/from-3',
-        url_to: 'https://foo.com/returns-429',
-        domain_traffic: 1000,
-        url_suggested: 'https://bar.foo.com/bar.html',
-      },
-      {
-        title: 'backlink that is not excluded',
-        url_from: 'https://from.com/from-not-excluded',
-        url_to: 'https://foo.com/not-excluded',
-        domain_traffic: 5000,
-      },
-    ],
-    fullAuditRef: sinon.match.string,
-  };
-
-  const backlinksNotExcluded = [
-    {
-      title: 'backlink that is not excluded',
-      url_from: 'https://from.com/from-not-excluded',
-      url_to: 'https://foo.com/not-excluded',
-      domain_traffic: 5000,
-    },
-  ];
-
   beforeEach(() => {
-    mockDataAccess = {
-      getSiteByID: sinon.stub(),
-      addAudit: sinon.stub(),
-      getTopPagesForSite: sinon.stub(),
-      getConfiguration: sinon.stub(),
-    };
-
     message = {
       type: 'broken-backlinks',
-      url: 'site1',
+      siteId: 'site1',
     };
 
-    mockLog = {
-      info: sinon.spy(),
-      warn: sinon.spy(),
-      error: sinon.spy(),
-    };
-
-    context = {
-      log: mockLog,
-      env: {
-        AHREFS_API_BASE_URL: 'https://ahrefs.com',
-        AHREFS_API_KEY: 'ahrefs-token',
-        AUDIT_RESULTS_QUEUE_URL: 'queueUrl',
-      },
-      dataAccess: mockDataAccess,
-      sqs: {
-        sendMessage: sandbox.stub().resolves(),
-      },
-    };
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        env: {
+          AHREFS_API_BASE_URL: 'https://ahrefs.com',
+          AHREFS_API_KEY: 'ahrefs-api',
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        },
+        s3Client: {
+          send: sandbox.stub(),
+        },
+      })
+      .build(message);
 
     nock('https://foo.com')
       .get('/returns-404')
@@ -240,7 +82,7 @@ describe('Backlinks Tests', function () {
 
     nock('https://www.foo.com')
       .get('/redirects-throws-error')
-      .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
+      .replyWithError('connection refused');
 
     nock('https://foo.com')
       .get('/returns-429')
@@ -256,43 +98,75 @@ describe('Backlinks Tests', function () {
     sinon.restore();
   });
 
-  it('should filter out excluded URLs and include valid backlinks', async () => {
-    mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(siteWithExcludedUrls);
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+  it('should run broken backlinks audit and filter out excluded URLs and include valid backlinks', async () => {
+    const { brokenBacklinks } = auditDataMock.auditResult;
+    const withoutExcluded = brokenBacklinks.filter((backlink) => backlink.url_to !== excludedUrl);
 
-    nock(siteWithExcludedUrls.getBaseURL())
-      .get(/.*/)
-      .reply(200);
+    ahrefsMock(siteWithExcludedUrls.getBaseURL(), { backlinks: brokenBacklinks });
 
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, { backlinks: auditResult.backlinks.concat(backlinksNotExcluded) });
+    const auditData = await brokenBacklinksAuditRunner(auditUrl, context, siteWithExcludedUrls);
 
-    const response = await auditBrokenBacklinks(message, context);
+    expect(auditData.auditResult.brokenBacklinks).to.deep.equal(withoutExcluded);
+  });
 
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledWith(
-      context.env.AUDIT_RESULTS_QUEUE_URL,
-      sinon.match({
-        type: message.type,
-        url: siteWithExcludedUrls.getBaseURL(),
-        auditContext: sinon.match.any,
-        auditResult: sinon.match({
-          finalUrl: 'bar.foo.com',
-          brokenBacklinks: expectedAuditResult.brokenBacklinks,
-          fullAuditRef: sinon.match.string,
-        }),
-      }),
+  it('should filter out broken backlinks that return ok (even with redirection)', async () => {
+    const allBacklinks = auditDataMock.auditResult.brokenBacklinks
+      .concat(fixedBacklinks)
+      .concat(brokenBacklinkWithTimeout);
+
+    mockFixedBacklinks(allBacklinks);
+
+    const auditData = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+    expect(auditData.auditResult.brokenBacklinks)
+      .to
+      .deep
+      .equal(auditDataMock.auditResult.brokenBacklinks.concat(brokenBacklinkWithTimeout));
+  });
+
+  it('should transform the audit result into an opportunity in the post processor and create a new opportunity', async () => {
+    context.dataAccess.Site.findById = sinon.stub().withArgs('site1').resolves(site);
+    context.dataAccess.Opportunity.create.resolves(brokenBacklinksOpportunity);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
+
+    ahrefsMock(site.getBaseURL(), auditDataMock.auditResult);
+
+    await convertToOpportunity(auditUrl, auditDataMock, context);
+
+    expect(context.dataAccess.Opportunity.create)
+      .to
+      .have
+      .been
+      .calledOnceWith(opportunityData(auditDataMock.siteId, auditDataMock.id));
+    expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
+  });
+
+  it('should transform the audit result into an opportunity in the post processor and add it to an existing opportunity', async () => {
+    context.dataAccess.Site.findById = sinon.stub().withArgs('site1').resolves(site);
+    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
+    brokenBacklinksOpportunity.getSuggestions.resolves(brokenBacklinkExistingSuggestions);
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves(
+      [brokenBacklinksOpportunity, otherOpportunity],
+    );
+
+    ahrefsMock(site.getBaseURL(), auditDataMock.auditResult);
+
+    await convertToOpportunity(auditUrl, auditDataMock, context);
+
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(brokenBacklinksOpportunity.setAuditId).to.have.been.calledOnceWith(auditDataMock.id);
+
+    expect(brokenBacklinksOpportunity.save).to.have.been.calledOnce;
+    expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledWith(
+      suggestions.filter((s) => brokenBacklinkExistingSuggestions[0].data.url_to !== s.data.url_to),
     );
   });
 
-  it('should successfully perform an audit to detect broken backlinks, save and send the proper audit result', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
-    mockDataAccess.getTopPagesForSite.resolves([]);
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
+  it('should throw an error if opportunity creation fails', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.throws('broken-backlinks opportunity-error');
+    const errorMessage = 'Sinon-provided broken-backlinks opportunity-error';
 
     nock(site.getBaseURL())
       .get(/.*/)
@@ -300,331 +174,18 @@ describe('Backlinks Tests', function () {
 
     nock('https://ahrefs.com')
       .get(/.*/)
-      .reply(200, auditResult);
+      .reply(200, auditDataMock.auditResult);
 
-    const expectedMessage = {
-      type: message.type,
-      url: site.getBaseURL(),
-      auditContext: {
-        finalUrl: 'bar.foo.com',
-      },
-      auditResult: {
-        finalUrl: 'bar.foo.com',
-        brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=bar.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
-      },
-    };
+    try {
+      await convertToOpportunity(auditUrl, auditDataMock, context);
+    } catch (e) {
+      expect(e.message).to.equal(errorMessage);
+    }
 
-    const response = await auditBrokenBacklinks(message, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-    expect(context.log.info).to.have.been.calledWith('Successfully audited site1 for broken-backlinks type audit');
-  });
-
-  it('should successfully perform an audit to detect broken backlinks and suggest fixes based on keywords from top pages if auto-suggest'
-    + ' enabled', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
-    mockDataAccess.getTopPagesForSite.resolves([siteTopPage, siteTopPage2]);
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
-    nock(site.getBaseURL())
-      .get(/.*/)
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, auditResult);
-
-    const expectedEnhancedBacklinks = auditResult.backlinks;
-    expectedEnhancedBacklinks[0].url_suggested = 'https://bar.foo.com/foo.html';
-    expectedEnhancedBacklinks[2].url_suggested = 'https://bar.foo.com/bar.html';
-
-    const expectedMessage = {
-      type: message.type,
-      url: site.getBaseURL(),
-      auditContext: {
-        finalUrl: 'bar.foo.com',
-      },
-      auditResult: {
-        finalUrl: 'bar.foo.com',
-        brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=bar.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
-      },
-    };
-
-    const response = await auditBrokenBacklinks(message, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-  });
-
-  it('should successfully perform an audit to detect broken backlinks and not suggest fixes if auto-suggest disabled', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
-    configuration.disableHandlerForSite('broken-backlinks-auto-suggest', { getId: () => site2.getId(), getOrganizationId: () => org.getId() });
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
-    nock(site2.getBaseURL())
-      .get(/.*/)
-      .reply(301, undefined, { location: 'https://www.foo.com' });
-
-    nock('https://www.foo.com')
-      .get(/.*/)
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, auditResult);
-
-    const expectedMessage = {
-      type: message.type,
-      url: site2.getBaseURL(),
-      auditContext: {
-        finalUrl: 'www.foo.com',
-      },
-      auditResult: {
-        finalUrl: 'www.foo.com',
-        brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=www.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
-      },
-    };
-
-    const response = await auditBrokenBacklinks({
-      url: site2.getId(), type: 'broken-backlinks',
-    }, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.getTopPagesForSite).to.not.have.been.called;
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-    expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
-  });
-
-  it('should detect broken backlinks and save the proper audit result, even if the suggested fix fails', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
-    mockDataAccess.getTopPagesForSite.resolves([createSiteTopPage({
-      siteId: site.getId(),
-      url: `${site.getBaseURL()}/foo.html`,
-      traffic: 1000,
-      source: 'ahrefs',
-      geo: 'global',
-      importedAt: new Date('2024-06-18').toISOString(),
-      topKeyword: 'c++',
-    })]);
-    const brokenBacklink = {
-      backlinks: [
-        {
-          title: 'backlink that has a faulty path',
-          url_from: 'https://from.com/from-1',
-          url_to: 'https://foo.com/c++',
-          domain_traffic: 4000,
-        }],
-    };
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-    nock(site.getBaseURL())
-      .get(/.*/)
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, brokenBacklink);
-
-    const expectedMessage = {
-      type: message.type,
-      url: site.getBaseURL(),
-      auditContext: {
-        finalUrl: 'bar.foo.com',
-      },
-      auditResult: {
-        finalUrl: 'bar.foo.com',
-        brokenBacklinks: brokenBacklink.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=bar.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
-      },
-    };
-    const response = await auditBrokenBacklinks(message, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-  });
-
-  it('should successfully perform an audit to detect broken backlinks and set finalUrl, for baseUrl redirecting to www domain', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
-    mockDataAccess.getTopPagesForSite.resolves([]);
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
-    nock(site2.getBaseURL())
-      .get(/.*/)
-      .reply(301, undefined, { location: 'https://www.foo.com' });
-
-    nock('https://www.foo.com')
-      .get(/.*/)
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, auditResult);
-
-    const expectedMessage = {
-      type: message.type,
-      url: site2.getBaseURL(),
-      auditContext: {
-        finalUrl: 'www.foo.com',
-      },
-      auditResult: {
-        finalUrl: 'www.foo.com',
-        brokenBacklinks: auditResult.backlinks,
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=www.foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
-      },
-    };
-
-    const response = await auditBrokenBacklinks({
-      url: site2.getId(), type: 'broken-backlinks',
-    }, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-    expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
-  });
-
-  it('should filter out from audit result broken backlinks the ones that return ok (even with redirection)', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
-    mockDataAccess.getTopPagesForSite.resolves([]);
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
-    const fixedBacklinks = [
-      {
-        title: 'fixed backlink',
-        url_from: 'https://from.com/from-1',
-        url_to: 'https://foo.com/fixed',
-        traffic_domain: 4500,
-      },
-      {
-        title: 'fixed backlink via redirect',
-        url_from: 'https://from.com/from-2',
-        url_to: 'https://foo.com/fixed-via-redirect',
-        traffic_domain: 1500,
-      },
-    ];
-    const allBacklinks = auditResult.backlinks.concat(fixedBacklinks, brokenBacklinkWithTimeout);
-
-    nock('https://foo.com')
-      .get('/fixed')
-      .reply(200);
-
-    nock('https://foo.com')
-      .get('/fixed-via-redirect')
-      .reply(301, undefined, { location: 'https://www.foo.com/fixed-via-redirect' });
-
-    nock('https://www.foo.com')
-      .get('/fixed-via-redirect')
-      .reply(200);
-
-    nock(site2.getBaseURL())
-      .get('/')
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, { backlinks: allBacklinks });
-
-    const expectedMessage = {
-      type: message.type,
-      url: site2.getBaseURL(),
-      auditContext: {
-        finalUrl: 'foo.com',
-      },
-      auditResult: {
-        finalUrl: 'foo.com',
-        brokenBacklinks: auditResult.backlinks.concat(brokenBacklinkWithTimeout),
-        fullAuditRef: 'https://ahrefs.com/site-explorer/broken-backlinks?select=title%2Curl_from%2Curl_to%2Ctraffic_domain&limit=50&mode=prefix&order_by=domain_rating_source%3Adesc%2Ctraffic_domain%3Adesc&target=foo.com&output=json&where=%7B%22and%22%3A%5B%7B%22field%22%3A%22domain_rating_source%22%2C%22is%22%3A%5B%22gte%22%2C29.5%5D%7D%2C%7B%22field%22%3A%22traffic_domain%22%2C%22is%22%3A%5B%22gte%22%2C500%5D%7D%2C%7B%22field%22%3A%22links_external%22%2C%22is%22%3A%5B%22lte%22%2C300%5D%7D%5D%7D',
-      },
-    };
-
-    const response = await auditBrokenBacklinks({
-      url: site2.getId(), type: 'broken-backlinks',
-    }, context);
-
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been
-      .calledWith(context.env.AUDIT_RESULTS_QUEUE_URL, expectedMessage);
-    expect(context.log.warn).to.have.been.calledWith('Backlink https://foo.com/returns-429 returned status 429');
-    expect(context.log.info).to.have.been.calledWith('Successfully audited site2 for broken-backlinks type audit');
-  });
-
-  it('returns a 404 when site does not exist', async () => {
-    mockDataAccess.getSiteByID.resolves(null);
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
-    const response = await auditBrokenBacklinks(message, context);
-
-    expect(response.status).to.equal(404);
-  });
-
-  it('returns a 200 when site audit is disabled', async () => {
-    /* const siteWithDisabledAudits = createSite({
-      ...siteData,
-      auditConfig: { auditsDisabled: true },
-    }); */
-    message = {
-      type: 'broken-backlinks',
-      url: 'site3',
-    };
-
-    mockDataAccess.getSiteByID.resolves(site3);
-    configuration.disableHandlerForSite('broken-backlinks', { getId: () => site3.getId(), getOrganizationId: () => org.getId() });
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
-    const response = await auditBrokenBacklinks(message, context);
-
-    expect(response.status).to.equal(200);
-    expect(mockLog.info).to.have.been.calledTwice;
-    expect(mockLog.info).to.have.been.calledWith('Audit type broken-backlinks disabled for site site3');
-  });
-
-  it('returns a 500 for sites with no base url', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site2').resolves(site2);
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
-    const response = await auditBrokenBacklinks(message, context);
-    expect(response.status).to.equal(500);
-    expect(mockLog.error).to.have.been.calledTwice;
-  });
-
-  it('returns a 200 when site is not live', async () => {
-    const siteWithDisabledAudits = createSite({
-      ...siteData,
-      isLive: false,
-    });
-
-    mockDataAccess.getSiteByID.resolves(siteWithDisabledAudits);
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
-    const response = await auditBrokenBacklinks(message, context);
-
-    expect(response.status).to.equal(200);
-    expect(mockLog.info).to.have.been.calledWith('Site site1 is not live');
+    expect(context.log.error).to.have.been.calledWith(`Failed to create new opportunity for siteId site-id and auditId audit-id: ${errorMessage}`);
   });
 
   it('should handle audit api errors gracefully', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
-    mockDataAccess.getConfiguration = sinon.stub().resolves(configuration);
-
     nock(site.getBaseURL())
       .get(/.*/)
       .reply(200);
@@ -633,41 +194,256 @@ describe('Backlinks Tests', function () {
       .get(/.*/)
       .reply(500);
 
-    const response = await auditBrokenBacklinks(message, context);
+    const auditData = await brokenBacklinksAuditRunner(auditUrl, context, site);
 
-    expect(response.status).to.equal(204);
-    expect(mockDataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledWith(
-      context.env.AUDIT_RESULTS_QUEUE_URL,
-      sinon.match({
-        type: message.type,
-        url: site.getBaseURL(),
-        auditResult: {
-          finalUrl: 'bar.foo.com',
-          error: `broken-backlinks type audit for ${site.getId()} with url bar.foo.com failed with error`,
-        },
-      }),
-    );
-  });
-
-  it('should handle errors gracefully', async () => {
-    mockDataAccess.getSiteByID.throws('some-error');
-
-    const response = await auditBrokenBacklinks(message, context);
-
-    expect(response.status).to.equal(500);
+    expect(auditData).to.deep.equal({
+      fullAuditRef: auditUrl,
+      finalUrl: auditUrl,
+      auditResult: {
+        error: 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 500',
+        success: false,
+      },
+    });
   });
 
   it('should handle fetch errors gracefully', async () => {
-    mockDataAccess.getSiteByID = sinon.stub().withArgs('site1').resolves(site);
-
+    context.dataAccess.Site.findById = sinon.stub().withArgs('site1').resolves(site);
+    const errorMessage = 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 404';
     nock(site.getBaseURL())
       .get(/.*/)
-      .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
+      .replyWithError('connection refused');
 
-    const response = await auditBrokenBacklinks(message, context);
+    const auditResult = await brokenBacklinksAuditRunner(auditUrl, context, site);
 
-    expect(response.status).to.equal(500);
+    expect(context.log.error).to.have.been.calledWith(errorMessage);
+    expect(auditResult).to.deep.equal({
+      fullAuditRef: auditUrl,
+      finalUrl: auditUrl,
+      auditResult: {
+        error: errorMessage,
+        success: false,
+      },
+    });
+  });
+  describe('generateSuggestionData', async () => {
+    let auditData;
+    let configuration;
+    let firefallClient;
+
+    const mockFileResponse = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: '<html lang="en"><body><header><a href="/home">Home</a><a href="/about">About</a></header></body></html>',
+            tags: {
+              title: 'Page 1 Title',
+              description: 'Page 1 Description',
+              h1: ['Page 1 H1'],
+            },
+          },
+        })),
+      },
+    };
+
+    beforeEach(() => {
+      auditData = {
+        auditResult: {
+          success: true,
+          brokenBacklinks: [
+            { url_to: 'https://example.com/broken1' },
+            { url_to: 'https://example.com/broken2' },
+          ],
+        },
+      };
+      configuration = {
+        isHandlerEnabledForSite: sandbox.stub(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      firefallClient = {
+        fetchChatCompletion: sandbox.stub(),
+      };
+      sandbox.stub(FirefallClient, 'createFrom').returns(firefallClient);
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('returns original auditData if audit result is unsuccessful', async () => {
+      auditData.auditResult.success = false;
+
+      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal(auditData);
+      expect(context.log.info).to.have.been.calledWith('Audit failed, skipping suggestions generation');
+    });
+
+    it('returns original auditData if auto-suggest is disabled for the site', async () => {
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal(auditData);
+      expect(context.log.info).to.have.been.calledWith('Auto-suggest is disabled for site');
+    });
+
+    it('processes suggestions for broken backlinks, defaults to base URL if none found', async () => {
+      context.s3Client.send.onCall(0).resolves({
+        Contents: [
+          { Key: 'scrapes/site1/scrape.json' },
+        ],
+        IsTruncated: false,
+        NextContinuationToken: 'token',
+      });
+      context.s3Client.send.resolves(mockFileResponse);
+      configuration.isHandlerEnabledForSite.returns(true);
+      firefallClient.fetchChatCompletion.resolves({
+        choices: [{
+          message: { content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }) },
+          finish_reason: 'stop',
+        }],
+      });
+      firefallClient.fetchChatCompletion.onCall(3).resolves({
+        choices: [{
+          message: { content: JSON.stringify({ some_other_property: 'some other value' }) },
+          finish_reason: 'stop',
+        }],
+      });
+
+      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+
+      expect(firefallClient.fetchChatCompletion).to.have.been.callCount(4);
+      expect(result.auditResult.brokenBacklinks).to.deep.equal([
+        {
+          url_to: 'https://example.com/broken1',
+          urls_suggested: ['https://fix.com'],
+          ai_rationale: 'Rationale',
+        },
+        {
+          url_to: 'https://example.com/broken2',
+          urls_suggested: ['https://example.com'],
+          ai_rationale: 'No suitable suggestions found',
+        },
+      ]);
+      expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
+    });
+
+    it('generates suggestions in multiple batches if there are more than 300 alternative URLs', async () => {
+      context.s3Client.send.onCall(0).resolves({
+        Contents: [
+          // genereate 301 keys
+          ...Array.from({ length: 301 }, (_, i) => ({ Key: `scrapes/site-id/scrape${i}.json` })),
+        ],
+        IsTruncated: false,
+        NextContinuationToken: 'token',
+      });
+      context.s3Client.send.resolves(mockFileResponse);
+      configuration.isHandlerEnabledForSite.returns(true);
+      firefallClient.fetchChatCompletion.resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
+            ai_rationale: 'Rationale',
+          },
+          finish_reason: 'stop',
+        }],
+      });
+
+      firefallClient.fetchChatCompletion.onCall(1).resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
+            ai_rationale: 'Rationale',
+          },
+          finish_reason: 'length',
+        }],
+      });
+
+      firefallClient.fetchChatCompletion.onCall(6).resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
+            ai_rationale: 'Rationale',
+          },
+          finish_reason: 'length',
+        }],
+      });
+
+      firefallClient.fetchChatCompletion.onCall(7).resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
+            ai_rationale: 'Rationale',
+          },
+          finish_reason: 'length',
+        }],
+      });
+
+      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+
+      expect(firefallClient.fetchChatCompletion).to.have.been.callCount(8);
+      expect(result.auditResult.brokenBacklinks).to.deep.equal([
+        {
+          url_to: 'https://example.com/broken1',
+          urls_suggested: ['https://fix.com'],
+          ai_rationale: 'Rationale',
+        },
+        {
+          url_to: 'https://example.com/broken2',
+        },
+      ]);
+      expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
+    }).timeout(20000);
+
+    it('handles Firefall client errors gracefully and continues processing, should suggest base URL instead', async () => {
+      context.s3Client.send.onCall(0).resolves({
+        Contents: [
+          // genereate 301 keys
+          ...Array.from({ length: 301 }, (_, i) => ({ Key: `scrapes/site-id/scrape${i}.json` })),
+        ],
+        IsTruncated: false,
+        NextContinuationToken: 'token',
+      });
+      context.s3Client.send.resolves(mockFileResponse);
+      configuration.isHandlerEnabledForSite.returns(true);
+      firefallClient.fetchChatCompletion.onCall(0).rejects(new Error('Firefall error'));
+      firefallClient.fetchChatCompletion.onCall(2).rejects(new Error('Firefall error'));
+      firefallClient.fetchChatCompletion.onCall(4).resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ some_other_property: 'some other value' }),
+            ai_rationale: 'Rationale',
+          },
+          finish_reason: 'stop',
+        }],
+      });
+      firefallClient.fetchChatCompletion.onCall(7).rejects(new Error('Firefall error'));
+      firefallClient.fetchChatCompletion.resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
+            ai_rationale: 'Rationale',
+          },
+          finish_reason: 'stop',
+        }],
+      });
+
+      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+
+      expect(result.auditResult.brokenBacklinks).to.deep.equal([
+        {
+          url_to: 'https://example.com/broken1',
+          urls_suggested: ['https://example.com'],
+          ai_rationale: 'No suitable suggestions found',
+        },
+        {
+          url_to: 'https://example.com/broken2',
+        },
+      ]);
+      expect(context.log.error).to.have.been.calledWith('Batch processing error: Firefall error');
+    }).timeout(20000);
   });
 });

@@ -15,16 +15,18 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 import URI from 'urijs';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
-export async function defaultMessageSender(resultMessage, context) {
-  const { sqs } = context;
-  const { AUDIT_RESULTS_QUEUE_URL: queueUrl } = context.env;
-
-  await sqs.sendMessage(queueUrl, resultMessage);
-}
+// eslint-disable-next-line no-empty-function
+export async function defaultMessageSender() {}
 
 export async function defaultPersister(auditData, context) {
   const { dataAccess } = context;
-  await dataAccess.addAudit(auditData);
+  const { Audit } = dataAccess;
+
+  return Audit.create(auditData);
+}
+
+export async function noopPersister(auditData) {
+  return { getId: () => auditData.id || 'noop' };
 }
 
 export async function defaultSiteProvider(siteId, context) {
@@ -40,8 +42,9 @@ export async function defaultSiteProvider(siteId, context) {
 
 export async function defaultOrgProvider(orgId, context) {
   const { dataAccess } = context;
+  const { Organization } = dataAccess;
 
-  const org = await dataAccess.getOrganizationByID(orgId);
+  const org = await Organization.findById(orgId);
   if (!org) {
     throw new Error(`Org with id ${orgId} not found`);
   }
@@ -86,15 +89,16 @@ export class Audit {
 
   async run(message, context) {
     const { log, dataAccess } = context;
+    const { Configuration } = dataAccess;
     const {
       type,
+      siteId,
       auditContext = {},
     } = message;
-    const siteId = message.url || message.siteId;
 
     try {
       const site = await this.siteProvider(siteId, context);
-      const configuration = await dataAccess.getConfiguration();
+      const configuration = await Configuration.findLatest();
       if (!configuration.isHandlerEnabledForSite(type, site)) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();
@@ -108,13 +112,13 @@ export class Audit {
       } = await this.runner(finalUrl, context, site);
       const auditData = {
         siteId: site.getId(),
-        isLive: site.isLive(),
+        isLive: site.getIsLive(),
         auditedAt: new Date().toISOString(),
         auditType: type,
         auditResult,
         fullAuditRef,
       };
-      await this.persister(auditData, context);
+      const audit = await this.persister(auditData, context);
       auditContext.finalUrl = finalUrl;
       auditContext.fullAuditRef = fullAuditRef;
 
@@ -126,15 +130,24 @@ export class Audit {
       };
 
       await this.messageSender(resultMessage, context);
+      // add auditId for the post-processing
+      auditData.id = audit.getId();
+      await this.postProcessors.reduce(async (previousProcessor, postProcessor) => {
+        const updatedAuditData = await previousProcessor;
 
-      for (const postProcessor of this.postProcessors) {
-        // eslint-disable-next-line no-await-in-loop
-        await postProcessor(finalUrl, auditData, context);
-      }
+        try {
+          const result = await postProcessor(finalUrl, updatedAuditData, context, site);
+
+          return result || updatedAuditData;
+        } catch (e) {
+          log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(updatedAuditData)}`);
+          throw e;
+        }
+      }, Promise.resolve(auditData));
 
       return ok();
     } catch (e) {
-      throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`);
+      throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`, { cause: e });
     }
   }
 }

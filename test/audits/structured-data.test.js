@@ -16,8 +16,13 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 
-import { structuredDataHandler } from '../../src/structured-data/handler.js';
+import { convertToOpportunity, structuredDataHandler } from '../../src/structured-data/handler.js';
 import { MockContextBuilder } from '../shared.js';
+
+import fullUrlInspectionResult from '../fixtures/structured-data/structured-data.json' with { type: 'json' };
+import expectedOppty from '../fixtures/structured-data/oppty.json' with { type: 'json' };
+import auditDataMock from '../fixtures/structured-data/audit.json' with { type: 'json' };
+import suggestions from '../fixtures/structured-data/suggestions.json' with { type: 'json' };
 
 use(sinonChai);
 
@@ -32,8 +37,8 @@ describe('URLInspect Audit', () => {
   let googleClientStub;
   let urlInspectStub;
   let siteStub;
-
-  let fullUrlInspectionResult;
+  let structuredDataSuggestions;
+  let mockFullInspectionResult;
 
   beforeEach(() => {
     context = new MockContextBuilder()
@@ -55,68 +60,25 @@ describe('URLInspect Audit', () => {
     siteStub = {
       getId: () => '123',
       getConfig: () => ({
-        getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2'],
+        getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2', 'https://example.com/product/3'],
       }),
     };
 
-    fullUrlInspectionResult = {
-      inspectionResult: {
-        inspectionResultLink: 'https://search.google.com/search-console/inspect?resource_id=https://www.example.com/',
-        indexStatusResult: {
-          verdict: 'PASS',
-          coverageState: 'Submitted and indexed',
-          robotsTxtState: 'ALLOWED',
-          indexingState: 'INDEXING_ALLOWED',
-          lastCrawlTime: '2024-08-13T22:35:22Z',
-          pageFetchState: 'SUCCESSFUL',
-          googleCanonical: 'https://www.example.com/foo',
-          userCanonical: 'https://www.example.com/foo',
-          referringUrls: [
-            'https://www.example.com/bar',
-          ],
-          crawledAs: 'MOBILE',
+    mockFullInspectionResult = JSON.parse(JSON.stringify(fullUrlInspectionResult));
+
+    structuredDataSuggestions = {
+      createdItems: [
+        {
+          type: 'url',
+          url: 'https://example.com/product/1',
+          errors: ['Missing field "image"'],
         },
-        mobileUsabilityResult: {
-          verdict: 'VERDICT_UNSPECIFIED',
+        {
+          type: 'url',
+          url: 'https://example.com/product/2',
+          errors: ['Missing field "image"'],
         },
-        richResultsResult: {
-          verdict: 'PASS',
-          detectedItems: [
-            {
-              richResultType: 'Product snippets',
-              items: [
-                {
-                  name: 'Example Product Name',
-                  issues: [
-                    {
-                      issueMessage: 'Missing field "image"',
-                      severity: 'ERROR',
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              richResultType: 'Merchant listings',
-              items: [
-                {
-                  name: 'Example Product Name',
-                  issues: [
-                    {
-                      issueMessage: 'Missing field "hasMerchantReturnPolicy"',
-                      severity: 'WARNING',
-                    },
-                    {
-                      issueMessage: 'Missing field "shippingDetails"',
-                      severity: 'ERROR',
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      },
+      ],
     };
   });
 
@@ -126,108 +88,20 @@ describe('URLInspect Audit', () => {
 
   it('should successfully return a filtered result of the url inspection result', async () => {
     sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
+    // for the first call, return the full inspection result
     urlInspectStub.resolves(fullUrlInspectionResult);
+    urlInspectStub.onSecondCall().resolves(fullUrlInspectionResult);
+    urlInspectStub.onThirdCall().rejects(new Error('Failed to inspect URL'));
 
     const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
-    expect(auditData.auditResult).to.deep.equal(
-      [
-        {
-          inspectionUrl: 'https://example.com/product/1',
-          indexStatusResult: {
-            verdict: 'PASS',
-            lastCrawlTime: '2024-08-13T22:35:22Z',
-          },
-          richResults: {
-            verdict: 'PASS',
-            detectedItemTypes: [
-              'Product snippets',
-              'Merchant listings',
-            ],
-            detectedIssues: [
-              {
-                richResultType: 'Product snippets',
-                items: [
-                  {
-                    name: 'Example Product Name',
-                    issues: [
-                      {
-                        issueMessage: 'Missing field "image"',
-                        severity: 'ERROR',
-                      },
-                    ],
-                  },
-                ],
-              },
-              {
-                richResultType: 'Merchant listings',
-                items: [
-                  {
-                    name: 'Example Product Name',
-                    issues: [
-                      {
-                        issueMessage: 'Missing field "shippingDetails"',
-                        severity: 'ERROR',
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        },
-        {
-          inspectionUrl: 'https://example.com/product/2',
-          indexStatusResult: {
-            verdict: 'PASS',
-            lastCrawlTime: '2024-08-13T22:35:22Z',
-          },
-          richResults: {
-            verdict: 'PASS',
-            detectedItemTypes: [
-              'Product snippets',
-              'Merchant listings',
-            ],
-            detectedIssues: [
-              {
-                richResultType: 'Product snippets',
-                items: [
-                  {
-                    name: 'Example Product Name',
-                    issues: [
-                      {
-                        issueMessage: 'Missing field "image"',
-                        severity: 'ERROR',
-                      },
-                    ],
-                  },
-                ],
-              },
-              {
-                richResultType: 'Merchant listings',
-                items: [
-                  {
-                    name: 'Example Product Name',
-                    issues: [
-                      {
-                        issueMessage: 'Missing field "shippingDetails"',
-                        severity: 'ERROR',
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        },
-      ],
-    );
+    expect(auditData.auditResult).to.deep.equal(auditDataMock.auditResult);
   });
 
   it('returns no rich results when there are no rich results errors', async () => {
     sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
-    delete fullUrlInspectionResult.inspectionResult.richResultsResult;
-    urlInspectStub.resolves(fullUrlInspectionResult);
+    delete mockFullInspectionResult.inspectionResult.richResultsResult;
+    urlInspectStub.resolves(mockFullInspectionResult);
 
     const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
@@ -236,11 +110,12 @@ describe('URLInspect Audit', () => {
 
   it('returns no rich results when there are no errors in rich results', async () => {
     sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
-    fullUrlInspectionResult.inspectionResult
+    mockFullInspectionResult.inspectionResult
       .richResultsResult.detectedItems[0].items[0].issues = [];
-    delete fullUrlInspectionResult.inspectionResult
+    delete mockFullInspectionResult.inspectionResult
       .richResultsResult.detectedItems[1].items[0].issues[1];
-    urlInspectStub.resolves(fullUrlInspectionResult);
+
+    urlInspectStub.resolves(mockFullInspectionResult);
 
     const auditData = await structuredDataHandler('https://www.example.com', context, siteStub);
 
@@ -279,5 +154,45 @@ describe('URLInspect Audit', () => {
     } catch (error) {
       expect(error.message).to.equal('Failed to inspect URL: https://example.com/product/1. Error: Failed to inspect URL');
     }
+  });
+
+  it('should transform the audit result into opportunities and suggestions in the post processor', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+    context.dataAccess.Opportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
+    await convertToOpportunity('', auditDataMock, context);
+
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
+    expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
+  });
+
+  it('should transform the audit result into opportunities and suggestions in the post processor and add the audit to an existing opportunity', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([context.dataAccess.Opportunity]);
+    context.dataAccess.Opportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.getType.returns('structured-data');
+    context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
+    await convertToOpportunity('', auditDataMock, context);
+
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(context.dataAccess.Opportunity.setAuditId).to.have.been.calledOnceWith('audit-id');
+    expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
+    expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
+  });
+
+  it('should throw an error if creating a new opportunity fails', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.throws('opportunity-error');
+    try {
+      await convertToOpportunity('', auditDataMock, context);
+    } catch (error) {
+      expect(error.message).to.equal('Sinon-provided opportunity-error');
+    }
+
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
+    expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;
+    expect(context.log.error).to.have.been.calledWith('Failed to create new opportunity for siteId site-id and auditId audit-id: Sinon-provided opportunity-error');
   });
 });

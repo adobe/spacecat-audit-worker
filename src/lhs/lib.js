@@ -10,10 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { isObject, isValidUrl } from '@adobe/spacecat-shared-utils';
+import { isObject, isValidUrl, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
 import PSIClient from '../support/psi-client.js';
-import { fetch } from '../support/utils.js';
 
 /**
  * Extracts audit scores from an audit.
@@ -253,8 +252,6 @@ async function lhsAuditRunner(baseURL, strategy, context, site) {
   if (!isValidUrl(psiApiBaseUrl)) {
     throw new Error('Invalid PageSpeed API base URL');
   }
-
-  log.info(`Received ${strategy} audit request for: ${baseURL}`);
 
   const services = initServices({
     psiApiKey,

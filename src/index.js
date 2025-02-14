@@ -17,6 +17,7 @@ import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-util
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 
 import sqs from './support/sqs.js';
+import s3Client from './support/s3-client.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
@@ -25,13 +26,17 @@ import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
+import internalLinks from './internal-links/handler.js';
 import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
 import experimentationOpportunities from './experimentation-opportunities/experimentation-opportunities.js';
+import formsOpportunities from './forms-opportunities/handler.js';
+import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
+import siteDetection from './site-detection/handler.js';
 
 const HANDLERS = {
   apex,
@@ -42,13 +47,17 @@ const HANDLERS = {
   sitemap,
   canonical,
   'broken-backlinks': backlinks,
+  'broken-internal-links': internalLinks,
   experimentation,
   conversion,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
   'experimentation-opportunities': experimentationOpportunities,
+  'meta-tags': metaTags,
   costs,
   'structured-data': structuredData,
+  'forms-opportunities': formsOpportunities,
+  'site-detection': siteDetection,
   dummy: (message) => ok(message),
 };
 
@@ -66,9 +75,9 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
-  const { type, url } = message;
+  const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for: ${url}`);
+  log.info(`Received ${type} audit request for: ${siteId}`);
 
   const handler = HANDLERS[type];
   if (!handler) {
@@ -82,11 +91,11 @@ async function run(message, context) {
   try {
     const result = await (typeof handler.run === 'function' ? handler.run(message, context) : handler(message, context));
 
-    log.info(`${type} audit for ${url} completed in ${getElapsedSeconds(startTime)} seconds`);
+    log.info(`${type} audit for ${siteId} completed in ${getElapsedSeconds(startTime)} seconds`);
 
     return result;
   } catch (e) {
-    log.error(`${type} audit for ${url} failed after ${getElapsedSeconds(startTime)} seconds`, e);
+    log.error(`${type} audit for ${siteId} failed after ${getElapsedSeconds(startTime)} seconds. `, e);
     return internalServerError();
   }
 }
@@ -95,5 +104,6 @@ export const main = wrap(run)
   .with(dataAccess)
   .with(sqsEventAdapter)
   .with(sqs)
+  .with(s3Client)
   .with(secrets, { name: resolveSecretsName })
   .with(helixStatus);

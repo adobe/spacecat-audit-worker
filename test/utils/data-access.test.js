@@ -15,54 +15,217 @@
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
-import { retrieveSiteBySiteId } from '../../src/utils/data-access.js';
+import sinonChai from 'sinon-chai';
+import { retrieveSiteBySiteId, syncSuggestions } from '../../src/utils/data-access.js';
 
+use(sinonChai);
 use(chaiAsPromised);
 
-describe('retrieveSiteBySiteId', () => {
-  let mockDataAccess;
-  let mockLog;
+describe('data-access', () => {
+  describe('retrieveSiteBySiteId', () => {
+    let mockDataAccess;
+    let mockLog;
 
-  beforeEach(() => {
-    mockDataAccess = {
-      getSiteByID: sinon.stub(),
-    };
+    beforeEach(() => {
+      mockDataAccess = {
+        Site: {
+          findById: sinon.stub(),
+        },
+      };
 
-    mockLog = {
-      warn: sinon.spy(),
-    };
+      mockLog = {
+        warn: sinon.spy(),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('returns site when Site.findById returns a valid object', async () => {
+      const site = { id: 'site1' };
+      mockDataAccess.Site.findById.resolves(site);
+
+      const result = await retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog);
+
+      expect(result).to.equal(site);
+      expect(mockDataAccess.Site.findById).to.have.been.calledOnceWith('site1');
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('returns null and logs a warning when Site.findById returns a non-object', async () => {
+      mockDataAccess.Site.findById.resolves('not an object');
+
+      const result = await retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog);
+
+      expect(result).to.be.null;
+      expect(mockDataAccess.Site.findById).to.have.been.calledOnceWith('site1');
+      expect(mockLog.warn).to.have.been.calledOnceWith('Site not found for site: site1');
+    });
+
+    it('throws an error when Site.findById throws an error', async () => {
+      mockDataAccess.Site.findById.rejects(new Error('database error'));
+
+      await expect(retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog)).to.be.rejectedWith('Error getting site site1: database error');
+      expect(mockDataAccess.Site.findById).to.have.been.calledOnceWith('site1');
+      expect(mockLog.warn).to.not.have.been.called;
+    });
   });
 
-  afterEach(() => {
-    sinon.restore();
-  });
+  describe('syncSuggestions', () => {
+    let mockOpportunity;
+    let mockLogger;
 
-  it('returns site when getSiteByID returns a valid object', async () => {
-    const site = { id: 'site1' };
-    mockDataAccess.getSiteByID.resolves(site);
+    const buildKey = (data) => `${data.key}`;
+    const mapNewSuggestion = (data) => ({
+      opportunityId: '123',
+      type: 'TYPE',
+      rank: 123,
+      data: {
+        key: data.key,
+      },
+    });
 
-    const result = await retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog);
+    beforeEach(() => {
+      mockOpportunity = {
+        getSuggestions: sinon.stub(),
+        addSuggestions: sinon.stub(),
+        getSiteId: () => 'site-id',
+      };
 
-    expect(result).to.equal(site);
-    expect(mockDataAccess.getSiteByID).to.have.been.calledOnceWith('site1');
-    expect(mockLog.warn).to.not.have.been.called;
-  });
+      mockLogger = {
+        error: sinon.spy(),
+        info: sinon.spy(),
+      };
+    });
 
-  it('returns null and logs a warning when getSiteByID returns a non-object', async () => {
-    mockDataAccess.getSiteByID.resolves('not an object');
+    it('should remove outdated suggestions and add new ones', async () => {
+      const suggestionsData = [{ key: '1' }, { key: '2' }];
+      const existingSuggestions = [
+        {
+          id: '1', data: suggestionsData[0], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[0]),
+        },
+        {
+          id: '2', data: suggestionsData[1], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[1]),
+        }];
+      const newData = [{ key: '3' }, { key: '4' }];
 
-    const result = await retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog);
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
 
-    expect(result).to.be.null;
-    expect(mockDataAccess.getSiteByID).to.have.been.calledOnceWith('site1');
-    expect(mockLog.warn).to.have.been.calledOnceWith('Site not found for site: site1');
-  });
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        log: mockLogger,
+      });
 
-  it('throws an error when getSiteByID throws an error', async () => {
-    mockDataAccess.getSiteByID.rejects(new Error('database error'));
+      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+      expect(mockOpportunity.addSuggestions).to.have.been.calledOnceWith([{
+        opportunityId: '123',
+        type: 'TYPE',
+        rank: 123,
+        data: {
+          key: '3',
+        },
+      }, {
+        opportunityId: '123',
+        type: 'TYPE',
+        rank: 123,
+        data: {
+          key: '4',
+        },
+      }]);
+      expect(mockLogger.error).to.not.have.been.called;
+    });
 
-    await expect(retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog)).to.be.rejectedWith('Error getting site site1: database error');
-    expect(mockDataAccess.getSiteByID).to.have.been.calledOnceWith('site1');
-    expect(mockLog.warn).to.not.have.been.called;
+    it('should update suggestions when they are detected again', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title' },
+        { key: '2', title: 'same title' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+      }, {
+        id: '2',
+        data: suggestionsData[1],
+        getData: sinon.stub().returns(suggestionsData[1]),
+        remove: sinon.stub(),
+      }];
+      const newData = [{ key: '1', title: 'new title' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        log: mockLogger,
+      });
+
+      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+      expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
+      expect(existingSuggestions[0].save).to.have.been.calledOnce;
+      expect(existingSuggestions[1].remove).to.have.been.calledOnce;
+    });
+
+    it('should log errors if there are items with errors', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1', data: suggestionsData[0], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[0]),
+      }];
+      const newData = [{ id: '2' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [{ item: { id: '2' }, error: 'some error' }],
+        createdItems: [],
+      });
+
+      try {
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          buildKey,
+          mapNewSuggestion,
+          log: mockLogger,
+        });
+      } catch (e) {
+        expect(e.message).to.equal('Failed to create suggestions for siteId site-id');
+      }
+
+      expect(mockLogger.error).to.have.been.calledTwice;
+      expect(mockLogger.error.firstCall.args[0]).to.include('contains 1 items with errors');
+      expect(mockLogger.error.secondCall.args[0]).to.include('failed with error: some error');
+    });
+
+    it('should throw an error if all items fail to be created', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1', data: suggestionsData[0], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[0]),
+      }];
+      const newData = [{ id: '2' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [{ item: { id: '2' }, error: 'some error' }],
+        createdItems: [],
+      });
+
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        log: mockLogger,
+      })).to.be.rejectedWith('Failed to create suggestions for siteId');
+    });
   });
 });

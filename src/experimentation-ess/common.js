@@ -12,10 +12,10 @@
 
 /* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { JSDOM } from 'jsdom';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
-import { getRUMDomainkey } from '../support/utils.js';
 
 const DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD = 500;
 
@@ -628,6 +628,10 @@ function filterMultiPageExperimentsByThreshold(
 }
 
 async function processExperimentRUMData(experimentInsights, context, days) {
+  if (Object.keys(experimentInsights).length === 0) {
+    log.info('No Experiment Insights found');
+    return [];
+  }
   log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
   const multiPageExperimentNames = getMultiPageExperimentNames(experimentInsights);
   log.info('Multi-Page Experiment Names: ', multiPageExperimentNames.join(', '));
@@ -648,10 +652,8 @@ export async function processAudit(auditURL, context, site, days) {
   log = context.log;
   log.info(`Processing ESS Experimentation audit for ${auditURL}`);
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: auditURL,
-    domainkey,
     interval: days,
     granularity: 'hourly',
   };
@@ -661,12 +663,13 @@ export async function processAudit(auditURL, context, site, days) {
 
 export async function postProcessor(auditUrl, auditData, context) {
   const { dataAccess } = context;
+  const { Experiment } = dataAccess;
   log = context.log;
   // iterate array auditData.auditResult
   for (const experiment of auditData.auditResult) {
     const experimentData = {
       siteId: auditData.siteId,
-      experimentId: experiment.id,
+      expId: experiment.id,
       name: experiment.label,
       url: experiment.url,
       startDate: experiment.startDate,
@@ -678,7 +681,10 @@ export async function postProcessor(auditUrl, auditData, context) {
       conversionEventValue: experiment.conversionEventValue,
     };
     // eslint-disable-next-line no-await-in-loop
-    const existingExperiments = await dataAccess.getExperiments(auditData.siteId, experiment.id);
+    const existingExperiments = await Experiment.allBySiteIdAndExpId(
+      auditData.siteId,
+      experiment.id,
+    );
     let existingExperiment;
     if (existingExperiments) {
       if (existingExperiments.length === 1) {
@@ -715,7 +721,7 @@ export async function postProcessor(auditUrl, auditData, context) {
       }
     }
     // eslint-disable-next-line no-await-in-loop
-    await dataAccess.upsertExperiment(experimentData);
+    await Experiment.create(experimentData);
   }
   log.info(`Experiments data for site ${auditData.siteId} has been upserted`);
 }

@@ -218,3 +218,113 @@ export default new AuditBuilder()
   .build();
 
 ```
+
+### How to add Opportunities and Suggestions
+```js
+import { syncSuggestions } from '../utils/data-access.js';
+
+export async function auditRunner(url, context) {
+
+  // your audit logic goes here...
+
+  return {
+    auditResult: results,
+    fullAuditRef: baseURL,
+  };
+}
+
+async function convertToOpportunity(auditUrl, auditData, context) {
+  const { dataAccess, log } = context;
+
+  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+  let opportunity = opportunities.find((oppty) => oppty.getType() === 'audit-type');
+
+  if (!opportunity) {
+    const opportunityData = {
+      siteId: auditData.siteId,
+      auditId: auditData.id,
+      runbook: 'link-to-runbook',
+      type: 'audit-type',
+      origin: 'AUTOMATION',
+      title: 'Opportunity Title',
+      description: 'Opportunity Description',
+      guidance: {
+        steps: [
+          'Step 1',
+          'Step 2',
+        ],
+      },
+      tags: ['tag1', 'tag2'],
+    };
+    try {
+      opportunity = await dataAccess.Opportunity.create(opportunityData);
+    } catch (e) {
+      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
+      throw e;
+    }
+  } else {
+    opportunity.setAuditId(auditData.id);
+    await opportunity.save();
+  }
+
+  // this logic changes based on the audit type
+  const buildKey = (auditData) => `${auditData.property}|${auditData.anotherProperty}`;
+
+  await syncSuggestions({
+    opportunity,
+    newData: auditData,
+    buildKey,
+    mapNewSuggestion: (issue) => ({
+      opportunityId: opportunity.getId(),
+      type: 'SUGGESTION_TYPE',
+      rank: issue.rankMetric,
+      // data changes based on the audit type
+      data: {
+        property: issue.property,
+        anotherProperty: issue.anotherProperty,
+      },
+    }),
+    log,
+  }); 
+}
+
+export default new AuditBuilder()
+  .withRunner(auditRunner)
+  .withPostProcessors([ convertToOpportunity ])
+  .build();
+
+```
+
+### How to add auto-suggest to an audit
+A new auto-suggest feature can be added as a post processor step to the existing audit.
+
+The `AuditBuilder` is chaining all post processors together and passing the `auditData` object to each post processor.
+The `auditData` object can be updated by each post processor and the updated `auditData` object will be passed to the next post processor.
+If the `auditData` object is not updated by a post processor, the previous `auditData` object will be used.
+
+The auto-suggest post processor should verify if the site is enabled for suggestions and if the audit was run successfully:
+
+```js
+export const generateSuggestionData = async (finalUrl, auditData, context, site) => {
+  const { dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+
+  if (auditData.auditResult.success === false) {
+    log.info('Audit failed, skipping suggestions generation');
+    return { ...auditData };
+  }
+
+  const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('[audit-name]-auto-suggest', site)) {
+    log.info('Auto-suggest is disabled for site');
+    return {...auditData};
+  }
+}
+```
+
+```js
+export default new AuditBuilder()
+  .withRunner(auditRunner)
+  .withPostProcessors([ generateSuggestionData, convertToOpportunity ])
+  .build();
+```

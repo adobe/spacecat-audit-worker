@@ -54,7 +54,6 @@ async function processAudit(baseURL, context) {
  */
 export async function conversionAuditRunner(baseURL, context) {
   const { log } = context;
-  log.info(`Received Conversion audit request for ${baseURL}`);
   const startTime = process.hrtime();
   const auditData = await processAudit(
     baseURL,

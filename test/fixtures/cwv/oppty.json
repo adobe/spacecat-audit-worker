@@ -1,0 +1,25 @@
+{
+  "siteId": "site-id",
+  "auditId": "audit-id",
+  "runbook": "https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_CWV_Runbook.docx?web=1",
+  "type": "cwv",
+  "origin": "AUTOMATION",
+  "title": "Core Web Vitals",
+  "description": "Core Web Vitals are key metrics Google uses to evaluate website performance, impacting SEO rankings by measuring user experience.",
+  "guidance": {
+    "steps": [
+      "Analyze CWV data using RUM and PageSpeed Insights to identify performance bottlenecks.",
+      "Optimize CWV metrics (CLS, INP, LCP) by addressing common issues such as slow server response times, unoptimized assets, excessive JavaScript, and layout instability.",
+      "Test the implemented changes with tools like Chrome DevTools or PageSpeed Insights to verify improvements.",
+      "Monitor performance over time to ensure consistent CWV scores across devices."
+    ]
+  },
+  "tags": [
+    "Traffic acquisition",
+    "Engagement"
+  ],
+  "data": {
+    "projectedTrafficLost": 0.51,
+    "projectedTrafficValue": 0.51
+  }
+}

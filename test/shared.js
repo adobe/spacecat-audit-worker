@@ -23,25 +23,53 @@ export class MockContextBuilder {
 
   build() {
     const mockLog = {
+      debug: this.sandbox.spy(),
       info: this.sandbox.spy(),
       warn: this.sandbox.spy(),
       error: this.sandbox.spy(),
     };
 
     const mockDataAccess = {
-      getSiteByID: this.sandbox.stub(),
-      getOrganizationByID: this.sandbox.stub(),
-      addAudit: this.sandbox.stub(),
+      Configuration: {
+        findLatest: this.sandbox.stub(),
+      },
+      Audit: {
+        create: this.sandbox.stub(),
+      },
+      Site: {
+        findById: this.sandbox.stub(),
+      },
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: this.sandbox.stub(),
+      },
+      Organization: {
+        findById: this.sandbox.stub(),
+      },
+      Opportunity: {
+        getId: this.sandbox.stub(),
+        getType: this.sandbox.stub(),
+        allBySiteIdAndStatus: this.sandbox.stub(),
+        create: this.sandbox.stub(),
+        getSuggestions: this.sandbox.stub(),
+        addSuggestions: this.sandbox.stub(),
+        setAuditId: this.sandbox.stub(),
+        save: this.sandbox.stub(),
+      },
     };
 
     const mockSqs = {
       sendMessage: this.sandbox.stub().resolves(),
     };
 
+    const mockEnv = {
+      S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+    };
+
     let context = {
       log: mockLog,
       dataAccess: mockDataAccess,
       sqs: mockSqs,
+      env: mockEnv,
     };
 
     if (this.contextOverrides) {

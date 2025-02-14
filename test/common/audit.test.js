@@ -11,21 +11,20 @@
  */
 
 /* eslint-env mocha */
+
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { createSite } from '@adobe/spacecat-shared-data-access/src/models/site.js';
-import { createOrganization } from '@adobe/spacecat-shared-data-access/src/models/organization.js';
-import { createConfiguration } from '@adobe/spacecat-shared-data-access/src/models/configuration.js';
-import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, hasText, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
   defaultMessageSender,
   defaultOrgProvider,
   defaultPersister,
   defaultSiteProvider,
   defaultUrlResolver,
+  noopPersister,
   noopUrlResolver,
   wwwUrlResolver,
 } from '../../src/common/audit.js';
@@ -39,28 +38,44 @@ use(chaiAsPromised);
 const baseURL = 'https://space.cat';
 const message = {
   type: 'dummy',
-  url: 'site-id',
+  siteId: 'site-id',
   auditContext: { someField: 431 },
 };
 const mockDate = '2023-03-12T15:24:51.231Z';
 const sandbox = sinon.createSandbox();
 describe('Audit tests', () => {
+  let clock;
   let context;
   let site;
   let org;
   let configuration;
 
   beforeEach('setup', () => {
+    clock = sandbox.useFakeTimers({
+      now: +new Date(mockDate),
+      toFake: ['Date'],
+    });
+
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .build(message);
 
-    org = createOrganization({ name: 'some-org' });
-    site = createSite({ baseURL, organizationId: org.getId() });
-    const configurationData = {
-      version: '1.0',
-      queues: {},
-      handlers: {
+    org = {
+      getId: () => 'some-org-id',
+      getName: () => 'some-org',
+    };
+    site = {
+      getId: () => 'site-id',
+      getBaseURL: () => baseURL,
+      getOrganizationId: () => org.getId(),
+      getIsLive: () => true,
+      getIsError: () => false,
+    };
+    configuration = {
+      getVersion: () => '1.0',
+      getQueues: () => {
+      },
+      getHandlers: () => ({
         dummy: {
           enabled: {
             sites: ['site-id', 'space.cat', site.getId()],
@@ -69,61 +84,57 @@ describe('Audit tests', () => {
           enabledByDefault: false,
           dependencies: [],
         },
-      },
-      jobs: [],
+      }),
+      getJobs: () => [],
+      isHandlerEnabledForSite: () => true,
+      disableHandlerForSite: () => true,
+      disableHandlerForOrg: () => true,
     };
-    configuration = createConfiguration(configurationData);
   });
 
-  before('setup', function () {
-    this.clock = sandbox.useFakeTimers({
-      now: new Date(mockDate).getTime(),
-    });
-  });
-
-  after('clean', function () {
-    this.clock.uninstall();
+  afterEach('clean', () => {
+    clock.restore();
   });
 
   describe('default components', () => {
     it('default site provider throws error when site is not found', async () => {
-      context.dataAccess.getSiteByID.withArgs(message.url).resolves(null);
+      context.dataAccess.Site.findById.withArgs(message.url).resolves(null);
       await expect(defaultSiteProvider(message.url, context))
         .to.be.rejectedWith(`Site with id ${message.url} not found`);
     });
 
     it('default site provider returns site', async () => {
-      context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
+      context.dataAccess.Site.findById.withArgs(message.url).resolves(site);
 
       const result = await defaultSiteProvider(message.url, context);
       expect(result.getBaseURL()).to.equal(baseURL);
 
-      expect(context.dataAccess.getSiteByID).to.have.been.calledOnce;
+      expect(context.dataAccess.Site.findById).to.have.been.calledOnce;
     });
 
     it('default org provider throws error when org is not found', async () => {
-      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(null);
+      context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(null);
       await expect(defaultOrgProvider(site.getOrganizationId(), context))
         .to.be.rejectedWith(`Org with id ${site.getOrganizationId()} not found`);
     });
 
     it('default org provider returns org', async () => {
-      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
+      context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
 
       const result = await defaultOrgProvider(site.getOrganizationId(), context);
       expect(result.getId()).to.equal(site.getOrganizationId());
 
-      expect(context.dataAccess.getOrganizationByID).to.have.been.calledOnce;
+      expect(context.dataAccess.Organization.findById).to.have.been.calledOnce;
     });
 
     it('default persister saves the audit result to data access', async () => {
-      context.dataAccess.addAudit.resolves();
+      context.dataAccess.Audit.create.resolves();
       const auditData = { result: 'hebele' };
 
       await defaultPersister(auditData, context);
 
-      expect(context.dataAccess.addAudit).to.have.been.calledOnce;
-      expect(context.dataAccess.addAudit).to.have.been.calledWith(auditData);
+      expect(context.dataAccess.Audit.create).to.have.been.calledOnce;
+      expect(context.dataAccess.Audit.create).to.have.been.calledWith(auditData);
     });
 
     it('default message sender sends the audit to sqs', async () => {
@@ -135,8 +146,7 @@ describe('Audit tests', () => {
 
       await defaultMessageSender(resultMessage, context);
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, resultMessage);
+      expect(context.sqs.sendMessage).not.to.have.been.calledOnce;
     });
 
     it('default url resolves gets the base url and follows redirects', async () => {
@@ -173,7 +183,7 @@ describe('Audit tests', () => {
         .build();
 
       await expect(audit.run(message, context))
-        .to.be.rejectedWith(`${message.type} audit failed for site ${message.url}. Reason: Site with id ${message.url} not found`);
+        .to.be.rejectedWith(`${message.type} audit failed for site ${message.siteId}. Reason: Site with id ${message.siteId} not found`);
     });
 
     it('should follow redirection and return final URL', async () => {
@@ -185,7 +195,7 @@ describe('Audit tests', () => {
         .get('/blog')
         .reply(200, () => 'hello world', {});
 
-      const testsite = createSite({ baseURL: 'https://spacekitty.cat/blog', organizationId: org.getId() });
+      const testsite = { getBaseURL: () => 'https://spacekitty.cat/blog', getOrganizationId: () => org.getId() };
       const initialBaseURL = testsite.getBaseURL();
       const auditURL = await composeAuditURL(initialBaseURL);
       const urlWithSchema = prependSchema(auditURL);
@@ -195,13 +205,12 @@ describe('Audit tests', () => {
     });
 
     it('audit run skips when audit is disabled', async () => {
-      configuration.disableHandlerForSite('dummy', { getId: () => site.getId(), getOrganizationId: () => org.getId() });
-      configuration.disableHandlerForOrg('dummy', org);
+      configuration.isHandlerEnabledForSite = sinon.stub().returns(false);
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
-      context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
-      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
-      context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
+      context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
+      context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
+      context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
 
       const audit = new AuditBuilder()
         .withRunner(() => 123)
@@ -215,22 +224,46 @@ describe('Audit tests', () => {
 
     it('audit runs as expected with post processors', async () => {
       const queueUrl = 'some-queue-url';
+      const fullAuditRef = 'hebele';
+      const auditData = {
+        siteId: site.getId(),
+        isLive: site.getIsLive(),
+        auditedAt: mockDate,
+        auditType: message.type,
+        auditResult: { metric: 42 },
+        fullAuditRef,
+        id: 'some-audit-id',
+      };
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
-      context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
-      context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
-      context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
-      context.dataAccess.addAudit.resolves();
+      context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
+      context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
+      context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
+      context.dataAccess.Audit.create.resolves({
+        getId: () => 'some-audit-id',
+      });
       context.sqs.sendMessage.resolves();
 
+      // Stubs for post processors
+      const updatedAuditData1 = {
+        ...auditData,
+        auditResult: { ...auditData.auditResult, extraMetric: 100 },
+      };
+      const updatedAuditData2 = {
+        ...updatedAuditData1,
+        auditResult: { ...updatedAuditData1.auditResult, anotherMetric: 200 },
+      };
+
       const postProcessors = [
-        sandbox.stub().resolves(), sandbox.stub().resolves(),
+        sandbox.stub().resolves(updatedAuditData1), // First post processor modifies auditData
+        sandbox.stub().resolves(), // second post processor does not return anything
+        sandbox.stub().rejects(new Error('some nasty error')), // Third post processor throws an error
+        sandbox.stub().resolves(updatedAuditData2), // Fourth post processor should not be called
       ];
 
       nock(baseURL)
         .get('/')
         .reply(200);
 
-      const fullAuditRef = 'hebele';
       const dummyRunner = (url, _context) => ({
         auditResult: typeof url === 'string' && typeof _context === 'object' ? { metric: 42 } : null,
         fullAuditRef,
@@ -246,43 +279,36 @@ describe('Audit tests', () => {
         .withPostProcessors(postProcessors)
         .build();
 
-      const resp = await audit.run(message, context);
+      await expect(audit.run(message, context)).to.be.rejectedWith('some nasty error');
 
       // Assert
-      expect(resp.status).to.equal(200);
+      expect(context.dataAccess.Audit.create).to.have.been.calledOnce;
 
-      expect(context.dataAccess.addAudit).to.have.been.calledOnce;
-      const auditData = {
-        siteId: site.getId(),
-        isLive: site.isLive(),
-        auditedAt: mockDate,
-        auditType: message.type,
-        auditResult: { metric: 42 },
-        fullAuditRef,
-      };
-      expect(context.dataAccess.addAudit).to.have.been.calledWith(auditData);
+      expect(context.dataAccess.Audit.create).to.have.been.calledWith(auditData);
 
       const finalUrl = 'space.cat';
-      const expectedMessage = {
-        type: message.type,
-        url: 'https://space.cat',
-        auditContext: { someField: 431, finalUrl, fullAuditRef },
-        auditResult: { metric: 42 },
-      };
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);
-      expect(postProcessors[0]).to.have.been.calledWith(finalUrl, auditData);
-      expect(postProcessors[1]).to.have.been.calledWith(finalUrl, auditData);
+      expect(context.sqs.sendMessage).not.to.have.been.calledOnce;
+
+      expect(postProcessors[0]).to.have.been.calledWith(finalUrl, auditData, context, site);
+      expect(postProcessors[1]).to.have.been.called;
+      expect(postProcessors[2]).to.have.been.calledWith(finalUrl, updatedAuditData1, context, site);
+      expect(postProcessors[3]).to.not.have.been.called;
+
+      expect(context.log.error).to.have.been.calledOnceWith(
+        `Post processor functionStub failed for dummy audit failed for site site-id. Reason: some nasty error.\nAudit data: ${JSON.stringify(updatedAuditData1)}`,
+      );
     });
   });
 
   it('audit runs as expected when receiving siteId instead of message ', async () => {
     const queueUrl = 'some-queue-url';
     context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
-    context.dataAccess.getSiteByID.withArgs(message.url).resolves(site);
-    context.dataAccess.getOrganizationByID.withArgs(site.getOrganizationId()).resolves(org);
-    context.dataAccess.getConfiguration = sinon.stub().resolves(configuration);
-    context.dataAccess.addAudit.resolves();
+    context.dataAccess.Site.findById.withArgs(message.url).resolves(site);
+    context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
+    context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
+    context.dataAccess.Audit.create.resolves({
+      getId: () => 'some-audit-id',
+    });
     context.sqs.sendMessage.resolves();
 
     nock(baseURL)
@@ -310,32 +336,40 @@ describe('Audit tests', () => {
     // Assert
     expect(resp.status).to.equal(200);
 
-    expect(context.dataAccess.addAudit).to.have.been.calledOnce;
-    expect(context.dataAccess.addAudit).to.have.been.calledWith({
+    expect(context.dataAccess.Audit.create).to.have.been.calledOnce;
+    expect(context.dataAccess.Audit.create).to.have.been.calledWith({
       siteId: site.getId(),
-      isLive: site.isLive(),
+      isLive: site.getIsLive(),
       auditedAt: mockDate,
       auditType: message.type,
       auditResult: { metric: 42 },
       fullAuditRef,
+      // Sinon is comparing against the final state of the object because JavaScript
+      //  objects are passed by reference.
+      id: 'some-audit-id',
     });
 
-    const expectedMessage = {
-      type: message.type,
-      url: 'https://space.cat',
-      auditContext: { finalUrl: 'space.cat', fullAuditRef },
-      auditResult: { metric: 42 },
-    };
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(context.sqs.sendMessage).to.have.been.calledWith(queueUrl, expectedMessage);
+    expect(context.sqs.sendMessage).not.to.have.been.calledOnce;
   });
 
   it('wwwUrlResolver calculates audit urls correctly', async () => {
-    expect(wwwUrlResolver(createSite({ baseURL: 'http://spacecat.com' }))).to.equal('www.spacecat.com');
-    expect(wwwUrlResolver(createSite({ baseURL: 'https://spacecat.com' }))).to.equal('www.spacecat.com');
-    expect(wwwUrlResolver(createSite({ baseURL: 'http://www.spacecat.com' }))).to.equal('www.spacecat.com');
-    expect(wwwUrlResolver(createSite({ baseURL: 'https://www.spacecat.com' }))).to.equal('www.spacecat.com');
-    expect(wwwUrlResolver(createSite({ baseURL: 'http://blog.spacecat.com' }))).to.equal('blog.spacecat.com');
-    expect(wwwUrlResolver(createSite({ baseURL: 'https://blog.spacecat.com' }))).to.equal('blog.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'http://spacecat.com' })).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'https://spacecat.com' })).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'http://www.spacecat.com' })).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'https://www.spacecat.com' })).to.equal('www.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'http://blog.spacecat.com' })).to.equal('blog.spacecat.com');
+    expect(wwwUrlResolver({ getBaseURL: () => 'https://blog.spacecat.com' })).to.equal('blog.spacecat.com');
+  });
+
+  it('noop persister', async () => {
+    const audit = await noopPersister({
+      siteId: 'site-id',
+      isLive: true,
+      auditedAt: new Date().toISOString(),
+      auditType: 'some-type',
+      auditResult: { metric: 42 },
+      fullAuditRef: 'hmm',
+    });
+    expect(hasText(audit.getId())).to.be.true;
   });
 });
