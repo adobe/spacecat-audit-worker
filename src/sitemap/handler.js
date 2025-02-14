@@ -30,6 +30,9 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
+// Add new constant for status codes we want to track
+const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -47,10 +50,6 @@ const VALID_MIME_TYPES = Object.freeze([
   'text/html',
   'text/plain',
 ]);
-
-// Add new constant for status codes we want to track
-const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 /**
  * Fetches the content from a given URL.
@@ -174,13 +173,14 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
- * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[]}>} -
- * A promise that resolves to a dict of URLs categorized by status.
+* @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
+ * Array<{url: string, statusCode: number}>}>} - A Promise that resolves to an object containing
  */
 export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
   const NETWORK_ERROR = 2;
+  const OTHER_STATUS = 3;
   const batchSize = 50;
 
   const fetchUrl = async (url) => {
@@ -189,7 +189,7 @@ export async function filterValidUrls(urls) {
         method: 'HEAD',
         redirect: 'manual',
         headers: {
-          'User-Agent': 'DEFAULT_USER_AGENT',
+          'User-Agent': DEFAULT_USER_AGENT,
         },
       });
 
@@ -225,13 +225,13 @@ export async function filterValidUrls(urls) {
         }
       }
 
-      // Only track specific status codes
-      if (TRACKED_STATUS_CODES.includes(response.status)) {
+      // Track 404 status code
+      if (response.status === 404) {
         return { status: NOT_OK, url, statusCode: response.status };
       }
 
-      // Any other status code is treated as OK
-      return { status: OK, url };
+      // Any other status code goes to otherStatusCodes
+      return { status: OTHER_STATUS, url, statusCode: response.status };
     } catch {
       return { status: NETWORK_ERROR, url, error: 'NETWORK_ERROR' };
     }
@@ -267,6 +267,11 @@ export async function filterValidUrls(urls) {
           url: result.url,
           error: result.error,
         });
+      } else if (result.status === OTHER_STATUS) {
+        acc.otherStatusCodes.push({
+          url: result.url,
+          statusCode: result.statusCode,
+        });
       } else {
         acc.notOk.push({
           url: result.url,
@@ -276,7 +281,9 @@ export async function filterValidUrls(urls) {
       }
       return acc;
     },
-    { ok: [], notOk: [], networkErrors: [] },
+    {
+      ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
+    },
   );
 }
 
@@ -424,7 +431,6 @@ export async function findSitemap(inputUrl) {
           }
         }
 
-        // Consider the sitemap valid if it has any OK URLs or tracked status codes
         const hasValidUrls = existingPages.ok.length > 0
           || existingPages.notOk.some((issue) => [301, 302].includes(issue.statusCode));
 

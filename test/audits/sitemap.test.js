@@ -911,7 +911,7 @@ describe('Sitemap Audit', () => {
           },
           url: 'https://some-domain.adobe',
           details: {
-            issues: { },
+            issues: {},
           },
         },
         suggestions: [],
@@ -931,7 +931,11 @@ describe('Sitemap Audit', () => {
       );
 
       await expect(
-        opportunityAndSuggestions('https://example.com', auditDataFailure, context),
+        opportunityAndSuggestions(
+          'https://example.com',
+          auditDataFailure,
+          context,
+        ),
       ).to.be.rejectedWith('Creation failed');
 
       expect(context.log.error).to.have.been.calledWith(
@@ -972,27 +976,32 @@ describe('Sitemap Audit', () => {
         createdItems: [],
       });
 
-      await opportunityAndSuggestions('https://example.com', auditDataFailure, context);
+      await opportunityAndSuggestions(
+        'https://example.com',
+        auditDataFailure,
+        context,
+      );
 
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith({
-        siteId: 'site-id',
-        auditId: 'audit-id',
-        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
-        type: 'sitemap',
-        origin: 'AUTOMATION',
-        title: 'Sitemap issues found',
-        description: '',
-        guidance: {
-          steps: [
-            'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
-            'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
-          ],
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
+        {
+          siteId: 'site-id',
+          auditId: 'audit-id',
+          runbook:
+            'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
+          type: 'sitemap',
+          origin: 'AUTOMATION',
+          title: 'Sitemap issues found',
+          description: '',
+          guidance: {
+            steps: [
+              'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
+              'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
+            ],
+          },
+          tags: ['Traffic Acquisition'],
+          data: {},
         },
-        tags: [
-          'Traffic Acquisition',
-        ],
-        data: { },
-      });
+      );
     });
 
     it('should handle updating when opportunity was already defined', async () => {
@@ -1007,7 +1016,11 @@ describe('Sitemap Audit', () => {
       context.dataAccess.Opportunity.addSuggestions.resolves({
         createdItems: auditDataFailure.suggestions,
       });
-      await opportunityAndSuggestions('https://example.com', auditDataFailure, context);
+      await opportunityAndSuggestions(
+        'https://example.com',
+        auditDataFailure,
+        context,
+      );
 
       expect(
         context.dataAccess.Opportunity.setAuditId,
@@ -1320,8 +1333,6 @@ describe('filterValidUrls with status code tracking', () => {
     // Should include 200 responses in ok array
     expect(result.ok).to.deep.equal([
       'https://example.com/ok',
-      'https://example.com/server-error',
-      'https://example.com/forbidden',
     ]);
 
     // Should only include tracked status codes in notOk array
@@ -1383,5 +1394,70 @@ describe('filterValidUrls with status code tracking', () => {
     // Verify untracked status codes are not included
     expect(result.notOk.some((issue) => [403, 500].includes(issue.statusCode)))
       .to.be.false;
+  });
+
+  it('should categorize non-tracked status codes in otherStatusCodes array', async () => {
+    const urls = [
+      'https://example.com/ok',
+      'https://example.com/redirect',
+      'https://example.com/not-found',
+      'https://example.com/forbidden',
+      'https://example.com/server-error',
+      'https://example.com/service-unavailable',
+      'https://example.com/bad-gateway',
+    ];
+
+    nock('https://example.com').head('/ok').reply(200);
+    nock('https://example.com')
+      .head('/redirect')
+      .reply(301, '', { Location: 'https://example.com/new' });
+    nock('https://example.com').head('/not-found').reply(404);
+    nock('https://example.com').head('/forbidden').reply(403);
+    nock('https://example.com').head('/server-error').reply(500);
+    nock('https://example.com').head('/service-unavailable').reply(503);
+    nock('https://example.com').head('/bad-gateway').reply(502);
+
+    const result = await filterValidUrls(urls);
+
+    // Should include only 200 responses in ok array
+    expect(result.ok).to.deep.equal(['https://example.com/ok']);
+
+    // Should only include tracked status codes (301, 302, 404) in notOk array
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect',
+        statusCode: 301,
+        urls_suggested: 'https://example.com/new',
+      },
+      {
+        url: 'https://example.com/not-found',
+        statusCode: 404,
+      },
+    ]);
+
+    // Should include all other status codes in otherStatusCodes array
+    expect(result.otherStatusCodes).to.deep.equal([
+      {
+        url: 'https://example.com/forbidden',
+        statusCode: 403,
+      },
+      {
+        url: 'https://example.com/server-error',
+        statusCode: 500,
+      },
+      {
+        url: 'https://example.com/service-unavailable',
+        statusCode: 503,
+      },
+      {
+        url: 'https://example.com/bad-gateway',
+        statusCode: 502,
+      },
+    ]);
+
+    // Verify these status codes don't appear in the audit results
+    expect(
+      result.notOk.some((issue) => [403, 500, 502, 503].includes(issue.statusCode)),
+    ).to.be.false;
   });
 });
