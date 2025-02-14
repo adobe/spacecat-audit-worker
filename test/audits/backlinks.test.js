@@ -319,12 +319,12 @@ describe('Backlinks Tests', function () {
       expect(result.auditResult.brokenBacklinks).to.deep.equal([
         {
           url_to: 'https://example.com/broken1',
-          urls_suggested: ['https://fix.com'],
+          urlsSuggested: ['https://fix.com'],
           ai_rationale: 'Rationale',
         },
         {
           url_to: 'https://example.com/broken2',
-          urls_suggested: ['https://example.com'],
+          urlsSuggested: ['https://example.com'],
           ai_rationale: 'No suitable suggestions found',
         },
       ]);
@@ -388,7 +388,7 @@ describe('Backlinks Tests', function () {
       expect(result.auditResult.brokenBacklinks).to.deep.equal([
         {
           url_to: 'https://example.com/broken1',
-          urls_suggested: ['https://fix.com'],
+          urlsSuggested: ['https://fix.com'],
           ai_rationale: 'Rationale',
         },
         {
@@ -436,7 +436,7 @@ describe('Backlinks Tests', function () {
       expect(result.auditResult.brokenBacklinks).to.deep.equal([
         {
           url_to: 'https://example.com/broken1',
-          urls_suggested: ['https://example.com'],
+          urlsSuggested: ['https://example.com'],
           ai_rationale: 'No suitable suggestions found',
         },
         {
