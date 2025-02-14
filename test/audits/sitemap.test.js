@@ -23,7 +23,7 @@ import {
   checkSitemap,
   checkRobotsForSitemap,
   fetchContent,
-  convertToOpportunity,
+  opportunityAndSuggestions,
   generateSuggestions,
   findSitemap,
   filterValidUrls,
@@ -835,7 +835,7 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe('convertToOpportunity', () => {
+  describe('opportunityAndSuggestions', () => {
     let auditDataFailure;
     let auditDataSuccess;
 
@@ -911,7 +911,7 @@ describe('Sitemap Audit', () => {
           },
           url: 'https://some-domain.adobe',
           details: {
-            issues: {},
+            issues: { },
           },
         },
         suggestions: [],
@@ -931,7 +931,7 @@ describe('Sitemap Audit', () => {
       );
 
       await expect(
-        convertToOpportunity('https://example.com', auditDataFailure, context),
+        opportunityAndSuggestions('https://example.com', auditDataFailure, context),
       ).to.be.rejectedWith('Creation failed');
 
       expect(context.log.error).to.have.been.calledWith(
@@ -952,7 +952,7 @@ describe('Sitemap Audit', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([
         mockOpportunity,
       ]);
-      await convertToOpportunity(
+      await opportunityAndSuggestions(
         'https://example.com',
         auditDataSuccess,
         context,
@@ -972,30 +972,27 @@ describe('Sitemap Audit', () => {
         createdItems: [],
       });
 
-      await convertToOpportunity(
-        'https://example.com',
-        auditDataFailure,
-        context,
-      );
+      await opportunityAndSuggestions('https://example.com', auditDataFailure, context);
 
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
-        {
-          siteId: 'site-id',
-          auditId: 'audit-id',
-          type: 'sitemap',
-          origin: 'AUTOMATION',
-          title: 'Sitemap issues found',
-          runbook:
-            'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
-          guidance: {
-            steps: [
-              'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
-              'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
-            ],
-          },
-          tags: ['Traffic Acquisition'],
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith({
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
+        type: 'sitemap',
+        origin: 'AUTOMATION',
+        title: 'Sitemap issues found',
+        description: '',
+        guidance: {
+          steps: [
+            'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
+            'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
+          ],
         },
-      );
+        tags: [
+          'Traffic Acquisition',
+        ],
+        data: { },
+      });
     });
 
     it('should handle updating when opportunity was already defined', async () => {
@@ -1010,11 +1007,7 @@ describe('Sitemap Audit', () => {
       context.dataAccess.Opportunity.addSuggestions.resolves({
         createdItems: auditDataFailure.suggestions,
       });
-      await convertToOpportunity(
-        'https://example.com',
-        auditDataFailure,
-        context,
-      );
+      await opportunityAndSuggestions('https://example.com', auditDataFailure, context);
 
       expect(
         context.dataAccess.Opportunity.setAuditId,
