@@ -32,7 +32,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   log.info(`Generating suggestions for site ${finalUrl}`);
 
   const firefallClient = FirefallClient.createFrom(context);
-  const firefallOptions = { responseFormat: 'json_object' };
+  const firefallOptions = { responseFormat: 'json_object', model: 'gpt-4o' };
   const BATCH_SIZE = 300;
 
   const data = await getScrapedDataForSiteId(site, context);
@@ -48,6 +48,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   const processBatch = async (batch, urlTo) => {
     const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
     const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
+    log.info(`Response line 51: ${JSON.stringify(response)}`);
     if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
       log.error(`No suggestions found for ${urlTo}`);
       return null;
@@ -88,6 +89,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.urlTo }, 'broken-backlinks-followup', log);
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
+        log.info(`Response line 92: ${JSON.stringify(finalResponse)}`);
 
         if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
           log.error(`No final suggestions found for ${link.urlTo}`);
@@ -124,6 +126,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
       const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: link.urlTo }, 'broken-backlinks', log);
       // eslint-disable-next-line no-await-in-loop
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
+      log.info(`Response line 129: ${JSON.stringify(response)}`);
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
         log.error(`No header suggestions for ${link.urlTo}`);
         headerSuggestionsResults.push(null);
