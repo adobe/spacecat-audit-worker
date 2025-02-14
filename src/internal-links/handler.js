@@ -122,7 +122,7 @@ function calculateKpiDeltasForAudit(auditData) {
 
   let projectedTrafficLost = 0;
 
-  for (const url of groups) {
+  Object.keys(groups).forEach((url) => {
     const links = groups[url];
     let linksToBeIncremented;
     // Sort links by traffic domain if there are more than MAX_LINKS_TO_CONSIDER
@@ -138,7 +138,7 @@ function calculateKpiDeltasForAudit(auditData) {
       (acc, link) => acc + (link.trafficDomain * TRAFFIC_MULTIPLIER),
       0,
     );
-  }
+  });
 
   const projectedTrafficValue = projectedTrafficLost * DEFAULT_CPC_VALUE;
   return {

@@ -32,7 +32,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   log.info(`Generating suggestions for site ${finalUrl}`);
 
   const firefallClient = FirefallClient.createFrom(context);
-  const firefallOptions = { responseFormat: 'json_object' };
+  const firefallOptions = { responseFormat: 'json_object', model: 'gpt-4o' };
   const BATCH_SIZE = 300;
 
   const data = await getScrapedDataForSiteId(site, context);
