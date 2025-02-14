@@ -1,3 +1,10 @@
+## [1.52.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.9...v1.52.10) (2025-02-14)
+
+
+### Bug Fixes
+
+* track just redirects and not found oppties ([#654](https://github.com/adobe/spacecat-audit-worker/issues/654)) ([62cddc6](https://github.com/adobe/spacecat-audit-worker/commit/62cddc6497c08a91b19cbdf30fee91a81280187c))
+
 ## [1.52.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.8...v1.52.9) (2025-02-12)
 
 
