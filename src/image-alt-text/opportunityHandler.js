@@ -102,10 +102,8 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   }
 
   const suggestions = detectedTags.imagesWithoutAltText.map((image) => ({
-    url: image.url,
-    src: image.src,
-    issue: 'Missing alt text',
-    suggestion: 'Add descriptive alt text to this image to improve accessibility and SEO',
+    pageUrl: auditUrl,
+    imageUrl: image.src,
   }));
 
   log.debug(`Suggestions: ${JSON.stringify(suggestions)}`);
