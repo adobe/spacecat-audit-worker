@@ -82,32 +82,113 @@
       "type": "high-organic-low-ctr",
       "page": "https://abc.com/abc-adoption/account",
       "screenshot": "",
-      "thumbnail": "",
       "trackedPageKPIName": "Click Through Rate",
       "trackedKPISiteAverage": "0.24",
       "trackedPageKPIValue": "0.14",
       "pageViews": 21450,
       "samples": 215,
-      "metrics": [],
-      "opportunityImpact": 1286,
-      "recommendations": [
+      "metrics": [
         {
-          "type": "guidance",
-          "insight": "The visual prominence and clarity of the CTA buttons may be insufficient, especially for mobile users.",
-          "recommendation": "Redesign the CTA buttons to be larger and more visually distinct, with contrasting colors and bold text.",
-          "rationale": "The 'Generate' and 'Upload Image' buttons are visually small and may not stand out enough, especially on mobile devices. Making them larger and using high-contrast colors will draw more attention and likely increase engagement, as evidenced by higher CTR from visually engaging sources like YouTube."
+          "type": "traffic",
+          "value": {
+            "paid": 1400,
+            "total": 3548400,
+            "earned": 304400,
+            "owned": 3242600
+          },
+          "vendor": "*"
         },
         {
-          "type": "guidance",
-          "insight": "The placement of CTAs might not be optimal, potentially causing users to miss them.",
-          "recommendation": "Reposition the primary CTAs to be closer to the top of the page and ensure they are visible without scrolling.",
-          "rationale": "CTAs placed 'above the fold' (visible without scrolling) generally perform better. Currently, some CTAs are placed lower on the page, which might be causing lower engagement from vendors like TikTok and Facebook, where users may not scroll as much."
+          "type": "ctr",
+          "value": {
+            "page": 0.10630143163115771
+          },
+          "vendor": "*"
         },
         {
-          "type": "guidance",
-          "insight": "The CTA messaging may not be compelling or clear enough to drive action.",
-          "recommendation": "Revise the CTA text to be more action-oriented and specific, such as 'Start Creating with AI Now' instead of 'Try Generative Fill'.",
-          "rationale": "Action-oriented and specific CTA text tends to drive higher engagement. By clarifying the value proposition and creating a sense of urgency, users are more likely to click through. This aligns with the higher engagement seen from YouTube, where clear and compelling video titles drive clicks."
+          "type": "traffic",
+          "value": {
+            "paid": 1000,
+            "total": 77300,
+            "earned": 76300,
+            "owned": 0
+          },
+          "vendor": "google"
+        },
+        {
+          "type": "ctr",
+          "value": {
+            "page": 0.7645536869340233
+          },
+          "vendor": "google"
+        },
+        {
+          "type": "traffic",
+          "value": {
+            "paid": 0,
+            "total": 6400,
+            "earned": 6400,
+            "owned": 0
+          },
+          "vendor": "youtube"
+        },
+        {
+          "type": "ctr",
+          "value": {
+            "page": 0.515625
+          },
+          "vendor": "youtube"
+        },
+        {
+          "type": "traffic",
+          "value": {
+            "paid": 0,
+            "total": 3100,
+            "earned": 3100,
+            "owned": 0
+          },
+          "vendor": "bing"
+        },
+        {
+          "type": "ctr",
+          "value": {
+            "page": 0.6451612903225806
+          },
+          "vendor": "bing"
+        },
+        {
+          "type": "traffic",
+          "value": {
+            "paid": 0,
+            "total": 1400,
+            "earned": 1400,
+            "owned": 0
+          },
+          "vendor": "yandex"
+        },
+        {
+          "type": "ctr",
+          "value": {
+            "page": 0.8571428571428571
+          },
+          "vendor": "yandex"
+        },
+        {
+          "type": "traffic",
+          "value": {
+            "paid": 0,
+            "total": 1100,
+            "earned": 1100,
+            "owned": 0
+          },
+          "vendor": "yahoo"
+        },
+        {
+          "type": "ctr",
+          "value": {
+            "page": 0.2727272727272727
+          },
+          "vendor": "yahoo"
         }
       ]
     },

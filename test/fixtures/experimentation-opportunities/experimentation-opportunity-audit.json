@@ -1,0 +1,218 @@
+{
+  "auditedAt": "2025-01-11T05:44:29.799Z",
+  "auditId": "audit-id",
+  "auditResult": {
+    "experimentationOpportunities": [
+      {
+        "type": "rageclick",
+        "page": "https://abc.com/abc-adoption/survey",
+        "screenshot": "",
+        "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
+        "trackedPageKPIValue": 43.25513196480938,
+        "pageViews": 34100,
+        "samples": 341,
+        "opportunityImpact": 157,
+        "metrics": [
+          {
+            "type": "click",
+            "selector": ".abc-survey",
+            "value": 2111,
+            "targets": {
+              "https://abc.com/in/products/media_1c2c9e62626b7b4df13882c013438725ae05464d6.jpeg": 577,
+              "undefined": 1534
+            },
+            "samples": 138,
+            "mobileSamples": 106,
+            "desktopSamples": 32,
+            "percentage": 40.469208211143695
+          },
+          {
+            "type": "click",
+            "selector": ".abc-survey #abc-survey-next",
+            "value": 2160,
+            "targets": {
+              "https://abc.com/in/images/media_1c2c9e62626b7b4df13882c0134982380923890.jpeg": 141,
+              "https://abc.com/in/images/media_1c2c9e62626b7b4df13882c013498223987923afe.jpeg": 401,
+              "undefined": 1618
+            },
+            "samples": 157,
+            "mobileSamples": 96,
+            "desktopSamples": 61,
+            "percentage": 46.04105571847507
+          }
+        ]
+      },
+      {
+        "type": "rageclick",
+        "page": "https://abc.com/abc-adoption/account",
+        "screenshot": "",
+        "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
+        "trackedPageKPIValue": 8.771929824561402,
+        "pageViews": 11400,
+        "samples": 114,
+        "opportunityImpact": 10,
+        "metrics": [
+          {
+            "type": "click",
+            "selector": ".account #favorites",
+            "value": 138,
+            "targets": {
+              "undefined": 138
+            },
+            "samples": 10,
+            "mobileSamples": 9,
+            "desktopSamples": 1,
+            "percentage": 8.771929824561402
+          }
+        ]
+      },
+      {
+        "type": "rageclick",
+        "page": "https://abc.com/dummy-page",
+        "screenshot": "",
+        "trackedPageKPIName": "The percentage of users who click on the same element lot of times in a short period of time.",
+        "trackedPageKPIValue": 2.771929824561402,
+        "pageViews": 100,
+        "samples": 1,
+        "metrics": [
+          {
+            "type": "click",
+            "selector": "undefined"
+          }
+        ],
+        "opportunityImpact": 0
+      },
+      {
+        "type": "high-organic-low-ctr",
+        "page": "https://abc.com/abc-adoption/account",
+        "screenshot": "",
+        "trackedPageKPIName": "Click Through Rate",
+        "trackedKPISiteAverage": "0.24",
+        "trackedPageKPIValue": "0.14",
+        "pageViews": 21450,
+        "samples": 215,
+        "metrics": [
+          {
+            "type": "traffic",
+            "value": {
+              "paid": 1400,
+              "total": 3548400,
+              "earned": 304400,
+              "owned": 3242600
+            },
+            "vendor": "*"
+          },
+          {
+            "type": "ctr",
+            "value": {
+              "page": 0.10630143163115771
+            },
+            "vendor": "*"
+          },
+          {
+            "type": "traffic",
+            "value": {
+              "paid": 1000,
+              "total": 77300,
+              "earned": 76300,
+              "owned": 0
+            },
+            "vendor": "google"
+          },
+          {
+            "type": "ctr",
+            "value": {
+              "page": 0.7645536869340233
+            },
+            "vendor": "google"
+          },
+          {
+            "type": "traffic",
+            "value": {
+              "paid": 0,
+              "total": 6400,
+              "earned": 6400,
+              "owned": 0
+            },
+            "vendor": "youtube"
+          },
+          {
+            "type": "ctr",
+            "value": {
+              "page": 0.515625
+            },
+            "vendor": "youtube"
+          },
+          {
+            "type": "traffic",
+            "value": {
+              "paid": 0,
+              "total": 3100,
+              "earned": 3100,
+              "owned": 0
+            },
+            "vendor": "bing"
+          },
+          {
+            "type": "ctr",
+            "value": {
+              "page": 0.6451612903225806
+            },
+            "vendor": "bing"
+          },
+          {
+            "type": "traffic",
+            "value": {
+              "paid": 0,
+              "total": 1400,
+              "earned": 1400,
+              "owned": 0
+            },
+            "vendor": "yandex"
+          },
+          {
+            "type": "ctr",
+            "value": {
+              "page": 0.8571428571428571
+            },
+            "vendor": "yandex"
+          },
+          {
+            "type": "traffic",
+            "value": {
+              "paid": 0,
+              "total": 1100,
+              "earned": 1100,
+              "owned": 0
+            },
+            "vendor": "yahoo"
+          },
+          {
+            "type": "ctr",
+            "value": {
+              "page": 0.2727272727272727
+            },
+            "vendor": "yahoo"
+          }
+        ]
+      },
+      {
+        "type": "high-inorganic-high-bounce-rate",
+        "page": "https://abc.com/abc-adoption/pricing",
+        "screenshot": "",
+        "trackedPageKPIName": "Bounce Rate",
+        "trackedPageKPIValue": 0.76,
+        "pageViews": 8839,
+        "samples": 89,
+        "metrics": []
+      }
+    ]
+  },
+  "auditType": "experimentation-opportunities",
+  "createdAt": "2025-01-11T05:44:29.799Z",
+  "fullAuditRef": "www.abc.com",
+  "isError": false,
+  "isLive": true,
+  "siteId": "site-id",
+  "updatedAt": "2025-01-11T05:44:29.799Z"
+}
