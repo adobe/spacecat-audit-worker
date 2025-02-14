@@ -98,6 +98,10 @@ describe('Image Alt Text Opportunity Handler', () => {
         ],
       },
       tags: ['seo', 'accessibility'],
+      data: {
+        projectedTrafficLost: 3871,
+        projectedTrafficValue: 7355,
+      },
     });
     expect(logStub.debug).to.have.been.calledWith(
       'Alt-text Opportunity created',

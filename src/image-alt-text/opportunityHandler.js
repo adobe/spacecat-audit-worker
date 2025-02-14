@@ -44,6 +44,12 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestions, log 
     }
   }
 }
+// TO-DO: Integrate with
+// https://github.com/adobe/spacecat-audit-worker/blob/main/src/cwv/kpi-metrics.js
+const getProjectedMetrics = () => ({
+  projectedTrafficLost: 3871,
+  projectedTrafficValue: 7355,
+});
 
 /**
  * @param auditUrl - The URL of the audit
@@ -89,6 +95,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
             },
           ],
         },
+        data: getProjectedMetrics(),
         tags: ['seo', 'accessibility'],
       };
       altTextOppty = await Opportunity.create(opportunityData);
