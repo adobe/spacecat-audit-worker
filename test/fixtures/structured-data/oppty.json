@@ -9,5 +9,6 @@
   "guidance": {
     "steps": []
   },
-  "tags": ["Traffic acquisition"]
+  "tags": ["Traffic acquisition"],
+  "data": { }
 }
