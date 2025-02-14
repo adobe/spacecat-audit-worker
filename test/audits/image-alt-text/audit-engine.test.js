@@ -55,7 +55,7 @@ describe('AuditEngine', () => {
 
       expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(3);
       expect(auditedTags.imagesWithoutAltText[0]).to.deep.equal({
-        url: pageUrl,
+        pageUrl,
         src: 'image1.jpg',
       });
     });
@@ -182,8 +182,8 @@ describe('AuditEngine', () => {
       const auditedTags = auditEngine.getAuditedTags();
 
       expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(2);
-      expect(auditedTags.imagesWithoutAltText[0].url).to.equal('/page1');
-      expect(auditedTags.imagesWithoutAltText[1].url).to.equal('/page2');
+      expect(auditedTags.imagesWithoutAltText[0].pageUrl).to.equal('/page1');
+      expect(auditedTags.imagesWithoutAltText[1].pageUrl).to.equal('/page2');
     });
 
     it('should return empty results when no pages audited', () => {
