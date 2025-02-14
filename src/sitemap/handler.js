@@ -30,6 +30,9 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
+// Add new constant for status codes we want to track
+const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -65,7 +68,7 @@ export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl, {
     method: 'GET',
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'User-Agent': DEFAULT_USER_AGENT,
     },
   });
   if (!response.ok) {
@@ -170,13 +173,14 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
- * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[]}>} -
- * A promise that resolves to a dict of URLs categorized by status.
+* @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
+ * Array<{url: string, statusCode: number}>}>} - A Promise that resolves to an object containing
  */
 export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
   const NETWORK_ERROR = 2;
+  const OTHER_STATUS = 3;
   const batchSize = 50;
 
   const fetchUrl = async (url) => {
@@ -185,7 +189,7 @@ export async function filterValidUrls(urls) {
         method: 'HEAD',
         redirect: 'manual',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'User-Agent': DEFAULT_USER_AGENT,
         },
       });
 
@@ -202,7 +206,7 @@ export async function filterValidUrls(urls) {
             method: 'HEAD',
             redirect: 'follow',
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'User-Agent': DEFAULT_USER_AGENT,
             },
           });
           return {
@@ -221,7 +225,13 @@ export async function filterValidUrls(urls) {
         }
       }
 
-      return { status: NOT_OK, url, statusCode: response.status };
+      // Track 404 status code
+      if (response.status === 404) {
+        return { status: NOT_OK, url, statusCode: response.status };
+      }
+
+      // Any other status code goes to otherStatusCodes
+      return { status: OTHER_STATUS, url, statusCode: response.status };
     } catch {
       return { status: NETWORK_ERROR, url, error: 'NETWORK_ERROR' };
     }
@@ -257,6 +267,11 @@ export async function filterValidUrls(urls) {
           url: result.url,
           error: result.error,
         });
+      } else if (result.status === OTHER_STATUS) {
+        acc.otherStatusCodes.push({
+          url: result.url,
+          statusCode: result.statusCode,
+        });
       } else {
         acc.notOk.push({
           url: result.url,
@@ -266,7 +281,9 @@ export async function filterValidUrls(urls) {
       }
       return acc;
     },
-    { ok: [], notOk: [], networkErrors: [] },
+    {
+      ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
+    },
   );
 }
 
@@ -405,11 +422,19 @@ export async function findSitemap(inputUrl) {
         // eslint-disable-next-line no-await-in-loop
         const existingPages = await filterValidUrls(urlsToCheck);
 
+        // Only collect tracked status codes in issues
         if (existingPages.notOk && existingPages.notOk.length > 0) {
-          notOkPagesFromSitemap[s] = existingPages.notOk;
+          const trackedIssues = existingPages.notOk
+            .filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
+          if (trackedIssues.length > 0) {
+            notOkPagesFromSitemap[s] = trackedIssues;
+          }
         }
 
-        if (!existingPages.ok || existingPages.ok.length === 0) {
+        const hasValidUrls = existingPages.ok.length > 0
+          || existingPages.notOk.some((issue) => [301, 302].includes(issue.statusCode));
+
+        if (!hasValidUrls) {
           delete extractedPaths[s];
         } else {
           extractedPaths[s] = existingPages.ok;
@@ -584,7 +609,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
-  .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
+  .withUrlResolver((site) => composeAuditURL(site.getBaseURL(), DEFAULT_USER_AGENT)
     .then((url) => getUrlWithoutPath(prependSchema(url))))
   .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();
