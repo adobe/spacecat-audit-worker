@@ -28,7 +28,7 @@ export default class AuditEngine {
       const altText = image.alt?.trim();
       if (!altText) {
         this.auditedTags.imagesWithoutAltText.push({
-          url: pageUrl,
+          pageUrl,
           src: image.src,
         });
       }

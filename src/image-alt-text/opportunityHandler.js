@@ -103,8 +103,8 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   }
 
   const suggestions = detectedTags.imagesWithoutAltText.map((image) => ({
-    pageUrl: auditUrl,
-    imageUrl: image.src,
+    pageUrl: image.pageUrl,
+    imageUrl: new URL(image.src, auditUrl).toString(),
   }));
 
   log.debug(`Suggestions: ${JSON.stringify(suggestions)}`);
