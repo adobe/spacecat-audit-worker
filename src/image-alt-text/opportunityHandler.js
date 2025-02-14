@@ -114,7 +114,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     opportunity: altTextOppty,
     newSuggestions: suggestions.map((suggestion) => ({
       opportunityId: altTextOppty.getId(),
-      type: 'ALT_TEXT_UPDATE', // Is this necessary maybe for the UI?
+      type: 'CONTENT_UPDATE',
       data: { ...suggestion },
       rank: 1, // They share all the same importance, so what number should we use here?
     })),
