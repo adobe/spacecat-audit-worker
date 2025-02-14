@@ -50,6 +50,7 @@ const VALID_MIME_TYPES = Object.freeze([
 
 // Add new constant for status codes we want to track
 const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 /**
  * Fetches the content from a given URL.
@@ -68,7 +69,7 @@ export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl, {
     method: 'GET',
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'User-Agent': DEFAULT_USER_AGENT,
     },
   });
   if (!response.ok) {
@@ -188,7 +189,7 @@ export async function filterValidUrls(urls) {
         method: 'HEAD',
         redirect: 'manual',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'User-Agent': 'DEFAULT_USER_AGENT',
         },
       });
 
@@ -205,7 +206,7 @@ export async function filterValidUrls(urls) {
             method: 'HEAD',
             redirect: 'follow',
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'User-Agent': DEFAULT_USER_AGENT,
             },
           });
           return {
@@ -602,7 +603,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
-  .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
+  .withUrlResolver((site) => composeAuditURL(site.getBaseURL(), DEFAULT_USER_AGENT)
     .then((url) => getUrlWithoutPath(prependSchema(url))))
   .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();
