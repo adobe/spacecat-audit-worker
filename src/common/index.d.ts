@@ -35,3 +35,10 @@ export class AuditBuilder {
 
   build(): Audit;
 }
+
+export const DESTINATIONS: {
+  readonly IMPORT_WORKER: 'IMPORT_WORKER';
+  readonly CONTENT_SCRAPER: 'CONTENT_SCRAPER';
+};
+
+export type Destination = typeof DESTINATIONS[keyof typeof DESTINATIONS];

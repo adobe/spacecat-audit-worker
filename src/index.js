@@ -76,6 +76,7 @@ function getElapsedSeconds(startTime) {
 async function run(message, context) {
   const { log } = context;
   const { type, siteId } = message;
+  context.auditType = type;
 
   log.info(`Received ${type} audit request for: ${siteId}`);
 
