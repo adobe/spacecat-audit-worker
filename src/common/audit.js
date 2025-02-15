@@ -18,6 +18,7 @@ import {
   isValidUUID,
 } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 
 import { retrieveAuditById, retrieveSiteBySiteId } from '../utils/data-access.js';
 
@@ -74,27 +75,7 @@ export async function noopUrlResolver(site) {
 
 export const defaultPostProcessors = [];
 
-export const DESTINATIONS = {
-  IMPORT_WORKER: 'IMPORT_WORKER',
-  CONTENT_SCRAPER: 'CONTENT_SCRAPER',
-};
-
-export const STEP_QUEUE_CONFIG = {
-  [DESTINATIONS.IMPORT_WORKER]: {
-    queueUrl: process.env.IMPORT_WORKER_QUEUE_URL,
-    formatPayload: (stepResult, auditContext) => ({
-      source: stepResult,
-      auditContext,
-    }),
-  },
-  [DESTINATIONS.CONTENT_SCRAPER]: {
-    queueUrl: process.env.CONTENT_SCRAPER_QUEUE_URL,
-    formatPayload: (stepResult, auditContext) => ({
-      ...stepResult,
-      auditContext,
-    }),
-  },
-};
+const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 
 async function isAuditEnabledForSite(type, site, context) {
   const { Configuration } = context.dataAccess;
@@ -168,7 +149,7 @@ export class Audit {
       throw new Error(`Audit not found for step ${step.name} for audit of type ${this.type}`);
     }
 
-    const destination = STEP_QUEUE_CONFIG[step.destination];
+    const destination = AUDIT_STEP_DESTINATION_CONFIGS[step.destination];
     if (!isNonEmptyObject(destination)) {
       throw new Error(`Unknown destination: ${step.destination} for audit ${audit.getId()} of type ${this.type}`);
     }

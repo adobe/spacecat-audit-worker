@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+
 import {
   Audit,
   defaultSiteProvider,
@@ -18,7 +20,6 @@ import {
   defaultPersister,
   defaultUrlResolver,
   defaultPostProcessors,
-  DESTINATIONS,
 } from './audit.js';
 
 export class AuditBuilder {
@@ -105,14 +106,15 @@ export class AuditBuilder {
    */
   addStep(name, handler, destination = null) {
     const stepNames = Object.keys(this.steps);
+    const supportedDestinations = Object.values(AuditModel.AUDIT_STEP_DESTINATIONS);
     const isLastStep = stepNames.length === 0 || stepNames[stepNames.length - 1] === name;
 
     if (!isLastStep && !destination) {
       throw new Error(`Step ${name} must specify a destination as it is not the last step`);
     }
 
-    if (destination && !Object.values(DESTINATIONS).includes(destination)) {
-      throw new Error(`Invalid destination: ${destination}. Must be one of: ${Object.values(DESTINATIONS).join(', ')}`);
+    if (!Object.values(supportedDestinations).includes(destination)) {
+      throw new Error(`Invalid destination: ${destination}. Must be one of: ${Object.values(supportedDestinations).join(', ')}`);
     }
 
     this.steps[name] = {

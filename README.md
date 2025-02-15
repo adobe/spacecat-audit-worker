@@ -326,3 +326,116 @@ export default new AuditBuilder()
   .withPostProcessors([ generateSuggestionData, convertToOpportunity ])
   .build();
 ```
+
+## Step-Based Audits
+
+In addition to the traditional single-function audits, Spacecat supports multi-step workflows where each step can be processed by different workers. This enables complex audit scenarios that require different processing capabilities.
+
+### Creating a Step-Based Audit
+
+Here's an example of a content audit that processes content in multiple steps:
+
+```js
+import { AuditBuilder } from '@adobe/spacecat-shared';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+
+const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+export default new AuditBuilder()
+  // First step: Prepare content scraping
+  .addStep('prepare', async (site, audit, auditContext, context) => {
+    const { log } = context;
+    log.info(`Preparing content scrape for ${site.getBaseURL()}`);
+    
+    // First step must return auditResult and fullAuditRef
+    // These will be used to create the audit record
+    return {
+      auditResult: { status: 'preparing' },
+      fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
+      // Data formatted for content scraper
+      urls: [
+        { url: site.getBaseURL() }
+      ],
+      siteId: site.getId(),
+      processingType: 'content-audit'
+    };
+  }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+
+  // Second step: Process import results
+  .addStep('process', async (site, audit, auditContext, context) => {
+    // Return data formatted for import worker
+    return {
+      type: 'content-import',
+      siteId: site.getId(),
+    };
+  }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+
+  // Final step: Analyze results
+  .addStep('analyze', async (site, audit, auditContext, context) => {
+    const results = await analyzeContent(audit.getFullAuditRef());
+    return {
+      status: 'complete',
+      findings: results,
+    };
+  })
+  .build();
+```
+
+### Step Requirements
+
+1. **First Step**
+   - Must return `auditResult` and `fullAuditRef`
+   - These are used to create the initial audit record
+   - No audit record exists during first step execution
+
+2. **Subsequent Steps**
+   - Have access to audit record via context
+   - Must return data matching destination requirements
+   - Can access audit data via `audit.getFullAuditRef()`, `audit.getAuditType()`, etc.
+
+3. **Destinations**
+   - All steps except the last must specify a destination
+   - Each destination has specific payload format requirements:
+     - CONTENT_SCRAPER expects: `{ urls, jobId, processingType, auditContext }`
+     - IMPORT_WORKER expects: `{ type, siteId, auditContext }`
+   - Available destinations are defined in `Audit.AUDIT_STEP_DESTINATIONS`
+
+### Message Flow
+
+When using step-based audits, messages flow between the audit worker and destination workers:
+
+```js
+// Initial trigger
+{
+  type: 'content-audit',
+  siteId: '123',
+  auditContext: {}
+}
+
+// After first step, to content scraper
+{
+  urls: [{ url: 'https://example.com' }],
+  jobId: '123',
+  processingType: 'default',
+  auditContext: {
+    next: 'process',
+    auditId: 'audit-456',
+    auditType: 'content-audit',
+    fullAuditRef: 's3://content-bucket/123/raw.json'
+  }
+}
+
+// Content scraper back to audit worker
+{
+  type: 'content-audit',
+  siteId: '123',
+  auditContext: {
+    next: 'process',
+    auditId: 'audit-456',
+    auditType: 'content-audit',
+    fullAuditRef: 's3://content-bucket/123/raw.json'
+  }
+}
+```
+
+Each destination worker must preserve and return the `auditContext` to maintain the step chain. The `auditContext.next` field determines which step runs next.
