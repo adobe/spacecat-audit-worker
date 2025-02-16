@@ -17,8 +17,7 @@
  */
 export default async function sendUrlsForScraping(auditUrl, auditData, context, site) {
   const { log, sqs } = context;
-
-  log.info(`Debug log 3 ${JSON.stringify(auditData, null, 2)}`);
+  // log.info(`Debug log 3 ${JSON.stringify(auditData, null, 2)}`);
 
   // Get accumulated opportunities from previous processors
   const formOpportunities = Array.isArray(auditData.formOpportunities)
