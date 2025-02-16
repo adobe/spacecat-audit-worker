@@ -29,21 +29,23 @@ export default async function sendUrlsForScraping(auditUrl, auditData, context, 
     log.info('No form opportunities to process for scraping');
   }
 
-  const uniqueUrls = new Set();
-  formOpportunities.forEach((opptyData) => {
-    if (opptyData.type === 'high-page-views-low-form-ctr') {
-      uniqueUrls.add(opptyData.data.cta.url);
-    } else {
-      uniqueUrls.add(opptyData.data.form);
-    }
-  });
-
-  log.info(`Triggering scrape for [${JSON.stringify(uniqueUrls, null, 2)}]`);
-  if (uniqueUrls.size > 0) {
-    await sqs.sendMessage(process.env.SCRAPING_JOBS_QUEUE_URL, {
-      processingType: 'form',
-      jobId: site.getId(),
-      urls: uniqueUrls,
+  if (formOpportunities.length > 0) {
+    const uniqueUrls = new Set();
+    formOpportunities.forEach((opptyData) => {
+      if (opptyData.type === 'high-page-views-low-form-ctr') {
+        uniqueUrls.add(opptyData.data.cta.url);
+      } else {
+        uniqueUrls.add(opptyData.data.form);
+      }
     });
+
+    log.info(`Triggering scrape for [${JSON.stringify(uniqueUrls, null, 2)}]`);
+    if (uniqueUrls.size > 0) {
+      await sqs.sendMessage(process.env.SCRAPING_JOBS_QUEUE_URL, {
+        processingType: 'form',
+        jobId: site.getId(),
+        urls: uniqueUrls,
+      });
+    }
   }
 }

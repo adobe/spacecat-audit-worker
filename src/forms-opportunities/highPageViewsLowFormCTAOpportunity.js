@@ -66,7 +66,10 @@ export default async function highPageViewsLowFormCTROpportunity(auditUrl, audit
 
     log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form cta audit type.`);
     // eslint-disable-next-line no-param-reassign
-    auditData.formsOpportunities = identifiedOpportunities;
+    auditData.formsOpportunities = [
+      ...(auditData.formsOpportunities),
+      ...identifiedOpportunities,
+    ];
     return {
       ...auditData,
     };
