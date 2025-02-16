@@ -18,6 +18,8 @@
 export default async function sendUrlsForScraping(auditUrl, auditData, context, site) {
   const { log, sqs } = context;
 
+  log.info(`Debug log 3 ${auditData}`);
+
   // Get accumulated opportunities from previous processors
   const formOpportunities = Array.isArray(auditData.formOpportunities)
     ? auditData.formOpportunities

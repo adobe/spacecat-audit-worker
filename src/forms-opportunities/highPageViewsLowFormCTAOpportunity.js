@@ -21,6 +21,8 @@ export default async function highPageViewsLowFormCTROpportunity(auditUrl, audit
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
   log.info(`Syncing high page views low form ctr opportunity for ${auditData.siteId}`);
+  log.info(`Debug log 2 ${auditData}`);
+
   let highPageViewsLowFormCtaOppty;
 
   try {

@@ -22,6 +22,7 @@ export default async function highFormViewsLowConversionsOpportunity(auditUrl, a
   const { Opportunity } = dataAccess;
 
   log.info(`Syncing opportunity for ${auditData.siteId}`);
+  log.info(`Debug log 1 ${auditData}`);
   let highFormViewsLowConversionsOppty;
 
   try {
