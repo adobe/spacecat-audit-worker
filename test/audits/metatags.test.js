@@ -895,7 +895,7 @@ describe('Meta Tags', () => {
       const response = await metatagsAutoSuggest(allTags, context, siteStub);
 
       expect(log.debug.calledWith('Generated presigned URLs')).to.be.true;
-      expect(log.debug.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+      expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
       expect(response['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
       expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
       expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
