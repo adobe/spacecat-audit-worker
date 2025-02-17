@@ -72,7 +72,7 @@ export default async function metatagsAutoSuggest(allTags, context, site) {
   try {
     const genvarClient = GenvarClient.createFrom(context);
     responseWithSuggestions = await genvarClient.generateSuggestions(
-      requestBody,
+      JSON.stringify(requestBody),
       context.env.GENVAR_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/metatags',
     );
     if (!isObject(responseWithSuggestions)) {
