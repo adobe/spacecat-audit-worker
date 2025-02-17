@@ -83,7 +83,7 @@ export class RunnerAudit extends BaseAudit {
 export interface AuditStep {
   name: string;
   handler: (context: UniversalContext) => Promise<object>;
-  destination?: keyof typeof Audit.AUDIT_STEP_DESTINATIONS;
+  destination?: object;
 }
 
 export class StepAudit extends BaseAudit {
@@ -115,7 +115,7 @@ export class AuditBuilder {
 
   withPostProcessors(postProcessors: PostProcessor[]): AuditBuilder;
 
-  addStep(name: string, handler: AuditStep['handler'], destination?: keyof typeof AuditModel.AUDIT_STEP_DESTINATIONS): AuditBuilder;
+  addStep(name: string, handler: AuditStep['handler'], destination?: object): AuditBuilder;
 
   build(): RunnerAudit | StepAudit;
 }
