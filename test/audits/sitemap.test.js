@@ -23,7 +23,7 @@ import {
   checkSitemap,
   checkRobotsForSitemap,
   fetchContent,
-  convertToOpportunity,
+  opportunityAndSuggestions,
   generateSuggestions,
   findSitemap,
   filterValidUrls,
@@ -154,7 +154,10 @@ describe('Sitemap Audit', () => {
     it('runs successfully for text sitemap extracted from robots.txt', async () => {
       nock(url)
         .get('/robots.txt')
-        .reply(200, `Sitemap: ${url}/sitemap_foo.txt\nSitemap: ${url}/sitemap_bar.txt`);
+        .reply(
+          200,
+          `Sitemap: ${url}/sitemap_foo.txt\nSitemap: ${url}/sitemap_bar.txt`,
+        );
 
       nock(url)
         .get('/sitemap_foo.txt')
@@ -202,7 +205,8 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
-              value: 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
+              value:
+                'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
           ],
           success: false,
@@ -228,7 +232,8 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               error: ERROR_CODES.FETCH_ERROR,
-              value: 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
+              value:
+                'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
           ],
           success: false,
@@ -401,11 +406,14 @@ describe('Sitemap Audit', () => {
     it('should return nothing when sitemap does not contain urls', async () => {
       nock(url)
         .get('/sitemap.xml')
-        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
+        .reply(
+          200,
+          '<?xml version="1.0" encoding="UTF-8"?>\n'
             + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
             + '<url></url>\n'
             + '<url></url>\n'
-            + '</urlset>');
+            + '</urlset>',
+        );
 
       const resp = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
@@ -459,10 +467,13 @@ describe('Sitemap Audit', () => {
 
       nock(url)
         .get('/sitemap.xml')
-        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
+        .reply(
+          200,
+          '<?xml version="1.0" encoding="UTF-8"?>\n'
             + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
             + '<url> <loc>https://another-url.test/baz</loc></url>\n'
-            + '</urlset>');
+            + '</urlset>',
+        );
 
       const result = await findSitemap(url);
       expect(result.success).to.equal(false);
@@ -491,13 +502,16 @@ describe('Sitemap Audit', () => {
       nock(url).head('/sitemap_index.xml').reply(200);
       nock(url)
         .get('/sitemap.xml')
-        .reply(200, '<?xml version="1.0" encoding="UTF-8"?>\n'
+        .reply(
+          200,
+          '<?xml version="1.0" encoding="UTF-8"?>\n'
             + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
             + `<url> <loc>${url}/foo</loc></url>\n`
             + `<url> <loc>${url}/bar</loc></url>\n`
             + `<url> <loc>${url}/baz</loc></url>\n`
             + `<url> <loc>${url}/zzz</loc></url>\n`
-            + '</urlset>');
+            + '</urlset>',
+        );
 
       nock(url).head('/foo').reply(200);
       nock(url).head('/bar').reply(200);
@@ -821,7 +835,7 @@ describe('Sitemap Audit', () => {
     });
   });
 
-  describe('convertToOpportunity', () => {
+  describe('opportunityAndSuggestions', () => {
     let auditDataFailure;
     let auditDataSuccess;
 
@@ -917,7 +931,11 @@ describe('Sitemap Audit', () => {
       );
 
       await expect(
-        convertToOpportunity('https://example.com', auditDataFailure, context),
+        opportunityAndSuggestions(
+          'https://example.com',
+          auditDataFailure,
+          context,
+        ),
       ).to.be.rejectedWith('Creation failed');
 
       expect(context.log.error).to.have.been.calledWith(
@@ -935,8 +953,10 @@ describe('Sitemap Audit', () => {
         addSuggestions: sinon.stub().resolves({ createdItems: [] }),
       };
 
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
-      await convertToOpportunity(
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([
+        mockOpportunity,
+      ]);
+      await opportunityAndSuggestions(
         'https://example.com',
         auditDataSuccess,
         context,
@@ -948,13 +968,15 @@ describe('Sitemap Audit', () => {
 
     it('should create a new opportunity when there is not an existing one', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-      context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+      context.dataAccess.Opportunity.create.resolves(
+        context.dataAccess.Opportunity,
+      );
       context.dataAccess.Opportunity.getSuggestions.resolves([]);
       context.dataAccess.Opportunity.addSuggestions.resolves({
         createdItems: [],
       });
 
-      await convertToOpportunity(
+      await opportunityAndSuggestions(
         'https://example.com',
         auditDataFailure,
         context,
@@ -964,11 +986,12 @@ describe('Sitemap Audit', () => {
         {
           siteId: 'site-id',
           auditId: 'audit-id',
+          runbook:
+            'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
           type: 'sitemap',
           origin: 'AUTOMATION',
           title: 'Sitemap issues found',
-          runbook:
-            'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
+          description: '',
           guidance: {
             steps: [
               'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
@@ -976,6 +999,7 @@ describe('Sitemap Audit', () => {
             ],
           },
           tags: ['Traffic Acquisition'],
+          data: {},
         },
       );
     });
@@ -992,13 +1016,15 @@ describe('Sitemap Audit', () => {
       context.dataAccess.Opportunity.addSuggestions.resolves({
         createdItems: auditDataFailure.suggestions,
       });
-      await convertToOpportunity(
+      await opportunityAndSuggestions(
         'https://example.com',
         auditDataFailure,
         context,
       );
 
-      expect(context.dataAccess.Opportunity.setAuditId).to.have.been.calledOnceWith('audit-id');
+      expect(
+        context.dataAccess.Opportunity.setAuditId,
+      ).to.have.been.calledOnceWith('audit-id');
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
       expect(
         context.dataAccess.Opportunity.addSuggestions,
@@ -1273,5 +1299,165 @@ describe('getPagesWithIssues', () => {
       },
     };
     expect(getPagesWithIssues(auditData)).to.deep.equal([]);
+  });
+});
+
+describe('filterValidUrls with status code tracking', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+
+  it('should only track specified status codes (301, 302, 404)', async () => {
+    const urls = [
+      'https://example.com/ok',
+      'https://example.com/permanent-redirect',
+      'https://example.com/temp-redirect',
+      'https://example.com/not-found',
+      'https://example.com/server-error',
+      'https://example.com/forbidden',
+    ];
+
+    nock('https://example.com').head('/ok').reply(200);
+    nock('https://example.com')
+      .head('/permanent-redirect')
+      .reply(301, '', { Location: 'https://example.com/new' });
+    nock('https://example.com')
+      .head('/temp-redirect')
+      .reply(302, '', { Location: 'https://example.com/temp' });
+    nock('https://example.com').head('/not-found').reply(404);
+    nock('https://example.com').head('/server-error').reply(500);
+    nock('https://example.com').head('/forbidden').reply(403);
+
+    const result = await filterValidUrls(urls);
+
+    // Should include 200 responses in ok array
+    expect(result.ok).to.deep.equal([
+      'https://example.com/ok',
+    ]);
+
+    // Should only include tracked status codes in notOk array
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/permanent-redirect',
+        statusCode: 301,
+        urls_suggested: 'https://example.com/new',
+      },
+      {
+        url: 'https://example.com/temp-redirect',
+        statusCode: 302,
+        urls_suggested: 'https://example.com/temp',
+      },
+      {
+        url: 'https://example.com/not-found',
+        statusCode: 404,
+      },
+    ]);
+
+    // Should not include untracked status codes (500, 403) in notOk array
+    expect(result.notOk.some((item) => item.statusCode === 500)).to.be.false;
+    expect(result.notOk.some((item) => item.statusCode === 403)).to.be.false;
+  });
+
+  it('should only include tracked status codes in issues collection', async () => {
+    const urls = [
+      'https://example.com/ok',
+      'https://example.com/redirect',
+      'https://example.com/not-found',
+      'https://example.com/forbidden',
+      'https://example.com/server-error',
+    ];
+
+    nock('https://example.com').head('/ok').reply(200);
+    nock('https://example.com')
+      .head('/redirect')
+      .reply(301, '', { Location: 'https://example.com/new' });
+    nock('https://example.com').head('/not-found').reply(404);
+    nock('https://example.com').head('/forbidden').reply(403);
+    nock('https://example.com').head('/server-error').reply(500);
+
+    const result = await filterValidUrls(urls);
+    const trackedIssues = result.notOk
+      .filter((issue) => [301, 302, 404].includes(issue.statusCode));
+
+    expect(trackedIssues).to.deep.equal([
+      {
+        url: 'https://example.com/redirect',
+        statusCode: 301,
+        urls_suggested: 'https://example.com/new',
+      },
+      {
+        url: 'https://example.com/not-found',
+        statusCode: 404,
+      },
+    ]);
+
+    // Verify untracked status codes are not included
+    expect(result.notOk.some((issue) => [403, 500].includes(issue.statusCode)))
+      .to.be.false;
+  });
+
+  it('should categorize non-tracked status codes in otherStatusCodes array', async () => {
+    const urls = [
+      'https://example.com/ok',
+      'https://example.com/redirect',
+      'https://example.com/not-found',
+      'https://example.com/forbidden',
+      'https://example.com/server-error',
+      'https://example.com/service-unavailable',
+      'https://example.com/bad-gateway',
+    ];
+
+    nock('https://example.com').head('/ok').reply(200);
+    nock('https://example.com')
+      .head('/redirect')
+      .reply(301, '', { Location: 'https://example.com/new' });
+    nock('https://example.com').head('/not-found').reply(404);
+    nock('https://example.com').head('/forbidden').reply(403);
+    nock('https://example.com').head('/server-error').reply(500);
+    nock('https://example.com').head('/service-unavailable').reply(503);
+    nock('https://example.com').head('/bad-gateway').reply(502);
+
+    const result = await filterValidUrls(urls);
+
+    // Should include only 200 responses in ok array
+    expect(result.ok).to.deep.equal(['https://example.com/ok']);
+
+    // Should only include tracked status codes (301, 302, 404) in notOk array
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect',
+        statusCode: 301,
+        urls_suggested: 'https://example.com/new',
+      },
+      {
+        url: 'https://example.com/not-found',
+        statusCode: 404,
+      },
+    ]);
+
+    // Should include all other status codes in otherStatusCodes array
+    expect(result.otherStatusCodes).to.deep.equal([
+      {
+        url: 'https://example.com/forbidden',
+        statusCode: 403,
+      },
+      {
+        url: 'https://example.com/server-error',
+        statusCode: 500,
+      },
+      {
+        url: 'https://example.com/service-unavailable',
+        statusCode: 503,
+      },
+      {
+        url: 'https://example.com/bad-gateway',
+        statusCode: 502,
+      },
+    ]);
+
+    // Verify these status codes don't appear in the audit results
+    expect(
+      result.notOk.some((issue) => [403, 500, 502, 503].includes(issue.statusCode)),
+    ).to.be.false;
   });
 });

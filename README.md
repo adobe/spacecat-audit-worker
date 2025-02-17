@@ -40,7 +40,7 @@ $ npm test
 $ npm run lint
 ```
 
-## Message Body Formats 
+## Message Body Formats
 
 Audit worker consumes the `AUDIT_JOBS_QUEUE` queue, performs the requested audit, then queues the result to `AUDIT_RESULTS_QUEUE` for the interested parties to consume later on.
 
@@ -109,7 +109,7 @@ To create a new audit, you'll need to create an audit handler function. This fun
 
 ```js
 export async function auditRunner(url, context) {
-  
+
   // your audit logic goes here...
 
   return {
@@ -130,7 +130,7 @@ All audits share common components, such as persisting audit results to a databa
 
 ```js
 export async function auditRunner(url, context) {
-  
+
   // your audit logic goes here...
 
   return {
@@ -141,7 +141,7 @@ export async function auditRunner(url, context) {
 
 export async function differentUrlResolver(site) {
   // logic to override to default behavior of the audit step
-  
+
   return 'url';
 }
 
@@ -158,7 +158,7 @@ Using a noop messageSender, audit results might not be sent to the audit results
 
 ```js
 export async function auditRunner(url, context) {
-  
+
   // your audit logic goes here...
 
   return {
@@ -195,7 +195,7 @@ Here's the full example:
 
 ```js
 export async function auditRunner(url, context) {
-  
+
   // your audit logic goes here...
 
   return {
@@ -218,80 +218,66 @@ export default new AuditBuilder()
 ```
 
 ### How to add Opportunities and Suggestions
+
+In the handler, the `opportunityAndSuggestions` function is responsible for converting audit data into an opportunity and synchronizing suggestions.
+
+This function utilizes the `convertToOpportunity` function to create or update an opportunity based on the audit data and type.
+
+The `buildKey` function is used to generate a unique key for each suggestion based on specific properties of the audit data.
+
+It then uses the `syncSuggestions` function to map new suggestions to the opportunity and synchronize them.
+
 ```js
 import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
-export async function auditRunner(url, context) {
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
 
-  // your audit logic goes here...
-
-  return {
-    auditResult: results,
-    fullAuditRef: baseURL,
-  };
-}
-
-async function convertToOpportunity(auditUrl, auditData, context) {
-  const { dataAccess, log } = context;
-
-  const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  let opportunity = opportunities.find((oppty) => oppty.getType() === 'audit-type');
-
-  if (!opportunity) {
-    const opportunityData = {
-      siteId: auditData.siteId,
-      auditId: auditData.id,
-      runbook: 'link-to-runbook',
-      type: 'audit-type',
-      origin: 'AUTOMATION',
-      title: 'Opportunity Title',
-      description: 'Opportunity Description',
-      guidance: {
-        steps: [
-          'Step 1',
-          'Step 2',
-        ],
-      },
-      tags: ['tag1', 'tag2'],
-    };
-    try {
-      opportunity = await dataAccess.Opportunity.create(opportunityData);
-    } catch (e) {
-      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
-      throw e;
-    }
-  } else {
-    opportunity.setAuditId(auditData.id);
-    await opportunity.save();
-  }
-
-  // this logic changes based on the audit type
-  const buildKey = (auditData) => `${auditData.property}|${auditData.anotherProperty}`;
-
-  await syncSuggestions({
-    opportunity,
-    newData: auditData,
-    buildKey,
-    mapNewSuggestion: (issue) => ({
-      opportunityId: opportunity.getId(),
-      type: 'SUGGESTION_TYPE',
-      rank: issue.rankMetric,
-      // data changes based on the audit type
-      data: {
-        property: issue.property,
-        anotherProperty: issue.anotherProperty,
-      },
-    }),
-    log,
-  }); 
-}
-
+  const { log } = context;
+  
+  // buildKey and SyncSuggestions logic based on the auditType goes here...
+)};
+```
+```js
 export default new AuditBuilder()
   .withRunner(auditRunner)
-  .withPostProcessors([ convertToOpportunity ])
+  .withPostProcessors([opportunityAndSuggestions])
   .build();
-
 ```
+
+
+The logic for converting to an opportunity is in `common/opportunity.js`. The function `convertToOpportunity` is used to create a new opportunity or update an existing one based on the audit type. The function takes the audit URL, audit data, context, createOpportunityData, auditType, and props as arguments. It first fetches the opportunities for the site. If the opportunity is not found, it creates a new one. If the opportunity is found, it updates the existing one with the new data. The function returns the opportunity entity.
+
+
+How to map the opportunity data in the handler's `opportunity-data-mapper.js` file:
+
+```js
+export function createOpportunityData(parameters) {
+  return {
+    runbook: 'runbook',
+    origin: 'origin',
+    title: 'title',
+    description: 'description',
+    guidance: {
+      steps: [
+        'step1',
+        'step2',
+      ],
+    },
+    tags: ['tag1'],
+    data: {data},
+  };
+}
+```
+
 
 ### How to add auto-suggest to an audit
 A new auto-suggest feature can be added as a post processor step to the existing audit.

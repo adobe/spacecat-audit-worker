@@ -11,15 +11,17 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { internalServerError } from '@adobe/spacecat-shared-http-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
 
 const INTERVAL = 30; // days
-const AUDIT_TYPE = 'broken-internal-links';
+const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
  * Classifies links into priority categories based on views
@@ -75,7 +77,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     granularity: 'hourly',
   };
 
-  log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
+  log.info(`${auditType}: Options for RUM call: `, JSON.stringify(options));
 
   const internal404Links = await rumAPIClient.query('404-internal-links', options);
   const transformedLinks = internal404Links.map((link) => ({
@@ -100,58 +102,18 @@ export async function internalLinksAuditRunner(auditUrl, context) {
   };
 }
 
-// eslint-disable-next-line consistent-return
-export async function convertToOpportunity(auditUrl, auditData, context) {
-  const {
-    dataAccess,
-    log,
-  } = context;
-  const { Opportunity } = dataAccess;
-
-  let opportunity;
-  try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-    opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-  } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    return internalServerError(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
-  }
-
-  try {
-    if (!opportunity) {
-      const opportunityData = {
-        siteId: auditData.siteId,
-        auditId: auditData.id,
-        runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
-        type: AUDIT_TYPE,
-        origin: 'AUTOMATION',
-        title: 'Broken internal links are impairing user experience and SEO crawlability',
-        description: 'We\'ve detected broken internal links on your website. Broken links can negatively impact user experience and SEO. Please review and fix these links to ensure smooth navigation and accessibility.',
-        guidance: {
-          steps: [
-            'Update each broken internal link to valid URLs.',
-            'Test the implemented changes manually to ensure they are working as expected.',
-            'Monitor internal links for 404 errors in RUM tool over time to ensure they are functioning correctly.',
-          ],
-        },
-        tags: [
-          'Traffic acquisition',
-          'Engagement',
-        ],
-      };
-      opportunity = await Opportunity.create(opportunityData);
-    } else {
-      opportunity.setAuditId(auditData.id);
-      await opportunity.save();
-    }
-  } catch (e) {
-    log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
-    throw e;
-  }
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
+  const { log } = context;
 
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
 
-  // Sync suggestions
   await syncSuggestions({
     opportunity,
     newData: auditData?.auditResult?.brokenInternalLinks,
@@ -176,5 +138,5 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(internalLinksAuditRunner)
-  .withPostProcessors([generateSuggestionData, convertToOpportunity])
+  .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
   .build();
