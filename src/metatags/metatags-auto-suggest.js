@@ -89,7 +89,8 @@ export default async function metatagsAutoSuggest(allTags, context, site) {
   for (const [endpoint, tags] of Object.entries(responseWithSuggestions)) {
     for (const tagName of ['title', 'description', 'h1']) {
       const tagIssueData = tags[tagName];
-      if (tagIssueData?.aiSuggestion && tagIssueData.aiRationale) {
+      if (updatedDetectedTags[endpoint][tagName]
+        && tagIssueData?.aiSuggestion && tagIssueData.aiRationale) {
         updatedDetectedTags[endpoint][tagName].aiSuggestion = tagIssueData.aiSuggestion;
         updatedDetectedTags[endpoint][tagName].aiRationale = tagIssueData.aiRationale;
       }
