@@ -4,12 +4,12 @@ description: "Configures AWS credentials for use in subsequent steps. Fetches se
 inputs:
   aws_role_to_assume:
     description: "ARN of the IAM role to assume"
-    default: "arn:aws:iam::282898975672:role/spacecat-role-github-actions"
+    default: "arn:aws:iam::682033462621:role/spacecat-role-github-actions"
     required: true
   secret_ids:
     description: "List of secret IDs to fetch from AWS Secrets Manager"
     default: |
-        /spacecat/github-action-secrets
+        /spacecat/github-actions
     required: true
 
 runs:

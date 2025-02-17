@@ -11,6 +11,7 @@ env:
   CI_BUILD_NUM: ${{ github.run_id }}
   CI_BRANCH: ${{ github.ref_name }}
   HLX_AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ github.ref == 'refs/heads/main' && '640168421876' || '682033462621' }}
 
 jobs:
   build:
@@ -54,6 +55,8 @@ jobs:
 
       - name: Configure AWS
         uses: ./.github/actions/configure-aws
+        with:
+          aws_role_to_assume: 'arn:aws:iam::${{env.AWS_ACCOUNT_ID}}:role/spacecat-role-github-actions'
 
       - name: Semantic Release
         run: npm run semantic-release
@@ -76,6 +79,8 @@ jobs:
 
       - name: Configure AWS
         uses: ./.github/actions/configure-aws
+        with:
+          aws_role_to_assume: 'arn:aws:iam::${{env.AWS_ACCOUNT_ID}}:role/spacecat-role-github-actions'
 
       - name: Branch Deployment
         run: npm run deploy-ci
