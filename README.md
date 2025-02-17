@@ -315,11 +315,11 @@ export default new AuditBuilder()
 
 ## Step-Based Audits
 
-In addition to the traditional single-function audits, Spacecat supports multi-step workflows where each step can be processed by different workers. This enables complex audit scenarios that require different processing capabilities.
+Spacecat supports multi-step audit workflows where each step can be processed by different workers. This enables complex audit scenarios that may require different processing capabilities or need to be split across multiple services.
 
 ### Creating a Step-Based Audit
 
-Here's an example of a content audit that processes content in multiple steps:
+Here's an example of how to create a step-based audit:
 
 ```js
 import { Audit } from '@adobe/spacecat-shared-data-access';
@@ -332,27 +332,27 @@ export default new AuditBuilder()
     const { site, finalUrl, log } = context;
     log.info(`Preparing content scrape for ${site.getBaseURL()}`);
     
-    // First step must return auditResult and fullAuditRef
+    // First step MUST return auditResult and fullAuditRef
     return {
       auditResult: { status: 'preparing' },
       fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
-      // Data formatted for content scraper
+      // Additional data for content scraper
       urls: [{ url: finalUrl }],
       siteId: site.getId(),
     };
   }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
 
-  // Second step: Process import results
+  // Second step: Process results
   .addStep('process', async (context) => {
     const { site, audit } = context;
-    // Return data formatted for import worker
+    // Access previous audit data via audit.getFullAuditRef()
     return {
       type: 'content-import',
       siteId: site.getId(),
     };
   }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
 
-  // Final step: Analyze results
+  // Final step: Analyze results (no destination needed for final step)
   .addStep('analyze', async (context) => {
     const { audit } = context;
     const results = await analyzeContent(audit.getFullAuditRef());
@@ -367,125 +367,80 @@ export default new AuditBuilder()
 ### Step Requirements
 
 1. **First Step**
-   - Must return `auditResult` and `fullAuditRef`
+   - Must return an object containing both `auditResult` and `fullAuditRef`
    - These are used to create the initial audit record
-   - Audit record is created after first step execution
+   - Receives `finalUrl` in context (resolved from site's baseURL)
+   - No previous audit data available in context
 
-2. **Subsequent Steps**
-   - Have access to audit record via context
-   - Must return data matching destination requirements
-   - Can access audit data via `audit.getFullAuditRef()`, `audit.getAuditType()`, etc.
-   - Must have a valid audit ID in auditContext
+2. **Intermediate Steps**
+   - Must specify a destination queue via `AUDIT_STEP_DESTINATIONS`
+   - Return data will be formatted according to destination requirements
+   - Have access to audit record via `context.audit`
+   - Can access previous step data via `audit.getFullAuditRef()`
 
-3. **Destinations**
-   - All steps except the last must specify a destination
-   - Each destination has specific payload format requirements:
-     - CONTENT_SCRAPER expects: `{ urls, jobId, processingType, auditContext }`
-     - IMPORT_WORKER expects: `{ type, siteId, auditContext }`
-   - Available destinations are defined in `Audit.AUDIT_STEP_DESTINATIONS`
-   - Each destination must have a valid configuration in AUDIT_STEP_DESTINATION_CONFIGS
+3. **Final Step**
+   - Must not specify a destination
+   - Return data will be stored as the final audit result
+   - Has access to all previous audit data via `context.audit`
 
-### Step-Based Audit Example
-
-```js
-import { Audit } from '@adobe/spacecat-shared-data-access';
-
-const { AUDIT_STEP_DESTINATIONS } = Audit;
-
-export default new AuditBuilder()
-  // First step: Prepare content scraping
-  .addStep('prepare', async (context) => {
-    const { site, finalUrl, log } = context;
-    log.info(`Preparing content scrape for ${site.getBaseURL()}`);
-    
-    // First step must return auditResult and fullAuditRef
-    return {
-      auditResult: { status: 'preparing' },
-      fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
-      // Data formatted for content scraper
-      urls: [{ url: finalUrl }],
-      siteId: site.getId(),
-    };
-  }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-
-  // Second step: Process import results
-  .addStep('process', async (context) => {
-    const { site, audit } = context;
-    // Return data formatted for import worker
-    return {
-      type: 'content-import',
-      siteId: site.getId(),
-    };
-  }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-
-  // Final step: Analyze results
-  .addStep('analyze', async (context) => {
-    const { audit } = context;
-    const results = await analyzeContent(audit.getFullAuditRef());
-    return {
-      status: 'complete',
-      findings: results,
-    };
-  })
-  .build();
-```
-
-### Message Flow
-
-When using step-based audits, messages flow between the audit worker and destination workers:
-
-```js
-// Initial trigger
-{
-  type: 'content-audit',
-  siteId: '123',
-  auditContext: {}
-}
-
-// After first step, to content scraper
-{
-  urls: [{ url: 'https://example.com' }],
-  jobId: '123',
-  auditContext: {
-    next: 'process',
-    auditId: 'audit-456',
-    auditType: 'content-audit',
-    fullAuditRef: 's3://content-bucket/123/raw.json'
-  }
-}
-
-// Content scraper back to audit worker
-{
-  type: 'content-audit',
-  siteId: '123',
-  auditContext: {
-    next: 'process',
-    auditId: 'audit-456',
-    fullAuditRef: 's3://content-bucket/123/raw.json'
-  }
-}
-```
+### Step Context
 
 Each step receives a context object containing:
-- `site`: The site being audited
-- `audit`: The audit record (for subsequent steps)
-- `finalUrl`: The resolved URL (for first step)
-- Standard context properties (log, dataAccess, etc.)
+- `site`: The site being audited (with methods like `getBaseURL()`, `getId()`)
+- `audit`: The audit record (undefined for first step)
+- `finalUrl`: The resolved URL (only in first step)
+- Standard context properties (`log`, `dataAccess`, etc.)
 
-### Step-Based Audit Error Handling
+### Destinations
 
-The step-based audit implementation includes several error checks:
+The `AUDIT_STEP_DESTINATIONS` enum defines supported destination queues. Each destination has specific payload format requirements:
 
-1. **Step Validation**
-   - Non-final steps must have valid destinations
-   - Steps must exist in the audit configuration
+```js
+CONTENT_SCRAPER: {
+  // Formats payload for content scraper queue
+  payload: {
+    urls: Array<{url: string}>,
+    jobId: string,
+    auditContext: {
+      next: string,
+      auditId: string,
+      auditType: string,
+      fullAuditRef: string
+    }
+  }
+}
+
+IMPORT_WORKER: {
+  // Formats payload for import worker queue
+  payload: {
+    type: string,
+    siteId: string,
+    auditContext: {
+      next: string,
+      auditId: string,
+      auditType: string,
+      fullAuditRef: string
+    }
+  }
+}
+```
+
+### Error Handling
+
+The step-based audit implementation includes several validations:
+
+1. **Step Configuration**
+   - All steps except the last must specify a valid destination
    - Step handlers must be functions
+   - First step must return both `auditResult` and `fullAuditRef`
 
 2. **Audit Context**
-   - For subsequent steps, a valid audit ID is required
-   - The audit record must exist in the database
-   - The audit type must match the current audit
+   - For subsequent steps, audit ID must be valid
+   - Audit record must exist in database
+   - Audit type must match current audit
 
-3. **Destination Configuration**
-   - Each destination must have a valid configuration
-   - The configuration must include queue URL and payload formatting
+3. **Destination Validation**
+   - Destinations must be from `AUDIT_STEP_DESTINATIONS`
+   - Each destination must have valid queue URL and payload formatting
+
+If any validation fails, the audit will throw an error and stop processing.
