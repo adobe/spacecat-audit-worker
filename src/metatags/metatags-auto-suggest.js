@@ -75,7 +75,6 @@ export default async function metatagsAutoSuggest(allTags, context, site) {
       JSON.stringify(requestBody),
       context.env.GENVAR_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/metatags',
     );
-    log.info(`Genvar response: ${JSON.stringify(responseWithSuggestions)}`);
     if (!isObject(responseWithSuggestions)) {
       throw new Error(`Invalid response received from Genvar API: ${JSON.stringify(responseWithSuggestions)}`);
     }
