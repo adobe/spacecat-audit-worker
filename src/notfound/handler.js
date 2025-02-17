@@ -16,7 +16,7 @@ import {
   getRUMUrl,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { noopUrlResolver } from '../common/index.js';
 
 const AUDIT_TYPE = '404';
 const PAGEVIEW_THRESHOLD = 100;

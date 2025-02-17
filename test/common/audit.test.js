@@ -19,15 +19,17 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { composeAuditURL, hasText, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
+  BaseAudit,
   defaultMessageSender,
   defaultOrgProvider,
   defaultPersister,
+  defaultPostProcessors,
   defaultSiteProvider,
   defaultUrlResolver,
   noopPersister,
   noopUrlResolver,
   wwwUrlResolver,
-} from '../../src/common/audit.js';
+} from '../../src/common/index.js';
 import { AuditBuilder } from '../../src/common/audit-builder.js';
 import { MockContextBuilder } from '../shared.js';
 import { getUrlWithoutPath } from '../../src/support/utils.js';
@@ -367,5 +369,31 @@ describe('Audit tests', () => {
       fullAuditRef: 'hmm',
     });
     expect(hasText(audit.getId())).to.be.true;
+  });
+
+  /*
+  add test for:
+   // Abstract method that subclasses must implement
+  // eslint-disable-next-line class-methods-use-this,@typescript-eslint/no-unused-vars
+  async run(message, context) {
+    throw new Error('Subclasses must implement run()');
+  }
+   */
+  it('should throw error when run() is not implemented', async () => {
+    class DummyAudit extends BaseAudit {
+      constructor() {
+        super(
+          defaultSiteProvider,
+          defaultOrgProvider,
+          defaultUrlResolver,
+          defaultPersister,
+          defaultMessageSender,
+          defaultPostProcessors,
+        );
+      }
+    }
+
+    const dummyAudit = new DummyAudit();
+    await expect(dummyAudit.run(message, context)).to.be.rejectedWith('Subclasses must implement run()');
   });
 });

@@ -13,14 +13,15 @@
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 
 import {
-  Audit,
   defaultSiteProvider,
   defaultOrgProvider,
   defaultMessageSender,
   defaultPersister,
   defaultUrlResolver,
   defaultPostProcessors,
-} from './audit.js';
+  StepAudit,
+  RunnerAudit,
+} from './index.js';
 
 export class AuditBuilder {
   constructor() {
@@ -72,7 +73,7 @@ export class AuditBuilder {
    *
    * @param {string} name - Unique name of the step
    * @param {Function} handler - Function to execute for this step
-   * @param {DESTINATIONS} destination - Destination queue for step results
+   * @param {AuditModel.AUDIT_STEP_DESTINATIONS} destination - Destination queue for step results
    * (e.g., DESTINATIONS.IMPORT_WORKER). Only the last step may omit the destination.
    *
    * @returns {AuditBuilder} Returns this builder instance for method chaining
@@ -90,7 +91,7 @@ export class AuditBuilder {
    *       auditResult: { status: 'success', data },
    *       fullAuditRef: 'path/to/full/data'
    *     };
-   *   }, DESTINATIONS.IMPORT_WORKER)
+   *   }, AuditModel.AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
    *   .addStep('scrape', async (site, audit, auditContext, context) => {
    *     // Subsequent steps can return any data needed by their destination
    *     // audit: Audit record with getId(), getFullAuditRef(), etc.
@@ -102,19 +103,13 @@ export class AuditBuilder {
    *         // ... other scraper options
    *       }
    *     };
-   *   }, DESTINATIONS.CONTENT_SCRAPER)
+   *   }, AuditModel.AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
    */
   addStep(name, handler, destination = null) {
-    const stepNames = Object.keys(this.steps);
     const supportedDestinations = Object.values(AuditModel.AUDIT_STEP_DESTINATIONS);
-    const isLastStep = stepNames.length === 0 || stepNames[stepNames.length - 1] === name;
 
-    if (!isLastStep && !destination) {
-      throw new Error(`Step ${name} must specify a destination as it is not the last step`);
-    }
-
-    if (!Object.values(supportedDestinations).includes(destination)) {
-      throw new Error(`Invalid destination: ${destination}. Must be one of: ${Object.values(supportedDestinations).join(', ')}`);
+    if (destination && !supportedDestinations.includes(destination)) {
+      throw new Error(`Invalid destination: ${destination}. Must be one of: ${supportedDestinations.join(', ')}`);
     }
 
     this.steps[name] = {
@@ -126,28 +121,34 @@ export class AuditBuilder {
   }
 
   build() {
-    if (Object.keys(this.steps).length > 0) {
-      // Auto-configure message sender for steps
-      this.messageSender = async (message, context) => {
-        const { log } = context;
-        const { queueUrl, payload } = message;
+    const stepNames = Object.keys(this.steps);
 
-        try {
-          const { sqs } = context;
-          await sqs.sendMessage({
-            QueueUrl: queueUrl,
-            MessageBody: JSON.stringify(payload),
-          }).promise();
-        } catch (e) {
-          log.error(`Failed to send message to queue ${queueUrl}`, e);
-          throw e;
+    if (stepNames.length > 0) {
+      stepNames.forEach((stepName, index) => {
+        const isLastStep = index === stepNames.length - 1;
+        const step = this.steps[stepName];
+
+        if (!isLastStep && !step.destination) {
+          throw new Error(`Step ${stepName} must specify a destination as it is not the last step`);
         }
-      };
-    } else if (typeof this.runner !== 'function') {
+      });
+
+      return new StepAudit(
+        this.siteProvider,
+        this.orgProvider,
+        this.urlResolver,
+        this.persister,
+        this.messageSender,
+        this.postProcessors,
+        this.steps,
+      );
+    }
+
+    if (typeof this.runner !== 'function') {
       throw Error('Audit must have either steps or a runner defined');
     }
 
-    return new Audit(
+    return new RunnerAudit(
       this.siteProvider,
       this.orgProvider,
       this.urlResolver,
@@ -155,7 +156,6 @@ export class AuditBuilder {
       this.persister,
       this.messageSender,
       this.postProcessors,
-      this.steps,
     );
   }
 }
