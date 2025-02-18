@@ -20,9 +20,6 @@ export default async function generateSuggestions(auditUrl, auditData, context) 
 
   const firefallClient = FirefallClient.createFrom(context);
   const firefallOptions = {
-    imageUrls:
-            ['https://bamboohr.com/media_13b069aab947ce0a5318c6395d965241ab8c8887e.png?width=750&format=png&optimize=medium',
-              'https://www.bamboohr.com/media_1d319fa752502760d09bdd73afac7040772c45932.png?width=750&format=png&optimize=medium'],
     responseFormat: 'json_object',
   };
   const prompt = 'Using these alt text best practices, describe the picture provided in a way that is helpful for the user. Alt Text Best Practices: Keep it short, usually 1-2 sentences. Dont overthink it. Consider key elements of why you chose this image, instead of describing every little detail. No need to say image of or picture of. But, do say if its a logo, illustration, painting, or cartoon. Dont duplicate text thats adjacent in the document or website. End the alt text sentence with a period.';
