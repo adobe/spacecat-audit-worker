@@ -70,11 +70,13 @@ export async function formsAuditRunner(auditUrl, context) {
 export default new AuditBuilder()
   // .addStep('formsAuditRunner', formsAuditRunner)
   .addStep('sendUrlsForScraping', async (context) => {
-    const { site, audit } = context;
+    const { site, audit, log } = context;
     const formsAuditRunnerResult = await formsAuditRunner(site.getBaseURL(), context);
+    log.info(`Debug log 1 ${JSON.stringify(formsAuditRunnerResult, null, 2)}`);
 
-    const { formVitals } = formsAuditRunnerResult.getAuditResult();
+    const { formVitals } = formsAuditRunnerResult.auditResult;
     const formOpportunities = generateOpptyData(formVitals);
+    log.info(`Debug log 2 ${JSON.stringify(formsAuditRunnerResult, null, 2)}`);
     const uniqueUrls = new Set();
     for (const opportunity of formOpportunities) {
       uniqueUrls.add(opportunity.form);
