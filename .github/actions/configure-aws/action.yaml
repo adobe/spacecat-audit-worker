@@ -9,7 +9,7 @@ inputs:
   secret_ids:
     description: "List of secret IDs to fetch from AWS Secrets Manager"
     default: |
-        /spacecat/github-actions
+      /spacecat/github-actions
     required: true
 
 runs:

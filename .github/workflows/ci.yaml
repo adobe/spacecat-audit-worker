@@ -11,8 +11,6 @@ env:
   CI_BUILD_NUM: ${{ github.run_id }}
   CI_BRANCH: ${{ github.ref_name }}
   HLX_AWS_REGION: ${{ secrets.AWS_REGION }}
-  AWS_ACCOUNT_ID: ${{ github.ref == 'refs/heads/main' && '640168421876' || '682033462621' }}
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -56,13 +54,17 @@ jobs:
       - name: Configure AWS
         uses: ./.github/actions/configure-aws
         with:
-          aws_role_to_assume: 'arn:aws:iam::${{env.AWS_ACCOUNT_ID}}:role/spacecat-role-github-actions'
+          aws_role_to_assume: 'arn:aws:iam::${{secrets.AWS_ACCOUNT_ID_PROD}}:role/spacecat-role-github-actions'
 
       - name: Semantic Release
         run: npm run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.ADOBE_BOT_GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.ADOBE_BOT_NPM_TOKEN }}
+          AWS_REGION: us-east-1
+          AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_PROD}}
+          AWS_API_ID: ${{secrets.AWS_API_ID_PROD}}
+
 
   branch-deploy:
     runs-on: ubuntu-latest
@@ -80,12 +82,14 @@ jobs:
       - name: Configure AWS
         uses: ./.github/actions/configure-aws
         with:
-          aws_role_to_assume: 'arn:aws:iam::${{env.AWS_ACCOUNT_ID}}:role/spacecat-role-github-actions'
+          aws_role_to_assume: 'arn:aws:iam::${{secrets.AWS_ACCOUNT_ID_DEV}}:role/spacecat-role-github-actions'
 
       - name: Branch Deployment
         run: npm run deploy-ci
         env:
           AWS_REGION: us-east-1
+          AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
+          AWS_API_ID: ${{secrets.AWS_API_ID_DEV}}
 
       - name: Post-Deployment Integration Test
         run: npm run test-postdeploy
