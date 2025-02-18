@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { OPPORTUNITY_TYPES } from './constants.js';
 
 /**
@@ -29,16 +30,16 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestions, log 
   await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
 
   // Add new suggestions to oppty
-  if (newSuggestions.length > 0) {
+  if (isNonEmptyArray(newSuggestions)) {
     const updateResult = await opportunity.addSuggestions(newSuggestions);
 
-    if (updateResult.errorItems?.length > 0) {
+    if (isNonEmptyArray(updateResult.errorItems)) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
       updateResult.errorItems.forEach((errorItem) => {
         log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
       });
 
-      if (updateResult.createdItems?.length <= 0) {
+      if (!isNonEmptyArray(updateResult.createdItems)) {
         throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
       }
     }

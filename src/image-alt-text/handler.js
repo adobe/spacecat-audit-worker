@@ -11,6 +11,7 @@
  */
 
 import { JSDOM } from 'jsdom';
+import { hasText } from '@adobe/spacecat-shared-utils';
 import {
   getObjectFromKey,
   getObjectKeysUsingPrefix,
@@ -28,7 +29,7 @@ export async function fetchAndProcessPageObject(
   log,
 ) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
-  if (!object?.scrapeResult?.rawBody) {
+  if (!hasText(object?.scrapeResult?.rawBody)) {
     log.error(`No raw HTML content found in S3 ${key} object`);
     return null;
   }

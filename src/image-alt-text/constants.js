@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+// TO-DO: migrate to spacecat-shared-data-access Audit.AUDIT_TYPES
 export const OPPORTUNITY_TYPES = {
   MISSING_ALT_TEXT: 'alt-text',
 };
