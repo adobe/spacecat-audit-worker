@@ -20,15 +20,20 @@ export default async function generateSuggestions(auditUrl, auditData, context) 
 
   const firefallClient = FirefallClient.createFrom(context);
   const firefallOptions = {
-    responseFormat: 'json_object',
+    imageUrls: [
+      'https://www.bamboohr.com/careers/media_1d86828fba22e2f00d256418e0fe1765b8f2f0178.png',
+      'https://bamboohr.com/media_1f7ff06e46b621f94843bc685ad4f820e5b6901d4.jpeg?width=750&format=jpeg&optimize=medium',
+      'https://bamboohr.com/media_11e551e23b855eff228f2eff3c420a8940596803d.png?width=750&format=png&optimize=medium',
+    ],
+    // responseFormat: 'json_object',
   };
-  const prompt = 'Using these alt text best practices, describe the picture provided in a way that is helpful for the user. Alt Text Best Practices: Keep it short, usually 1-2 sentences. Dont overthink it. Consider key elements of why you chose this image, instead of describing every little detail. No need to say image of or picture of. But, do say if its a logo, illustration, painting, or cartoon. Dont duplicate text thats adjacent in the document or website. End the alt text sentence with a period.';
+  const prompt = 'Using these alt text best practices, create a description for each image in a way that is helpful for the user. Please format the json to have a objects with key, the url of the image, and value the description. Alt Text Best Practices: Keep it short, usually 1-2 sentences. Dont overthink it. Consider key elements of why you chose this image, instead of describing every little detail. No need to say image of or picture of. But, do say if its a logo, illustration, painting, or cartoon. Dont duplicate text thats adjacent in the document or website. End the alt text sentence with a period.';
 
-  log.debug('About to call Firefall for alt-text suggestion generation');
+  log.info('About to call Firefall for alt-text suggestion generation');
 
   try {
     const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
-    log.debug('Firefall response for alt-text suggestions', response);
+    log.info('Firefall response for alt-text suggestions', response);
   } catch (err) {
     log.error('Error calling Firefall for alt-text suggestion generation', err);
   }
