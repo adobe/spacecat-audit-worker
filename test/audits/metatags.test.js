@@ -14,6 +14,7 @@
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
+import esmock from 'esmock';
 import sinonChai from 'sinon-chai';
 
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
@@ -202,7 +203,7 @@ describe('Meta Tags', () => {
     let dataAccessStub;
     let s3ClientStub;
     let logStub;
-
+    let context;
     beforeEach(() => {
       sinon.restore();
       dataAccessStub = {
@@ -227,6 +228,24 @@ describe('Meta Tags', () => {
         info: sinon.stub(),
         debug: sinon.stub(),
         error: sinon.stub(),
+        warn: sinon.stub(),
+      };
+      const latestConfigStub = sinon.stub().resolves({
+        isHandlerEnabledForSite: () => false,
+      });
+      context = {
+        log: logStub,
+        s3Client: s3ClientStub,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          GENVAR_ENDPOINT: 'test-genvar-url',
+          FIREFALL_IMS_ORG_ID: 'test-org@adobe',
+        },
+        dataAccess: {
+          Configuration: {
+            findLatest: latestConfigStub,
+          },
+        },
       };
     });
 
@@ -320,8 +339,7 @@ describe('Meta Tags', () => {
 
       const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
       dataAccessStub.Audit.create = await addAuditStub();
-
-      await auditMetaTagsRunner('http://example.com', { log: logStub, s3Client: s3ClientStub, env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' } }, { getId: () => 'site-id' });
+      await auditMetaTagsRunner('http://example.com', context, { getId: () => 'site-id' });
       const result = await fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page3/scrape.json', 'scrapes/site-id/', logStub);
       expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
       expect(result).to.be.null;
@@ -601,7 +619,7 @@ describe('Meta Tags', () => {
           },
           ContentType: 'application/json',
         });
-      await auditMetaTagsRunner('http://example.com', { log: logStub, s3Client: s3ClientStub, env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' } }, { getId: () => 'site-id' });
+      await auditMetaTagsRunner('http://example.com', context, { getId: () => 'site-id' });
       expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
     });
   });
@@ -744,6 +762,165 @@ describe('Meta Tags', () => {
       const url = '';
       const result = removeTrailingSlash(url);
       expect(result).to.equal('');
+    });
+  });
+
+  describe('metatagsAutoSuggest', () => {
+    let metatagsAutoSuggest;
+    let context;
+    let s3Client;
+    let dataAccess;
+    let log;
+    let Configuration;
+    let getPresignedUrlStub;
+    let genvarClientStub;
+    let siteStub;
+    let allTags;
+
+    beforeEach(async () => {
+      s3Client = {};
+      log = {
+        info: sinon.stub(),
+        error: sinon.stub(),
+        warn: sinon.stub(),
+        debug: sinon.stub(),
+      };
+      Configuration = {
+        findLatest: sinon.stub().resolves({
+          isHandlerEnabledForSite: sinon.stub().returns(true),
+        }),
+      };
+      dataAccess = { Configuration };
+      genvarClientStub = {
+        generateSuggestions: sinon.stub().resolves({
+          '/about-us': {
+            h1: {
+              aiRationale: 'The H1 tag is catchy and broad...',
+              aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
+            },
+          },
+          '/add-on-and-refresh': {
+            description: {
+              aiRationale: 'The description emphasizes the brand\'s core values...',
+              aiSuggestion: 'Elevate your home with Lovesac\'s customizable add-ons...',
+            },
+            h1: {
+              aiRationale: 'The H1 tag is catchy and directly addresses the user\'s intent...',
+              aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons',
+            },
+          },
+        }),
+      };
+      context = {
+        s3Client,
+        dataAccess,
+        log,
+        env: {
+          GENVARHOST: 'https://genvar.endpoint',
+          GENVAR_IMS_ORG_ID: 'test-org-id',
+        },
+      };
+      allTags = {
+        detectedTags: {
+          '/about-us': { h1: {} },
+          '/add-on-and-refresh': { description: {}, h1: {} },
+        },
+        extractedTags: {
+          '/about-us': { s3key: 'about-us-key' },
+          '/add-on-and-refresh': { s3key: 'add-on-key' },
+        },
+        healthyTags: {},
+      };
+
+      metatagsAutoSuggest = await esmock('../../src/metatags/metatags-auto-suggest.js', {
+        '@adobe/spacecat-shared-gpt-client': { GenvarClient: { createFrom: () => genvarClientStub } },
+        '@aws-sdk/s3-request-presigner': { getSignedUrl: getPresignedUrlStub },
+      });
+      siteStub = {
+        getBaseURL: sinon.stub().returns('https://example.com'),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should handle disabled handler for site', async () => {
+      Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(false),
+      });
+      await metatagsAutoSuggest(allTags, context, siteStub);
+      expect(log.info.calledWith('Metatags auto-suggest is disabled for site')).to.be.true;
+    });
+
+    it('should handle missing Genvar endpoint', async () => {
+      context.env.GENVAR_HOST = '';
+      try {
+        await metatagsAutoSuggest(allTags, context, siteStub);
+      } catch (error) {
+        expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId');
+      }
+    });
+
+    it('should handle missing genvar ims orgId', async () => {
+      context.env.GENVAR_IMS_ORG_ID = '';
+
+      try {
+        await metatagsAutoSuggest(allTags, context, siteStub);
+      } catch (error) {
+        expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId1');
+      }
+    });
+
+    it('should generate presigned URLs and call Genvar API', async () => {
+      genvarClientStub.generateSuggestions.resolves({
+        '/about-us': {
+          h1: {
+            aiRationale: 'The H1 tag is catchy and broad...',
+            aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
+          },
+        },
+        '/add-on-and-refresh': {
+          description: {
+            aiRationale: 'The description emphasizes the brand\'s core values...',
+            aiSuggestion: 'Elevate your home with Lovesac\'s customizable add-ons...',
+          },
+          h1: {
+            aiRationale: 'The H1 tag is catchy and directly addresses the user\'s intent...',
+            aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons',
+          },
+        },
+      });
+
+      const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+      expect(log.debug.calledWith('Generated presigned URLs')).to.be.true;
+      expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+      expect(response['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
+      expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
+      expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
+    }).timeout(15000);
+
+    it('should log an error and throw if the Genvar API call fails', async () => {
+      genvarClientStub.generateSuggestions.throws(new Error('Genvar API failed'));
+      let err;
+      try {
+        await metatagsAutoSuggest(allTags, context, siteStub);
+      } catch (error) {
+        err = error;
+      }
+      expect(err.message).to.equal('Genvar API failed');
+    });
+
+    it('should log an error and throw if the Genvar API response is invalid', async () => {
+      genvarClientStub.generateSuggestions.resolves(5);
+      let err;
+      try {
+        await metatagsAutoSuggest(allTags, context, siteStub);
+      } catch (error) {
+        err = error;
+      }
+      expect(err.message).to.equal('Invalid response received from Genvar API: 5');
     });
   });
 });
