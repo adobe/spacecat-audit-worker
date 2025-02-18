@@ -17,7 +17,6 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import chaiAsPromised from 'chai-as-promised';
 import {
-  ERROR_CODES,
   sitemapAuditRunner,
   isSitemapContentValid,
   checkSitemap,
@@ -31,6 +30,7 @@ import {
   getPagesWithIssues,
   getSitemapsWithIssues,
 } from '../../src/sitemap/handler.js';
+import { ERROR_CODES } from '../../src/sitemap/constants.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 
