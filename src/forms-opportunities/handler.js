@@ -11,10 +11,13 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { wwwUrlResolver } from '../common/index.js';
+// import { wwwUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
+import generateOpptyData from './utils.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const DAILY_THRESHOLD = 200;
 const INTERVAL = 7; // days
 const FORMS_OPPTY_QUERIES = [
@@ -65,7 +68,30 @@ export async function formsAuditRunner(auditUrl, context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(wwwUrlResolver)
-  .withRunner(formsAuditRunner)
-  .withPostProcessors([convertToOpportunity])
+  // .addStep('formsAuditRunner', formsAuditRunner)
+  .addStep('sendUrlsForScraping', async (context) => {
+    const { site, audit } = context;
+    const formsAuditRunnerResult = await formsAuditRunner(site.getBaseURL(), context);
+
+    const { formVitals } = formsAuditRunnerResult.getAuditResult();
+    const formOpportunities = generateOpptyData(formVitals);
+    const uniqueUrls = new Set();
+    for (const opportunity of formOpportunities) {
+      uniqueUrls.add(opportunity.form);
+    }
+
+    return {
+      auditResult: audit.getAuditResult,
+      fullAuditRef: audit.getFullAuditRef,
+      // Additional data for content scraper
+      processingType: 'form',
+      jobId: site.getId(),
+      urls: [{ url: uniqueUrls }],
+      siteId: site.getId(),
+    };
+  }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('processOpportunity', convertToOpportunity)
+  // .withUrlResolver(wwwUrlResolver)
+  // .withRunner(formsAuditRunner)
+  // .withPostProcessors([convertToOpportunity])
   .build();

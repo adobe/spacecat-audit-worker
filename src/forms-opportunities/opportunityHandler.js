@@ -55,11 +55,11 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
         };
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
-        log.debug('Forms Opportunity created');
+        // log.debug('Forms Opportunity created');
       } else {
-        highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
+        // highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
         // eslint-disable-next-line no-await-in-loop
-        await highFormViewsLowConversionsOppty.save();
+        // await highFormViewsLowConversionsOppty.save();
       }
     }
   } catch (e) {
