@@ -255,6 +255,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     opportunity,
     newData: auditData.auditResult.brokenBacklinks,
     buildKey,
+    context,
     mapNewSuggestion: (backlink) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',

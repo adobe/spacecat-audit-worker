@@ -596,6 +596,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   await syncSuggestions({
     opportunity,
     newData: auditData.suggestions,
+    context,
     buildKey,
     mapNewSuggestion: (issue) => ({
       opportunityId: opportunity.getId(),
