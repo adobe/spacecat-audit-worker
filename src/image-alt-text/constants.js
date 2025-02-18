@@ -11,5 +11,5 @@
  */
 
 export const OPPORTUNITY_TYPES = {
-  MISSING_ALT_TEXT: 'alt-text', // Coming from the live oppty that already has this type
+  MISSING_ALT_TEXT: 'alt-text',
 };
