@@ -126,7 +126,7 @@ export default class FirefallClient {
     };
 
     this.log.info(`URL: ${url}, Headers: ${JSON.stringify(headers)}`);
-    this.log.debug('called with:', headers, body);
+    this.log.info('called with:', headers, body);
 
     const response = await httpFetch(url, {
       method: 'POST',
@@ -135,7 +135,7 @@ export default class FirefallClient {
     });
 
     if (!response.ok) {
-      this.log.debug('response:', response);
+      this.log.info('response:', response);
       throw new Error(`Job submission failed with status code ${response.status}`);
     }
 
