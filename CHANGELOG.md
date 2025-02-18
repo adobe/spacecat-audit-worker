@@ -1,3 +1,24 @@
+## [1.53.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.53.0...v1.53.1) (2025-02-18)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#666](https://github.com/adobe/spacecat-audit-worker/issues/666)) ([10204dd](https://github.com/adobe/spacecat-audit-worker/commit/10204dd133f339aad0ea00645cfdbd1267c989ed))
+
+# [1.53.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.15...v1.53.0) (2025-02-17)
+
+
+### Features
+
+* introduce auto-suggest for Metatags ([#608](https://github.com/adobe/spacecat-audit-worker/issues/608)) ([5f4832a](https://github.com/adobe/spacecat-audit-worker/commit/5f4832a092e22844147cbd34180700e96042a3fa))
+
+## [1.52.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.14...v1.52.15) (2025-02-17)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#663](https://github.com/adobe/spacecat-audit-worker/issues/663)) ([b2fc54e](https://github.com/adobe/spacecat-audit-worker/commit/b2fc54e68a44a2d54bbc3bbe8a572b393ead9cdb))
+
 ## [1.52.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.52.13...v1.52.14) (2025-02-17)
 
 
