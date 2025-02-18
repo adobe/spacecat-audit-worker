@@ -10,8 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { ok } from '@adobe/spacecat-shared-http-utils';
+import { hasText, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { BaseAudit } from './base-audit.js';
 import {
   isAuditEnabledForSite,
@@ -32,32 +33,37 @@ export class StepAudit extends BaseAudit {
     steps = {},
   ) {
     super(siteProvider, orgProvider, urlResolver, persister, messageSender, postProcessors);
-    this.steps = steps;
+
+    Object.freeze(this.steps = steps);
+    Object.freeze(this.stepNames = Object.keys(steps));
   }
 
   getStep(name) {
     const step = this.steps[name];
-    if (!step) {
+    if (!isNonEmptyObject(step)) {
       throw new Error(`Step ${name} not found for audit ${this.type}`);
     }
 
     return step;
   }
 
-  getStepNames() {
-    return Object.keys(this.steps);
-  }
-
   getNextStepName(currentStepName) {
-    const stepNames = this.getStepNames();
-    const currentIndex = stepNames.indexOf(currentStepName);
-    return currentIndex < stepNames.length - 1 ? stepNames[currentIndex + 1] : null;
+    const currentIndex = this.stepNames.indexOf(currentStepName);
+    return currentIndex < this.stepNames.length - 1 ? this.stepNames[currentIndex + 1] : null;
   }
 
   async chainStep(step, stepResult, context) {
     const { audit, log } = context;
 
+    if (!hasText(step?.destination)) {
+      throw new Error('Invalid step configuration: missing destination');
+    }
+
     const destination = AUDIT_STEP_DESTINATION_CONFIGS[step.destination];
+    if (!isNonEmptyObject(destination)) {
+      throw new Error(`Invalid destination configuration for step ${step.name}`);
+    }
+
     const nextStepName = this.getNextStepName(step.name);
     const auditContext = {
       next: nextStepName,
@@ -75,6 +81,7 @@ export class StepAudit extends BaseAudit {
   }
 
   async run(message, context) {
+    const { stepNames } = this;
     const { log } = context;
     const { type, siteId, auditContext = {} } = message;
 
@@ -87,13 +94,14 @@ export class StepAudit extends BaseAudit {
       }
 
       // Determine which step to run
-      const stepName = auditContext.next || this.getStepNames()[0];
-      const isLastStep = stepName === this.getStepNames()[this.getStepNames().length - 1];
+      const hasNext = hasText(auditContext.next);
+      const stepName = auditContext.next || stepNames[0];
+      const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
       const stepContext = { ...context, site };
 
       // For subsequent steps, load existing audit
-      if (auditContext.next) {
+      if (hasNext) {
         stepContext.audit = await loadExistingAudit(auditContext.auditId, context);
       } else {
         // For first step, resolve URL
@@ -104,7 +112,7 @@ export class StepAudit extends BaseAudit {
       const stepResult = await step.handler(stepContext);
       let response = ok();
 
-      if (!auditContext.next) {
+      if (!hasNext) {
         response = await this.processAuditResult(
           stepResult,
           {
@@ -123,7 +131,10 @@ export class StepAudit extends BaseAudit {
 
       return response;
     } catch (e) {
-      throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`, { cause: e });
+      // Enhance error message with more context
+      const errorMessage = `${type} audit failed for site ${siteId} at step ${auditContext.next || 'initial'}. Reason: ${e.message}`;
+      log.error(errorMessage, { error: e });
+      throw new Error(errorMessage, { cause: e });
     }
   }
 }

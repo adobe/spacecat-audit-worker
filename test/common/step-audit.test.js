@@ -266,7 +266,38 @@ describe('Step-based Audit Tests', () => {
       };
 
       await expect(audit.run(invalidMessage, context))
-        .to.be.rejectedWith('content-audit audit failed for site 42322ae6-b8b1-4a61-9c88-25205fa65b07. Reason: Step invalid-step not found');
+        .to.be.rejectedWith('ontent-audit audit failed for site 42322ae6-b8b1-4a61-9c88-25205fa65b07 at step invalid-step. Reason: Step invalid-step not found for audit undefined');
+    });
+
+    it('fails when site is not found', async () => {
+      context.dataAccess.Site.findById.resolves(null);
+
+      await expect(audit.run(message, context))
+        .to.be.rejectedWith('content-audit audit failed for site 42322ae6-b8b1-4a61-9c88-25205fa65b07 at step initial. Reason: Site with id 42322ae6-b8b1-4a61-9c88-25205fa65b07 not found');
+    });
+
+    it('fails when step configuration is invalid', async () => {
+      // Create an audit with invalid step configuration
+      const invalidAudit = new AuditBuilder()
+        .addStep('prepare', async () => ({}), null) // Missing destination
+        .build();
+
+      await expect(invalidAudit.chainStep(
+        { name: 'prepare' }, // Missing destination
+        {},
+        context,
+      )).to.be.rejectedWith('Invalid step configuration: missing destination');
+    });
+
+    it('fails when step destination configuration is invalid', async () => {
+      // Create a step with invalid destination config
+      const step = {
+        name: 'test',
+        destination: 'non-existent-destination',
+      };
+
+      await expect(audit.chainStep(step, {}, context))
+        .to.be.rejectedWith('Invalid destination configuration for step test');
     });
   });
 });

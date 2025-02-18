@@ -87,7 +87,11 @@ DYNAMO_INDEX_NAME_ALL_LATEST_AUDIT_SCORES = name of the dynamo index to query al
 
 ## What is a Spacecat Audit
 
-A Spacecat audit is an operation designed for various purposes, including inspection, data collection, verification, and more, all performed on a given `URL`.
+A Spacecat audit is an operation designed for various purposes, including inspection, data collection, verification, and more, all performed on a given `URL`. Spacecat supports two types of audits:
+
+1. **Traditional (Runner-based) Audits**: Single-function audits that execute their logic in one pass. Best for straightforward checks like uptime monitoring or performance scoring.
+
+2. **Step-based Audits**: Multi-step workflows where each step can be processed by different specialized workers. Ideal for complex scenarios requiring different processing capabilities or coordination between multiple services.
 
 Spacecat audits run periodically: weekly, daily, and even hourly. By default, the results of these audits are automatically stored in DynamoDB and sent to the `audit-results-queue`. The results can then be queried by type via [the Spacecat API](https://opensource.adobe.com/spacecat-api-service/#tag/audit).
 
@@ -105,7 +109,23 @@ A Spacecat audit consists of seven steps, six of which are provided by default. 
 
 ## How to create a new Audit
 
-To create a new audit, you'll need to create an audit handler function. This function should accept a `url` and a `context` (see [HelixUniversal](https://github.com/adobe/helix-universal/blob/main/src/adapter.d.ts#L120) ) object as parameters, and it should return an `auditResult` along with `fullAuditRef`. Here's an example:
+When implementing a new audit, first decide which type of audit best suits your needs:
+
+- Choose a **Traditional (Runner-based) Audit** when:
+  - Your audit logic can execute in a single pass
+  - You don't need to coordinate with other specialized workers
+  - The processing time fits within Lambda execution limits
+  - Example: Checking site uptime, collecting CWV metrics
+
+- Choose a **Step-based Audit** when:
+  - Your audit requires multiple specialized processing steps
+  - You need to coordinate with other workers (e.g., content scrapers)
+  - Processing might exceed Lambda execution limits
+  - Example: Content analysis requiring scraping, processing, and analysis steps
+
+### Creating a Traditional Audit
+
+To create a traditional audit, you'll need to create an audit handler function. This function should accept a `url` and a `context` (see [HelixUniversal](https://github.com/adobe/helix-universal/blob/main/src/adapter.d.ts#L120) ) object as parameters, and it should return an `auditResult` along with `fullAuditRef`. Here's an example:
 
 ```js
 export async function auditRunner(url, context) {
@@ -123,6 +143,10 @@ export default new AuditBuilder()
   .build();
 
 ```
+
+### Creating a Step-based Audit
+
+For step-based audits, use the `addStep()` method...
 
 ### How to customize audit steps
 
@@ -444,3 +468,81 @@ The step-based audit implementation includes several validations:
    - Each destination must have valid queue URL and payload formatting
 
 If any validation fails, the audit will throw an error and stop processing.
+
+### Message Flow Example
+
+Here's how messages flow between workers in a step-based audit:
+
+```js
+// 1. Initial trigger message to audit-worker
+{
+  "type": "content-audit",
+  "siteId": "123",
+  "auditContext": {}
+}
+
+// 2. After first step, audit-worker sends to content-scraper
+{
+  "urls": [{ "url": "https://example.com" }],
+  "jobId": "audit-456",
+  "auditContext": {
+    "next": "process",
+    "auditId": "audit-456",
+    "auditType": "content-audit",
+    "fullAuditRef": "s3://content-bucket/123/raw.json"
+  }
+}
+
+// 3. Content-scraper completes, sends to audit-worker
+{
+  "type": "content-audit",
+  "siteId": "123",
+  "auditContext": {
+    "next": "process",
+    "auditId": "audit-456",
+    "auditType": "content-audit",
+    "fullAuditRef": "s3://content-bucket/123/raw.json"
+  }
+}
+
+// 4. Audit-worker processes second step, sends to import-worker
+{
+  "type": "content-import",
+  "siteId": "123",
+  "auditContext": {
+    "next": "analyze",
+    "auditId": "audit-456",
+    "auditType": "content-audit",
+    "fullAuditRef": "s3://content-bucket/123/raw.json"
+  }
+}
+
+// 5. Import-worker completes, sends to audit-worker
+{
+  "type": "content-audit",
+  "siteId": "123",
+  "auditContext": {
+    "next": "analyze",
+    "auditId": "audit-456",
+    "auditType": "content-audit",
+    "fullAuditRef": "s3://content-bucket/123/processed.json"
+  }
+}
+
+// 6. Final step completes, audit-worker sends results
+{
+  "type": "content-audit",
+  "url": "https://example.com",
+  "auditContext": {
+    "auditId": "audit-456",
+    "auditType": "content-audit",
+    "fullAuditRef": "s3://content-bucket/123/processed.json"
+  },
+  "auditResult": {
+    "status": "complete",
+    "findings": [/*...*/]
+  }
+}
+```
+
+Each message preserves the `auditContext` to maintain the step chain. The `next` field determines which step runs next, while `auditId` and `fullAuditRef` track the audit state across workers.
