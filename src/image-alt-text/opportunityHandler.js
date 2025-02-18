@@ -44,8 +44,7 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestions, log 
     }
   }
 }
-// TO-DO: Integrate with
-// https://github.com/adobe/spacecat-audit-worker/blob/main/src/cwv/kpi-metrics.js
+// TO-DO: Implement in https://jira.corp.adobe.com/browse/ASSETS-47371
 const getProjectedMetrics = () => ({
   projectedTrafficLost: 3871,
   projectedTrafficValue: 7355,
@@ -122,7 +121,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       opportunityId: altTextOppty.getId(),
       type: 'CONTENT_UPDATE',
       data: { recommendations: [suggestion] },
-      rank: 1, // They share all the same importance, so what number should we use here?
+      rank: 1,
     })),
     log,
   });

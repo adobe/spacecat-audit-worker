@@ -59,7 +59,7 @@ const HANDLERS = {
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
-  'alt-text': imageAltText, // TO-DO: where is this ID set?
+  'alt-text': imageAltText,
   dummy: (message) => ok(message),
 };
 
