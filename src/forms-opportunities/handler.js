@@ -71,6 +71,7 @@ export default new AuditBuilder()
   // .addStep('formsAuditRunner', formsAuditRunner)
   .addStep('sendUrlsForScraping', async (context) => {
     const { site, audit, log } = context;
+    log.info(`Debug log 0 ${site.getBaseURL()}`);
     const formsAuditRunnerResult = await formsAuditRunner(site.getBaseURL(), context);
     log.info(`Debug log 1 ${JSON.stringify(formsAuditRunnerResult, null, 2)}`);
 
