@@ -1,3 +1,10 @@
+# [1.54.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.53.2...v1.54.0) (2025-02-18)
+
+
+### Features
+
+* audit steps ([#659](https://github.com/adobe/spacecat-audit-worker/issues/659)) ([8b0362d](https://github.com/adobe/spacecat-audit-worker/commit/8b0362dae4c57440d9f786d4dfe74105df2124ca))
+
 ## [1.53.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.53.1...v1.53.2) (2025-02-18)
 
 
