@@ -56,6 +56,17 @@ export class MockContextBuilder {
         setAuditId: this.sandbox.stub(),
         save: this.sandbox.stub(),
       },
+      Suggestion: {
+        bulkUpdateStatus: this.sandbox.stub(),
+        STATUSES: {
+          NEW: 'NEW',
+          APPROVED: 'APPROVED',
+          SKIPPED: 'SKIPPED',
+          FIXED: 'FIXED',
+          ERROR: 'ERROR',
+          OUTDATED: 'OUTDATED',
+        },
+      },
     };
 
     const mockSqs = {

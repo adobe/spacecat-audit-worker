@@ -98,18 +98,16 @@ describe('broken-internal-links audit to opportunity conversion', () => {
   let opportunity;
   let auditData;
 
-  const context = new MockContextBuilder()
-    .withSandbox(sandbox)
-    .withOverrides({
-      runtime: { name: 'aws-lambda', region: 'us-east-1' },
-      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
-      rumApiClient: {
-        query: sinon.stub().resolves(internalLinksData),
-      },
-    })
-    .build();
+  let context;
 
   beforeEach(() => {
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+      })
+      .build();
     context.log = {
       info: sandbox.stub(),
       error: sandbox.stub(),
@@ -207,6 +205,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
       save: sinon.stub(),
       getData: () => (suggestion.data),
       setData: sinon.stub(),
+      getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
     }));
     opportunity.getSuggestions.resolves(existingSuggestions);
 
@@ -216,8 +215,8 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     expect(opportunity.setAuditId).to.have.been.calledOnceWith('audit-id-1');
     expect(opportunity.save).to.have.been.calledOnce;
 
-    // make sure that 1 old suggestion is removed
-    expect(existingSuggestions[1].remove).to.have.been.calledOnce;
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
+      .calledOnceWith([existingSuggestions[1]], context.dataAccess.Suggestion.STATUSES.OUTDATED);
 
     // make sure that 1 existing suggestion is updated
     expect(existingSuggestions[0].setData).to.have.been.calledOnce;

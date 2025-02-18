@@ -17,6 +17,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { retrieveSiteBySiteId, syncSuggestions } from '../../src/utils/data-access.js';
+import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -30,6 +31,17 @@ describe('data-access', () => {
       mockDataAccess = {
         Site: {
           findById: sinon.stub(),
+        },
+        Suggestion: {
+          bulkUpdateStatus: sinon.stub(),
+          STATUSES: {
+            NEW: 'NEW',
+            APPROVED: 'APPROVED',
+            SKIPPED: 'SKIPPED',
+            FIXED: 'FIXED',
+            ERROR: 'ERROR',
+            OUTDATED: 'OUTDATED',
+          },
         },
       };
 
@@ -75,6 +87,9 @@ describe('data-access', () => {
   describe('syncSuggestions', () => {
     let mockOpportunity;
     let mockLogger;
+    let context;
+
+    const sandbox = sinon.createSandbox();
 
     const buildKey = (data) => `${data.key}`;
     const mapNewSuggestion = (data) => ({
@@ -93,6 +108,20 @@ describe('data-access', () => {
         getSiteId: () => 'site-id',
       };
 
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          env: {
+            AHREFS_API_BASE_URL: 'https://ahrefs.com',
+            AHREFS_API_KEY: 'ahrefs-api',
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          },
+          s3Client: {
+            send: sandbox.stub(),
+          },
+        })
+        .build();
+
       mockLogger = {
         error: sinon.spy(),
         info: sinon.spy(),
@@ -103,11 +132,20 @@ describe('data-access', () => {
       const suggestionsData = [{ key: '1' }, { key: '2' }];
       const existingSuggestions = [
         {
-          id: '1', data: suggestionsData[0], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[0]),
+          id: '1',
+          data: suggestionsData[0],
+          remove: sinon.stub(),
+          getData: sinon.stub().returns(suggestionsData[0]),
+          getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
         },
         {
-          id: '2', data: suggestionsData[1], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[1]),
-        }];
+          id: '2',
+          data: suggestionsData[1],
+          remove: sinon.stub(),
+          getData: sinon.stub().returns(suggestionsData[1]),
+          getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
+        },
+      ];
       const newData = [{ key: '3' }, { key: '4' }];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
@@ -116,6 +154,7 @@ describe('data-access', () => {
       await syncSuggestions({
         opportunity: mockOpportunity,
         newData,
+        context,
         buildKey,
         mapNewSuggestion,
         log: mockLogger,
@@ -151,11 +190,13 @@ describe('data-access', () => {
         getData: sinon.stub().returns(suggestionsData[0]),
         setData: sinon.stub(),
         save: sinon.stub(),
+        getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
       }, {
         id: '2',
         data: suggestionsData[1],
         getData: sinon.stub().returns(suggestionsData[1]),
         remove: sinon.stub(),
+        getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
       }];
       const newData = [{ key: '1', title: 'new title' }];
 
@@ -165,6 +206,7 @@ describe('data-access', () => {
       await syncSuggestions({
         opportunity: mockOpportunity,
         newData,
+        context,
         buildKey,
         mapNewSuggestion,
         log: mockLogger,
@@ -173,13 +215,18 @@ describe('data-access', () => {
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
       expect(existingSuggestions[0].save).to.have.been.calledOnce;
-      expect(existingSuggestions[1].remove).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
+        .calledOnceWith([existingSuggestions[1]], context.dataAccess.Suggestion.STATUSES.OUTDATED);
     });
 
     it('should log errors if there are items with errors', async () => {
       const suggestionsData = [{ key: '1' }];
       const existingSuggestions = [{
-        id: '1', data: suggestionsData[0], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[0]),
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
       }];
       const newData = [{ id: '2' }];
 
@@ -193,6 +240,7 @@ describe('data-access', () => {
         await syncSuggestions({
           opportunity: mockOpportunity,
           newData,
+          context,
           buildKey,
           mapNewSuggestion,
           log: mockLogger,
@@ -209,7 +257,11 @@ describe('data-access', () => {
     it('should throw an error if all items fail to be created', async () => {
       const suggestionsData = [{ key: '1' }];
       const existingSuggestions = [{
-        id: '1', data: suggestionsData[0], remove: sinon.stub(), getData: sinon.stub().returns(suggestionsData[0]),
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
       }];
       const newData = [{ id: '2' }];
 
@@ -222,6 +274,7 @@ describe('data-access', () => {
       await expect(syncSuggestions({
         opportunity: mockOpportunity,
         newData,
+        context,
         buildKey,
         mapNewSuggestion,
         log: mockLogger,

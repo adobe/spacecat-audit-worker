@@ -104,6 +104,18 @@ describe('CWVRunner Tests', () => {
         create: sandbox.stub(),
       };
 
+      context.dataAccess.Suggestion = {
+        bulkUpdateStatus: sandbox.stub(),
+        STATUSES: {
+          NEW: 'NEW',
+          APPROVED: 'APPROVED',
+          SKIPPED: 'SKIPPED',
+          FIXED: 'FIXED',
+          ERROR: 'ERROR',
+          OUTDATED: 'OUTDATED',
+        },
+      };
+
       addSuggestionsResponse = {
         createdItems: [],
         errorItems: [],
@@ -178,6 +190,7 @@ describe('CWVRunner Tests', () => {
         save: sinon.stub(),
         getData: () => (suggestion.data),
         setData: sinon.stub(),
+        getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
       }));
       oppty.getSuggestions.resolves(existingSuggestions);
 
@@ -191,7 +204,8 @@ describe('CWVRunner Tests', () => {
       expect(oppty.save).to.have.been.calledOnce;
 
       // make sure that 1 old suggestion is removed
-      expect(existingSuggestions[0].remove).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
+        .calledOnceWith([existingSuggestions[0]], context.dataAccess.Suggestion.STATUSES.OUTDATED);
 
       // make sure that 1 existing suggestion is updated
       expect(existingSuggestions[1].setData).to.have.been.calledOnce;

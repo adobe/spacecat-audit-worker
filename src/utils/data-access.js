@@ -60,6 +60,29 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 }
 
 /**
+ * Handles outdated suggestions by updating their status to OUTDATED.
+ *
+ * @param {Object} params - The parameters for the handleOutdatedSuggestions operation.
+ * @param {Suggestion[]} params.existingSuggestions - The existing suggestions.
+ * @param {Set} params.newDataKeys - The set of new data keys to check for outdated suggestions.
+ * @param {Function} params.buildKey - The function to build a unique key for each suggestion.
+ * @param {Object} params.context - The context object containing the data access object.
+ * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
+ */
+const handleOutdatedSuggestions = async ({
+  existingSuggestions, newDataKeys, buildKey, context,
+}) => {
+  // Check if context is provided
+  if (context) {
+    const { Suggestion } = context.dataAccess;
+    const existingOutdatedSuggestions = existingSuggestions
+      .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
+      .filter((existing) => existing.getStatus() !== Suggestion.STATUSES.OUTDATED);
+    await Suggestion.bulkUpdateStatus(existingOutdatedSuggestions, Suggestion.STATUSES.OUTDATED);
+  }
+};
+
+/**
  * Synchronizes existing suggestions with new data by removing outdated suggestions
  * and adding new ones.
  *
@@ -74,6 +97,7 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 export async function syncSuggestions({
   opportunity,
   newData,
+  context,
   buildKey,
   mapNewSuggestion,
   log,
@@ -81,11 +105,12 @@ export async function syncSuggestions({
   const newDataKeys = new Set(newData.map(buildKey));
   const existingSuggestions = await opportunity.getSuggestions();
   // Remove outdated suggestions
-  await Promise.all(
-    existingSuggestions
-      .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
-      .map((suggestion) => suggestion.remove()),
-  );
+  await handleOutdatedSuggestions({
+    existingSuggestions,
+    newDataKeys,
+    buildKey,
+    context,
+  });
 
   // Update existing suggestions
   await Promise.all(
