@@ -196,7 +196,7 @@ export default class FirefallClient {
     const {
       imageUrls,
       responseFormat,
-      model: llmModel = 'gpt-4-turbo',
+      model: llmModel = 'gpt-4-vision',
     } = options || {};
     const hasImageUrls = imageUrls && imageUrls.length > 0;
 
