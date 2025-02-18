@@ -12,7 +12,7 @@
 
 import { fetch, hasText, stripWWW } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
-import { noopPersister, noopUrlResolver } from '../common/audit.js';
+import { noopPersister, noopUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 
 const CORALOGIX_API_URL = 'https://ng-api-http.coralogix.com/api/v1/dataprime/query';

@@ -15,7 +15,7 @@ import { dateAfterDays } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { noopUrlResolver } from '../common/index.js';
 
 const auditType = Audit.AUDIT_TYPES[404];
 const PAGEVIEW_THRESHOLD = 100;

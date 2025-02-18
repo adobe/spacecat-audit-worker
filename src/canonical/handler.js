@@ -13,7 +13,7 @@
 import { JSDOM } from 'jsdom';
 import { composeBaseURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { noopUrlResolver } from '../common/index.js';
 
 export const CANONICAL_CHECKS = Object.freeze({
   CANONICAL_TAG_EXISTS: {

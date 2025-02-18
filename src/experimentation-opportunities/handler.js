@@ -17,7 +17,7 @@ import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AuditBuilder } from '../common/audit-builder.js';
 import s3Client from '../support/s3-client.js';
-import { wwwUrlResolver } from '../common/audit.js';
+import { wwwUrlResolver } from '../common/index.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
