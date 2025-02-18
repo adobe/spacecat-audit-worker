@@ -19,15 +19,17 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { composeAuditURL, hasText, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
+  BaseAudit,
   defaultMessageSender,
   defaultOrgProvider,
   defaultPersister,
+  defaultPostProcessors,
   defaultSiteProvider,
   defaultUrlResolver,
   noopPersister,
   noopUrlResolver,
   wwwUrlResolver,
-} from '../../src/common/audit.js';
+} from '../../src/common/index.js';
 import { AuditBuilder } from '../../src/common/audit-builder.js';
 import { MockContextBuilder } from '../shared.js';
 import { getUrlWithoutPath } from '../../src/support/utils.js';
@@ -173,7 +175,7 @@ describe('Audit tests', () => {
 
   describe('audit runner', () => {
     it('audit fails when built without a runner', async () => {
-      expect(() => new AuditBuilder().build()).to.throw('"runner" must be a function');
+      expect(() => new AuditBuilder().build()).to.throw('Audit must have either steps or a runner defined');
     });
 
     it('audit run fails when an underlying audit step throws an error', async () => {
@@ -232,7 +234,6 @@ describe('Audit tests', () => {
         auditType: message.type,
         auditResult: { metric: 42 },
         fullAuditRef,
-        id: 'some-audit-id',
       };
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
@@ -344,9 +345,6 @@ describe('Audit tests', () => {
       auditType: message.type,
       auditResult: { metric: 42 },
       fullAuditRef,
-      // Sinon is comparing against the final state of the object because JavaScript
-      //  objects are passed by reference.
-      id: 'some-audit-id',
     });
 
     expect(context.sqs.sendMessage).not.to.have.been.calledOnce;
@@ -371,5 +369,23 @@ describe('Audit tests', () => {
       fullAuditRef: 'hmm',
     });
     expect(hasText(audit.getId())).to.be.true;
+  });
+
+  it('should throw error when run() is not implemented', async () => {
+    class DummyAudit extends BaseAudit {
+      constructor() {
+        super(
+          defaultSiteProvider,
+          defaultOrgProvider,
+          defaultUrlResolver,
+          defaultPersister,
+          defaultMessageSender,
+          defaultPostProcessors,
+        );
+      }
+    }
+
+    const dummyAudit = new DummyAudit();
+    await expect(dummyAudit.run(message, context)).to.be.rejectedWith('Subclasses must implement run()');
   });
 });
