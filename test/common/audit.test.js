@@ -371,14 +371,6 @@ describe('Audit tests', () => {
     expect(hasText(audit.getId())).to.be.true;
   });
 
-  /*
-  add test for:
-   // Abstract method that subclasses must implement
-  // eslint-disable-next-line class-methods-use-this,@typescript-eslint/no-unused-vars
-  async run(message, context) {
-    throw new Error('Subclasses must implement run()');
-  }
-   */
   it('should throw error when run() is not implemented', async () => {
     class DummyAudit extends BaseAudit {
       constructor() {
