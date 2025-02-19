@@ -25,6 +25,8 @@ const FORMS_OPPTY_QUERIES = [
 ];
 
 export async function formsAuditRunner(auditUrl, context) {
+  const { log } = context;
+  log.info(`DEBUG LOG 0 ${auditUrl}`);
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
     domain: auditUrl,
