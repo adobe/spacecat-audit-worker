@@ -42,25 +42,34 @@ export async function syncMetatagsSuggestions({
 
   // Create new suggestions and sync them with existing suggestions
   const newSuggestions = newData
+    // map new audit data to suggestions format
     .map(mapNewSuggestion)
-    .filter((newSuggestion) => {
-      // Skip suggestions that already exist with the same key
+    // update new suggestions with data from existing suggestion of same key
+    .map((newSuggestion) => {
       const existing = existingSuggestionsMap.get(buildKey(newSuggestion.data));
       if (existing) {
-        existingSuggestionsMap.delete(buildKey(newSuggestion.data));
-        return false;
+        return {
+          ...newSuggestion,
+          status: existing.getStatus(),
+          data: {
+            ...newSuggestion.data,
+            ...(existing
+              .getData().aiSuggestion && { aiSuggestion: existing.getData().aiSuggestion }),
+            ...(existing.getData().aiRationale && { aiRationale: existing.getData().aiRationale }),
+            ...(existing.getData().toOverride && { toOverride: existing.getData().toOverride }),
+          },
+        };
       }
-      return true;
+      return newSuggestion;
     });
 
-  // Remove only the suggestions that don't have corresponding new data
-  const suggestionsToRemove = Array.from(existingSuggestionsMap.values());
-  await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
+  // Remove existing suggestions
+  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
 
   // TODO: Skip deleting the suggestions created by BO UI
   //  once the createdBy field is introduced in suggestions schema
 
-  // Add only the new suggestions that don't exist yet
+  // Add new suggestions
   if (newSuggestions.length > 0) {
     const suggestions = await opportunity.addSuggestions(newSuggestions);
 
