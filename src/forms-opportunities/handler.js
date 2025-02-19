@@ -76,7 +76,7 @@ export default new AuditBuilder()
     } = context;
     log.info(`Debug log 0 ${site.getBaseURL()}`);
     log.info(`Debug log 00 ${finalUrl}`);
-    const formsAuditRunnerResult = await formsAuditRunner(site.getBaseURL(), context);
+    const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
     log.info(`Debug log 1 ${JSON.stringify(formsAuditRunnerResult, null, 2)}`);
 
     const { formVitals } = formsAuditRunnerResult.auditResult;
