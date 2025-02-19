@@ -18,8 +18,7 @@ export default async function handler(message, context) {
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { url, guidance, suggestions } = data;
-
-  console.log(`message from mystique: ${JSON.stringify(message, null, 2)}`);
+  log.info(`Message received in high-organic-low-ctr handler: ${JSON.stringify(message, null, 2)}`);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
@@ -78,8 +77,7 @@ export default async function handler(message, context) {
     },
   };
 
-  const suggestion = await Suggestion.create(suggestionData);
-  console.log(`suggestion created: ${JSON.stringify(suggestion, null, 2)}`);
+  await Suggestion.create(suggestionData);
 
   return ok();
 }

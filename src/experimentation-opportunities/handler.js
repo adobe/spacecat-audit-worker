@@ -47,8 +47,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
     return;
   }
 
-  log.info(`Experimentation opportunities audit completed. Audit id: ${auditData.id}`);
-
   const messages = auditResult.experimentationOpportunities?.filter((oppty) => oppty.type === 'high-organic-low-ctr')
     .map((oppty) => ({
       type: 'guidance:high-organic-low-ctr',
