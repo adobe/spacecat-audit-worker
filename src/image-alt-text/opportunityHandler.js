@@ -10,7 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, getPrompt } from '@adobe/spacecat-shared-utils';
+import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 
 /**
@@ -57,7 +58,7 @@ const getProjectedMetrics = () => ({
  * @param context - The context object containing the data access and logger objects.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
-export default async function convertToOpportunity(auditUrl, auditData, context) {
+export default async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
   const { detectedTags } = auditData.auditResult;
@@ -113,6 +114,27 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     pageUrl: new URL(image.pageUrl, auditUrl).toString(),
     imageUrl: new URL(image.src, auditUrl).toString(),
   }));
+
+  const firefallClient = FirefallClient.createFrom(context);
+  const prompt = await getPrompt({}, 'image-alt-text', log);
+  const firefallOptions = {
+    imageUrls: suggestions.map((suggestion) => suggestion.imageUrl),
+  };
+
+  log.info('About to call Firefall for alt-text suggestion generation');
+
+  try {
+    const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
+    log.info('Firefall response for alt-text suggestions', response);
+    if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
+      log.error('No final suggestions found for ');
+    }
+
+    const answer = JSON.parse(response.choices[0].message.content);
+    log.info(`Final suggestion for, ${JSON.stringify(answer)}`, answer);
+  } catch (err) {
+    log.error('Error calling Firefall for alt-text suggestion generation', err);
+  }
 
   log.debug(`Suggestions: ${JSON.stringify(suggestions)}`);
 

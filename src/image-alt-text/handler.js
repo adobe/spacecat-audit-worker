@@ -19,7 +19,7 @@ import {
 import AuditEngine from './auditEngine.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import convertToOpportunity from './opportunityHandler.js';
+import opportunityAndSuggestions from './opportunityHandler.js';
 
 export async function fetchAndProcessPageObject(
   s3Client,
@@ -107,5 +107,5 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditImageAltTextRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([opportunityAndSuggestions])
   .build();
