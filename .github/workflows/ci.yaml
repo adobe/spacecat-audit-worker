@@ -63,7 +63,6 @@ jobs:
           NPM_TOKEN: ${{ secrets.ADOBE_BOT_NPM_TOKEN }}
           AWS_REGION: us-east-1
           AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_PROD}}
-          AWS_API_ID: ${{secrets.AWS_API_ID_PROD}}
 
 
   branch-deploy:
@@ -89,7 +88,6 @@ jobs:
         env:
           AWS_REGION: us-east-1
           AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
-          AWS_API_ID: ${{secrets.AWS_API_ID_DEV}}
 
       - name: Post-Deployment Integration Test
         run: npm run test-postdeploy

@@ -17,8 +17,8 @@
     "semantic-release": "semantic-release",
     "semantic-release-dry": "semantic-release --dry-run --no-ci --branches $CI_BRANCH",
     "build": "hedy -v --test-bundle",
-    "deploy": "hedy -v --deploy --aws-deploy-bucket=spacecat-prod-deploy --pkgVersion=latest --aws-api=${AWS_API_ID}",
-    "deploy-ci": "hedy -v --deploy --pkgVersion=ci$CI_BUILD_NUM -l latest --aws-deploy-bucket=spacecat-dev-deploy --cleanup-ci=24h --aws-api=${AWS_API_ID}",
+    "deploy": "hedy -v --deploy --aws-deploy-bucket=spacecat-prod-deploy --pkgVersion=latest",
+    "deploy-ci": "hedy -v --deploy --pkgVersion=ci$CI_BUILD_NUM -l latest --aws-deploy-bucket=spacecat-dev-deploy --cleanup-ci=24h",
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
     "prepare": "husky"
   },
