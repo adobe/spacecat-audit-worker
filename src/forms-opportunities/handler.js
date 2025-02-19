@@ -90,12 +90,12 @@ export default new AuditBuilder()
     log.info(`Debug log 3 ${Array.from(uniqueUrls)}`);
 
     const result = {
-      auditResult: formsAuditRunnerResult,
-      fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
+      formsAuditRunnerResult,
+      // fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
       // Additional data for content scraper
       processingType: 'form',
       jobId: site.getId(),
-      urls: [{ url: uniqueUrls }],
+      urls: Array.from(uniqueUrls).map((url) => ({ url })),
       siteId: site.getId(),
     };
 
