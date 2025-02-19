@@ -101,7 +101,7 @@ export default new AuditBuilder()
       urls: Array.from(uniqueUrls).map((url) => ({ url })),
       // urls: urlArray,
       siteId: site.getId(),
-      auditContent: {
+      auditContext: {
         next: 'processOpportunity',
         auditId: site.getId(),
         auditType: 'forms-opportunities',
