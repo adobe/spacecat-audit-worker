@@ -173,7 +173,7 @@ describe('Step-based Audit Tests', () => {
 
       // Verify message sent to content scraper
       expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: process.env.CONTENT_SCRAPER_QUEUE_URL,
+        QueueUrl: 'https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-scraping-jobs',
         MessageBody: sinon.match.string,
       });
 
@@ -214,7 +214,7 @@ describe('Step-based Audit Tests', () => {
 
       // Verify message sent to import worker
       expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: process.env.IMPORT_WORKER_QUEUE_URL,
+        QueueUrl: 'https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-scraping-jobs',
         MessageBody: sinon.match.string,
       });
 
