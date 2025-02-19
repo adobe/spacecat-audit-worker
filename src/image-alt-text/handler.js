@@ -94,7 +94,7 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
   const auditResult = {
     detectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
-    fullAuditRef: 'na', // Unclear what value should go here, some use baseURL, some 'na'
+    fullAuditRef: prefix,
     finalUrl: baseURL,
   };
 
