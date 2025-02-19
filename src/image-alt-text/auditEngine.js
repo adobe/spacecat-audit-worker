@@ -27,7 +27,7 @@ export default class AuditEngine {
     }
 
     pageTags.images.forEach((image) => {
-      if (!hasText(image.alt)) {
+      if (!hasText(image.alt?.trim())) {
         this.auditedTags.imagesWithoutAltText.push({
           pageUrl,
           src: image.src,
