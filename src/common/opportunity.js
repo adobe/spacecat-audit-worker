@@ -81,7 +81,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
       opportunity = await Opportunity.create(opportunityData);
       return opportunity;
     } else {
-      if (auditType === Audit.AUDIT_TYPES.METATAGS) {
+      if (auditType === Audit.AUDIT_TYPES.META_TAGS) {
         opportunity.setAuditId(auditData.siteId);
       } else {
         opportunity.setAuditId(auditData.id);
