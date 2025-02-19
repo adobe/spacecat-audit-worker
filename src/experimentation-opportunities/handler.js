@@ -53,7 +53,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
     .map((oppty) => ({
       type: 'guidance:high-organic-low-ctr',
       siteId: auditData.siteId,
-      auditId: auditData.auditId,
+      auditId: auditData.id,
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
