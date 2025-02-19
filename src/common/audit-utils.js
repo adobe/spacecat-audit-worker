@@ -36,6 +36,8 @@ export async function sendContinuationMessage(message, context) {
 
   try {
     const { sqs } = context;
+    log.info(`Debug log 6 ${JSON.stringify(payload, null, 2)}`);
+    log.info(`Debug log 7 ${queueUrl}`);
     await sqs.sendMessage({
       QueueUrl: queueUrl,
       MessageBody: JSON.stringify(payload),
