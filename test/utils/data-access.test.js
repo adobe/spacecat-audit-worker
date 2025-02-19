@@ -34,14 +34,6 @@ describe('data-access', () => {
         },
         Suggestion: {
           bulkUpdateStatus: sinon.stub(),
-          STATUSES: {
-            NEW: 'NEW',
-            APPROVED: 'APPROVED',
-            SKIPPED: 'SKIPPED',
-            FIXED: 'FIXED',
-            ERROR: 'ERROR',
-            OUTDATED: 'OUTDATED',
-          },
         },
       };
 
@@ -125,10 +117,11 @@ describe('data-access', () => {
       mockLogger = {
         error: sinon.spy(),
         info: sinon.spy(),
+        warn: sinon.spy(),
       };
     });
 
-    it('should remove outdated suggestions and add new ones', async () => {
+    it('should handle outdated suggestions and add new ones', async () => {
       const suggestionsData = [{ key: '1' }, { key: '2' }];
       const existingSuggestions = [
         {
@@ -136,14 +129,14 @@ describe('data-access', () => {
           data: suggestionsData[0],
           remove: sinon.stub(),
           getData: sinon.stub().returns(suggestionsData[0]),
-          getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
+          getStatus: sinon.stub().returns('NEW'),
         },
         {
           id: '2',
           data: suggestionsData[1],
           remove: sinon.stub(),
           getData: sinon.stub().returns(suggestionsData[1]),
-          getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
+          getStatus: sinon.stub().returns('NEW'),
         },
       ];
       const newData = [{ key: '3' }, { key: '4' }];
@@ -190,13 +183,13 @@ describe('data-access', () => {
         getData: sinon.stub().returns(suggestionsData[0]),
         setData: sinon.stub(),
         save: sinon.stub(),
-        getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
+        getStatus: sinon.stub().returns('NEW'),
       }, {
         id: '2',
         data: suggestionsData[1],
         getData: sinon.stub().returns(suggestionsData[1]),
         remove: sinon.stub(),
-        getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
+        getStatus: sinon.stub().returns('NEW'),
       }];
       const newData = [{ key: '1', title: 'new title' }];
 
@@ -216,7 +209,41 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
       expect(existingSuggestions[0].save).to.have.been.calledOnce;
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
-        .calledOnceWith([existingSuggestions[1]], context.dataAccess.Suggestion.STATUSES.OUTDATED);
+        .calledOnceWith([existingSuggestions[1]], 'OUTDATED');
+    });
+
+    it('should reopen fixed suggestions', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+        getStatus: sinon.stub().returns('OUTDATED'),
+        setStatus: sinon.stub(),
+      }];
+      const newData = [{ key: '1', title: 'new title' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        log: mockLogger,
+      });
+
+      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+      expect(mockOpportunity.addSuggestions).to.not.have.been.called;
+      expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
+      expect(existingSuggestions[0].setStatus).to.have.been.calledOnceWith('NEW');
+      expect(mockLogger.warn).to.have.been.calledOnceWith('Resolved suggestion found in audit. Possible regression.');
+      expect(existingSuggestions[0].save).to.have.been.calledOnce;
     });
 
     it('should log errors if there are items with errors', async () => {
@@ -226,7 +253,7 @@ describe('data-access', () => {
         data: suggestionsData[0],
         remove: sinon.stub(),
         getData: sinon.stub().returns(suggestionsData[0]),
-        getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
+        getStatus: sinon.stub().returns('NEW'),
       }];
       const newData = [{ id: '2' }];
 
@@ -261,7 +288,7 @@ describe('data-access', () => {
         data: suggestionsData[0],
         remove: sinon.stub(),
         getData: sinon.stub().returns(suggestionsData[0]),
-        getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
+        getStatus: sinon.stub().returns('NEW'),
       }];
       const newData = [{ id: '2' }];
 

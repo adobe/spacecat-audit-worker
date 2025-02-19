@@ -117,6 +117,10 @@ export async function syncSuggestions({
   });
 
   // Update existing suggestions
+  const RESOLVED_STATUSES = [
+    SuggestionDataAccess.STATUSES.OUTDATED,
+    SuggestionDataAccess.STATUSES.FIXED,
+  ];
   await Promise.all(
     existingSuggestions
       .filter((existing) => {
@@ -129,6 +133,10 @@ export async function syncSuggestions({
           ...existing.getData(),
           ...newDataItem,
         });
+        if (RESOLVED_STATUSES.includes(existing.getStatus())) {
+          log.warn('Resolved suggestion found in audit. Possible regression.');
+          existing.setStatus(SuggestionDataAccess.STATUSES.NEW);
+        }
         return existing.save();
       }),
   );

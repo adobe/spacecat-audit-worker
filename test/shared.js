@@ -58,14 +58,6 @@ export class MockContextBuilder {
       },
       Suggestion: {
         bulkUpdateStatus: this.sandbox.stub(),
-        STATUSES: {
-          NEW: 'NEW',
-          APPROVED: 'APPROVED',
-          SKIPPED: 'SKIPPED',
-          FIXED: 'FIXED',
-          ERROR: 'ERROR',
-          OUTDATED: 'OUTDATED',
-        },
       },
     };
 

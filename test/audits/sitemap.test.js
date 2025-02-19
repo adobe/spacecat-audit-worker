@@ -1062,7 +1062,7 @@ describe('Sitemap Audit', () => {
           getData: sinon.stub().returns(suggestionData),
           setData: sinon.stub(),
           save: sinon.stub().resolves(),
-          getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
+          getStatus: sinon.stub().returns('NEW'),
         },
       ];
       context.dataAccess.Opportunity.getSuggestions.resolves(existingSuggestions);
@@ -1081,7 +1081,7 @@ describe('Sitemap Audit', () => {
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
         existingSuggestions,
-        context.dataAccess.Suggestion.STATUSES.OUTDATED,
+        'OUTDATED',
       );
       expect(
         context.dataAccess.Opportunity.addSuggestions,

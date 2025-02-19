@@ -24,6 +24,7 @@ export const brokenBacklinkExistingSuggestions = [{
   rank: 5000,
   data: auditDataMock.auditResult.brokenBacklinks[0],
   remove: sinon.stub(),
+  getStatus: sinon.stub().returns('NEW'),
   getData: sinon.stub().returns(auditDataMock.auditResult.brokenBacklinks[0]),
   setData: sinon.stub(),
   save: sinon.stub(),

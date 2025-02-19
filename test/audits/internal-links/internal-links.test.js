@@ -205,7 +205,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
       save: sinon.stub(),
       getData: () => (suggestion.data),
       setData: sinon.stub(),
-      getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
+      getStatus: sinon.stub().returns('NEW'),
     }));
     opportunity.getSuggestions.resolves(existingSuggestions);
 
@@ -216,7 +216,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     expect(opportunity.save).to.have.been.calledOnce;
 
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
-      .calledOnceWith([existingSuggestions[1]], context.dataAccess.Suggestion.STATUSES.OUTDATED);
+      .calledOnceWith([existingSuggestions[1]], 'OUTDATED');
 
     // make sure that 1 existing suggestion is updated
     expect(existingSuggestions[0].setData).to.have.been.calledOnce;

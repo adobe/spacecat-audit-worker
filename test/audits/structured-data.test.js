@@ -210,7 +210,7 @@ describe('URLInspect Audit', () => {
       getData: sinon.stub().returns(existingSuggestionsData),
       setData: sinon.stub(),
       save: sinon.stub().resolves(),
-      getStatus: sinon.stub().returns(context.dataAccess.Suggestion.STATUSES.NEW),
+      getStatus: sinon.stub().returns('NEW'),
     }];
 
     context.dataAccess.Opportunity.getSuggestions.resolves(existingSuggestions);
@@ -221,7 +221,7 @@ describe('URLInspect Audit', () => {
 
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
       existingSuggestions,
-      context.dataAccess.Suggestion.STATUSES.OUTDATED,
+      'OUTDATED',
     );
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(context.dataAccess.Opportunity.setAuditId).to.have.been.calledOnceWith('audit-id');
