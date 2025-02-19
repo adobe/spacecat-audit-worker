@@ -89,7 +89,7 @@ export default new AuditBuilder()
     }
     log.info(`Debug log 3 ${Array.from(uniqueUrls)}`);
 
-    return {
+    const result = {
       auditResult: formsAuditRunnerResult,
       fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
       // Additional data for content scraper
@@ -98,7 +98,12 @@ export default new AuditBuilder()
       urls: [{ url: uniqueUrls }],
       siteId: site.getId(),
     };
+
+    log.info(`Debug log 4 ${JSON.stringify(result, null, 2)}`);
+
+    return result;
   }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+
   .addStep('processOpportunity', convertToOpportunity)
   // .withUrlResolver(wwwUrlResolver)
   // .withRunner(formsAuditRunner)
