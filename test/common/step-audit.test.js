@@ -60,6 +60,11 @@ describe('Step-based Audit Tests', () => {
 
     context.dataAccess.Site.findById.resolves(site);
     context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+    context.env = {
+      CONTENT_SCRAPER_QUEUE_URL: 'https://space.cat/content-scraper',
+      IMPORT_WORKER_QUEUE_URL: 'https://space.cat/import-worker',
+    };
   });
 
   afterEach(() => {
@@ -173,7 +178,7 @@ describe('Step-based Audit Tests', () => {
 
       // Verify message sent to content scraper
       expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: process.env.CONTENT_SCRAPER_QUEUE_URL,
+        QueueUrl: 'https://space.cat/content-scraper',
         MessageBody: sinon.match.string,
       });
 
@@ -214,7 +219,7 @@ describe('Step-based Audit Tests', () => {
 
       // Verify message sent to import worker
       expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: process.env.IMPORT_WORKER_QUEUE_URL,
+        QueueUrl: 'https://space.cat/import-worker',
         MessageBody: sinon.match.string,
       });
 
