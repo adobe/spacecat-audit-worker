@@ -34,6 +34,8 @@ export async function sendContinuationMessage(message, context) {
   const { log } = context;
   const { queueUrl, payload } = message;
   const queueUrl1 = 'https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-scraping-jobs';
+  const payload1 = JSON.stringify({ payload });
+  log.info(`Debug log 8 ${payload1}`);
 
   try {
     const { sqs } = context;
@@ -42,7 +44,7 @@ export async function sendContinuationMessage(message, context) {
     await sqs.sendMessage({
       // QueueUrl: queueUrl,
       QueueUrl: queueUrl1,
-      MessageBody: JSON.stringify({ payload }),
+      MessageBody: payload1,
     });
   } catch (e) {
     log.error(`Failed to send message to queue ${queueUrl1}`, e);
