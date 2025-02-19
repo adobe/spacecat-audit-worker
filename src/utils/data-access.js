@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { isObject } from '@adobe/spacecat-shared-utils';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Fetches site data based on the given base URL. If no site is found for the given
@@ -77,9 +78,12 @@ const handleOutdatedSuggestions = async ({
     const { Suggestion } = context.dataAccess;
     const existingOutdatedSuggestions = existingSuggestions
       .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
-      .filter((existing) => existing.getStatus() !== Suggestion.STATUSES.OUTDATED);
+      .filter((existing) => existing.getStatus() !== SuggestionDataAccess.STATUSES.OUTDATED);
     log.info(`Outdated suggestions: ${JSON.stringify(existingOutdatedSuggestions)}`);
-    await Suggestion.bulkUpdateStatus(existingOutdatedSuggestions, Suggestion.STATUSES.OUTDATED);
+    await Suggestion.bulkUpdateStatus(
+      existingOutdatedSuggestions,
+      SuggestionDataAccess.STATUSES.OUTDATED,
+    );
   }
 };
 
