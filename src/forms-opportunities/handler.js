@@ -76,6 +76,7 @@ export default new AuditBuilder()
     } = context;
     log.info(`Debug log 0 ${site.getBaseURL()}`);
     log.info(`Debug log 00 ${finalUrl}`);
+    log.info(`Debug log 000 ${audit}`);
     const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
     log.info(`Debug log 1 ${JSON.stringify(formsAuditRunnerResult, null, 2)}`);
 
@@ -86,11 +87,11 @@ export default new AuditBuilder()
     for (const opportunity of formOpportunities) {
       uniqueUrls.add(opportunity.form);
     }
-    log.info(`Debug log 3 ${uniqueUrls}`);
+    log.info(`Debug log 3 ${Array.from(uniqueUrls)}`);
 
     return {
-      auditResult: audit.getAuditResult,
-      fullAuditRef: audit.getFullAuditRef,
+      auditResult: formsAuditRunnerResult,
+      fullAuditRef: finalUrl,
       // Additional data for content scraper
       processingType: 'form',
       jobId: site.getId(),
