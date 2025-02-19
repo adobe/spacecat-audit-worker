@@ -10,11 +10,62 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
-import convertToOpportunity from './opportunityHandler.js';
+import { noopUrlResolver } from '../common/index.js';
+import metatagsAutoSuggest from './metatags-auto-suggest.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { getIssueRanking, removeTrailingSlash, syncMetatagsSuggestions } from './opportunity-handler.js';
+import { DESCRIPTION, H1, TITLE } from './constants.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+
+const auditType = Audit.AUDIT_TYPES.META_TAGS;
+
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
+  const { log } = context;
+  const { detectedTags } = auditData.auditResult;
+  const suggestions = [];
+  // Generate suggestions data to be inserted in meta-tags opportunity suggestions
+  Object.keys(detectedTags)
+    .forEach((endpoint) => {
+      [TITLE, DESCRIPTION, H1].forEach((tag) => {
+        if (detectedTags[endpoint]?.[tag]?.issue) {
+          suggestions.push({
+            ...detectedTags[endpoint][tag],
+            tagName: tag,
+            url: removeTrailingSlash(auditData.auditResult.finalUrl) + endpoint,
+            rank: getIssueRanking(tag, detectedTags[endpoint][tag].issue),
+          });
+        }
+      });
+    });
+
+  const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
+
+  // Sync the suggestions from new audit with old ones
+  await syncMetatagsSuggestions({
+    opportunity,
+    newData: suggestions,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: 'METADATA_UPDATE',
+      rank: suggestion.rank,
+      data: { ...suggestion },
+    }),
+    log,
+  });
+  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+}
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -22,12 +73,17 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
     log.error(`No Scraped tags found in S3 ${key} object`);
     return null;
   }
-  const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
+  let pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
+  // handling for homepage
+  if (pageUrl === '') {
+    pageUrl = '/';
+  }
   return {
     [pageUrl]: {
       title: object.scrapeResult.tags.title,
       description: object.scrapeResult.tags.description,
       h1: object.scrapeResult.tags.h1 || [],
+      s3key: key,
     },
   };
 }
@@ -55,18 +111,21 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   // Perform SEO checks
   const seoChecks = new SeoChecks(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
-    seoChecks.performChecks(pageUrl || '/', pageTags);
+    seoChecks.performChecks(pageUrl, pageTags);
   }
   seoChecks.finalChecks();
-  const detectedTags = seoChecks.getDetectedTags();
-
+  const allTags = {
+    detectedTags: seoChecks.getDetectedTags(),
+    healthyTags: seoChecks.getFewHealthyTags(),
+    extractedTags,
+  };
+  const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
   const auditResult = {
-    detectedTags,
+    detectedTags: updatedDetectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: 'na',
     finalUrl: baseURL,
   };
-
   return {
     auditResult,
     fullAuditRef: baseURL,
@@ -76,5 +135,5 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditMetaTagsRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([opportunityAndSuggestions])
   .build();
