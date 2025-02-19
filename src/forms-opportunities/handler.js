@@ -92,9 +92,9 @@ export default new AuditBuilder()
 
     const result = {
       // auditResult: formsAuditRunnerResult.auditResult,
-      // fullAuditRef: formsAuditRunnerResult.fullAuditRef,
+      fullAuditRef: formsAuditRunnerResult.fullAuditRef,
       auditResult: { status: 'preparing' },
-      fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
+      // fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
       // Additional data for content scraper
       processingType: 'form',
       jobId: site.getId(),
