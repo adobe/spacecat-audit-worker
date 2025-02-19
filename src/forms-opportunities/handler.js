@@ -101,12 +101,13 @@ export default new AuditBuilder()
       urls: Array.from(uniqueUrls).map((url) => ({ url })),
       // urls: urlArray,
       siteId: site.getId(),
-      auditContext: {
-        next: 'processOpportunity',
-        auditId: site.getId(),
-        auditType: 'forms-opportunities',
-        fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
-      },
+      context,
+      // auditContext: {
+      //   next: 'processOpportunity',
+      //   auditId: site.getId(),
+      //   auditType: 'forms-opportunities',
+      //   fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
+      // },
     };
 
     log.info(`Debug log 4: ${JSON.stringify(result, null, 2)}`);
