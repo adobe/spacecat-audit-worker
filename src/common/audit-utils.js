@@ -33,19 +33,19 @@ export async function loadExistingAudit(auditId, context) {
 export async function sendContinuationMessage(message, context) {
   const { log } = context;
   const { queueUrl, payload } = message;
+  const queueUrl1 = 'https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-scraping-jobs';
 
   try {
     const { sqs } = context;
     log.info(`Debug log 6 ${JSON.stringify(payload, null, 2)}`);
     log.info(`Debug log 7 ${queueUrl}`);
-    const queueUrl1 = 'https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-scraping-jobs';
     await sqs.sendMessage({
       // QueueUrl: queueUrl,
       QueueUrl: queueUrl1,
       MessageBody: JSON.stringify(payload),
     });
   } catch (e) {
-    log.error(`Failed to send message to queue ${queueUrl}`, e);
+    log.error(`Failed to send message to queue ${queueUrl1}`, e);
     throw e;
   }
 }
