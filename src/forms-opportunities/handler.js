@@ -90,7 +90,8 @@ export default new AuditBuilder()
     log.info(`Debug log 3 ${Array.from(uniqueUrls)}`);
 
     const result = {
-      formsAuditRunnerResult,
+      auditResult: formsAuditRunnerResult.auditResult,
+      fullAuditRef: formsAuditRunnerResult.fullAuditRef,
       // fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
       // Additional data for content scraper
       processingType: 'form',
