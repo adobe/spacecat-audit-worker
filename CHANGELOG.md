@@ -1,3 +1,10 @@
+# [1.55.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.54.1...v1.55.0) (2025-02-19)
+
+
+### Features
+
+* add image alt-text audit ([#647](https://github.com/adobe/spacecat-audit-worker/issues/647)) ([3e9309a](https://github.com/adobe/spacecat-audit-worker/commit/3e9309a4c7550a8454624f163b68724d8a4bed97))
+
 ## [1.54.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.54.0...v1.54.1) (2025-02-19)
 
 
