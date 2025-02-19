@@ -91,7 +91,7 @@ export default new AuditBuilder()
 
     return {
       auditResult: formsAuditRunnerResult,
-      fullAuditRef: finalUrl,
+      fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
       // Additional data for content scraper
       processingType: 'form',
       jobId: site.getId(),
