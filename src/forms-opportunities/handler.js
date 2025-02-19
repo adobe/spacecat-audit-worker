@@ -13,7 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-// import { wwwUrlResolver } from '../common/index.js';
+import { wwwUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
 import generateOpptyData from './utils.js';
 
@@ -69,7 +69,7 @@ export async function formsAuditRunner(auditUrl, context) {
 
 export default new AuditBuilder()
   // .addStep('formsAuditRunner', formsAuditRunner)
-  // .withUrlResolver(wwwUrlResolver)
+  .withUrlResolver(wwwUrlResolver)
   .addStep('sendUrlsForScraping', async (context) => {
     const { site, audit, log } = context;
     log.info(`Debug log 0 ${site.getBaseURL()}`);
