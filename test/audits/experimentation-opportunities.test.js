@@ -113,7 +113,7 @@ describe('Opportunities Tests', () => {
   describe('post processor tests', () => {
     it('sends messages for each high-organic-low-ctr opportunity to mystique', async () => {
       const auditData = {
-        id: 'some-audit-id',
+        auditId: 'some-audit-id',
         siteId: 'some-site-id',
         auditResult: {
           experimentationOpportunities: [
