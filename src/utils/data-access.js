@@ -71,7 +71,7 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
  * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
  */
 const handleOutdatedSuggestions = async ({
-  existingSuggestions, newDataKeys, buildKey, context, log,
+  existingSuggestions, newDataKeys, buildKey, context,
 }) => {
   // Check if context is provided
   if (context) {
@@ -79,7 +79,6 @@ const handleOutdatedSuggestions = async ({
     const existingOutdatedSuggestions = existingSuggestions
       .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
       .filter((existing) => existing.getStatus() !== SuggestionDataAccess.STATUSES.OUTDATED);
-    log.info(`Outdated suggestions: ${JSON.stringify(existingOutdatedSuggestions)}`);
     await Suggestion.bulkUpdateStatus(
       existingOutdatedSuggestions,
       SuggestionDataAccess.STATUSES.OUTDATED,
@@ -109,15 +108,12 @@ export async function syncSuggestions({
 }) {
   const newDataKeys = new Set(newData.map(buildKey));
   const existingSuggestions = await opportunity.getSuggestions();
-  log.info('Applying outdated suggestions');
-  log.info(`Existing suggestions: ${existingSuggestions.length}`);
   // Remove outdated suggestions
   await handleOutdatedSuggestions({
     existingSuggestions,
     newDataKeys,
     buildKey,
     context,
-    log,
   });
 
   // Update existing suggestions
