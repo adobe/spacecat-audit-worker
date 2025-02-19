@@ -19,6 +19,8 @@ export default async function handler(message, context) {
   const { auditId, siteId, data } = message;
   const { url, guidance, suggestions } = data;
 
+  console.log(`message from mystique: ${JSON.stringify(message, null, 2)}`);
+
   const audit = await Audit.findById(auditId);
   if (!audit) {
     log.warn(`No audit found for auditId: ${auditId}`);
@@ -76,7 +78,8 @@ export default async function handler(message, context) {
     },
   };
 
-  await Suggestion.create(suggestionData);
+  const suggestion = await Suggestion.create(suggestionData);
+  console.log(`suggestion created: ${JSON.stringify(suggestion, null, 2)}`);
 
   return ok();
 }
