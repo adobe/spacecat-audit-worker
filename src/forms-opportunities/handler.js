@@ -101,7 +101,7 @@ export default new AuditBuilder()
       siteId: site.getId(),
     };
 
-    log.info(`Debug log 4 ${JSON.stringify(result, null, 2)}`);
+    log.info(`Debug log 4: ${JSON.stringify(result, null, 2)}`);
 
     return result;
   }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
