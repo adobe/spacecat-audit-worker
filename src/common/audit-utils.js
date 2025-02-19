@@ -42,7 +42,7 @@ export async function sendContinuationMessage(message, context) {
     await sqs.sendMessage({
       // QueueUrl: queueUrl,
       QueueUrl: queueUrl1,
-      MessageBody: JSON.stringify(payload),
+      MessageBody: JSON.stringify({ payload }),
     });
   } catch (e) {
     log.error(`Failed to send message to queue ${queueUrl1}`, e);
