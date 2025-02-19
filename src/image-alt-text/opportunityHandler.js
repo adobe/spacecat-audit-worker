@@ -10,7 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { OPPORTUNITY_TYPES } from './constants.js';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Synchronizes existing suggestions with new data
@@ -29,23 +30,22 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestions, log 
   await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
 
   // Add new suggestions to oppty
-  if (newSuggestions.length > 0) {
+  if (isNonEmptyArray(newSuggestions)) {
     const updateResult = await opportunity.addSuggestions(newSuggestions);
 
-    if (updateResult.errorItems?.length > 0) {
+    if (isNonEmptyArray(updateResult.errorItems)) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
       updateResult.errorItems.forEach((errorItem) => {
         log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
       });
 
-      if (updateResult.createdItems?.length <= 0) {
+      if (!isNonEmptyArray(updateResult.createdItems)) {
         throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
       }
     }
   }
 }
-// TO-DO: Integrate with
-// https://github.com/adobe/spacecat-audit-worker/blob/main/src/cwv/kpi-metrics.js
+// TO-DO: Implement in https://jira.corp.adobe.com/browse/ASSETS-47371
 const getProjectedMetrics = () => ({
   projectedTrafficLost: 3871,
   projectedTrafficValue: 7355,
@@ -68,7 +68,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   try {
     const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
     altTextOppty = opportunities.find(
-      (oppty) => oppty.getType() === OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+      (oppty) => oppty.getType() === Audit.AUDIT_TYPES.ALT_TEXT,
     );
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
@@ -81,7 +81,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
         siteId: auditData.siteId,
         auditId: auditData.id,
         runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
-        type: OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+        type: Audit.AUDIT_TYPES.ALT_TEXT,
         origin: 'AUTOMATION',
         title: 'Missing alt text for images decreases accessibility and discoverability of content',
         description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
@@ -122,7 +122,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       opportunityId: altTextOppty.getId(),
       type: 'CONTENT_UPDATE',
       data: { recommendations: [suggestion] },
-      rank: 1, // They share all the same importance, so what number should we use here?
+      rank: 1,
     })),
     log,
   });

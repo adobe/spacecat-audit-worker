@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray, hasText } from '@adobe/spacecat-shared-utils';
+
 export default class AuditEngine {
   constructor(log) {
     this.log = log;
@@ -19,14 +21,13 @@ export default class AuditEngine {
   }
 
   performPageAudit(pageUrl, pageTags) {
-    if (!pageTags?.images || !Array.isArray(pageTags.images)) {
+    if (!isNonEmptyArray(pageTags?.images)) {
       this.log.warn(`No images found for page ${pageUrl}`);
       return;
     }
 
     pageTags.images.forEach((image) => {
-      const altText = image.alt?.trim();
-      if (!altText) {
+      if (!hasText(image.alt?.trim())) {
         this.auditedTags.imagesWithoutAltText.push({
           pageUrl,
           src: image.src,

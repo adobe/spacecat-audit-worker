@@ -14,7 +14,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { noopUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getIssueRanking, removeTrailingSlash, syncMetatagsSuggestions } from './opportunity-handler.js';

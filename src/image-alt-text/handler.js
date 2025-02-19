@@ -11,15 +11,15 @@
  */
 
 import { JSDOM } from 'jsdom';
+import { hasText } from '@adobe/spacecat-shared-utils';
 import {
   getObjectFromKey,
   getObjectKeysUsingPrefix,
 } from '../utils/s3-utils.js';
 import AuditEngine from './auditEngine.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { noopUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
-import generateSuggestions from './suggestion-helper.js';
 
 export async function fetchAndProcessPageObject(
   s3Client,
@@ -29,7 +29,7 @@ export async function fetchAndProcessPageObject(
   log,
 ) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
-  if (!object?.scrapeResult?.rawBody) {
+  if (!hasText(object?.scrapeResult?.rawBody)) {
     log.error(`No raw HTML content found in S3 ${key} object`);
     return null;
   }
@@ -94,7 +94,7 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
   const auditResult = {
     detectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
-    fullAuditRef: 'na', // Unclear what value should go here, some use baseURL, some 'na'
+    fullAuditRef: prefix,
     finalUrl: baseURL,
   };
 
@@ -107,5 +107,5 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditImageAltTextRunner)
-  .withPostProcessors([convertToOpportunity, generateSuggestions])
+  .withPostProcessors([convertToOpportunity])
   .build();

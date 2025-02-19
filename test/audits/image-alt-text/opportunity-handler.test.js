@@ -13,8 +13,8 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
-import { OPPORTUNITY_TYPES } from '../../../src/image-alt-text/constants.js';
 
 describe('Image Alt Text Opportunity Handler', () => {
   let logStub;
@@ -35,7 +35,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       addSuggestions: sinon
         .stub()
         .returns({ errorItems: [], createdItems: [1] }),
-      getType: () => OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+      getType: () => Audit.AUDIT_TYPES.ALT_TEXT,
       getSiteId: () => 'site-id',
     };
 
@@ -81,7 +81,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       auditId: 'audit-id',
       runbook:
         'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
-      type: OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+      type: Audit.AUDIT_TYPES.ALT_TEXT,
       origin: 'AUTOMATION',
       title:
         'Missing alt text for images decreases accessibility and discoverability of content',
