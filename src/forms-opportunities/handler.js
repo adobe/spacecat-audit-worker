@@ -69,6 +69,7 @@ export async function formsAuditRunner(auditUrl, context) {
 
 export default new AuditBuilder()
   // .addStep('formsAuditRunner', formsAuditRunner)
+  // .withUrlResolver(wwwUrlResolver)
   .addStep('sendUrlsForScraping', async (context) => {
     const { site, audit, log } = context;
     log.info(`Debug log 0 ${site.getBaseURL()}`);
