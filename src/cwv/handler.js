@@ -11,25 +11,28 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { wwwUrlResolver } from '../common/audit.js';
+import { wwwUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
-const AUDIT_TYPE = 'cwv';
+const auditType = Audit.AUDIT_TYPES.CWV;
 
 export async function CWVRunner(auditUrl, context, site) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const groupedURLs = site.getConfig().getGroupedURLs(AUDIT_TYPE);
+  const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const options = {
     domain: auditUrl,
     interval: INTERVAL,
     granularity: 'hourly',
     groupedURLs,
   };
-  const cwvData = await rumAPIClient.query(AUDIT_TYPE, options);
+  const cwvData = await rumAPIClient.query(auditType, options);
   const auditResult = {
     cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
     auditContext: {
@@ -43,64 +46,18 @@ export async function CWVRunner(auditUrl, context, site) {
   };
 }
 
-export async function convertToOppty(auditUrl, auditData, context, site) {
-  const {
-    dataAccess,
-    log,
-  } = context;
-  const { Opportunity } = dataAccess;
-  const groupedURLs = site.getConfig().getGroupedURLs(AUDIT_TYPE);
-
-  log.info(`auditUrl: ${auditUrl}`);
-  log.info(`auditData: ${JSON.stringify(auditData)}`);
-
-  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  log.info(`opportunities: ${JSON.stringify(opportunities)}`);
-
-  let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-  log.info(`opportunity: ${JSON.stringify(opportunity)}`);
-
-  const kpiDeltas = calculateKpiDeltasForAudit(auditData, dataAccess, groupedURLs);
-  if (!opportunity) {
-    const opportunityData = {
-      siteId: auditData.siteId,
-      auditId: auditData.id,
-      runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_CWV_Runbook.docx?web=1',
-      type: AUDIT_TYPE,
-      origin: 'AUTOMATION',
-      title: 'Core Web Vitals',
-      description: 'Core Web Vitals are key metrics Google uses to evaluate website performance, impacting SEO rankings by measuring user experience.',
-      guidance: {
-        steps: [
-          'Analyze CWV data using RUM and PageSpeed Insights to identify performance bottlenecks.',
-          'Optimize CWV metrics (CLS, INP, LCP) by addressing common issues such as slow server response times, unoptimized assets, excessive JavaScript, and layout instability.',
-          'Test the implemented changes with tools like Chrome DevTools or PageSpeed Insights to verify improvements.',
-          'Monitor performance over time to ensure consistent CWV scores across devices.',
-        ],
-      },
-      tags: [
-        'Traffic acquisition',
-        'Engagement',
-      ],
-      data: {
-        ...kpiDeltas,
-      },
-    };
-    try {
-      opportunity = await Opportunity.create(opportunityData);
-    } catch (e) {
-      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
-      throw e;
-    }
-  } else {
-    opportunity.setAuditId(auditData.id);
-    opportunity.setData({
-      ...opportunity.getData(),
-      ...kpiDeltas,
-    });
-    await opportunity.save();
-  }
-
+export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
+  const groupedURLs = site.getConfig().getGroupedURLs(auditType);
+  const kpiDeltas = calculateKpiDeltasForAudit(auditData, context, groupedURLs);
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+    kpiDeltas,
+  );
+  const { log } = context;
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
   const maxOrganicForUrls = Math.max(...auditData.auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews));
@@ -129,5 +86,5 @@ export async function convertToOppty(auditUrl, auditData, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(CWVRunner)
-  .withPostProcessors([convertToOppty])
+  .withPostProcessors([opportunityAndSuggestions])
   .build();

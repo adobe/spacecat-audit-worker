@@ -12,7 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { wwwUrlResolver } from '../common/audit.js';
+import { wwwUrlResolver } from '../common/index.js';
 
 const DAYS = 7;
 
@@ -39,7 +39,7 @@ function processRageClickOpportunities(opportunities) {
     });
 }
 
-export async function postProcessor(auditUrl, auditData, context, site) {
+export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
   const { log, sqs, env } = context;
   const { auditResult, isError = false } = auditData;
   if (isError) {
@@ -101,6 +101,6 @@ export async function handler(auditUrl, context) {
 export default new AuditBuilder()
   .withRunner(handler)
   .withUrlResolver(wwwUrlResolver)
-  .withPostProcessors([postProcessor])
+  .withPostProcessors([opportunityAndSuggestions])
   .withMessageSender(() => true)
   .build();

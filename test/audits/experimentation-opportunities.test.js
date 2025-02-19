@@ -19,7 +19,7 @@ import nock from 'nock';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/experimentation-opportunities/opportunitiesdata.json' with { type: 'json' };
 import expectedOpportunitiesData from '../fixtures/experimentation-opportunities/expected-opportunities-data.json' with { type: 'json' };
-import { handler, postProcessor } from '../../src/experimentation-opportunities/experimentation-opportunities.js';
+import { handler, opportunityAndSuggestions } from '../../src/experimentation-opportunities/handler.js';
 
 use(sinonChai);
 
@@ -137,7 +137,7 @@ describe('Opportunities Tests', () => {
         },
       };
 
-      await postProcessor(url, auditData, context, site);
+      await opportunityAndSuggestions(url, auditData, context, site);
 
       expect(context.sqs.sendMessage).to.have.been.calledTwice;
 
@@ -181,7 +181,7 @@ describe('Opportunities Tests', () => {
         },
       };
 
-      await postProcessor(url, auditData, context);
+      await opportunityAndSuggestions(url, auditData, context);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
@@ -194,7 +194,7 @@ describe('Opportunities Tests', () => {
         auditResult: {
         },
       };
-      await postProcessor(url, auditData, context);
+      await opportunityAndSuggestions(url, auditData, context);
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
   });
