@@ -141,7 +141,7 @@ describe('Audit Utils Tests', () => {
         .to.be.rejectedWith('SQS error');
 
       expect(context.log.error).to.have.been.calledWith(
-        `Failed to send message to queue ${message.queueUrl}`,
+        'Failed to send message to queue https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-scraping-jobs',
         sinon.match.instanceOf(Error),
       );
     });
