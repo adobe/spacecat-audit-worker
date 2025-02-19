@@ -88,6 +88,7 @@ export default new AuditBuilder()
       uniqueUrls.add(opportunity.form);
     }
     log.info(`Debug log 3 ${Array.from(uniqueUrls)}`);
+    const urlArray = Array.from(uniqueUrls);
 
     const result = {
       // auditResult: formsAuditRunnerResult.auditResult,
@@ -97,7 +98,8 @@ export default new AuditBuilder()
       // Additional data for content scraper
       processingType: 'form',
       jobId: site.getId(),
-      urls: Array.from(uniqueUrls).map((url) => ({ url })),
+      // urls: Array.from(uniqueUrls).map((url) => ({ url })),
+      urls: urlArray,
       siteId: site.getId(),
     };
 
