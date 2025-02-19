@@ -41,9 +41,13 @@ function processRageClickOpportunities(opportunities) {
 
 export async function postProcessor(auditUrl, auditData, context, site) {
   const { log, sqs, env } = context;
-  const { auditResult } = auditData;
+  const { auditResult, isError = false } = auditData;
+  if (isError) {
+    log.error(`Experimentation opportunities audit failed for ${auditUrl}. AuditRef: ${auditResult.fullAuditRef}`);
+    return;
+  }
 
-  const messages = auditResult.experimentationOpportunities.filter((oppty) => oppty.type === 'high-organic-low-ctr')
+  const messages = auditResult.experimentationOpportunities?.filter((oppty) => oppty.type === 'high-organic-low-ctr')
     .map((oppty) => ({
       type: 'guidance:high-organic-low-ctr',
       siteId: auditData.siteId,

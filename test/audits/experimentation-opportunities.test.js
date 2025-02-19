@@ -185,5 +185,17 @@ describe('Opportunities Tests', () => {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
+
+    it('should not send SQS messages if audit failed', async () => {
+      const auditData = {
+        id: 'some-audit-id',
+        siteId: 'some-site-id',
+        isError: true,
+        auditResult: {
+        },
+      };
+      await postProcessor(url, auditData, context);
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
   });
 });
