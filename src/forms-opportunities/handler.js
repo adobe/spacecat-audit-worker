@@ -81,11 +81,12 @@ export default new AuditBuilder()
 
     const { formVitals } = formsAuditRunnerResult.auditResult;
     const formOpportunities = generateOpptyData(formVitals);
-    log.info(`Debug log 2 ${JSON.stringify(formsAuditRunnerResult, null, 2)}`);
+    log.info(`Debug log 2 ${JSON.stringify(formOpportunities, null, 2)}`);
     const uniqueUrls = new Set();
     for (const opportunity of formOpportunities) {
       uniqueUrls.add(opportunity.form);
     }
+    log.info(`Debug log 3 ${uniqueUrls}`);
 
     return {
       auditResult: audit.getAuditResult,
