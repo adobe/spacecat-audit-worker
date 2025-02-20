@@ -123,9 +123,8 @@ describe('Audit Utils Tests', () => {
       await sendContinuationMessage(message, context);
 
       expect(context.sqs.sendMessage).to.have.been.calledWith({
-        // QueueUrl: message.queueUrl,
-        QueueUrl: 'https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-scraping-jobs',
-        MessageBody: JSON.stringify({ payload: message.payload }),
+        QueueUrl: message.queueUrl,
+        MessageBody: JSON.stringify(message.payload),
       });
     });
 
@@ -141,7 +140,7 @@ describe('Audit Utils Tests', () => {
         .to.be.rejectedWith('SQS error');
 
       expect(context.log.error).to.have.been.calledWith(
-        'Failed to send message to queue https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-scraping-jobs',
+        `Failed to send message to queue ${message.queueUrl}`,
         sinon.match.instanceOf(Error),
       );
     });

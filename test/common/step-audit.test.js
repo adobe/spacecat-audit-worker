@@ -173,22 +173,19 @@ describe('Step-based Audit Tests', () => {
 
       // Verify message sent to content scraper
       expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: 'https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-scraping-jobs',
+        QueueUrl: process.env.CONTENT_SCRAPER_QUEUE_URL,
         MessageBody: sinon.match.string,
       });
 
       const sentMessage = JSON.parse(context.sqs.sendMessage.firstCall.args[0].MessageBody);
       expect(sentMessage).to.deep.include({
-        payload: {
-          urls: [{ url: baseURL }],
-          jobId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
-          processingType: 'default',
-          auditContext: {
-            next: 'process',
-            auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
-            auditType: 'content-audit',
-            fullAuditRef: 's3://test/123',
-          },
+        urls: [{ url: baseURL }],
+        jobId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'process',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+          auditType: 'content-audit',
+          fullAuditRef: 's3://test/123',
         },
       });
     });
@@ -217,21 +214,19 @@ describe('Step-based Audit Tests', () => {
 
       // Verify message sent to import worker
       expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: 'https://sqs.us-east-1.amazonaws.com/282898975672/spacecat-scraping-jobs',
+        QueueUrl: process.env.IMPORT_WORKER_QUEUE_URL,
         MessageBody: sinon.match.string,
       });
 
       const sentMessage = JSON.parse(context.sqs.sendMessage.firstCall.args[0].MessageBody);
       expect(sentMessage).to.deep.include({
-        payload: {
-          type: 'content-import',
-          siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
-          auditContext: {
-            next: 'analyze',
-            auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
-            auditType: 'content-audit',
-            fullAuditRef: 's3://test/123',
-          },
+        type: 'content-import',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'analyze',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+          auditType: 'content-audit',
+          fullAuditRef: 's3://test/123',
         },
       });
     });
