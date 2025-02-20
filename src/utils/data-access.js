@@ -84,10 +84,12 @@ const handleOutdatedSuggestions = async ({
         SuggestionDataAccess.STATUSES.ERROR,
         SuggestionDataAccess.STATUSES.SKIPPED,
       ].includes(existing.getStatus()));
-    await Suggestion.bulkUpdateStatus(
-      existingOutdatedSuggestions,
-      SuggestionDataAccess.STATUSES.OUTDATED,
-    );
+    if (existingOutdatedSuggestions.length > 0) {
+      await Suggestion.bulkUpdateStatus(
+        existingOutdatedSuggestions,
+        SuggestionDataAccess.STATUSES.OUTDATED,
+      );
+    }
   }
 };
 
