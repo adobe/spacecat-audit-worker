@@ -65,7 +65,6 @@ export async function sendContinuationMessage(message, context) {
 
     await sqs.sendMessage(queueUrl, payload);
 
-    // await sqs.sendMessage({
     //   QueueUrl: queueUrl,
     //   MessageBody: JSON.stringify(payload1),
     // });

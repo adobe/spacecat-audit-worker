@@ -78,7 +78,7 @@ export class StepAudit extends BaseAudit {
 
     log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${this.type}, message sent to ${step.destination}`);
 
-    return stepResult;
+    return ok(stepResult);
   }
 
   async run(message, context) {
