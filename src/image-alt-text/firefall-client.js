@@ -135,7 +135,6 @@ export default class FirefallClient {
     });
 
     if (!response.ok) {
-      this.log.info('response:', response);
       throw new Error(`Job submission failed with status code ${response.status}`);
     }
 
@@ -196,7 +195,7 @@ export default class FirefallClient {
     const {
       imageUrls,
       responseFormat,
-      model: llmModel = 'gpt-4-vision',
+      model: llmModel = 'gpt-4-turbo',
     } = options || {};
     const hasImageUrls = imageUrls && imageUrls.length > 0;
 
