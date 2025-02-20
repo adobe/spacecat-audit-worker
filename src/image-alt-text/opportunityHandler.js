@@ -117,12 +117,12 @@ export default async function opportunityAndSuggestions(auditUrl, auditData, con
 
   const firefallClient = FirefallClient.createFrom(context);
   const prompt = await getPrompt({}, 'image-alt-text', log);
+  log.info('About to call Firefall with images', suggestions.map((suggestion) => suggestion.imageUrl));
+  log.info('and prompt', prompt);
   const firefallOptions = {
     imageUrls: suggestions.map((suggestion) => suggestion.imageUrl),
     model: 'gpt-4-vision',
   };
-
-  log.info('About to call Firefall for alt-text suggestion generations');
 
   try {
     const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);

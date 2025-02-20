@@ -234,6 +234,9 @@ export default class FirefallClient {
         ],
       };
       if (responseFormat === JSON_OBJECT_RESPONSE_FORMAT) {
+        this.log.error(
+          'I should not be here',
+        );
         body.response_format = {
           type: JSON_OBJECT_RESPONSE_FORMAT,
         };
