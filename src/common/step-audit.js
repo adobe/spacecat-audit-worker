@@ -99,6 +99,7 @@ export class StepAudit extends BaseAudit {
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
+      log.info(`debug log 13 ${step}`);
       const stepContext = { ...context, site };
 
       // For subsequent steps, load existing audit
@@ -111,6 +112,7 @@ export class StepAudit extends BaseAudit {
 
       // Run the step
       const stepResult = await step.handler(stepContext);
+      log.info(`debug log 14 ${stepResult}`);
       let response = ok();
 
       if (!hasNext) {
