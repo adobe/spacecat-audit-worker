@@ -212,7 +212,13 @@ describe('Step-based Audit Tests', () => {
         },
       };
 
-      await audit.run(continueMessage, context);
+      const result = await audit.run(continueMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(await result.json()).to.deep.equal({
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        type: 'content-import',
+      });
 
       // Verify no new audit record is created
       expect(context.dataAccess.Audit.create).not.to.have.been.called;
