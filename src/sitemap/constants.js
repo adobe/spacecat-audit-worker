@@ -10,11 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-// chrome mac browser agent
-export const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
-
-// spacecat user agent
-export const SPACECAT_USER_AGENT = 'spacecat/1.0';
+// chrome mac browser agent and spacecat version
+export const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Spacecat/1.0';
 
 // sitemap error codes
 export const ERROR_CODES = Object.freeze({
