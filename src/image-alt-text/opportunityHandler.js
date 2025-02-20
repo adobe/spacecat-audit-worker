@@ -11,7 +11,7 @@
  */
 
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { OPPORTUNITY_TYPES } from './constants.js';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Synchronizes existing suggestions with new data
@@ -68,7 +68,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   try {
     const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
     altTextOppty = opportunities.find(
-      (oppty) => oppty.getType() === OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+      (oppty) => oppty.getType() === Audit.AUDIT_TYPES.ALT_TEXT,
     );
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
@@ -81,7 +81,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
         siteId: auditData.siteId,
         auditId: auditData.id,
         runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
-        type: OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+        type: Audit.AUDIT_TYPES.ALT_TEXT,
         origin: 'AUTOMATION',
         title: 'Missing alt text for images decreases accessibility and discoverability of content',
         description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',

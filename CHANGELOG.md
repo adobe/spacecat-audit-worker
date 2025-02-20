@@ -1,3 +1,10 @@
+## [1.55.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.0...v1.55.1) (2025-02-19)
+
+
+### Bug Fixes
+
+* guidance high organic low ctr ([#620](https://github.com/adobe/spacecat-audit-worker/issues/620)) ([3ae0969](https://github.com/adobe/spacecat-audit-worker/commit/3ae096959f65b734ca6fc6adea71daf119dce964))
+
 # [1.55.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.54.1...v1.55.0) (2025-02-19)
 
 
