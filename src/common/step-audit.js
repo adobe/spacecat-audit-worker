@@ -113,7 +113,7 @@ export class StepAudit extends BaseAudit {
 
       // Run the step
       const stepResult = await step.handler(stepContext);
-      log.info(`debug log 14 ${stepResult}`);
+      log.info(`Step ${stepName} execution result: ${JSON.stringify(stepResult)}`);
       let response = ok();
 
       if (!hasNext) {
