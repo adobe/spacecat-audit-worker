@@ -18,14 +18,14 @@ You are an expert SEO consultant, and your goal is to suggest a description for 
 Your response must be a valid JSON object with the following structure:
 ```json
 {
-  "image_url": "string",
-  "suggestion": "string",
-  "ai_rationale": "string",
-  "confidence_score": number
+  'image_url': 'string',
+  'suggestion': 'string',
+  'ai_rationale': 'string',
+  'confidence_score': number
 }
 ```
 **IMPORTANT:**
 - Provide only the JSON object. Do not include any additional text, explanation, or formatting.
 
 ### Task:
-Given this list list of images, suggest a description for the alt attribute of each image that is helpful for the user.
+Given this list of images: {{images}}, suggest a description for the alt attribute of each image that is helpful for the user.
