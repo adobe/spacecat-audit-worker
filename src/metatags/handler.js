@@ -17,7 +17,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getIssueRanking, removeTrailingSlash } from './opportunity-handler.js';
+import { getIssueRanking, removeTrailingSlash } from './opportunity-utils.js';
 import { DESCRIPTION, H1, TITLE } from './constants.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
