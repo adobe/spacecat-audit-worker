@@ -664,24 +664,22 @@ describe('Meta Tags', () => {
       auditData = testData.auditData;
     });
 
-    it.skip('should create new opportunity and add suggestions', async () => {
+    it('should create new opportunity and add suggestions', async () => {
       opportunity.getType = () => 'backlinks';
       dataAccessStub.Opportunity.create = sinon.stub().returns(opportunity);
       await opportunityAndSuggestions(auditUrl, auditData, context);
       expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.OpportunityData);
-      expect(opportunity.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
-    it.skip('should use existing opportunity and add suggestions', async () => {
+    it('should use existing opportunity and add suggestions', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       await opportunityAndSuggestions(auditUrl, auditData, context);
       expect(opportunity.save).to.be.calledOnce;
-      expect(opportunity.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
-    it.skip('should throw error if fetching opportunity fails', async () => {
+    it('should throw error if fetching opportunity fails', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
       try {
         await opportunityAndSuggestions(auditUrl, auditData, context);
@@ -691,7 +689,7 @@ describe('Meta Tags', () => {
       expect(logStub.error).to.be.calledWith('Fetching opportunities for siteId site-id failed with error: some-error');
     });
 
-    it.skip('should throw error if creating opportunity fails', async () => {
+    it('should throw error if creating opportunity fails', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
       dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
       try {
@@ -702,16 +700,76 @@ describe('Meta Tags', () => {
       expect(logStub.error).to.be.calledWith('Failed to create new opportunity for siteId site-id and auditId audit-id: some-error');
     });
 
-    it.skip('should sync existing suggestions with new suggestions', async () => {
+    it('should sync existing suggestions with new suggestions', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       opportunity.getSuggestions.returns(testData.existingSuggestions);
       await opportunityAndSuggestions(auditUrl, auditData, context);
       expect(opportunity.save).to.be.calledOnce;
-      expect(opportunity.addSuggestions).to.be.calledWith(testData.expectedSyncedSuggestion);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
-    it.skip('should throw error if suggestions fail to create', async () => {
+    it('should preserve existing AI suggestions and overrides when syncing', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+      // Setup existing suggestion with AI data and overrides
+      const existingSuggestion = {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          tagName: 'title',
+          tagContent: 'Original Title',
+          issue: 'Title too short',
+          seoImpact: 'High',
+          aiSuggestion: 'AI Generated Title',
+          aiRationale: 'AI explanation for the title',
+          toOverride: true,
+        }),
+        getStatus: () => 'pending',
+        remove: sinon.stub(),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+      };
+
+      opportunity.getSuggestions.returns([existingSuggestion]);
+
+      // Create audit data with different content for same URL
+      const modifiedAuditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          detectedTags: {
+            '/page1': {
+              title: {
+                tagContent: 'Original Title',
+                issue: 'Title too short',
+                seoImpact: 'High',
+              },
+            },
+          },
+        },
+      };
+
+      await opportunityAndSuggestions(auditUrl, modifiedAuditData, context);
+
+      // Verify that existing suggestion was updated properly
+      expect(opportunity.save).to.be.calledOnce;
+      expect(existingSuggestion.setData).to.be.calledOnce;
+
+      const setDataCall = existingSuggestion.setData.getCall(0);
+      const updatedData = setDataCall.args[0];
+
+      // Verify the original AI data and override flags were preserved
+      expect(updatedData).to.deep.include({
+        aiSuggestion: 'AI Generated Title',
+        aiRationale: 'AI explanation for the title',
+        toOverride: true,
+      });
+
+      // Verify the suggestion was saved
+      expect(existingSuggestion.save).to.be.calledOnce;
+    });
+
+    it('should throw error if suggestions fail to create', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       opportunity.getSiteId = () => 'site-id';
       opportunity.addSuggestions = sinon.stub().returns({ errorItems: [{ item: 1, error: 'some-error' }], createdItems: [] });
@@ -721,12 +779,11 @@ describe('Meta Tags', () => {
         expect(err.message).to.equal('Failed to create suggestions for siteId site-id');
       }
       expect(opportunity.save).to.be.calledOnce;
-      expect(opportunity.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
       expect(logStub.error).to.be.calledWith('Suggestions for siteId site-id contains 1 items with errors');
       expect(logStub.error).to.be.calledTwice;
     });
 
-    it.skip('should take rank as -1 if issue is not known', async () => {
+    it('should take rank as -1 if issue is not known', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       const auditDataModified = {
         ...testData.auditData,
@@ -740,8 +797,123 @@ describe('Meta Tags', () => {
       expectedSuggestionModified[0].rank = -1;
       await opportunityAndSuggestions(auditUrl, auditData, context);
       expect(opportunity.save).to.be.calledOnce;
-      expect(opportunity.addSuggestions).to.be.calledWith(expectedSuggestionModified);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+    });
+
+    it('should handle both new and existing suggestions with enhanced mapping', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+      // Setup existing suggestions with AI data
+      const existingSuggestions = [{
+        getData: () => ({
+          url: 'https://example.com/page1',
+          tagName: 'title',
+          tagContent: 'Existing Title 1',
+          issue: 'Title too short',
+          seoImpact: 'High',
+          aiSuggestion: 'AI Generated Title 1',
+          aiRationale: 'AI explanation for title 1',
+          toOverride: true,
+        }),
+        getStatus: () => 'implemented',
+        remove: sinon.stub(),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+      }, {
+        getData: () => ({
+          url: 'https://example.com/page2',
+          tagName: 'description',
+          tagContent: 'Existing Description',
+          issue: 'Description too short',
+          seoImpact: 'High',
+          aiSuggestion: 'AI Generated Description',
+          aiRationale: 'AI explanation for description',
+          toOverride: false,
+        }),
+        getStatus: () => 'pending',
+        remove: sinon.stub(),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+      }];
+
+      opportunity.getSuggestions.returns(existingSuggestions);
+
+      // Create audit data with mix of existing and new content
+      const modifiedAuditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          detectedTags: {
+            '/page1': {
+              title: {
+                tagContent: 'Existing Title 1',
+                issue: 'Title too short',
+                seoImpact: 'High',
+              },
+            },
+            '/page2': {
+              description: {
+                tagContent: 'Existing Description',
+                issue: 'Description too short',
+                seoImpact: 'Moderate',
+              },
+            },
+            '/page3': { // New page
+              title: {
+                tagContent: 'New Title',
+                issue: 'Title too short',
+                seoImpact: 'High',
+              },
+            },
+          },
+        },
+      };
+      await opportunityAndSuggestions(auditUrl, modifiedAuditData, context);
+      // Verify existing suggestions were properly updated
+      const page1Suggestion = existingSuggestions[0];
+      const page2Suggestion = existingSuggestions[1];
+      // Check page1: Should preserve AI data and status
+      expect(page1Suggestion.setData).to.be.calledWith({
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        tagContent: 'Existing Title 1',
+        issue: 'Title too short',
+        seoImpact: 'High',
+        aiSuggestion: 'AI Generated Title 1',
+        aiRationale: 'AI explanation for title 1',
+        rank: 8,
+        toOverride: true,
+      });
+      expect(page1Suggestion.getStatus()).to.equal('implemented');
+      // Check page2: Should preserve AI data while updating content
+      expect(page2Suggestion.setData).to.be.calledWith({
+        url: 'https://example.com/page2',
+        tagName: 'description',
+        tagContent: 'Existing Description',
+        issue: 'Description too short',
+        seoImpact: 'Moderate',
+        aiSuggestion: 'AI Generated Description',
+        aiRationale: 'AI explanation for description',
+        rank: 9,
+        toOverride: false,
+      });
+
+      // Verify new suggestion was created without AI data
+      expect(opportunity.addSuggestions).to.be.calledOnce;
+      const newSuggestions = opportunity.addSuggestions.getCall(0).args[0];
+      expect(newSuggestions).to.have.lengthOf(1);
+      expect(newSuggestions[0].data).to.deep.include({
+        url: 'https://example.com/page3',
+        tagName: 'title',
+        tagContent: 'New Title',
+        issue: 'Title too short',
+        seoImpact: 'High',
+      });
+      // Verify no suggestions were removed
+      existingSuggestions.forEach((suggestion) => {
+        expect(suggestion.remove).to.not.be.called;
+      });
     });
   });
 

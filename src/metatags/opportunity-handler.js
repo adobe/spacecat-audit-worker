@@ -10,62 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { syncSuggestions } from '../utils/data-access.js';
-
 export function removeTrailingSlash(url) {
   return url.endsWith('/') ? url.slice(0, -1) : url;
-}
-
-/**
- * Synchronizes existing suggestions with new data
- * by removing outdated suggestions and adding new ones.
- *
- * @param {Object} params - The parameters for the sync operation.
- * @param {Object} params.opportunity - The opportunity object to synchronize suggestions for.
- * @param {Array} params.newData - Array of new data objects to sync.
- * @param {Function} params.buildKey - Function to generate a unique key for each item.
- * @param {Function} params.mapNewSuggestion - Function to map new data to suggestion objects.
- * @param {Object} params.log - Logger object for error reporting.
- * @returns {Promise<void>} - Resolves when the synchronization is complete.
- */
-export async function syncMetatagsSuggestions({
-  opportunity,
-  newData,
-  buildKey,
-  mapNewSuggestion,
-  log,
-}) {
-  // Create a wrapper for mapNewSuggestion that preserves existing fields
-  const existingSuggestions = await opportunity.getSuggestions();
-  const existingSuggestionsMap = new Map(
-    existingSuggestions.map((existing) => [buildKey(existing.getData()), existing]),
-  );
-
-  const enhancedMapNewSuggestion = (data) => {
-    const baseSuggestion = mapNewSuggestion(data);
-    const existing = existingSuggestionsMap.get(buildKey(baseSuggestion.data));
-    if (existing) {
-      return {
-        ...baseSuggestion,
-        status: existing.getStatus(),
-        data: {
-          ...baseSuggestion.data,
-          ...(existing.getData().aiSuggestion && { aiSuggestion: existing.getData().aiSuggestion }),
-          ...(existing.getData().aiRationale && { aiRationale: existing.getData().aiRationale }),
-          ...(existing.getData().toOverride && { toOverride: existing.getData().toOverride }),
-        },
-      };
-    }
-    return baseSuggestion;
-  };
-
-  await syncSuggestions({
-    opportunity,
-    newData,
-    buildKey,
-    mapNewSuggestion: enhancedMapNewSuggestion,
-    log,
-  });
 }
 
 const issueRankings = {
