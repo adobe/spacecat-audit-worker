@@ -1,3 +1,10 @@
+## [1.55.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.4...v1.55.5) (2025-02-20)
+
+
+### Bug Fixes
+
+* opportunity schema violation ([#679](https://github.com/adobe/spacecat-audit-worker/issues/679)) ([447f5b3](https://github.com/adobe/spacecat-audit-worker/commit/447f5b3868b89ad152beeb8c7b43104245a5c5c6))
+
 ## [1.55.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.3...v1.55.4) (2025-02-20)
 
 
