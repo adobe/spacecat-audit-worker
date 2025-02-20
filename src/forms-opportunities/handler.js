@@ -119,7 +119,7 @@ export default new AuditBuilder()
       audit, log,
     } = context;
     log.info('Debug log 52');
-    log.info(`Debug log 53: ${JSON.stringify(audit, null, 2)}`);
+    log.info(`Debug log 53 ${JSON.stringify(audit, null, 2)}`);
   })
   // .withRunner(formsAuditRunner)
   // .withPostProcessors([convertToOpportunity])
