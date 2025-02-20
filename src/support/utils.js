@@ -277,3 +277,14 @@ export async function sleep(ms) {
     setTimeout(resolve, ms);
   });
 }
+
+export function stripHtmlTags(html) {
+  return html.replace(/<\/?[^>]+(>|$)/g, '');
+}
+
+export async function getScrapeForPath(path, context, site) {
+  const { log, s3Client } = context;
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const prefix = `scrapes/${site.getId()}${path}/scrape.json`;
+  return getObjectFromKey(s3Client, bucketName, prefix, log);
+}

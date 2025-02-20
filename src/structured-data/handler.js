@@ -18,11 +18,11 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import * as cheerio from 'cheerio';
 
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { stripHtmlTags, getScrapeForPath } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 
@@ -44,59 +44,6 @@ const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 export async function processStructuredData(baseURL, context, pages) {
   const { log } = context;
 
-  // TODO: Create proper opportunity format and document it
-
-  // Use the following bulk URLs
-  // https://www.bulk.com/uk/products/multivitamin-multimineral/bble-mvmm
-  // https://www.bulk.com/uk/sports-nutrition/creatine
-  // https://www.bulk.com/uk/sports-nutrition/informed-sport
-  // https://www.bulk.com/uk/foods/breakfast
-  // https://www.bulk.com/uk/sports-nutrition/pre-workout
-  // https://www.bulk.com/uk/protein/banana-protein-powders
-  // https://www.bulk.com/uk/health-wellbeing/hair-skin-nails
-  // https://www.bulk.com/uk/sports-nutrition/endurance-hydration
-
-  // Hardcode for development
-  return [
-    {
-      inspectionUrl: 'https://www.bulk.com/uk/products/multivitamin-multimineral/bble-mvmm',
-      indexStatusResult: {
-        verdict: 'PASS',
-        lastCrawlTime: '2025-02-20T04:28:06Z',
-      },
-      richResults: {
-        verdict: 'FAIL',
-        detectedItemTypes: [
-          'Product snippets',
-          'Merchant listings',
-          'Breadcrumbs',
-          'Review snippets',
-        ],
-        detectedIssues: [
-          {
-            richResultType: 'Breadcrumbs',
-            items: [
-              {
-                name: 'Unnamed item',
-                issues: [
-                  {
-                    issueMessage: 'Missing field "item"',
-                    severity: 'ERROR',
-                  },
-                  {
-                    issueMessage: 'Either "name" or "item.name" should be specified',
-                    severity: 'ERROR',
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
-    },
-  ];
-
-  // eslint-disable-next-line no-unreachable
   let google;
   try {
     google = await GoogleClient.createFrom(context, baseURL);
@@ -171,8 +118,6 @@ export async function processStructuredData(baseURL, context, pages) {
   const filteredResults = results.filter((result) => result.status === 'fulfilled')
     .map((result) => result.value);
 
-  console.log('filteredResults', JSON.stringify(filteredResults));
-
   return filteredResults;
 }
 
@@ -191,14 +136,12 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const filteredAuditResult = auditData.auditResult
     .filter((result) => result.richResults?.detectedIssues?.length > 0);
 
-  // TODO: Pass actual suggestions data
-
   await syncSuggestions({
     opportunity,
     newData: filteredAuditResult,
     buildKey,
     mapNewSuggestion: (data) => {
-      const errors = data.richResults.detectedIssues.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.issueMessage}`))).sort();
+      const errors = data.richResults.detectedIssues.sort();
       return {
         opportunityId: opportunity.getId(),
         type: 'CODE_CHANGE',
@@ -206,11 +149,38 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         data: {
           type: 'url',
           url: data.inspectionUrl,
-          errors: errors.map((error) => ({
-            id: error.replaceAll(/["\s]/g, '').toLowerCase(),
-            errorTitle: error.replaceAll('"', "'"),
-            fix: '', // todo: implement for auto-suggest
-          })),
+          errors: errors.map((error) => {
+            let fix = '';
+            if (error.suggestion && error.suggestion.correctedLdjson) {
+              const {
+                errorDescription,
+                correctedLdjson,
+                aiRationale,
+                confidenceScore,
+              } = error.suggestion;
+
+              const score = `${parseFloat(confidenceScore) * 100}%`;
+
+              fix = `
+## Issue Explanation
+${errorDescription}
+## Corrected Structured Data
+\`\`\`json
+${JSON.stringify(correctedLdjson, null, 4)}
+\`\`\`
+
+## Rationale
+${aiRationale}
+
+_Confidence score: ${score}_`;
+            }
+
+            return {
+              id: error.richResultType.replaceAll(/["\s]/g, '').toLowerCase(),
+              errorTitle: error.richResultType,
+              fix,
+            };
+          }),
         },
       };
     },
@@ -246,24 +216,9 @@ export async function structuredDataHandler(baseURL, context, site) {
   };
 }
 
-// TODO: Move to utils
-async function getScrapeForPage(path, context, site) {
-  const { log, s3Client } = context;
-  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-  const prefix = `scrapes/${site.getId()}${path}/scrape.json`;
-  return getObjectFromKey(s3Client, bucketName, prefix, log);
-}
-
-// TODO: Move to utils
-function stripHtmlTags(html) {
-  return html.replace(/<\/?[^>]+(>|$)/g, '');
-}
-
-export async function generateSuggestionsData(finalUrl, auditData, context, site) {
+export async function generateSuggestionsData(auditUrl, auditData, context, site) {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
-
-  console.info('called generateSuggestionsData', finalUrl, JSON.stringify(auditData));
 
   // TODO: Check if audit was successful can be skipped for now as the audit throws if it fails.
 
@@ -274,7 +229,7 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
     return { ...auditData };
   }
 
-  // Init firefall
+  // Initialize Firefall client
   const firefallClient = FirefallClient.createFrom(context);
   const firefallOptions = {
     model: 'gpt-4o-mini',
@@ -293,7 +248,7 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
     let scrapeResult;
     const { pathname } = new URL(auditResult.inspectionUrl);
     try {
-      scrapeResult = await getScrapeForPage(pathname, context, site);
+      scrapeResult = await getScrapeForPath(pathname, context, site);
     } catch (e) {
       log.error(`Could not find scrape for ${pathname}`, e);
       continue;
@@ -385,5 +340,5 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
 export default new AuditBuilder()
   .withRunner(structuredDataHandler)
   .withUrlResolver((site) => site.getBaseURL())
-  .withPostProcessors([generateSuggestionsData]) // opportunityAndSuggestions
+  .withPostProcessors([generateSuggestionsData, opportunityAndSuggestions])
   .build();

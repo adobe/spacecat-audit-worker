@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+/* eslint-disable no-console */
 import { main as universalMain } from './index.js';
 
 export const main = async () => {
