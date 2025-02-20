@@ -118,7 +118,12 @@ export default async function opportunityAndSuggestions(auditUrl, auditData, con
   const firefallClient = FirefallClient.createFrom(context);
   // const prompt = await getPrompt({}, 'image-alt-text', log);
   const prompt = 'You re tasked with identifying suitable text for the alt attribute of images. You are an expert SEO consultant, and your goal is to suggest a description for each image that is helpful for the user.### Rules:1. Follow the industry guidelines for accessibility, https://www.w3.org/WAI/tutorials/images/2. Alt-text should reflect how the image relates to the content. Avoid irrelevant descriptions.3. Use natural language, ensuring you\'re not "stuffing" SEO keys.4. If an image is purely decorative and adds no functional or informational value, use an empty string as the alt text.5. For infographics, describe the key data points and trends.6. Ideal description length is 50-60 characters.7. Dont duplicate text thats adjacent in the document or website.8. End the alt text sentence with a period.9. The alt text should be helpful for the user, not the search engine.10. Consider key elements of why you chose this image, instead of describing every little detail. No need to say image of or picture of. But, do say if its a logo, illustration, painting, or cartoon.11. If you can recognize a person in the image, use their name when known.### Response Format:Your response must be a valid JSON object with the following json structure:{image_url: string of the url you used to check the image,suggestion: string of the suggestion you found,ai_rationale: string,confidence_score: number}**IMPORTANT:**- Provide only the JSON object. Do not include any additional text, explanation, or formatting.### Task:Given this list list of images, suggest a description for the alt attribute of each image that is helpful for the user.';
-  const imageList = suggestions.map((suggestion) => suggestion.imageUrl);
+  const recommendableSuggestions = suggestions.filter((s) => {
+    const { imageUrl } = s;
+    const regex = /\.(webp|png|gif|jpeg)(?=\?|$)/i;
+    return imageUrl.contains('bamboo') && regex.test(imageUrl);
+  });
+  const imageList = recommendableSuggestions.map((suggestion) => suggestion.imageUrl);
   log.info('About to call Firefall with images', imageList);
   log.info('and prompt', prompt);
 
@@ -130,7 +135,8 @@ export default async function opportunityAndSuggestions(auditUrl, auditData, con
     return chunks;
   }
 
-  const imageBatches = chunkArray(imageList, 50);
+  const batchSize = 10;
+  const imageBatches = chunkArray(imageList, batchSize);
 
   const batchPromises = imageBatches.map(async (batch) => {
     const firefallOptions = {
