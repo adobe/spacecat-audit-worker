@@ -11,14 +11,17 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { internalServerError } from '@adobe/spacecat-shared-http-utils';
-import { getRUMDomainkey, getRUMUrl } from '../support/utils.js';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+import { generateSuggestionData } from './suggestions-generator.js';
 
 const INTERVAL = 30; // days
-const AUDIT_TYPE = 'broken-internal-links';
+const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
  * Classifies links into priority categories based on views
@@ -62,24 +65,28 @@ function calculatePriority(links) {
  * and environment variables.
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
-export async function internalLinksAuditRunner(auditUrl, context, site) {
+export async function internalLinksAuditRunner(auditUrl, context) {
   const { log } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context, auditUrl, log);
 
   const options = {
     domain: finalUrl,
-    domainkey,
     interval: INTERVAL,
     granularity: 'hourly',
   };
 
-  log.info('broken-internal-links: Options for RUM call: ', JSON.stringify(options));
+  log.info(`${auditType}: Options for RUM call: `, JSON.stringify(options));
 
   const internal404Links = await rumAPIClient.query('404-internal-links', options);
-  const priorityLinks = calculatePriority(internal404Links);
+  const transformedLinks = internal404Links.map((link) => ({
+    urlFrom: link.url_from,
+    urlTo: link.url_to,
+    trafficDomain: link.traffic_domain,
+  }));
+
+  const priorityLinks = calculatePriority(transformedLinks);
   const auditResult = {
     brokenInternalLinks: priorityLinks,
     fullAuditRef: auditUrl,
@@ -95,58 +102,18 @@ export async function internalLinksAuditRunner(auditUrl, context, site) {
   };
 }
 
-// eslint-disable-next-line consistent-return
-export async function convertToOpportunity(auditUrl, auditData, context) {
-  const {
-    dataAccess,
-    log,
-  } = context;
-  const { Opportunity } = dataAccess;
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
+  const { log } = context;
 
-  let opportunity;
-  try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-    opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-  } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    return internalServerError(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
-  }
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
 
-  try {
-    if (!opportunity) {
-      const opportunityData = {
-        siteId: auditData.siteId,
-        auditId: auditData.id,
-        runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
-        type: AUDIT_TYPE,
-        origin: 'AUTOMATION',
-        title: 'Broken internal links found',
-        description: 'We\'ve detected broken internal links on your website. Broken links can negatively impact user experience and SEO. Please review and fix these links to ensure smooth navigation and accessibility.',
-        guidance: {
-          steps: [
-            'Update each broken internal link to valid URLs.',
-            'Test the implemented changes manually to ensure they are working as expected.',
-            'Monitor internal links for 404 errors in RUM tool over time to ensure they are functioning correctly.',
-          ],
-        },
-        tags: [
-          'Traffic acquisition',
-          'Engagement',
-        ],
-      };
-      opportunity = await Opportunity.create(opportunityData);
-    } else {
-      opportunity.setAuditId(auditData.id);
-      await opportunity.save();
-    }
-  } catch (e) {
-    log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
-    throw e;
-  }
-
-  const buildKey = (item) => `${item.url_from}-${item.url_to}`;
-
-  // Sync suggestions
   await syncSuggestions({
     opportunity,
     newData: auditData?.auditResult?.brokenInternalLinks,
@@ -154,11 +121,14 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
-      rank: entry.traffic_domain,
+      rank: entry.trafficDomain,
       data: {
-        ...entry,
-        /* code commented until implementation of suggested links. TODO: implement suggestions, https://jira.corp.adobe.com/browse/SITES-26545 */
-        // suggestedLink: 'some suggestion here',
+        title: entry.title,
+        urlFrom: entry.urlFrom,
+        urlTo: entry.urlTo,
+        urlsSuggested: entry.urlsSuggested || [],
+        aiRationale: entry.aiRationale || '',
+        trafficDomain: entry.trafficDomain,
       },
     }),
     log,
@@ -168,5 +138,5 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(internalLinksAuditRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
   .build();

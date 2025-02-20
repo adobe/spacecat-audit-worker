@@ -14,11 +14,17 @@
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import * as cheerio from 'cheerio';
+
 import { AuditBuilder } from '../common/audit-builder.js';
-import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+
+const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -170,37 +176,15 @@ export async function processStructuredData(baseURL, context, pages) {
   return filteredResults;
 }
 
-export async function convertToOpportunity(auditUrl, auditData, context) {
-  const { dataAccess, log } = context;
-  const { Opportunity } = dataAccess;
-
-  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  let opportunity = opportunities.find((oppty) => oppty.getType() === 'structured-data');
-
-  if (!opportunity) {
-    const opportunityData = {
-      siteId: auditData.siteId,
-      auditId: auditData.id,
-      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Structured_Data_Runbook.docx?d=wf814159992be44a58b72ce1950c0c9ab&csf=1&web=1&e=5Qq6vm',
-      type: 'structured-data',
-      origin: 'AUTOMATION',
-      title: 'Missing or invalid structured data',
-      description: 'Structured data (JSON-LD) is a way to organize and label important information on your website so that search engines can understand it more easily. It\'s important because it can lead to improved visibility in search.',
-      guidance: { // TODO?
-        steps: [],
-      },
-      tags: ['Traffic acquisition'],
-    };
-    try {
-      opportunity = await Opportunity.create(opportunityData);
-    } catch (e) {
-      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
-      throw e;
-    }
-  } else {
-    opportunity.setAuditId(auditData.id);
-    await opportunity.save();
-  }
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
+  const { log } = context;
 
   const buildKey = (data) => `${data.inspectionUrl}`;
 
@@ -401,5 +385,5 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
 export default new AuditBuilder()
   .withRunner(structuredDataHandler)
   .withUrlResolver((site) => site.getBaseURL())
-  .withPostProcessors([generateSuggestionsData]) // convertToOpportunity
+  .withPostProcessors([generateSuggestionsData]) // opportunityAndSuggestions
   .build();

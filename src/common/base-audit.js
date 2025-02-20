@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,9 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
 import { ok } from '@adobe/spacecat-shared-http-utils';
+import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
+
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
 
 // eslint-disable-next-line no-empty-function
@@ -68,12 +69,11 @@ export async function noopUrlResolver(site) {
 
 export const defaultPostProcessors = [];
 
-export class Audit {
+export class BaseAudit {
   constructor(
     siteProvider,
     orgProvider,
     urlResolver,
-    runner,
     persister,
     messageSender,
     postProcessors,
@@ -81,73 +81,72 @@ export class Audit {
     this.siteProvider = siteProvider;
     this.orgProvider = orgProvider;
     this.urlResolver = urlResolver;
-    this.runner = runner;
     this.persister = persister;
     this.messageSender = messageSender;
     this.postProcessors = postProcessors;
   }
 
+  // Abstract method that subclasses must implement
+  // eslint-disable-next-line class-methods-use-this,@typescript-eslint/no-unused-vars
   async run(message, context) {
-    const { log, dataAccess } = context;
-    const { Configuration } = dataAccess;
-    const {
-      type,
-      siteId,
-      auditContext = {},
-    } = message;
+    throw new Error('Subclasses must implement run()');
+  }
 
-    try {
-      const site = await this.siteProvider(siteId, context);
-      const configuration = await Configuration.findLatest();
-      if (!configuration.isHandlerEnabledForSite(type, site)) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
-        return ok();
-      }
-      const finalUrl = await this.urlResolver(site);
+  async processAuditResult(result, params, context) {
+    const { type, site } = params;
+    const { auditResult, fullAuditRef } = result;
 
-      // run the audit business logic
-      const {
-        auditResult,
-        fullAuditRef,
-      } = await this.runner(finalUrl, context, site);
-      const auditData = {
-        siteId: site.getId(),
-        isLive: site.getIsLive(),
-        auditedAt: new Date().toISOString(),
-        auditType: type,
-        auditResult,
-        fullAuditRef,
-      };
-      const audit = await this.persister(auditData, context);
-      auditContext.finalUrl = finalUrl;
-      auditContext.fullAuditRef = fullAuditRef;
+    const auditData = {
+      siteId: site.getId(),
+      isLive: site.getIsLive(),
+      auditedAt: new Date().toISOString(),
+      auditType: type,
+      auditResult,
+      fullAuditRef,
+    };
 
-      const resultMessage = {
-        type,
-        url: site.getBaseURL(),
-        auditContext,
-        auditResult,
-      };
-
-      await this.messageSender(resultMessage, context);
+    const audit = await this.persister(auditData, context);
+    context.audit = audit;
+    return this.runPostProcessors(
+      audit,
+      result,
       // add auditId for the post-processing
-      auditData.id = audit.getId();
-      await this.postProcessors.reduce(async (previousProcessor, postProcessor) => {
-        const updatedAuditData = await previousProcessor;
+      { ...params, auditData: { ...auditData, id: audit.getId() } },
+      context,
+    );
+  }
 
-        try {
-          const result = await postProcessor(finalUrl, updatedAuditData, context, site);
+  async runPostProcessors(audit, result, params, context) {
+    const {
+      type, site, finalUrl, auditData,
+    } = params;
+    const { auditResult, fullAuditRef } = result;
+    const { log } = context;
 
-          return result || updatedAuditData;
-        } catch (e) {
-          log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${siteId}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(updatedAuditData)}`);
-          throw e;
-        }
-      }, Promise.resolve(auditData));
+    const resultMessage = {
+      type,
+      url: site.getBaseURL(),
+      auditContext: {
+        auditId: audit.getId(),
+        finalUrl,
+        fullAuditRef,
+      },
+      auditResult,
+    };
+    await this.messageSender(resultMessage, context);
 
-      return ok();
-    } catch (e) {
-      throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`);
-    }
+    await this.postProcessors.reduce(async (previousProcessor, postProcessor) => {
+      const updatedAuditData = await previousProcessor;
+
+      try {
+        const processedResult = await postProcessor(finalUrl, updatedAuditData, context, site);
+        return processedResult || updatedAuditData;
+      } catch (e) {
+        log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${site.getId()}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(updatedAuditData)}`);
+        throw e;
+      }
+    }, Promise.resolve(auditData));
+
+    return ok();
   }
 }

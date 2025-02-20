@@ -18,7 +18,7 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
-import { brokenBacklinksAuditRunner, convertToOpportunity, generateSuggestionData } from '../../src/backlinks/handler.js';
+import { brokenBacklinksAuditRunner, opportunityAndSuggestions, generateSuggestionData } from '../../src/backlinks/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import {
   brokenBacklinkWithTimeout,
@@ -82,7 +82,7 @@ describe('Backlinks Tests', function () {
 
     nock('https://www.foo.com')
       .get('/redirects-throws-error')
-      .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
+      .replyWithError('connection refused');
 
     nock('https://foo.com')
       .get('/returns-429')
@@ -132,7 +132,7 @@ describe('Backlinks Tests', function () {
 
     ahrefsMock(site.getBaseURL(), auditDataMock.auditResult);
 
-    await convertToOpportunity(auditUrl, auditDataMock, context);
+    await opportunityAndSuggestions(auditUrl, auditDataMock, context);
 
     expect(context.dataAccess.Opportunity.create)
       .to
@@ -152,7 +152,7 @@ describe('Backlinks Tests', function () {
 
     ahrefsMock(site.getBaseURL(), auditDataMock.auditResult);
 
-    await convertToOpportunity(auditUrl, auditDataMock, context);
+    await opportunityAndSuggestions(auditUrl, auditDataMock, context);
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(brokenBacklinksOpportunity.setAuditId).to.have.been.calledOnceWith(auditDataMock.id);
@@ -177,7 +177,7 @@ describe('Backlinks Tests', function () {
       .reply(200, auditDataMock.auditResult);
 
     try {
-      await convertToOpportunity(auditUrl, auditDataMock, context);
+      await opportunityAndSuggestions(auditUrl, auditDataMock, context);
     } catch (e) {
       expect(e.message).to.equal(errorMessage);
     }
@@ -198,6 +198,7 @@ describe('Backlinks Tests', function () {
 
     expect(auditData).to.deep.equal({
       fullAuditRef: auditUrl,
+      finalUrl: auditUrl,
       auditResult: {
         error: 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 500',
         success: false,
@@ -210,13 +211,14 @@ describe('Backlinks Tests', function () {
     const errorMessage = 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 404';
     nock(site.getBaseURL())
       .get(/.*/)
-      .replyWithError({ code: 'ECONNREFUSED', syscall: 'connect' });
+      .replyWithError('connection refused');
 
     const auditResult = await brokenBacklinksAuditRunner(auditUrl, context, site);
 
     expect(context.log.error).to.have.been.calledWith(errorMessage);
     expect(auditResult).to.deep.equal({
       fullAuditRef: auditUrl,
+      finalUrl: auditUrl,
       auditResult: {
         error: errorMessage,
         success: false,

@@ -14,10 +14,14 @@ import { composeAuditURL, getPrompt, tracingFetch as fetch } from '@adobe/spacec
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getScrapedDataForSiteId, sleep } from '../support/utils.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
+const auditType = Audit.AUDIT_TYPES.BROKEN_BACKLINKS;
 const TIMEOUT = 3000;
 
 async function filterOutValidBacklinks(backlinks, log) {
@@ -34,25 +38,22 @@ async function filterOutValidBacklinks(backlinks, log) {
       if (error instanceof AbortError) {
         log.warn(`Request to ${url} timed out after ${timeout}ms`);
         return { ok: false, status: 408 };
+      } else {
+        log.warn(`Request to ${url} failed with error: ${error.message}`);
       }
     } finally {
       clearTimeout(id);
     }
-    return null;
+    return { ok: false, status: 500 };
   };
 
   const isStillBrokenBacklink = async (backlink) => {
-    try {
-      const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
-      if (!response.ok && response.status !== 404
+    const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
+    if (!response.ok && response.status !== 404
         && response.status >= 400 && response.status < 500) {
-        log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
-      }
-      return !response.ok;
-    } catch (error) {
-      log.error(`Failed to check backlink ${backlink.url_to}: ${error.message}`);
-      return true;
+      log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
     }
+    return !response.ok;
   };
 
   const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
@@ -85,6 +86,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
     log.error(`Broken Backlinks audit for ${siteId} with url ${auditUrl} failed with error: ${e.message}`, e);
     return {
       fullAuditRef: auditUrl,
+      finalUrl: auditUrl,
       auditResult: {
         error: `Broken Backlinks audit for ${siteId} with url ${auditUrl} failed with error: ${e.message}`,
         success: false,
@@ -229,42 +231,23 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   };
 };
 
-export const convertToOpportunity = async (auditUrl, auditData, context) => {
-  const { dataAccess, log } = context;
-  const { Opportunity } = dataAccess;
-  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  let opportunity = opportunities.find((oppty) => oppty.getType() === 'broken-backlinks');
+/**
+  * Converts audit data to an opportunity and synchronizes suggestions.
+  *
+  * @param {string} auditUrl - The URL of the audit.
+  * @param {Object} auditData - The data from the audit.
+  * @param {Object} context - The context contains logging and data access utilities.
+  */
 
-  if (!opportunity) {
-    const opportunityData = {
-      siteId: auditData.siteId,
-      auditId: auditData.id,
-      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BAC174971-BA97-44A9-9560-90BE6C7CF789%7D&file=Experience_Success_Studio_Broken_Backlinks_Runbook.docx&action=default&mobileredirect=true',
-      type: 'broken-backlinks',
-      origin: 'AUTOMATION',
-      title: 'Authoritative Domains are linking to invalid URLs. This could impact your SEO.',
-      description: 'Provide the correct target URL that each of the broken backlinks should be redirected to.',
-      guidance: {
-        steps: [
-          'Review the list of broken target URLs and the suggested redirects.',
-          'Manually override redirect URLs as needed.',
-          'Copy redirects.',
-          'Paste new entries in your website redirects file.',
-          'Publish the changes.',
-        ],
-      },
-      tags: ['Traffic acquisition'],
-    };
-    try {
-      opportunity = await Opportunity.create(opportunityData);
-    } catch (e) {
-      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
-      throw e;
-    }
-  } else {
-    opportunity.setAuditId(auditData.id);
-    await opportunity.save();
-  }
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
+  const { log } = context;
 
   const buildKey = (data) => `${data.url_from}|${data.url_to}`;
 
@@ -287,10 +270,10 @@ export const convertToOpportunity = async (auditUrl, auditData, context) => {
     }),
     log,
   });
-};
+}
 
 export default new AuditBuilder()
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL()))
   .withRunner(brokenBacklinksAuditRunner)
-  .withPostProcessors([generateSuggestionData, convertToOpportunity])
+  .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
   .build();

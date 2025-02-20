@@ -13,7 +13,7 @@
 import { hasText, isObject } from '@adobe/spacecat-shared-utils';
 import {
   DESCRIPTION, TITLE, H1, ISSUE, ISSUE_DETAILS, SEO_IMPACT, HIGH, SEO_RECOMMENDATION,
-  MODERATE, DUPLICATES, MULTIPLE_H1_ON_PAGE, ONE_H1_ON_A_PAGE, TAG_LENGTHS, SHOULD_BE_PRESENT,
+  MODERATE, MULTIPLE_H1_ON_PAGE, ONE_H1_ON_A_PAGE, TAG_LENGTHS, SHOULD_BE_PRESENT,
   TITLE_LENGTH_SUGGESTION, DESCRIPTION_LENGTH_SUGGESTION, H1_LENGTH_SUGGESTION, UNIQUE_ACROSS_PAGES,
 } from './constants.js';
 
@@ -25,6 +25,11 @@ class SeoChecks {
       [TITLE]: {},
       [DESCRIPTION]: {},
       [H1]: {},
+    };
+    this.healthyTags = {
+      [TITLE]: [],
+      [DESCRIPTION]: [],
+      [H1]: [],
     };
   }
 
@@ -108,6 +113,8 @@ class SeoChecks {
           [SEO_RECOMMENDATION]: recommendation,
           ...(tagContent && { tagContent }),
         });
+      } else {
+        this.healthyTags[tagName].push(tagContent);
       }
     };
     checkTag(TITLE, pageTags[TITLE]);
@@ -142,7 +149,7 @@ class SeoChecks {
         if (value?.pageUrls?.size > 1) {
           const capitalisedTagName = SeoChecks.capitalizeFirstLetter(tagName);
           const pageUrls = [...value.pageUrls];
-          pageUrls.forEach((url, index) => {
+          pageUrls.forEach((url) => {
             this.detectedTags[url] ??= {};
             this.detectedTags[url][tagName] = {
               tagContent: value.tagContent,
@@ -150,10 +157,6 @@ class SeoChecks {
               [ISSUE]: `Duplicate ${capitalisedTagName}`,
               [ISSUE_DETAILS]: `${pageUrls.length} pages share same ${tagName}`,
               [SEO_RECOMMENDATION]: UNIQUE_ACROSS_PAGES,
-              [DUPLICATES]: [
-                ...pageUrls.slice(0, index),
-                ...pageUrls.slice(index + 1),
-              ],
             };
           });
         }
@@ -203,6 +206,18 @@ class SeoChecks {
    */
   getDetectedTags() {
     return this.detectedTags;
+  }
+
+  /**
+   * Gets 20 healthy tags for this site, later to be used to generate brand guidelines
+   * @returns {*|{[p: string]: [], "[DESCRIPTION]": *[], "[H1]": *[], "[TITLE]": *[]}}
+   */
+  getFewHealthyTags() {
+    return {
+      [TITLE]: this.healthyTags[TITLE].slice(0, 15),
+      [DESCRIPTION]: this.healthyTags[DESCRIPTION].slice(0, 15),
+      [H1]: this.healthyTags[H1].slice(0, 15),
+    };
   }
 
   finalChecks() {
