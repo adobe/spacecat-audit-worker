@@ -192,7 +192,7 @@ export default async function opportunityAndSuggestions(auditUrl, auditData, con
     newSuggestions: suggestions.map((suggestion) => ({
       opportunityId: altTextOppty.getId(),
       type: 'CONTENT_UPDATE',
-      data: { recommendations: [suggestion] },
+      data: { recommendations: [{ ...suggestion, altText: finalResults.filter((res) => res.image_url === suggestion.imageUrl)?.[0]?.suggestion || '' }] },
       rank: 1,
     })),
     log,
