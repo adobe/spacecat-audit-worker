@@ -10,15 +10,18 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+
 import {
-  Audit,
   defaultSiteProvider,
   defaultOrgProvider,
   defaultMessageSender,
   defaultPersister,
   defaultUrlResolver,
   defaultPostProcessors,
-} from './audit.js';
+  StepAudit,
+  RunnerAudit,
+} from './index.js';
 
 export class AuditBuilder {
   constructor() {
@@ -28,6 +31,7 @@ export class AuditBuilder {
     this.persister = defaultPersister;
     this.messageSender = defaultMessageSender;
     this.postProcessors = defaultPostProcessors;
+    this.steps = {};
   }
 
   // message > site
@@ -64,12 +68,87 @@ export class AuditBuilder {
     return this;
   }
 
-  build() {
-    if (typeof this.runner !== 'function') {
-      throw Error('"runner" must be a function');
+  /**
+   * Adds a step to the audit workflow.
+   *
+   * @param {string} name - Unique name of the step
+   * @param {Function} handler - Function to execute for this step
+   * @param {AuditModel.AUDIT_STEP_DESTINATIONS} destination - Destination queue for step results
+   * (e.g., DESTINATIONS.IMPORT_WORKER). Only the last step may omit the destination.
+   *
+   * @returns {AuditBuilder} Returns this builder instance for method chaining
+   *
+   * @example
+   * new AuditBuilder()
+   *   .addStep('ingest', async (site, audit, auditContext, context) => {
+   *     // First step must return auditResult and fullAuditRef
+   *     // site: Site instance with getBaseURL(), getId(), etc.
+   *     // audit: undefined for first step
+   *     // context: { log, dataAccess, sqs, ... }
+   *
+   *     const data = await fetchData(site.getBaseURL());
+   *     return {
+   *       auditResult: { status: 'success', data },
+   *       fullAuditRef: 'path/to/full/data'
+   *     };
+   *   }, AuditModel.AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+   *   .addStep('scrape', async (site, audit, auditContext, context) => {
+   *     // Subsequent steps can return any data needed by their destination
+   *     // audit: Audit record with getId(), getFullAuditRef(), etc.
+   *     // auditContext: { step, auditId, finalUrl, fullAuditRef }
+   *     return {
+   *       url: site.getBaseURL(),
+   *       options: {
+   *         fullAuditRef: audit.getFullAuditRef(),
+   *         // ... other scraper options
+   *       }
+   *     };
+   *   }, AuditModel.AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+   */
+  addStep(name, handler, destination = null) {
+    const supportedDestinations = Object.values(AuditModel.AUDIT_STEP_DESTINATIONS);
+
+    if (destination && !supportedDestinations.includes(destination)) {
+      throw new Error(`Invalid destination: ${destination}. Must be one of: ${supportedDestinations.join(', ')}`);
     }
 
-    return new Audit(
+    this.steps[name] = {
+      name,
+      handler,
+      destination,
+    };
+    return this;
+  }
+
+  build() {
+    const stepNames = Object.keys(this.steps);
+
+    if (stepNames.length > 0) {
+      stepNames.forEach((stepName, index) => {
+        const isLastStep = index === stepNames.length - 1;
+        const step = this.steps[stepName];
+
+        if (!isLastStep && !step.destination) {
+          throw new Error(`Step ${stepName} must specify a destination as it is not the last step`);
+        }
+      });
+
+      return new StepAudit(
+        this.siteProvider,
+        this.orgProvider,
+        this.urlResolver,
+        this.persister,
+        this.messageSender,
+        this.postProcessors,
+        this.steps,
+      );
+    }
+
+    if (typeof this.runner !== 'function') {
+      throw Error('Audit must have either steps or a runner defined');
+    }
+
+    return new RunnerAudit(
       this.siteProvider,
       this.orgProvider,
       this.urlResolver,

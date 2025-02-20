@@ -14,70 +14,14 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { noopUrlResolver } from '../common/index.js';
+import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getIssueRanking, removeTrailingSlash, syncMetatagsSuggestions } from './opportunity-handler.js';
 import { DESCRIPTION, H1, TITLE } from './constants.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.META_TAGS;
-
-export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
-  const object = await getObjectFromKey(s3Client, bucketName, key, log);
-  if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
-    log.error(`No Scraped tags found in S3 ${key} object`);
-    return null;
-  }
-  const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
-  return {
-    [pageUrl]: {
-      title: object.scrapeResult.tags.title,
-      description: object.scrapeResult.tags.description,
-      h1: object.scrapeResult.tags.h1 || [],
-    },
-  };
-}
-
-export async function auditMetaTagsRunner(baseURL, context, site) {
-  const { log, s3Client } = context;
-  // Fetch site's scraped content from S3
-  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-  const prefix = `scrapes/${site.getId()}/`;
-  const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
-  const extractedTags = {};
-  const pageMetadataResults = await Promise.all(scrapedObjectKeys.map(
-    (key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log),
-  ));
-  pageMetadataResults.forEach((pageMetadata) => {
-    if (pageMetadata) {
-      Object.assign(extractedTags, pageMetadata);
-    }
-  });
-  const extractedTagsCount = Object.entries(extractedTags).length;
-  if (extractedTagsCount === 0) {
-    log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
-  }
-  log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
-  // Perform SEO checks
-  const seoChecks = new SeoChecks(log);
-  for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
-    seoChecks.performChecks(pageUrl || '/', pageTags);
-  }
-  seoChecks.finalChecks();
-  const detectedTags = seoChecks.getDetectedTags();
-
-  const auditResult = {
-    detectedTags,
-    sourceS3Folder: `${bucketName}/${prefix}`,
-    fullAuditRef: 'na',
-    finalUrl: baseURL,
-  };
-
-  return {
-    auditResult,
-    fullAuditRef: baseURL,
-  };
-}
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
@@ -121,6 +65,71 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log,
   });
   log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+}
+
+export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
+  const object = await getObjectFromKey(s3Client, bucketName, key, log);
+  if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
+    log.error(`No Scraped tags found in S3 ${key} object`);
+    return null;
+  }
+  let pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
+  // handling for homepage
+  if (pageUrl === '') {
+    pageUrl = '/';
+  }
+  return {
+    [pageUrl]: {
+      title: object.scrapeResult.tags.title,
+      description: object.scrapeResult.tags.description,
+      h1: object.scrapeResult.tags.h1 || [],
+      s3key: key,
+    },
+  };
+}
+
+export async function auditMetaTagsRunner(baseURL, context, site) {
+  const { log, s3Client } = context;
+  // Fetch site's scraped content from S3
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const prefix = `scrapes/${site.getId()}/`;
+  const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
+  const extractedTags = {};
+  const pageMetadataResults = await Promise.all(scrapedObjectKeys.map(
+    (key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log),
+  ));
+  pageMetadataResults.forEach((pageMetadata) => {
+    if (pageMetadata) {
+      Object.assign(extractedTags, pageMetadata);
+    }
+  });
+  const extractedTagsCount = Object.entries(extractedTags).length;
+  if (extractedTagsCount === 0) {
+    log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
+  }
+  log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
+  // Perform SEO checks
+  const seoChecks = new SeoChecks(log);
+  for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
+    seoChecks.performChecks(pageUrl, pageTags);
+  }
+  seoChecks.finalChecks();
+  const allTags = {
+    detectedTags: seoChecks.getDetectedTags(),
+    healthyTags: seoChecks.getFewHealthyTags(),
+    extractedTags,
+  };
+  const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
+  const auditResult = {
+    detectedTags: updatedDetectedTags,
+    sourceS3Folder: `${bucketName}/${prefix}`,
+    fullAuditRef: 'na',
+    finalUrl: baseURL,
+  };
+  return {
+    auditResult,
+    fullAuditRef: baseURL,
+  };
 }
 
 export default new AuditBuilder()

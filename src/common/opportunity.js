@@ -57,27 +57,6 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         tags: opportunityInstance.tags,
         data: opportunityInstance.data,
       };
-
-      if (auditType === 'high-organic-low-ctr') {
-        opportunityData.status = Oppty.STATUSES.NEW;
-        const opportunities = await Opportunity.allBySiteId(auditData.siteId);
-
-        opportunity = opportunities.find(
-          (oppty) => (oppty.getType() === opportunityData.type) && oppty.getData()
-            && (oppty.getData().page === opportunityData.data.page),
-        );
-
-        if (opportunity) {
-          log.info(`Updating opportunity entity for ${opportunityData.data.page} with the new data`);
-          opportunity.setAuditId(opportunityData.auditId);
-          opportunity.setData({
-            ...opportunityData.data,
-          });
-
-          await opportunity.save();
-          return opportunity;
-        }
-      }
       opportunity = await Opportunity.create(opportunityData);
       return opportunity;
     } else {
