@@ -119,6 +119,7 @@ export default async function opportunityAndSuggestions(auditUrl, auditData, con
   const prompt = await getPrompt({}, 'image-alt-text', log);
   const firefallOptions = {
     imageUrls: suggestions.map((suggestion) => suggestion.imageUrl),
+    model: 'gpt-4-vision',
   };
 
   log.info('About to call Firefall for alt-text suggestion generations');
