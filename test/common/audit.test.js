@@ -284,13 +284,12 @@ describe('Audit tests', () => {
 
       // Assert
       expect(context.dataAccess.Audit.create).to.have.been.calledOnce;
-
       expect(context.dataAccess.Audit.create).to.have.been.calledWith(auditData);
 
       const finalUrl = 'space.cat';
       expect(context.sqs.sendMessage).not.to.have.been.calledOnce;
 
-      expect(postProcessors[0]).to.have.been.calledWith(finalUrl, auditData, context, site);
+      expect(postProcessors[0]).to.have.been.calledWith(finalUrl, { ...auditData, id: 'some-audit-id' }, context, site);
       expect(postProcessors[1]).to.have.been.called;
       expect(postProcessors[2]).to.have.been.calledWith(finalUrl, updatedAuditData1, context, site);
       expect(postProcessors[3]).to.not.have.been.called;
