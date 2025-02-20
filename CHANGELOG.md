@@ -1,3 +1,10 @@
+## [1.55.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.2...v1.55.3) (2025-02-20)
+
+
+### Bug Fixes
+
+* chain step response ([#678](https://github.com/adobe/spacecat-audit-worker/issues/678)) ([62c30f1](https://github.com/adobe/spacecat-audit-worker/commit/62c30f12d3b0c9b15589da93cc224a7e432ea4d8))
+
 ## [1.55.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.1...v1.55.2) (2025-02-20)
 
 
