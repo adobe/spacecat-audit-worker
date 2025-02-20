@@ -371,7 +371,7 @@ const testData = {
     tags: [
       'Traffic acquisition',
     ],
-    data: { },
+    data: null,
   },
 };
 
