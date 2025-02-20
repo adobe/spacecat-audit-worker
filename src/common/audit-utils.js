@@ -37,33 +37,33 @@ export async function sendContinuationMessage(message, context) {
   try {
     const { sqs } = context;
 
-    const payload1 = {
-      urls: [
-        {
-          url: 'https://www.petplace.com/pet-adoption/search',
-        },
-        {
-          url: 'https://www.petplace.com/',
-        },
-        {
-          url: 'https://www.petplace.com/pet-adoption/account',
-        },
-        {
-          url: 'https://www.petplace.com/search',
-        },
-        {
-          url: 'https://www.petplace.com/article/dogs/pet-care/top-1200-pet-names',
-        },
-      ],
-      jobId: '5a377a31-b6c3-411c-8b00-62d7e1b116ac',
-      processingType: 'form',
-    };
+    // const payload1 = {
+    //   urls: [
+    //     {
+    //       url: 'https://www.petplace.com/pet-adoption/search',
+    //     },
+    //     {
+    //       url: 'https://www.petplace.com/',
+    //     },
+    //     {
+    //       url: 'https://www.petplace.com/pet-adoption/account',
+    //     },
+    //     {
+    //       url: 'https://www.petplace.com/search',
+    //     },
+    //     {
+    //       url: 'https://www.petplace.com/article/dogs/pet-care/top-1200-pet-names',
+    //     },
+    //   ],
+    //   jobId: '5a377a31-b6c3-411c-8b00-62d7e1b116ac',
+    //   processingType: 'form',
+    // };
 
     log.info(`Debug log 6 ${JSON.stringify(payload, null, 2)}`);
-    log.info(`Debug log 61 ${JSON.stringify(payload1, null, 2)}`);
+    // log.info(`Debug log 61 ${JSON.stringify(payload1, null, 2)}`);
     log.info(`Debug log 7 ${queueUrl}`);
 
-    await sqs.sendMessage(queueUrl, payload1);
+    await sqs.sendMessage(queueUrl, payload);
 
     // await sqs.sendMessage({
     //   QueueUrl: queueUrl,
