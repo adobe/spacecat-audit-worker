@@ -121,7 +121,7 @@ export default async function opportunityAndSuggestions(auditUrl, auditData, con
   const recommendableSuggestions = suggestions.filter((s) => {
     const { imageUrl } = s;
     const regex = /\.(webp|png|gif|jpeg)(?=\?|$)/i;
-    return imageUrl.contains('bamboo') && regex.test(imageUrl);
+    return imageUrl.includes('bamboo') && regex.test(imageUrl);
   });
   const imageList = recommendableSuggestions.map((suggestion) => suggestion.imageUrl);
   log.info('About to call Firefall with images', imageList);
