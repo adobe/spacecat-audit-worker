@@ -14,7 +14,7 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import convertToOpportunity from './opportunityHandler.js';
+// import convertToOpportunity from './opportunityHandler.js';
 import generateOpptyData from './utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -114,7 +114,13 @@ export default new AuditBuilder()
     return result;
   }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
 
-  .addStep('processOpportunity', convertToOpportunity)
+  .addStep('processOpportunity', async (context) => {
+    const {
+      audit, log,
+    } = context;
+    log.info('Debug log 52');
+    log.info(`Debug log 53: ${JSON.stringify(audit, null, 2)}`);
+  })
   // .withRunner(formsAuditRunner)
   // .withPostProcessors([convertToOpportunity])
   .build();

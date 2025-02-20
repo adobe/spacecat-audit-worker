@@ -290,3 +290,75 @@ describe('sendUrlsForScraping step', () => {
 //   expect(urls).to.include('https://example.com/form2');
 // });
 });
+
+describe('processOpportunity step', () => {
+  let logStub;
+  let context;
+  let auditInstance;
+
+  beforeEach(async () => {
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+      warn: sinon.stub(),
+    };
+
+    const mockAudit = {
+      id: 'test-audit-id',
+      type: 'forms-audit',
+      getAuditResult: () => ({ someData: 'test' }),
+      getAuditType: () => 'forms-audit',
+      getId: () => 'test-audit-id',
+    };
+
+    context = new MockContextBuilder()
+      .withSandbox(sinon.createSandbox())
+      .withOverrides({
+        log: logStub,
+        audit: mockAudit,
+        dataAccess: {
+          Site: {
+            findById: sinon.stub().resolves({
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://test.com',
+            }),
+          },
+          Configuration: {
+            findLatest: sinon.stub().resolves({
+              isHandlerEnabledForSite: () => true,
+            }),
+          },
+          Opportunity: {
+            create: sinon.stub(),
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+          },
+          Audit: {
+            findById: sinon.stub().resolves(mockAudit),
+          },
+        },
+      })
+      .build();
+
+    const { default: auditBuilder } = await import('../../src/forms-opportunities/handler.js');
+    auditInstance = auditBuilder;
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should process opportunity', async () => {
+    const result = await auditInstance.run({
+      type: 'processOpportunity',
+      siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+      auditContext: {
+        next: 'processOpportunity',
+        auditId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+      },
+    }, context);
+
+    expect(result).to.exist;
+    expect(logStub.info).to.have.been.called;
+  });
+});
