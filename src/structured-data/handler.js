@@ -38,18 +38,33 @@ import { getTopPagesForSiteId } from '../canonical/handler.js';
 export async function processStructuredData(baseURL, context, pages) {
   const { log } = context;
 
+  // TODO: Create proper opportunity format and document it
+
+  // Use the following bulk URLs
+  // https://www.bulk.com/uk/products/multivitamin-multimineral/bble-mvmm
+  // https://www.bulk.com/uk/sports-nutrition/creatine
+  // https://www.bulk.com/uk/sports-nutrition/informed-sport
+  // https://www.bulk.com/uk/foods/breakfast
+  // https://www.bulk.com/uk/sports-nutrition/pre-workout
+  // https://www.bulk.com/uk/protein/banana-protein-powders
+  // https://www.bulk.com/uk/health-wellbeing/hair-skin-nails
+  // https://www.bulk.com/uk/sports-nutrition/endurance-hydration
+
   // Hardcode for development
   return [
     {
-      inspectionUrl: 'https://www.revolt.tv/article/2021-08-05/47692/fetty-waps-daughters-cause-of-death-revealed',
+      inspectionUrl: 'https://www.bulk.com/uk/products/multivitamin-multimineral/bble-mvmm',
       indexStatusResult: {
         verdict: 'PASS',
-        lastCrawlTime: '2025-02-07T04:18:27Z',
+        lastCrawlTime: '2025-02-20T04:28:06Z',
       },
       richResults: {
         verdict: 'FAIL',
         detectedItemTypes: [
+          'Product snippets',
+          'Merchant listings',
           'Breadcrumbs',
+          'Review snippets',
         ],
         detectedIssues: [
           {
@@ -58,6 +73,10 @@ export async function processStructuredData(baseURL, context, pages) {
               {
                 name: 'Unnamed item',
                 issues: [
+                  {
+                    issueMessage: 'Missing field "item"',
+                    severity: 'ERROR',
+                  },
                   {
                     issueMessage: 'Either "name" or "item.name" should be specified',
                     severity: 'ERROR',
@@ -243,6 +262,7 @@ export async function structuredDataHandler(baseURL, context, site) {
   };
 }
 
+// TODO: Move to utils
 async function getScrapeForPage(path, context, site) {
   const { log, s3Client } = context;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
@@ -250,28 +270,32 @@ async function getScrapeForPage(path, context, site) {
   return getObjectFromKey(s3Client, bucketName, prefix, log);
 }
 
+// TODO: Move to utils
 function stripHtmlTags(html) {
   return html.replace(/<\/?[^>]+(>|$)/g, '');
 }
 
 export async function generateSuggestionsData(finalUrl, auditData, context, site) {
-  const { log } = context;
+  const { dataAccess, log } = context;
+  const { Configuration } = dataAccess;
 
   console.info('called generateSuggestionsData', finalUrl, JSON.stringify(auditData));
 
   // TODO: Check if audit was successful can be skipped for now as the audit throws if it fails.
 
-  // TODO: Check if auto suggest was enabled
-  // Need to register structured-data-auto-suggest handler first and activate it for customer
-  /* const configuration = await Configuration.findLatest();
+  // Check if auto suggest was enabled
+  const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('structured-data-auto-suggest', site)) {
-    log.info('Auto suggest is disabled for for site');
+    log.info('Auto-suggest is disabled for site');
     return { ...auditData };
-  } */
+  }
 
   // Init firefall
   const firefallClient = FirefallClient.createFrom(context);
-  const firefallOptions = { responseFormat: 'json_object' };
+  const firefallOptions = {
+    model: 'gpt-4o-mini',
+    responseFormat: 'json_object',
+  };
 
   // Only take results which have actual issues
   const results = auditData.auditResult
@@ -280,8 +304,6 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
   // Go through audit results, one for each URL
   for (const auditResult of results) {
     log.info(`Create suggestion for URL ${auditResult.inspectionUrl}`);
-
-    // TODO (SITES-28718): Handle case where scrape might not exist
 
     // Get scraped version of website from S3 if available.
     let scrapeResult;
@@ -293,14 +315,13 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
       continue;
     }
 
-    // Try to find structured data from scrape
-    // TODO (SITES-28714): There might be more structured data on the site using different formats
+    // Get extracted LD-JSON from scrape
     const structuredData = scrapeResult?.scrapeResult?.structuredData;
     if (structuredData.length === 0) {
       log.error(`No structured data found in scrape result for URL ${auditResult.inspectionUrl}`);
       continue;
     }
-    log.info('Found ld+json data:', JSON.stringify(structuredData));
+    log.debug('Found ld+json in scrape:', JSON.stringify(structuredData));
 
     let plainPage;
     // If plain html version is not available, transform scraped page
@@ -312,16 +333,8 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
       plainPage = stripHtmlTags(main);
     }
 
-    // ALTERNATIVE: Get .plain.html version of page to pass to the LLM
-    /* try {
-      // .plain.html is not available for folder mapped pages, so this will use the scrape fallback
-      const plainPageResponse = await fetch(`${auditResult.inspectionUrl}.plain.html`);
-      plainPage = stripHtmlTags(await plainPageResponse.text());
-    } catch (e) {
-      log.error(`Could not fetch plain HTML for URL ${auditResult.inspectionUrl}`, e);
-    } */
-
     // TODO: Add more mappings based on actual customer issues
+    // TODO: Handle case "Review has multiple aggregate ratings"
     const entityMapping = {
       Breadcrumbs: 'BreadcrumbList',
       Product: 'Product',
@@ -343,7 +356,7 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
         log.error(`Could not find structured data for issue of type ${issue.richResultType}`);
         continue;
       }
-      log.info('Filtered structured data:', JSON.stringify(wrongLdJson));
+      log.debug('Filtered structured data:', JSON.stringify(wrongLdJson));
 
       const firefallInputs = {
         entity,
@@ -352,16 +365,12 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
         wrong_ld_json: JSON.stringify(wrongLdJson, null, 4),
         website_markup: plainPage,
       };
-      log.info('Firefall inputs:', JSON.stringify(firefallInputs));
+      log.debug('Firefall inputs:', JSON.stringify(firefallInputs));
 
       // Get suggestions from Firefall
       let response;
       try {
         const requestBody = await getPrompt(firefallInputs, 'structured-data-suggest', log);
-
-        // TODO: For some reason Firefall does not like
-        // this revolt.tv article and returns a 400 response
-
         response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
         if (response.choices?.length === 0 || response.choices[0].finish_reason !== 'stop') {
@@ -372,8 +381,13 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
         continue;
       }
 
-      const suggestion = JSON.parse(response.choices[0].message.content);
-      log.info('Received Firefall response:', JSON.stringify(suggestion));
+      let suggestion;
+      try {
+        suggestion = JSON.parse(response.choices[0].message.content);
+      } catch (e) {
+        log.error(`Could not parse Firefall response for issue of type ${issue.richResultType}`, e);
+        throw e;
+      }
 
       issue.suggestion = suggestion;
     }
@@ -387,5 +401,5 @@ export async function generateSuggestionsData(finalUrl, auditData, context, site
 export default new AuditBuilder()
   .withRunner(structuredDataHandler)
   .withUrlResolver((site) => site.getBaseURL())
-  .withPostProcessors([generateSuggestionsData]) // , convertToOpportunity
+  .withPostProcessors([generateSuggestionsData]) // convertToOpportunity
   .build();
