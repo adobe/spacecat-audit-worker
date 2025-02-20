@@ -121,7 +121,7 @@ export default async function opportunityAndSuggestions(auditUrl, auditData, con
     imageUrls: suggestions.map((suggestion) => suggestion.imageUrl),
   };
 
-  log.info('About to call Firefall for alt-text suggestion generation');
+  log.info('About to call Firefall for alt-text suggestion generations');
 
   try {
     const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
