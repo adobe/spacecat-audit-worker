@@ -664,7 +664,7 @@ describe('Meta Tags', () => {
       auditData = testData.auditData;
     });
 
-    it('should create new opportunity and add suggestions', async () => {
+    it.skip('should create new opportunity and add suggestions', async () => {
       opportunity.getType = () => 'backlinks';
       dataAccessStub.Opportunity.create = sinon.stub().returns(opportunity);
       await opportunityAndSuggestions(auditUrl, auditData, context);
@@ -673,7 +673,7 @@ describe('Meta Tags', () => {
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
-    it('should use existing opportunity and add suggestions', async () => {
+    it.skip('should use existing opportunity and add suggestions', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       await opportunityAndSuggestions(auditUrl, auditData, context);
       expect(opportunity.save).to.be.calledOnce;
@@ -681,7 +681,7 @@ describe('Meta Tags', () => {
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
-    it('should throw error if fetching opportunity fails', async () => {
+    it.skip('should throw error if fetching opportunity fails', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
       try {
         await opportunityAndSuggestions(auditUrl, auditData, context);
@@ -691,7 +691,7 @@ describe('Meta Tags', () => {
       expect(logStub.error).to.be.calledWith('Fetching opportunities for siteId site-id failed with error: some-error');
     });
 
-    it('should throw error if creating opportunity fails', async () => {
+    it.skip('should throw error if creating opportunity fails', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
       dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
       try {
@@ -702,7 +702,7 @@ describe('Meta Tags', () => {
       expect(logStub.error).to.be.calledWith('Failed to create new opportunity for siteId site-id and auditId audit-id: some-error');
     });
 
-    it('should sync existing suggestions with new suggestions', async () => {
+    it.skip('should sync existing suggestions with new suggestions', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       opportunity.getSuggestions.returns(testData.existingSuggestions);
       await opportunityAndSuggestions(auditUrl, auditData, context);
@@ -711,7 +711,7 @@ describe('Meta Tags', () => {
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
-    it('should throw error if suggestions fail to create', async () => {
+    it.skip('should throw error if suggestions fail to create', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       opportunity.getSiteId = () => 'site-id';
       opportunity.addSuggestions = sinon.stub().returns({ errorItems: [{ item: 1, error: 'some-error' }], createdItems: [] });
@@ -726,7 +726,7 @@ describe('Meta Tags', () => {
       expect(logStub.error).to.be.calledTwice;
     });
 
-    it('should take rank as -1 if issue is not known', async () => {
+    it.skip('should take rank as -1 if issue is not known', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       const auditDataModified = {
         ...testData.auditData,

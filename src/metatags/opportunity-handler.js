@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { syncSuggestions } from '../utils/data-access.js';
+
 export function removeTrailingSlash(url) {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
@@ -33,55 +35,37 @@ export async function syncMetatagsSuggestions({
   mapNewSuggestion,
   log,
 }) {
+  // Create a wrapper for mapNewSuggestion that preserves existing fields
   const existingSuggestions = await opportunity.getSuggestions();
   const existingSuggestionsMap = new Map(
     existingSuggestions.map((existing) => [buildKey(existing.getData()), existing]),
   );
 
-  // Create new suggestions and sync them with existing suggestions
-  const newSuggestions = newData
-    // map new audit data to suggestions format
-    .map(mapNewSuggestion)
-    // update new suggestions with data from existing suggestion of same key
-    .map((newSuggestion) => {
-      const existing = existingSuggestionsMap.get(buildKey(newSuggestion.data));
-      if (existing) {
-        return {
-          ...newSuggestion,
-          status: existing.getStatus(),
-          data: {
-            ...newSuggestion.data,
-            ...(existing
-              .getData().aiSuggestion && { aiSuggestion: existing.getData().aiSuggestion }),
-            ...(existing.getData().aiRationale && { aiRationale: existing.getData().aiRationale }),
-            ...(existing.getData().toOverride && { toOverride: existing.getData().toOverride }),
-          },
-        };
-      }
-      return newSuggestion;
-    });
-
-  // Remove existing suggestions
-  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
-
-  // TODO: Skip deleting the suggestions created by BO UI
-  //  once the createdBy field is introduced in suggestions schema
-
-  // Add new suggestions
-  if (newSuggestions.length > 0) {
-    const suggestions = await opportunity.addSuggestions(newSuggestions);
-
-    if (suggestions.errorItems?.length > 0) {
-      log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);
-      suggestions.errorItems.forEach((errorItem) => {
-        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
-      });
-
-      if (suggestions.createdItems?.length <= 0) {
-        throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
-      }
+  const enhancedMapNewSuggestion = (data) => {
+    const baseSuggestion = mapNewSuggestion(data);
+    const existing = existingSuggestionsMap.get(buildKey(baseSuggestion.data));
+    if (existing) {
+      return {
+        ...baseSuggestion,
+        status: existing.getStatus(),
+        data: {
+          ...baseSuggestion.data,
+          ...(existing.getData().aiSuggestion && { aiSuggestion: existing.getData().aiSuggestion }),
+          ...(existing.getData().aiRationale && { aiRationale: existing.getData().aiRationale }),
+          ...(existing.getData().toOverride && { toOverride: existing.getData().toOverride }),
+        },
+      };
     }
-  }
+    return baseSuggestion;
+  };
+
+  await syncSuggestions({
+    opportunity,
+    newData,
+    buildKey,
+    mapNewSuggestion: enhancedMapNewSuggestion,
+    log,
+  });
 }
 
 const issueRankings = {
