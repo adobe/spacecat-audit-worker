@@ -182,6 +182,53 @@ describe('URLInspect Audit', () => {
     expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
   });
 
+  it('should transform the audit result into opportunities and suggestions in the post processor and add the audit to an existing opportunity with outdated suggestions', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([context.dataAccess.Opportunity]);
+    const existingSuggestionsData = {
+      type: 'url',
+      url: 'https://example.com/product/1',
+      errors: [
+        {
+          id: 'missingfieldimages',
+          errorTitle: "Missing field 'images'",
+          fix: '',
+        },
+        {
+          id: 'missingfieldrecipe',
+          errorTitle: "Missing field 'Recipe'",
+          fix: '',
+        },
+      ],
+    };
+
+    const existingSuggestions = [{
+      opportunityId: 'opportunity-id',
+      type: 'CODE_CHANGE',
+      rank: 2,
+      data: existingSuggestionsData,
+      remove: sinon.stub(),
+      getData: sinon.stub().returns(existingSuggestionsData),
+      setData: sinon.stub(),
+      save: sinon.stub().resolves(),
+      getStatus: sinon.stub().returns('NEW'),
+    }];
+
+    context.dataAccess.Opportunity.getSuggestions.resolves(existingSuggestions);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.getType.returns('structured-data');
+    context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
+    await opportunityAndSuggestions('', auditDataMock, context);
+
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+      existingSuggestions,
+      'OUTDATED',
+    );
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(context.dataAccess.Opportunity.setAuditId).to.have.been.calledOnceWith('audit-id');
+    expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
+    expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
+  });
+
   it('should throw an error if creating a new opportunity fails', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.throws('opportunity-error');

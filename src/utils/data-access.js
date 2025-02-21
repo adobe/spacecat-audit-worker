@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { isObject } from '@adobe/spacecat-shared-utils';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Fetches site data based on the given base URL. If no site is found for the given
@@ -60,6 +61,39 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 }
 
 /**
+ * Handles outdated suggestions by updating their status to OUTDATED.
+ *
+ * @param {Object} params - The parameters for the handleOutdatedSuggestions operation.
+ * @param {Suggestion[]} params.existingSuggestions - The existing suggestions.
+ * @param {Set} params.newDataKeys - The set of new data keys to check for outdated suggestions.
+ * @param {Function} params.buildKey - The function to build a unique key for each suggestion.
+ * @param {Object} params.context - The context object containing the data access object.
+ * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
+ */
+const handleOutdatedSuggestions = async ({
+  existingSuggestions, newDataKeys, buildKey, context,
+}) => {
+  // Check if context is provided
+  if (context) {
+    const { Suggestion } = context.dataAccess;
+    const existingOutdatedSuggestions = existingSuggestions
+      .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
+      .filter((existing) => ![
+        SuggestionDataAccess.STATUSES.OUTDATED,
+        SuggestionDataAccess.STATUSES.FIXED,
+        SuggestionDataAccess.STATUSES.ERROR,
+        SuggestionDataAccess.STATUSES.SKIPPED,
+      ].includes(existing.getStatus()));
+    if (existingOutdatedSuggestions.length > 0) {
+      await Suggestion.bulkUpdateStatus(
+        existingOutdatedSuggestions,
+        SuggestionDataAccess.STATUSES.OUTDATED,
+      );
+    }
+  }
+};
+
+/**
  * Synchronizes existing suggestions with new data by removing outdated suggestions
  * and adding new ones.
  *
@@ -74,6 +108,7 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 export async function syncSuggestions({
   opportunity,
   newData,
+  context,
   buildKey,
   mapNewSuggestion,
   log,
@@ -81,11 +116,12 @@ export async function syncSuggestions({
   const newDataKeys = new Set(newData.map(buildKey));
   const existingSuggestions = await opportunity.getSuggestions();
   // Remove outdated suggestions
-  await Promise.all(
-    existingSuggestions
-      .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
-      .map((suggestion) => suggestion.remove()),
-  );
+  await handleOutdatedSuggestions({
+    existingSuggestions,
+    newDataKeys,
+    buildKey,
+    context,
+  });
 
   // Update existing suggestions
   await Promise.all(
@@ -100,6 +136,13 @@ export async function syncSuggestions({
           ...existing.getData(),
           ...newDataItem,
         });
+        if ([
+          SuggestionDataAccess.STATUSES.FIXED,
+          SuggestionDataAccess.STATUSES.OUTDATED,
+        ].includes(existing.getStatus())) {
+          log.warn('Resolved suggestion found in audit. Possible regression.');
+          existing.setStatus(SuggestionDataAccess.STATUSES.NEW);
+        }
         return existing.save();
       }),
   );

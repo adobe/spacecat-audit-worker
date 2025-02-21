@@ -56,6 +56,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   await syncSuggestions({
     opportunity,
     newData: suggestions,
+    context,
     buildKey,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
