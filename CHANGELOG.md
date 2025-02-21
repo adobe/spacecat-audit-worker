@@ -1,3 +1,17 @@
+## [1.55.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.8...v1.55.9) (2025-02-21)
+
+
+### Bug Fixes
+
+* camelcase for urls suggestions and ai rationale ([#655](https://github.com/adobe/spacecat-audit-worker/issues/655)) ([6adba5f](https://github.com/adobe/spacecat-audit-worker/commit/6adba5fcc5c35e9e9b8adf1a9bf84188da05392f))
+
+## [1.55.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.7...v1.55.8) (2025-02-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.33.0 ([#684](https://github.com/adobe/spacecat-audit-worker/issues/684)) ([57cb5b9](https://github.com/adobe/spacecat-audit-worker/commit/57cb5b90831c316ad3cafdacf716c03e81900907))
+
 ## [1.55.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.6...v1.55.7) (2025-02-21)
 
 
