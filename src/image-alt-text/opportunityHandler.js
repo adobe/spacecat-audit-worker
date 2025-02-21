@@ -12,6 +12,7 @@
 
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { getImageSuggestions } from './suggestionsEngine.js';
 
 /**
  * Synchronizes existing suggestions with new data
@@ -57,7 +58,7 @@ const getProjectedMetrics = () => ({
  * @param context - The context object containing the data access and logger objects.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
-export default async function convertToOpportunity(auditUrl, auditData, context) {
+export default async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
   const { detectedTags } = auditData.auditResult;
@@ -109,19 +110,31 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     throw new Error(`Failed to create alt-text opportunity for siteId ${auditData.siteId}: ${e.message}`);
   }
 
-  const suggestions = detectedTags.imagesWithoutAltText.map((image) => ({
-    pageUrl: new URL(image.pageUrl, auditUrl).toString(),
-    imageUrl: new URL(image.src, auditUrl).toString(),
-  }));
+  const imageUrls = detectedTags.imagesWithoutAltText.map(
+    (image) => new URL(image.src, auditUrl).toString(),
+  );
 
-  log.debug(`Suggestions: ${JSON.stringify(suggestions)}`);
+  const imageSuggestions = await getImageSuggestions(
+    imageUrls,
+    auditUrl,
+    context,
+  );
+
+  const suggestions = detectedTags.imagesWithoutAltText.map((image) => {
+    const imageUrl = new URL(image.src, auditUrl).toString();
+    return {
+      pageUrl: new URL(image.pageUrl, auditUrl).toString(),
+      imageUrl,
+      altText: imageSuggestions[imageUrl]?.suggestion || '',
+    };
+  });
 
   await syncAltTextSuggestions({
     opportunity: altTextOppty,
     newSuggestions: suggestions.map((suggestion) => ({
       opportunityId: altTextOppty.getId(),
       type: 'CONTENT_UPDATE',
-      data: { recommendations: [suggestion] },
+      data: { recommendations: [{ ...suggestion }] },
       rank: 1,
     })),
     log,
