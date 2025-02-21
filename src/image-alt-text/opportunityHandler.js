@@ -120,11 +120,14 @@ export default async function opportunityAndSuggestions(auditUrl, auditData, con
     context,
   );
 
-  const suggestions = detectedTags.imagesWithoutAltText.map((image) => ({
-    pageUrl: new URL(image.pageUrl, auditUrl).toString(),
-    imageUrl: new URL(image.src, auditUrl).toString(),
-    altText: imageSuggestions.filter((res) => res.image_url === image)?.[0]?.suggestion || '',
-  }));
+  const suggestions = detectedTags.imagesWithoutAltText.map((image) => {
+    const imageUrl = new URL(image.src, auditUrl).toString();
+    return {
+      pageUrl: new URL(image.pageUrl, auditUrl).toString(),
+      imageUrl,
+      altText: imageSuggestions[imageUrl]?.suggestion || '',
+    };
+  });
 
   await syncAltTextSuggestions({
     opportunity: altTextOppty,
