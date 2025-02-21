@@ -1,3 +1,17 @@
+## [1.55.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.6...v1.55.7) (2025-02-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.8.2 ([#681](https://github.com/adobe/spacecat-audit-worker/issues/681)) ([016c3b9](https://github.com/adobe/spacecat-audit-worker/commit/016c3b9e41a513eba7605140912dd0af16bda4df))
+
+## [1.55.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.5...v1.55.6) (2025-02-21)
+
+
+### Bug Fixes
+
+* sites-28998 fix for ignored entries are overwritten with next audit run ([#653](https://github.com/adobe/spacecat-audit-worker/issues/653)) ([0cfb009](https://github.com/adobe/spacecat-audit-worker/commit/0cfb00926c64af650cc20a19d2e2c3fd2565345e))
+
 ## [1.55.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.4...v1.55.5) (2025-02-20)
 
 
