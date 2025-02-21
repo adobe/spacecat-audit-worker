@@ -78,7 +78,7 @@ export class StepAudit extends BaseAudit {
 
     log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${this.type}, message sent to ${step.destination}`);
 
-    return stepResult;
+    return ok(stepResult);
   }
 
   async run(message, context) {
@@ -99,6 +99,8 @@ export class StepAudit extends BaseAudit {
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
+      log.info(`debug log 13 ${stepName}`);
+      log.info(`debug log 131 ${JSON.stringify(stepNames)}`);
       const stepContext = { ...context, site };
 
       // For subsequent steps, load existing audit
@@ -111,6 +113,7 @@ export class StepAudit extends BaseAudit {
 
       // Run the step
       const stepResult = await step.handler(stepContext);
+      log.info(`Step ${stepName} execution result: ${JSON.stringify(stepResult)}`);
       let response = ok();
 
       if (!hasNext) {

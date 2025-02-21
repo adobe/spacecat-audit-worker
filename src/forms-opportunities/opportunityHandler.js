@@ -21,6 +21,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 
+  log.info(`Debug log 51 ${JSON.stringify(auditData, null, 2)}`);
   log.info(`Syncing opportunity for ${auditData.siteId}`);
   let highFormViewsLowConversionsOppty;
 
@@ -39,28 +40,28 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
 
   try {
     for (const opptyData of formOpportunities) {
-      if (!highFormViewsLowConversionsOppty) {
-        const opportunityData = {
-          siteId: auditData.siteId,
-          auditId: auditData.id,
-          runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
-          type: 'high-form-views-low-conversions',
-          origin: 'AUTOMATION',
-          title: 'Form has high views but low conversions',
-          description: 'Form has high views but low conversions',
-          tags: ['Forms Conversion'],
-          data: {
-            ...opptyData,
-          },
-        };
-        // eslint-disable-next-line no-await-in-loop
-        highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
-        log.debug('Forms Opportunity created');
-      } else {
-        highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
-        // eslint-disable-next-line no-await-in-loop
-        await highFormViewsLowConversionsOppty.save();
-      }
+      // if (!highFormViewsLowConversionsOppty) {
+      const opportunityData = {
+        siteId: auditData.siteId,
+        auditId: auditData.id,
+        runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
+        type: 'high-form-views-low-conversions',
+        origin: 'AUTOMATION',
+        title: 'Form has high views but low conversions',
+        description: 'Form has high views but low conversions',
+        tags: ['Forms Conversion'],
+        data: {
+          ...opptyData,
+        },
+      };
+      // eslint-disable-next-line no-await-in-loop,@typescript-eslint/no-unused-vars
+      highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
+      log.debug('Forms Opportunity created');
+      // } else {
+      //   highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
+      // eslint-disable-next-line no-await-in-loop
+      //   await highFormViewsLowConversionsOppty.save();
+      // }
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
