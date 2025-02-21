@@ -44,8 +44,8 @@ const STATUSES = {
  * These modifiers are applied to statuses that require adjustment
  */
 const TRAFFIC_MULTIPLIERS = {
-  Poor: 0.015, // +1.5%
-  'Needs Improvement': 0.005, // +0.5%
+  Poor: 0.1, // +10%
+  'Needs Improvement': 0.05, // +5%
 };
 
 const calculateProjectedTrafficLost = (metrics) => {
