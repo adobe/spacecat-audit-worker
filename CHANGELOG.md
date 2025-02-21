@@ -1,3 +1,45 @@
+## [1.55.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.6...v1.55.7) (2025-02-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.8.2 ([#681](https://github.com/adobe/spacecat-audit-worker/issues/681)) ([016c3b9](https://github.com/adobe/spacecat-audit-worker/commit/016c3b9e41a513eba7605140912dd0af16bda4df))
+
+## [1.55.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.5...v1.55.6) (2025-02-21)
+
+
+### Bug Fixes
+
+* sites-28998 fix for ignored entries are overwritten with next audit run ([#653](https://github.com/adobe/spacecat-audit-worker/issues/653)) ([0cfb009](https://github.com/adobe/spacecat-audit-worker/commit/0cfb00926c64af650cc20a19d2e2c3fd2565345e))
+
+## [1.55.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.4...v1.55.5) (2025-02-20)
+
+
+### Bug Fixes
+
+* opportunity schema violation ([#679](https://github.com/adobe/spacecat-audit-worker/issues/679)) ([447f5b3](https://github.com/adobe/spacecat-audit-worker/commit/447f5b3868b89ad152beeb8c7b43104245a5c5c6))
+
+## [1.55.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.3...v1.55.4) (2025-02-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.8.1 ([#677](https://github.com/adobe/spacecat-audit-worker/issues/677)) ([2110793](https://github.com/adobe/spacecat-audit-worker/commit/21107930e4d96f83f3f2ff47f1b4f0ebec87a7ed))
+
+## [1.55.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.2...v1.55.3) (2025-02-20)
+
+
+### Bug Fixes
+
+* chain step response ([#678](https://github.com/adobe/spacecat-audit-worker/issues/678)) ([62c30f1](https://github.com/adobe/spacecat-audit-worker/commit/62c30f12d3b0c9b15589da93cc224a7e432ea4d8))
+
+## [1.55.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.1...v1.55.2) (2025-02-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.8.0 ([#668](https://github.com/adobe/spacecat-audit-worker/issues/668)) ([1fbe759](https://github.com/adobe/spacecat-audit-worker/commit/1fbe759316acb169ec65e4549103998a3c3ab7ff))
+
 ## [1.55.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.0...v1.55.1) (2025-02-19)
 
 

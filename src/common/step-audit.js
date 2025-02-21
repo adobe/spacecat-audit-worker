@@ -127,7 +127,8 @@ export class StepAudit extends BaseAudit {
       }
 
       if (!isLastStep) {
-        response = await this.chainStep(step, stepResult, stepContext);
+        const result = await this.chainStep(step, stepResult, stepContext);
+        response = ok(result);
       }
 
       return response;
