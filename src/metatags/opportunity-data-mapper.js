@@ -26,6 +26,6 @@ export function createOpportunityData() {
       ],
     },
     tags: ['Traffic acquisition'],
-    data: {},
+    data: null,
   };
 }
