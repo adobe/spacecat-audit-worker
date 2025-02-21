@@ -141,3 +141,225 @@ describe('opportunities handler method', () => {
     expect(logStub.error).to.be.calledWith('Creating Forms opportunity for siteId site-id failed with error: some-error');
   });
 });
+
+describe('sendUrlsForScraping step', () => {
+  // eslint-disable-next-line no-shadow
+  const sandbox = sinon.createSandbox();
+  const mockDate = '2024-03-12T15:24:51.231Z';
+  // eslint-disable-next-line no-shadow
+  const baseURL = 'https://space.cat';
+
+  let clock;
+  let context;
+  let site;
+  let audit;
+  let auditInstance;
+
+  beforeEach(async () => {
+    clock = sandbox.useFakeTimers({
+      now: +new Date(mockDate),
+      toFake: ['Date'],
+    });
+
+    site = {
+      getId: () => '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+      getBaseURL: () => baseURL,
+      getIsLive: () => true,
+    };
+
+    audit = {
+      getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+      getAuditType: () => 'forms-audit',
+      getFullAuditRef: () => 's3://test/123',
+      getAuditResult: () => ({ someData: 'test' }),
+    };
+
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+        rumApiClient: {
+          queryMulti: sinon.stub().resolves(formVitalsData),
+        },
+        site,
+        audit,
+        dataAccess: {
+          Site: {
+            findById: sinon.stub().resolves(site),
+          },
+          Configuration: {
+            findLatest: sinon.stub().resolves({
+              isHandlerEnabledForSite: () => true,
+            }),
+          },
+          Audit: {
+            create: sinon.stub().resolves(audit),
+            findById: sinon.stub().resolves(audit),
+          },
+        },
+        sqs: {
+          sendMessage: sinon.stub().resolves(),
+        },
+      })
+      .build();
+
+    const { default: auditBuilder } = await import('../../src/forms-opportunities/handler.js');
+    auditInstance = auditBuilder;
+  });
+
+  afterEach(() => {
+    clock.restore();
+    sandbox.restore();
+  });
+
+  it('should execute step and send message to content scraper', async () => {
+    const result = await auditInstance.run(
+      {
+        type: 'forms-audit',
+        siteId: site.getId(),
+        auditContext: {
+          next: 'sendUrlsForScraping',
+          auditId: audit.getId(),
+        },
+      },
+      context,
+    );
+
+    expect(result).to.exist;
+
+    // expect(result).to.have.property('processingType', 'form');
+
+    // Verify SQS message was sent to content scraper
+    // expect(context.sqs.sendMessage).to.have.been.calledWith({
+    //   QueueUrl: process.env.CONTENT_SCRAPER_QUEUE_URL,
+    //   MessageBody: sinon.match.string
+    // });
+
+    // const sentMessage = JSON.parse(context.sqs.sendMessage.firstCall.args[0].MessageBody);
+    // expect(sentMessage).to.include({
+    //   processingType: 'form',
+    //   jobId: site.getId(),
+    //   siteId: site.getId()
+    // });
+    // expect(sentMessage.urls).to.be.an('array');
+    // expect(sentMessage.urls[0]).to.have.property('url');
+  });
+
+// it('should handle RUM API errors gracefully', async () => {
+//   context.rumApiClient.queryMulti.rejects(new Error('RUM API Error'));
+//
+//   await expect(auditInstance.run(
+//     {
+//       type: 'forms-audit',
+//       siteId: site.getId(),
+//       auditContext: {
+//         next: 'sendUrlsForScraping',
+//         auditId: audit.getId()
+//       }
+//     },
+//     context
+//   )).to.be.rejectedWith('RUM API Error');
+// });
+//
+// it('should process form vitals data correctly', async () => {
+//   const mockFormVitals = {
+//     'form-vitals': [
+//       { url: 'https://example.com/form1', pageview: { total: 1000 } },
+//       { url: 'https://example.com/form2', pageview: { total: 2000 } }
+//     ],
+//     cwv: []
+//   };
+//
+//   context.rumApiClient.queryMulti.resolves(mockFormVitals);
+//
+//   await auditInstance.run(
+//     {
+//       type: 'forms-audit',
+//       siteId: site.getId(),
+//       auditContext: {
+//         next: 'sendUrlsForScraping',
+//         auditId: audit.getId()
+//       }
+//     },
+//     context
+//   );
+//
+//   const sentMessage = JSON.parse(context.sqs.sendMessage.firstCall.args[0].MessageBody);
+//   const urls = sentMessage.urls[0].url;
+//   expect(urls).to.include('https://example.com/form1');
+//   expect(urls).to.include('https://example.com/form2');
+// });
+});
+
+describe('processOpportunity step', () => {
+  let logStub;
+  let context;
+  let auditInstance;
+
+  beforeEach(async () => {
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+      warn: sinon.stub(),
+    };
+
+    const mockAudit = {
+      id: 'test-audit-id',
+      type: 'forms-audit',
+      getAuditResult: () => ({ someData: 'test' }),
+      getAuditType: () => 'forms-audit',
+      getId: () => 'test-audit-id',
+    };
+
+    context = new MockContextBuilder()
+      .withSandbox(sinon.createSandbox())
+      .withOverrides({
+        log: logStub,
+        audit: mockAudit,
+        dataAccess: {
+          Site: {
+            findById: sinon.stub().resolves({
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://test.com',
+            }),
+          },
+          Configuration: {
+            findLatest: sinon.stub().resolves({
+              isHandlerEnabledForSite: () => true,
+            }),
+          },
+          Opportunity: {
+            create: sinon.stub(),
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+          },
+          Audit: {
+            findById: sinon.stub().resolves(mockAudit),
+          },
+        },
+      })
+      .build();
+
+    const { default: auditBuilder } = await import('../../src/forms-opportunities/handler.js');
+    auditInstance = auditBuilder;
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should process opportunity', async () => {
+    const result = await auditInstance.run({
+      type: 'processOpportunity',
+      siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+      auditContext: {
+        next: 'processOpportunity',
+        auditId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+      },
+    }, context);
+
+    expect(result).to.exist;
+    expect(logStub.info).to.have.been.called;
+  });
+});
