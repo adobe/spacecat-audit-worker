@@ -13,7 +13,7 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
 
 describe('Image Alt Text Opportunity Handler', () => {
@@ -31,7 +31,11 @@ describe('Image Alt Text Opportunity Handler', () => {
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       save: sinon.stub(),
-      getSuggestions: sinon.stub().returns([]),
+      getSuggestions: sinon.stub().returns([{
+        id: 'suggestion-1',
+        status: 'NEW',
+        remove: sinon.stub().resolves(),
+      }]),
       addSuggestions: sinon
         .stub()
         .returns({ errorItems: [], createdItems: [1] }),
@@ -203,5 +207,33 @@ describe('Image Alt Text Opportunity Handler', () => {
         'Item {"url":"/page1","src":"image1.jpg"} failed with error: Invalid suggestion data',
       );
     }
+  });
+
+  it('should preserve ignored suggestions when syncing', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+
+    // Mock existing suggestions with one ignored - update to include data.id
+    const mockSuggestions = [
+      {
+        id: 'suggestion-1',
+        status: SuggestionModel.STATUSES.SKIPPED,
+        data: { id: 'suggestion-1' }, // Add data.id to match handler's expectation
+        remove: sinon.stub().resolves(),
+      },
+      {
+        id: 'suggestion-2',
+        status: 'NEW',
+        data: { id: 'suggestion-2' }, // Add data.id to match handler's expectation
+        remove: sinon.stub().resolves(),
+      },
+    ];
+
+    altTextOppty.getSuggestions.returns(mockSuggestions);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    // Verify that only non-ignored suggestion was removed
+    expect(mockSuggestions[0].remove).to.not.have.been.called;
+    expect(mockSuggestions[1].remove).to.have.been.called;
   });
 });
