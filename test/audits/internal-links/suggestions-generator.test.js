@@ -139,7 +139,7 @@ describe('generateSuggestionData', async function test() {
     configuration.isHandlerEnabledForSite.returns(true);
     firefallClient.fetchChatCompletion.resolves({
       choices: [{
-        message: { content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }) },
+        message: { content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }) },
         finish_reason: 'stop',
       }],
     });
@@ -182,8 +182,8 @@ describe('generateSuggestionData', async function test() {
     firefallClient.fetchChatCompletion.resolves({
       choices: [{
         message: {
-          content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
-          ai_rationale: 'Rationale',
+          content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+          aiRationale: 'Rationale',
         },
         finish_reason: 'stop',
       }],
@@ -192,8 +192,8 @@ describe('generateSuggestionData', async function test() {
     firefallClient.fetchChatCompletion.onCall(1).resolves({
       choices: [{
         message: {
-          content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
-          ai_rationale: 'Rationale',
+          content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+          aiRationale: 'Rationale',
         },
         finish_reason: 'length',
       }],
@@ -202,8 +202,8 @@ describe('generateSuggestionData', async function test() {
     firefallClient.fetchChatCompletion.onCall(6).resolves({
       choices: [{
         message: {
-          content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
-          ai_rationale: 'Rationale',
+          content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+          aiRationale: 'Rationale',
         },
         finish_reason: 'length',
       }],
@@ -212,8 +212,8 @@ describe('generateSuggestionData', async function test() {
     firefallClient.fetchChatCompletion.onCall(7).resolves({
       choices: [{
         message: {
-          content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
-          ai_rationale: 'Rationale',
+          content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+          aiRationale: 'Rationale',
         },
         finish_reason: 'length',
       }],
@@ -252,7 +252,7 @@ describe('generateSuggestionData', async function test() {
       choices: [{
         message: {
           content: JSON.stringify({ some_other_property: 'some other value' }),
-          ai_rationale: 'Rationale',
+          aiRationale: 'Rationale',
         },
         finish_reason: 'stop',
       }],
@@ -261,8 +261,8 @@ describe('generateSuggestionData', async function test() {
     firefallClient.fetchChatCompletion.resolves({
       choices: [{
         message: {
-          content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
-          ai_rationale: 'Rationale',
+          content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+          aiRationale: 'Rationale',
         },
         finish_reason: 'stop',
       }],
