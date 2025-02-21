@@ -212,16 +212,18 @@ describe('Image Alt Text Opportunity Handler', () => {
   it('should preserve ignored suggestions when syncing', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
-    // Mock existing suggestions with one ignored
+    // Mock existing suggestions with one ignored - update to include data.id
     const mockSuggestions = [
       {
         id: 'suggestion-1',
         status: SuggestionModel.STATUSES.SKIPPED,
+        data: { id: 'suggestion-1' }, // Add data.id to match handler's expectation
         remove: sinon.stub().resolves(),
       },
       {
         id: 'suggestion-2',
         status: 'NEW',
+        data: { id: 'suggestion-2' }, // Add data.id to match handler's expectation
         remove: sinon.stub().resolves(),
       },
     ];

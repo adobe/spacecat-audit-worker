@@ -30,7 +30,7 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestions, log 
 
   // eslint-disable-next-line max-len
   const ignoredSuggestions = existingSuggestions.filter((s) => s.status === SuggestionModel.STATUSES.SKIPPED);
-  const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.id);
+  const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.data.id);
 
   // Remove existing suggestions that were not ignored
   await Promise.all(existingSuggestions
