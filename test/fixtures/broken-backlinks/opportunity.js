@@ -44,5 +44,5 @@ export const opportunityData = (siteId, auditId) => ({
     ],
   },
   tags: ['Traffic acquisition'],
-  data: { },
+  data: null,
 });

@@ -20,6 +20,6 @@ export function createOpportunityData() {
       steps: [],
     },
     tags: ['Traffic acquisition'],
-    data: { },
+    data: null,
   };
 }
