@@ -309,7 +309,7 @@ describe('Backlinks Tests', function () {
       firefallClient.fetchChatCompletion.onCall(3).resolves({
         choices: [{
           message: { content: JSON.stringify({ some_other_property: 'some other value' }) },
-          finish_reason: 'stop',
+          finish_reason: 'length',
         }],
       });
 
@@ -368,7 +368,7 @@ describe('Backlinks Tests', function () {
             content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
             ai_rationale: 'Rationale',
           },
-          finish_reason: 'length',
+          finish_reason: 'stop',
         }],
       });
 
@@ -396,7 +396,7 @@ describe('Backlinks Tests', function () {
         },
       ]);
       expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
-    }).timeout(20000);
+    });
 
     it('handles Firefall client errors gracefully and continues processing, should suggest base URL instead', async () => {
       context.s3Client.send.onCall(0).resolves({
@@ -411,7 +411,7 @@ describe('Backlinks Tests', function () {
       configuration.isHandlerEnabledForSite.returns(true);
       firefallClient.fetchChatCompletion.onCall(0).rejects(new Error('Firefall error'));
       firefallClient.fetchChatCompletion.onCall(2).rejects(new Error('Firefall error'));
-      firefallClient.fetchChatCompletion.onCall(4).resolves({
+      firefallClient.fetchChatCompletion.onCall(6).resolves({
         choices: [{
           message: {
             content: JSON.stringify({ some_other_property: 'some other value' }),
@@ -444,6 +444,6 @@ describe('Backlinks Tests', function () {
         },
       ]);
       expect(context.log.error).to.have.been.calledWith('Batch processing error: Firefall error');
-    }).timeout(20000);
+    });
   });
 });

@@ -129,8 +129,11 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 
   const processBatch = async (batch, urlTo) => {
     try {
-      const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
-      // await sleep(1000);
+      const requestBody = await getPrompt(
+        { alternative_urls: batch, broken_url: urlTo },
+        'broken-backlinks',
+        log,
+      );
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
@@ -147,20 +150,22 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 
   const processBacklink = async (backlink, headerSuggestions) => {
     log.info(`Processing backlink: ${backlink.url_to}`);
-    const suggestions = [];
-    for (const batch of dataBatches) {
-      // eslint-disable-next-line no-await-in-loop
-      const result = await processBatch(batch, backlink.url_to);
-      if (result) {
-        suggestions.push(result);
-      }
-    }
+    const batchPromises = dataBatches.map((batch) => processBatch(batch, backlink.url_to));
+    const batchResults = await Promise.all(batchPromises);
+    const suggestions = batchResults.filter((result) => result !== null);
 
     if (totalBatches > 1) {
       log.info(`Compiling final suggestions for: ${backlink.url_to}`);
       try {
-        const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: backlink.url_to }, 'broken-backlinks-followup', log);
-        // await sleep(1000);
+        const finalRequestBody = await getPrompt(
+          {
+            suggested_urls: suggestions,
+            header_links: headerSuggestions,
+            broken_url: backlink.url_to,
+          },
+          'broken-backlinks-followup',
+          log,
+        );
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
 
@@ -192,36 +197,33 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     };
   };
 
-  const headerSuggestionsResults = [];
-  for (const backlink of auditData.auditResult.brokenBacklinks) {
+  const headerSuggestionsPromises = auditData.auditResult.brokenBacklinks.map(async (backlink) => {
     try {
-      // eslint-disable-next-line no-await-in-loop
-      const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: backlink.url_to }, 'broken-backlinks', log);
-      // eslint-disable-next-line no-await-in-loop
+      const requestBody = await getPrompt(
+        { alternative_urls: headerLinks, broken_url: backlink.url_to },
+        'broken-backlinks',
+        log,
+      );
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
         log.error(`No header suggestions for ${backlink.url_to}`);
-        headerSuggestionsResults.push(null);
-        // eslint-disable-next-line no-continue
-        continue;
+        return null;
       }
 
-      headerSuggestionsResults.push(JSON.parse(response.choices[0].message.content));
+      return JSON.parse(response.choices[0].message.content);
     } catch (error) {
       log.error(`Header suggestion error: ${error.message}`);
-      headerSuggestionsResults.push(null);
+      return null;
     }
-  }
+  });
+  const headerSuggestionsResults = await Promise.all(headerSuggestionsPromises);
 
-  const updatedBacklinks = [];
-  for (let index = 0; index < auditData.auditResult.brokenBacklinks.length; index += 1) {
-    const backlink = auditData.auditResult.brokenBacklinks[index];
-    const headerSuggestions = headerSuggestionsResults[index];
-    // eslint-disable-next-line no-await-in-loop
-    const updatedBacklink = await processBacklink(backlink, headerSuggestions);
-    updatedBacklinks.push(updatedBacklink);
-  }
+  // Process each backlink (including its batches) in parallel.
+  const updatedBacklinkPromises = auditData.auditResult.brokenBacklinks.map(
+    (backlink, index) => processBacklink(backlink, headerSuggestionsResults[index]),
+  );
+  const updatedBacklinks = await Promise.all(updatedBacklinkPromises);
 
   log.info('Suggestions generation complete.');
   return {
