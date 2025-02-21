@@ -21,8 +21,7 @@ export const getImageSuggestions = async (imageUrls, auditUrl, context) => {
   const otherImages = [];
   const unsupportedFormatImages = [];
 
-  imageUrls.forEach((s) => {
-    const { imageUrl } = s;
+  imageUrls.forEach((imageUrl) => {
     const regex = /\.(webp|png|gif|jpeg)(?=\?|$)/i;
 
     if (!regex.test(imageUrl)) {
