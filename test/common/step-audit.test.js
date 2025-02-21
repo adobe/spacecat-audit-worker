@@ -60,6 +60,11 @@ describe('Step-based Audit Tests', () => {
 
     context.dataAccess.Site.findById.resolves(site);
     context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+    context.env = {
+      CONTENT_SCRAPER_QUEUE_URL: 'https://space.cat/content-scraper',
+      IMPORT_WORKER_QUEUE_URL: 'https://space.cat/import-worker',
+    };
   });
 
   afterEach(() => {
@@ -173,7 +178,7 @@ describe('Step-based Audit Tests', () => {
 
       // Verify message sent to content scraper
       expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: process.env.CONTENT_SCRAPER_QUEUE_URL,
+        QueueUrl: 'https://space.cat/content-scraper',
         MessageBody: sinon.match.string,
       });
 
@@ -207,14 +212,20 @@ describe('Step-based Audit Tests', () => {
         },
       };
 
-      await audit.run(continueMessage, context);
+      const result = await audit.run(continueMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(await result.json()).to.deep.equal({
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        type: 'content-import',
+      });
 
       // Verify no new audit record is created
       expect(context.dataAccess.Audit.create).not.to.have.been.called;
 
       // Verify message sent to import worker
       expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: process.env.IMPORT_WORKER_QUEUE_URL,
+        QueueUrl: 'https://space.cat/import-worker',
         MessageBody: sinon.match.string,
       });
 

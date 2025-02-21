@@ -107,7 +107,13 @@ export class BaseAudit {
 
     const audit = await this.persister(auditData, context);
     context.audit = audit;
-    return this.runPostProcessors(audit, result, { ...params, auditData }, context);
+    return this.runPostProcessors(
+      audit,
+      result,
+      // add auditId for the post-processing
+      { ...params, auditData: { ...auditData, id: audit.getId() } },
+      context,
+    );
   }
 
   async runPostProcessors(audit, result, params, context) {

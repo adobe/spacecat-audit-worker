@@ -72,8 +72,9 @@ export class StepAudit extends BaseAudit {
       fullAuditRef: audit.getFullAuditRef(),
     };
 
+    const queueUrl = destination.getQueueUrl(context);
     const payload = destination.formatPayload(stepResult, auditContext);
-    await sendContinuationMessage({ queueUrl: destination.queueUrl, payload }, context);
+    await sendContinuationMessage({ queueUrl, payload }, context);
 
     log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${this.type}, message sent to ${step.destination}`);
 
@@ -126,7 +127,8 @@ export class StepAudit extends BaseAudit {
       }
 
       if (!isLastStep) {
-        response = await this.chainStep(step, stepResult, stepContext);
+        const result = await this.chainStep(step, stepResult, stepContext);
+        response = ok(result);
       }
 
       return response;

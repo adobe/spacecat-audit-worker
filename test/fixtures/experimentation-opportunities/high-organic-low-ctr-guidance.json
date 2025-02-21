@@ -1,0 +1,39 @@
+{
+  "type": "guidance:high-organic-low-ctr",
+  "time": "2025-01-29T12:56:25.363Z",
+  "siteId": "0f889afa-270c-46b1-b831-425818c3fdd4",
+  "auditId": "30bbee80-6430-49b6-821e-e886f18ab433",
+  "data": {
+    "url": "https://abc.com/abc-adoption/account",
+    "guidance": [
+      {
+        "insight": "The CTAs lack compelling and action-oriented language.",
+        "rationale": "The current CTA texts are generic and do not create a sense of urgency or direct benefit. By using more compelling language, users are more likely to be motivated to click, leading to higher engagement rates.",
+        "recommendation": "Enhance the CTA text to be more dynamic and engaging, such as changing 'Learn More' to 'Get Your Free Quote Now'.",
+        "type": "guidance"
+      }
+    ],
+    "suggestions": [
+      {
+        "name": "Original",
+        "changes": [],
+        "variationEditPageUrl": "",
+        "id": "original",
+        "variationPageUrl": "https://main--wknd--hlxsites.hlx.live/",
+        "explanation": "",
+        "projectedImpact": 0.0,
+        "previewImage": "https://main--wknd--hlxsites.hlx.live/media_1a1f015e843aeee634ff6722bcbf1c64c739a2464.jpeg?width=2000&format=webply&optimize=medium"
+      },
+      {
+        "name": "Variation 1",
+        "changes": [],
+        "variationEditPageUrl": "https://example.com/edit/variation-1",
+        "id": "variation-1",
+        "variationPageUrl": "https://experience-platform-mystique-deploy-ethos102-stage-88229c.stage.cloud.adobe.io/proxy-ad346e2292b54a229b44821e7d2e1b94-9640fed0821345da877126b478fa7841/variation.html",
+        "explanation": "Variation explanation",
+        "projectedImpact": 0.08,
+        "previewImage": "https://experience-platform-mystique-deploy-ethos102-stage-88229c.stage.cloud.adobe.io/v1/generations/ad346e2292b54a229b44821e7d2e1b94/variations/9640fed0821345da877126b478fa7841/screenshot"
+      }
+    ]
+  }
+}
