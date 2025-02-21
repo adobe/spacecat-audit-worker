@@ -23,6 +23,6 @@ export function createOpportunityData() {
       ],
     },
     tags: ['Traffic Acquisition'],
-    data: {},
+    data: null,
   };
 }

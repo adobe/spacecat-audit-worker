@@ -86,7 +86,110 @@
     "trackedPageKPIValue": "0.14",
     "pageViews": 21450,
     "samples": 215,
-    "metrics": []
+    "metrics": [
+      {
+        "type": "traffic",
+        "value": {
+          "paid": 1400,
+          "total": 3548400,
+          "earned": 304400,
+          "owned": 3242600
+        },
+        "vendor": "*"
+      },
+      {
+        "type": "ctr",
+        "value": {
+          "page": 0.10630143163115771
+        },
+        "vendor": "*"
+      },
+      {
+        "type": "traffic",
+        "value": {
+          "paid": 1000,
+          "total": 77300,
+          "earned": 76300,
+          "owned": 0
+        },
+        "vendor": "google"
+      },
+      {
+        "type": "ctr",
+        "value": {
+          "page": 0.7645536869340233
+        },
+        "vendor": "google"
+      },
+      {
+        "type": "traffic",
+        "value": {
+          "paid": 0,
+          "total": 6400,
+          "earned": 6400,
+          "owned": 0
+        },
+        "vendor": "youtube"
+      },
+      {
+        "type": "ctr",
+        "value": {
+          "page": 0.515625
+        },
+        "vendor": "youtube"
+      },
+      {
+        "type": "traffic",
+        "value": {
+          "paid": 0,
+          "total": 3100,
+          "earned": 3100,
+          "owned": 0
+        },
+        "vendor": "bing"
+      },
+      {
+        "type": "ctr",
+        "value": {
+          "page": 0.6451612903225806
+        },
+        "vendor": "bing"
+      },
+      {
+        "type": "traffic",
+        "value": {
+          "paid": 0,
+          "total": 1400,
+          "earned": 1400,
+          "owned": 0
+        },
+        "vendor": "yandex"
+      },
+      {
+        "type": "ctr",
+        "value": {
+          "page": 0.8571428571428571
+        },
+        "vendor": "yandex"
+      },
+      {
+        "type": "traffic",
+        "value": {
+          "paid": 0,
+          "total": 1100,
+          "earned": 1100,
+          "owned": 0
+        },
+        "vendor": "yahoo"
+      },
+      {
+        "type": "ctr",
+        "value": {
+          "page": 0.2727272727272727
+        },
+        "vendor": "yahoo"
+      }
+    ]
   }],
   "high-inorganic-high-bounce-rate": [{
     "type": "high-inorganic-high-bounce-rate",

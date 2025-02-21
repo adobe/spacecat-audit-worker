@@ -38,6 +38,28 @@ export async function retrieveSiteBySiteId(dataAccess, siteId, log) {
 }
 
 /**
+ * Retrieves an audit record by its ID.
+ *
+ * @param {Object} dataAccess - The data access object for database operations.
+ * @param {string} auditId - The ID of the audit record to retrieve.
+ * @param {Object} log - The logging object.
+ * @returns {Promise<Object|null>} - Returns the audit record if found, otherwise null.
+ */
+export async function retrieveAuditById(dataAccess, auditId, log) {
+  try {
+    const { Audit } = dataAccess;
+    const audit = await Audit.findById(auditId);
+    if (!isObject(audit)) {
+      log.warn(`Audit not found for auditId: ${auditId}`);
+      return null;
+    }
+    return audit;
+  } catch (e) {
+    throw new Error(`Error getting audit ${auditId}: ${e.message}`);
+  }
+}
+
+/**
  * Synchronizes existing suggestions with new data by removing outdated suggestions
  * and adding new ones.
  *

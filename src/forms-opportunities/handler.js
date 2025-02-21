@@ -12,7 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { wwwUrlResolver } from '../common/audit.js';
+import { wwwUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
 
 const DAILY_THRESHOLD = 200;

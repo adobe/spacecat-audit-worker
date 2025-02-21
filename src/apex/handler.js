@@ -13,7 +13,7 @@ import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
 import { hasNonWWWSubdomain, toggleWWW } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { noopUrlResolver } from '../common/index.js';
 
 /**
  * Probes the connection to a given URL using the fetch API

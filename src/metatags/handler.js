@@ -14,11 +14,12 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { noopUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getIssueRanking, removeTrailingSlash, syncMetatagsSuggestions } from './opportunity-handler.js';
+import { getIssueRanking, removeTrailingSlash } from './opportunity-utils.js';
 import { DESCRIPTION, H1, TITLE } from './constants.js';
+import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.META_TAGS;
@@ -52,7 +53,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
 
   // Sync the suggestions from new audit with old ones
-  await syncMetatagsSuggestions({
+  await syncSuggestions({
     opportunity,
     newData: suggestions,
     buildKey,

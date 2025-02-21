@@ -13,7 +13,7 @@
 /* c8 ignore start */
 import { AuditBuilder } from '../common/audit-builder.js';
 import { processAudit } from './common.js';
-import { wwwUrlResolver } from '../common/audit.js';
+import { wwwUrlResolver } from '../common/index.js';
 
 const DAYS = 1;
 

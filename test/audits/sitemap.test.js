@@ -999,7 +999,7 @@ describe('Sitemap Audit', () => {
             ],
           },
           tags: ['Traffic Acquisition'],
-          data: {},
+          data: null,
         },
       );
     });
