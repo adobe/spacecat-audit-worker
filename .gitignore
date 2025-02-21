@@ -12,3 +12,4 @@ test-results.xml
 .vscode/
 .aws-sam/
 env.sh
+output.txt
