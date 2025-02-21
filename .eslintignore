@@ -1,3 +1,3 @@
 .vscode/*
 coverage/*
-src/image-alt-text/firefall-client.js
+package.json
