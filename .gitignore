@@ -11,3 +11,4 @@ test-results.xml
 .idea/
 .vscode/
 .aws-sam/
+env.sh
