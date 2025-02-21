@@ -52,7 +52,6 @@ export async function processStructuredData(baseURL, context, pages) {
     throw new Error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
   }
 
-  // TODO: Hardcode for development
   const urlInspectionResult = pages.map(async ({ url: page }) => {
     try {
       const { inspectionResult } = await google.urlInspect(page);
@@ -113,10 +112,13 @@ export async function processStructuredData(baseURL, context, pages) {
     }
   });
 
-  // eslint-disable-next-line no-unreachable
   const results = await Promise.allSettled(urlInspectionResult);
-  const filteredResults = results.filter((result) => result.status === 'fulfilled')
-    .map((result) => result.value);
+
+  const filteredResults = results
+    .filter((result) => result.status === 'fulfilled')
+    .map((result) => result.value)
+    // Filter out the results where GSC inspection failed
+    .filter((result) => !result.error);
 
   return filteredResults;
 }
@@ -194,33 +196,45 @@ export async function structuredDataHandler(baseURL, context, site) {
 
   const siteId = site.getId();
 
-  // TODO: Replace error throws with audit object and success = false
+  try {
+    const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+    if (topPages.length === 0) {
+      log.error(`No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
+      throw new Error(`No top pages for site ID ${siteId} found.`);
+    }
 
-  const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  if (topPages.length === 0) {
-    log.error(`No top pages for site ID ${siteId} found, ending audit.`);
-    throw new Error(`No top pages for site ID ${siteId} found, ending audit.`);
+    const auditResult = await processStructuredData(baseURL, context, topPages);
+
+    const endTime = process.hrtime(startTime);
+    const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+    const formattedElapsed = elapsedSeconds.toFixed(2);
+
+    log.info(`Structured data audit completed in ${formattedElapsed} seconds for ${baseURL}`);
+
+    return {
+      fullAuditRef: baseURL,
+      auditResult,
+    };
+  } catch (e) {
+    return {
+      fullAuditRef: baseURL,
+      auditResult: {
+        error: e.message,
+        success: false,
+      },
+    };
   }
-
-  const auditResult = await processStructuredData(baseURL, context, topPages);
-
-  const endTime = process.hrtime(startTime);
-  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
-  const formattedElapsed = elapsedSeconds.toFixed(2);
-
-  log.info(`Structured data audit completed in ${formattedElapsed} seconds for ${baseURL}`);
-
-  return {
-    fullAuditRef: baseURL,
-    auditResult,
-  };
 }
 
 export async function generateSuggestionsData(auditUrl, auditData, context, site) {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
 
-  // TODO: Check if audit was successful can be skipped for now as the audit throws if it fails.
+  // Check if audit was successful
+  if (auditData.auditResult.success === false) {
+    log.info('Audit failed, skipping suggestions data generation');
+    return { ...auditData };
+  }
 
   // Check if auto suggest was enabled
   const configuration = await Configuration.findLatest();
@@ -250,28 +264,27 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
     try {
       scrapeResult = await getScrapeForPath(pathname, context, site);
     } catch (e) {
-      log.error(`Could not find scrape for ${pathname}`, e);
+      log.error(`Could not find scrape for ${pathname}. Make sure that scrape-top-pages did run.`, e);
       continue;
     }
 
     // Get extracted LD-JSON from scrape
     const structuredData = scrapeResult?.scrapeResult?.structuredData;
     if (structuredData.length === 0) {
+      // If structured data is loaded late on the page, e.g. in delayed phase,
+      // the scraper might not pick it up. You would need to fine tune wait for
+      // check of the scraper for this site.
       log.error(`No structured data found in scrape result for URL ${auditResult.inspectionUrl}`);
       continue;
     }
     log.debug('Found ld+json in scrape:', JSON.stringify(structuredData));
 
-    let plainPage;
-    // If plain html version is not available, transform scraped page
-    if (!plainPage) {
-      // Scraper already strips out some HTML tags
-      // Use cheerio to get text from main element only
-      const parsed = cheerio.load(scrapeResult?.scrapeResult?.rawBody);
-      const main = parsed('main').prop('outerHTML');
-      plainPage = stripHtmlTags(main);
-    }
+    // Use cheerio to get text from main element only and strip all tags
+    const parsed = cheerio.load(scrapeResult?.scrapeResult?.rawBody);
+    const main = parsed('main').prop('outerHTML');
+    const plainPage = stripHtmlTags(main);
 
+    // Need a mapping between GSC rich result types and schema.org entities as they differ.
     // TODO: Add more mappings based on actual customer issues
     // TODO: Handle case "Review has multiple aggregate ratings"
     const entityMapping = {
@@ -332,7 +345,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
     }
   }
 
-  log.info('Finished generating suggestions data', JSON.stringify(auditData));
+  log.debug('Generated suggestions data', JSON.stringify(auditData));
 
   return { ...auditData };
 }
