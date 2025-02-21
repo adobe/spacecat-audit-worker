@@ -17,6 +17,7 @@ import { getScrapedDataForSiteId } from '../support/utils.js';
 export const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
+  const { FIREFALL_MODEL } = context.env;
 
   if (auditData.auditResult.success === false) {
     log.info('Audit failed, skipping suggestions generation');
@@ -32,7 +33,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   log.info(`Generating suggestions for site ${finalUrl}`);
 
   const firefallClient = FirefallClient.createFrom(context);
-  const firefallOptions = { responseFormat: 'json_object' };
+  const firefallOptions = { responseFormat: 'json_object', model: FIREFALL_MODEL };
   const BATCH_SIZE = 300;
 
   const data = await getScrapedDataForSiteId(site, context);
