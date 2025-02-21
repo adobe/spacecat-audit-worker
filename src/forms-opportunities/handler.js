@@ -11,10 +11,13 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import convertToOpportunity from './opportunityHandler.js';
+// import convertToOpportunity from './opportunityHandler.js';
+import generateOpptyData from './utils.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const DAILY_THRESHOLD = 200;
 const INTERVAL = 7; // days
 const FORMS_OPPTY_QUERIES = [
@@ -66,6 +69,63 @@ export async function formsAuditRunner(auditUrl, context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(formsAuditRunner)
-  .withPostProcessors([convertToOpportunity])
+  // .withRunner(formsAuditRunner)
+  // .withPostProcessors([convertToOpportunity])
+  .addStep('sendUrlsForScraping', async (context) => {
+    const {
+      site, audit, log, finalUrl,
+    } = context;
+    log.info(`Debug log 0 ${site.getBaseURL()}`);
+    log.info(`Debug log 00 ${finalUrl}`);
+    log.info(`Debug log 000 ${audit}`);
+    const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
+    log.info(`Debug log 1 ${JSON.stringify(formsAuditRunnerResult, null, 2)}`);
+
+    const { formVitals } = formsAuditRunnerResult.auditResult;
+    const formOpportunities = generateOpptyData(formVitals);
+    log.info(`Debug log 2 ${JSON.stringify(formOpportunities, null, 2)}`);
+    const uniqueUrls = new Set();
+    for (const opportunity of formOpportunities) {
+      uniqueUrls.add(opportunity.form);
+    }
+    log.info(`Debug log 3 ${Array.from(uniqueUrls)}`);
+    // const urlArray = Array.from(uniqueUrls);
+
+    const result = {
+      // auditResult: formsAuditRunnerResult.auditResult,
+      fullAuditRef: formsAuditRunnerResult.fullAuditRef,
+      auditResult: { status: 'preparing' },
+      // fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
+      // Additional data for content scraper
+      processingType: 'form',
+      jobId: site.getId(),
+      urls: Array.from(uniqueUrls).map((url) => ({ url })),
+      // urls: urlArray,
+      siteId: site.getId(),
+      // context,
+      // auditContext: {
+      //   next: 'processOpportunity',
+      //   auditId: site.getId(),
+      //   auditType: 'forms-opportunities',
+      //   fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
+      // },
+    };
+
+    log.info(`Debug log 4: ${JSON.stringify(result, null, 2)}`);
+
+    return result;
+  }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+
+  .addStep('processOpportunity', async (context) => {
+    const {
+      audit, log,
+    } = context;
+    log.info('Debug log 52');
+    log.info(`Debug log 53 ${JSON.stringify(audit, null, 2)}`);
+    return {
+      status: 'complete',
+    };
+  })
+// .withRunner(formsAuditRunner)
+// .withPostProcessors([convertToOpportunity])
   .build();
