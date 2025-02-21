@@ -28,4 +28,4 @@ Your response must be a valid JSON object with the following structure:
 - **Broken URL:** `{{broken_url}}`
 
 ### Task:
-For the broken URL `{{broken_url}}`, suggest up to 3 alternative URLs strictly from the provided list, ensuring language and context alignment. If no suitable match exists, suggest only the base URL.
+For the broken URL `{{broken_url}}`, suggest up to 3 alternative URLs strictly from the provided list, ensuring language and context alignment. If the broken URL is mixed case, also suggest the lowercase version of the URL. If no suitable match exists, suggest only the base URL.
