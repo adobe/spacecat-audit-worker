@@ -17,10 +17,10 @@ You are an expert SEO consultant, and your goal is to suggest a description for 
 ### Response Format:
 Your response must be a valid JSON object with the following structure:
 [{
-  'image_url': 'string',
-  'suggestion': 'string',
-  'ai_rationale': 'string',
-  'confidence_score': number
+  "image_url": "string",
+  "suggestion": "string",
+  "ai_rationale": "string",
+  "confidence_score": number
 }]
 **IMPORTANT:**
 - Provide only the JSON object. Do not include any additional text, explanation, or formatting.
