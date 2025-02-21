@@ -15,7 +15,7 @@ Your response must be a valid JSON object in the following structure:
 {
   "broken_url": "string",
   "suggested_urls": ["string"],
-  "ai_rationale": "string",
+  "aiRationale": "string",
   "confidence_score": number
 }
 ```
