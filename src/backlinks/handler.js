@@ -219,7 +219,6 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   });
   const headerSuggestionsResults = await Promise.all(headerSuggestionsPromises);
 
-  // Process each backlink (including its batches) in parallel.
   const updatedBacklinkPromises = auditData.auditResult.brokenBacklinks.map(
     (backlink, index) => processBacklink(backlink, headerSuggestionsResults[index]),
   );
