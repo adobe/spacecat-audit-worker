@@ -81,7 +81,7 @@ describe('Index Tests', () => {
   });
 
   it('happy path', async () => {
-    // const resp = await main(request, context);
-    // expect(resp.status).to.equal(200);
+    const resp = await main(request, context);
+    expect(resp.status).to.equal(200);
   });
 });
