@@ -181,7 +181,7 @@ export async function filterValidUrls(urls) {
   const NOT_OK = 1;
   const NETWORK_ERROR = 2;
   const OTHER_STATUS = 3;
-  const batchSize = 50;
+  const BATCH_SIZE = 50;
 
   const fetchUrl = async (url) => {
     try {
@@ -240,8 +240,8 @@ export async function filterValidUrls(urls) {
   const fetchPromises = urls.map(fetchUrl);
 
   const batches = [];
-  for (let i = 0; i < fetchPromises.length; i += batchSize) {
-    batches.push(fetchPromises.slice(i, i + batchSize));
+  for (let i = 0; i < fetchPromises.length; i += BATCH_SIZE) {
+    batches.push(fetchPromises.slice(i, i + BATCH_SIZE));
   }
 
   const results = [];
@@ -276,7 +276,7 @@ export async function filterValidUrls(urls) {
         acc.notOk.push({
           url: result.url,
           statusCode: result.statusCode,
-          ...(result.finalUrl && { urls_suggested: result.finalUrl }),
+          ...(result.finalUrl && { urlsSuggested: result.finalUrl }),
         });
       }
       return acc;
@@ -518,7 +518,6 @@ export function getSitemapsWithIssues(auditData) {
  * // Output:
  * // [
  * //   { type: 'url', sitemapUrl: 'https://site.url/sitemap.xml', pageUrl: 'https://site.url/page1', statusCode: 404 },
- * //   { type: 'url', sitemapUrl: 'https://site.url/sitemap.xml', pageUrl: 'https://site.url/page2', statusCode: 500 }
  * // ]
  */
 export function getPagesWithIssues(auditData) {
@@ -536,7 +535,7 @@ export function getPagesWithIssues(auditData) {
       sitemapUrl,
       pageUrl: page.url,
       statusCode: page.statusCode ?? 0, // default to 0 if not present
-      ...(page.urls_suggested && { urls_suggested: page.urls_suggested }),
+      ...(page.urlsSuggested && { urlsSuggested: page.urlsSuggested }),
     }));
   });
 }
@@ -562,8 +561,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
     .filter(Boolean)
     .map((issue) => ({
       ...issue,
-      recommendedAction: issue.urls_suggested
-        ? `use this url instead: ${issue.urls_suggested}`
+      recommendedAction: issue.urlsSuggested
+        ? `use this url instead: ${issue.urlsSuggested}`
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 
