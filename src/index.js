@@ -79,10 +79,18 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
+
+  // eslint-disable-next-line no-param-reassign
+  message = JSON.parse('{"type":"forms-opportunities","siteId":"5a377a31-b6c3-411c-8b00-62d7e1b116ac",'
+      + '"auditContext": {'
+      + '"next": "processOpportunity",'
+      + '"auditId": "e8edd08e-6399-4a4a-a46d-65bdb9a73252",'
+      + '"auditType": "forms-opportunities",'
+      + '"fullAuditRef": "www.petplace.com"}}');
+
   const { type, siteId } = message;
 
   log.info(`Debug log 13: ${JSON.stringify(message, null, 2)}`);
-
   log.info(`Received ${type} audit request for: ${siteId}`);
 
   const handler = HANDLERS[type];
