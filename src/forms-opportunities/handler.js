@@ -116,12 +116,16 @@ export default new AuditBuilder()
 
     log.info(`Debug log 4: ${JSON.stringify(result, null, 2)}`);
 
-    try {
-      const data = await getScrapedDataForSiteId(site, context);
-      log.info(`Debug log 4_4 scraped data ${JSON.stringify(data, null, 2)}`);
-    } catch (e) {
-      log.error('error', e);
-    }
+    const data = await getScrapedDataForSiteId(site, context);
+    log.info(`Debug log 4_4 scraped data ${JSON.stringify(data, null, 2)}`);
+
+    // let data;
+    // try {
+    //   data = await getScrapedDataForSiteId(site, context);
+    // } catch (e) {
+    //   log.error('error', e);
+    // }
+    // log.info(`Debug log 4_4 scraped data ${JSON.stringify(data, null, 2)}`);
 
     return result;
   }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)

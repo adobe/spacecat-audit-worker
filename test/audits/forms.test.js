@@ -23,6 +23,7 @@ import testData from '../fixtures/high-form-views-low-conversions.js';
 import convertToOpportunity from '../../src/forms-opportunities/opportunityHandler.js';
 import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
 // import { getScrapedDataForSiteId } from '../../src/support/utils.js';
+// import * as utilsModule from '../../src/support/utils.js';
 
 use(sinonChai);
 
@@ -180,6 +181,9 @@ describe('sendUrlsForScraping step', () => {
       .withOverrides({
         runtime: { name: 'aws-lambda', region: 'us-east-1' },
         func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+        s3Client: {
+          send: sandbox.stub(),
+        },
         rumApiClient: {
           queryMulti: sinon.stub().resolves(formVitalsData),
         },
@@ -215,8 +219,22 @@ describe('sendUrlsForScraping step', () => {
   });
 
   it('should execute step and send message to content scraper', async () => {
-    // eslint-disable-next-line max-len
-    // sinon.stub('transformProcessUrlResult').resolves({ location: 'mocked-location', urlId: 'test-url', jobMetadata: { meta: 'info' } });
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/scrape.json' },
+      ],
+      IsTruncated: true,
+      NextContinuationToken: 'token',
+    });
+
+    context.s3Client.send.onCall(1).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/screenshot.png' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+
     const result = await auditInstance.run(
       {
         type: 'forms-audit',
@@ -232,21 +250,6 @@ describe('sendUrlsForScraping step', () => {
     expect(result).to.exist;
 
     // expect(result).to.have.property('processingType', 'form');
-
-    // Verify SQS message was sent to content scraper
-    // expect(context.sqs.sendMessage).to.have.been.calledWith({
-    //   QueueUrl: process.env.CONTENT_SCRAPER_QUEUE_URL,
-    //   MessageBody: sinon.match.string
-    // });
-
-    // const sentMessage = JSON.parse(context.sqs.sendMessage.firstCall.args[0].MessageBody);
-    // expect(sentMessage).to.include({
-    //   processingType: 'form',
-    //   jobId: site.getId(),
-    //   siteId: site.getId()
-    // });
-    // expect(sentMessage.urls).to.be.an('array');
-    // expect(sentMessage.urls[0]).to.have.property('url');
   });
 
 // it('should handle RUM API errors gracefully', async () => {
