@@ -89,6 +89,7 @@ export default new AuditBuilder()
       uniqueUrls.add(opportunity.form);
     }
     log.info(`Debug log 3 ${Array.from(uniqueUrls)}`);
+    log.info(`Debug log 4 ${Array.from(uniqueUrls)}`);
     // const urlArray = Array.from(uniqueUrls);
 
     const result = {
