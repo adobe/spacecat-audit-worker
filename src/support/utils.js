@@ -155,7 +155,9 @@ export function getUrlWithoutPath(url) {
 
 const extractScrapedMetadataFromJson = (data, log) => {
   try {
-    log.debug(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
+    // eslint-disable-next-line max-len
+    // log.debug(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
+    log.debug(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data));
     const finalUrl = data.finalUrl || '';
     const title = data.scrapeResult.tags?.title || '';
     const description = data.scrapeResult.tags?.description || '';
@@ -248,6 +250,9 @@ export const getScrapedDataForSiteId = async (site, context) => {
     };
   }
 
+  // eslint-disable-next-line max-len
+  // const filteredFiles = allFiles.filter((file) => file.Key.includes('pet-adoption/search/forms/scrape.json'));
+
   const extractedData = await Promise.all(
     allFiles.map(async (file) => {
       const fileContent = await getObjectFromKey(
@@ -256,18 +261,28 @@ export const getScrapedDataForSiteId = async (site, context) => {
         file.Key,
         log,
       );
-      log.info(`Debug log 73: ${JSON.stringify(fileContent, null, 2)}`);
+      // log.info(`Debug log 73: ${JSON.stringify(fileContent, null, 2)}`);
       return extractScrapedMetadataFromJson(fileContent, log);
     }),
   );
 
-  const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
+  // const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
+  // const indexFileContent = await getObjectFromKey(
+  //   s3Client,
+  //   env.S3_SCRAPER_BUCKET_NAME,
+  //   indexFile?.Key,
+  //   log,
+  // );
+  // const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
+
+  const indexFile = allFiles.find((file) => file.Key.endsWith('forms/scrape.json'));
   const indexFileContent = await getObjectFromKey(
     s3Client,
     env.S3_SCRAPER_BUCKET_NAME,
     indexFile?.Key,
     log,
   );
+  log.info(`Debug log 74: ${JSON.stringify(indexFileContent, null, 2)}`);
   const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
 
   log.info(`siteData: ${JSON.stringify(extractedData)}`);
