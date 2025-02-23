@@ -276,7 +276,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   // const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
 
   log.info(`Debug log 76: ${JSON.stringify(allFiles, null, 2)}`);
-  const indexFile = allFiles.find((file) => file.Key.endsWith('forms/scrape.json'));
+  const indexFile = allFiles.find((file) => file.Key.endsWith('pet-adoption/search/forms/scrape.json'));
   log.info(`Debug log 75: ${JSON.stringify(indexFile, null, 2)}`);
 
   const indexFileContent = await getObjectFromKey(

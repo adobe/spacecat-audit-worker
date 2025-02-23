@@ -154,7 +154,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
   it('processes S3 files, filters by json files, and extracts metadata and links - 1', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [
-        { Key: 'scrapes/forms/scrape.json' },
+        { Key: '/scrapes/pet-adoption/search/forms/scrape.json' },
       ],
       IsTruncated: true,
       NextContinuationToken: 'token',
