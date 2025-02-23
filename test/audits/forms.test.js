@@ -22,6 +22,7 @@ import formVitalsData from '../fixtures/formvitalsdata.json' with { type: 'json'
 import testData from '../fixtures/high-form-views-low-conversions.js';
 import convertToOpportunity from '../../src/forms-opportunities/opportunityHandler.js';
 import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
+// import { getScrapedDataForSiteId } from '../../src/support/utils.js';
 
 use(sinonChai);
 
@@ -214,6 +215,8 @@ describe('sendUrlsForScraping step', () => {
   });
 
   it('should execute step and send message to content scraper', async () => {
+    // eslint-disable-next-line max-len
+    // sinon.stub('transformProcessUrlResult').resolves({ location: 'mocked-location', urlId: 'test-url', jobMetadata: { meta: 'info' } });
     const result = await auditInstance.run(
       {
         type: 'forms-audit',

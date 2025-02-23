@@ -16,6 +16,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 // import convertToOpportunity from './opportunityHandler.js';
 import generateOpptyData from './utils.js';
+import { getScrapedDataForSiteId } from '../support/utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const DAILY_THRESHOLD = 200;
@@ -75,6 +76,7 @@ export default new AuditBuilder()
     const {
       site, audit, log, finalUrl,
     } = context;
+
     log.info(`Debug log 0 ${site.getBaseURL()}`);
     log.info(`Debug log 00 ${finalUrl}`);
     log.info(`Debug log 000 ${audit}`);
@@ -113,6 +115,13 @@ export default new AuditBuilder()
     };
 
     log.info(`Debug log 4: ${JSON.stringify(result, null, 2)}`);
+
+    try {
+      const data = await getScrapedDataForSiteId(site, context);
+      log.info(`Debug log 4_4 scraped data ${JSON.stringify(data, null, 2)}`);
+    } catch (e) {
+      log.error('error', e);
+    }
 
     return result;
   }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
