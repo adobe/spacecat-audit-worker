@@ -224,9 +224,13 @@ export const getScrapedDataForSiteId = async (site, context) => {
     });
 
     const listResponse = await s3Client.send(listCommand);
+    log.info(`Debug log 71: ${JSON.stringify(listResponse, null, 2)}`);
+
     allFiles = allFiles.concat(
       listResponse.Contents.filter((file) => file.Key.endsWith('.json')),
     );
+
+    log.info(`Debug log 72: ${JSON.stringify(allFiles, null, 2)}`);
     isTruncated = listResponse.IsTruncated;
     continuationToken = listResponse.NextContinuationToken;
 
@@ -252,6 +256,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
         file.Key,
         log,
       );
+      log.info(`Debug log 73: ${JSON.stringify(fileContent, null, 2)}`);
       return extractScrapedMetadataFromJson(fileContent, log);
     }),
   );
