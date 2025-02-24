@@ -1,3 +1,10 @@
+## [1.56.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.2...v1.56.3) (2025-02-24)
+
+
+### Bug Fixes
+
+* update traffic multipliers for cwv projected traffic value calculations ([#680](https://github.com/adobe/spacecat-audit-worker/issues/680)) ([38c604d](https://github.com/adobe/spacecat-audit-worker/commit/38c604d5ce151760e8390aae5f84bc9226c048c0))
+
 ## [1.56.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.1...v1.56.2) (2025-02-24)
 
 
