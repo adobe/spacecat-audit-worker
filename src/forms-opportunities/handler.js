@@ -17,6 +17,7 @@ import { wwwUrlResolver } from '../common/index.js';
 // import convertToOpportunity from './opportunityHandler.js';
 import generateOpptyData from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
+import convertToOpportunity from './opportunityHandler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const DAILY_THRESHOLD = 200;
@@ -130,28 +131,34 @@ export default new AuditBuilder()
 
   .addStep('processOpportunity', async (context) => {
     const {
-      audit, log, site, dataAccess,
+      audit, log, site, finalUrl,
     } = context;
     log.info('Debug log 54-2');
     log.info(`Debug log 53 ${JSON.stringify(audit, null, 2)}`);
 
-    const { Site } = dataAccess;
+    // const { Site } = dataAccess;
     const data = await getScrapedDataForSiteId(site, context);
     log.info(`Debug log 4_4 scraped data ${JSON.stringify(data, null, 2)}`);
 
-    const sites = await Site.allWithLatestAudit('forms-opportunities');
-    for (const site1 of sites) {
-      // log.info(`Debug log 81 site1 id ${site1.getId()}`);
-      // log.info(`Debug log 82 site id ${site.getId()}`);
-      // if (site.getId === site1.getId()) {
-      // eslint-disable-next-line no-await-in-loop
-      const latestAudit = await site1.getLatestAuditByAuditType('forms-opportunities');
-      log.info(`Debug log 4_5 latestAudit ${JSON.stringify(latestAudit, null, 2)}`);
-      // }
-    }
+    // const sites = await Site.allWithLatestAudit('forms-opportunities');
+    // for (const site1 of sites) {
+    //   // log.info(`Debug log 81 site1 id ${site1.getId()}`);
+    //   // log.info(`Debug log 82 site id ${site.getId()}`);
+    //   // if (site.getId === site1.getId()) {
+    //   // eslint-disable-next-line no-await-in-loop
+    //   const latestAudit = await site1.getLatestAuditByAuditType('forms-opportunities');
+    //   log.info(`Debug log 4_5 latestAudit ${JSON.stringify(latestAudit, null, 2)}`);
+    //   // }
+    // }
 
-    const latestAudit1 = await site.getLatestAuditByAuditType('forms-opportunities');
-    log.info(`Debug log 91 latestAudit ${JSON.stringify(latestAudit1, null, 2)}`);
+    const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
+    log.info(`Debug log 91 latestAudit ${JSON.stringify(latestAudit, null, 2)}`);
+
+    // const { auditResult } = latestAudit;
+    // const formVitals = auditResult.formVitals;
+
+    const opportunity = convertToOpportunity(finalUrl, latestAudit, context);
+    log.info(`Debug log 92 opportunity ${JSON.stringify(opportunity, null, 2)}`);
 
     return {
       status: 'complete',
