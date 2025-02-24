@@ -157,7 +157,7 @@ export default new AuditBuilder()
     // const { auditResult } = latestAudit;
     // const formVitals = auditResult.formVitals;
 
-    const opportunity = convertToOpportunity(finalUrl, latestAudit, context);
+    const opportunity = await convertToOpportunity(finalUrl, latestAudit, context);
     log.info(`Debug log 92 opportunity ${JSON.stringify(opportunity, null, 2)}`);
 
     return {
