@@ -226,13 +226,9 @@ export const getScrapedDataForSiteId = async (site, context) => {
     });
 
     const listResponse = await s3Client.send(listCommand);
-    log.info(`Debug log 71: ${JSON.stringify(listResponse, null, 2)}`);
-
     allFiles = allFiles.concat(
       listResponse.Contents.filter((file) => file.Key.endsWith('.json')),
     );
-
-    log.info(`Debug log 72: ${JSON.stringify(allFiles, null, 2)}`);
     isTruncated = listResponse.IsTruncated;
     continuationToken = listResponse.NextContinuationToken;
 
@@ -250,9 +246,6 @@ export const getScrapedDataForSiteId = async (site, context) => {
     };
   }
 
-  // eslint-disable-next-line max-len
-  // const filteredFiles = allFiles.filter((file) => file.Key.includes('pet-adoption/search/forms/scrape.json'));
-
   const extractedData = await Promise.all(
     allFiles.map(async (file) => {
       const fileContent = await getObjectFromKey(
@@ -261,39 +254,128 @@ export const getScrapedDataForSiteId = async (site, context) => {
         file.Key,
         log,
       );
-      // log.info(`Debug log 73: ${JSON.stringify(fileContent, null, 2)}`);
       return extractScrapedMetadataFromJson(fileContent, log);
     }),
   );
 
-  // const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
-  // const indexFileContent = await getObjectFromKey(
-  //   s3Client,
-  //   env.S3_SCRAPER_BUCKET_NAME,
-  //   indexFile?.Key,
-  //   log,
-  // );
-  // const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
-
-  log.info(`Debug log 76: ${JSON.stringify(allFiles, null, 2)}`);
-  const indexFile = allFiles.find((file) => file.Key.endsWith('pet-adoption/search/forms/scrape.json'));
-  log.info(`Debug log 75: ${JSON.stringify(indexFile, null, 2)}`);
-
+  const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
   const indexFileContent = await getObjectFromKey(
     s3Client,
     env.S3_SCRAPER_BUCKET_NAME,
     indexFile?.Key,
     log,
   );
-  log.info(`Debug log 74: ${JSON.stringify(indexFileContent, null, 2)}`);
   const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
 
   log.info(`siteData: ${JSON.stringify(extractedData)}`);
+
+  const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
+  const extractedFormData = await Promise.all(
+    formFiles.map(async (file) => {
+      const fileContent = await getObjectFromKey(
+        s3Client,
+        env.S3_SCRAPER_BUCKET_NAME,
+        file.Key,
+        log,
+      );
+      return fileContent;
+    }),
+  );
+
   return {
     headerLinks,
+    formData: extractedFormData,
     siteData: extractedData.filter(Boolean),
   };
 };
+
+// export const getScrapedDataForSiteId = async (site, context) => {
+//   const { s3Client, env, log } = context;
+//   const siteId = site.getId();
+//
+//   let allFiles = [];
+//   let isTruncated = true;
+//   let continuationToken = null;
+//
+//   async function fetchFiles() {
+//     const listCommand = new ListObjectsV2Command({
+//       Bucket: env.S3_SCRAPER_BUCKET_NAME,
+//       Prefix: `scrapes/${siteId}`,
+//       ContinuationToken: continuationToken,
+//     });
+//
+//     const listResponse = await s3Client.send(listCommand);
+//     log.info(`Debug log 71: ${JSON.stringify(listResponse, null, 2)}`);
+//
+//     allFiles = allFiles.concat(
+//       listResponse.Contents.filter((file) => file.Key.endsWith('.json')),
+//     );
+//
+//     log.info(`Debug log 72: ${JSON.stringify(allFiles, null, 2)}`);
+//     isTruncated = listResponse.IsTruncated;
+//     continuationToken = listResponse.NextContinuationToken;
+//
+//     if (isTruncated) {
+//       await fetchFiles();
+//     }
+//   }
+//
+//   await fetchFiles();
+//
+//   if (!isNonEmptyArray(allFiles)) {
+//     return {
+//       headerLinks: [],
+//       siteData: [],
+//     };
+//   }
+//
+//   // eslint-disable-next-line max-len
+// eslint-disable-next-line max-len
+//   // const filteredFiles = allFiles.filter((file) => file.Key.includes('pet-adoption/search/forms/scrape.json'));
+//
+//   const extractedData = await Promise.all(
+//     allFiles.map(async (file) => {
+//       const fileContent = await getObjectFromKey(
+//         s3Client,
+//         env.S3_SCRAPER_BUCKET_NAME,
+//         file.Key,
+//         log,
+//       );
+//       // log.info(`Debug log 73: ${JSON.stringify(fileContent, null, 2)}`);
+//       return extractScrapedMetadataFromJson(fileContent, log);
+//     }),
+//   );
+//
+//   // const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
+//   // const indexFileContent = await getObjectFromKey(
+//   //   s3Client,
+//   //   env.S3_SCRAPER_BUCKET_NAME,
+//   //   indexFile?.Key,
+//   //   log,
+//   // );
+//   // const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
+//
+//   log.info(`Debug log 76: ${JSON.stringify(allFiles, null, 2)}`);
+
+// eslint-disable-next-line max-len
+//   const indexFile = allFiles.find((file) => file.Key.endsWith('pet-adoption/search/forms/scrape.json'));
+//   log.info(`Debug log 75: ${JSON.stringify(indexFile, null, 2)}`);
+//
+//   const indexFileContent = await getObjectFromKey(
+//     s3Client,
+//     env.S3_SCRAPER_BUCKET_NAME,
+//     indexFile?.Key,
+//     log,
+//   );
+//   log.info(`Debug log 74: ${JSON.stringify(indexFileContent, null, 2)}`);
+//   const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
+//
+//   log.info(`siteData: ${JSON.stringify(extractedData)}`);
+//   return {
+//     headerLinks,
+//     siteData: extractedData.filter(Boolean),
+//   };
+// };
 
 export async function sleep(ms) {
   return new Promise((resolve) => {
