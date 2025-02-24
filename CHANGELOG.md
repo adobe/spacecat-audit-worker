@@ -1,3 +1,10 @@
+## [1.56.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.0...v1.56.1) (2025-02-24)
+
+
+### Bug Fixes
+
+* site's url not displaying in slack reports ([#691](https://github.com/adobe/spacecat-audit-worker/issues/691)) ([df1d60f](https://github.com/adobe/spacecat-audit-worker/commit/df1d60f8fe816554eebb4b107a8bd1a1651eec34))
+
 # [1.56.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.11...v1.56.0) (2025-02-24)
 
 
