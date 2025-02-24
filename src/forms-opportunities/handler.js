@@ -74,9 +74,10 @@ export default new AuditBuilder()
   // .withPostProcessors([convertToOpportunity])
   .addStep('sendUrlsForScraping', async (context) => {
     const {
-      site, audit, log, finalUrl,
+      site, audit, log, finalUrl, dataAccess,
     } = context;
 
+    const { Site } = dataAccess;
     log.info(`Debug log 0 ${site.getBaseURL()}`);
     log.info(`Debug log 00 ${finalUrl}`);
     log.info(`Debug log 000 ${audit}`);
@@ -118,6 +119,13 @@ export default new AuditBuilder()
 
     const data = await getScrapedDataForSiteId(site, context);
     log.info(`Debug log 4_4 scraped data ${JSON.stringify(data, null, 2)}`);
+
+    const sites = await Site.allWithLatestAudit('forms-opportunities');
+    for (const site1 of sites) {
+      // eslint-disable-next-line no-await-in-loop
+      const latestAudit = await site1.getLatestAuditByAuditType('forms-opportunities');
+      log.info(`Debug log 4_5 latestAudit ${JSON.stringify(latestAudit, null, 2)}`);
+    }
 
     // let data;
     // try {

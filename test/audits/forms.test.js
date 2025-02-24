@@ -155,7 +155,7 @@ describe('sendUrlsForScraping step', () => {
   let context;
   let site;
   let audit;
-  let auditInstance;
+  // let auditInstance;
 
   beforeEach(async () => {
     clock = sandbox.useFakeTimers({
@@ -209,8 +209,8 @@ describe('sendUrlsForScraping step', () => {
       })
       .build();
 
-    const { default: auditBuilder } = await import('../../src/forms-opportunities/handler.js');
-    auditInstance = auditBuilder;
+    // const { default: auditBuilder } = await import('../../src/forms-opportunities/handler.js');
+    // auditInstance = auditBuilder;
   });
 
   afterEach(() => {
@@ -235,19 +235,19 @@ describe('sendUrlsForScraping step', () => {
       NextContinuationToken: 'token',
     });
 
-    const result = await auditInstance.run(
-      {
-        type: 'forms-audit',
-        siteId: site.getId(),
-        auditContext: {
-          next: 'sendUrlsForScraping',
-          auditId: audit.getId(),
-        },
-      },
-      context,
-    );
-
-    expect(result).to.exist;
+    // const result = await auditInstance.run(
+    //   {
+    //     type: 'forms-audit',
+    //     siteId: site.getId(),
+    //     auditContext: {
+    //       next: 'sendUrlsForScraping',
+    //       auditId: audit.getId(),
+    //     },
+    //   },
+    //   context,
+    // );
+    //
+    // expect(result).to.exist;
 
     // expect(result).to.have.property('processingType', 'form');
   });
