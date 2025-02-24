@@ -23,8 +23,8 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   log.info(`Debug log 93 latestAudit ${JSON.stringify(auditData, null, 2)}`);
   log.info('auditData type:', typeof auditData);
 
-  // eslint-disable-next-line no-param-reassign
-  auditData = typeof auditData === 'string' ? JSON.parse(auditData) : auditData;
+  const { siteId } = auditData;
+  log.info('site id :', typeof siteId);
 
   log.info(`Syncing opportunity for ${auditData.siteId}`);
   let highFormViewsLowConversionsOppty;
