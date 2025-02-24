@@ -198,8 +198,8 @@ describe('Backlinks Tests', function () {
 
     expect(auditData).to.deep.equal({
       fullAuditRef: auditUrl,
-      finalUrl: auditUrl,
       auditResult: {
+        finalUrl: auditUrl,
         error: 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 500',
         success: false,
       },
@@ -218,8 +218,8 @@ describe('Backlinks Tests', function () {
     expect(context.log.error).to.have.been.calledWith(errorMessage);
     expect(auditResult).to.deep.equal({
       fullAuditRef: auditUrl,
-      finalUrl: auditUrl,
       auditResult: {
+        finalUrl: auditUrl,
         error: errorMessage,
         success: false,
       },
@@ -302,14 +302,14 @@ describe('Backlinks Tests', function () {
       configuration.isHandlerEnabledForSite.returns(true);
       firefallClient.fetchChatCompletion.resolves({
         choices: [{
-          message: { content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }) },
+          message: { content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }) },
           finish_reason: 'stop',
         }],
       });
       firefallClient.fetchChatCompletion.onCall(3).resolves({
         choices: [{
           message: { content: JSON.stringify({ some_other_property: 'some other value' }) },
-          finish_reason: 'stop',
+          finish_reason: 'length',
         }],
       });
 
@@ -319,13 +319,13 @@ describe('Backlinks Tests', function () {
       expect(result.auditResult.brokenBacklinks).to.deep.equal([
         {
           url_to: 'https://example.com/broken1',
-          urls_suggested: ['https://fix.com'],
-          ai_rationale: 'Rationale',
+          urlsSuggested: ['https://fix.com'],
+          aiRationale: 'Rationale',
         },
         {
           url_to: 'https://example.com/broken2',
-          urls_suggested: ['https://example.com'],
-          ai_rationale: 'No suitable suggestions found',
+          urlsSuggested: ['https://example.com'],
+          aiRationale: 'No suitable suggestions found',
         },
       ]);
       expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
@@ -345,8 +345,8 @@ describe('Backlinks Tests', function () {
       firefallClient.fetchChatCompletion.resolves({
         choices: [{
           message: {
-            content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
-            ai_rationale: 'Rationale',
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+            aiRationale: 'Rationale',
           },
           finish_reason: 'stop',
         }],
@@ -355,8 +355,8 @@ describe('Backlinks Tests', function () {
       firefallClient.fetchChatCompletion.onCall(1).resolves({
         choices: [{
           message: {
-            content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
-            ai_rationale: 'Rationale',
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+            aiRationale: 'Rationale',
           },
           finish_reason: 'length',
         }],
@@ -365,18 +365,18 @@ describe('Backlinks Tests', function () {
       firefallClient.fetchChatCompletion.onCall(6).resolves({
         choices: [{
           message: {
-            content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
-            ai_rationale: 'Rationale',
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+            aiRationale: 'Rationale',
           },
-          finish_reason: 'length',
+          finish_reason: 'stop',
         }],
       });
 
       firefallClient.fetchChatCompletion.onCall(7).resolves({
         choices: [{
           message: {
-            content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
-            ai_rationale: 'Rationale',
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+            aiRationale: 'Rationale',
           },
           finish_reason: 'length',
         }],
@@ -388,15 +388,15 @@ describe('Backlinks Tests', function () {
       expect(result.auditResult.brokenBacklinks).to.deep.equal([
         {
           url_to: 'https://example.com/broken1',
-          urls_suggested: ['https://fix.com'],
-          ai_rationale: 'Rationale',
+          urlsSuggested: ['https://fix.com'],
+          aiRationale: 'Rationale',
         },
         {
           url_to: 'https://example.com/broken2',
         },
       ]);
       expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
-    }).timeout(20000);
+    });
 
     it('handles Firefall client errors gracefully and continues processing, should suggest base URL instead', async () => {
       context.s3Client.send.onCall(0).resolves({
@@ -411,11 +411,11 @@ describe('Backlinks Tests', function () {
       configuration.isHandlerEnabledForSite.returns(true);
       firefallClient.fetchChatCompletion.onCall(0).rejects(new Error('Firefall error'));
       firefallClient.fetchChatCompletion.onCall(2).rejects(new Error('Firefall error'));
-      firefallClient.fetchChatCompletion.onCall(4).resolves({
+      firefallClient.fetchChatCompletion.onCall(6).resolves({
         choices: [{
           message: {
             content: JSON.stringify({ some_other_property: 'some other value' }),
-            ai_rationale: 'Rationale',
+            aiRationale: 'Rationale',
           },
           finish_reason: 'stop',
         }],
@@ -424,8 +424,8 @@ describe('Backlinks Tests', function () {
       firefallClient.fetchChatCompletion.resolves({
         choices: [{
           message: {
-            content: JSON.stringify({ suggested_urls: ['https://fix.com'], ai_rationale: 'Rationale' }),
-            ai_rationale: 'Rationale',
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+            aiRationale: 'Rationale',
           },
           finish_reason: 'stop',
         }],
@@ -436,14 +436,14 @@ describe('Backlinks Tests', function () {
       expect(result.auditResult.brokenBacklinks).to.deep.equal([
         {
           url_to: 'https://example.com/broken1',
-          urls_suggested: ['https://example.com'],
-          ai_rationale: 'No suitable suggestions found',
+          urlsSuggested: ['https://example.com'],
+          aiRationale: 'No suitable suggestions found',
         },
         {
           url_to: 'https://example.com/broken2',
         },
       ]);
       expect(context.log.error).to.have.been.calledWith('Batch processing error: Firefall error');
-    }).timeout(20000);
+    });
   });
 });
