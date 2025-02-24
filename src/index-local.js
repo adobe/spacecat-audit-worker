@@ -29,7 +29,7 @@ export const main = async () => {
       info: console.log,
       error: console.error,
       warn: console.warn,
-      debug: () => {},
+      debug: console.debug,
     },
     runtime: {
       region: 'us-east-1',

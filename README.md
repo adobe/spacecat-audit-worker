@@ -560,6 +560,6 @@ You can run the audit locally using AWS SAM and Docker.
     npm run local-build
     npm run local-run
     ```
-5. Output of the audit will be stored in `output.txt`.
+5. Starting point of the execution is `src/index-local.js`. Output of the audit can be found in `output.txt`.
 
 If you need to add additional secrets, make sure to adjust the Lambda `template.yml` accordingly.

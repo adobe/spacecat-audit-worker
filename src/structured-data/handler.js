@@ -270,7 +270,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
 
     // Get extracted LD-JSON from scrape
     const structuredData = scrapeResult?.scrapeResult?.structuredData;
-    if (structuredData.length === 0) {
+    if (!structuredData?.length || structuredData?.length === 0) {
       // If structured data is loaded late on the page, e.g. in delayed phase,
       // the scraper might not pick it up. You would need to fine tune wait for
       // check of the scraper for this site.
@@ -289,7 +289,10 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
     // TODO: Handle case "Review has multiple aggregate ratings"
     const entityMapping = {
       Breadcrumbs: 'BreadcrumbList',
-      Product: 'Product',
+      'Product snippets': 'Product',
+      'Merchant listings': 'Product',
+      Videos: 'VideoObject',
+      Recipes: 'Recipe',
     };
 
     // Go through every issue on page
@@ -305,7 +308,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
       // Filter structured data relevant to this issue
       const wrongLdJson = structuredData.find((data) => entity === data['@type']);
       if (!wrongLdJson) {
-        log.error(`Could not find structured data for issue of type ${issue.richResultType}`);
+        log.error(`Could not find structured data for issue of type ${entity}`);
         continue;
       }
       log.debug('Filtered structured data:', JSON.stringify(wrongLdJson));
@@ -338,7 +341,13 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
         suggestion = JSON.parse(response.choices[0].message.content);
       } catch (e) {
         log.error(`Could not parse Firefall response for issue of type ${issue.richResultType}`, e);
-        throw e;
+        continue;
+      }
+
+      // Reject suggestion if confidence score is too low
+      if (suggestion?.confidenceScore < 0.6) {
+        log.error(`Confidence score too low, skip suggestion of type ${issue.richResultType}`);
+        continue;
       }
 
       issue.suggestion = suggestion;
