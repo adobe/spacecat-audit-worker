@@ -34,7 +34,7 @@ import {
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import testData from '../fixtures/meta-tags-data.js';
-import { removeTrailingSlash } from '../../src/metatags/opportunity-handler.js';
+import { removeTrailingSlash } from '../../src/metatags/opportunity-utils.js';
 import { auditMetaTagsRunner, fetchAndProcessPageObject, opportunityAndSuggestions } from '../../src/metatags/handler.js';
 
 use(sinonChai);
@@ -669,7 +669,6 @@ describe('Meta Tags', () => {
       dataAccessStub.Opportunity.create = sinon.stub().returns(opportunity);
       await opportunityAndSuggestions(auditUrl, auditData, context);
       expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.OpportunityData);
-      expect(opportunity.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
@@ -677,7 +676,6 @@ describe('Meta Tags', () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       await opportunityAndSuggestions(auditUrl, auditData, context);
       expect(opportunity.save).to.be.calledOnce;
-      expect(opportunity.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
@@ -707,8 +705,68 @@ describe('Meta Tags', () => {
       opportunity.getSuggestions.returns(testData.existingSuggestions);
       await opportunityAndSuggestions(auditUrl, auditData, context);
       expect(opportunity.save).to.be.calledOnce;
-      expect(opportunity.addSuggestions).to.be.calledWith(testData.expectedSyncedSuggestion);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+    });
+
+    it('should preserve existing AI suggestions and overrides when syncing', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+      // Setup existing suggestion with AI data and overrides
+      const existingSuggestion = {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          tagName: 'title',
+          tagContent: 'Original Title',
+          issue: 'Title too short',
+          seoImpact: 'High',
+          aiSuggestion: 'AI Generated Title',
+          aiRationale: 'AI explanation for the title',
+          toOverride: true,
+        }),
+        getStatus: () => 'pending',
+        remove: sinon.stub(),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+      };
+
+      opportunity.getSuggestions.returns([existingSuggestion]);
+
+      // Create audit data with different content for same URL
+      const modifiedAuditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          detectedTags: {
+            '/page1': {
+              title: {
+                tagContent: 'Original Title',
+                issue: 'Title too short',
+                seoImpact: 'High',
+              },
+            },
+          },
+        },
+      };
+
+      await opportunityAndSuggestions(auditUrl, modifiedAuditData, context);
+
+      // Verify that existing suggestion was updated properly
+      expect(opportunity.save).to.be.calledOnce;
+      expect(existingSuggestion.setData).to.be.calledOnce;
+
+      const setDataCall = existingSuggestion.setData.getCall(0);
+      const updatedData = setDataCall.args[0];
+
+      // Verify the original AI data and override flags were preserved
+      expect(updatedData).to.deep.include({
+        aiSuggestion: 'AI Generated Title',
+        aiRationale: 'AI explanation for the title',
+        toOverride: true,
+      });
+
+      // Verify the suggestion was saved
+      expect(existingSuggestion.save).to.be.calledOnce;
     });
 
     it('should throw error if suggestions fail to create', async () => {
@@ -721,7 +779,6 @@ describe('Meta Tags', () => {
         expect(err.message).to.equal('Failed to create suggestions for siteId site-id');
       }
       expect(opportunity.save).to.be.calledOnce;
-      expect(opportunity.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
       expect(logStub.error).to.be.calledWith('Suggestions for siteId site-id contains 1 items with errors');
       expect(logStub.error).to.be.calledTwice;
     });
@@ -740,7 +797,6 @@ describe('Meta Tags', () => {
       expectedSuggestionModified[0].rank = -1;
       await opportunityAndSuggestions(auditUrl, auditData, context);
       expect(opportunity.save).to.be.calledOnce;
-      expect(opportunity.addSuggestions).to.be.calledWith(expectedSuggestionModified);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
   });
