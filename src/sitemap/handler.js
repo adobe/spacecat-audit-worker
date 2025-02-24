@@ -32,7 +32,6 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
 // Add new constant for status codes we want to track
 const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -67,9 +66,6 @@ const VALID_MIME_TYPES = Object.freeze([
 export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl, {
     method: 'GET',
-    headers: {
-      'User-Agent': DEFAULT_USER_AGENT,
-    },
   });
   if (!response.ok) {
     throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
@@ -188,9 +184,6 @@ export async function filterValidUrls(urls) {
       const response = await fetch(url, {
         method: 'HEAD',
         redirect: 'manual',
-        headers: {
-          'User-Agent': DEFAULT_USER_AGENT,
-        },
       });
 
       if (response.status === 200) {
@@ -205,9 +198,6 @@ export async function filterValidUrls(urls) {
           const redirectResponse = await fetch(finalUrl, {
             method: 'HEAD',
             redirect: 'follow',
-            headers: {
-              'User-Agent': DEFAULT_USER_AGENT,
-            },
           });
           return {
             status: NOT_OK,
@@ -608,7 +598,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
-  .withUrlResolver((site) => composeAuditURL(site.getBaseURL(), DEFAULT_USER_AGENT)
+  .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
     .then((url) => getUrlWithoutPath(prependSchema(url))))
   .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();
