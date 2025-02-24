@@ -57,7 +57,7 @@ export const getImageSuggestions = async (imageUrls, auditUrl, context) => {
 
     const firefallOptions = {
       imageUrls: batch,
-      model: 'gpt-4-vision',
+      model: 'gpt-4o',
     };
     const prompt = await getPrompt({ images: batch }, 'image-alt-text', log);
     log.info('and prompt', prompt);
