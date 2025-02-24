@@ -13,7 +13,13 @@ import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { sleep } from '../support/utils.js';
 
-export const getImageSuggestions = async (imageUrls, auditUrl, context) => {
+const PROMPT_FILE = 'image-alt-text';
+const BATCH_SIZE = 10;
+const BATCH_DELAY = 5000;
+const MODEL = 'gpt-4o';
+const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg)(?=\?|$)/i;
+
+const getImageSuggestions = async (imageUrls, auditUrl, context) => {
   const { log } = context;
   const firefallClient = FirefallClient.createFrom(context);
 
@@ -22,9 +28,7 @@ export const getImageSuggestions = async (imageUrls, auditUrl, context) => {
   const unsupportedFormatImages = [];
 
   imageUrls.forEach((imageUrl) => {
-    const regex = /\.(webp|png|gif|jpeg)(?=\?|$)/i;
-
-    if (!regex.test(imageUrl)) {
+    if (!SUPPORTED_FORMATS.test(imageUrl)) {
       unsupportedFormatImages.push(imageUrl);
     } else if (imageUrl.includes(auditUrl)) {
       imagesFromHost.push(imageUrl);
@@ -33,12 +37,11 @@ export const getImageSuggestions = async (imageUrls, auditUrl, context) => {
     }
   });
 
-  log.info('Images from host:', imagesFromHost);
-  log.info('Other images:', otherImages);
-  log.info('Unsupported format images:', unsupportedFormatImages);
+  log.info('[alt-text] Total images from host:', imagesFromHost.length);
+  log.info('[alt-text] Other images:', otherImages);
+  log.info('[alt-text] Unsupported format images:', unsupportedFormatImages);
 
   const imageList = imagesFromHost;
-  log.info('About to call Firefall with images', imageList);
 
   function chunkArray(array, chunkSize) {
     const chunks = [];
@@ -48,8 +51,6 @@ export const getImageSuggestions = async (imageUrls, auditUrl, context) => {
     return chunks;
   }
 
-  const BATCH_SIZE = 10;
-  const BATCH_DELAY = 5000;
   const imageBatches = chunkArray(imageList, BATCH_SIZE);
 
   const batchPromises = imageBatches.map(async (batch, index) => {
@@ -57,22 +58,20 @@ export const getImageSuggestions = async (imageUrls, auditUrl, context) => {
 
     const firefallOptions = {
       imageUrls: batch,
-      model: 'gpt-4o',
+      model: MODEL,
     };
-    const prompt = await getPrompt({ images: batch }, 'image-alt-text', log);
-    log.info('and prompt', prompt);
+    const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
     try {
       const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
-      log.info('Firefall response for alt-text suggestions', JSON.stringify(response));
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-        log.error('No final suggestions found for batch');
+        log.error('[alt-text] No final suggestions found for batch');
       }
 
       const answer = JSON.parse(response.choices[0].message.content);
-      log.info(`Final suggestion for batch, ${JSON.stringify(answer)}`);
+      log.info(`[alt-text] Loaded ${answer.length} alt-text suggestions for batch`);
       return answer;
     } catch (err) {
-      log.error('Error calling Firefall for alt-text suggestion generation for batch', err);
+      log.error('[alt-text] Error calling Firefall for alt-text suggestion generation for batch', err);
       return [];
     }
   });
@@ -86,7 +85,11 @@ export const getImageSuggestions = async (imageUrls, auditUrl, context) => {
     return acc;
   }, {});
 
-  log.info(`Final Merged Suggestions: ${JSON.stringify(finalResults)}`);
+  log.info(`[alt-text] Final Merged Suggestions: ${Object.keys(finalResults).length}`);
 
   return finalResults;
+};
+
+export default {
+  getImageSuggestions,
 };

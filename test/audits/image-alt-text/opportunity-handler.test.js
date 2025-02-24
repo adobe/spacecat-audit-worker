@@ -15,6 +15,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
+import suggestionsEngine from '../../../src/image-alt-text/suggestionsEngine.js';
 
 describe('Image Alt Text Opportunity Handler', () => {
   let logStub;
@@ -51,6 +52,11 @@ describe('Image Alt Text Opportunity Handler', () => {
         create: sinon.stub(),
       },
     };
+
+    sinon.stub(suggestionsEngine, 'getImageSuggestions').resolves({
+      'https://example.com/image1.jpg': { image_url: '/page1', suggestion: 'Image 1 description' },
+      'https://example.com/page2': { image_url: '/page2', suggestion: 'Image 2 description' },
+    });
 
     context = {
       log: logStub,
@@ -110,6 +116,17 @@ describe('Image Alt Text Opportunity Handler', () => {
 
   it('should update existing opportunity when one exists', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
+    expect(altTextOppty.save).to.have.been.called;
+    expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
+  });
+
+  it('should update existing opportunitywith empty suggestion if none are found', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+    suggestionsEngine.getImageSuggestions.resolves({});
 
     await convertToOpportunity(auditUrl, auditData, context);
 

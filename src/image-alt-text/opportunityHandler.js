@@ -12,7 +12,7 @@
 
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { getImageSuggestions } from './suggestionsEngine.js';
+import suggestionsEngine from './suggestionsEngine.js';
 
 /**
  * Synchronizes existing suggestions with new data
@@ -58,7 +58,7 @@ const getProjectedMetrics = () => ({
  * @param context - The context object containing the data access and logger objects.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
-export default async function opportunityAndSuggestions(auditUrl, auditData, context) {
+export default async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
   const { detectedTags } = auditData.auditResult;
@@ -114,7 +114,7 @@ export default async function opportunityAndSuggestions(auditUrl, auditData, con
     (image) => new URL(image.src, auditUrl).toString(),
   );
 
-  const imageSuggestions = await getImageSuggestions(
+  const imageSuggestions = await suggestionsEngine.getImageSuggestions(
     imageUrls,
     auditUrl,
     context,
@@ -134,7 +134,7 @@ export default async function opportunityAndSuggestions(auditUrl, auditData, con
     newSuggestions: suggestions.map((suggestion) => ({
       opportunityId: altTextOppty.getId(),
       type: 'CONTENT_UPDATE',
-      data: { recommendations: [{ ...suggestion }] },
+      data: { recommendations: [suggestion] },
       rank: 1,
     })),
     log,
