@@ -141,13 +141,13 @@ export default new AuditBuilder()
 
     const sites = await Site.allWithLatestAudit('forms-opportunities');
     for (const site1 of sites) {
-      log.info(`Debug log 81 site1 id ${site1.getId()}`);
-      log.info(`Debug log 82 site id ${site.getId()}`);
-      if (site.getId === site1.getId()) {
-        // eslint-disable-next-line no-await-in-loop
-        const latestAudit = await site1.getLatestAuditByAuditType('forms-opportunities');
-        log.info(`Debug log 4_5 latestAudit ${JSON.stringify(latestAudit, null, 2)}`);
-      }
+      // log.info(`Debug log 81 site1 id ${site1.getId()}`);
+      // log.info(`Debug log 82 site id ${site.getId()}`);
+      // if (site.getId === site1.getId()) {
+      // eslint-disable-next-line no-await-in-loop
+      const latestAudit = await site1.getLatestAuditByAuditType('forms-opportunities');
+      log.info(`Debug log 4_5 latestAudit ${JSON.stringify(latestAudit, null, 2)}`);
+      // }
     }
 
     return {
