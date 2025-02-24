@@ -178,8 +178,8 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
         log.info(`Final suggestion for ${backlink.url_to}: ${JSON.stringify(answer)}`);
         return {
           ...backlink,
-          urls_suggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
-          ai_rationale: answer.ai_rationale?.length > 0 ? answer.ai_rationale : 'No suitable suggestions found',
+          urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
+          aiRationale: answer.aiRationale?.length > 0 ? answer.aiRationale : 'No suitable suggestions found',
         };
       } catch (error) {
         log.error(`Final suggestion error for ${backlink.url_to}: ${error.message}`);
@@ -190,10 +190,10 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     log.info(`Suggestions for ${backlink.url_to}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
     return {
       ...backlink,
-      urls_suggested:
+      urlsSuggested:
         suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
-      ai_rationale:
-        suggestions[0]?.ai_rationale?.length > 0 ? suggestions[0]?.ai_rationale : 'No suitable suggestions found',
+      aiRationale:
+        suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
     };
   };
 
@@ -265,8 +265,8 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         title: backlink.title,
         url_from: backlink.url_from,
         url_to: backlink.url_to,
-        urls_suggested: backlink.urls_suggested || [],
-        ai_rationale: backlink.ai_rationale || '',
+        urlsSuggested: backlink.urlsSuggested || [],
+        aiRationale: backlink.aiRationale || '',
         traffic_domain: backlink.traffic_domain,
       },
     }),
