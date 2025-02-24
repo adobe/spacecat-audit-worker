@@ -21,6 +21,11 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 
+  log.info(`Debug log 93 latestAudit ${JSON.stringify(auditData, null, 2)}`);
+  log.info('auditData type:', typeof auditData);
+  log.info('auditData keys:', Object.keys(auditData));  // NEW: see what keys are available
+  log.info('Direct siteId value:', auditData.siteId);   // NEW: see the actual value
+
   log.info(`Syncing opportunity for ${auditData.siteId}`);
   let highFormViewsLowConversionsOppty;
 
