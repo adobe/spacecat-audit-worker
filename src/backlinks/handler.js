@@ -78,8 +78,8 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
 
     return {
       fullAuditRef,
-      finalUrl: auditUrl,
       auditResult: {
+        finalUrl: auditUrl,
         brokenBacklinks: await filterOutValidBacklinks(filteredBacklinks, log),
       },
     };
@@ -87,8 +87,8 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
     log.error(`Broken Backlinks audit for ${siteId} with url ${auditUrl} failed with error: ${e.message}`, e);
     return {
       fullAuditRef: auditUrl,
-      finalUrl: auditUrl,
       auditResult: {
+        finalUrl: auditUrl,
         error: `Broken Backlinks audit for ${siteId} with url ${auditUrl} failed with error: ${e.message}`,
         success: false,
       },
