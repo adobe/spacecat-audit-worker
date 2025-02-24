@@ -150,6 +150,9 @@ export default new AuditBuilder()
       // }
     }
 
+    const latestAudit1 = await site.getLatestAuditByAuditType('forms-opportunities');
+    log.info(`Debug log 91 latestAudit ${JSON.stringify(latestAudit1, null, 2)}`);
+
     return {
       status: 'complete',
     };
