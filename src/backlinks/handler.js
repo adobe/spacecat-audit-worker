@@ -21,7 +21,9 @@ import { getScrapedDataForSiteId } from '../support/utils.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
-const auditType = Audit.AUDIT_TYPES.BROKEN_BACKLINKS;
+const { AUDIT_STEP_DESTINATIONS, AUDIT_TYPES } = Audit;
+
+const auditType = AUDIT_TYPES.BROKEN_BACKLINKS;
 const TIMEOUT = 3000;
 
 async function filterOutValidBacklinks(backlinks, log) {
@@ -277,6 +279,31 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL()))
+  .addStep('import', async (context) => {
+    const {
+      site, finalUrl, log,
+    } = context;
+    log.info(`Importing top pages for ${site.getBaseURL()}`);
+
+    return {
+      auditResult: { status: 'importing' },
+      fullAuditRef: finalUrl,
+      type: 'top-pages',
+      siteId: site.getId(),
+    };
+  }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('scrape', async (context) => {
+    const {
+      site, audit, log,
+    } = context;
+    log.info(`Preparing content scrape for ${site.getBaseURL()}`);
+    log.info(`auditResult: ${JSON.stringify(audit.auditResult)}`);
+    const { topPages } = audit.auditResult;
+    return {
+      type: 'import',
+      urls: [...topPages.map((page) => page.url)],
+    };
+  }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .withRunner(brokenBacklinksAuditRunner)
   .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
   .build();
