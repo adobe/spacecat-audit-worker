@@ -1,3 +1,10 @@
+# [1.56.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.11...v1.56.0) (2025-02-24)
+
+
+### Features
+
+* unthrottle broken backlinks suggestions ([#682](https://github.com/adobe/spacecat-audit-worker/issues/682)) ([ff4f9fa](https://github.com/adobe/spacecat-audit-worker/commit/ff4f9fabd3f9e69010c79f5964bed71a9be7dea0))
+
 ## [1.55.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.10...v1.55.11) (2025-02-23)
 
 
