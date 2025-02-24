@@ -22,6 +22,8 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const { Opportunity } = dataAccess;
   log.info(`Debug log 93 latestAudit ${JSON.stringify(auditData, null, 2)}`);
   log.info('auditData type:', typeof auditData);
+  log.info('auditData keys:', Object.keys(auditData));
+  log.info('Direct siteId value:', auditData.siteId);
 
   const { siteId } = auditData;
   log.info('site id :', typeof siteId);
