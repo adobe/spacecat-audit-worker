@@ -1,3 +1,10 @@
+## [1.56.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.1...v1.56.2) (2025-02-24)
+
+
+### Bug Fixes
+
+* remove user-agent from sitemap handler ([#690](https://github.com/adobe/spacecat-audit-worker/issues/690)) ([d04fe36](https://github.com/adobe/spacecat-audit-worker/commit/d04fe364da53a5fee0d55c10c473b1bd205aa7d0))
+
 ## [1.56.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.0...v1.56.1) (2025-02-24)
 
 
