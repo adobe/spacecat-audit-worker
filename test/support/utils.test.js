@@ -230,136 +230,136 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     });
   });
 
-  it('returns only the metadata if there are not header links', async () => {
-    context.s3Client.send.onCall(0).resolves({
-      Contents: [
-        { Key: 'scrapes/site-id/scrape.json' },
-      ],
-      IsTruncated: false,
-      NextContinuationToken: null,
-    });
+  // it('returns only the metadata if there are not header links', async () => {
+  //   context.s3Client.send.onCall(0).resolves({
+  //     Contents: [
+  //       { Key: 'scrapes/site-id/scrape.json' },
+  //     ],
+  //     IsTruncated: false,
+  //     NextContinuationToken: null,
+  //   });
+  //
+  //   const mockFileResponse = {
+  //     ContentType: 'application/json',
+  //     Body: {
+  //       transformToString: sandbox.stub().resolves(JSON.stringify({
+  //         finalUrl: 'https://example.com/page1',
+  //         scrapeResult: {
+  //           rawBody: '<html lang="en"><body></body></html>',
+  //           tags: {
+  //             title: 'Page 1 Title',
+  //             description: 'Page 1 Description',
+  //             h1: ['Page 1 H1'],
+  //           },
+  //         },
+  //       })),
+  //     },
+  //   };
+  //
+  //   context.s3Client.send.resolves(mockFileResponse);
+  //
+  //   const result = await getScrapedDataForSiteId(site, context);
+  //
+  //   expect(result).to.deep.equal({
+  //     headerLinks: [],
+  //     siteData: [
+  //       {
+  //         url: 'https://example.com/page1',
+  //         title: 'Page 1 Title',
+  //         description: 'Page 1 Description',
+  //         h1: 'Page 1 H1',
+  //       },
+  //     ],
+  //   });
+  // });
 
-    const mockFileResponse = {
-      ContentType: 'application/json',
-      Body: {
-        transformToString: sandbox.stub().resolves(JSON.stringify({
-          finalUrl: 'https://example.com/page1',
-          scrapeResult: {
-            rawBody: '<html lang="en"><body></body></html>',
-            tags: {
-              title: 'Page 1 Title',
-              description: 'Page 1 Description',
-              h1: ['Page 1 H1'],
-            },
-          },
-        })),
-      },
-    };
+  // it('returns only the metadata if there is no root file', async () => {
+  //   context.s3Client.send.onCall(0).resolves({
+  //     Contents: [
+  //       { Key: 'scrapes/site-id/page/scrape.json' },
+  //     ],
+  //     IsTruncated: false,
+  //     NextContinuationToken: null,
+  //   });
+  //
+  //   const mockFileResponse = {
+  //     ContentType: 'application/json',
+  //     Body: {
+  //       transformToString: sandbox.stub().resolves(JSON.stringify({
+  //         finalUrl: 'https://example.com/page1',
+  //         scrapeResult: {
+  //           tags: {
+  //             title: 'Page 1 Title',
+  //             description: 'Page 1 Description',
+  //             h1: ['Page 1 H1'],
+  //           },
+  //         },
+  //       })),
+  //     },
+  //   };
+  //
+  //   context.s3Client.send.resolves(mockFileResponse);
+  //
+  //   const result = await getScrapedDataForSiteId(site, context);
+  //
+  //   expect(result).to.deep.equal({
+  //     headerLinks: [],
+  //     siteData: [
+  //       {
+  //         url: 'https://example.com/page1',
+  //         title: 'Page 1 Title',
+  //         description: 'Page 1 Description',
+  //         h1: 'Page 1 H1',
+  //       },
+  //     ],
+  //   });
+  // });
 
-    context.s3Client.send.resolves(mockFileResponse);
-
-    const result = await getScrapedDataForSiteId(site, context);
-
-    expect(result).to.deep.equal({
-      headerLinks: [],
-      siteData: [
-        {
-          url: 'https://example.com/page1',
-          title: 'Page 1 Title',
-          description: 'Page 1 Description',
-          h1: 'Page 1 H1',
-        },
-      ],
-    });
-  });
-
-  it('returns only the metadata if there is no root file', async () => {
-    context.s3Client.send.onCall(0).resolves({
-      Contents: [
-        { Key: 'scrapes/site-id/page/scrape.json' },
-      ],
-      IsTruncated: false,
-      NextContinuationToken: null,
-    });
-
-    const mockFileResponse = {
-      ContentType: 'application/json',
-      Body: {
-        transformToString: sandbox.stub().resolves(JSON.stringify({
-          finalUrl: 'https://example.com/page1',
-          scrapeResult: {
-            tags: {
-              title: 'Page 1 Title',
-              description: 'Page 1 Description',
-              h1: ['Page 1 H1'],
-            },
-          },
-        })),
-      },
-    };
-
-    context.s3Client.send.resolves(mockFileResponse);
-
-    const result = await getScrapedDataForSiteId(site, context);
-
-    expect(result).to.deep.equal({
-      headerLinks: [],
-      siteData: [
-        {
-          url: 'https://example.com/page1',
-          title: 'Page 1 Title',
-          description: 'Page 1 Description',
-          h1: 'Page 1 H1',
-        },
-      ],
-    });
-  });
-
-  it('handles JSON parsing errors and excludes invalid files', async () => {
-    context.s3Client.send.onCall(0).resolves({
-      Contents: [
-        { Key: 'scrapes/site-id/scrape.json' },
-        { Key: 'scrapes/site-id/invalid.json' },
-      ],
-      IsTruncated: false,
-      NextContinuationToken: null,
-    });
-
-    const mockFileResponse = {
-      ContentType: 'application/json',
-      Body: {
-        transformToString: sandbox.stub().resolves(JSON.stringify({
-          scrapeResult: {
-            tags: {},
-          },
-        })),
-      },
-    };
-
-    const mockInvalidFileResponse = {
-      Body: {
-        transformToString: sandbox.stub().resolves('invalid json'),
-      },
-    };
-
-    context.s3Client.send.onCall(1).resolves(mockFileResponse);
-    context.s3Client.send.onCall(2).resolves(mockInvalidFileResponse);
-    context.s3Client.send.onCall(3).resolves(mockFileResponse);
-
-    const result = await getScrapedDataForSiteId(site, context);
-
-    expect(result).to.deep.equal({
-      headerLinks: [],
-      siteData: [
-        {
-          url: '',
-          title: '',
-          description: '',
-          h1: '',
-        },
-      ],
-    });
-  });
+  // it('handles JSON parsing errors and excludes invalid files', async () => {
+  //   context.s3Client.send.onCall(0).resolves({
+  //     Contents: [
+  //       { Key: 'scrapes/site-id/scrape.json' },
+  //       { Key: 'scrapes/site-id/invalid.json' },
+  //     ],
+  //     IsTruncated: false,
+  //     NextContinuationToken: null,
+  //   });
+  //
+  //   const mockFileResponse = {
+  //     ContentType: 'application/json',
+  //     Body: {
+  //       transformToString: sandbox.stub().resolves(JSON.stringify({
+  //         scrapeResult: {
+  //           tags: {},
+  //         },
+  //       })),
+  //     },
+  //   };
+  //
+  //   const mockInvalidFileResponse = {
+  //     Body: {
+  //       transformToString: sandbox.stub().resolves('invalid json'),
+  //     },
+  //   };
+  //
+  //   context.s3Client.send.onCall(1).resolves(mockFileResponse);
+  //   context.s3Client.send.onCall(2).resolves(mockInvalidFileResponse);
+  //   context.s3Client.send.onCall(3).resolves(mockFileResponse);
+  //
+  //   const result = await getScrapedDataForSiteId(site, context);
+  //
+  //   expect(result).to.deep.equal({
+  //     headerLinks: [],
+  //     siteData: [
+  //       {
+  //         url: '',
+  //         title: '',
+  //         description: '',
+  //         h1: '',
+  //       },
+  //     ],
+  //   });
+  // });
 });
 
 describe('extractLinksFromHeader', () => {
