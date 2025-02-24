@@ -20,7 +20,11 @@ import generateOpptyData from './utils.js';
 export default async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
-  log.info(`Debug log 91 latestAudit ${JSON.stringify(auditData, null, 2)}`);
+  log.info(`Debug log 93 latestAudit ${JSON.stringify(auditData, null, 2)}`);
+  log.info('auditData type:', typeof auditData);
+
+  // eslint-disable-next-line no-param-reassign
+  auditData = typeof auditData === 'string' ? JSON.parse(auditData) : auditData;
 
   log.info(`Syncing opportunity for ${auditData.siteId}`);
   let highFormViewsLowConversionsOppty;
