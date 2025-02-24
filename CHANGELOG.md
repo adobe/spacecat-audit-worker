@@ -1,3 +1,31 @@
+## [1.56.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.0...v1.56.1) (2025-02-24)
+
+
+### Bug Fixes
+
+* site's url not displaying in slack reports ([#691](https://github.com/adobe/spacecat-audit-worker/issues/691)) ([df1d60f](https://github.com/adobe/spacecat-audit-worker/commit/df1d60f8fe816554eebb4b107a8bd1a1651eec34))
+
+# [1.56.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.11...v1.56.0) (2025-02-24)
+
+
+### Features
+
+* unthrottle broken backlinks suggestions ([#682](https://github.com/adobe/spacecat-audit-worker/issues/682)) ([ff4f9fa](https://github.com/adobe/spacecat-audit-worker/commit/ff4f9fabd3f9e69010c79f5964bed71a9be7dea0))
+
+## [1.55.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.10...v1.55.11) (2025-02-23)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#689](https://github.com/adobe/spacecat-audit-worker/issues/689)) ([2bdb881](https://github.com/adobe/spacecat-audit-worker/commit/2bdb881876b022cf3ab486adc2888bf6e2557982))
+
+## [1.55.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.9...v1.55.10) (2025-02-22)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#688](https://github.com/adobe/spacecat-audit-worker/issues/688)) ([8dc658e](https://github.com/adobe/spacecat-audit-worker/commit/8dc658eed36c357233c48137792cb2299b91d0fe))
+
 ## [1.55.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.55.8...v1.55.9) (2025-02-21)
 
 
