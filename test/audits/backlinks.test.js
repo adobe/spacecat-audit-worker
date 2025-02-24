@@ -198,8 +198,8 @@ describe('Backlinks Tests', function () {
 
     expect(auditData).to.deep.equal({
       fullAuditRef: auditUrl,
-      finalUrl: auditUrl,
       auditResult: {
+        finalUrl: auditUrl,
         error: 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 500',
         success: false,
       },
@@ -218,8 +218,8 @@ describe('Backlinks Tests', function () {
     expect(context.log.error).to.have.been.calledWith(errorMessage);
     expect(auditResult).to.deep.equal({
       fullAuditRef: auditUrl,
-      finalUrl: auditUrl,
       auditResult: {
+        finalUrl: auditUrl,
         error: errorMessage,
         success: false,
       },
