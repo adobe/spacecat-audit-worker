@@ -132,7 +132,7 @@ export default new AuditBuilder()
     const {
       audit, log, site, dataAccess,
     } = context;
-    log.info('Debug log 54');
+    log.info('Debug log 54-1');
     log.info(`Debug log 53 ${JSON.stringify(audit, null, 2)}`);
 
     const { Site } = dataAccess;
