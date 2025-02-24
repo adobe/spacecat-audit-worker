@@ -41,7 +41,7 @@
     "static": [
       "static/prompts/broken-backlinks.prompt",
       "static/prompts/broken-backlinks-followup.prompt",
-      "src/structured-data/crawled-page-example.html"
+      "static/prompts/structured-data-suggest.prompt"
     ]
   },
   "repository": {
