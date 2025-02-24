@@ -23,6 +23,7 @@ import { MockContextBuilder } from '../shared.js';
 import gscExample1 from '../fixtures/structured-data/gsc-example1.json' with { type: 'json' };
 import gscExample2 from '../fixtures/structured-data/gsc-example2.json' with { type: 'json' };
 import gscExample3 from '../fixtures/structured-data/gsc-example3.json' with { type: 'json' };
+import gscExample4 from '../fixtures/structured-data/gsc-example4.json' with { type: 'json' };
 
 import expectedOppty from '../fixtures/structured-data/oppty.json' with { type: 'json' };
 
@@ -278,6 +279,32 @@ describe('Structured Data Audit', () => {
             detectedItemTypes: [],
             detectedIssues: [],
           },
+        },
+      ],
+    });
+  });
+
+  it('returns an empty response if results from google client do not have rich results', async () => {
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([
+      createPageStub('https://example.com/product/4'),
+    ]);
+
+    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
+    urlInspectStub.resolves(gscExample4);
+
+    const result = await structuredDataHandler(baseUrl, context, siteStub);
+    expect(urlInspectStub).to.have.been.calledWith('https://example.com/product/4');
+
+    expect(result).to.deep.equal({
+      fullAuditRef: 'https://www.example.com',
+      auditResult: [
+        {
+          inspectionUrl: 'https://example.com/product/4',
+          indexStatusResult: {
+            verdict: 'PASS',
+            lastCrawlTime: '2024-08-13T22:35:22Z',
+          },
+          richResults: {},
         },
       ],
     });
