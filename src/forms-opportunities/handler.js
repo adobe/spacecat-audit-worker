@@ -74,10 +74,10 @@ export default new AuditBuilder()
   // .withPostProcessors([convertToOpportunity])
   .addStep('sendUrlsForScraping', async (context) => {
     const {
-      site, audit, log, finalUrl, dataAccess,
+      site, audit, log, finalUrl,
     } = context;
 
-    const { Site } = dataAccess;
+    // const { Site } = dataAccess;
     log.info(`Debug log 0 ${site.getBaseURL()}`);
     log.info(`Debug log 00 ${finalUrl}`);
     log.info(`Debug log 000 ${audit}`);
@@ -96,9 +96,9 @@ export default new AuditBuilder()
     // const urlArray = Array.from(uniqueUrls);
 
     const result = {
-      // auditResult: formsAuditRunnerResult.auditResult,
+      auditResult: formsAuditRunnerResult.auditResult,
       fullAuditRef: formsAuditRunnerResult.fullAuditRef,
-      auditResult: { status: 'preparing' },
+      // auditResult: { status: 'preparing' },
       // fullAuditRef: `s3://content-bucket/${site.getId()}/raw.json`,
       // Additional data for content scraper
       processingType: 'form',
@@ -117,16 +117,6 @@ export default new AuditBuilder()
 
     log.info(`Debug log 4: ${JSON.stringify(result, null, 2)}`);
 
-    const data = await getScrapedDataForSiteId(site, context);
-    log.info(`Debug log 4_4 scraped data ${JSON.stringify(data, null, 2)}`);
-
-    const sites = await Site.allWithLatestAudit('forms-opportunities');
-    for (const site1 of sites) {
-      // eslint-disable-next-line no-await-in-loop
-      const latestAudit = await site1.getLatestAuditByAuditType('forms-opportunities');
-      log.info(`Debug log 4_5 latestAudit ${JSON.stringify(latestAudit, null, 2)}`);
-    }
-
     // let data;
     // try {
     //   data = await getScrapedDataForSiteId(site, context);
@@ -140,10 +130,26 @@ export default new AuditBuilder()
 
   .addStep('processOpportunity', async (context) => {
     const {
-      audit, log,
+      audit, log, site, dataAccess,
     } = context;
     log.info('Debug log 54');
     log.info(`Debug log 53 ${JSON.stringify(audit, null, 2)}`);
+
+    const { Site } = dataAccess;
+    const data = await getScrapedDataForSiteId(site, context);
+    log.info(`Debug log 4_4 scraped data ${JSON.stringify(data, null, 2)}`);
+
+    const sites = await Site.allWithLatestAudit('forms-opportunities');
+    for (const site1 of sites) {
+      log.info(`Debug log 81 site1 id ${site1.getId()}`);
+      log.info(`Debug log 82 site id ${site.getId()}`);
+      if (site.getId === site1.getId()) {
+        // eslint-disable-next-line no-await-in-loop
+        const latestAudit = await site1.getLatestAuditByAuditType('forms-opportunities');
+        log.info(`Debug log 4_5 latestAudit ${JSON.stringify(latestAudit, null, 2)}`);
+      }
+    }
+
     return {
       status: 'complete',
     };
