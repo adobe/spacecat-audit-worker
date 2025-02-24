@@ -78,6 +78,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
 
     return {
       fullAuditRef,
+      finalUrl: auditUrl,
       auditResult: {
         brokenBacklinks: await filterOutValidBacklinks(filteredBacklinks, log),
       },
