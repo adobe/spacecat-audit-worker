@@ -76,6 +76,9 @@ describe('Image Alt Text Opportunity Handler', () => {
       },
     };
   });
+  afterEach(() => {
+    sinon.restore();
+  });
 
   it('should create new opportunity when none exists', async () => {
     dataAccessStub.Opportunity.create.resolves(altTextOppty);
