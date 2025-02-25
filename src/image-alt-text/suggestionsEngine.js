@@ -56,10 +56,6 @@ const generateBatchPromises = (
   const firefallOptions = {
     imageUrls: batch,
     model: MODEL,
-    additionalHeaders: {
-      'Cache-Control': 'no-cache',
-      Pragma: 'no-cache',
-    },
   };
   const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
   try {
