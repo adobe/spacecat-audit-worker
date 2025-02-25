@@ -162,7 +162,6 @@ describe('Image Alt Text Opportunity Handler', () => {
   it('should handle errors when adding suggestions', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
-    // Update mock suggestion to include getData
     altTextOppty.getSuggestions.returns([{
       id: 'suggestion-1',
       getStatus: () => 'NEW',
@@ -171,7 +170,6 @@ describe('Image Alt Text Opportunity Handler', () => {
       remove: sinon.stub().resolves(),
     }]);
 
-    // Mock error response from addSuggestions
     altTextOppty.addSuggestions.returns({
       errorItems: [
         {
@@ -195,7 +193,6 @@ describe('Image Alt Text Opportunity Handler', () => {
   it('should throw error when all suggestions fail to create', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
-    // Update mock suggestion to include getData
     altTextOppty.getSuggestions.returns([{
       id: 'suggestion-1',
       getStatus: () => 'NEW',
@@ -204,7 +201,6 @@ describe('Image Alt Text Opportunity Handler', () => {
       remove: sinon.stub().resolves(),
     }]);
 
-    // Mock error response from addSuggestions with no successful creations
     altTextOppty.addSuggestions.returns({
       errorItems: [
         {
