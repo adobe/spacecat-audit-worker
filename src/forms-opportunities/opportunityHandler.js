@@ -53,6 +53,8 @@ export default async function convertToOpportunity(auditUrl, auditData, scrapedD
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 
+  // eslint-disable-next-line no-param-reassign
+  auditData = JSON.parse(JSON.stringify(auditData));
   log.info(`Syncing opportunity for ${auditData.siteId}`);
   let highFormViewsLowConversionsOppty;
 
