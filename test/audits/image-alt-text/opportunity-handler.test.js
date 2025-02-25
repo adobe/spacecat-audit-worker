@@ -38,7 +38,6 @@ describe('Image Alt Text Opportunity Handler', () => {
         getData: () => ({ recommendations: [{ id: 'suggestion-1' }] }),
         remove: sinon.stub().resolves(),
       }]),
-      getSuggestionsByStatus: sinon.stub().returns([]),
       addSuggestions: sinon
         .stub()
         .returns({ errorItems: [], createdItems: [1] }),
@@ -248,8 +247,6 @@ describe('Image Alt Text Opportunity Handler', () => {
     ];
 
     altTextOppty.getSuggestions.returns(mockSuggestions);
-    altTextOppty.getSuggestionsByStatus.withArgs(SuggestionModel.STATUSES.SKIPPED)
-      .returns([mockSuggestions[0]]);
 
     await convertToOpportunity(auditUrl, auditData, context);
 
