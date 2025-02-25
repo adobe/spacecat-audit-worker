@@ -119,7 +119,7 @@ describe('getImageSuggestions', () => {
     expect(context.log.info.calledWith('[alt-text]: Total images from host:', 0)).to.be.true;
   });
 
-  it('cristoiddio', async () => {
+  it('should handle finish_reason not being a stop', async () => {
     firefallClientStub.fetchChatCompletion.resolves({
       choices: [
         {
