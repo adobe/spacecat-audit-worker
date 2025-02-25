@@ -10,7 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
+// import { calculateKpiDeltasForAudit } from './helpers';
+
 export function createOpportunityData() {
+  const kpiDeltas = {}; // calculateKpiDeltasForAudit(auditData);
   return {
     runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
     origin: 'AUTOMATION',
@@ -27,6 +30,6 @@ export function createOpportunityData() {
       'Traffic acquisition',
       'Engagement',
     ],
-    data: null,
+    data: kpiDeltas,
   };
 }
