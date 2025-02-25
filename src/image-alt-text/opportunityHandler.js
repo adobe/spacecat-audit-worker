@@ -11,7 +11,9 @@
  */
 
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+
+const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 
 /**
  * Synchronizes existing suggestions with new data
@@ -19,19 +21,29 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
  *
  * @param {Object} params - The parameters for the sync operation.
  * @param {Object} params.opportunity - The opportunity object to synchronize suggestions for.
- * @param {Array} params.newSuggestions - Array of new data objects to sync.
+ * @param {Array} params.newSuggestionDTOs - Array of new data objects (not models) to sync.
  * @param {Object} params.log - Logger object for error reporting.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
-export async function syncAltTextSuggestions({ opportunity, newSuggestions, log }) {
+export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
   const existingSuggestions = await opportunity.getSuggestions();
 
-  // Remove existing suggestions
-  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+  // eslint-disable-next-line max-len
+  const ignoredSuggestions = existingSuggestions.filter((s) => s.getStatus() === SuggestionModel.STATUSES.SKIPPED);
+  const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
+
+  // Remove existing suggestions that were not ignored
+  await Promise.all(existingSuggestions
+    // eslint-disable-next-line max-len
+    .filter((suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id))
+    .map((suggestion) => suggestion.remove()));
+
+  // eslint-disable-next-line max-len
+  const suggestionsToAdd = newSuggestionDTOs.filter((s) => !ignoredSuggestionIds.includes(s.data.recommendations[0].id));
 
   // Add new suggestions to oppty
-  if (isNonEmptyArray(newSuggestions)) {
-    const updateResult = await opportunity.addSuggestions(newSuggestions);
+  if (isNonEmptyArray(suggestionsToAdd)) {
+    const updateResult = await opportunity.addSuggestions(suggestionsToAdd);
 
     if (isNonEmptyArray(updateResult.errorItems)) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
@@ -68,7 +80,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   try {
     const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
     altTextOppty = opportunities.find(
-      (oppty) => oppty.getType() === Audit.AUDIT_TYPES.ALT_TEXT,
+      (oppty) => oppty.getType() === AuditModel.AUDIT_TYPES.ALT_TEXT,
     );
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
@@ -81,7 +93,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
         siteId: auditData.siteId,
         auditId: auditData.id,
         runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
-        type: Audit.AUDIT_TYPES.ALT_TEXT,
+        type: AuditModel.AUDIT_TYPES.ALT_TEXT,
         origin: 'AUTOMATION',
         title: 'Missing alt text for images decreases accessibility and discoverability of content',
         description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
@@ -112,15 +124,16 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const suggestions = detectedTags.imagesWithoutAltText.map((image) => ({
     pageUrl: new URL(image.pageUrl, auditUrl).toString(),
     imageUrl: new URL(image.src, auditUrl).toString(),
+    id: getImageSuggestionIdentifier(image),
   }));
 
   log.debug(`Suggestions: ${JSON.stringify(suggestions)}`);
 
   await syncAltTextSuggestions({
     opportunity: altTextOppty,
-    newSuggestions: suggestions.map((suggestion) => ({
+    newSuggestionDTOs: suggestions.map((suggestion) => ({
       opportunityId: altTextOppty.getId(),
-      type: 'CONTENT_UPDATE',
+      type: SuggestionModel.TYPES.CONTENT_UPDATE,
       data: { recommendations: [suggestion] },
       rank: 1,
     })),
