@@ -262,13 +262,6 @@ describe('process opportunity step', () => {
           fullAuditRef: 'www.example.com',
           siteId: 'test-site-id',
         }),
-        // dataAccess: {
-        //   Opportunity: {
-        //     allBySiteIdAndStatus: sinon.stub().resolves([]),
-        //     create: sinon.stub(),
-        //   },
-        // },
-        // dataAccess: dataAccessStub,
         auditUrl: 'https://example.com',
         formsOppty: {
           getId: 'opportunity-id',
@@ -328,7 +321,6 @@ describe('process opportunity step', () => {
     };
 
     context.s3Client.send.resolves(mockFileResponse);
-
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
 
