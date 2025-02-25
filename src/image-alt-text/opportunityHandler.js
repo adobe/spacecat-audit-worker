@@ -28,18 +28,21 @@ const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${su
 export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
   const existingSuggestions = await opportunity.getSuggestions();
 
-  // eslint-disable-next-line max-len
-  const ignoredSuggestions = existingSuggestions.filter((s) => s.getStatus() === SuggestionModel.STATUSES.SKIPPED);
+  const ignoredSuggestions = existingSuggestions.filter(
+    (s) => s.getStatus() === SuggestionModel.STATUSES.SKIPPED,
+  );
   const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
 
   // Remove existing suggestions that were not ignored
   await Promise.all(existingSuggestions
-    // eslint-disable-next-line max-len
-    .filter((suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id))
+    .filter(
+      (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
+    )
     .map((suggestion) => suggestion.remove()));
 
-  // eslint-disable-next-line max-len
-  const suggestionsToAdd = newSuggestionDTOs.filter((s) => !ignoredSuggestionIds.includes(s.data.recommendations[0].id));
+  const suggestionsToAdd = newSuggestionDTOs.filter(
+    (s) => !ignoredSuggestionIds.includes(s.data.recommendations[0].id),
+  );
 
   // Add new suggestions to oppty
   if (isNonEmptyArray(suggestionsToAdd)) {
