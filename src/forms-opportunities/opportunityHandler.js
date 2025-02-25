@@ -44,6 +44,7 @@ export default async function convertToOpportunity(auditUrl, auditData, scrapedD
   }
 
   const { formVitals } = auditData.auditResult;
+  log.info(`Form vitals ${JSON.stringify(formVitals, null, 2)}`);
 
   const formOpportunities = generateOpptyData(formVitals);
   log.info(`Form opportunity ${JSON.stringify(formOpportunities, null, 2)}`);
