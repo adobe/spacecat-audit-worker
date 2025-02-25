@@ -78,6 +78,44 @@ const testData = {
       ],
     },
   },
+  auditData2: {
+    type: 'high-form-views-low-conversions',
+    siteId: 'site-id',
+    latestAuditId: 'audit-id',
+    auditResult: {
+      formVitals: [
+        {
+          url: 'https://www.surest.com/contact-us',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {},
+          formengagement: {
+            'desktop:windows': 700,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/info/win',
+          formsubmit: {
+          },
+          formview: {},
+          formengagement: {
+            'desktop:windows': 4000,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+        },
+      ],
+    },
+  },
 };
 
 export default testData;
