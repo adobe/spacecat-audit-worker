@@ -28,8 +28,8 @@ const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${su
 export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
   const existingSuggestions = await opportunity.getSuggestions();
 
-  const ignoredSuggestions = existingSuggestions.filter(
-    (s) => s.getStatus() === SuggestionModel.STATUSES.SKIPPED,
+  const ignoredSuggestions = await opportunity.getSuggestionsByStatus(
+    SuggestionModel.STATUSES.SKIPPED,
   );
   const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
 
