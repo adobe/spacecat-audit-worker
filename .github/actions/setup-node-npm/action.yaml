@@ -30,7 +30,3 @@ runs:
     - name: Install dependencies (only if cache miss)
       run: npm ci
       shell: bash
-    
-    - name: Copy my file
-      run: cp src/image-alt-text/firefall-client.js node_modules/@adobe/spacecat-shared-gpt-client/src/clients
-      shell: bash

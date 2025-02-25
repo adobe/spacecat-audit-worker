@@ -17,6 +17,10 @@ runs:
     - name: Lint
       run: npm run lint
       shell: bash
+    
+    - name: Test
+      run: npm run test
+      shell: bash
 
     - name: Upload coverage to Codecov
       if: ${{ inputs.upload_coverage == 'true' }}
