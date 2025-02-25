@@ -38,7 +38,8 @@
     "nodeVersion": 22,
     "static": [
       "static/prompts/broken-backlinks.prompt",
-      "static/prompts/broken-backlinks-followup.prompt"
+      "static/prompts/broken-backlinks-followup.prompt",
+      "static/prompts/image-alt-text.prompt"
     ]
   },
   "repository": {

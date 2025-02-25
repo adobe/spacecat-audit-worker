@@ -15,6 +15,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
+import suggestionsEngine from '../../../src/image-alt-text/suggestionsEngine.js';
 
 describe('Image Alt Text Opportunity Handler', () => {
   let logStub;
@@ -75,6 +76,15 @@ describe('Image Alt Text Opportunity Handler', () => {
         },
       },
     };
+
+    sinon.stub(suggestionsEngine, 'getImageSuggestions').resolves({
+      'https://example.com/image1.jpg': { image_url: '/page1', suggestion: 'Image 1 description' },
+      'https://example.com/page2': { image_url: '/page2', suggestion: 'Image 2 description' },
+    });
+  });
+
+  afterEach(() => {
+    sinon.restore();
   });
 
   it('should create new opportunity when none exists', async () => {
@@ -110,12 +120,23 @@ describe('Image Alt Text Opportunity Handler', () => {
       },
     });
     expect(logStub.debug).to.have.been.calledWith(
-      'Alt-text Opportunity created',
+      '[alt-text]: Opportunity created',
     );
   });
 
   it('should update existing opportunity when one exists', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
+    expect(altTextOppty.save).to.have.been.called;
+    expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
+  });
+
+  it('should update existing opportunitywith empty suggestion if none are found', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+    suggestionsEngine.getImageSuggestions.resolves({});
 
     await convertToOpportunity(auditUrl, auditData, context);
 
@@ -133,10 +154,10 @@ describe('Image Alt Text Opportunity Handler', () => {
       expect.fail('Should have thrown an error');
     } catch (e) {
       expect(e.message).to.equal(
-        'Failed to fetch opportunities for siteId site-id: Fetch failed',
+        '[alt-text]: Failed to fetch opportunities for siteId site-id: Fetch failed',
       );
       expect(logStub.error).to.have.been.calledWith(
-        'Fetching opportunities for siteId site-id failed with error: Fetch failed',
+        '[alt-text]: Fetching opportunities for siteId site-id failed with error: Fetch failed',
       );
     }
   });
@@ -150,10 +171,10 @@ describe('Image Alt Text Opportunity Handler', () => {
       expect.fail('Should have thrown an error');
     } catch (e) {
       expect(e.message).to.equal(
-        'Failed to create alt-text opportunity for siteId site-id: Creation failed',
+        '[alt-text]: Failed to create alt-text opportunity for siteId site-id: Creation failed',
       );
       expect(logStub.error).to.have.been.calledWith(
-        'Creating alt-text opportunity for siteId site-id failed with error: Creation failed',
+        '[alt-text]: Creating alt-text opportunity for siteId site-id failed with error: Creation failed',
         error,
       );
     }
@@ -183,10 +204,10 @@ describe('Image Alt Text Opportunity Handler', () => {
     await convertToOpportunity(auditUrl, auditData, context);
 
     expect(logStub.error).to.have.been.calledWith(
-      'Suggestions for siteId site-id contains 1 items with errors',
+      '[alt-text]: Suggestions for siteId site-id contains 1 items with errors',
     );
     expect(logStub.error).to.have.been.calledWith(
-      'Item {"url":"/page1","src":"image1.jpg"} failed with error: Invalid suggestion data',
+      '[alt-text]: Item {"url":"/page1","src":"image1.jpg"} failed with error: Invalid suggestion data',
     );
   });
 
@@ -215,12 +236,12 @@ describe('Image Alt Text Opportunity Handler', () => {
       await convertToOpportunity(auditUrl, auditData, context);
       expect.fail('Should have thrown an error');
     } catch (e) {
-      expect(e.message).to.equal('Failed to create suggestions for siteId site-id');
+      expect(e.message).to.equal('[alt-text]: Failed to create suggestions for siteId site-id');
       expect(logStub.error).to.have.been.calledWith(
-        'Suggestions for siteId site-id contains 1 items with errors',
+        '[alt-text]: Suggestions for siteId site-id contains 1 items with errors',
       );
       expect(logStub.error).to.have.been.calledWith(
-        'Item {"url":"/page1","src":"image1.jpg"} failed with error: Invalid suggestion data',
+        '[alt-text]: Item {"url":"/page1","src":"image1.jpg"} failed with error: Invalid suggestion data',
       );
     }
   });

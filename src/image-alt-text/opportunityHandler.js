@@ -12,6 +12,7 @@
 
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import suggestionsEngine from './suggestionsEngine.js';
 
 const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 
@@ -49,13 +50,13 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
     const updateResult = await opportunity.addSuggestions(suggestionsToAdd);
 
     if (isNonEmptyArray(updateResult.errorItems)) {
-      log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
+      log.error(`[alt-text]: Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
       updateResult.errorItems.forEach((errorItem) => {
-        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+        log.error(`[alt-text]: Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
       });
 
       if (!isNonEmptyArray(updateResult.createdItems)) {
-        throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+        throw new Error(`[alt-text]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
       }
     }
   }
@@ -77,7 +78,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const { Opportunity } = dataAccess;
   const { detectedTags } = auditData.auditResult;
 
-  log.info(`Syncing opportunity and suggestions for ${auditData.siteId}`);
+  log.info(`[alt-text]: Syncing opportunity and suggestions for ${auditData.siteId}`);
   let altTextOppty;
 
   try {
@@ -86,8 +87,8 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       (oppty) => oppty.getType() === AuditModel.AUDIT_TYPES.ALT_TEXT,
     );
   } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`[alt-text]: Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    throw new Error(`[alt-text]: Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
   try {
@@ -114,23 +115,37 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
         tags: ['seo', 'accessibility'],
       };
       altTextOppty = await Opportunity.create(opportunityData);
-      log.debug('Alt-text Opportunity created');
+      log.debug('[alt-text]: Opportunity created');
     } else {
       altTextOppty.setAuditId(auditData.id);
       await altTextOppty.save();
     }
   } catch (e) {
-    log.error(`Creating alt-text opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
-    throw new Error(`Failed to create alt-text opportunity for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`[alt-text]: Creating alt-text opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
+    throw new Error(`[alt-text]: Failed to create alt-text opportunity for siteId ${auditData.siteId}: ${e.message}`);
   }
 
-  const suggestions = detectedTags.imagesWithoutAltText.map((image) => ({
-    pageUrl: new URL(image.pageUrl, auditUrl).toString(),
-    imageUrl: new URL(image.src, auditUrl).toString(),
-    id: getImageSuggestionIdentifier(image),
-  }));
+  const imageUrls = detectedTags.imagesWithoutAltText.map(
+    (image) => new URL(image.src, auditUrl).toString(),
+  );
 
-  log.debug(`Suggestions: ${JSON.stringify(suggestions)}`);
+  const imageSuggestions = await suggestionsEngine.getImageSuggestions(
+    imageUrls,
+    auditUrl,
+    context,
+  );
+
+  const suggestions = detectedTags.imagesWithoutAltText.map((image) => {
+    const imageUrl = new URL(image.src, auditUrl).toString();
+    return {
+      id: getImageSuggestionIdentifier(image),
+      pageUrl: new URL(image.pageUrl, auditUrl).toString(),
+      imageUrl,
+      altText: imageSuggestions[imageUrl]?.suggestion || '',
+    };
+  });
+
+  log.debug(`[alt-text]: Suggestions: ${JSON.stringify(suggestions)}`);
 
   await syncAltTextSuggestions({
     opportunity: altTextOppty,
@@ -143,5 +158,5 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     log,
   });
 
-  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and alt-text audit type.`);
+  log.info(`[alt-text]: Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and alt-text audit type.`);
 }
