@@ -17,7 +17,7 @@ import generateOpptyData from './utils.js';
  * @param auditData - The audit data containing the audit result and additional details.
  * @param context - The context object containing the data access and logger objects.
  */
-export default async function convertToOpportunity(auditUrl, auditData, context) {
+export default async function convertToOpportunity(auditUrl, auditData, scrapedData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
   // eslint-disable-next-line no-param-reassign
@@ -46,6 +46,8 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const { formVitals } = auditData.auditResult;
 
   const formOpportunities = generateOpptyData(formVitals);
+  log.info(`Form opportunity ${JSON.stringify(formOpportunities, null, 2)}`);
+  log.info(`scraped data ${JSON.stringify(scrapedData, null, 2)}`);
 
   try {
     for (const opptyData of formOpportunities) {

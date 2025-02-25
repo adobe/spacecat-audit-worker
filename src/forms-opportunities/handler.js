@@ -137,8 +137,8 @@ export default new AuditBuilder()
     log.info(`Debug log 53 ${JSON.stringify(audit, null, 2)}`);
 
     // const { Site } = dataAccess;
-    const data = await getScrapedDataForSiteId(site, context);
-    log.info(`Debug log 4_4 scraped data ${JSON.stringify(data, null, 2)}`);
+    const scrapedData = await getScrapedDataForSiteId(site, context);
+    log.info(`Debug log 4_4 scraped data ${JSON.stringify(scrapedData, null, 2)}`);
 
     // const sites = await Site.allWithLatestAudit('forms-opportunities');
     // for (const site1 of sites) {
@@ -157,7 +157,7 @@ export default new AuditBuilder()
     // const { auditResult } = latestAudit;
     // const formVitals = auditResult.formVitals;
 
-    const opportunity = await convertToOpportunity(finalUrl, latestAudit, context);
+    const opportunity = await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
     log.info(`Debug log 92 opportunity ${JSON.stringify(opportunity, null, 2)}`);
 
     return {
