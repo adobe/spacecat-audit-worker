@@ -55,7 +55,7 @@ export async function processStructuredData(baseURL, context, pages) {
     try {
       const { inspectionResult } = await google.urlInspect(page);
       log.info(`Successfully inspected URL: ${page}`);
-      log.info(`Inspection result: ${JSON.stringify(inspectionResult)}`);
+      log.debug(`Inspection result: ${JSON.stringify(inspectionResult)}`);
 
       const filteredIndexStatusResult = {
         verdict: inspectionResult?.indexStatusResult?.verdict, // PASS if indexed
