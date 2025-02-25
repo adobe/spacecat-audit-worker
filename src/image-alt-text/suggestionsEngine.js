@@ -41,6 +41,9 @@ const getImageSuggestions = async (imageUrls, auditUrl, context) => {
   log.info('[alt-text] Other images:', otherImages);
   log.info('[alt-text] Unsupported format images:', unsupportedFormatImages);
 
+  // idea to break cache
+  imagesFromHost.reverse();
+
   const imageList = imagesFromHost;
 
   function chunkArray(array, chunkSize) {
