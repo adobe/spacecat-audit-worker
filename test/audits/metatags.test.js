@@ -118,6 +118,7 @@ describe('Meta Tags', () => {
       });
     });
 
+    // check disabled, to be included in later iterations
     describe('checkForH1Count', () => {
       it('should detect multiple H1 tags on the page', () => {
         const url = 'https://example.com';
@@ -166,14 +167,13 @@ describe('Meta Tags', () => {
         const pageTags = {
           [TITLE]: '', // Empty title
           [DESCRIPTION]: 'A short description.',
-          [H1]: ['Heading 1', 'Heading 2'], // Multiple H1 tags
+          [H1]: ['Heading 1'], // Multiple H1 tags
         };
 
         seoChecks.performChecks(url, pageTags);
 
         const detectedTags = seoChecks.getDetectedTags();
         expect(detectedTags[url][TITLE][ISSUE]).to.equal('Empty Title');
-        expect(detectedTags[url][H1][ISSUE]).to.equal(MULTIPLE_H1_ON_PAGE);
       });
 
       it('should return if url is invalid', () => {
