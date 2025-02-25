@@ -50,8 +50,44 @@ export default async function convertToOpportunity(auditUrl, auditData, scrapedD
   log.info(`Form opportunity ${JSON.stringify(formOpportunities, null, 2)}`);
   log.info(`scraped data ${JSON.stringify(scrapedData, null, 2)}`);
 
+  const filteredOpportunities = formOpportunities.filter((opportunity) => {
+    // Ensure scrapedData and formData exist
+    if (!scrapedData?.formData || !Array.isArray(scrapedData.formData)) {
+      log.debug('No valid scraped data available.');
+      return true; // Keep the opportunity since we can't determine if it should be filtered out
+    }
+
+    // Find matching form in scraped data
+    const matchingForm = scrapedData.formData.find((form) => {
+      if (!form || typeof form.finalUrl !== 'string') {
+        return false; // Skip invalid form entries
+      }
+
+      const urlMatches = form.finalUrl === opportunity?.url;
+      const isSearchForm = Array.isArray(form.scrapeResult)
+          && form.scrapeResult.some((result) => result?.formType === 'search');
+
+      if (urlMatches) {
+        log.debug(`Found matching URL: ${form.finalUrl}`);
+        log.debug(`Form types: ${Array.isArray(form.scrapeResult) ? form.scrapeResult.map((r) => r?.formType).join(', ') : 'N/A'}`);
+      }
+
+      return urlMatches && isSearchForm;
+    });
+
+    if (matchingForm) {
+      log.debug(`Filtered out search form: ${opportunity?.url}`);
+      return false;
+    }
+
+    return true;
+  });
+
+  log.info(`Filtered opportunities length: ${filteredOpportunities.length}`);
+  log.info(`Filtered opportunities: ${JSON.stringify(filteredOpportunities, null, 2)}`);
+
   try {
-    for (const opptyData of formOpportunities) {
+    for (const opptyData of filteredOpportunities) {
       if (!highFormViewsLowConversionsOppty) {
         const opportunityData = {
           siteId: auditData.siteId,
