@@ -122,10 +122,7 @@ describe('Audit Utils Tests', () => {
 
       await sendContinuationMessage(message, context);
 
-      expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: message.queueUrl,
-        MessageBody: JSON.stringify(message.payload),
-      });
+      expect(context.sqs.sendMessage).to.have.been.calledWith(message.queueUrl, message.payload);
     });
 
     it('throws error when message sending fails', async () => {

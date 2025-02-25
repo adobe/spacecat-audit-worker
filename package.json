@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.56.3",
+  "version": "1.56.5",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -68,7 +68,7 @@
     "@adobe/spacecat-shared-data-access": "2.8.3",
     "@adobe/spacecat-shared-google-client": "1.4.11",
     "@adobe/spacecat-shared-gpt-client": "1.5.0",
-    "@adobe/spacecat-shared-http-utils": "1.9.9",
+    "@adobe/spacecat-shared-http-utils": "1.9.10",
     "@adobe/spacecat-shared-rum-api-client": "2.21.1",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.33.1",

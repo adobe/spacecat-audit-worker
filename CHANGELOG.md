@@ -1,3 +1,17 @@
+## [1.56.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.4...v1.56.5) (2025-02-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.9.10 ([#697](https://github.com/adobe/spacecat-audit-worker/issues/697)) ([b95171f](https://github.com/adobe/spacecat-audit-worker/commit/b95171fce2ec9e74dd85ae3bd420c2d7e303ee1b))
+
+## [1.56.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.3...v1.56.4) (2025-02-25)
+
+
+### Bug Fixes
+
+* send continuation message to sqs in add step ([#695](https://github.com/adobe/spacecat-audit-worker/issues/695)) ([f4f7814](https://github.com/adobe/spacecat-audit-worker/commit/f4f7814b25763e0cc1cab85d2ea7c0a1c7b9bd3e))
+
 ## [1.56.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.2...v1.56.3) (2025-02-24)
 
 
