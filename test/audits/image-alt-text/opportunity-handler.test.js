@@ -134,7 +134,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
   });
 
-  it('should update existing opportunitywith empty suggestion if none are found', async () => {
+  it('should update existing opportunity with empty suggestion if none are found', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
     suggestionsEngine.getImageSuggestions.resolves({});
 
