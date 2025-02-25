@@ -34,8 +34,8 @@ describe('getImageSuggestions', () => {
         {
           message: {
             content: JSON.stringify([
-              { image_url: 'http://example.com/image1.png', alt_text: 'Image 1 description' },
-              { image_url: 'http://example.com/image2.png', alt_text: 'Image 2 description' },
+              { image_url: 'http://example.com/image1.png', suggestion: 'Image 1 description' },
+              { image_url: 'http://example.com/image2.png', suggestion: 'Image 2 description' },
             ]),
           },
           finish_reason: 'stop',
@@ -58,8 +58,8 @@ describe('getImageSuggestions', () => {
     const auditUrl = 'https://example.com';
 
     const expectedResults = {
-      'http://example.com/image1.png': { image_url: 'http://example.com/image1.png', alt_text: 'Image 1 description' },
-      'http://example.com/image2.png': { image_url: 'http://example.com/image2.png', alt_text: 'Image 2 description' },
+      'http://example.com/image1.png': { image_url: 'http://example.com/image1.png', suggestion: 'Image 1 description' },
+      'http://example.com/image2.png': { image_url: 'http://example.com/image2.png', suggestion: 'Image 2 description' },
     };
 
     const result = await suggestionsEngine.getImageSuggestions(imageUrls, auditUrl, context);

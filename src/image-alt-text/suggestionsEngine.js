@@ -41,9 +41,6 @@ const getImageSuggestions = async (imageUrls, auditUrl, context) => {
   log.info('[alt-text] Other images:', otherImages);
   log.info('[alt-text] Unsupported format images:', unsupportedFormatImages);
 
-  // idea to break cache
-  imagesFromHost.reverse();
-
   const imageList = imagesFromHost;
 
   function chunkArray(array, chunkSize) {
@@ -65,7 +62,7 @@ const getImageSuggestions = async (imageUrls, auditUrl, context) => {
     };
     const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
     try {
-      const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
+      const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions, { 'Cache-Control': 'no-cache', Pragma: 'no-cache' });
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
         log.error('[alt-text] No final suggestions found for batch');
       }
