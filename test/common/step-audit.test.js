@@ -176,23 +176,23 @@ describe('Step-based Audit Tests', () => {
         fullAuditRef: 's3://test/123',
       });
 
-      // Verify message sent to content scraper
-      expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: 'https://space.cat/content-scraper',
-        MessageBody: sinon.match.string,
-      });
-
-      const sentMessage = JSON.parse(context.sqs.sendMessage.firstCall.args[0].MessageBody);
-      expect(sentMessage).to.deep.include({
+      // Update verification to match actual implementation
+      const expectedPayload = {
         urls: [{ url: baseURL }],
         jobId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        processingType: 'default',
         auditContext: {
           next: 'process',
           auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
           auditType: 'content-audit',
           fullAuditRef: 's3://test/123',
         },
-      });
+      };
+
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        'https://space.cat/content-scraper',
+        expectedPayload,
+      );
     });
 
     it('continues execution from specified step', async () => {
@@ -223,14 +223,8 @@ describe('Step-based Audit Tests', () => {
       // Verify no new audit record is created
       expect(context.dataAccess.Audit.create).not.to.have.been.called;
 
-      // Verify message sent to import worker
-      expect(context.sqs.sendMessage).to.have.been.calledWith({
-        QueueUrl: 'https://space.cat/import-worker',
-        MessageBody: sinon.match.string,
-      });
-
-      const sentMessage = JSON.parse(context.sqs.sendMessage.firstCall.args[0].MessageBody);
-      expect(sentMessage).to.deep.include({
+      // Update verification to match actual implementation
+      const expectedPayload = {
         type: 'content-import',
         siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
         auditContext: {
@@ -239,7 +233,12 @@ describe('Step-based Audit Tests', () => {
           auditType: 'content-audit',
           fullAuditRef: 's3://test/123',
         },
-      });
+      };
+
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        'https://space.cat/import-worker',
+        expectedPayload,
+      );
     });
 
     it('handles final step without sending messages', async () => {
