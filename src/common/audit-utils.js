@@ -37,11 +37,6 @@ export async function sendContinuationMessage(message, context) {
   try {
     const { sqs } = context;
     await sqs.sendMessage(queueUrl, payload);
-
-    // await sqs.sendMessage({
-    //   QueueUrl: queueUrl,
-    //   MessageBody: JSON.stringify(payload),
-    // });
   } catch (e) {
     log.error(`Failed to send message to queue ${queueUrl}`, e);
     throw e;
