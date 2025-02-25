@@ -32,7 +32,6 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
 // Add new constant for status codes we want to track
 const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -67,9 +66,6 @@ const VALID_MIME_TYPES = Object.freeze([
 export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl, {
     method: 'GET',
-    headers: {
-      'User-Agent': DEFAULT_USER_AGENT,
-    },
   });
   if (!response.ok) {
     throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
@@ -181,16 +177,13 @@ export async function filterValidUrls(urls) {
   const NOT_OK = 1;
   const NETWORK_ERROR = 2;
   const OTHER_STATUS = 3;
-  const batchSize = 50;
+  const BATCH_SIZE = 50;
 
   const fetchUrl = async (url) => {
     try {
       const response = await fetch(url, {
         method: 'HEAD',
         redirect: 'manual',
-        headers: {
-          'User-Agent': DEFAULT_USER_AGENT,
-        },
       });
 
       if (response.status === 200) {
@@ -205,9 +198,6 @@ export async function filterValidUrls(urls) {
           const redirectResponse = await fetch(finalUrl, {
             method: 'HEAD',
             redirect: 'follow',
-            headers: {
-              'User-Agent': DEFAULT_USER_AGENT,
-            },
           });
           return {
             status: NOT_OK,
@@ -240,8 +230,8 @@ export async function filterValidUrls(urls) {
   const fetchPromises = urls.map(fetchUrl);
 
   const batches = [];
-  for (let i = 0; i < fetchPromises.length; i += batchSize) {
-    batches.push(fetchPromises.slice(i, i + batchSize));
+  for (let i = 0; i < fetchPromises.length; i += BATCH_SIZE) {
+    batches.push(fetchPromises.slice(i, i + BATCH_SIZE));
   }
 
   const results = [];
@@ -276,7 +266,7 @@ export async function filterValidUrls(urls) {
         acc.notOk.push({
           url: result.url,
           statusCode: result.statusCode,
-          ...(result.finalUrl && { urls_suggested: result.finalUrl }),
+          ...(result.finalUrl && { urlsSuggested: result.finalUrl }),
         });
       }
       return acc;
@@ -518,7 +508,6 @@ export function getSitemapsWithIssues(auditData) {
  * // Output:
  * // [
  * //   { type: 'url', sitemapUrl: 'https://site.url/sitemap.xml', pageUrl: 'https://site.url/page1', statusCode: 404 },
- * //   { type: 'url', sitemapUrl: 'https://site.url/sitemap.xml', pageUrl: 'https://site.url/page2', statusCode: 500 }
  * // ]
  */
 export function getPagesWithIssues(auditData) {
@@ -536,7 +525,7 @@ export function getPagesWithIssues(auditData) {
       sitemapUrl,
       pageUrl: page.url,
       statusCode: page.statusCode ?? 0, // default to 0 if not present
-      ...(page.urls_suggested && { urls_suggested: page.urls_suggested }),
+      ...(page.urlsSuggested && { urlsSuggested: page.urlsSuggested }),
     }));
   });
 }
@@ -562,8 +551,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
     .filter(Boolean)
     .map((issue) => ({
       ...issue,
-      recommendedAction: issue.urls_suggested
-        ? `use this url instead: ${issue.urls_suggested}`
+      recommendedAction: issue.urlsSuggested
+        ? `use this url instead: ${issue.urlsSuggested}`
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 
@@ -609,7 +598,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
-  .withUrlResolver((site) => composeAuditURL(site.getBaseURL(), DEFAULT_USER_AGENT)
+  .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
     .then((url) => getUrlWithoutPath(prependSchema(url))))
   .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();
