@@ -93,7 +93,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     siteId: site.getId(),
   };
 
-  log.info(`finished forms audit and sending urls for scraping for site id  ${site.getId()}`);
+  log.info(`finished forms audit and sending urls for scraping for site id 2 ${site.getId()}`);
   return result;
 }
 
