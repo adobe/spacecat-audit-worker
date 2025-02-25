@@ -63,7 +63,7 @@ export default async function convertToOpportunity(auditUrl, auditData, scrapedD
         return false; // Skip invalid form entries
       }
 
-      const urlMatches = form.finalUrl === opportunity?.url;
+      const urlMatches = form.finalUrl === opportunity?.form;
       const isSearchForm = Array.isArray(form.scrapeResult)
           && form.scrapeResult.some((result) => result?.formType === 'search');
 
