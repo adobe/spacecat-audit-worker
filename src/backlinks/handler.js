@@ -17,7 +17,7 @@ import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getScrapedDataForSiteId, sleep } from '../support/utils.js';
+import { getScrapedDataForSiteId } from '../support/utils.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
@@ -79,6 +79,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
     return {
       fullAuditRef,
       auditResult: {
+        finalUrl: auditUrl,
         brokenBacklinks: await filterOutValidBacklinks(filteredBacklinks, log),
       },
     };
@@ -86,8 +87,8 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
     log.error(`Broken Backlinks audit for ${siteId} with url ${auditUrl} failed with error: ${e.message}`, e);
     return {
       fullAuditRef: auditUrl,
-      finalUrl: auditUrl,
       auditResult: {
+        finalUrl: auditUrl,
         error: `Broken Backlinks audit for ${siteId} with url ${auditUrl} failed with error: ${e.message}`,
         success: false,
       },
@@ -98,6 +99,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
 export const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
+  const { FIREFALL_MODEL } = context.env;
 
   if (auditData.auditResult.success === false) {
     log.info('Audit failed, skipping suggestions generation');
@@ -113,7 +115,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   log.info(`Generating suggestions for site ${finalUrl}`);
 
   const firefallClient = FirefallClient.createFrom(context);
-  const firefallOptions = { responseFormat: 'json_object' };
+  const firefallOptions = { responseFormat: 'json_object', model: FIREFALL_MODEL };
   const BATCH_SIZE = 300;
 
   const data = await getScrapedDataForSiteId(site, context);
@@ -128,8 +130,11 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 
   const processBatch = async (batch, urlTo) => {
     try {
-      const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
-      await sleep(1000);
+      const requestBody = await getPrompt(
+        { alternative_urls: batch, broken_url: urlTo },
+        'broken-backlinks',
+        log,
+      );
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
@@ -146,20 +151,22 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 
   const processBacklink = async (backlink, headerSuggestions) => {
     log.info(`Processing backlink: ${backlink.url_to}`);
-    const suggestions = [];
-    for (const batch of dataBatches) {
-      // eslint-disable-next-line no-await-in-loop
-      const result = await processBatch(batch, backlink.url_to);
-      if (result) {
-        suggestions.push(result);
-      }
-    }
+    const batchPromises = dataBatches.map((batch) => processBatch(batch, backlink.url_to));
+    const batchResults = await Promise.all(batchPromises);
+    const suggestions = batchResults.filter((result) => result !== null);
 
     if (totalBatches > 1) {
       log.info(`Compiling final suggestions for: ${backlink.url_to}`);
       try {
-        const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: backlink.url_to }, 'broken-backlinks-followup', log);
-        await sleep(1000);
+        const finalRequestBody = await getPrompt(
+          {
+            suggested_urls: suggestions,
+            header_links: headerSuggestions,
+            broken_url: backlink.url_to,
+          },
+          'broken-backlinks-followup',
+          log,
+        );
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
 
@@ -172,8 +179,8 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
         log.info(`Final suggestion for ${backlink.url_to}: ${JSON.stringify(answer)}`);
         return {
           ...backlink,
-          urls_suggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
-          ai_rationale: answer.ai_rationale?.length > 0 ? answer.ai_rationale : 'No suitable suggestions found',
+          urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
+          aiRationale: answer.aiRationale?.length > 0 ? answer.aiRationale : 'No suitable suggestions found',
         };
       } catch (error) {
         log.error(`Final suggestion error for ${backlink.url_to}: ${error.message}`);
@@ -184,43 +191,39 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     log.info(`Suggestions for ${backlink.url_to}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
     return {
       ...backlink,
-      urls_suggested:
+      urlsSuggested:
         suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
-      ai_rationale:
-        suggestions[0]?.ai_rationale?.length > 0 ? suggestions[0]?.ai_rationale : 'No suitable suggestions found',
+      aiRationale:
+        suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
     };
   };
 
-  const headerSuggestionsResults = [];
-  for (const backlink of auditData.auditResult.brokenBacklinks) {
+  const headerSuggestionsPromises = auditData.auditResult.brokenBacklinks.map(async (backlink) => {
     try {
-      // eslint-disable-next-line no-await-in-loop
-      const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: backlink.url_to }, 'broken-backlinks', log);
-      // eslint-disable-next-line no-await-in-loop
+      const requestBody = await getPrompt(
+        { alternative_urls: headerLinks, broken_url: backlink.url_to },
+        'broken-backlinks',
+        log,
+      );
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
         log.error(`No header suggestions for ${backlink.url_to}`);
-        headerSuggestionsResults.push(null);
-        // eslint-disable-next-line no-continue
-        continue;
+        return null;
       }
 
-      headerSuggestionsResults.push(JSON.parse(response.choices[0].message.content));
+      return JSON.parse(response.choices[0].message.content);
     } catch (error) {
       log.error(`Header suggestion error: ${error.message}`);
-      headerSuggestionsResults.push(null);
+      return null;
     }
-  }
+  });
+  const headerSuggestionsResults = await Promise.all(headerSuggestionsPromises);
 
-  const updatedBacklinks = [];
-  for (let index = 0; index < auditData.auditResult.brokenBacklinks.length; index += 1) {
-    const backlink = auditData.auditResult.brokenBacklinks[index];
-    const headerSuggestions = headerSuggestionsResults[index];
-    // eslint-disable-next-line no-await-in-loop
-    const updatedBacklink = await processBacklink(backlink, headerSuggestions);
-    updatedBacklinks.push(updatedBacklink);
-  }
+  const updatedBacklinkPromises = auditData.auditResult.brokenBacklinks.map(
+    (backlink, index) => processBacklink(backlink, headerSuggestionsResults[index]),
+  );
+  const updatedBacklinks = await Promise.all(updatedBacklinkPromises);
 
   log.info('Suggestions generation complete.');
   return {
@@ -264,8 +267,8 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         title: backlink.title,
         url_from: backlink.url_from,
         url_to: backlink.url_to,
-        urls_suggested: backlink.urls_suggested || [],
-        ai_rationale: backlink.ai_rationale || '',
+        urlsSuggested: backlink.urlsSuggested || [],
+        aiRationale: backlink.aiRationale || '',
         traffic_domain: backlink.traffic_domain,
       },
     }),
