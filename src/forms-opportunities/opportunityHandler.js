@@ -17,7 +17,7 @@ import generateOpptyData from './utils.js';
  * @param auditData - The audit data containing the audit result and additional details.
  * @param context - The context object containing the data access and logger objects.
  */
-export default async function convertToOpportunity(auditUrl, auditData, context) {
+export default async function convertToOpportunity(auditUrl, auditData, scrapedData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 

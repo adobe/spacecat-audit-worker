@@ -11,10 +11,14 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import generateOpptyData from './utils.js';
+import { getScrapedDataForSiteId } from '../support/utils.js';
 import convertToOpportunity from './opportunityHandler.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const DAILY_THRESHOLD = 200;
 const INTERVAL = 7; // days
 const FORMS_OPPTY_QUERIES = [
@@ -64,8 +68,52 @@ export async function formsAuditRunner(auditUrl, context) {
   };
 }
 
+export async function runAuditAndSendUrlsForScrapingStep(context) {
+  const {
+    site, log, finalUrl,
+  } = context;
+
+  log.info(`starting forms audit for site id  ${site.getId()}`);
+  const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
+  const { formVitals } = formsAuditRunnerResult.auditResult;
+
+  // generating opportunity data from audit to be send to scraper
+  const formOpportunities = generateOpptyData(formVitals);
+  const uniqueUrls = new Set();
+  for (const opportunity of formOpportunities) {
+    uniqueUrls.add(opportunity.form);
+  }
+
+  const result = {
+    auditResult: formsAuditRunnerResult.auditResult,
+    fullAuditRef: formsAuditRunnerResult.fullAuditRef,
+    processingType: 'form',
+    jobId: site.getId(),
+    urls: Array.from(uniqueUrls).map((url) => ({ url })),
+    siteId: site.getId(),
+  };
+
+  log.info(`finished forms audit and sending urls for scraping for site id  ${site.getId()}`);
+  return result;
+}
+
+export async function processOpportunityStep(context) {
+  const {
+    log, site, finalUrl,
+  } = context;
+
+  log.info(`starting process opportunity step for site id  ${site.getId()}`);
+  const scrapedData = await getScrapedDataForSiteId(site, context);
+  const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
+  await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
+  log.info(`finished process opportunity step for site id  ${site.getId()}`);
+  return {
+    status: 'complete',
+  };
+}
+
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(formsAuditRunner)
-  .withPostProcessors([convertToOpportunity])
+  .addStep('runAuditAndSendUrlsForScraping', runAuditAndSendUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('processOpportunity', processOpportunityStep)
   .build();
