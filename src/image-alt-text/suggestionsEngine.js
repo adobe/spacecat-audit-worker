@@ -59,10 +59,14 @@ const getImageSuggestions = async (imageUrls, auditUrl, context) => {
     const firefallOptions = {
       imageUrls: batch,
       model: MODEL,
+      additionalHeaders: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
     };
     const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
     try {
-      const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions, { 'Cache-Control': 'no-cache', Pragma: 'no-cache' });
+      const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
         log.error('[alt-text] No final suggestions found for batch');
       }

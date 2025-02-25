@@ -126,6 +126,7 @@ export default class FirefallClient {
       ...additionalHeaders,
     };
 
+    this.log.info(`AH: ${additionalHeaders}`);
     this.log.info(`URL: ${url}, Headers: ${JSON.stringify(headers)}`);
 
     const response = await httpFetch(url, {
@@ -196,7 +197,7 @@ export default class FirefallClient {
       imageUrls,
       responseFormat,
       model: llmModel = 'gpt-4-turbo',
-      additionalHeaders,
+      additionalHeaders = {},
     } = options || {};
     const hasImageUrls = imageUrls && imageUrls.length > 0;
 
