@@ -11,8 +11,12 @@
  */
 
 import {
-  composeAuditURL, isArray, prependSchema, tracingFetch as fetch,
+  composeAuditURL,
+  isArray,
+  prependSchema,
+  tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
   extractDomainAndProtocol,
   getBaseUrlPagesFromSitemapContents,
@@ -22,6 +26,12 @@ import {
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+
+const auditType = Audit.AUDIT_TYPES.SITEMAP;
+// Add new constant for status codes we want to track
+const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -32,8 +42,6 @@ export const ERROR_CODES = Object.freeze({
   SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
   FETCH_ERROR: 'ERROR FETCHING DATA',
 });
-
-const AUDIT_TYPE = 'sitemap';
 
 const VALID_MIME_TYPES = Object.freeze([
   'application/xml',
@@ -56,7 +64,9 @@ const VALID_MIME_TYPES = Object.freeze([
  * @throws {Error} If the fetch operation fails or the response status is not OK.
  */
 export async function fetchContent(targetUrl) {
-  const response = await fetch(targetUrl);
+  const response = await fetch(targetUrl, {
+    method: 'GET',
+  });
   if (!response.ok) {
     throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
   }
@@ -159,32 +169,69 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
- * @returns {Promise<{ok: string[], notOk: string[], err: string[]}>} -
- * A promise that resolves to a dict of URLs that exist.
+* @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
+ * Array<{url: string, statusCode: number}>}>} - A Promise that resolves to an object containing
  */
 export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
-  const batchSize = 50;
+  const NETWORK_ERROR = 2;
+  const OTHER_STATUS = 3;
+  const BATCH_SIZE = 50;
 
   const fetchUrl = async (url) => {
     try {
-      const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
+      const response = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'manual',
+      });
+
       if (response.status === 200) {
         return { status: OK, url };
-      } else {
+      }
+
+      // if it's a redirect, follow it to get the final URL
+      if (response.status === 301 || response.status === 302) {
+        const redirectUrl = response.headers.get('location');
+        const finalUrl = new URL(redirectUrl, url).href;
+        try {
+          const redirectResponse = await fetch(finalUrl, {
+            method: 'HEAD',
+            redirect: 'follow',
+          });
+          return {
+            status: NOT_OK,
+            url,
+            statusCode: response.status,
+            finalUrl: redirectResponse.url,
+          };
+        } catch {
+          return {
+            status: NOT_OK,
+            url,
+            statusCode: response.status,
+            finalUrl,
+          };
+        }
+      }
+
+      // Track 404 status code
+      if (response.status === 404) {
         return { status: NOT_OK, url, statusCode: response.status };
       }
+
+      // Any other status code goes to otherStatusCodes
+      return { status: OTHER_STATUS, url, statusCode: response.status };
     } catch {
-      return { status: NOT_OK, url };
+      return { status: NETWORK_ERROR, url, error: 'NETWORK_ERROR' };
     }
   };
 
   const fetchPromises = urls.map(fetchUrl);
 
   const batches = [];
-  for (let i = 0; i < fetchPromises.length; i += batchSize) {
-    batches.push(fetchPromises.slice(i, i + batchSize));
+  for (let i = 0; i < fetchPromises.length; i += BATCH_SIZE) {
+    batches.push(fetchPromises.slice(i, i + BATCH_SIZE));
   }
 
   const results = [];
@@ -201,14 +248,33 @@ export async function filterValidUrls(urls) {
     .filter((result) => result.status === 'fulfilled')
     .map((result) => result.value);
 
-  return filtered.reduce((acc, result) => {
-    if (result.status === OK) {
-      acc.ok.push(result.url);
-    } else {
-      acc.notOk.push({ url: result.url, statusCode: result.statusCode });
-    }
-    return acc;
-  }, { ok: [], notOk: [] });
+  return filtered.reduce(
+    (acc, result) => {
+      if (result.status === OK) {
+        acc.ok.push(result.url);
+      } else if (result.status === NETWORK_ERROR) {
+        acc.networkErrors.push({
+          url: result.url,
+          error: result.error,
+        });
+      } else if (result.status === OTHER_STATUS) {
+        acc.otherStatusCodes.push({
+          url: result.url,
+          statusCode: result.statusCode,
+        });
+      } else {
+        acc.notOk.push({
+          url: result.url,
+          statusCode: result.statusCode,
+          ...(result.finalUrl && { urlsSuggested: result.finalUrl }),
+        });
+      }
+      return acc;
+    },
+    {
+      ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
+    },
+  );
 }
 
 /**
@@ -310,12 +376,20 @@ export async function findSitemap(inputUrl) {
   }
 
   if (!sitemapUrls.ok.length) {
-    const commonSitemapUrls = [`${protocol}://${domain}/sitemap.xml`, `${protocol}://${domain}/sitemap_index.xml`];
+    const commonSitemapUrls = [
+      `${protocol}://${domain}/sitemap.xml`,
+      `${protocol}://${domain}/sitemap_index.xml`,
+    ];
     sitemapUrls = await filterValidUrls(commonSitemapUrls);
     if (!sitemapUrls.ok || !sitemapUrls.ok.length) {
       return {
         success: false,
-        reasons: [{ value: `${protocol}://${domain}/robots.txt`, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS }],
+        reasons: [
+          {
+            value: `${protocol}://${domain}/robots.txt`,
+            error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+          },
+        ],
         details: {
           issues: sitemapUrls.notOk,
         },
@@ -338,11 +412,19 @@ export async function findSitemap(inputUrl) {
         // eslint-disable-next-line no-await-in-loop
         const existingPages = await filterValidUrls(urlsToCheck);
 
+        // Only collect tracked status codes in issues
         if (existingPages.notOk && existingPages.notOk.length > 0) {
-          notOkPagesFromSitemap[s] = existingPages.notOk;
+          const trackedIssues = existingPages.notOk
+            .filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
+          if (trackedIssues.length > 0) {
+            notOkPagesFromSitemap[s] = trackedIssues;
+          }
         }
 
-        if (!existingPages.ok || existingPages.ok.length === 0) {
+        const hasValidUrls = existingPages.ok.length > 0
+          || existingPages.notOk.some((issue) => [301, 302].includes(issue.statusCode));
+
+        if (!hasValidUrls) {
           delete extractedPaths[s];
         } else {
           extractedPaths[s] = existingPages.ok;
@@ -361,10 +443,12 @@ export async function findSitemap(inputUrl) {
   } else {
     return {
       success: false,
-      reasons: [{
-        value: filteredSitemapUrls[0],
-        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-      }],
+      reasons: [
+        {
+          value: filteredSitemapUrls[0],
+          error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        },
+      ],
       url: inputUrl,
       details: { issues: notOkPagesFromSitemap },
     };
@@ -424,7 +508,6 @@ export function getSitemapsWithIssues(auditData) {
  * // Output:
  * // [
  * //   { type: 'url', sitemapUrl: 'https://site.url/sitemap.xml', pageUrl: 'https://site.url/page1', statusCode: 404 },
- * //   { type: 'url', sitemapUrl: 'https://site.url/sitemap.xml', pageUrl: 'https://site.url/page2', statusCode: 500 }
  * // ]
  */
 export function getPagesWithIssues(auditData) {
@@ -441,7 +524,8 @@ export function getPagesWithIssues(auditData) {
       type: 'url',
       sitemapUrl,
       pageUrl: page.url,
-      statusCode: page.statusCode ?? 500,
+      statusCode: page.statusCode ?? 0, // default to 0 if not present
+      ...(page.urlsSuggested && { urlsSuggested: page.urlsSuggested }),
     }));
   });
 }
@@ -450,10 +534,11 @@ export function getPagesWithIssues(auditData) {
  *
  * @param auditUrl - The URL of the audit
  * @param auditData - The audit data containing the audit result and additional details.
- * @param log - Logger object for logging information.
+ * @param context - The context object containing the logger
  * @returns {Array} An array of suggestions or error objects.
  */
-export function classifySuggestions(auditUrl, auditData, log) {
+export function generateSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
   log.info(`Classifying suggestions for ${JSON.stringify(auditData)}`);
 
   const { success, reasons } = auditData.auditResult;
@@ -462,67 +547,49 @@ export function classifySuggestions(auditUrl, auditData, log) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
-  const suggestions = [...response, ...pagesWithIssues].filter(Boolean);
+  const suggestions = [...response, ...pagesWithIssues]
+    .filter(Boolean)
+    .map((issue) => ({
+      ...issue,
+      recommendedAction: issue.urlsSuggested
+        ? `use this url instead: ${issue.urlsSuggested}`
+        : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+    }));
 
   log.info(`Classified suggestions: ${JSON.stringify(suggestions)}`);
-  return suggestions;
+  return {
+    ...auditData,
+    suggestions,
+  };
 }
 
-export async function convertToOpportunity(auditUrl, auditData, context) {
-  const { dataAccess, log } = context;
-  const { Opportunity } = dataAccess;
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
 
-  log.info('Converting SITEMAP audit to opportunity...');
-
-  const classifiedSuggestions = classifySuggestions(auditUrl, auditData, log);
-  if (!classifiedSuggestions.length) {
-    // If there are no issues, no need to create an opportunity
+  // suggestions are in auditData.suggestions
+  if (!auditData.suggestions || !auditData.suggestions.length) {
+    log.info('No sitemap issues found, skipping opportunity creation');
     return;
   }
 
-  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  log.info(`opportunities: ${JSON.stringify(opportunities)}`);
-
-  let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-  log.info(`opportunity: ${JSON.stringify(opportunity)}`);
-
-  if (!opportunity) {
-    const opportunityData = {
-      siteId: auditData.siteId,
-      auditId: auditData.id,
-      type: AUDIT_TYPE,
-      origin: 'AUTOMATION',
-      title: 'Sitemap issues found',
-      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
-      guidance: {
-        steps: [
-          'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
-          'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
-        ],
-      },
-      tags: ['Traffic Acquisition'],
-    };
-    try {
-      opportunity = await Opportunity.create(opportunityData);
-    } catch (e) {
-      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`, e);
-      throw e;
-    }
-  } else {
-    opportunity.setAuditId(auditData.id);
-    await opportunity.save();
-  }
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
 
   const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);
 
   await syncSuggestions({
     opportunity,
-    newData: classifiedSuggestions,
+    newData: auditData.suggestions,
     buildKey,
     mapNewSuggestion: (issue) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',
-      rank: 0, // how can we rank this?
+      rank: 0,
       data: issue,
     }),
     log,
@@ -532,6 +599,6 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
-    .then((url) => (getUrlWithoutPath(prependSchema(url)))))
-  .withPostProcessors([convertToOpportunity])
+    .then((url) => getUrlWithoutPath(prependSchema(url))))
+  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();

@@ -11,12 +11,64 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
-import convertToOpportunity from './opportunityHandler.js';
-import { calculateCPCValue, getRUMDomainkey } from '../support/utils.js';
-import { noopUrlResolver, wwwUrlResolver } from '../common/audit.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { noopUrlResolver, wwwUrlResolver } from '../common/index.js';
+import metatagsAutoSuggest from './metatags-auto-suggest.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { getIssueRanking, removeTrailingSlash } from './opportunity-utils.js';
+import { DESCRIPTION, H1, TITLE } from './constants.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+
+const auditType = Audit.AUDIT_TYPES.META_TAGS;
+
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
+  const { log } = context;
+  const { detectedTags } = auditData.auditResult;
+  const suggestions = [];
+  // Generate suggestions data to be inserted in meta-tags opportunity suggestions
+  Object.keys(detectedTags)
+    .forEach((endpoint) => {
+      [TITLE, DESCRIPTION, H1].forEach((tag) => {
+        if (detectedTags[endpoint]?.[tag]?.issue) {
+          suggestions.push({
+            ...detectedTags[endpoint][tag],
+            tagName: tag,
+            url: removeTrailingSlash(auditData.auditResult.finalUrl) + endpoint,
+            rank: getIssueRanking(tag, detectedTags[endpoint][tag].issue),
+          });
+        }
+      });
+    });
+
+  const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
+
+  // Sync the suggestions from new audit with old ones
+  await syncSuggestions({
+    opportunity,
+    newData: suggestions,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: 'METADATA_UPDATE',
+      rank: suggestion.rank,
+      data: { ...suggestion },
+    }),
+    log,
+  });
+  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+}
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
@@ -24,12 +76,17 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
     log.error(`No Scraped tags found in S3 ${key} object`);
     return null;
   }
-  const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
+  let pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
+  // handling for homepage
+  if (pageUrl === '') {
+    pageUrl = '/';
+  }
   return {
     [pageUrl]: {
       title: object.scrapeResult.tags.title,
       description: object.scrapeResult.tags.description,
       h1: object.scrapeResult.tags.h1 || [],
+      s3key: key,
     },
   };
 }
@@ -75,10 +132,8 @@ function getOrganicTrafficForEndpoint(endpoint, rumDataMapMonthly, rumDataMapBiM
 // Calculate the projected traffic lost for a site
 async function calculateProjectedTraffic(context, site, detectedTags, log) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const domainkey = await getRUMDomainkey(site.getBaseURL(), context);
   const options = {
     domain: wwwUrlResolver(site),
-    domainkey,
     interval: 30,
     granularity: 'DAILY',
   };
@@ -132,20 +187,32 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   if (extractedTagsCount === 0) {
     log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
   }
-  log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
+
   // Perform SEO checks
+  log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
   const seoChecks = new SeoChecks(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
-    seoChecks.performChecks(pageUrl || '/', pageTags);
+    seoChecks.performChecks(pageUrl, pageTags);
   }
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
+
+  // Calculate projected traffic lost
   const projectedTrafficLost = await calculateProjectedTraffic(context, site, detectedTags, log);
   const cpcValue = await calculateCPCValue(context, site.getId());
   log.info(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
   const projectedTrafficValue = projectedTrafficLost * cpcValue;
+
+  // Generate AI suggestions for detected tags if auto-suggest enabled for site
+  const allTags = {
+    detectedTags: seoChecks.getDetectedTags(),
+    healthyTags: seoChecks.getFewHealthyTags(),
+    extractedTags,
+  };
+  const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
+
   const auditResult = {
-    detectedTags,
+    detectedTags: updatedDetectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: '',
     finalUrl: baseURL,
@@ -161,5 +228,5 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditMetaTagsRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withPostProcessors([opportunityAndSuggestions])
   .build();

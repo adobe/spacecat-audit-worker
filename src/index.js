@@ -31,12 +31,14 @@ import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
-import experimentationOpportunities from './experimentation-opportunities/experimentation-opportunities.js';
+import experimentationOpportunities from './experimentation-opportunities/handler.js';
 import formsOpportunities from './forms-opportunities/handler.js';
 import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
 import siteDetection from './site-detection/handler.js';
+import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
+import imageAltText from './image-alt-text/handler.js';
 
 const HANDLERS = {
   apex,
@@ -58,6 +60,8 @@ const HANDLERS = {
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
+  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
+  'alt-text': imageAltText,
   dummy: (message) => ok(message),
 };
 
@@ -95,7 +99,7 @@ async function run(message, context) {
 
     return result;
   } catch (e) {
-    log.error(`${type} audit for ${siteId} failed after ${getElapsedSeconds(startTime)} seconds`, e);
+    log.error(`${type} audit for ${siteId} failed after ${getElapsedSeconds(startTime)} seconds. `, e);
     return internalServerError();
   }
 }

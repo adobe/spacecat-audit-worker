@@ -17,7 +17,8 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { CWVRunner, convertToOppty } from '../../src/cwv/handler.js';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
 import rumData from '../fixtures/cwv/cwv.json' with { type: 'json' };
@@ -27,15 +28,14 @@ use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 
+const auditType = Audit.AUDIT_TYPES.CWV;
 const baseURL = 'https://spacecat.com';
 const auditUrl = 'www.spacecat.com';
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   domain: auditUrl,
-  domainkey: '42',
   interval: 7,
   granularity: 'hourly',
 };
-const AUDIT_TYPE = 'cwv';
 
 describe('CWVRunner Tests', () => {
   const groupedURLs = [{ name: 'test', pattern: 'test/*' }];
@@ -54,17 +54,8 @@ describe('CWVRunner Tests', () => {
       query: sandbox.stub().resolves(rumData),
     },
     dataAccess: {},
+    env: {},
   };
-
-  beforeEach('setup', () => {
-    nock('https://secretsmanager.us-east-1.amazonaws.com/')
-      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/spacecat_com/ci')
-      .reply(200, {
-        SecretString: JSON.stringify({
-          RUM_DOMAIN_KEY: '42',
-        }),
-      });
-  });
 
   afterEach(() => {
     nock.cleanAll();
@@ -74,10 +65,10 @@ describe('CWVRunner Tests', () => {
   it('cwv audit runs rum api client cwv query', async () => {
     const result = await CWVRunner(auditUrl, context, site);
 
-    expect(siteConfig.getGroupedURLs.calledWith(AUDIT_TYPE)).to.be.true;
+    expect(siteConfig.getGroupedURLs.calledWith(auditType)).to.be.true;
     expect(
       context.rumApiClient.query.calledWith(
-        AUDIT_TYPE,
+        auditType,
         {
           ...DOMAIN_REQUEST_DEFAULT_PARAMS,
           groupedURLs,
@@ -119,7 +110,7 @@ describe('CWVRunner Tests', () => {
       };
 
       oppty = {
-        getType: () => AUDIT_TYPE,
+        getType: () => auditType,
         getId: () => 'oppty-id',
         getSiteId: () => 'site-id',
         addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
@@ -135,7 +126,7 @@ describe('CWVRunner Tests', () => {
         id: 'audit-id',
         isLive: true,
         auditedAt: new Date().toISOString(),
-        auditType: AUDIT_TYPE,
+        auditType,
         auditResult: {
           cwv: rumData.filter((data) => data.pageviews >= 7000),
           auditContext: {
@@ -154,9 +145,9 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
 
-      await convertToOppty(auditUrl, auditData, context, site);
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(AUDIT_TYPE);
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(auditType);
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
 
@@ -170,8 +161,7 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
 
-      await expect(convertToOppty(auditUrl, auditData, context, site)).to.be.rejectedWith('big error happened');
-
+      await expect(opportunityAndSuggestions(auditUrl, auditData, context, site)).to.be.rejectedWith('big error happened');
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
       expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id and auditId audit-id: big error happened');
 
@@ -191,9 +181,9 @@ describe('CWVRunner Tests', () => {
       }));
       oppty.getSuggestions.resolves(existingSuggestions);
 
-      await convertToOppty(auditUrl, auditData, context, site);
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(AUDIT_TYPE);
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(auditType);
 
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');

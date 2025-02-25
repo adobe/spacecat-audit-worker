@@ -199,6 +199,8 @@ const testData = {
       },
       remove: () => {},
       getStatus: () => 'NEW',
+      setData: () => {},
+      save: () => {},
       getData: () => ({
         tagContent: 'The BigOne Insert modified',
         seoRecommendation: '140-160 characters long',
@@ -228,6 +230,8 @@ const testData = {
       },
       remove: () => {},
       getStatus: () => 'SKIPPED',
+      setData: () => {},
+      save: () => {},
       getData: () => ({
         seoRecommendation: 'Should be present',
         issue: 'Missing H1',
@@ -257,6 +261,8 @@ const testData = {
       },
       remove: () => {},
       getStatus: () => 'NEW',
+      setData: () => {},
+      save: () => {},
       getData: () => ({
         tagContent: '["We Can All Win Together","We Say As We Do"]',
         seoRecommendation: '1 H1 on a page',
@@ -353,7 +359,7 @@ const testData = {
       status: 'NEW',
     },
   ],
-  opportunityData: {
+  OpportunityData: {
     siteId: 'site-id',
     auditId: 'audit-id',
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7B27CF48AA-5492-435D-B17C-01E38332A5CA%7D&file=Experience_Success_Studio_Metatags_Runbook.docx&action=default&mobileredirect=true',
@@ -373,10 +379,7 @@ const testData = {
     tags: [
       'Traffic acquisition',
     ],
-    data: {
-      projectedTrafficLost: 100,
-      projectedTrafficValue: 50,
-    },
+    data: null,
   },
 };
 

@@ -17,27 +17,27 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 
-import { internalLinksAuditRunner, convertToOpportunity } from '../../src/internal-links/handler.js';
-import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../fixtures/internal-links-data.js';
-import { MockContextBuilder } from '../shared.js';
+import { internalLinksAuditRunner, opportunityAndSuggestions } from '../../../src/internal-links/handler.js';
+import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../../fixtures/internal-links-data.js';
+import { MockContextBuilder } from '../../shared.js';
 
 const AUDIT_RESULT_DATA = [
   {
-    traffic_domain: 1800,
-    url_to: 'https://www.petplace.com/a01',
-    url_from: 'https://www.petplace.com/a02nf',
+    trafficDomain: 1800,
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a02nf',
     priority: 'high',
   },
   {
-    traffic_domain: 1200,
-    url_to: 'https://www.petplace.com/ax02',
-    url_from: 'https://www.petplace.com/ax02nf',
+    trafficDomain: 1200,
+    urlTo: 'https://www.petplace.com/ax02',
+    urlFrom: 'https://www.petplace.com/ax02nf',
     priority: 'medium',
   },
   {
-    traffic_domain: 200,
-    url_to: 'https://www.petplace.com/a01',
-    url_from: 'https://www.petplace.com/a01nf',
+    trafficDomain: 200,
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a01nf',
     priority: 'low',
   },
 ];
@@ -63,16 +63,6 @@ describe('Broken internal links audit', () => {
     })
     .build();
 
-  beforeEach('setup', () => {
-    nock('https://secretsmanager.us-east-1.amazonaws.com/')
-      .post('/', (body) => body.SecretId === '/helix-deploy/spacecat-services/customer-secrets/example_com/ci')
-      .reply(200, {
-        SecretString: JSON.stringify({
-          RUM_DOMAIN_KEY: 'test-key',
-        }),
-      });
-  });
-
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
@@ -86,7 +76,6 @@ describe('Broken internal links audit', () => {
     );
     expect(context.rumApiClient.query).calledWith('404-internal-links', {
       domain: 'www.example.com',
-      domainkey: 'test-key',
       interval: 30,
       granularity: 'hourly',
     });
@@ -170,7 +159,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await opportunityAndSuggestions(auditUrl, auditData, context);
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
 
@@ -184,7 +173,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
 
-    await expect(convertToOpportunity(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
+    await expect(opportunityAndSuggestions(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
     expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id-1 and auditId audit-id-1: big error happened');
@@ -194,13 +183,16 @@ describe('broken-internal-links audit to opportunity conversion', () => {
   }).timeout(5000);
 
   it('allBySiteIdAndStatus method fails', async () => {
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('Some Error'));
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
     context.dataAccess.Opportunity.create.resolves(opportunity);
-
-    await convertToOpportunity(auditUrl, auditData, context);
+    try {
+      await opportunityAndSuggestions(auditUrl, auditData, context);
+    } catch (err) {
+      expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id-1: some-error');
+    }
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
-    expect(context.log.error).to.have.been.calledOnceWith('Fetching opportunities for siteId site-id-1 failed with error: Some Error');
+    expect(context.log.error).to.have.been.calledOnceWith('Fetching opportunities for siteId site-id-1 failed with error: some-error');
 
     // make sure that no new suggestions are added
     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
@@ -218,7 +210,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     }));
     opportunity.getSuggestions.resolves(existingSuggestions);
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await opportunityAndSuggestions(auditUrl, auditData, context);
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(opportunity.setAuditId).to.have.been.calledOnceWith('audit-id-1');

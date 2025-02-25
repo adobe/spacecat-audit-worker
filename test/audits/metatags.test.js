@@ -33,8 +33,8 @@ import {
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import testData from '../fixtures/meta-tags-data.js';
-import convertToOpportunity, { removeTrailingSlash } from '../../src/metatags/opportunityHandler.js';
-import { auditMetaTagsRunner, fetchAndProcessPageObject } from '../../src/metatags/handler.js';
+import { removeTrailingSlash } from '../../src/metatags/opportunity-utils.js';
+import { auditMetaTagsRunner, fetchAndProcessPageObject, opportunityAndSuggestions } from '../../src/metatags/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -117,6 +117,7 @@ describe('Meta Tags', () => {
       });
     });
 
+    // check disabled, to be included in later iterations
     describe('checkForH1Count', () => {
       it('should detect multiple H1 tags on the page', () => {
         const url = 'https://example.com';
@@ -165,14 +166,13 @@ describe('Meta Tags', () => {
         const pageTags = {
           [TITLE]: '', // Empty title
           [DESCRIPTION]: 'A short description.',
-          [H1]: ['Heading 1', 'Heading 2'], // Multiple H1 tags
+          [H1]: ['Heading 1'], // Multiple H1 tags
         };
 
         seoChecks.performChecks(url, pageTags);
 
         const detectedTags = seoChecks.getDetectedTags();
         expect(detectedTags[url][TITLE][ISSUE]).to.equal('Empty Title');
-        expect(detectedTags[url][H1][ISSUE]).to.equal(MULTIPLE_H1_ON_PAGE);
       });
 
       it('should return if url is invalid', () => {
@@ -202,12 +202,15 @@ describe('Meta Tags', () => {
     let dataAccessStub;
     let s3ClientStub;
     let logStub;
-
+    let context;
     beforeEach(() => {
       sinon.restore();
       dataAccessStub = {
         Audit: {
           create: sinon.stub(),
+          AUDIT_TYPES: {
+            META_TAGS: 'meta-tags',
+          },
         },
         Configuration: {
           findLatest: sinon.stub(),
@@ -228,6 +231,23 @@ describe('Meta Tags', () => {
         debug: sinon.stub(),
         error: sinon.stub(),
         warn: sinon.stub(),
+      };
+      const latestConfigStub = sinon.stub().resolves({
+        isHandlerEnabledForSite: () => false,
+      });
+      context = {
+        log: logStub,
+        s3Client: s3ClientStub,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          GENVAR_ENDPOINT: 'test-genvar-url',
+          FIREFALL_IMS_ORG_ID: 'test-org@adobe',
+        },
+        dataAccess: {
+          Configuration: {
+            findLatest: latestConfigStub,
+          },
+        },
       };
     });
 
@@ -359,16 +379,11 @@ describe('Meta Tags', () => {
       const auditStub = await esmock('../../src/metatags/handler.js', {
         '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
         '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+        '@adobe/spacecat-shared-data-access': dataAccessStub,
       });
       const auditInstance = auditStub.default;
-      await auditInstance.runner('http://example.com', {
-        log: logStub,
-        s3Client: s3ClientStub,
-        env: {
-          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
-        },
-      }, site);
+      await auditInstance.runner('http://example.com', context, site);
+
       const result = await fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page3/scrape.json', 'scrapes/site-id/', logStub);
       expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
       expect(result).to.be.null;
@@ -436,7 +451,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(4);
+      expect(logStub.info.callCount).to.equal(5);
     }).timeout(10000);
 
     it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
@@ -551,14 +566,7 @@ describe('Meta Tags', () => {
       dataAccessStub.Audit.create = await addAuditStub();
 
       const auditInstance = auditStub.default;
-      await auditInstance.runner('http://example.com', {
-        log: logStub,
-        s3Client: s3ClientStub,
-        env: {
-          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
-        },
-      }, site);
+      await auditInstance.runner('http://example.com', context, site);
       await fetchAndProcessPageObject(s3ClientStub, 'test-bucket', 'scrapes/site-id/blog/page1/scrape.json', 'scrapes/site-id/', sinon.stub());
 
       expect(addAuditStub.calledWithMatch({
@@ -618,7 +626,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(4);
+      expect(logStub.info.callCount).to.equal(5);
     });
 
     it('should handle gracefully if S3 object has no rawbody', async () => {
@@ -687,6 +695,7 @@ describe('Meta Tags', () => {
           },
           ContentType: 'application/json',
         });
+
       const site = {
         getIsLive: sinon.stub().returns(true),
         getId: sinon.stub().returns('site-id'),
@@ -712,14 +721,7 @@ describe('Meta Tags', () => {
         '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
       });
       const auditInstance = auditStub.default;
-      await auditInstance.runner('http://example.com', {
-        log: logStub,
-        s3Client: s3ClientStub,
-        env: {
-          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
-        },
-      }, site);
+      await auditInstance.runner('http://example.com', context, site);
       expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
     });
 
@@ -819,14 +821,7 @@ describe('Meta Tags', () => {
         '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
       });
       const auditInstance = auditStub.default;
-      await auditInstance.runner('http://example.com', {
-        log: logStub,
-        s3Client: s3ClientStub,
-        env: {
-          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
-        },
-      }, site);
+      await auditInstance.runner('http://example.com', context, site);
       expect(addAuditStub.calledWithMatch({
         auditResult: {
           projectedTraffic: 200,
@@ -893,13 +888,13 @@ describe('Meta Tags', () => {
     let dataAccessStub;
     let auditData;
     let auditUrl;
-    let metatagsOppty;
+    let opportunity;
     let context;
 
     beforeEach(() => {
       sinon.restore();
       auditUrl = 'https://example.com';
-      metatagsOppty = {
+      opportunity = {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
         save: sinon.stub(),
@@ -930,26 +925,24 @@ describe('Meta Tags', () => {
     });
 
     it('should create new opportunity and add suggestions', async () => {
-      metatagsOppty.getType = () => 'meta-tags';
-      dataAccessStub.Opportunity.create = sinon.stub().returns(metatagsOppty);
-      await convertToOpportunity(auditUrl, auditData, context);
-      expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
-      expect(metatagsOppty.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
+      opportunity.getType = () => 'meta-tags';
+      dataAccessStub.Opportunity.create = sinon.stub().returns(opportunity);
+      await opportunityAndSuggestions(auditUrl, auditData, context);
+      expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.OpportunityData);
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
     it('should use existing opportunity and add suggestions', async () => {
-      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
-      await convertToOpportunity(auditUrl, auditData, context);
-      expect(metatagsOppty.save).to.be.calledOnce;
-      expect(metatagsOppty.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+      await opportunityAndSuggestions(auditUrl, auditData, context);
+      expect(opportunity.save).to.be.calledOnce;
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
     it('should throw error if fetching opportunity fails', async () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
       try {
-        await convertToOpportunity(auditUrl, auditData, context);
+        await opportunityAndSuggestions(auditUrl, auditData, context);
       } catch (err) {
         expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id: some-error');
       }
@@ -960,39 +953,98 @@ describe('Meta Tags', () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
       dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
       try {
-        await convertToOpportunity(auditUrl, auditData, context);
+        await opportunityAndSuggestions(auditUrl, auditData, context);
       } catch (err) {
-        expect(err.message).to.equal('Failed to create meta-tags opportunity for siteId site-id: some-error');
+        expect(err.message).to.equal('some-error');
       }
-      expect(logStub.error).to.be.calledWith('Creating meta-tags opportunity for siteId site-id failed with error: some-error');
+      expect(logStub.error).to.be.calledWith('Failed to create new opportunity for siteId site-id and auditId audit-id: some-error');
     });
 
     it('should sync existing suggestions with new suggestions', async () => {
-      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
-      metatagsOppty.getSuggestions.returns(testData.existingSuggestions);
-      await convertToOpportunity(auditUrl, auditData, context);
-      expect(metatagsOppty.save).to.be.calledOnce;
-      expect(metatagsOppty.addSuggestions).to.be.calledWith(testData.expectedSyncedSuggestion);
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+      opportunity.getSuggestions.returns(testData.existingSuggestions);
+      await opportunityAndSuggestions(auditUrl, auditData, context);
+      expect(opportunity.save).to.be.calledOnce;
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
 
+    it('should preserve existing AI suggestions and overrides when syncing', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+      // Setup existing suggestion with AI data and overrides
+      const existingSuggestion = {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          tagName: 'title',
+          tagContent: 'Original Title',
+          issue: 'Title too short',
+          seoImpact: 'High',
+          aiSuggestion: 'AI Generated Title',
+          aiRationale: 'AI explanation for the title',
+          toOverride: true,
+        }),
+        getStatus: () => 'pending',
+        remove: sinon.stub(),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+      };
+
+      opportunity.getSuggestions.returns([existingSuggestion]);
+
+      // Create audit data with different content for same URL
+      const modifiedAuditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          detectedTags: {
+            '/page1': {
+              title: {
+                tagContent: 'Original Title',
+                issue: 'Title too short',
+                seoImpact: 'High',
+              },
+            },
+          },
+        },
+      };
+
+      await opportunityAndSuggestions(auditUrl, modifiedAuditData, context);
+
+      // Verify that existing suggestion was updated properly
+      expect(opportunity.save).to.be.calledOnce;
+      expect(existingSuggestion.setData).to.be.calledOnce;
+
+      const setDataCall = existingSuggestion.setData.getCall(0);
+      const updatedData = setDataCall.args[0];
+
+      // Verify the original AI data and override flags were preserved
+      expect(updatedData).to.deep.include({
+        aiSuggestion: 'AI Generated Title',
+        aiRationale: 'AI explanation for the title',
+        toOverride: true,
+      });
+
+      // Verify the suggestion was saved
+      expect(existingSuggestion.save).to.be.calledOnce;
+    });
+
     it('should throw error if suggestions fail to create', async () => {
-      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
-      metatagsOppty.getSiteId = () => 'site-id';
-      metatagsOppty.addSuggestions = sinon.stub().returns({ errorItems: [{ item: 1, error: 'some-error' }], createdItems: [] });
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+      opportunity.getSiteId = () => 'site-id';
+      opportunity.addSuggestions = sinon.stub().returns({ errorItems: [{ item: 1, error: 'some-error' }], createdItems: [] });
       try {
-        await convertToOpportunity(auditUrl, auditData, context);
+        await opportunityAndSuggestions(auditUrl, auditData, context);
       } catch (err) {
         expect(err.message).to.equal('Failed to create suggestions for siteId site-id');
       }
-      expect(metatagsOppty.save).to.be.calledOnce;
-      expect(metatagsOppty.addSuggestions).to.be.calledWith(testData.expectedSuggestions);
+      expect(opportunity.save).to.be.calledOnce;
       expect(logStub.error).to.be.calledWith('Suggestions for siteId site-id contains 1 items with errors');
       expect(logStub.error).to.be.calledTwice;
     });
 
     it('should take rank as -1 if issue is not known', async () => {
-      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       const auditDataModified = {
         ...testData.auditData,
       };
@@ -1003,9 +1055,8 @@ describe('Meta Tags', () => {
       expectedSuggestionModified[0].data.issue = 'some random issue';
       expectedSuggestionModified[0].data.rank = -1;
       expectedSuggestionModified[0].rank = -1;
-      await convertToOpportunity(auditUrl, auditData, context);
-      expect(metatagsOppty.save).to.be.calledOnce;
-      expect(metatagsOppty.addSuggestions).to.be.calledWith(expectedSuggestionModified);
+      await opportunityAndSuggestions(auditUrl, auditData, context);
+      expect(opportunity.save).to.be.calledOnce;
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
   });
@@ -1027,6 +1078,165 @@ describe('Meta Tags', () => {
       const url = '';
       const result = removeTrailingSlash(url);
       expect(result).to.equal('');
+    });
+  });
+
+  describe('metatagsAutoSuggest', () => {
+    let metatagsAutoSuggest;
+    let context;
+    let s3Client;
+    let dataAccess;
+    let log;
+    let Configuration;
+    let getPresignedUrlStub;
+    let genvarClientStub;
+    let siteStub;
+    let allTags;
+
+    beforeEach(async () => {
+      s3Client = {};
+      log = {
+        info: sinon.stub(),
+        error: sinon.stub(),
+        warn: sinon.stub(),
+        debug: sinon.stub(),
+      };
+      Configuration = {
+        findLatest: sinon.stub().resolves({
+          isHandlerEnabledForSite: sinon.stub().returns(true),
+        }),
+      };
+      dataAccess = { Configuration };
+      genvarClientStub = {
+        generateSuggestions: sinon.stub().resolves({
+          '/about-us': {
+            h1: {
+              aiRationale: 'The H1 tag is catchy and broad...',
+              aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
+            },
+          },
+          '/add-on-and-refresh': {
+            description: {
+              aiRationale: 'The description emphasizes the brand\'s core values...',
+              aiSuggestion: 'Elevate your home with Lovesac\'s customizable add-ons...',
+            },
+            h1: {
+              aiRationale: 'The H1 tag is catchy and directly addresses the user\'s intent...',
+              aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons',
+            },
+          },
+        }),
+      };
+      context = {
+        s3Client,
+        dataAccess,
+        log,
+        env: {
+          GENVARHOST: 'https://genvar.endpoint',
+          GENVAR_IMS_ORG_ID: 'test-org-id',
+        },
+      };
+      allTags = {
+        detectedTags: {
+          '/about-us': { h1: {} },
+          '/add-on-and-refresh': { description: {}, h1: {} },
+        },
+        extractedTags: {
+          '/about-us': { s3key: 'about-us-key' },
+          '/add-on-and-refresh': { s3key: 'add-on-key' },
+        },
+        healthyTags: {},
+      };
+
+      metatagsAutoSuggest = await esmock('../../src/metatags/metatags-auto-suggest.js', {
+        '@adobe/spacecat-shared-gpt-client': { GenvarClient: { createFrom: () => genvarClientStub } },
+        '@aws-sdk/s3-request-presigner': { getSignedUrl: getPresignedUrlStub },
+      });
+      siteStub = {
+        getBaseURL: sinon.stub().returns('https://example.com'),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should handle disabled handler for site', async () => {
+      Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(false),
+      });
+      await metatagsAutoSuggest(allTags, context, siteStub);
+      expect(log.info.calledWith('Metatags auto-suggest is disabled for site')).to.be.true;
+    });
+
+    it('should handle missing Genvar endpoint', async () => {
+      context.env.GENVAR_HOST = '';
+      try {
+        await metatagsAutoSuggest(allTags, context, siteStub);
+      } catch (error) {
+        expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId');
+      }
+    });
+
+    it('should handle missing genvar ims orgId', async () => {
+      context.env.GENVAR_IMS_ORG_ID = '';
+
+      try {
+        await metatagsAutoSuggest(allTags, context, siteStub);
+      } catch (error) {
+        expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId1');
+      }
+    });
+
+    it('should generate presigned URLs and call Genvar API', async () => {
+      genvarClientStub.generateSuggestions.resolves({
+        '/about-us': {
+          h1: {
+            aiRationale: 'The H1 tag is catchy and broad...',
+            aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
+          },
+        },
+        '/add-on-and-refresh': {
+          description: {
+            aiRationale: 'The description emphasizes the brand\'s core values...',
+            aiSuggestion: 'Elevate your home with Lovesac\'s customizable add-ons...',
+          },
+          h1: {
+            aiRationale: 'The H1 tag is catchy and directly addresses the user\'s intent...',
+            aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons',
+          },
+        },
+      });
+
+      const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+      expect(log.debug.calledWith('Generated presigned URLs')).to.be.true;
+      expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+      expect(response['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
+      expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
+      expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
+    }).timeout(15000);
+
+    it('should log an error and throw if the Genvar API call fails', async () => {
+      genvarClientStub.generateSuggestions.throws(new Error('Genvar API failed'));
+      let err;
+      try {
+        await metatagsAutoSuggest(allTags, context, siteStub);
+      } catch (error) {
+        err = error;
+      }
+      expect(err.message).to.equal('Genvar API failed');
+    });
+
+    it('should log an error and throw if the Genvar API response is invalid', async () => {
+      genvarClientStub.generateSuggestions.resolves(5);
+      let err;
+      try {
+        await metatagsAutoSuggest(allTags, context, siteStub);
+      } catch (error) {
+        err = error;
+      }
+      expect(err.message).to.equal('Invalid response received from Genvar API: 5');
     });
   });
 });

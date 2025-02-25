@@ -37,7 +37,7 @@ export const expectedOpportunity = {
   runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
   type: 'broken-internal-links',
   origin: 'AUTOMATION',
-  title: 'Broken internal links found',
+  title: 'Broken internal links are impairing user experience and SEO crawlability',
   description: 'We\'ve detected broken internal links on your website. Broken links can negatively impact user experience and SEO. Please review and fix these links to ensure smooth navigation and accessibility.',
   guidance: {
     steps: [
@@ -50,6 +50,7 @@ export const expectedOpportunity = {
     'Traffic acquisition',
     'Engagement',
   ],
+  data: null,
 };
 
 export const expectedSuggestions = [
@@ -57,9 +58,9 @@ export const expectedSuggestions = [
     type: 'CONTENT_UPDATE',
     rank: 100,
     data: {
-      traffic_domain: 1800,
-      url_to: 'https://www.petplace.com/a01',
-      url_from: 'https://www.petplace.com/a02nf',
+      trafficDomain: 1800,
+      urlTo: 'https://www.petplace.com/a01',
+      urlFrom: 'https://www.petplace.com/a02nf',
       priority: 'high',
     },
   },
@@ -67,9 +68,9 @@ export const expectedSuggestions = [
     type: 'CONTENT_UPDATE',
     rank: 100,
     data: {
-      traffic_domain: 1200,
-      url_to: 'https://www.petplace.com/ax02-changed',
-      url_from: 'https://www.petplace.com/ax02nf',
+      trafficDomain: 1200,
+      urlTo: 'https://www.petplace.com/ax02-changed',
+      urlFrom: 'https://www.petplace.com/ax02nf',
       priority: 'medium',
     },
   },
@@ -77,9 +78,9 @@ export const expectedSuggestions = [
     type: 'CONTENT_UPDATE',
     rank: 100,
     data: {
-      traffic_domain: 200,
-      url_to: 'https://www.petplace.com/a01',
-      url_from: 'https://www.petplace.com/a01nf',
+      trafficDomain: 200,
+      urlTo: 'https://www.petplace.com/a01',
+      urlFrom: 'https://www.petplace.com/a01nf',
       priority: 'low',
     },
   },

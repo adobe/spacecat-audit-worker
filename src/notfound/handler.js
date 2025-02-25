@@ -12,13 +12,12 @@
 
 import RUMAPIClient, { create404URL } from '@adobe/spacecat-shared-rum-api-client-v1';
 import { dateAfterDays } from '@adobe/spacecat-shared-utils';
-import {
-  getRUMUrl,
-} from '../support/utils.js';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/audit.js';
+import { noopUrlResolver } from '../common/index.js';
 
-const AUDIT_TYPE = '404';
+const auditType = Audit.AUDIT_TYPES[404];
 const PAGEVIEW_THRESHOLD = 100;
 
 export function filter404Data(data) {
@@ -58,7 +57,7 @@ export async function audit404Runner(baseURL, context) {
   const auditResult = process404Response(data);
   const fullAuditRef = create404URL(params);
 
-  log.info(`Successfully audited ${baseURL} for ${AUDIT_TYPE} type audit`);
+  log.info(`Successfully audited ${baseURL} for ${auditType} type audit`);
 
   return { auditResult, fullAuditRef };
 }
