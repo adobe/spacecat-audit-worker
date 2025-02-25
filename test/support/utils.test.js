@@ -127,6 +127,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: ['https://example.com/home', 'https://example.com/about'],
+      formData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -197,6 +198,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -239,6 +241,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -285,6 +288,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [
         {
           url: '',
