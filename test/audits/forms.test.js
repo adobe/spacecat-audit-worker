@@ -27,6 +27,7 @@ import testData from '../fixtures/high-form-views-low-conversions.js';
 import convertToOpportunity from '../../src/forms-opportunities/opportunityHandler.js';
 import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../fixtures/expectedformsendtoscraperdata.json' with { type: 'json' };
+import formScrapeData from '../fixtures/formscrapedata.js';
 
 use(sinonChai);
 
@@ -114,6 +115,22 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData, undefined, context);
+    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+  });
+
+  it('should create new forms opportunity with scraped data available', async () => {
+    formsOppty.getType = () => 'high-form-views-low-conversions';
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData1, context);
+    expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+  });
+
+  it('should create new forms opportunity with scraped data available not matched', async () => {
+    formsOppty.getType = () => 'high-form-views-low-conversions';
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData2, context);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
