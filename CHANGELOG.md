@@ -1,3 +1,17 @@
+## [1.57.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.57.0...v1.57.1) (2025-02-25)
+
+
+### Bug Fixes
+
+* disable multiple h1 count check ([#696](https://github.com/adobe/spacecat-audit-worker/issues/696)) ([87ac09e](https://github.com/adobe/spacecat-audit-worker/commit/87ac09e337c28a1cc74965c5d11a2096be0d2ad2))
+
+# [1.57.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.6...v1.57.0) (2025-02-25)
+
+
+### Features
+
+* add support for ignored suggestions in alt-text audit ([#683](https://github.com/adobe/spacecat-audit-worker/issues/683)) ([554b0ca](https://github.com/adobe/spacecat-audit-worker/commit/554b0cada1349159441055f707a828a57f5bb2c4))
+
 ## [1.56.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.5...v1.56.6) (2025-02-25)
 
 

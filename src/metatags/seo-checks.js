@@ -123,6 +123,8 @@ class SeoChecks {
   }
 
   /**
+   * Disabled, this check might be included in later iterations
+   * https://cq-dev.slack.com/archives/C05A45JBP9N/p1739989459286999
    * Checks if there are more than one H1 tags and adds to detected tags array if found lacking.
    * @param {string} urlPath - The URL of the page.
    * @param {object} pageTags - An object containing the tags of the page.
@@ -193,7 +195,6 @@ class SeoChecks {
     }
     this.checkForMissingTags(urlPath, pageTags);
     this.checkForTagsLength(urlPath, pageTags);
-    this.checkForH1Count(urlPath, pageTags);
     // store tag data in all tags object to be used in later checks like uniqueness
     this.addToAllTags(urlPath, TITLE, pageTags[TITLE]);
     this.addToAllTags(urlPath, DESCRIPTION, pageTags[DESCRIPTION]);
