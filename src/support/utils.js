@@ -278,8 +278,10 @@ export async function sleep(ms) {
   });
 }
 
+const HTML_TAG_REGEX = /<\/?[^>]+(>|$)/g;
+
 export function stripHtmlTags(html) {
-  return html.replace(/<\/?[^>]+(>|$)/g, '');
+  return html.replace(HTML_TAG_REGEX, '');
 }
 
 export async function getScrapeForPath(path, context, site) {

@@ -10,12 +10,11 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-disable no-continue, no-await-in-loop */
-
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { getPrompt } from '@adobe/spacecat-shared-utils';
+import { getPrompt, isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import * as cheerio from 'cheerio';
+import { load as cheerioLoad } from 'cheerio';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
@@ -198,7 +197,7 @@ export async function structuredDataHandler(baseURL, context, site) {
 
   try {
     const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-    if (topPages.length === 0) {
+    if (!isNonEmptyArray(topPages)) {
       log.error(`No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
       throw new Error(`No top pages for site ID ${siteId} found.`);
     }
@@ -270,7 +269,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
 
     // Get extracted LD-JSON from scrape
     const structuredData = scrapeResult?.scrapeResult?.structuredData;
-    if (!structuredData?.length || structuredData?.length === 0) {
+    if (!isNonEmptyArray(structuredData)) {
       // If structured data is loaded late on the page, e.g. in delayed phase,
       // the scraper might not pick it up. You would need to fine tune wait for
       // check of the scraper for this site.
@@ -280,7 +279,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
     log.debug('Found ld+json in scrape:', JSON.stringify(structuredData));
 
     // Use cheerio to get text from main element only and strip all tags
-    const parsed = cheerio.load(scrapeResult?.scrapeResult?.rawBody);
+    const parsed = cheerioLoad(scrapeResult?.scrapeResult?.rawBody);
     const main = parsed('main').prop('outerHTML');
     const plainPage = stripHtmlTags(main);
 
@@ -307,7 +306,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
 
       // Filter structured data relevant to this issue
       const wrongLdJson = structuredData.find((data) => entity === data['@type']);
-      if (!wrongLdJson) {
+      if (!isNonEmptyObject(wrongLdJson)) {
         log.error(`Could not find structured data for issue of type ${entity}`);
         continue;
       }
