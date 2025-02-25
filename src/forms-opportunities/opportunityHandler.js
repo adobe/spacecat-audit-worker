@@ -36,7 +36,7 @@ function filterForms(formOpportunities, scrapedData, log) {
     });
 
     if (matchingForm) {
-      log.debug(`Filtered out search form: ${opportunity?.url}`);
+      log.debug(`Filtered out search form: ${opportunity?.form}`);
       return false;
     }
 
@@ -69,8 +69,11 @@ export default async function convertToOpportunity(auditUrl, auditData, scrapedD
 
   const { formVitals } = auditData.auditResult;
 
+  log.debug(`scraped data for form ${JSON.stringify(scrapedData, null, 2)}`);
   const formOpportunities = generateOpptyData(formVitals);
+  log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
+  log.info(`filtered opportunties for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
     for (const opptyData of filteredOpportunities) {
