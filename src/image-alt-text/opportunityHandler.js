@@ -12,7 +12,9 @@
 
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import suggestionsEngine from './suggestionsEngine.js';
+import { getRUMUrl } from '../support/utils.js';
 
 const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -62,11 +64,58 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
     }
   }
 }
-// TO-DO: Implement in https://jira.corp.adobe.com/browse/ASSETS-47371
-const getProjectedMetrics = () => ({
-  projectedTrafficLost: 3871,
-  projectedTrafficValue: 7355,
-});
+
+const getProjectedMetrics = async ({
+  images, auditUrl, context, log,
+}) => {
+  const CPC = 1; // $1
+  const PENALTY_PER_IMAGE = 0.01; // 1%
+
+  const finalUrl = await getRUMUrl(auditUrl);
+  const INTERVAL = 30; // days
+
+  const rumAPIClient = RUMAPIClient.createFrom(context);
+  const options = {
+    domain: finalUrl,
+    interval: INTERVAL,
+  };
+
+  const results = await rumAPIClient.query('traffic-acquisition', options);
+  log.info(`[${AUDIT_TYPE}]: RUM API results: ${JSON.stringify(results)}`);
+
+  const pageUrlToOrganicTrafficMap = results.reduce((acc, page) => {
+    acc[page.url] = {
+      organicTraffic: page.earned,
+      imagesWithoutAltText: 0,
+    };
+    return acc;
+  });
+  log.info(`[${AUDIT_TYPE}]: Page URL to organic traffic map: ${JSON.stringify(pageUrlToOrganicTrafficMap)}`);
+
+  images.forEach((image) => {
+    const fullPageUrl = new URL(image.pageUrl, auditUrl).toString();
+    if (pageUrlToOrganicTrafficMap[fullPageUrl]) {
+      pageUrlToOrganicTrafficMap[fullPageUrl].imagesWithoutAltText += 1;
+    } else {
+      log.error(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} not found in RUM API results`);
+    }
+  });
+  log.info(`[${AUDIT_TYPE}]: Page URL to organic traffic map after processing images: ${JSON.stringify(pageUrlToOrganicTrafficMap)}`);
+
+  const projectedTrafficLost = Object.values(pageUrlToOrganicTrafficMap)
+    .reduce(
+      (acc, page) => acc + (page.organicTraffic * PENALTY_PER_IMAGE * page.imagesWithoutAltText),
+      0,
+    );
+  log.info(`[${AUDIT_TYPE}]: Projected traffic lost: ${projectedTrafficLost}`);
+
+  const projectedTrafficValue = projectedTrafficLost * CPC;
+  log.info(`[${AUDIT_TYPE}]: Projected traffic value: ${projectedTrafficValue}`);
+  return {
+    projectedTrafficLost,
+    projectedTrafficValue,
+  };
+};
 
 /**
  * @param auditUrl - The URL of the audit
@@ -112,7 +161,9 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
             },
           ],
         },
-        data: getProjectedMetrics(),
+        data: await getProjectedMetrics({
+          images: detectedTags.imagesWithoutAltText, auditUrl, context, log,
+        }),
         tags: ['seo', 'accessibility'],
       };
       altTextOppty = await Opportunity.create(opportunityData);
