@@ -41,7 +41,7 @@ export default async function convertToOpportunity(auditUrl, auditData, scrapedD
   const formOpportunities = generateOpptyData(formVitals);
   log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
-  log.info(`filtered opportunties for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
+  log.info(`filtered opportunties high page views low form views for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
     for (const opptyData of filteredOpportunities) {
@@ -59,6 +59,8 @@ export default async function convertToOpportunity(auditUrl, auditData, scrapedD
             ...opptyData,
           },
         };
+
+        log.info(`Forms Opportunity high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
         log.debug('Forms Opportunity created');

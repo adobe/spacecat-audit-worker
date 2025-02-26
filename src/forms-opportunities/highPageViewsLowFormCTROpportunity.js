@@ -21,6 +21,9 @@ import { filterForms, generateOpptyDataForHighPageViewsLowFormCTR } from './util
 export default async function highPageViewsLowFormCTROpportunity(auditUrl, auditData, scrapedData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
+
+  // eslint-disable-next-line no-param-reassign
+  auditData = JSON.parse(JSON.stringify(auditData));
   log.info(`Syncing high page views low form ctr opportunity for ${auditData.siteId}`);
   // log.info(`Debug log 2 ${JSON.stringify(auditData, null, 2)}`);
   let highPageViewsLowFormCtaOppty;
@@ -55,9 +58,9 @@ export default async function highPageViewsLowFormCTROpportunity(auditUrl, audit
             ...opptyData,
           },
         };
+        log.info(`Forms Opportunity created high page views low form ctr ${JSON.stringify(opportunityData, null, 2)}`);
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormCtaOppty = await Opportunity.create(opportunityData);
-        log.info('Forms Opportunity created high page views low form ctr');
       } else {
         highPageViewsLowFormCtaOppty.setAuditId(auditData.siteId);
         // eslint-disable-next-line no-await-in-loop
