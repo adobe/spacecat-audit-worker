@@ -1,3 +1,52 @@
+## [1.58.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.58.0...v1.58.1) (2025-02-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-gpt-client to v1.5.1 ([#708](https://github.com/adobe/spacecat-audit-worker/issues/708)) ([79c4c2b](https://github.com/adobe/spacecat-audit-worker/commit/79c4c2b0ef75c67ad12f7b05108803e251dee825))
+
+# [1.58.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.57.4...v1.58.0) (2025-02-26)
+
+
+### Features
+
+* adds gpt recommendations to alt-text audit ([#701](https://github.com/adobe/spacecat-audit-worker/issues/701)) ([6fee16b](https://github.com/adobe/spacecat-audit-worker/commit/6fee16b97e3c3029f39e90afecbc8b833f55d894))
+
+## [1.57.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.57.3...v1.57.4) (2025-02-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.9.2 ([#706](https://github.com/adobe/spacecat-audit-worker/issues/706)) ([d71cfe9](https://github.com/adobe/spacecat-audit-worker/commit/d71cfe9b7a86b238b6f6b035bf674a981e518465))
+
+## [1.57.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.57.2...v1.57.3) (2025-02-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.9.1 ([#705](https://github.com/adobe/spacecat-audit-worker/issues/705)) ([56b3765](https://github.com/adobe/spacecat-audit-worker/commit/56b37652a59f95b79ae87f6bf3a95d2d5fd78f23))
+
+## [1.57.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.57.1...v1.57.2) (2025-02-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.9.0 ([#700](https://github.com/adobe/spacecat-audit-worker/issues/700)) ([62feb53](https://github.com/adobe/spacecat-audit-worker/commit/62feb534ea05471d5c7e1b522f878d1976ed39d4))
+
+## [1.57.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.57.0...v1.57.1) (2025-02-25)
+
+
+### Bug Fixes
+
+* disable multiple h1 count check ([#696](https://github.com/adobe/spacecat-audit-worker/issues/696)) ([87ac09e](https://github.com/adobe/spacecat-audit-worker/commit/87ac09e337c28a1cc74965c5d11a2096be0d2ad2))
+
+# [1.57.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.6...v1.57.0) (2025-02-25)
+
+
+### Features
+
+* add support for ignored suggestions in alt-text audit ([#683](https://github.com/adobe/spacecat-audit-worker/issues/683)) ([554b0ca](https://github.com/adobe/spacecat-audit-worker/commit/554b0cada1349159441055f707a828a57f5bb2c4))
+
 ## [1.56.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.56.5...v1.56.6) (2025-02-25)
 
 

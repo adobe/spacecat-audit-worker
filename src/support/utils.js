@@ -35,7 +35,10 @@ export async function getRUMUrl(url) {
     },
   });
   const finalUrl = resp.url.split('://')[1];
-  return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
+  /* Return just the domain part by splitting on '/' and taking first segment.
+   * This is to avoid returning the full URL with path. It will also remove any trailing /.
+   */
+  return finalUrl.split('/')[0];
 }
 
 /**
