@@ -44,27 +44,28 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
 
   try {
     for (const opptyData of filteredOpportunities) {
-      if (!highFormViewsLowConversionsOppty) {
-        const opportunityData = {
-          siteId: auditData.siteId,
-          auditId: auditData.id ?? auditData.latestAuditId,
-          runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
-          type: 'high-form-views-low-conversions',
-          origin: 'AUTOMATION',
-          title: 'Form has high views but low conversions',
-          description: 'Form has high views but low conversions',
-          tags: ['Forms Conversion'],
-          data: {
-            ...opptyData,
-          },
-        };
+      const opportunityData = {
+        siteId: auditData.siteId,
+        auditId: auditData.id ?? auditData.latestAuditId,
+        runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
+        type: 'high-form-views-low-conversions',
+        origin: 'AUTOMATION',
+        title: 'Form has high views but low conversions',
+        description: 'Form has high views but low conversions',
+        tags: ['Forms Conversion'],
+        data: {
+          ...opptyData,
+        },
+      };
 
-        log.info(`Forms Opportunity high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
+      log.info(`Forms Opportunity high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
+      if (!highFormViewsLowConversionsOppty) {
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
         log.debug('Forms Opportunity created');
       } else {
         highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
+        highFormViewsLowConversionsOppty.setData(opportunityData);
         // eslint-disable-next-line no-await-in-loop
         await highFormViewsLowConversionsOppty.save();
       }
