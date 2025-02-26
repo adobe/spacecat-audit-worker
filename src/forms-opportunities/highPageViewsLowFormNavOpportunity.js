@@ -66,13 +66,18 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         log.info(`debug 1 ${JSON.stringify(highPageViewsLowFormNavOppty.getData(), null, 2)}`);
         log.info(`debug 2 ${JSON.stringify(opportunityData.data, null, 2)}`);
 
+        // Delete the updatedAt property if it exists
+        if (highPageViewsLowFormNavOppty.updatedAt !== undefined) {
+          delete highPageViewsLowFormNavOppty.updatedAt;
+        }
+
         highPageViewsLowFormNavOppty.setAuditId(auditData.siteId);
         highPageViewsLowFormNavOppty.setData({
           ...highPageViewsLowFormNavOppty.getData(),
           ...opportunityData.data,
         });
         // eslint-disable-next-line no-await-in-loop
-        await highPageViewsLowFormNavOppty.update();
+        await highPageViewsLowFormNavOppty.save();
       }
     }
   } catch (e) {
