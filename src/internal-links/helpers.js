@@ -9,31 +9,36 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-const DEFAULT_CPC_VALUE = 1;
-const TRAFFIC_MULTIPLIER = 0.01; // 1%
-const MAX_LINKS_TO_CONSIDER = 10;
+export const CPC_DEFAULT_VALUE = 1;
+export const TRAFFIC_MULTIPLIER = 0.01; // 1%
+export const MAX_LINKS_TO_CONSIDER = 10;
+
+/**
+ * Resolve Cost per click (CPC) value
+ *
+ * @returns {number} - Cost per click (CPC) Value
+ */
+export const resolveCpcValue = () => CPC_DEFAULT_VALUE;
 
 /**
  * Calculates KPI deltas based on broken internal links audit data
  * @param {Object} auditData - The audit data containing results
  * @returns {Object} KPI delta calculations
  */
-function calculateKpiDeltasForAudit(auditData) {
-  const brokenLinks = auditData?.auditResult?.brokenInternalLinks || [];
+export const calculateKpiDeltasForAudit = (auditData) => {
+  const cpcValue = resolveCpcValue();
 
-  const groups = {};
+  const brokenInternalLinks = auditData?.auditResult?.brokenInternalLinks || [];
+  const linksMap = {};
 
-  for (const link of brokenLinks) {
-    if (!groups[link.urlTo]) {
-      groups[link.urlTo] = [];
-    }
-    groups[link.urlTo].push(link);
+  for (const link of brokenInternalLinks) {
+    (linksMap[link.urlTo] = linksMap[link.urlTo] || []).push(link);
   }
 
   let projectedTrafficLost = 0;
 
-  Object.keys(groups).forEach((url) => {
-    const links = groups[url];
+  Object.keys(linksMap).forEach((url) => {
+    const links = linksMap[url];
     let linksToBeIncremented;
     // Sort links by traffic domain if there are more than MAX_LINKS_TO_CONSIDER
     // and only consider top MAX_LINKS_TO_CONSIDER for calculating deltas
@@ -45,16 +50,13 @@ function calculateKpiDeltasForAudit(auditData) {
     }
 
     projectedTrafficLost += linksToBeIncremented.reduce(
-      (acc, link) => acc + (link.trafficDomain * TRAFFIC_MULTIPLIER),
+      (acc, link) => acc + link.trafficDomain * TRAFFIC_MULTIPLIER,
       0,
     );
   });
 
-  const projectedTrafficValue = projectedTrafficLost * DEFAULT_CPC_VALUE;
   return {
-    projectedTrafficLost,
-    projectedTrafficValue,
+    projectedTrafficLost: Math.round(projectedTrafficLost),
+    projectedTrafficValue: Math.round(projectedTrafficLost * cpcValue),
   };
-}
-
-export { calculateKpiDeltasForAudit };
+};
