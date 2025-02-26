@@ -63,6 +63,9 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
       } else {
+        log.info(`debug 1 ${JSON.stringify(highPageViewsLowFormNavOppty.getData(), null, 2)}`);
+        log.info(`debug 2 ${JSON.stringify(opportunityData.data, null, 2)}`);
+
         highPageViewsLowFormNavOppty.setAuditId(auditData.siteId);
         highPageViewsLowFormNavOppty.setData({
           ...highPageViewsLowFormNavOppty.getData(),
