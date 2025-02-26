@@ -73,7 +73,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     site, log, finalUrl,
   } = context;
 
-  log.info(`starting forms audit for site id  ${site.getId()}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit`);
   const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
   const { formVitals } = formsAuditRunnerResult.auditResult;
 
@@ -93,7 +93,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     siteId: site.getId(),
   };
 
-  log.info(`finished forms audit and sending urls for scraping for site id 2 ${site.getId()}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping`);
   return result;
 }
 
@@ -102,11 +102,11 @@ export async function processOpportunityStep(context) {
     log, site, finalUrl,
   } = context;
 
-  log.info(`starting process opportunity step for site id  ${site.getId()}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
-  log.info(`finished process opportunity step for site id  ${site.getId()}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',
   };
