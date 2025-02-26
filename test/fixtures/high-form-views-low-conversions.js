@@ -133,6 +133,147 @@ const testData = {
       ],
     },
   },
+  auditData3: {
+    type: 'high-form-views-low-conversions',
+    siteId: 'site-id',
+    id: 'audit-id',
+    auditResult: {
+      formVitals: [
+        {
+          url: 'https://www.surest.com/contact-us',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {},
+          formengagement: {
+            'desktop:windows': 700,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/info/win',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {},
+          formengagement: {
+            'desktop:windows': 4000,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/info/win-1',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {},
+          formengagement: {
+            'desktop:windows': 4000,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/info/win-2',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {},
+          formengagement: {
+            'desktop:windows': 4000,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/newsletter',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: { 'mobile:ios': 3000 },
+          formengagement: {
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 4000,
+          },
+          forminternalnavigation: [
+            {
+              url: 'https://www.surest.com/about-us',
+              pageview: {
+                'desktop:windows:blink': 54000,
+                'mobile:android:blink': 26000,
+                'mobile:ios:webkit': 24000,
+                'desktop:mac:webkit': 2000,
+                'desktop:chromeos:blink': 900,
+                'desktop:mac:blink': 900,
+                'desktop:linux:gecko': 200,
+                'mobile:ipados:webkit': 100,
+                'mobile:android:gecko': 100,
+                'desktop:linux:blink': 100,
+                'desktop:windows:gecko': 100,
+              },
+              CTAs: [
+                {
+                  source: '#teaser-related02 .cmp-teaser__action-link',
+                  clicks: 800,
+                },
+                {
+                  source: '#teaser-related02 .cmp-teaser__action-container',
+                  clicks: 300,
+                },
+                {
+                  source: 'nav',
+                  clicks: 200,
+                },
+                {
+                  source: '#teaser-related01 .cmp-teaser__action-container',
+                  clicks: 200,
+                },
+                {
+                  source: '#teaser-related01 .cmp-teaser__content',
+                  clicks: 100,
+                },
+                {
+                  source: 'header .cmp-list__item-title',
+                  clicks: 100,
+                },
+              ],
+              totalClicksOnPage: 7200,
+            },
+            {
+              url: 'https://www.surest.com/about-us/history',
+              pageview: {
+                'desktop:windows:blink': 54000,
+                'mobile:android:blink': 26000,
+              },
+              CTAs: [
+                {
+                  source: '#teaser-related02 .cmp-teaser__action-link',
+                  clicks: 800,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  },
   opportunityData: {
     siteId: 'site-id',
     auditId: 'audit-id',

@@ -51,7 +51,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
           type: 'high-page-views-low-form-nav',
           origin: 'AUTOMATION',
           title: 'Form has low views but conversion element has low CTR',
-          description: 'The form has low views due to low navigations in the page containing its CTA.',
+          description: 'The form has low views due to low navigations in the page containing its CTA',
           tags: ['Forms Conversion'],
           data: {
             ...opptyData,
