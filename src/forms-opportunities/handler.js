@@ -86,7 +86,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   }
 
   // generating opportunity data from audit to be send to scraper
-  // high page views low form ctr
+  // high page views low form navigation
   formOpportunities = generateOpptyDataForHighPageViewsLowFormNav(formVitals);
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);

@@ -110,7 +110,7 @@ function convertToOpportunityData(opportunityName, urlObject) {
         page: conversionRate,
       },
     }],
-    ...(opportunityName === 'high-page-views-low-form-nav' && { cta: CTA }),
+    ...(opportunityName === 'high-page-views-low-form-nav' && { formNavigation: CTA }),
   };
   return opportunity;
 }
