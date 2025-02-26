@@ -1,3 +1,10 @@
+# [1.58.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.57.4...v1.58.0) (2025-02-26)
+
+
+### Features
+
+* adds gpt recommendations to alt-text audit ([#701](https://github.com/adobe/spacecat-audit-worker/issues/701)) ([6fee16b](https://github.com/adobe/spacecat-audit-worker/commit/6fee16b97e3c3029f39e90afecbc8b833f55d894))
+
 ## [1.57.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.57.3...v1.57.4) (2025-02-26)
 
 
