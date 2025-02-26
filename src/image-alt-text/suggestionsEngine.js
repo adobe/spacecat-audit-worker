@@ -9,7 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { getPrompt } from '@adobe/spacecat-shared-utils';
+import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { sleep } from '../support/utils.js';
 
@@ -19,6 +20,7 @@ const BATCH_DELAY = 5000;
 const MODEL = 'gpt-4o';
 // https://platform.openai.com/docs/guides/vision
 const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg)(?=\?|$)/i;
+const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
 const filterImages = (imageUrls, auditUrl) => {
   const imagesFromHost = [];
@@ -60,15 +62,15 @@ const generateBatchPromises = (
   const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
   try {
     const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
-    if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-      log.error('[alt-text]: No final suggestions found for batch');
+    if (isNonEmptyArray(response.choices) && response.choices[0].finish_reason !== 'stop') {
+      log.error(`[${AUDIT_TYPE}]: No final suggestions found for batch`);
     }
 
     const answer = JSON.parse(response.choices[0].message.content);
-    log.info(`[alt-text]: Loaded ${answer.length} alt-text suggestions for batch`);
+    log.info(`[${AUDIT_TYPE}]: Loaded ${answer.length} alt-text suggestions for batch`);
     return answer;
   } catch (err) {
-    log.error('[alt-text]: Error calling Firefall for alt-text suggestion generation for batch', err);
+    log.error(`[${AUDIT_TYPE}]: Error calling Firefall for alt-text suggestion generation for batch`, err);
     return [];
   }
 });
@@ -79,9 +81,9 @@ const getImageSuggestions = async (imageUrls, auditUrl, context) => {
 
   const filteredImages = filterImages(imageUrls, auditUrl);
 
-  log.info('[alt-text]: Total images from host:', filteredImages.imagesFromHost.length);
-  log.info('[alt-text]: Other images:', filteredImages.otherImages);
-  log.info('[alt-text]: Unsupported format images:', filteredImages.unsupportedFormatImages);
+  log.info(`[${AUDIT_TYPE}]: Total images from host:`, filteredImages.imagesFromHost.length);
+  log.info(`[${AUDIT_TYPE}]: Other images:`, filteredImages.otherImages);
+  log.info(`[${AUDIT_TYPE}]: Unsupported format images:`, filteredImages.unsupportedFormatImages);
 
   const supportedImageBatches = chunkArray(filteredImages.imagesFromHost, BATCH_SIZE);
 
@@ -96,7 +98,7 @@ const getImageSuggestions = async (imageUrls, auditUrl, context) => {
     return acc;
   }, {});
 
-  log.info(`[alt-text]: Final Merged Suggestions: ${Object.keys(suggestionsByImageUrl).length}`);
+  log.info(`[${AUDIT_TYPE}]: Final Merged Suggestions: ${Object.keys(suggestionsByImageUrl).length}`);
 
   return suggestionsByImageUrl;
 };

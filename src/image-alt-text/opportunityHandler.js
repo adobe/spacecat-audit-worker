@@ -15,6 +15,7 @@ import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/space
 import suggestionsEngine from './suggestionsEngine.js';
 
 const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
+const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
 /**
  * Synchronizes existing suggestions with new data
@@ -50,13 +51,13 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
     const updateResult = await opportunity.addSuggestions(suggestionsToAdd);
 
     if (isNonEmptyArray(updateResult.errorItems)) {
-      log.error(`[alt-text]: Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
+      log.error(`[${AUDIT_TYPE}]: Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
       updateResult.errorItems.forEach((errorItem) => {
-        log.error(`[alt-text]: Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+        log.error(`[${AUDIT_TYPE}]: Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
       });
 
       if (!isNonEmptyArray(updateResult.createdItems)) {
-        throw new Error(`[alt-text]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+        throw new Error(`[${AUDIT_TYPE}]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
       }
     }
   }
@@ -78,17 +79,17 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const { Opportunity } = dataAccess;
   const { detectedTags } = auditData.auditResult;
 
-  log.info(`[alt-text]: Syncing opportunity and suggestions for ${auditData.siteId}`);
+  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${auditData.siteId}`);
   let altTextOppty;
 
   try {
     const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
     altTextOppty = opportunities.find(
-      (oppty) => oppty.getType() === AuditModel.AUDIT_TYPES.ALT_TEXT,
+      (oppty) => oppty.getType() === AUDIT_TYPE,
     );
   } catch (e) {
-    log.error(`[alt-text]: Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    throw new Error(`[alt-text]: Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
   try {
@@ -97,7 +98,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
         siteId: auditData.siteId,
         auditId: auditData.id,
         runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
-        type: AuditModel.AUDIT_TYPES.ALT_TEXT,
+        type: AUDIT_TYPE,
         origin: 'AUTOMATION',
         title: 'Missing alt text for images decreases accessibility and discoverability of content',
         description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
@@ -115,14 +116,14 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
         tags: ['seo', 'accessibility'],
       };
       altTextOppty = await Opportunity.create(opportunityData);
-      log.debug('[alt-text]: Opportunity created');
+      log.debug(`[${AUDIT_TYPE}]: Opportunity created`);
     } else {
       altTextOppty.setAuditId(auditData.id);
       await altTextOppty.save();
     }
   } catch (e) {
-    log.error(`[alt-text]: Creating alt-text opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[alt-text]: Failed to create alt-text opportunity for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: Creating alt-text opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
+    throw new Error(`[${AUDIT_TYPE}]: Failed to create alt-text opportunity for siteId ${auditData.siteId}: ${e.message}`);
   }
 
   const imageUrls = detectedTags.imagesWithoutAltText.map(
@@ -145,7 +146,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     };
   });
 
-  log.debug(`[alt-text]: Suggestions: ${JSON.stringify(suggestions)}`);
+  log.debug(`[${AUDIT_TYPE}]: Suggestions: ${JSON.stringify(suggestions)}`);
 
   await syncAltTextSuggestions({
     opportunity: altTextOppty,
@@ -158,5 +159,5 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     log,
   });
 
-  log.info(`[alt-text]: Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and alt-text audit type.`);
+  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and alt-text audit type.`);
 }
