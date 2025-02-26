@@ -117,7 +117,7 @@ export async function processOpportunityStep(context) {
   await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
   log.info('debug log 2');
   await highPageViewsLowFormNavOpportunity(finalUrl, latestAudit, scrapedData, context);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified .`);
   return {
     status: 'complete',
   };
