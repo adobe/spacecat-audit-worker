@@ -151,11 +151,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
   });
 
   it('returns empty arrays when no files are found', async () => {
-    context.s3Client.send.resolves({
-      Contents: [],
-      IsTruncated: false,
-      NextContinuationToken: null,
-    });
+    context.s3Client.send.resolves({});
 
     const result = await getScrapedDataForSiteId(site, context);
 
