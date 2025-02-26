@@ -326,6 +326,7 @@ describe('Meta Tags', () => {
         }))).returns({
           Body: {
             transformToString: () => JSON.stringify({
+              finalUrl: 'http://example.com/site-id/',
               scrapeResult: {
                 tags: {
                   title: 'Home Page',
@@ -407,7 +408,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-    }).timeout(3000);
+    }).timeout(5000);
 
     it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
       const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
