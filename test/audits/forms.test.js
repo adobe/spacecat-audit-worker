@@ -395,7 +395,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
       type: 'high-page-views-low-form-nav',
       origin: 'AUTOMATION',
-      title: 'Form has low views but conversion element has low CTR',
+      title: 'Form has low views',
       description: 'The form has low views due to low navigations in the page containing its CTA',
       tags: [
         'Forms Conversion',
@@ -417,7 +417,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
             },
           },
         ],
-        cta: {
+        formNavigation: {
           source: '#teaser-related02 .cmp-teaser__action-link',
           url: 'https://www.surest.com/about-us',
         },
