@@ -14,9 +14,10 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import generateOpptyData from './utils.js';
+import { generateOpptyData, generateOpptyDataForHighPageViewsLowFormCTR } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import convertToOpportunity from './opportunityHandler.js';
+import highPageViewsLowFormCTROpportunity from './highPageViewsLowFormCTROpportunity.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const DAILY_THRESHOLD = 200;
@@ -78,8 +79,15 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   const { formVitals } = formsAuditRunnerResult.auditResult;
 
   // generating opportunity data from audit to be send to scraper
-  const formOpportunities = generateOpptyData(formVitals);
+  let formOpportunities = generateOpptyData(formVitals);
   const uniqueUrls = new Set();
+  for (const opportunity of formOpportunities) {
+    uniqueUrls.add(opportunity.form);
+  }
+
+  // generating opportunity data from audit to be send to scraper
+  // high page views low form ctr
+  formOpportunities = generateOpptyDataForHighPageViewsLowFormCTR(formVitals);
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
   }
@@ -106,6 +114,7 @@ export async function processOpportunityStep(context) {
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
+  await highPageViewsLowFormCTROpportunity(finalUrl, latestAudit, scrapedData, context);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',

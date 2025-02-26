@@ -10,39 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import generateOpptyData from './utils.js';
-
-/**
- * filter login and search forms from the opportunities
- * @param formOpportunities
- * @param scrapedData
- * @param log
- * @returns {*}
- */
-function filterForms(formOpportunities, scrapedData, log) {
-  if (!scrapedData?.formData || !Array.isArray(scrapedData.formData)) {
-    log.debug('No valid scraped data available.');
-    return formOpportunities; // Return original opportunities if no valid scraped data
-  }
-
-  return formOpportunities.filter((opportunity) => {
-    // Find matching form in scraped data
-    const matchingForm = scrapedData.formData.find((form) => {
-      const urlMatches = form.finalUrl === opportunity?.form;
-      const isSearchForm = Array.isArray(form.scrapeResult)
-          && form.scrapeResult.some((result) => result?.formType === 'search');
-
-      return urlMatches && isSearchForm;
-    });
-
-    if (matchingForm) {
-      log.debug(`Filtered out search form: ${opportunity?.form}`);
-      return false;
-    }
-
-    return true;
-  });
-}
+import { filterForms, generateOpptyData } from './utils.js';
 
 /**
  * @param auditUrl - The URL of the audit

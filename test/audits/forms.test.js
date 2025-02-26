@@ -28,6 +28,7 @@ import convertToOpportunity from '../../src/forms-opportunities/opportunityHandl
 import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../fixtures/expectedformsendtoscraperdata.json' with { type: 'json' };
 import formScrapeData from '../fixtures/formscrapedata.js';
+import highPageViewsLowFormCTROpportunity from '../../src/forms-opportunities/highPageViewsLowFormCTROpportunity.js';
 
 use(sinonChai);
 
@@ -346,5 +347,133 @@ describe('process opportunity step', () => {
     expect(result).to.deep.equal({
       status: 'complete',
     });
+  });
+});
+
+describe('highPageViewsLowFormCTAOpportunity handler method', () => {
+  let logStub;
+  let dataAccessStub;
+  let auditData;
+  let auditUrl;
+  let formsCTAOppty;
+  let context;
+
+  beforeEach(() => {
+    sinon.restore();
+    auditUrl = 'https://example.com';
+    formsCTAOppty = {
+      getId: () => 'opportunity-id',
+      setAuditId: sinon.stub(),
+      save: sinon.stub(),
+      getType: () => 'high-page-views-low-form-ctr',
+    };
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+    };
+    dataAccessStub = {
+      Opportunity: {
+        allBySiteIdAndStatus: sinon.stub().resolves([]),
+        create: sinon.stub(),
+      },
+    };
+    context = {
+      log: logStub,
+      dataAccess: dataAccessStub,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+    };
+    auditData = testData.auditData;
+  });
+
+  it('should create new high page views low form CTA opportunity', async () => {
+    const expectedOpportunityData = {
+      siteId: 'site-id',
+      auditId: 'audit-id',
+      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/AEM_Forms/_layouts/15/doc.aspx?sourcedoc=%7Bc64ab030-cd49-4812-b8fa-a70bf8d91618%7D',
+      type: 'high-page-views-low-form-ctr',
+      origin: 'AUTOMATION',
+      title: 'Form has low views but conversion element has low CTR',
+      description: 'The page containing the form CTA has high views but low CTR for the form CTA',
+      tags: [
+        'Forms Conversion',
+      ],
+      data: {
+        form: 'https://www.surest.com/newsletter',
+        screenshot: '',
+        trackedFormKPIName: 'Conversion Rate',
+        trackedFormKPIValue: null,
+        formViews: 300,
+        pageViews: 8670,
+        samples: 8670,
+        metrics: [
+          {
+            type: 'conversionRate',
+            vendor: '*',
+            value: {
+              page: null,
+            },
+          },
+        ],
+        cta: {
+          source: '#teaser-related02 .cmp-teaser__action-link',
+          url: 'https://www.surest.com/about-us',
+        },
+      },
+    };
+
+    formsCTAOppty.getType = () => 'high-page-views-low-form-cta';
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
+
+    await highPageViewsLowFormCTROpportunity(auditUrl, auditData, undefined, context);
+
+    const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
+    expect(actualCall).to.deep.equal(expectedOpportunityData);
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form cta audit type.');
+  });
+
+  it('should use existing high page views low form CTA opportunity', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
+
+    await highPageViewsLowFormCTROpportunity(auditUrl, auditData, undefined, context);
+
+    expect(formsCTAOppty.save).to.be.calledOnce;
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form cta audit type.');
+  });
+
+  it('should throw error if fetching high page views low form CTA opportunity fails', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
+
+    try {
+      await highPageViewsLowFormCTROpportunity(auditUrl, auditData, undefined, context);
+    } catch (err) {
+      expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id: some-error');
+    }
+
+    expect(logStub.error).to.be.calledWith('Fetching opportunities for siteId site-id failed with error: some-error');
+  });
+
+  it('should throw error if creating high page views low form CTA opportunity fails', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
+    dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
+
+    try {
+      await highPageViewsLowFormCTROpportunity(auditUrl, auditData, undefined, context);
+    } catch (err) {
+      expect(err.message).to.equal('Failed to create Forms opportunity for high page views low form cta for siteId site-id: some-error');
+    }
+
+    expect(logStub.error).to.be.calledWith('Creating Forms opportunity for high page views low form cta for siteId site-id failed with error: some-error');
+  });
+
+  it('should handle empty form vitals data', async () => {
+    auditData.auditResult.formVitals = [];
+
+    await highPageViewsLowFormCTROpportunity(auditUrl, auditData, undefined, context);
+
+    expect(dataAccessStub.Opportunity.create).to.not.be.called;
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form cta audit type.');
   });
 });

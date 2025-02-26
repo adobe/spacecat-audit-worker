@@ -103,6 +103,79 @@
           "desktop:windows": 8000
         },
         "url": "https://business.adobe.com/jp/resources/guides/leading-generative-ai-deployment-for-marketing.html"
+      },
+      {
+        "cwv": {},
+        "formengagement": {
+          "mobile:ios": 300
+        },
+        "forminternalnavigation": [
+          {
+            "CTAs": [
+              {
+                "clicks": 800,
+                "source": "#teaser-related02 .cmp-teaser__action-link"
+              },
+              {
+                "clicks": 300,
+                "source": "#teaser-related02 .cmp-teaser__action-container"
+              },
+              {
+                "clicks": 200,
+                "source": "nav"
+              },
+              {
+                "clicks": 200,
+                "source": "#teaser-related01 .cmp-teaser__action-container"
+              },
+              {
+                "clicks": 100,
+                "source": "#teaser-related01 .cmp-teaser__content"
+              },
+              {
+                "clicks": 100,
+                "source": "header .cmp-list__item-title"
+              }
+            ],
+            "pageview": {
+              "desktop:chromeos:blink": 900,
+              "desktop:linux:blink": 100,
+              "desktop:linux:gecko": 200,
+              "desktop:mac:blink": 900,
+              "desktop:mac:webkit": 2000,
+              "desktop:windows:blink": 54000,
+              "desktop:windows:gecko": 100,
+              "mobile:android:blink": 26000,
+              "mobile:android:gecko": 100,
+              "mobile:ios:webkit": 24000,
+              "mobile:ipados:webkit": 100
+            },
+            "totalClicksOnPage": 7200,
+            "url": "https://www.business.adobe.com/about-us"
+          },
+          {
+            "CTAs": [
+              {
+                "clicks": 800,
+                "source": "#teaser-related02 .cmp-teaser__action-link"
+              }
+            ],
+            "pageview": {
+              "desktop:windows:blink": 54000,
+              "mobile:android:blink": 26000
+            },
+            "url": "https://www.surest.com/about-us/history"
+          }
+        ],
+        "formsubmit": {},
+        "formview": {
+          "mobile:ios": 300
+        },
+        "pageview": {
+          "desktop:windows": 4670,
+          "mobile:ios": 4000
+        },
+        "url": "https://www.business.adobe.com/newsletter"
       }
     ]
   },
@@ -122,6 +195,9 @@
     },
     {
       "url": "https://business.adobe.com/jp/resources/guides/leading-generative-ai-deployment-for-marketing.html"
+    },
+    {
+      "url": "https://www.business.adobe.com/newsletter"
     }
   ]
 }
