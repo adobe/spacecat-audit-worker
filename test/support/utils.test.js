@@ -204,10 +204,94 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     });
   });
 
+  it('can find the root scrape file when it is nested in a subdirectory', async () => {
+    const root = 'scrapes/site-id/root/scrape.json';
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: root },
+        { Key: 'scrapes/site-id/root/page/scrape.json' },
+        { Key: 'scrapes/site-id/invalid.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    let callCount = 0;
+
+    context.s3Client.send.callsFake((command) => {
+      if (command.input && command.input.Key === root) {
+        return Promise.resolve({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sandbox.stub().resolves(JSON.stringify({
+              finalUrl: 'https://example.com/root-page',
+              scrapeResult: {
+                rawBody: '<html><body><header><a href="/home">Home</a><a href="https://example.com/about">About</a></header></body></html>',
+                tags: {
+                  title: `Page ${callCount} Title`,
+                  description: `Page ${callCount} Description`,
+                  h1: [`Page ${callCount} H1`],
+                },
+              },
+            })),
+          },
+        });
+      }
+
+      callCount += 1;
+      return Promise.resolve({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sandbox.stub().resolves(JSON.stringify({
+            finalUrl: `https://example.com/page${callCount}`,
+            scrapeResult: {
+              tags: {
+                title: `Page ${callCount} Title`,
+                description: `Page ${callCount} Description`,
+                h1: [`Page ${callCount} H1`],
+              },
+            },
+          })),
+        },
+      });
+    });
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks:
+        [
+          'https://example.com/home',
+          'https://example.com/about',
+        ],
+      siteData:
+        [
+          {
+            description: 'Page 0 Description',
+            h1: 'Page 0 H1',
+            title: 'Page 0 Title',
+            url: 'https://example.com/root-page',
+          },
+          {
+            description: 'Page 1 Description',
+            h1: 'Page 1 H1',
+            title: 'Page 1 Title',
+            url: 'https://example.com/page1',
+          },
+          {
+            description: 'Page 2 Description',
+            h1: 'Page 2 H1',
+            title: 'Page 2 Title',
+            url: 'https://example.com/page2',
+          },
+        ],
+    });
+  });
+
   it('returns only the metadata if there is no root file', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [
-        { Key: 'scrapes/site-id/page/scrape.json' },
+        { Key: 'scrapes/site-id/page/invalid.json' },
       ],
       IsTruncated: false,
       NextContinuationToken: null,
