@@ -72,7 +72,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
           ...opportunityData.data,
         });
         // eslint-disable-next-line no-await-in-loop
-        await highPageViewsLowFormNavOppty.save();
+        await highPageViewsLowFormNavOppty.update();
       }
     }
   } catch (e) {
