@@ -1,3 +1,10 @@
+## [1.58.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.58.0...v1.58.1) (2025-02-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-gpt-client to v1.5.1 ([#708](https://github.com/adobe/spacecat-audit-worker/issues/708)) ([79c4c2b](https://github.com/adobe/spacecat-audit-worker/commit/79c4c2b0ef75c67ad12f7b05108803e251dee825))
+
 # [1.58.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.57.4...v1.58.0) (2025-02-26)
 
 
