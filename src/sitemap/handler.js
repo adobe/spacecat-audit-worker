@@ -34,13 +34,13 @@ const auditType = Audit.AUDIT_TYPES.SITEMAP;
 const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
 
 export const ERROR_CODES = Object.freeze({
-  INVALID_URL: 'INVALID URL',
-  NO_SITEMAP_IN_ROBOTS: 'NO SITEMAP FOUND IN ROBOTS',
-  NO_VALID_PATHS_EXTRACTED: 'NO VALID URLs FOUND IN SITEMAP',
-  SITEMAP_NOT_FOUND: 'NO SITEMAP FOUND',
-  SITEMAP_EMPTY: 'EMPTY SITEMAP',
-  SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
-  FETCH_ERROR: 'ERROR FETCHING DATA',
+  INVALID_URL: 'Invalid URL',
+  NO_SITEMAP_IN_ROBOTS: 'No sitemap found in robots.txt',
+  NO_VALID_PATHS_EXTRACTED: 'No urls extracted from sitemap',
+  SITEMAP_NOT_FOUND: 'No sitemap found',
+  SITEMAP_EMPTY: 'Sitemap is empty',
+  SITEMAP_FORMAT: 'Invalid format for sitemap',
+  FETCH_ERROR: 'Error while fetching sitemap',
 });
 
 const VALID_MIME_TYPES = Object.freeze([
@@ -169,7 +169,7 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
-* @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
+ * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
  * Array<{url: string, statusCode: number}>}>} - A Promise that resolves to an object containing
  */
 export async function filterValidUrls(urls) {
@@ -215,8 +215,43 @@ export async function filterValidUrls(urls) {
         }
       }
 
-      // Track 404 status code
+      // find 404 status code and try to find a valid parent URL
       if (response.status === 404) {
+        // Try to find a working parent URL
+        const urlObj = new URL(url);
+        const pathSegments = urlObj.pathname
+          .split('/')
+          .filter((segment) => segment.length > 0);
+
+        // Try progressively shorter paths until we find one that works
+        for (let i = pathSegments.length - 1; i >= 0; i -= 1) {
+          const testPathSegments = pathSegments.slice(0, i);
+          urlObj.pathname = testPathSegments.length > 0
+            ? `/${testPathSegments.join('/')}/`
+            : '/';
+          const testUrl = urlObj.toString();
+
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const parentResponse = await fetch(testUrl, {
+              method: 'HEAD',
+              redirect: 'follow',
+            });
+
+            if (parentResponse.status === 200) {
+              return {
+                status: NOT_OK,
+                url,
+                statusCode: response.status,
+                urlsSuggested: testUrl,
+              };
+            }
+          } catch {
+            // Ignore network errors and try the next parent
+          }
+        }
+
+        // If no working parent URL was found
         return { status: NOT_OK, url, statusCode: response.status };
       }
 
