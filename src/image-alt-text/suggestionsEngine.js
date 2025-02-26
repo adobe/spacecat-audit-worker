@@ -15,7 +15,7 @@ import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { sleep } from '../support/utils.js';
 
 const PROMPT_FILE = 'image-alt-text';
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 3;
 const BATCH_DELAY = 5000;
 const MODEL = 'gpt-4o';
 // https://platform.openai.com/docs/guides/vision
