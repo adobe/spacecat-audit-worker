@@ -217,23 +217,17 @@ export async function filterValidUrls(urls) {
 
       // find 404 status code and try to find a valid parent URL
       if (response.status === 404) {
-        // Try to find a working parent URL
-        const urlObj = new URL(url);
-        const pathSegments = urlObj.pathname
-          .split('/')
-          .filter((segment) => segment.length > 0);
+        const originalUrl = new URL(url);
+        const pathSegments = originalUrl.pathname.split('/').filter((segment) => segment.length > 0);
 
         // Try progressively shorter paths until we find one that works
         for (let i = pathSegments.length - 1; i >= 0; i -= 1) {
           const testPathSegments = pathSegments.slice(0, i);
-          urlObj.pathname = testPathSegments.length > 0
-            ? `/${testPathSegments.join('/')}/`
-            : '/';
-          const testUrl = urlObj.toString();
-
+          const testUrl = new URL(url);
+          testUrl.pathname = testPathSegments.length > 0 ? `/${testPathSegments.join('/')}/` : '/';
           try {
             // eslint-disable-next-line no-await-in-loop
-            const parentResponse = await fetch(testUrl, {
+            const parentResponse = await fetch(testUrl.toString(), {
               method: 'HEAD',
               redirect: 'follow',
             });
@@ -243,7 +237,7 @@ export async function filterValidUrls(urls) {
                 status: NOT_OK,
                 url,
                 statusCode: response.status,
-                urlsSuggested: testUrl,
+                urlsSuggested: testUrl.toString(),
               };
             }
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -254,10 +248,10 @@ export async function filterValidUrls(urls) {
 
         // If no working parent URL was found, try the root URL as a last resort
         try {
-          urlObj.pathname = '/';
-          const rootUrl = urlObj.toString();
+          const rootUrl = new URL(url);
+          rootUrl.pathname = '/';
           // eslint-disable-next-line no-await-in-loop
-          const rootResponse = await fetch(rootUrl, {
+          const rootResponse = await fetch(rootUrl.toString(), {
             method: 'HEAD',
             redirect: 'follow',
           });
@@ -267,7 +261,7 @@ export async function filterValidUrls(urls) {
               status: NOT_OK,
               url,
               statusCode: response.status,
-              urlsSuggested: rootUrl,
+              urlsSuggested: rootUrl.toString(),
             };
           }
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
