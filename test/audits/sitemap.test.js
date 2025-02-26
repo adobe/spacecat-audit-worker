@@ -611,7 +611,7 @@ describe('Sitemap Audit', () => {
           {
             value:
               'Fetch error for https://maidenform.com/robots.txt Status: 403',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: 'No urls extracted from sitemap',
           },
         ],
         scores: {},
@@ -626,7 +626,7 @@ describe('Sitemap Audit', () => {
         reasons: [
           {
             value: 'https://some-domain.adobe/sitemap.xml',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: 'No urls extracted from sitemap',
           },
         ],
         url: 'https://some-domain.adobe',
@@ -644,7 +644,7 @@ describe('Sitemap Audit', () => {
         reasons: [
           {
             value: 'https://some-domain.adobe/robots.txt',
-            error: 'NO SITEMAP FOUND IN ROBOTS',
+            error: 'No sitemap found in robots.txt',
           },
         ],
         details: {
@@ -848,7 +848,7 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               value: 'https://some-domain.adobe/sitemap.xml',
-              error: 'NO VALID URLs FOUND IN SITEMAP',
+              error: 'No urls extracted from sitemap',
             },
           ],
           url: 'https://some-domain.adobe',
@@ -870,7 +870,7 @@ describe('Sitemap Audit', () => {
         suggestions: [
           {
             type: 'error',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: 'No urls extracted from sitemap',
             recommendedAction:
               'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
           },
