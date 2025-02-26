@@ -61,6 +61,7 @@ const generateBatchPromises = (
   };
   const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
   try {
+    log.info(`[${AUDIT_TYPE}]: Batch prompt:`, prompt);
     const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
     if (isNonEmptyArray(response.choices) && response.choices[0].finish_reason !== 'stop') {
       log.error(`[${AUDIT_TYPE}]: No final suggestions found for batch`);
@@ -81,7 +82,7 @@ const getImageSuggestions = async (imageUrls, auditUrl, context) => {
 
   const filteredImages = filterImages(imageUrls, auditUrl);
 
-  log.info(`[${AUDIT_TYPE}]: Total images from host:`, filteredImages.imagesFromHost.length);
+  log.info(`[${AUDIT_TYPE}]: Images from host:`, filteredImages.imagesFromHost);
   log.info(`[${AUDIT_TYPE}]: Other images:`, filteredImages.otherImages);
   log.info(`[${AUDIT_TYPE}]: Unsupported format images:`, filteredImages.unsupportedFormatImages);
 

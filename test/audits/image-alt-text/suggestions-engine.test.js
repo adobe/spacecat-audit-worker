@@ -116,7 +116,7 @@ describe('getImageSuggestions', () => {
     const result = await suggestionsEngine.getImageSuggestions(imageUrls, auditUrl, context);
 
     expect(result).to.deep.equal({});
-    expect(context.log.info.calledWith('[alt-text]: Total images from host:', 0)).to.be.true;
+    expect(context.log.info.calledWith('[alt-text]: Images from host:', [])).to.be.true;
   });
 
   it('should handle finish_reason not being a stop', async () => {
