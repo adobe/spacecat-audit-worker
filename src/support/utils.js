@@ -266,18 +266,22 @@ export const getScrapedDataForSiteId = async (site, context) => {
   const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
   log.info(`siteData: ${JSON.stringify(extractedData)}`);
 
-  const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
-  const scrapedFormData = await Promise.all(
-    formFiles.map(async (file) => {
-      const fileContent = await getObjectFromKey(
-        s3Client,
-        env.S3_SCRAPER_BUCKET_NAME,
-        file.Key,
-        log,
-      );
-      return fileContent;
-    }),
-  );
+  let scrapedFormData;
+  log.info(`all files: ${JSON.stringify(allFiles)}`);
+  if (allFiles) {
+    const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
+    scrapedFormData = await Promise.all(
+      formFiles.map(async (file) => {
+        const fileContent = await getObjectFromKey(
+          s3Client,
+          env.S3_SCRAPER_BUCKET_NAME,
+          file.Key,
+          log,
+        );
+        return fileContent;
+      }),
+    );
+  }
 
   return {
     headerLinks,
