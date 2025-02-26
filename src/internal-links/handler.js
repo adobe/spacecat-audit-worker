@@ -19,6 +19,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
+import { isLinkInvalid } from './helpers.js';
 
 const INTERVAL = 30; // days
 const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
@@ -86,9 +87,13 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     trafficDomain: link.traffic_domain,
   }));
 
-  const priorityLinks = calculatePriority(transformedLinks);
+  const finalLinks = calculatePriority(transformedLinks);
+  // .filter(async (link) => !isValidLink(link.urlTo, log));
+
+  log.info('invalid links ==>', finalLinks
+    .filter(async (link) => isLinkInvalid(link.urlTo, log)));
   const auditResult = {
-    brokenInternalLinks: priorityLinks,
+    brokenInternalLinks: finalLinks,
     fullAuditRef: auditUrl,
     finalUrl,
     auditContext: {
