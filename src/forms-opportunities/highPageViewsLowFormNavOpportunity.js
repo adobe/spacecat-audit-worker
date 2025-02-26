@@ -35,6 +35,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
+  log.info(`Fetching existing high-page-views-low-form-nav opportunities for siteId ${JSON.stringify(highPageViewsLowFormNavOppty, null, 2)}`);
   const { formVitals } = auditData.auditResult;
   const formOpportunities = generateOpptyDataForHighPageViewsLowFormNav(formVitals);
   log.debug(`forms opportunities high page views low form navigation ${JSON.stringify(formOpportunities, null, 2)}`);
