@@ -30,10 +30,11 @@ const filterImages = (imageUrls, auditUrl) => {
   imageUrls.forEach((imageUrl) => {
     if (!SUPPORTED_FORMATS.test(imageUrl)) {
       unsupportedFormatImages.push(imageUrl);
-    } else if (imageUrl.includes(auditUrl)) {
+    } else if (imageUrl.includes(auditUrl.replace('https://', ''))) {
       imagesFromHost.push(imageUrl);
     } else {
       otherImages.push(imageUrl);
+      imagesFromHost.push(imageUrl);
     }
   });
 
