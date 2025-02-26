@@ -246,9 +246,33 @@ export async function filterValidUrls(urls) {
                 urlsSuggested: testUrl,
               };
             }
-          } catch {
-            // Ignore network errors and try the next parent
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          } catch (error) {
+            // Continue with next parent
           }
+        }
+
+        // If no working parent URL was found, try the root URL as a last resort
+        try {
+          urlObj.pathname = '/';
+          const rootUrl = urlObj.toString();
+          // eslint-disable-next-line no-await-in-loop
+          const rootResponse = await fetch(rootUrl, {
+            method: 'HEAD',
+            redirect: 'follow',
+          });
+
+          if (rootResponse.status === 200) {
+            return {
+              status: NOT_OK,
+              url,
+              statusCode: response.status,
+              urlsSuggested: rootUrl,
+            };
+          }
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (error) {
+          // Root URL check failed
         }
 
         // If no working parent URL was found
@@ -301,7 +325,10 @@ export async function filterValidUrls(urls) {
         acc.notOk.push({
           url: result.url,
           statusCode: result.statusCode,
-          ...(result.finalUrl && { urlsSuggested: result.finalUrl }),
+          // Check for both finalUrl (redirects) and urlsSuggested (404s)
+          ...((result.finalUrl || result.urlsSuggested) && {
+            urlsSuggested: result.finalUrl || result.urlsSuggested,
+          }),
         });
       }
       return acc;
@@ -450,7 +477,16 @@ export async function findSitemap(inputUrl) {
         // Only collect tracked status codes in issues
         if (existingPages.notOk && existingPages.notOk.length > 0) {
           const trackedIssues = existingPages.notOk
-            .filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
+            .filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode))
+            .map((issue) => ({
+              url: issue.url,
+              statusCode: issue.statusCode,
+              // Preserve urlsSuggested if it exists
+              ...(issue.urlsSuggested && {
+                urlsSuggested: issue.urlsSuggested,
+              }),
+            }));
+
           if (trackedIssues.length > 0) {
             notOkPagesFromSitemap[s] = trackedIssues;
           }
