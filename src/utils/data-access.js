@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { isObject } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 /**
@@ -73,23 +73,24 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 const handleOutdatedSuggestions = async ({
   existingSuggestions, newDataKeys, buildKey, context,
 }) => {
-  // Check if context is provided
-  if (context) {
-    const { Suggestion } = context.dataAccess;
-    const existingOutdatedSuggestions = existingSuggestions
-      .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
-      .filter((existing) => ![
-        SuggestionDataAccess.STATUSES.OUTDATED,
-        SuggestionDataAccess.STATUSES.FIXED,
-        SuggestionDataAccess.STATUSES.ERROR,
-        SuggestionDataAccess.STATUSES.SKIPPED,
-      ].includes(existing.getStatus()));
-    if (existingOutdatedSuggestions.length > 0) {
-      await Suggestion.bulkUpdateStatus(
-        existingOutdatedSuggestions,
-        SuggestionDataAccess.STATUSES.OUTDATED,
-      );
-    }
+  // Return early if context is not provided
+  if (!context) {
+    return;
+  }
+  const { Suggestion } = context.dataAccess;
+  const existingOutdatedSuggestions = existingSuggestions
+    .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
+    .filter((existing) => ![
+      SuggestionDataAccess.STATUSES.OUTDATED,
+      SuggestionDataAccess.STATUSES.FIXED,
+      SuggestionDataAccess.STATUSES.ERROR,
+      SuggestionDataAccess.STATUSES.SKIPPED,
+    ].includes(existing.getStatus()));
+  if (isNonEmptyArray(existingOutdatedSuggestions)) {
+    await Suggestion.bulkUpdateStatus(
+      existingOutdatedSuggestions,
+      SuggestionDataAccess.STATUSES.OUTDATED,
+    );
   }
 };
 
@@ -136,10 +137,7 @@ export async function syncSuggestions({
           ...existing.getData(),
           ...newDataItem,
         });
-        if ([
-          SuggestionDataAccess.STATUSES.FIXED,
-          SuggestionDataAccess.STATUSES.OUTDATED,
-        ].includes(existing.getStatus())) {
+        if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
           existing.setStatus(SuggestionDataAccess.STATUSES.NEW);
         }

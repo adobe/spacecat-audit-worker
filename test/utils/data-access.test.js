@@ -172,6 +172,40 @@ describe('data-access', () => {
       expect(mockLogger.error).to.not.have.been.called;
     });
 
+    it('should not handle outdated suggestions if context is not provided', async () => {
+      const suggestionsData = [{ key: '1' }, { key: '2' }];
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: suggestionsData[0],
+          remove: sinon.stub(),
+          getData: sinon.stub().returns(suggestionsData[0]),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+        {
+          id: '2',
+          data: suggestionsData[1],
+          remove: sinon.stub(),
+          getData: sinon.stub().returns(suggestionsData[1]),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+      const newData = [{ key: '3' }, { key: '4' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        log: mockLogger,
+      });
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    });
+
     it('should update suggestions when they are detected again', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title' },
