@@ -65,7 +65,10 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         log.debug('Forms Opportunity created');
       } else {
         highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
-        highFormViewsLowConversionsOppty.setData(opportunityData);
+        highFormViewsLowConversionsOppty.setData({
+          ...highFormViewsLowConversionsOppty.getData(),
+          ...opportunityData.data,
+        });
         // eslint-disable-next-line no-await-in-loop
         await highFormViewsLowConversionsOppty.save();
       }

@@ -43,25 +43,30 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
 
   try {
     for (const opptyData of filteredOpportunities) {
+      const opportunityData = {
+        siteId: auditData.siteId,
+        auditId: auditData.id,
+        runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
+        type: 'high-page-views-low-form-nav',
+        origin: 'AUTOMATION',
+        title: 'Form has low views',
+        description: 'The form has low views due to low navigations in the page containing its CTA',
+        tags: ['Forms Conversion'],
+        data: {
+          ...opptyData,
+        },
+      };
+
+      log.info(`Forms Opportunity created high page views low form nav ${JSON.stringify(opportunityData, null, 2)}`);
       if (!highPageViewsLowFormNavOppty) {
-        const opportunityData = {
-          siteId: auditData.siteId,
-          auditId: auditData.id,
-          runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
-          type: 'high-page-views-low-form-nav',
-          origin: 'AUTOMATION',
-          title: 'Form has low views',
-          description: 'The form has low views due to low navigations in the page containing its CTA',
-          tags: ['Forms Conversion'],
-          data: {
-            ...opptyData,
-          },
-        };
-        log.info(`Forms Opportunity created high page views low form nav ${JSON.stringify(opportunityData, null, 2)}`);
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
       } else {
         highPageViewsLowFormNavOppty.setAuditId(auditData.siteId);
+        highPageViewsLowFormNavOppty.setData({
+          ...highPageViewsLowFormNavOppty.getData(),
+          ...opportunityData.data,
+        });
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormNavOppty.save();
       }

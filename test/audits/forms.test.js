@@ -90,6 +90,16 @@ describe('opportunities handler method', () => {
       setAuditId: sinon.stub(),
       save: sinon.stub(),
       getType: () => 'high-form-views-low-conversions',
+      setData: sinon.stub(),
+      getData: sinon.stub().returns({
+        form: 'https://example.com/form1',
+        screenshot: '',
+        trackedFormKPIName: 'Conversion Rate',
+        trackedFormKPIValue: 0.5,
+        formViews: 1000,
+        pageViews: 5000,
+        samples: 5000,
+      }),
     };
     logStub = {
       info: sinon.stub(),
@@ -366,6 +376,16 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       setAuditId: sinon.stub(),
       save: sinon.stub(),
       getType: () => 'high-page-views-low-form-nav',
+      setData: sinon.stub(),
+      getData: sinon.stub().returns({
+        form: 'https://example.com/form1',
+        screenshot: '',
+        trackedFormKPIName: 'Conversion Rate',
+        trackedFormKPIValue: 0.5,
+        formViews: 1000,
+        pageViews: 5000,
+        samples: 5000,
+      }),
     };
     logStub = {
       info: sinon.stub(),
@@ -388,7 +408,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
     auditData = testData.auditData;
   });
 
-  it('should create new high page views low form CTA opportunity', async () => {
+  it('should create new high page views low form navigation opportunity', async () => {
     const expectedOpportunityData = {
       siteId: 'site-id',
       auditId: 'audit-id',
@@ -424,7 +444,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       },
     };
 
-    formsCTAOppty.getType = () => 'high-page-views-low-form-cta';
+    formsCTAOppty.getType = () => 'high-page-views-low-form-nav';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
 
     await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
@@ -434,7 +454,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });
 
-  it('should use existing high page views low form CTA opportunity', async () => {
+  it('should use existing high page views low form navigation opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
 
     await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
@@ -443,7 +463,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });
 
-  it('should throw error if fetching high page views low form CTA opportunity fails', async () => {
+  it('should throw error if fetching high page views low form navigation opportunity fails', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
 
     try {
@@ -455,7 +475,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
     expect(logStub.error).to.be.calledWith('Fetching opportunities for siteId site-id failed with error: some-error');
   });
 
-  it('should throw error if creating high page views low form CTA opportunity fails', async () => {
+  it('should throw error if creating high page views low form navigation opportunity fails', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
     dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
 
