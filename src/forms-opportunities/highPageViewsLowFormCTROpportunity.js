@@ -25,7 +25,6 @@ export default async function highPageViewsLowFormCTROpportunity(auditUrl, audit
   // eslint-disable-next-line no-param-reassign
   auditData = JSON.parse(JSON.stringify(auditData));
   log.info(`Syncing high page views low form ctr opportunity for ${auditData.siteId}`);
-  // log.info(`Debug log 2 ${JSON.stringify(auditData, null, 2)}`);
   let highPageViewsLowFormCtaOppty;
 
   try {
@@ -69,7 +68,8 @@ export default async function highPageViewsLowFormCTROpportunity(auditUrl, audit
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form cta for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
-    throw new Error(`Failed to create Forms opportunity for high page views low form cta for siteId ${auditData.siteId}: ${e.message}`);
+    // eslint-disable-next-line max-len
+    // throw new Error(`Failed to create Forms opportunity for high page views low form cta for siteId ${auditData.siteId}: ${e.message}`);
   }
   log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form cta audit type.`);
 }

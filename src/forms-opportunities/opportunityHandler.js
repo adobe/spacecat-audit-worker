@@ -23,12 +23,11 @@ export default async function convertToOpportunity(auditUrl, auditData, scrapedD
 
   // eslint-disable-next-line no-param-reassign
   auditData = JSON.parse(JSON.stringify(auditData));
-  log.info(`Syncing opportunity for ${auditData.siteId}`);
+  log.info(`Syncing opportunity high page views low form views for ${auditData.siteId}`);
   let highFormViewsLowConversionsOppty;
 
   try {
     const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-
     highFormViewsLowConversionsOppty = opportunities.find((oppty) => oppty.getType() === 'high-form-views-low-conversions');
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
@@ -36,7 +35,6 @@ export default async function convertToOpportunity(auditUrl, auditData, scrapedD
   }
 
   const { formVitals } = auditData.auditResult;
-
   log.debug(`scraped data for form ${JSON.stringify(scrapedData, null, 2)}`);
   const formOpportunities = generateOpptyData(formVitals);
   log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
@@ -72,7 +70,8 @@ export default async function convertToOpportunity(auditUrl, auditData, scrapedD
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
-    throw new Error(`Failed to create Forms opportunity for siteId ${auditData.siteId}: ${e.message}`);
+    // eslint-disable-next-line max-len
+    // throw new Error(`Failed to create Forms opportunity for siteId ${auditData.siteId}: ${e.message}`);
   }
   log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high-form-views-low-conversions audit type.`);
 }
