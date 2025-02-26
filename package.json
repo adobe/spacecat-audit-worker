@@ -68,7 +68,7 @@
     "@adobe/spacecat-shared-ahrefs-client": "1.6.7",
     "@adobe/spacecat-shared-data-access": "2.9.2",
     "@adobe/spacecat-shared-google-client": "1.4.11",
-    "@adobe/spacecat-shared-gpt-client": "1.5.0",
+    "@adobe/spacecat-shared-gpt-client": "1.5.1",
     "@adobe/spacecat-shared-http-utils": "1.9.10",
     "@adobe/spacecat-shared-rum-api-client": "2.21.1",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
