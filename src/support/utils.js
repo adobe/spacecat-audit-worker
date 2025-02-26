@@ -278,10 +278,33 @@ export async function sleep(ms) {
   });
 }
 
-const HTML_TAG_REGEX = /<\/?[^>]+(>|$)/g;
+export function generatePlainHtml($) {
+  const main = $('main');
 
-export function stripHtmlTags(html) {
-  return html.replace(HTML_TAG_REGEX, '');
+  // Remove HTML comments
+  $('*').contents().filter((i, el) => el.type === 'comment').remove();
+
+  // Remove non-essential tags
+  const essentialTags = ['main', 'img', 'ul', 'li', 'dl', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+  main.find('*').each((i, el) => {
+    // Skip if tag in essential list
+    if (essentialTags.includes(el.tagName.toLowerCase())) {
+      return;
+    }
+    $(el).replaceWith($(el).contents());
+  });
+
+  // Remove non-essential attributes
+  const allowedAttributes = ['src', 'alt', 'title'];
+  main.find('*').each((i, el) => {
+    Object.keys(el.attribs).forEach((attr) => {
+      if (!allowedAttributes.includes(attr)) {
+        $(el).removeAttr(attr);
+      }
+    });
+  });
+
+  return main.prop('outerHTML');
 }
 
 export async function getScrapeForPath(path, context, site) {

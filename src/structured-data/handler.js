@@ -21,7 +21,7 @@ import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { stripHtmlTags, getScrapeForPath } from '../support/utils.js';
+import { generatePlainHtml, getScrapeForPath } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 
@@ -278,10 +278,9 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
     }
     log.debug('Found ld+json in scrape:', JSON.stringify(structuredData));
 
-    // Use cheerio to get text from main element only and strip all tags
+    // Use cheerio to generate a plain version of the scraped HTML
     const parsed = cheerioLoad(scrapeResult?.scrapeResult?.rawBody);
-    const main = parsed('main').prop('outerHTML');
-    const plainPage = stripHtmlTags(main);
+    const plainPage = generatePlainHtml(parsed);
 
     // Need a mapping between GSC rich result types and schema.org entities as they differ.
     // TODO: Add more mappings based on actual customer issues
