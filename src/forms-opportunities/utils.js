@@ -110,7 +110,7 @@ function convertToOpportunityData(opportunityName, urlObject) {
         page: conversionRate,
       },
     }],
-    ...(opportunityName === 'high-page-views-low-form-ctr' && { cta: CTA }),
+    ...(opportunityName === 'high-page-views-low-form-nav' && { cta: CTA }),
   };
   return opportunity;
 }
@@ -124,12 +124,12 @@ export function generateOpptyData(formVitals) {
   return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion));
 }
 
-export function generateOpptyDataForHighPageViewsLowFormCTR(formVitals) {
+export function generateOpptyDataForHighPageViewsLowFormNav(formVitals) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
-  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-ctr', highPageViewsLowFormCtr));
+  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-nav', highPageViewsLowFormCtr));
 }
 
 /**
@@ -150,7 +150,7 @@ export function filterForms(formOpportunities, scrapedData, log) {
     const matchingForm = scrapedData.formData.find((form) => {
       const urlMatches = form.finalUrl === opportunity?.form;
       const isSearchForm = Array.isArray(form.scrapeResult)
-          && form.scrapeResult.some((result) => result?.formType === 'search');
+          && form.scrapeResult.some((result) => result?.formType === 'search' || result?.classList?.includes('search') || result?.classList?.includes('unsubscribe') || result?.action?.endsWith('search.html'));
 
       return urlMatches && isSearchForm;
     });

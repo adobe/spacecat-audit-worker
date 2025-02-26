@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { filterForms, generateOpptyDataForHighPageViewsLowFormCTR } from './utils.js';
+import { filterForms, generateOpptyDataForHighPageViewsLowFormNav } from './utils.js';
 
 /**
  * @param auditUrl - The URL of the audit
@@ -18,58 +18,58 @@ import { filterForms, generateOpptyDataForHighPageViewsLowFormCTR } from './util
  * @param context - The context object containing the data access and logger objects.
  */
 // eslint-disable-next-line max-len
-export default async function highPageViewsLowFormCTROpportunity(auditUrl, auditData, scrapedData, context) {
+export default async function highPageViewsLowFormNavOpportunity(auditUrl, auditDataObject, scrapedData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 
   // eslint-disable-next-line no-param-reassign
-  auditData = JSON.parse(JSON.stringify(auditData));
-  log.info(`Syncing high page views low form ctr opportunity for ${auditData.siteId}`);
-  let highPageViewsLowFormCtaOppty;
+  const auditData = JSON.parse(JSON.stringify(auditDataObject));
+  log.info(`Syncing high page views low form nav opportunity for ${auditData.siteId}`);
+  let highPageViewsLowFormNavOppty;
 
   try {
     const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-    highPageViewsLowFormCtaOppty = opportunities.find((oppty) => oppty.getType() === 'high-page-views-low-form-ctr');
+    highPageViewsLowFormNavOppty = opportunities.find((oppty) => oppty.getType() === 'high-page-views-low-form-nav');
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
   const { formVitals } = auditData.auditResult;
-  const formOpportunities = generateOpptyDataForHighPageViewsLowFormCTR(formVitals);
+  const formOpportunities = generateOpptyDataForHighPageViewsLowFormNav(formVitals);
   log.debug(`forms opportunities high page views low form navigation ${JSON.stringify(formOpportunities, null, 2)}`);
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
   log.info(`filtered opportunties for form for high page views low form navigation ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
     for (const opptyData of filteredOpportunities) {
-      if (!highPageViewsLowFormCtaOppty) {
+      if (!highPageViewsLowFormNavOppty) {
         const opportunityData = {
           siteId: auditData.siteId,
           auditId: auditData.id,
-          runbook: 'https://adobe.sharepoint.com/:w:/r/sites/AEM_Forms/_layouts/15/doc.aspx?sourcedoc=%7Bc64ab030-cd49-4812-b8fa-a70bf8d91618%7D',
-          type: 'high-page-views-low-form-ctr',
+          runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
+          type: 'high-page-views-low-form-nav',
           origin: 'AUTOMATION',
           title: 'Form has low views but conversion element has low CTR',
-          description: 'The page containing the form CTA has high views but low CTR for the form CTA',
+          description: 'The form has low views due to low navigations in the page containing its CTA.',
           tags: ['Forms Conversion'],
           data: {
             ...opptyData,
           },
         };
-        log.info(`Forms Opportunity created high page views low form ctr ${JSON.stringify(opportunityData, null, 2)}`);
+        log.info(`Forms Opportunity created high page views low form nav ${JSON.stringify(opportunityData, null, 2)}`);
         // eslint-disable-next-line no-await-in-loop
-        highPageViewsLowFormCtaOppty = await Opportunity.create(opportunityData);
+        highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
       } else {
-        highPageViewsLowFormCtaOppty.setAuditId(auditData.siteId);
+        highPageViewsLowFormNavOppty.setAuditId(auditData.siteId);
         // eslint-disable-next-line no-await-in-loop
-        await highPageViewsLowFormCtaOppty.save();
+        await highPageViewsLowFormNavOppty.save();
       }
     }
   } catch (e) {
-    log.error(`Creating Forms opportunity for high page views low form cta for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
+    log.error(`Creating Forms opportunity for high page views low form nav for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
     // eslint-disable-next-line max-len
     // throw new Error(`Failed to create Forms opportunity for high page views low form cta for siteId ${auditData.siteId}: ${e.message}`);
   }
-  log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form cta audit type.`);
+  log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form nav audit type.`);
 }

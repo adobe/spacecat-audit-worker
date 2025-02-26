@@ -14,10 +14,10 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { generateOpptyData, generateOpptyDataForHighPageViewsLowFormCTR } from './utils.js';
+import { generateOpptyData, generateOpptyDataForHighPageViewsLowFormNav } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import convertToOpportunity from './opportunityHandler.js';
-import highPageViewsLowFormCTROpportunity from './highPageViewsLowFormCTROpportunity.js';
+import highPageViewsLowFormNavOpportunity from './highPageViewsLowFormNavOpportunity.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const DAILY_THRESHOLD = 200;
@@ -87,7 +87,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
   // generating opportunity data from audit to be send to scraper
   // high page views low form ctr
-  formOpportunities = generateOpptyDataForHighPageViewsLowFormCTR(formVitals);
+  formOpportunities = generateOpptyDataForHighPageViewsLowFormNav(formVitals);
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
   }
@@ -116,7 +116,7 @@ export async function processOpportunityStep(context) {
   log.info('debug log 1');
   await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
   log.info('debug log 2');
-  await highPageViewsLowFormCTROpportunity(finalUrl, latestAudit, scrapedData, context);
+  await highPageViewsLowFormNavOpportunity(finalUrl, latestAudit, scrapedData, context);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',

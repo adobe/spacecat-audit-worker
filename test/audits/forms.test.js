@@ -28,7 +28,7 @@ import convertToOpportunity from '../../src/forms-opportunities/opportunityHandl
 import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../fixtures/expectedformsendtoscraperdata.json' with { type: 'json' };
 import formScrapeData from '../fixtures/formscrapedata.js';
-import highPageViewsLowFormCTROpportunity from '../../src/forms-opportunities/highPageViewsLowFormCTROpportunity.js';
+import highPageViewsLowFormNavOpportunity from '../../src/forms-opportunities/highPageViewsLowFormNavOpportunity.js';
 
 use(sinonChai);
 
@@ -427,7 +427,7 @@ describe('highPageViewsLowFormCTAOpportunity handler method', () => {
     formsCTAOppty.getType = () => 'high-page-views-low-form-cta';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
 
-    await highPageViewsLowFormCTROpportunity(auditUrl, auditData, undefined, context);
+    await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
 
     const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(actualCall).to.deep.equal(expectedOpportunityData);
@@ -437,7 +437,7 @@ describe('highPageViewsLowFormCTAOpportunity handler method', () => {
   it('should use existing high page views low form CTA opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
 
-    await highPageViewsLowFormCTROpportunity(auditUrl, auditData, undefined, context);
+    await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
 
     expect(formsCTAOppty.save).to.be.calledOnce;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form cta audit type.');
@@ -447,7 +447,7 @@ describe('highPageViewsLowFormCTAOpportunity handler method', () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
 
     try {
-      await highPageViewsLowFormCTROpportunity(auditUrl, auditData, undefined, context);
+      await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
     } catch (err) {
       expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id: some-error');
     }
@@ -460,7 +460,7 @@ describe('highPageViewsLowFormCTAOpportunity handler method', () => {
     dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
 
     try {
-      await highPageViewsLowFormCTROpportunity(auditUrl, auditData, undefined, context);
+      await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
     } catch (err) {
       expect(err.message).to.equal('Failed to create Forms opportunity for high page views low form cta for siteId site-id: some-error');
     }
@@ -471,7 +471,7 @@ describe('highPageViewsLowFormCTAOpportunity handler method', () => {
   it('should handle empty form vitals data', async () => {
     auditData.auditResult.formVitals = [];
 
-    await highPageViewsLowFormCTROpportunity(auditUrl, auditData, undefined, context);
+    await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form cta audit type.');

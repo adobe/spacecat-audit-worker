@@ -17,12 +17,13 @@ import { filterForms, generateOpptyData } from './utils.js';
  * @param auditData - The audit data containing the audit result and additional details.
  * @param context - The context object containing the data access and logger objects.
  */
-export default async function convertToOpportunity(auditUrl, auditData, scrapedData, context) {
+// eslint-disable-next-line max-len
+export default async function convertToOpportunity(auditUrl, auditDataObject, scrapedData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 
   // eslint-disable-next-line no-param-reassign
-  auditData = JSON.parse(JSON.stringify(auditData));
+  const auditData = JSON.parse(JSON.stringify(auditDataObject));
   log.info(`Syncing opportunity high page views low form views for ${auditData.siteId}`);
   let highFormViewsLowConversionsOppty;
 
