@@ -227,6 +227,8 @@ export const getScrapedDataForSiteId = async (site, context) => {
     });
 
     const listResponse = await s3Client.send(listCommand);
+
+    log.info('scraped data listResponse ==>', listResponse);
     allFiles = allFiles.concat(
       listResponse.Contents.filter((file) => file.Key.endsWith('.json')),
     );
