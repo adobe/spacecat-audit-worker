@@ -87,10 +87,18 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     trafficDomain: link.traffic_domain,
   }));
 
-  const finalLinks = calculatePriority(transformedLinks)
-    .filter(async (link) => isLinkInaccessible(link.urlTo, log));
+  let finalLinks = calculatePriority(transformedLinks);
 
-  log.info('Inaccessible links ==>', finalLinks);
+  log.info('finalLinks ==>', finalLinks);
+
+  finalLinks = finalLinks.filter(async (link) => {
+    log.info(`checking link ${link.urlTo}`);
+    const isInaccessible = await isLinkInaccessible(link.urlTo, log);
+    log.info(`${link.urlTo} isInaccessible: ${isInaccessible}`);
+    return isInaccessible;
+  });
+
+  log.info('Inaccessible links ==>', finalLinks.map((link) => link.urlTo));
 
   const auditResult = {
     brokenInternalLinks: finalLinks,
