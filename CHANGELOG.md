@@ -1,3 +1,10 @@
+## [1.60.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.60.3...v1.60.4) (2025-02-27)
+
+
+### Bug Fixes
+
+* retaining slash at Urls end in Meta-tags ([#713](https://github.com/adobe/spacecat-audit-worker/issues/713)) ([074d384](https://github.com/adobe/spacecat-audit-worker/commit/074d384eed8aca18eadc8778b6db451104385f05))
+
 ## [1.60.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.60.2...v1.60.3) (2025-02-27)
 
 
