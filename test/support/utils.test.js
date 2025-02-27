@@ -162,6 +162,27 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
+      siteData: [],
+    });
+  });
+
+  it('returns empty arrays without content when no files are found', async () => {
+    context.s3Client.send.resolves({
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    let result;
+    try {
+      result = await getScrapedDataForSiteId(site, context);
+    } catch (e) {
+      expect.fail(`Test failed due to error: ${e.message}`);
+    }
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      formData: [],
       siteData: [],
     });
   });
