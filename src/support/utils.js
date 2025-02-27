@@ -229,10 +229,9 @@ export const getScrapedDataForSiteId = async (site, context) => {
     const listResponse = await s3Client.send(listCommand);
     if (listResponse && listResponse.Contents) {
       allFiles = allFiles.concat(
-        listResponse.Contents.filter((file) => file.Key?.endsWith('.json')),
+        listResponse.Contents?.filter((file) => file.Key?.endsWith('.json')),
       );
     }
-
     isTruncated = listResponse.IsTruncated;
     continuationToken = listResponse.NextContinuationToken;
 
@@ -263,7 +262,10 @@ export const getScrapedDataForSiteId = async (site, context) => {
     }),
   );
 
-  const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
+  const indexFile = allFiles
+    .filter((file) => file.Key.includes(`${siteId}/`) && file.Key.endsWith('scrape.json'))
+    .sort((a, b) => a.Key.split('/').length - b.Key.split('/').length)[0];
+
   const indexFileContent = await getObjectFromKey(
     s3Client,
     env.S3_SCRAPER_BUCKET_NAME,
