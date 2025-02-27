@@ -110,16 +110,12 @@ export async function processOpportunityStep(context) {
     log, site, finalUrl,
   } = context;
 
-  try {
-    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
-    const scrapedData = await getScrapedDataForSiteId(site, context);
-    const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
-    await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
-    await highPageViewsLowFormNavOpportunity(finalUrl, latestAudit, scrapedData, context);
-    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
-  } catch (e) {
-    log.error(`Error in processing opportunity ste for forms: ${e.message}`, e);
-  }
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
+  const scrapedData = await getScrapedDataForSiteId(site, context);
+  const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
+  await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
+  await highPageViewsLowFormNavOpportunity(finalUrl, latestAudit, scrapedData, context);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',
   };
