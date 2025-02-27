@@ -1,3 +1,10 @@
+## [1.62.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.0...v1.62.1) (2025-02-27)
+
+
+### Bug Fixes
+
+* handle missing S3 contents and refine scrape file selection ([#709](https://github.com/adobe/spacecat-audit-worker/issues/709)) ([c5c86f4](https://github.com/adobe/spacecat-audit-worker/commit/c5c86f4cfb1cf9c35d06b13007a4b55c0c314897))
+
 # [1.62.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.61.0...v1.62.0) (2025-02-27)
 
 
