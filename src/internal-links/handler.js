@@ -19,6 +19,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
+import { calculateKpiDeltasForAudit } from './helpers.js';
 
 const INTERVAL = 30; // days
 const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
@@ -103,12 +104,16 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const kpiDeltas = calculateKpiDeltasForAudit(auditData);
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
     context,
     createOpportunityData,
     auditType,
+    {
+      kpiDeltas,
+    },
   );
   const { log } = context;
 
