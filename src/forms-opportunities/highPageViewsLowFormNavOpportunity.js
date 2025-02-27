@@ -64,7 +64,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
       } else {
         log.info(`debug 1 ${JSON.stringify(highPageViewsLowFormNavOppty.getData(), null, 2)}`);
-        log.info(`debug 3 ${JSON.stringify(opportunityData.data, null, 2)}`);
+        log.info(`debug 4 ${JSON.stringify(opportunityData.data, null, 2)}`);
 
         // Delete the updatedAt property if it exists
         if (highPageViewsLowFormNavOppty.updatedAt !== undefined) {
