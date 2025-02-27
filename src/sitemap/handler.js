@@ -169,7 +169,7 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
-* @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
+ * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
  * Array<{url: string, statusCode: number}>}>} - A Promise that resolves to an object containing
  */
 export async function filterValidUrls(urls) {
@@ -539,7 +539,7 @@ export function getPagesWithIssues(auditData) {
  */
 export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
-  log.info(`Classifying suggestions for ${JSON.stringify(auditData)}`);
+  log.info(`Generating suggestions for site: ${auditUrl}`);
 
   const { success, reasons } = auditData.auditResult;
   const response = success
@@ -547,7 +547,13 @@ export function generateSuggestions(auditUrl, auditData, context) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
-  const suggestions = [...response, ...pagesWithIssues]
+
+  // Filter suggestions to only include tracked status codes
+  const filteredPageIssues = pagesWithIssues.filter(
+    (issue) => !issue.statusCode || TRACKED_STATUS_CODES.includes(issue.statusCode),
+  );
+
+  const suggestions = [...response, ...filteredPageIssues]
     .filter(Boolean)
     .map((issue) => ({
       ...issue,
@@ -556,7 +562,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 
-  log.info(`Classified suggestions: ${JSON.stringify(suggestions)}`);
+  // Log only the number of suggestions, not the full content
+  log.info(`Generated ${suggestions.length} suggestions for ${auditUrl}`);
   return {
     ...auditData,
     suggestions,
@@ -566,47 +573,48 @@ export function generateSuggestions(auditUrl, auditData, context) {
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
-  // Log initial audit data
-  log.info(`Processing opportunity and suggestions for audit URL: ${auditUrl}`);
-  log.info(`Audit data: ${JSON.stringify(auditData)}`);
+  // Log minimal information
+  log.info(`Processing opportunity for ${auditUrl}`);
 
   if (!auditData.suggestions || !auditData.suggestions.length) {
     log.info('No sitemap issues found, skipping opportunity creation');
     return;
   }
 
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
-    context,
-    createOpportunityData,
-    auditType,
-  );
+  try {
+    const opportunity = await convertToOpportunity(
+      auditUrl,
+      auditData,
+      context,
+      createOpportunityData,
+      auditType,
+    );
 
-  // Log created opportunity
-  log.info(`Created opportunity: ${JSON.stringify(opportunity)}`);
+    // Log only the opportunity ID, not the full object
+    log.info(`Created opportunity with ID: ${opportunity.getId()}`);
 
-  const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);
+    const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);
 
-  // Log suggestions before sync
-  log.info(`Syncing suggestions: ${JSON.stringify(auditData.suggestions)}`);
+    await syncSuggestions({
+      opportunity,
+      newData: auditData.suggestions,
+      buildKey,
+      mapNewSuggestion: (issue) => ({
+        opportunityId: opportunity.getId(),
+        type: 'REDIRECT_UPDATE',
+        rank: 0,
+        data: issue,
+      }),
+      log,
+    });
 
-  await syncSuggestions({
-    opportunity,
-    newData: auditData.suggestions,
-    context,
-    buildKey,
-    mapNewSuggestion: (issue) => ({
-      opportunityId: opportunity.getId(),
-      type: 'REDIRECT_UPDATE',
-      rank: 0,
-      data: issue,
-    }),
-    log,
-  });
-
-  // Log completion
-  log.info(`Completed processing opportunity and suggestions for ${auditUrl}`);
+    log.info(`Opportunity processing complete for ${auditUrl}`);
+  } catch (error) {
+    log.error(
+      `Failed to process opportunity for ${auditUrl}: ${error.message}`,
+    );
+    throw error;
+  }
 }
 
 export default new AuditBuilder()
