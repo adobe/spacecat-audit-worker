@@ -11,7 +11,9 @@
  */
 /* eslint-disable no-continue, no-await-in-loop */
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { getPrompt, isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import {
+  getPrompt, isNonEmptyArray, isNonEmptyObject, isObject,
+} from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { load as cheerioLoad } from 'cheerio';
@@ -283,12 +285,11 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
     const plainPage = generatePlainHtml(parsed);
 
     // Need a mapping between GSC rich result types and schema.org entities as they differ.
-    // TODO: Add more mappings based on actual customer issues
-    // TODO: Handle case "Review has multiple aggregate ratings"
     const entityMapping = {
       Breadcrumbs: 'BreadcrumbList',
       'Product snippets': 'Product',
       'Merchant listings': 'Product',
+      'Review snippets': 'AggregateRating',
       Videos: 'VideoObject',
       Recipes: 'Recipe',
     };
@@ -304,7 +305,18 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
       }
 
       // Filter structured data relevant to this issue
-      const wrongLdJson = structuredData.find((data) => entity === data['@type']);
+      let wrongLdJson = structuredData.find((data) => entity === data['@type']);
+
+      // If not found in the first level objects, try second level objects.
+      // This typically happens for reviews within the Product entity.
+      if (!wrongLdJson) {
+        const children = structuredData
+          .flatMap((parent) => Object.keys(parent).map((key) => parent[key]))
+          .filter((data) => isObject(data) && data['@type'] === entity);
+        if (children.length >= 1) {
+          [wrongLdJson] = children;
+        }
+      }
       if (!isNonEmptyObject(wrongLdJson)) {
         log.error(`Could not find structured data for issue of type ${entity}`);
         continue;

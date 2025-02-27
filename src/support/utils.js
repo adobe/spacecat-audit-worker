@@ -279,13 +279,16 @@ export async function sleep(ms) {
 }
 
 export function generatePlainHtml($) {
-  const main = $('main');
+  let main = $('main');
+  if (!main.length) {
+    main = $('body');
+  }
 
   // Remove HTML comments
   $('*').contents().filter((i, el) => el.type === 'comment').remove();
 
   // Remove non-essential tags
-  const essentialTags = ['main', 'img', 'ul', 'li', 'dl', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+  const essentialTags = ['main', 'img', 'a', 'ul', 'li', 'dl', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
   main.find('*').each((i, el) => {
     // Skip if tag in essential list
     if (essentialTags.includes(el.tagName.toLowerCase())) {
@@ -295,7 +298,7 @@ export function generatePlainHtml($) {
   });
 
   // Remove non-essential attributes
-  const allowedAttributes = ['src', 'alt', 'title'];
+  const allowedAttributes = ['href', 'src', 'alt', 'title'];
   main.find('*').each((i, el) => {
     Object.keys(el.attribs).forEach((attr) => {
       if (!allowedAttributes.includes(attr)) {

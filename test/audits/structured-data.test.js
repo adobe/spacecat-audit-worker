@@ -122,7 +122,7 @@ describe('Structured Data Audit', () => {
           info: sinon.stub(),
           warn: sinon.stub(),
           error: sinon.stub(),
-          debug: sinon.stub(),
+          debug: sinon.spy(),
         },
         s3Client: s3ClientStub,
       })
@@ -482,6 +482,29 @@ describe('Structured Data Audit', () => {
 
     const result = await generateSuggestionsData(baseUrl, auditData, context, siteStub);
     expect(result).to.deep.equal(createAuditData(baseUrl, 'Product snippets', 'Missing field "name"', suggestion));
+  });
+
+  it('calls Firefall with AggregateRating structured data', async () => {
+    const auditData = createAuditData(baseUrl, 'Review snippets', 'Either "ratingCount" or "reviewCount" should be specified');
+    s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
+      scrapeResult: {
+        rawBody: '<main></main>',
+        structuredData: [{
+          '@type': 'Product',
+          aggregateRating: {
+            '@type': 'AggregateRating',
+            ratingValue: 4.5,
+          },
+        }],
+      },
+    })));
+    firefallClientStub.fetchChatCompletion.rejects(new Error('No suggestions found'));
+
+    await generateSuggestionsData(baseUrl, auditData, context, siteStub);
+
+    // Get log call with structured data
+    const logCall = context.log.debug.getCalls().find((call) => call.args[0].includes('Filtered structured data:'));
+    expect(logCall.args[1]).to.equal('{"@type":"AggregateRating","ratingValue":4.5}');
   });
 
   it('transforms the audit data into opportunities with no auto-suggestion', async () => {
