@@ -51,7 +51,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         type: 'high-form-views-low-conversions',
         origin: 'AUTOMATION',
         title: 'Form has high views but low conversions',
-        description: 'Form has high views but low conversions',
+        description: '123 Form has high views but low conversions',
         tags: ['Forms Conversion'],
         data: {
           ...opptyData,
@@ -64,6 +64,11 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
         log.debug('Forms Opportunity created');
       } else {
+        // Delete the updatedAt property if it exists
+        // if (highFormViewsLowConversionsOppty.updatedAt !== undefined) {
+        //   delete highFormViewsLowConversionsOppty.updatedAt;
+        // }
+
         highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
         highFormViewsLowConversionsOppty.setData({
           ...highFormViewsLowConversionsOppty.getData(),

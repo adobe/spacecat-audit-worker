@@ -51,7 +51,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         type: 'high-page-views-low-form-nav',
         origin: 'AUTOMATION',
         title: 'Form has low views',
-        description: 'The form has low views due to low navigations in the page containing its CTA',
+        description: '123 The form has low views due to low navigations in the page containing its CTA',
         tags: ['Forms Conversion'],
         data: {
           ...opptyData,
@@ -67,9 +67,9 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         log.info(`debug 4 ${JSON.stringify(opportunityData.data, null, 2)}`);
 
         // Delete the updatedAt property if it exists
-        if (highPageViewsLowFormNavOppty.updatedAt !== undefined) {
-          delete highPageViewsLowFormNavOppty.updatedAt;
-        }
+        // if (highPageViewsLowFormNavOppty.updatedAt !== undefined) {
+        //   delete highPageViewsLowFormNavOppty.updatedAt;
+        // }
 
         highPageViewsLowFormNavOppty.setAuditId(auditData.siteId);
         highPageViewsLowFormNavOppty.setData({
