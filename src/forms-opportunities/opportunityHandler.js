@@ -64,11 +64,6 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
         log.debug('Forms Opportunity created');
       } else {
-        // Delete the updatedAt property if it exists
-        // if (highFormViewsLowConversionsOppty.updatedAt !== undefined) {
-        //   delete highFormViewsLowConversionsOppty.updatedAt;
-        // }
-
         highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
         highFormViewsLowConversionsOppty.setData({
           ...highFormViewsLowConversionsOppty.getData(),
@@ -80,8 +75,6 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
-    // eslint-disable-next-line max-len
-    // throw new Error(`Failed to create Forms opportunity for siteId ${auditData.siteId}: ${e.message}`);
   }
   log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high-form-views-low-conversions audit type.`);
 }

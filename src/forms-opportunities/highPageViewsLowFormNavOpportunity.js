@@ -63,31 +63,17 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
       } else {
-        log.info(`debug 1 ${JSON.stringify(highPageViewsLowFormNavOppty.getData(), null, 2)}`);
-        log.info(`debug 4 ${JSON.stringify(opportunityData.data, null, 2)}`);
-
-        // Delete the updatedAt property if it exists
-        // if (highPageViewsLowFormNavOppty.updatedAt !== undefined) {
-        //   delete highPageViewsLowFormNavOppty.updatedAt;
-        // }
-
         highPageViewsLowFormNavOppty.setAuditId(auditData.siteId);
         highPageViewsLowFormNavOppty.setData({
-          abc: 'xyz',
+          ...highPageViewsLowFormNavOppty.getData(),
+          ...opportunityData.data,
         });
-
-        // highPageViewsLowFormNavOppty.setData({
-        //   ...highPageViewsLowFormNavOppty.getData(),
-        //   ...opportunityData.data,
-        // });
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormNavOppty.save();
       }
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form nav for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
-    // eslint-disable-next-line max-len
-    // throw new Error(`Failed to create Forms opportunity for high page views low form cta for siteId ${auditData.siteId}: ${e.message}`);
   }
   log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form nav audit type.`);
 }
