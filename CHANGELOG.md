@@ -1,3 +1,10 @@
+# [1.62.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.61.0...v1.62.0) (2025-02-27)
+
+
+### Features
+
+* Auto-suggest for structured data audit ([#692](https://github.com/adobe/spacecat-audit-worker/issues/692)) ([6f86c2b](https://github.com/adobe/spacecat-audit-worker/commit/6f86c2b67fa6435b79dfa5d0324eaab37bf09247))
+
 # [1.61.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.60.4...v1.61.0) (2025-02-27)
 
 
