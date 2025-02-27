@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Resources:
+  SpacecatAuditWorkerFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: src/index-local.main
+      Runtime: nodejs22.x
+      CodeUri: .
+      MemorySize: 6144
+      Timeout: 900
+      Environment:
+        Variables:
+          AWS_ACCESS_KEY_ID: !Ref AWS_ACCESS_KEY_ID
+          AWS_SECRET_ACCESS_KEY: !Ref AWS_SECRET_ACCESS_KEY
+          AWS_DEFAULT_REGION: !Ref AWS_DEFAULT_REGION
+          GOOGLE_CLOUD_API_KEY: !Ref GOOGLE_CLOUD_API_KEY
+          GOOGLE_CLIENT_ID: !Ref GOOGLE_CLIENT_ID
+          GOOGLE_CLIENT_SECRET: !Ref GOOGLE_CLIENT_SECRET
+          GOOGLE_REDIRECT_URI: !Ref GOOGLE_REDIRECT_URI
+          FIREFALL_API_KEY: !Ref FIREFALL_API_KEY
+          FIREFALL_API_ENDPOINT: !Ref FIREFALL_API_ENDPOINT
+          FIREFALL_IMS_ORG_ID: !Ref FIREFALL_IMS_ORG_ID
+          FIREFALL_API_CAPABILITY_NAME: !Ref FIREFALL_API_CAPABILITY_NAME
+          FIREFALL_MODEL: !Ref FIREFALL_MODEL
+          S3_SCRAPER_BUCKET_NAME: !Ref S3_SCRAPER_BUCKET_NAME
+          IMS_HOST: !Ref IMS_HOST
+          IMS_CLIENT_ID: !Ref IMS_CLIENT_ID
+          IMS_CLIENT_CODE: !Ref IMS_CLIENT_CODE
+          IMS_CLIENT_SECRET: !Ref IMS_CLIENT_SECRET
+      Role: arn:aws:iam::282898975672:role/spacecat-role-services
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+Parameters:
+  AWS_ACCESS_KEY_ID:
+    Type: String
+    Description: AWS Access Key ID
+  AWS_SECRET_ACCESS_KEY:
+    Type: String
+    Description: AWS Secret Access Key
+  AWS_DEFAULT_REGION:
+    Type: String
+    Description: AWS Default Region
+    Default: us-east-1
+  GOOGLE_CLOUD_API_KEY:
+    Type: String
+    Description: Google Cloud API Key
+  GOOGLE_CLIENT_ID:
+    Type: String
+    Description: Google Client ID
+  GOOGLE_CLIENT_SECRET:
+    Type: String
+    Description: Google Client Secret
+  GOOGLE_REDIRECT_URI:
+    Type: String
+    Description: Google Redirect URI
+  FIREFALL_API_KEY:
+    Type: String
+    Description: Firefall API Key
+  FIREFALL_API_ENDPOINT:
+    Type: String
+    Description: Firefall API Endpoint
+  FIREFALL_IMS_ORG_ID:
+    Type: String
+    Description: Firefall IMS Org ID
+  FIREFALL_API_CAPABILITY_NAME:
+    Type: String
+    Description: Firefall API Capability Name
+  FIREFALL_MODEL:
+    Type: String
+    Description: Firefall Model
+  S3_SCRAPER_BUCKET_NAME:
+    Type: String
+    Description: S3 Scraper Bucket Name
+  IMS_HOST:
+    Type: String
+    Description: IMS Host
+  IMS_CLIENT_ID:
+    Type: String
+    Description: IMS Client ID
+  IMS_CLIENT_CODE:
+    Type: String
+    Description: IMS Client Code
+  IMS_CLIENT_SECRET:
+    Type: String
+    Description: IMS Client Secret

@@ -227,11 +227,13 @@ export const getScrapedDataForSiteId = async (site, context) => {
     });
 
     const listResponse = await s3Client.send(listCommand);
-
     log.info('scraped data listResponse ==>', listResponse);
-    allFiles = allFiles.concat(
-      listResponse.Contents.filter((file) => file.Key.endsWith('.json')),
-    );
+    if (listResponse && listResponse.Contents) {
+      allFiles = allFiles.concat(
+        listResponse.Contents.filter((file) => file.Key?.endsWith('.json')),
+      );
+    }
+
     isTruncated = listResponse.IsTruncated;
     continuationToken = listResponse.NextContinuationToken;
 
@@ -245,6 +247,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   if (!isNonEmptyArray(allFiles)) {
     return {
       headerLinks: [],
+      formData: [],
       siteData: [],
     };
   }
@@ -269,10 +272,28 @@ export const getScrapedDataForSiteId = async (site, context) => {
     log,
   );
   const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
-
   log.info(`siteData: ${JSON.stringify(extractedData)}`);
+
+  let scrapedFormData;
+  log.info(`all files: ${JSON.stringify(allFiles)}`);
+  if (allFiles) {
+    const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
+    scrapedFormData = await Promise.all(
+      formFiles.map(async (file) => {
+        const fileContent = await getObjectFromKey(
+          s3Client,
+          env.S3_SCRAPER_BUCKET_NAME,
+          file.Key,
+          log,
+        );
+        return fileContent;
+      }),
+    );
+  }
+
   return {
     headerLinks,
+    formData: scrapedFormData,
     siteData: extractedData.filter(Boolean),
   };
 };
@@ -281,4 +302,47 @@ export async function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+export function generatePlainHtml($) {
+  let main = $('main');
+  if (!main.length) {
+    main = $('body');
+  }
+
+  // Remove HTML comments
+  $('*').contents().filter((i, el) => el.type === 'comment').remove();
+
+  // Remove non-essential tags
+  const essentialTags = ['main', 'img', 'a', 'ul', 'li', 'dl', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+  main.find('*').each((i, el) => {
+    // Skip if tag in essential list
+    if (essentialTags.includes(el.tagName.toLowerCase())) {
+      return;
+    }
+    $(el).replaceWith($(el).contents());
+  });
+
+  // Remove non-essential attributes
+  const allowedAttributes = ['href', 'src', 'alt', 'title'];
+  main.find('*').each((i, el) => {
+    Object.keys(el.attribs).forEach((attr) => {
+      if (!allowedAttributes.includes(attr)) {
+        $(el).removeAttr(attr);
+      }
+    });
+  });
+
+  return main.prop('outerHTML');
+}
+
+export async function getScrapeForPath(path, context, site) {
+  const { log, s3Client } = context;
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const prefix = `scrapes/${site.getId()}${path}/scrape.json`;
+  const result = await getObjectFromKey(s3Client, bucketName, prefix, log);
+  if (!result) {
+    throw new Error(`No scrape found for path ${path}`);
+  }
+  return result;
 }

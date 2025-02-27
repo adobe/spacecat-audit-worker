@@ -19,7 +19,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
-import { isLinkInvalid } from './helpers.js';
+import { calculateKpiDeltasForAudit, isLinkInvalid } from './helpers.js';
 
 const INTERVAL = 30; // days
 const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
@@ -78,7 +78,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     granularity: 'hourly',
   };
 
-  log.info(`${auditType}: Options for RUM call: `, JSON.stringify(options));
+  log.info(`broken-internal-links audit: ${auditType}: Options for RUM call: `, JSON.stringify(options));
 
   const internal404Links = await rumAPIClient.query('404-internal-links', options);
   const transformedLinks = internal404Links.map((link) => ({
@@ -92,6 +92,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
   log.info('invalid links ==>', finalLinks
     .filter(async (link) => isLinkInvalid(link.urlTo, log)));
+
   const auditResult = {
     brokenInternalLinks: finalLinks,
     fullAuditRef: auditUrl,
@@ -108,12 +109,16 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const kpiDeltas = calculateKpiDeltasForAudit(auditData);
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
     context,
     createOpportunityData,
     auditType,
+    {
+      kpiDeltas,
+    },
   );
   const { log } = context;
 
@@ -122,6 +127,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   await syncSuggestions({
     opportunity,
     newData: auditData?.auditResult?.brokenInternalLinks,
+    context,
     buildKey,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
