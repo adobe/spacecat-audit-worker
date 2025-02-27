@@ -10,3 +10,6 @@ test-results.xml
 .env
 .idea/
 .vscode/
+.aws-sam/
+env.sh
+output.txt

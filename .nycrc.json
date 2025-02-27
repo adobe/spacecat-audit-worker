@@ -10,5 +10,8 @@
   "all": true,
   "include": [
     "src/**/*.js"
+  ],
+  "exclude": [
+    "src/index-local.js"
   ]
 }

@@ -16,11 +16,13 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { load as cheerioLoad } from 'cheerio';
 import {
   extractLinksFromHeader,
   getBaseUrlPagesFromSitemapContents,
   getScrapedDataForSiteId,
   getUrlWithoutPath, sleep,
+  generatePlainHtml,
 } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -647,5 +649,31 @@ describe('sleep', () => {
     await clock.runAllAsync();
 
     expect(isFulfilled).to.be.true;
+  });
+});
+
+describe('generatePlainHtml', () => {
+  it('removes comments', () => {
+    const html = '<main><!-- Some comment --><h1>Hello World</h1></main>';
+    const parsed = cheerioLoad(html);
+    expect(generatePlainHtml(parsed)).to.equal('<main><h1>Hello World</h1></main>');
+  });
+
+  it('strips out non essential tags', () => {
+    const html = '<body><main><div><img src="my-image.png"><h1>Hello World</h1></div></main></body>';
+    const parsed = cheerioLoad(html);
+    expect(generatePlainHtml(parsed)).to.equal('<main><img src="my-image.png"><h1>Hello World</h1></main>');
+  });
+
+  it('removes non-essential attributes', () => {
+    const html = '<main><img src="my-image.png" class="abc" style="width: 100px;"></main>';
+    const parsed = cheerioLoad(html);
+    expect(generatePlainHtml(parsed)).to.equal('<main><img src="my-image.png"></main>');
+  });
+
+  it('falls back to body if no main element is available', () => {
+    const html = '<body><h1>Hello World</h1></body>';
+    const parsed = cheerioLoad(html);
+    expect(generatePlainHtml(parsed)).to.equal('<body><h1>Hello World</h1></body>');
   });
 });
