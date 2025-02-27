@@ -63,7 +63,7 @@ export async function fetchAndProcessPageObject(
   const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', '');
   return {
     [pageUrl]: {
-      supportedImages,
+      images: supportedImages,
     },
   };
 }
