@@ -51,7 +51,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         type: 'high-page-views-low-form-nav',
         origin: 'AUTOMATION',
         title: 'Form has low views',
-        description: '123 The form has low views due to low navigations in the page containing its CTA',
+        description: 'The form has low views due to low navigations in the page containing its CTA',
         tags: ['Forms Conversion'],
         data: {
           ...opptyData,
@@ -73,9 +73,13 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
 
         highPageViewsLowFormNavOppty.setAuditId(auditData.siteId);
         highPageViewsLowFormNavOppty.setData({
-          ...highPageViewsLowFormNavOppty.getData(),
-          ...opportunityData.data,
+          abc: 'xyz',
         });
+
+        // highPageViewsLowFormNavOppty.setData({
+        //   ...highPageViewsLowFormNavOppty.getData(),
+        //   ...opportunityData.data,
+        // });
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormNavOppty.save();
       }

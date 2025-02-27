@@ -416,7 +416,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       type: 'high-page-views-low-form-nav',
       origin: 'AUTOMATION',
       title: 'Form has low views',
-      description: '123 The form has low views due to low navigations in the page containing its CTA',
+      description: 'The form has low views due to low navigations in the page containing its CTA',
       tags: [
         'Forms Conversion',
       ],

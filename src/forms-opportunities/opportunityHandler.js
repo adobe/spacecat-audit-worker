@@ -51,7 +51,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         type: 'high-form-views-low-conversions',
         origin: 'AUTOMATION',
         title: 'Form has high views but low conversions',
-        description: '123 Form has high views but low conversions',
+        description: 'Form has high views but low conversions',
         tags: ['Forms Conversion'],
         data: {
           ...opptyData,
