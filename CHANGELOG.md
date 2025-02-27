@@ -1,3 +1,10 @@
+## [1.60.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.60.1...v1.60.2) (2025-02-27)
+
+
+### Bug Fixes
+
+* fetch file handling for scraper result ([#716](https://github.com/adobe/spacecat-audit-worker/issues/716)) ([8e91f6d](https://github.com/adobe/spacecat-audit-worker/commit/8e91f6dbbbb42b63a339ea39e40e83d01ce11b23))
+
 ## [1.60.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.60.0...v1.60.1) (2025-02-27)
 
 
