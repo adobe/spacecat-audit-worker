@@ -127,6 +127,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: ['https://example.com/home', 'https://example.com/about'],
+      formData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -197,6 +198,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -239,6 +241,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -285,6 +288,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [
         {
           url: '',
@@ -293,6 +297,239 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
           h1: '',
         },
       ],
+    });
+  });
+
+  it('handles form data extraction from forms/scrape.json', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    const mockFormFileResponse = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://example.com/contact',
+          scrapeResult: [
+            {
+              id: '',
+              formType: 'search',
+              classList: '',
+              visibleATF: true,
+              fieldCount: 2,
+              visibleFieldCount: 0,
+              fieldsLabels: [
+                'Search articles',
+                'search-btn',
+              ],
+              visibleInViewPortFieldCount: 0,
+            },
+            {
+              id: '',
+              formType: 'search',
+              classList: '',
+              visibleATF: true,
+              fieldCount: 2,
+              visibleFieldCount: 2,
+              fieldsLabels: [
+                'Search articles',
+                'search-btn',
+              ],
+              visibleInViewPortFieldCount: 2,
+            },
+            {
+              id: '',
+              formType: 'search',
+              classList: 'adopt-search-results-box-wrapper',
+              visibleATF: true,
+              fieldCount: 7,
+              visibleFieldCount: 5,
+              fieldsLabels: [
+                'Any\nDog\nCat\nOther',
+                'Any',
+                'Any',
+                'Enter Zip/Postal Code',
+                '✕',
+                'Search',
+                'Create Search Alert',
+              ],
+              visibleInViewPortFieldCount: 5,
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.resolves(mockFormFileResponse);
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      siteData: [
+        {
+          description: '',
+          h1: '',
+          title: '',
+          url: 'https://example.com/contact',
+        },
+      ],
+      formData: [{
+        finalUrl: 'https://example.com/contact',
+        scrapeResult: [
+          {
+            id: '',
+            formType: 'search',
+            classList: '',
+            visibleATF: true,
+            fieldCount: 2,
+            visibleFieldCount: 0,
+            fieldsLabels: [
+              'Search articles',
+              'search-btn',
+            ],
+            visibleInViewPortFieldCount: 0,
+          },
+          {
+            id: '',
+            formType: 'search',
+            classList: '',
+            visibleATF: true,
+            fieldCount: 2,
+            visibleFieldCount: 2,
+            fieldsLabels: [
+              'Search articles',
+              'search-btn',
+            ],
+            visibleInViewPortFieldCount: 2,
+          },
+          {
+            id: '',
+            formType: 'search',
+            classList: 'adopt-search-results-box-wrapper',
+            visibleATF: true,
+            fieldCount: 7,
+            visibleFieldCount: 5,
+            fieldsLabels: [
+              'Any\nDog\nCat\nOther',
+              'Any',
+              'Any',
+              'Enter Zip/Postal Code',
+              '✕',
+              'Search',
+              'Create Search Alert',
+            ],
+            visibleInViewPortFieldCount: 5,
+          },
+        ],
+      }],
+    });
+  });
+
+  it('handles multiple form files', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+        { Key: 'scrapes/site-id/forms/other/scrape.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    const mockFormResponse1 = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://example.com/contact',
+          scrapeResult: [
+            {
+              id: '',
+              formType: 'search',
+              classList: '',
+              visibleATF: true,
+              fieldCount: 2,
+              visibleFieldCount: 0,
+              fieldsLabels: [
+                'Search articles',
+                'search-btn',
+              ],
+              visibleInViewPortFieldCount: 0,
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.resolves(mockFormResponse1);
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      siteData: [
+        {
+          description: '',
+          h1: '',
+          title: '',
+          url: 'https://example.com/contact',
+        },
+        {
+          description: '',
+          h1: '',
+          title: '',
+          url: 'https://example.com/contact',
+        },
+      ],
+      formData: [
+        {
+          finalUrl: 'https://example.com/contact',
+          scrapeResult: [
+            {
+              id: '',
+              formType: 'search',
+              classList: '',
+              visibleATF: true,
+              fieldCount: 2,
+              visibleFieldCount: 0,
+              fieldsLabels: [
+                'Search articles',
+                'search-btn',
+              ],
+              visibleInViewPortFieldCount: 0,
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('handles invalid form data files', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    const mockInvalidFormResponse = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves('invalid json'),
+      },
+    };
+
+    context.s3Client.send.resolves(mockInvalidFormResponse);
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      siteData: [],
+      formData: [null],
     });
   });
 });
