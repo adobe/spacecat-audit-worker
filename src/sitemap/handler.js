@@ -539,7 +539,7 @@ export function getPagesWithIssues(auditData) {
  */
 export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
-  log.info(`Generating suggestions for site: ${JSON.stringify(auditData)}`);
+  log.info(`Generating suggestions for ${JSON.stringify(auditData)}`);
 
   const { success, reasons } = auditData.auditResult;
   const response = success
