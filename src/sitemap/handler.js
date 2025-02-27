@@ -566,7 +566,10 @@ export function generateSuggestions(auditUrl, auditData, context) {
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
-  // suggestions are in auditData.suggestions
+  // Log initial audit data
+  log.info(`Processing opportunity and suggestions for audit URL: ${auditUrl}`);
+  log.info(`Audit data: ${JSON.stringify(auditData)}`);
+
   if (!auditData.suggestions || !auditData.suggestions.length) {
     log.info('No sitemap issues found, skipping opportunity creation');
     return;
@@ -580,7 +583,13 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditType,
   );
 
+  // Log created opportunity
+  log.info(`Created opportunity: ${JSON.stringify(opportunity)}`);
+
   const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);
+
+  // Log suggestions before sync
+  log.info(`Syncing suggestions: ${JSON.stringify(auditData.suggestions)}`);
 
   await syncSuggestions({
     opportunity,
@@ -595,6 +604,9 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     }),
     log,
   });
+
+  // Log completion
+  log.info(`Completed processing opportunity and suggestions for ${auditUrl}`);
 }
 
 export default new AuditBuilder()
