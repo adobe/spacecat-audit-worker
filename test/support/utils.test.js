@@ -162,6 +162,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [],
     });
   });

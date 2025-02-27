@@ -231,9 +231,10 @@ export const getScrapedDataForSiteId = async (site, context) => {
       allFiles = allFiles.concat(
         listResponse.Contents.filter((file) => file.Key?.endsWith('.json')),
       );
-      isTruncated = listResponse.IsTruncated;
-      continuationToken = listResponse.NextContinuationToken;
     }
+
+    isTruncated = listResponse.IsTruncated;
+    continuationToken = listResponse.NextContinuationToken;
 
     if (isTruncated) {
       await fetchFiles();
@@ -245,6 +246,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   if (!isNonEmptyArray(allFiles)) {
     return {
       headerLinks: [],
+      formData: [],
       siteData: [],
     };
   }
