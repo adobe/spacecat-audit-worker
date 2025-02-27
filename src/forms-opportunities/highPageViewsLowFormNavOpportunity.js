@@ -25,17 +25,15 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
   // eslint-disable-next-line no-param-reassign
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
   log.info(`Syncing high page views low form nav opportunity for ${auditData.siteId}`);
-  let highPageViewsLowFormNavOppty;
+  let opportunities;
 
   try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-    highPageViewsLowFormNavOppty = opportunities.find((oppty) => oppty.getType() === 'high-page-views-low-form-nav');
+    opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
-  log.info(`Fetching existing high-page-views-low-form-nav opportunities for siteId ${JSON.stringify(highPageViewsLowFormNavOppty, null, 2)}`);
   const { formVitals } = auditData.auditResult;
   const formOpportunities = generateOpptyDataForHighPageViewsLowFormNav(formVitals);
   log.debug(`forms opportunities high page views low form navigation ${JSON.stringify(formOpportunities, null, 2)}`);
@@ -44,6 +42,11 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
 
   try {
     for (const opptyData of filteredOpportunities) {
+      let highPageViewsLowFormNavOppty = opportunities.find(
+        (oppty) => oppty.getType() === 'high-page-views-low-form-nav'
+              && oppty.getData().form === opptyData.form,
+      );
+
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.id,

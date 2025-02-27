@@ -25,11 +25,10 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
   // eslint-disable-next-line no-param-reassign
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
   log.info(`Syncing opportunity high page views low form views for ${auditData.siteId}`);
-  let highFormViewsLowConversionsOppty;
+  let opportunities;
 
   try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-    highFormViewsLowConversionsOppty = opportunities.find((oppty) => oppty.getType() === 'high-form-views-low-conversions');
+    opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
@@ -44,6 +43,11 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
 
   try {
     for (const opptyData of filteredOpportunities) {
+      let highFormViewsLowConversionsOppty = opportunities.find(
+        (oppty) => oppty.getType() === 'high-form-views-low-conversions'
+              && oppty.getData().form === opptyData.form,
+      );
+
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.id ?? auditData.latestAuditId,
@@ -58,11 +62,11 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         },
       };
 
-      log.info(`Forms Opportunity high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
+      log.info(`Forms Opportunity high form views low conversion ${JSON.stringify(opportunityData, null, 2)}`);
       if (!highFormViewsLowConversionsOppty) {
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
-        log.debug('Forms Opportunity created');
+        log.debug('Forms Opportunity high form views low conversion created');
       } else {
         highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
         highFormViewsLowConversionsOppty.setData({
@@ -71,6 +75,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         });
         // eslint-disable-next-line no-await-in-loop
         await highFormViewsLowConversionsOppty.save();
+        log.debug('Forms Opportunity high form views low conversion updated');
       }
     }
   } catch (e) {

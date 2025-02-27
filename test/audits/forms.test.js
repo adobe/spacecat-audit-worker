@@ -92,7 +92,7 @@ describe('opportunities handler method', () => {
       getType: () => 'high-form-views-low-conversions',
       setData: sinon.stub(),
       getData: sinon.stub().returns({
-        form: 'https://example.com/form1',
+        form: 'https://www.surest.com/info/win-1',
         screenshot: '',
         trackedFormKPIName: 'Conversion Rate',
         trackedFormKPIValue: 0.5,
@@ -150,7 +150,7 @@ describe('opportunities handler method', () => {
   it('should use existing opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
     await convertToOpportunity(auditUrl, auditData, undefined, context);
-    expect(formsOppty.save).to.be.callCount(5);
+    expect(formsOppty.save).to.be.callCount(1);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
@@ -378,7 +378,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       getType: () => 'high-page-views-low-form-nav',
       setData: sinon.stub(),
       getData: sinon.stub().returns({
-        form: 'https://example.com/form1',
+        form: 'https://www.surest.com/newsletter',
         screenshot: '',
         trackedFormKPIName: 'Conversion Rate',
         trackedFormKPIValue: 0.5,
