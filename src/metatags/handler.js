@@ -149,16 +149,13 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
     queryResultsBiMonthly,
   );
   let projectedTraffic = 0;
-  log.warn(`Detected Tags: ${JSON.stringify(detectedTags)}`);
   Object.entries(detectedTags).forEach(([endpoint, tags]) => {
-    log.warn(`Checking for endpoint: ${endpoint} !!`);
     const organicTraffic = getOrganicTrafficForEndpoint(
       endpoint,
       rumDataMapMonthly,
       rumDataMapBiMonthly,
       log,
     );
-    log.warn(`traffic for endpoint: ${endpoint} : ${organicTraffic} !!`);
     Object.values((tags)).forEach((tagIssueDetails) => {
       // Multiplying by 1% for missing tags, and 0.5% for other tag issues
       // For duplicate tags, each page's traffic is multiplied by .5% so
