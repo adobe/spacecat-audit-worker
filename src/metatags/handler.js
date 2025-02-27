@@ -75,7 +75,8 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
     log.error(`No Scraped tags found in S3 ${key} object`);
     return null;
   }
-  let pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
+  let pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
+    : key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
   // handling for homepage
   if (pageUrl === '') {
     pageUrl = '/';
