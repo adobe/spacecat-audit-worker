@@ -24,7 +24,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
 
   // eslint-disable-next-line no-param-reassign
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
-  log.info(`Syncing opportunity high page views low form views for ${auditData.siteId}`);
+  log.info(`Syncing opportunity high form views low conversion for ${auditData.siteId}`);
   let opportunities;
 
   try {
@@ -39,7 +39,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
   const formOpportunities = generateOpptyData(formVitals);
   log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
-  log.info(`filtered opportunties high page views low form views for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
+  log.info(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
     for (const opptyData of filteredOpportunities) {
