@@ -117,6 +117,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   await syncSuggestions({
     opportunity,
     newData: auditData?.auditResult?.brokenInternalLinks,
+    context,
     buildKey,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),

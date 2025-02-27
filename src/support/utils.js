@@ -35,7 +35,10 @@ export async function getRUMUrl(url) {
     },
   });
   const finalUrl = resp.url.split('://')[1];
-  return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
+  /* Return just the domain part by splitting on '/' and taking first segment.
+   * This is to avoid returning the full URL with path. It will also remove any trailing /.
+   */
+  return finalUrl.split('/')[0];
 }
 
 /**
@@ -224,9 +227,12 @@ export const getScrapedDataForSiteId = async (site, context) => {
     });
 
     const listResponse = await s3Client.send(listCommand);
-    allFiles = allFiles.concat(
-      listResponse.Contents.filter((file) => file.Key.endsWith('.json')),
-    );
+    if (listResponse && listResponse.Contents) {
+      allFiles = allFiles.concat(
+        listResponse.Contents.filter((file) => file.Key?.endsWith('.json')),
+      );
+    }
+
     isTruncated = listResponse.IsTruncated;
     continuationToken = listResponse.NextContinuationToken;
 
@@ -240,6 +246,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   if (!isNonEmptyArray(allFiles)) {
     return {
       headerLinks: [],
+      formData: [],
       siteData: [],
     };
   }
@@ -264,10 +271,28 @@ export const getScrapedDataForSiteId = async (site, context) => {
     log,
   );
   const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
-
   log.info(`siteData: ${JSON.stringify(extractedData)}`);
+
+  let scrapedFormData;
+  log.info(`all files: ${JSON.stringify(allFiles)}`);
+  if (allFiles) {
+    const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
+    scrapedFormData = await Promise.all(
+      formFiles.map(async (file) => {
+        const fileContent = await getObjectFromKey(
+          s3Client,
+          env.S3_SCRAPER_BUCKET_NAME,
+          file.Key,
+          log,
+        );
+        return fileContent;
+      }),
+    );
+  }
+
   return {
     headerLinks,
+    formData: scrapedFormData,
     siteData: extractedData.filter(Boolean),
   };
 };
