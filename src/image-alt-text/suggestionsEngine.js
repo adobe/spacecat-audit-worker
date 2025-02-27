@@ -15,7 +15,7 @@ import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { sleep } from '../support/utils.js';
 
 const PROMPT_FILE = 'image-alt-text';
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 3;
 const BATCH_DELAY = 5000;
 const MODEL = 'gpt-4o';
 // https://platform.openai.com/docs/guides/vision
@@ -30,10 +30,11 @@ const filterImages = (imageUrls, auditUrl) => {
   imageUrls.forEach((imageUrl) => {
     if (!SUPPORTED_FORMATS.test(imageUrl)) {
       unsupportedFormatImages.push(imageUrl);
-    } else if (imageUrl.includes(auditUrl)) {
+    } else if (imageUrl.includes(auditUrl.replace('https://', ''))) {
       imagesFromHost.push(imageUrl);
     } else {
       otherImages.push(imageUrl);
+      imagesFromHost.push(imageUrl);
     }
   });
 
@@ -61,6 +62,7 @@ const generateBatchPromises = (
   };
   const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
   try {
+    log.info(`[${AUDIT_TYPE}]: Batch prompt:`, prompt);
     const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
     if (isNonEmptyArray(response.choices) && response.choices[0].finish_reason !== 'stop') {
       log.error(`[${AUDIT_TYPE}]: No final suggestions found for batch`);
@@ -81,7 +83,7 @@ const getImageSuggestions = async (imageUrls, auditUrl, context) => {
 
   const filteredImages = filterImages(imageUrls, auditUrl);
 
-  log.info(`[${AUDIT_TYPE}]: Total images from host:`, filteredImages.imagesFromHost.length);
+  log.info(`[${AUDIT_TYPE}]: Images from host:`, filteredImages.imagesFromHost);
   log.info(`[${AUDIT_TYPE}]: Other images:`, filteredImages.otherImages);
   log.info(`[${AUDIT_TYPE}]: Unsupported format images:`, filteredImages.unsupportedFormatImages);
 

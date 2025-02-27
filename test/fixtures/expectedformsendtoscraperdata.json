@@ -179,5 +179,25 @@
       }
     ]
   },
-  "fullAuditRef": "www.example.com"
+  "fullAuditRef": "www.example.com",
+  "jobId": "test-site-id",
+  "processingType": "form",
+  "siteId": "test-site-id",
+  "urls": [
+    {
+      "url": "https://business.adobe.com/se/resources/main.html"
+    },
+    {
+      "url": "https://business.adobe.com/jp/products/magento/magento-commerce.html"
+    },
+    {
+      "url": "https://business.adobe.com/"
+    },
+    {
+      "url": "https://business.adobe.com/jp/resources/guides/leading-generative-ai-deployment-for-marketing.html"
+    },
+    {
+      "url": "https://www.business.adobe.com/newsletter"
+    }
+  ]
 }

@@ -127,6 +127,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     opportunity,
     newData: filteredAuditResult,
     buildKey,
+    context,
     mapNewSuggestion: (data) => {
       const errors = data.richResults.detectedIssues.flatMap((issue) => issue.items.flatMap((item) => item.issues.map((i) => `${i.issueMessage}`))).sort();
       return {
