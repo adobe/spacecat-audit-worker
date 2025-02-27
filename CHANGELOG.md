@@ -1,3 +1,10 @@
+## [1.60.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.60.2...v1.60.3) (2025-02-27)
+
+
+### Bug Fixes
+
+* [alt-text] reduces image batching and improves logging ([#707](https://github.com/adobe/spacecat-audit-worker/issues/707)) ([a0841e4](https://github.com/adobe/spacecat-audit-worker/commit/a0841e4d0266227927d204c6b683a3f2a3928454))
+
 ## [1.60.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.60.1...v1.60.2) (2025-02-27)
 
 
