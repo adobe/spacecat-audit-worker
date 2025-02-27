@@ -59,11 +59,14 @@ export async function fetchAndProcessPageObject(
   }));
 
   const { supportedImages } = filterImages(images);
+  const uniqueSupportedImages = Array.from(
+    new Map(supportedImages.map((img) => [img.src, img])).values(),
+  );
 
   const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', '');
   return {
     [pageUrl]: {
-      images: supportedImages,
+      images: uniqueSupportedImages,
     },
   };
 }

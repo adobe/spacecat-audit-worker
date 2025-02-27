@@ -95,6 +95,7 @@ describe('Image Alt Text Handler', () => {
             <img src="test1.jpg" alt="Test 1">
             <img src="test2.png" alt="Test 2">
             <img src="test3.gif" alt="Test 3">
+            <img src="test3.gif" alt="Test 3">
             <img src="test4.bmp" alt="Test 4">
             <img src="test5.123" alt="Test 5">
           </body>
