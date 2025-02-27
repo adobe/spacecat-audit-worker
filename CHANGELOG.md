@@ -1,3 +1,10 @@
+# [1.60.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.59.0...v1.60.0) (2025-02-27)
+
+
+### Features
+
+* handleOutdatedSuggestions gracefully ([#671](https://github.com/adobe/spacecat-audit-worker/issues/671)) ([acb1632](https://github.com/adobe/spacecat-audit-worker/commit/acb16325afef4c1efbfb65173f6886d4963559d5))
+
 # [1.59.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.58.1...v1.59.0) (2025-02-27)
 
 
