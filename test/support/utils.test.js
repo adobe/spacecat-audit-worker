@@ -185,6 +185,24 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     });
   });
 
+  it('returns empty arrays when no json files are found', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/scrape.txt' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      formData: [],
+      siteData: [],
+    });
+  });
+
   it('returns only the metadata if there are not header links', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [
