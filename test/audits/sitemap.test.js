@@ -1037,6 +1037,63 @@ describe('Sitemap Audit', () => {
         })),
       );
     });
+
+    it('should handle updating when opportunity was already defined with new suggestions', async () => {
+      const opptyId = 'oppty-id';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([
+        context.dataAccess.Opportunity,
+      ]);
+      context.dataAccess.Opportunity.getType.returns('sitemap');
+      context.dataAccess.Opportunity.getId.returns(opptyId);
+      context.dataAccess.Opportunity.save.resolves();
+      const suggestionData = {
+        type: 'url',
+        sitemapUrl: 'https://some-domain2.adobe/sitemap.xml',
+        pageUrl: 'https://some-domain2.adobe/foo',
+        statusCode: 404,
+        recommendedAction:
+          'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
+      };
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: suggestionData,
+          remove: sinon.stub(),
+          getData: sinon.stub().returns(suggestionData),
+          setData: sinon.stub(),
+          save: sinon.stub().resolves(),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+      context.dataAccess.Opportunity.getSuggestions.resolves(existingSuggestions);
+      context.dataAccess.Opportunity.addSuggestions.resolves({
+        createdItems: auditDataFailure.suggestions,
+      });
+      await opportunityAndSuggestions(
+        'https://example.com',
+        auditDataFailure,
+        context,
+      );
+
+      expect(
+        context.dataAccess.Opportunity.setAuditId,
+      ).to.have.been.calledOnceWith('audit-id');
+      expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        existingSuggestions,
+        'OUTDATED',
+      );
+      expect(
+        context.dataAccess.Opportunity.addSuggestions,
+      ).to.have.been.calledOnceWith(
+        auditDataFailure.suggestions.map((suggestion) => ({
+          opportunityId: opptyId,
+          type: 'REDIRECT_UPDATE',
+          rank: 0,
+          data: suggestion,
+        })),
+      );
+    });
   });
 });
 
