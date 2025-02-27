@@ -271,6 +271,8 @@ export const getScrapedDataForSiteId = async (site, context) => {
 
   let scrapedFormData;
   log.info(`all files: ${JSON.stringify(allFiles)}`);
+  const formScreenshots = allFiles.filter((file) => file.Key.includes('/forms/') && file.Key.endsWith('.png'));
+  log.info(`form screenshots: ${JSON.stringify(formScreenshots)}`);
   if (allFiles) {
     const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
     scrapedFormData = await Promise.all(
@@ -288,7 +290,10 @@ export const getScrapedDataForSiteId = async (site, context) => {
 
   return {
     headerLinks,
-    formData: scrapedFormData,
+    formData: {
+      scrapedFormData,
+      formScreenshots,
+    },
     siteData: extractedData.filter(Boolean),
   };
 };

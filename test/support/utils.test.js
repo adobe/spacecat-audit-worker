@@ -127,7 +127,10 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: ['https://example.com/home', 'https://example.com/about'],
-      formData: [],
+      formData: {
+        formScreenshots: [],
+        scrapedFormData: [],
+      },
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -198,7 +201,10 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
-      formData: [],
+      formData: {
+        formScreenshots: [],
+        scrapedFormData: [],
+      },
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -241,7 +247,10 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
-      formData: [],
+      formData: {
+        formScreenshots: [],
+        scrapedFormData: [],
+      },
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -288,7 +297,10 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
-      formData: [],
+      formData: {
+        formScreenshots: [],
+        scrapedFormData: [],
+      },
       siteData: [
         {
           url: '',
@@ -378,55 +390,58 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
           url: 'https://example.com/contact',
         },
       ],
-      formData: [{
-        finalUrl: 'https://example.com/contact',
-        scrapeResult: [
-          {
-            id: '',
-            formType: 'search',
-            classList: '',
-            visibleATF: true,
-            fieldCount: 2,
-            visibleFieldCount: 0,
-            fieldsLabels: [
-              'Search articles',
-              'search-btn',
-            ],
-            visibleInViewPortFieldCount: 0,
-          },
-          {
-            id: '',
-            formType: 'search',
-            classList: '',
-            visibleATF: true,
-            fieldCount: 2,
-            visibleFieldCount: 2,
-            fieldsLabels: [
-              'Search articles',
-              'search-btn',
-            ],
-            visibleInViewPortFieldCount: 2,
-          },
-          {
-            id: '',
-            formType: 'search',
-            classList: 'adopt-search-results-box-wrapper',
-            visibleATF: true,
-            fieldCount: 7,
-            visibleFieldCount: 5,
-            fieldsLabels: [
-              'Any\nDog\nCat\nOther',
-              'Any',
-              'Any',
-              'Enter Zip/Postal Code',
-              '✕',
-              'Search',
-              'Create Search Alert',
-            ],
-            visibleInViewPortFieldCount: 5,
-          },
-        ],
-      }],
+      formData: {
+        formScreenshots: [],
+        scrapedFormData: [{
+          finalUrl: 'https://example.com/contact',
+          scrapeResult: [
+            {
+              id: '',
+              formType: 'search',
+              classList: '',
+              visibleATF: true,
+              fieldCount: 2,
+              visibleFieldCount: 0,
+              fieldsLabels: [
+                'Search articles',
+                'search-btn',
+              ],
+              visibleInViewPortFieldCount: 0,
+            },
+            {
+              id: '',
+              formType: 'search',
+              classList: '',
+              visibleATF: true,
+              fieldCount: 2,
+              visibleFieldCount: 2,
+              fieldsLabels: [
+                'Search articles',
+                'search-btn',
+              ],
+              visibleInViewPortFieldCount: 2,
+            },
+            {
+              id: '',
+              formType: 'search',
+              classList: 'adopt-search-results-box-wrapper',
+              visibleATF: true,
+              fieldCount: 7,
+              visibleFieldCount: 5,
+              fieldsLabels: [
+                'Any\nDog\nCat\nOther',
+                'Any',
+                'Any',
+                'Enter Zip/Postal Code',
+                '✕',
+                'Search',
+                'Create Search Alert',
+              ],
+              visibleInViewPortFieldCount: 5,
+            },
+          ],
+        }],
+      },
     });
   });
 
@@ -483,26 +498,29 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
           url: 'https://example.com/contact',
         },
       ],
-      formData: [
-        {
-          finalUrl: 'https://example.com/contact',
-          scrapeResult: [
-            {
-              id: '',
-              formType: 'search',
-              classList: '',
-              visibleATF: true,
-              fieldCount: 2,
-              visibleFieldCount: 0,
-              fieldsLabels: [
-                'Search articles',
-                'search-btn',
-              ],
-              visibleInViewPortFieldCount: 0,
-            },
-          ],
-        },
-      ],
+      formData: {
+        formScreenshots: [],
+        scrapedFormData: [
+          {
+            finalUrl: 'https://example.com/contact',
+            scrapeResult: [
+              {
+                id: '',
+                formType: 'search',
+                classList: '',
+                visibleATF: true,
+                fieldCount: 2,
+                visibleFieldCount: 0,
+                fieldsLabels: [
+                  'Search articles',
+                  'search-btn',
+                ],
+                visibleInViewPortFieldCount: 0,
+              },
+            ],
+          },
+        ],
+      },
     });
   });
 
@@ -529,7 +547,10 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       siteData: [],
-      formData: [null],
+      formData: {
+        formScreenshots: [],
+        scrapedFormData: [null],
+      },
     });
   });
 });
