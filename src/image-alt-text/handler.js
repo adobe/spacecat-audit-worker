@@ -21,6 +21,22 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
 
+const filterImages = (imageTags) => {
+  const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg)(?=\?|$)/i;
+  const supportedImages = [];
+  const unsupportedFormatImages = [];
+
+  imageTags.forEach((imageTag) => {
+    if (!SUPPORTED_FORMATS.test(imageTag.src)) {
+      unsupportedFormatImages.push(imageTag);
+    } else {
+      supportedImages.push(imageTag);
+    }
+  });
+
+  return { unsupportedFormatImages, supportedImages };
+};
+
 export async function fetchAndProcessPageObject(
   s3Client,
   bucketName,
@@ -42,10 +58,12 @@ export async function fetchAndProcessPageObject(
     alt: img.getAttribute('alt'),
   }));
 
+  const { supportedImages } = filterImages(images);
+
   const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', '');
   return {
     [pageUrl]: {
-      images,
+      supportedImages,
     },
   };
 }
