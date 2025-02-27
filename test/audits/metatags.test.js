@@ -326,6 +326,7 @@ describe('Meta Tags', () => {
         }))).returns({
           Body: {
             transformToString: () => JSON.stringify({
+              finalUrl: 'http://example.com/site-id/',
               scrapeResult: {
                 tags: {
                   title: 'Home Page',
@@ -407,7 +408,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-    }).timeout(3000);
+    });
 
     it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
       const topPages = [{ getURL: 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
@@ -653,6 +654,9 @@ describe('Meta Tags', () => {
           allBySiteIdAndStatus: sinon.stub().resolves([]),
           create: sinon.stub(),
         },
+        Suggestion: {
+          bulkUpdateStatus: sinon.stub(),
+        },
       };
       context = {
         log: logStub,
@@ -704,6 +708,59 @@ describe('Meta Tags', () => {
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       opportunity.getSuggestions.returns(testData.existingSuggestions);
       await opportunityAndSuggestions(auditUrl, auditData, context);
+      expect(opportunity.save).to.be.calledOnce;
+      expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+    });
+
+    it('should mark existing suggestions OUTDATED if not present in audit data', async () => {
+      dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+      opportunity.getSuggestions.returns(testData.existingSuggestions);
+      const auditDataModified = {
+        type: 'meta-tags',
+        siteId: 'site-id',
+        id: 'audit-id',
+        auditResult: {
+          finalUrl: 'www.test-site.com/',
+          detectedTags: {
+            '/page1': {
+              title: {
+                tagContent: 'Lovesac - 404 Not Found',
+                duplicates: [
+                  '/page4',
+                  '/page5',
+                ],
+                seoRecommendation: 'Unique across pages',
+                issue: 'Duplicate Title',
+                issueDetails: '3 pages share same title',
+                seoImpact: 'High',
+              },
+              h1: {
+                seoRecommendation: 'Should be present',
+                issue: 'Missing H1',
+                issueDetails: 'H1 tag is missing',
+                seoImpact: 'High',
+              },
+            },
+            '/page2': {
+              title: {
+                seoRecommendation: '40-60 characters long',
+                issue: 'Empty Title',
+                issueDetails: 'Title tag is empty',
+                seoImpact: 'High',
+              },
+              h1: {
+                tagContent: '["We Can All Win Together","We Say As We Do"]',
+                seoRecommendation: '1 H1 on a page',
+                issue: 'Multiple H1 on page',
+                issueDetails: '2 H1 detected',
+                seoImpact: 'Moderate',
+              },
+            },
+          },
+        },
+      };
+      await opportunityAndSuggestions(auditUrl, auditDataModified, context);
+      expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.be.calledWith(testData.existingSuggestions.splice(0, 2), 'OUTDATED');
       expect(opportunity.save).to.be.calledOnce;
       expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
     });
