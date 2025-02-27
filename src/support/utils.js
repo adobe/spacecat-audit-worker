@@ -228,9 +228,9 @@ export const getScrapedDataForSiteId = async (site, context) => {
 
     const listResponse = await s3Client.send(listCommand);
     log.debug(`list response: ${JSON.stringify(listResponse)}`);
-    if(listResponse && listResponse.Contents) {
+    if (listResponse && listResponse.Contents) {
       allFiles = allFiles.concat(
-          listResponse.Contents.filter((file) => file.Key?.endsWith('.json')),
+        listResponse.Contents.filter((file) => file.Key?.endsWith('.json')),
       );
       isTruncated = listResponse.IsTruncated;
       continuationToken = listResponse.NextContinuationToken;
