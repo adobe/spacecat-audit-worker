@@ -1,3 +1,10 @@
+# [1.61.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.60.4...v1.61.0) (2025-02-27)
+
+
+### Features
+
+* KPI value for broken-internal-links audit ([#703](https://github.com/adobe/spacecat-audit-worker/issues/703)) ([3f4ad91](https://github.com/adobe/spacecat-audit-worker/commit/3f4ad916b6148c4ac9f885a4cfa3c15427c9eed5))
+
 ## [1.60.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.60.3...v1.60.4) (2025-02-27)
 
 

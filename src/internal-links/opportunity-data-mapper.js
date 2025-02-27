@@ -10,7 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-export function createOpportunityData() {
+/**
+ * Creates an opportunity data object for the broken internal links audit.
+ * @param {Object} props - The properties for the opportunity data object.
+ * @param {Object} props.kpiDeltas - The KPI deltas for the audit.
+ * @returns {Object} The opportunity data object.
+ */
+export function createOpportunityData({ kpiDeltas }) {
   return {
     runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Broken_Internal_Links_Runbook.docx?web=1',
     origin: 'AUTOMATION',
@@ -27,6 +33,6 @@ export function createOpportunityData() {
       'Traffic acquisition',
       'Engagement',
     ],
-    data: null,
+    data: kpiDeltas,
   };
 }
