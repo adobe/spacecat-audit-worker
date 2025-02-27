@@ -88,16 +88,23 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-function convertToOpportunityData(opportunityName, urlObject) {
+function convertToOpportunityData(opportunityName, urlObject, scrapedData) {
   const {
     url, pageViews, formViews, formSubmit, CTA,
   } = urlObject;
   let conversionRate = formSubmit / formViews;
   conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
 
+  // Find matching entry in scrapedData
+  let screenshot = '';
+  if (scrapedData) {
+    const matchedData = scrapedData.formData.find((data) => data.finalUrl === url);
+    screenshot = matchedData ? matchedData.screenshot || '' : '';
+  }
+
   const opportunity = {
     form: url,
-    screenshot: '',
+    screenshot,
     trackedFormKPIName: 'Conversion Rate',
     trackedFormKPIValue: conversionRate,
     formViews,
@@ -115,21 +122,21 @@ function convertToOpportunityData(opportunityName, urlObject) {
   return opportunity;
 }
 
-export function generateOpptyData(formVitals) {
+export function generateOpptyData(formVitals, scrapedData) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
   const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
-  return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion));
+  return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion, scrapedData));
 }
 
-export function generateOpptyDataForHighPageViewsLowFormNav(formVitals) {
+export function generateOpptyDataForHighPageViewsLowFormNav(formVitals, scrapedData) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
-  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-nav', highPageViewsLowFormCtr));
+  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-nav', highPageViewsLowFormCtr, scrapedData));
 }
 
 /**
