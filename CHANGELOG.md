@@ -1,3 +1,15 @@
+# [1.59.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.58.1...v1.59.0) (2025-02-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.9.3 ([#712](https://github.com/adobe/spacecat-audit-worker/issues/712)) ([5d8f339](https://github.com/adobe/spacecat-audit-worker/commit/5d8f339d7a8a27bc1dc2969c2c0f113a3d4cb90c))
+
+
+### Features
+
+* forms add step audit worker and content scraper and forms opportunity 2 added ([#699](https://github.com/adobe/spacecat-audit-worker/issues/699)) ([1332c93](https://github.com/adobe/spacecat-audit-worker/commit/1332c93dadd38d47bf61a2ed988af65cc2a0504c))
+
 ## [1.58.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.58.0...v1.58.1) (2025-02-26)
 
 
