@@ -284,6 +284,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     const result = await getScrapedDataForSiteId(site, context);
 
     expect(result).to.deep.equal({
+      formData: [],
       headerLinks:
         [
           'https://example.com/home',
