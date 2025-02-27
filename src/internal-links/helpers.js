@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { AbortController, AbortError } from '@adobe/fetch';
 
 const LINK_TIMEOUT = 3000;
 export const CPC_DEFAULT_VALUE = 1;
@@ -82,11 +83,7 @@ export async function isLinkInaccessible(url, log) {
   const timeoutId = setTimeout(() => controller.abort(), LINK_TIMEOUT);
 
   try {
-    const response = await fetch(url, {
-    //   method: 'HEAD',
-      signal: controller.signal,
-    });
-
+    const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
     const { status } = response;
 
@@ -101,10 +98,7 @@ export async function isLinkInaccessible(url, log) {
     return status >= 400;
   } catch (error) {
     clearTimeout(timeoutId);
-    const isTimeout = error.name === 'AbortError';
-
-    log.info(`broken-internal-links audit: Error checking ${url}: ${isTimeout ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
-
+    log.info(`broken-internal-links audit: Error checking ${url}: ${error instanceof AbortError ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
     // Any error means the URL is invalid
     return true;
   }
