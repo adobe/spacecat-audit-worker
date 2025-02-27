@@ -539,7 +539,7 @@ export function getPagesWithIssues(auditData) {
  */
 export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
-  log.info(`Generating suggestions for site: ${auditUrl}`);
+  log.info(`Generating suggestions for site: ${JSON.stringify(auditData)}`);
 
   const { success, reasons } = auditData.auditResult;
   const response = success
@@ -547,13 +547,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
-
-  // Filter suggestions to only include tracked status codes
-  const filteredPageIssues = pagesWithIssues.filter(
-    (issue) => !issue.statusCode || TRACKED_STATUS_CODES.includes(issue.statusCode),
-  );
-
-  const suggestions = [...response, ...filteredPageIssues]
+  const suggestions = [...response, ...pagesWithIssues]
     .filter(Boolean)
     .map((issue) => ({
       ...issue,
@@ -563,7 +557,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
     }));
 
   // Log only the number of suggestions, not the full content
-  log.info(`Generated ${suggestions.length} suggestions for ${auditUrl}`);
+  log.info(`Generated ${suggestions.length} suggestions for ${JSON.stringify(auditData)}`);
   return {
     ...auditData,
     suggestions,
@@ -598,6 +592,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     await syncSuggestions({
       opportunity,
       newData: auditData.suggestions,
+      context,
       buildKey,
       mapNewSuggestion: (issue) => ({
         opportunityId: opportunity.getId(),
