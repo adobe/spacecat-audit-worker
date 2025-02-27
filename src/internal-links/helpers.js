@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
 const LINK_TIMEOUT = 3000;
 export const CPC_DEFAULT_VALUE = 1;
@@ -64,17 +65,18 @@ export const calculateKpiDeltasForAudit = (auditData) => {
 };
 
 /**
- * Checks if a URL is valid by attempting to fetch it. A URL is considered valid if:
- * - The fetch request succeeds (no network errors or timeouts)
- * - The response status code is < 400 (2xx or 3xx)
+ * Checks if a URL is reachable/inaccessible by attempting to fetch it.
+ * A URL is considered inaccessible if:
+ * - The fetch request fails (network errors or timeouts)
+ * - The response status code is >= 400 (400-499)
  * The check will timeout after LINK_TIMEOUT milliseconds.
  * Non-404 client errors (400-499) will log a warning.
- * All errors (network, timeout etc) will log an error and return false.
+ * All errors (network, timeout etc) will log an error and return true.
  * @param {string} url - The URL to validate
- * @returns {Promise<boolean>} True if the URL is valid and accessible,
- * false if invalid, times out, or errors
+ * @returns {Promise<boolean>} True if the URL is inaccessible, times out, or errors
+ * false if reachable/accessible
  */
-export async function isLinkInvalid(url, log) {
+export async function isLinkInaccessible(url, log) {
   // Setup AbortController for timeout
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), LINK_TIMEOUT);
