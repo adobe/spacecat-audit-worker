@@ -334,23 +334,55 @@ describe('Image Alt Text Opportunity Handler', () => {
     const setDataCall = altTextOppty.setData.getCall(0);
     expect(setDataCall).to.exist;
 
-    // Instead of checking specific values, just verify the properties exist
-    expect(setDataCall.args[0]).to.have.property('projectedTrafficLost');
-    expect(setDataCall.args[0]).to.have.property('projectedTrafficValue');
+    // Calculate expected values based on the formula in the handler:
+    // PENALTY_PER_IMAGE = 0.01 (1%)
+    // CPC = 1 ($1)
+    // Page1: 100000 * 0.01 * 1 = 1000
+    // Page2: 200000 * 0.01 * 1 = 2000
+    // Total projected traffic lost: 3000
+    // Total projected traffic value: 3000 * 1 = $3000
+    const expectedTrafficLost = 3000;
+    const expectedTrafficValue = 3000;
 
-    // Verify that the same values were logged
-    const { projectedTrafficLost } = setDataCall.args[0];
-    const { projectedTrafficValue } = setDataCall.args[0];
+    // Verify the calculated values match our expectations
+    expect(setDataCall.args[0].projectedTrafficLost).to.equal(expectedTrafficLost);
+    expect(setDataCall.args[0].projectedTrafficValue).to.equal(expectedTrafficValue);
 
-    // Find the log calls for the metrics
-    const trafficLostLog = logStub.info.getCalls().find(
-      (call) => call.args[0] === `[alt-text]: Projected traffic lost: ${projectedTrafficLost}`,
+    // Verify that the opportunity was updated with the metrics
+    expect(altTextOppty.save).to.have.been.called;
+  });
+
+  it('should handle www and non-www URLs correctly when calculating metrics', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+
+    // Set up RUM API to return results with www prefix
+    rumClientStub.query.resolves([
+      { url: 'https://www.example.com/page1', earned: 100000 },
+      { url: 'https://www.example.com/page2', earned: 200000 },
+    ]);
+
+    // Our test data has non-www URLs
+    auditData.auditResult.detectedTags.imagesWithoutAltText = [
+      { pageUrl: '/page1', src: 'image1.jpg' },
+      { pageUrl: '/page2', src: 'image2.jpg' },
+    ];
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    // Check that the metrics were calculated correctly despite the www/non-www difference
+    const setDataCall = altTextOppty.setData.getCall(0);
+    expect(setDataCall).to.exist;
+
+    // The calculation should still work by toggling www/non-www
+    const expectedTrafficLost = 3000;
+    const expectedTrafficValue = 3000;
+
+    expect(setDataCall.args[0].projectedTrafficLost).to.equal(expectedTrafficLost);
+    expect(setDataCall.args[0].projectedTrafficValue).to.equal(expectedTrafficValue);
+
+    // Verify that no errors were logged about missing URLs
+    expect(logStub.error).to.not.have.been.calledWith(
+      sinon.match(/Page URL .* not found in RUM API results/),
     );
-    expect(trafficLostLog).to.exist;
-
-    const trafficValueLog = logStub.info.getCalls().find(
-      (call) => call.args[0] === `[alt-text]: Projected traffic value: ${projectedTrafficValue}`,
-    );
-    expect(trafficValueLog).to.exist;
   });
 });
