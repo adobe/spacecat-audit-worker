@@ -1,3 +1,24 @@
+## [1.62.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.2...v1.62.3) (2025-02-28)
+
+
+### Bug Fixes
+
+* **override-base-url:** use overrideBaseURL from site.config.fetchConfig ([#719](https://github.com/adobe/spacecat-audit-worker/issues/719)) ([3149d47](https://github.com/adobe/spacecat-audit-worker/commit/3149d4780647e1b9f52d8a002e5381d20355eb33)), closes [adobe/spacecat-shared#633](https://github.com/adobe/spacecat-shared/issues/633)
+
+## [1.62.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.1...v1.62.2) (2025-02-28)
+
+
+### Bug Fixes
+
+* forms opportunity handling mechanism fixed ([#718](https://github.com/adobe/spacecat-audit-worker/issues/718)) ([fbb3983](https://github.com/adobe/spacecat-audit-worker/commit/fbb3983f6fc3398531ddd2368615b69fba62b6f9))
+
+## [1.62.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.0...v1.62.1) (2025-02-27)
+
+
+### Bug Fixes
+
+* handle missing S3 contents and refine scrape file selection ([#709](https://github.com/adobe/spacecat-audit-worker/issues/709)) ([c5c86f4](https://github.com/adobe/spacecat-audit-worker/commit/c5c86f4cfb1cf9c35d06b13007a4b55c0c314897))
+
 # [1.62.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.61.0...v1.62.0) (2025-02-27)
 
 
