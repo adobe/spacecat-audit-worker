@@ -18,6 +18,8 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
+import auditDataSuggestionsMock from '../fixtures/broken-backlinks/auditWithSuggestions.json' with { type: 'json' };
+import rumTraffic from '../fixtures/broken-backlinks/rum-traffic.json' with { type: 'json' };
 import { brokenBacklinksAuditRunner, opportunityAndSuggestions, generateSuggestionData } from '../../src/backlinks/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import {
@@ -39,6 +41,7 @@ import {
   brokenBacklinksSuggestions,
   suggestions,
 } from '../fixtures/broken-backlinks/suggestion.js';
+import { organicTraffic } from '../fixtures/broken-backlinks/organic-traffic.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -66,11 +69,29 @@ describe('Backlinks Tests', function () {
           AHREFS_API_KEY: 'ahrefs-api',
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         },
+        s3: {
+          s3Bucket: 'test-bucket',
+          s3Client: {
+            send: sandbox.stub(),
+          },
+        },
         s3Client: {
           send: sandbox.stub(),
         },
       })
       .build(message);
+
+    context.s3.s3Client.send.onCall(0).resolves({
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),
+      },
+    });
+
+    context.s3.s3Client.send.onCall(1).resolves({
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify(organicTraffic(site))),
+      },
+    });
 
     nock('https://foo.com')
       .get('/returns-404')
@@ -132,13 +153,18 @@ describe('Backlinks Tests', function () {
 
     ahrefsMock(site.getBaseURL(), auditDataMock.auditResult);
 
-    await opportunityAndSuggestions(auditUrl, auditDataMock, context);
+    await opportunityAndSuggestions(auditUrl, auditDataSuggestionsMock, context, site);
+
+    const kpiDeltas = {
+      projectedTrafficLost: sinon.match.number,
+      projectedTrafficValue: sinon.match.number,
+    };
 
     expect(context.dataAccess.Opportunity.create)
       .to
       .have
       .been
-      .calledOnceWith(opportunityData(auditDataMock.siteId, auditDataMock.id));
+      .calledOnceWith(opportunityData(auditDataMock.siteId, auditDataMock.id, kpiDeltas));
     expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
   });
 
@@ -152,7 +178,7 @@ describe('Backlinks Tests', function () {
 
     ahrefsMock(site.getBaseURL(), auditDataMock.auditResult);
 
-    await opportunityAndSuggestions(auditUrl, auditDataMock, context);
+    await opportunityAndSuggestions(auditUrl, auditDataSuggestionsMock, context, site);
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(brokenBacklinksOpportunity.setAuditId).to.have.been.calledOnceWith(auditDataMock.id);
@@ -177,7 +203,7 @@ describe('Backlinks Tests', function () {
       .reply(200, auditDataMock.auditResult);
 
     try {
-      await opportunityAndSuggestions(auditUrl, auditDataMock, context);
+      await opportunityAndSuggestions(auditUrl, auditDataSuggestionsMock, context, site);
     } catch (e) {
       expect(e.message).to.equal(errorMessage);
     }

@@ -11,6 +11,7 @@
  */
 import sinon from 'sinon';
 import auditDataMock from './audit.json' with { type: 'json' };
+import auditDataSuggestionsMock from './auditWithSuggestions.json' with { type: 'json' };
 import { brokenBacklinksOpportunity } from './opportunity.js';
 
 export const brokenBacklinksSuggestions = {
@@ -34,54 +35,26 @@ export const suggestions = [
   {
     opportunityId: 'test-opportunity-id',
     type: 'REDIRECT_UPDATE',
-    rank: 2000,
-    data: {
-      title: 'backlink that redirects to www and throw connection error',
-      url_from: 'https://from.com/from-2',
-      url_to: 'https://foo.com/redirects-throws-error',
-      urlsSuggested: [],
-      aiRationale: '',
-      traffic_domain: 2000,
-    },
+    rank: 550000,
+    data: auditDataSuggestionsMock.auditResult.brokenBacklinks[0],
   },
   {
     opportunityId: 'test-opportunity-id',
     type: 'REDIRECT_UPDATE',
-    rank: 1000,
-    data: {
-      title: 'backlink that returns 429',
-      url_from: 'https://from.com/from-3',
-      url_to: 'https://foo.com/returns-429',
-      urlsSuggested: [],
-      aiRationale: '',
-      traffic_domain: 1000,
-    },
+    rank: 11000,
+    data: auditDataSuggestionsMock.auditResult.brokenBacklinks[1],
   },
   {
     opportunityId: 'test-opportunity-id',
     type: 'REDIRECT_UPDATE',
-    rank: 5000,
-    data: {
-      title: 'backlink that is not excluded',
-      url_from: 'https://from.com/from-not-excluded',
-      url_to: 'https://foo.com/not-excluded',
-      urlsSuggested: [],
-      aiRationale: '',
-      traffic_domain: 5000,
-    },
+    rank: 5500,
+    data: auditDataSuggestionsMock.auditResult.brokenBacklinks[2],
   },
   {
     opportunityId: 'test-opportunity-id',
     type: 'REDIRECT_UPDATE',
-    rank: 4000,
-    data: {
-      title: 'backlink that returns 404',
-      url_from: 'https://from.com/from-1',
-      url_to: 'https://foo.com/returns-404',
-      urlsSuggested: [],
-      aiRationale: '',
-      traffic_domain: 4000,
-    },
+    rank: 1100000,
+    data: auditDataSuggestionsMock.auditResult.brokenBacklinks[3],
   },
 ];
 

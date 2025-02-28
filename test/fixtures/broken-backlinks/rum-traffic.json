@@ -1,0 +1,38 @@
+{
+  "https://foo.com/redirects-throws-error-1": {
+    "total": 3864740,
+    "paid": 5640,
+    "earned": 408120,
+    "owned": 3450980
+  },
+  "https://foo.com/redirects-throws-error-2": {
+    "total": 419400,
+    "paid": 226500,
+    "earned": 565477,
+    "owned": 192900
+  },
+  "https://foo.com/returns-429-suggestion-1": {
+    "total": 3864740,
+    "paid": 5640,
+    "earned": 408120,
+    "owned": 3450980
+  },
+  "https://foo.com/returns-429-suggestion-2": {
+    "total": 419400,
+    "paid": 226500,
+    "earned": 565477,
+    "owned": 192900
+  },
+  "https://foo.com/not-excluded-suggestion-1": {
+    "total": 3864740,
+    "paid": 5640,
+    "earned": 408120,
+    "owned": 3450980
+  },
+  "https://foo.com/returns-404-suggestion-1": {
+    "total": 3864740,
+    "paid": 5640,
+    "earned": 408120,
+    "owned": 3450980
+  }
+}
