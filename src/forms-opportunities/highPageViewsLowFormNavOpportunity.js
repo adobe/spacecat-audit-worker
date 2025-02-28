@@ -37,7 +37,13 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
   const { formVitals } = auditData.auditResult;
   const formOpportunities = generateOpptyDataForHighPageViewsLowFormNav(formVitals);
   log.debug(`forms opportunities high page views low form navigation ${JSON.stringify(formOpportunities, null, 2)}`);
-  const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
+
+  // for opportunity type high page views low form navigation
+  // excluding opportunities whose cta page has search in it.
+  const filteredOpportunitiesByCta = formOpportunities.filter((opportunity) => !opportunity.formNavigation?.url?.includes('search'));
+  log.debug(`forms opportunities high page views low form navigation by cta ${JSON.stringify(filteredOpportunitiesByCta, null, 2)}`);
+
+  const filteredOpportunities = filterForms(filteredOpportunitiesByCta, scrapedData, log);
   log.info(`filtered opportunties for form for high page views low form navigation ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {

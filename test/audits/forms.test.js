@@ -405,7 +405,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
     };
-    auditData = testData.auditData;
+    auditData = testData.oppty2AuditData;
   });
 
   it('should create new high page views low form navigation opportunity', async () => {
