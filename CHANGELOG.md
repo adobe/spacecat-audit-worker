@@ -1,3 +1,10 @@
+## [1.62.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.1...v1.62.2) (2025-02-28)
+
+
+### Bug Fixes
+
+* forms opportunity handling mechanism fixed ([#718](https://github.com/adobe/spacecat-audit-worker/issues/718)) ([fbb3983](https://github.com/adobe/spacecat-audit-worker/commit/fbb3983f6fc3398531ddd2368615b69fba62b6f9))
+
 ## [1.62.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.0...v1.62.1) (2025-02-27)
 
 
