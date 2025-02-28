@@ -1,3 +1,10 @@
+## [1.62.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.2...v1.62.3) (2025-02-28)
+
+
+### Bug Fixes
+
+* **override-base-url:** use overrideBaseURL from site.config.fetchConfig ([#719](https://github.com/adobe/spacecat-audit-worker/issues/719)) ([3149d47](https://github.com/adobe/spacecat-audit-worker/commit/3149d4780647e1b9f52d8a002e5381d20355eb33)), closes [adobe/spacecat-shared#633](https://github.com/adobe/spacecat-shared/issues/633)
+
 ## [1.62.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.1...v1.62.2) (2025-02-28)
 
 
