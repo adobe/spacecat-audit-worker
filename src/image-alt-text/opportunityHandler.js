@@ -111,8 +111,8 @@ const getProjectedMetrics = async ({
 
   const projectedTrafficValue = projectedTrafficLost * CPC;
   return {
-    projectedTrafficLost,
-    projectedTrafficValue,
+    projectedTrafficLost: Math.round(projectedTrafficLost),
+    projectedTrafficValue: Math.round(projectedTrafficValue),
   };
 };
 
