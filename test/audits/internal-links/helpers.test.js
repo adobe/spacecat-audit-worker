@@ -13,12 +13,15 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
+import sinon from 'sinon';
+import nock from 'nock';
 import {
   calculateKpiDeltasForAudit,
   resolveCpcValue,
   MAX_LINKS_TO_CONSIDER,
   TRAFFIC_MULTIPLIER,
   CPC_DEFAULT_VALUE,
+  isLinkInaccessible,
 } from '../../../src/internal-links/helpers.js';
 import { auditData } from '../../fixtures/internal-links-data.js';
 
@@ -56,26 +59,6 @@ describe('calculateKpiDeltasForAudit', () => {
   });
 
   it('should handle multiple broken links to the same target', () => {
-    // const auditData = {
-    //   auditResult: {
-    //     brokenInternalLinks: [
-    //       {
-    //         urlFrom: 'https://example.com/source1',
-    //         urlTo: 'https://example.com/broken',
-    //         trafficDomain: 1000,
-    //       },
-    //       {
-    //         urlFrom: 'https://example.com/source2',
-    //         urlTo: 'https://example.com/broken',
-    //         trafficDomain: 2000,
-    //       },
-    //     ],
-    //   },
-    // };
-
-    // const expectedTrafficLost = (1000 + 2000) * TRAFFIC_MULTIPLIER;
-    // const expectedTrafficValue = expectedTrafficLost * CPC_DEFAULT_VALUE;
-
     const result = calculateKpiDeltasForAudit(auditData);
     expect(result).to.deep.equal({
       projectedTrafficLost: 83,
@@ -113,5 +96,82 @@ describe('calculateKpiDeltasForAudit', () => {
     it('should return CPC_DEFAULT_VALUE', () => {
       expect(resolveCpcValue()).to.equal(CPC_DEFAULT_VALUE);
     });
+  });
+});
+
+describe('isLinkInaccessible', () => {
+  let mockLog;
+
+  beforeEach(() => {
+    // Reset mock logger before each test
+    mockLog = {
+      info: sinon.stub(),
+    };
+    // Clear all nock interceptors
+    nock.cleanAll();
+  });
+
+  afterEach(() => {
+    // Ensure all nock interceptors were used
+    expect(nock.isDone()).to.be.true;
+    nock.cleanAll();
+  });
+
+  it('should return false for accessible links (status 200)', async () => {
+    nock('https://example.com')
+      .get('/')
+      .reply(200);
+
+    const result = await isLinkInaccessible('https://example.com', mockLog);
+    expect(result).to.be.false;
+  });
+
+  it('should return true for 404 responses', async () => {
+    nock('https://example.com')
+      .get('/notfound')
+      .reply(404);
+
+    const result = await isLinkInaccessible('https://example.com/notfound', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should return true and log warning for non-404 client errors', async () => {
+    nock('https://example.com')
+      .get('/forbidden')
+      .reply(403);
+
+    const result = await isLinkInaccessible('https://example.com/forbidden', mockLog);
+    expect(result).to.be.true;
+    expect(mockLog.info.calledWith(
+      'broken-internal-links audit: Warning: https://example.com/forbidden returned client error: 403',
+    )).to.be.true;
+  });
+
+  it('should return true for network errors', async () => {
+    nock('https://example.com')
+      .get('/error')
+      .replyWithError('Network error');
+
+    const result = await isLinkInaccessible('https://example.com/error', mockLog);
+    expect(result).to.be.true;
+    expect(mockLog.info.calledWith(
+      'broken-internal-links audit: Error checking https://example.com/error: Network error',
+    )).to.be.true;
+  });
+
+  it('should return true for timeout errors', async function call() {
+    // Increase the timeout for this specific test
+    this.timeout(5000);
+
+    nock('https://example.com')
+      .get('/timeout')
+      .delay(4000) // Set delay just above the 3000ms timeout in isLinkInaccessible
+      .reply(200);
+
+    const result = await isLinkInaccessible('https://example.com/timeout', mockLog);
+    expect(result).to.be.true;
+    expect(mockLog.info.calledWith(
+      'broken-internal-links audit: Error checking https://example.com/timeout: Request timed out after 3000ms',
+    )).to.be.true;
   });
 });

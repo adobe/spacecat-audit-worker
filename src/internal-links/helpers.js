@@ -87,8 +87,6 @@ export async function isLinkInaccessible(url, log) {
     clearTimeout(timeoutId);
     const { status } = response;
 
-    log.info(`broken-internal-links audit: link: ${url} ==> status: ${status}`);
-
     // Log non-404, non-200 status codes
     if (status >= 400 && status < 500 && status !== 404) {
       log.info(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
