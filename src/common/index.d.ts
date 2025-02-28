@@ -13,25 +13,120 @@
 // eslint-disable-next-line max-classes-per-file
 import type { UniversalContext } from '@adobe/helix-universal';
 
-export interface JobMessage {
-    type: string;
-    url: string;
+export interface Site {
+  getId(): string;
+  getBaseURL(): string;
+  getIsLive(): boolean;
 }
 
-export class Audit {
-  run(message: JobMessage, context: UniversalContext);
+export interface JobMessage {
+  type: string;
+  url: string;
+  siteId: string;
+  auditContext?: {
+    next?: string;
+    auditId?: string;
+    finalUrl?: string;
+    fullAuditRef?: string;
+  };
+}
+
+export interface AuditResult {
+  auditResult: object;
+  fullAuditRef: string;
+}
+
+export type SiteProvider = (siteId: string, context: UniversalContext) => Promise<Site>;
+export type OrgProvider = (orgId: string, context: UniversalContext) => Promise<object>;
+export type UrlResolver = (site: Site) => Promise<string>;
+export type Runner = (
+  finalUrl: string,
+  context: UniversalContext,
+  site: Site,
+) => Promise<AuditResult>;
+export type Persister = (auditData: object, context: UniversalContext) => Promise<object>;
+export type MessageSender = (message: object, context: UniversalContext) => Promise<void>;
+export type PostProcessor = (
+  finalUrl: string,
+  auditData: object,
+  context: UniversalContext,
+  site: Site,
+) => Promise<object>;
+
+export abstract class BaseAudit {
+  protected constructor(
+    siteProvider: SiteProvider,
+    orgProvider: OrgProvider,
+    urlResolver: UrlResolver,
+    persister: Persister,
+    messageSender: MessageSender,
+    postProcessors: PostProcessor[],
+  );
+
+  abstract run(message: JobMessage, context: UniversalContext): Promise<object>;
+}
+
+export class RunnerAudit extends BaseAudit {
+  constructor(
+    siteProvider: SiteProvider,
+    orgProvider: OrgProvider,
+    urlResolver: UrlResolver,
+    runner: Runner,
+    persister: Persister,
+    messageSender: MessageSender,
+    postProcessors: PostProcessor[],
+  );
+
+  run(message: JobMessage, context: UniversalContext): Promise<object>;
+}
+
+export interface AuditStep {
+  name: string;
+  handler: (context: UniversalContext) => Promise<object>;
+  destination?: object;
+}
+
+export class StepAudit extends BaseAudit {
+  constructor(
+    siteProvider: SiteProvider,
+    orgProvider: OrgProvider,
+    urlResolver: UrlResolver,
+    persister: Persister,
+    messageSender: MessageSender,
+    postProcessors: PostProcessor[],
+    steps: Record<string, AuditStep>,
+  );
+
+  run(message: JobMessage, context: UniversalContext): Promise<object>;
 }
 
 export class AuditBuilder {
-  withSiteProvider(siteProvider): AuditBuilder;
+  withSiteProvider(siteProvider: SiteProvider): AuditBuilder;
 
-  withUrlResolver(urlResolver): AuditBuilder;
+  withOrgProvider(orgProvider: OrgProvider): AuditBuilder;
 
-  withRunner(runner): AuditBuilder;
+  withUrlResolver(urlResolver: UrlResolver): AuditBuilder;
 
-  withPersister(persister): AuditBuilder;
+  withRunner(runner: Runner): AuditBuilder;
 
-  withMessageSender(messageSender): AuditBuilder;
+  withPersister(persister: Persister): AuditBuilder;
 
-  build(): Audit;
+  withMessageSender(messageSender: MessageSender): AuditBuilder;
+
+  withPostProcessors(postProcessors: PostProcessor[]): AuditBuilder;
+
+  addStep(name: string, handler: AuditStep['handler'], destination?: object): AuditBuilder;
+
+  build(): RunnerAudit | StepAudit;
 }
+
+// Default implementations
+export const defaultMessageSender: MessageSender;
+export const defaultPersister: Persister;
+export const noopPersister: Persister;
+export const defaultSiteProvider: SiteProvider;
+export const defaultOrgProvider: OrgProvider;
+export const defaultUrlResolver: UrlResolver;
+export const wwwUrlResolver: UrlResolver;
+export const noopUrlResolver: UrlResolver;
+export const defaultPostProcessors: PostProcessor[];

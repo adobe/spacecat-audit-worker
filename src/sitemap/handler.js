@@ -16,6 +16,7 @@ import {
   prependSchema,
   tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
   extractDomainAndProtocol,
   getBaseUrlPagesFromSitemapContents,
@@ -25,6 +26,12 @@ import {
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+
+const auditType = Audit.AUDIT_TYPES.SITEMAP;
+// Add new constant for status codes we want to track
+const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -35,8 +42,6 @@ export const ERROR_CODES = Object.freeze({
   SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
   FETCH_ERROR: 'ERROR FETCHING DATA',
 });
-
-const AUDIT_TYPE = 'sitemap';
 
 const VALID_MIME_TYPES = Object.freeze([
   'application/xml',
@@ -61,9 +66,6 @@ const VALID_MIME_TYPES = Object.freeze([
 export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl, {
     method: 'GET',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    },
   });
   if (!response.ok) {
     throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
@@ -167,23 +169,21 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
- * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[]}>} -
- * A promise that resolves to a dict of URLs categorized by status.
+* @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
+ * Array<{url: string, statusCode: number}>}>} - A Promise that resolves to an object containing
  */
 export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
   const NETWORK_ERROR = 2;
-  const batchSize = 50;
+  const OTHER_STATUS = 3;
+  const BATCH_SIZE = 50;
 
   const fetchUrl = async (url) => {
     try {
       const response = await fetch(url, {
         method: 'HEAD',
         redirect: 'manual',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        },
       });
 
       if (response.status === 200) {
@@ -198,9 +198,6 @@ export async function filterValidUrls(urls) {
           const redirectResponse = await fetch(finalUrl, {
             method: 'HEAD',
             redirect: 'follow',
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            },
           });
           return {
             status: NOT_OK,
@@ -218,7 +215,13 @@ export async function filterValidUrls(urls) {
         }
       }
 
-      return { status: NOT_OK, url, statusCode: response.status };
+      // Track 404 status code
+      if (response.status === 404) {
+        return { status: NOT_OK, url, statusCode: response.status };
+      }
+
+      // Any other status code goes to otherStatusCodes
+      return { status: OTHER_STATUS, url, statusCode: response.status };
     } catch {
       return { status: NETWORK_ERROR, url, error: 'NETWORK_ERROR' };
     }
@@ -227,8 +230,8 @@ export async function filterValidUrls(urls) {
   const fetchPromises = urls.map(fetchUrl);
 
   const batches = [];
-  for (let i = 0; i < fetchPromises.length; i += batchSize) {
-    batches.push(fetchPromises.slice(i, i + batchSize));
+  for (let i = 0; i < fetchPromises.length; i += BATCH_SIZE) {
+    batches.push(fetchPromises.slice(i, i + BATCH_SIZE));
   }
 
   const results = [];
@@ -254,16 +257,23 @@ export async function filterValidUrls(urls) {
           url: result.url,
           error: result.error,
         });
+      } else if (result.status === OTHER_STATUS) {
+        acc.otherStatusCodes.push({
+          url: result.url,
+          statusCode: result.statusCode,
+        });
       } else {
         acc.notOk.push({
           url: result.url,
           statusCode: result.statusCode,
-          ...(result.finalUrl && { urls_suggested: result.finalUrl }),
+          ...(result.finalUrl && { urlsSuggested: result.finalUrl }),
         });
       }
       return acc;
     },
-    { ok: [], notOk: [], networkErrors: [] },
+    {
+      ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
+    },
   );
 }
 
@@ -402,11 +412,19 @@ export async function findSitemap(inputUrl) {
         // eslint-disable-next-line no-await-in-loop
         const existingPages = await filterValidUrls(urlsToCheck);
 
+        // Only collect tracked status codes in issues
         if (existingPages.notOk && existingPages.notOk.length > 0) {
-          notOkPagesFromSitemap[s] = existingPages.notOk;
+          const trackedIssues = existingPages.notOk
+            .filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
+          if (trackedIssues.length > 0) {
+            notOkPagesFromSitemap[s] = trackedIssues;
+          }
         }
 
-        if (!existingPages.ok || existingPages.ok.length === 0) {
+        const hasValidUrls = existingPages.ok.length > 0
+          || existingPages.notOk.some((issue) => [301, 302].includes(issue.statusCode));
+
+        if (!hasValidUrls) {
           delete extractedPaths[s];
         } else {
           extractedPaths[s] = existingPages.ok;
@@ -490,7 +508,6 @@ export function getSitemapsWithIssues(auditData) {
  * // Output:
  * // [
  * //   { type: 'url', sitemapUrl: 'https://site.url/sitemap.xml', pageUrl: 'https://site.url/page1', statusCode: 404 },
- * //   { type: 'url', sitemapUrl: 'https://site.url/sitemap.xml', pageUrl: 'https://site.url/page2', statusCode: 500 }
  * // ]
  */
 export function getPagesWithIssues(auditData) {
@@ -508,7 +525,7 @@ export function getPagesWithIssues(auditData) {
       sitemapUrl,
       pageUrl: page.url,
       statusCode: page.statusCode ?? 0, // default to 0 if not present
-      ...(page.urls_suggested && { urls_suggested: page.urls_suggested }),
+      ...(page.urlsSuggested && { urlsSuggested: page.urlsSuggested }),
     }));
   });
 }
@@ -534,8 +551,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
     .filter(Boolean)
     .map((issue) => ({
       ...issue,
-      recommendedAction: issue.urls_suggested
-        ? `use this url instead: ${issue.urls_suggested}`
+      recommendedAction: issue.urlsSuggested
+        ? `use this url instead: ${issue.urlsSuggested}`
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 
@@ -546,11 +563,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
   };
 }
 
-export async function convertToOpportunity(auditUrl, auditData, context) {
-  const { dataAccess, log } = context;
-  const { Opportunity } = dataAccess;
-
-  log.info('Converting SITEMAP audit to opportunity...');
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
 
   // suggestions are in auditData.suggestions
   if (!auditData.suggestions || !auditData.suggestions.length) {
@@ -558,44 +572,20 @@ export async function convertToOpportunity(auditUrl, auditData, context) {
     return;
   }
 
-  const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-  log.info(`opportunities: ${JSON.stringify(opportunities)}`);
-
-  let opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-  log.info(`opportunity: ${JSON.stringify(opportunity)}`);
-
-  if (!opportunity) {
-    const opportunityData = {
-      siteId: auditData.siteId,
-      auditId: auditData.id,
-      type: AUDIT_TYPE,
-      origin: 'AUTOMATION',
-      title: 'Sitemap issues found',
-      runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
-      guidance: {
-        steps: [
-          'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
-          'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
-        ],
-      },
-      tags: ['Traffic Acquisition'],
-    };
-    try {
-      opportunity = await Opportunity.create(opportunityData);
-    } catch (e) {
-      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`, e);
-      throw e;
-    }
-  } else {
-    opportunity.setAuditId(auditData.id);
-    await opportunity.save();
-  }
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
 
   const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);
 
   await syncSuggestions({
     opportunity,
     newData: auditData.suggestions,
+    context,
     buildKey,
     mapNewSuggestion: (issue) => ({
       opportunityId: opportunity.getId(),
@@ -611,5 +601,5 @@ export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
     .then((url) => getUrlWithoutPath(prependSchema(url))))
-  .withPostProcessors([generateSuggestions, convertToOpportunity])
+  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();

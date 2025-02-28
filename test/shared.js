@@ -34,6 +34,7 @@ export class MockContextBuilder {
         findLatest: this.sandbox.stub(),
       },
       Audit: {
+        findById: this.sandbox.stub(),
         create: this.sandbox.stub(),
       },
       Site: {
@@ -54,6 +55,9 @@ export class MockContextBuilder {
         addSuggestions: this.sandbox.stub(),
         setAuditId: this.sandbox.stub(),
         save: this.sandbox.stub(),
+      },
+      Suggestion: {
+        bulkUpdateStatus: this.sandbox.stub(),
       },
     };
 

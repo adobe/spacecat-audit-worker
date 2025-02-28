@@ -1,0 +1,41 @@
+{
+    "inspectionResult": {
+        "inspectionResultLink": "https://search.google.com/search-console/inspect?resource_id=https://example.com/product/1",
+        "indexStatusResult": {
+            "verdict": "PASS",
+            "coverageState": "Submitted and indexed",
+            "robotsTxtState": "ALLOWED",
+            "indexingState": "INDEXING_ALLOWED",
+            "lastCrawlTime": "2024-08-13T22:35:22Z",
+            "pageFetchState": "SUCCESSFUL",
+            "googleCanonical": "https://example.com/product/1",
+            "userCanonical": "https://example.com/product/1",
+            "referringUrls": [
+                "https://www.example.com/bar"
+            ],
+            "crawledAs": "MOBILE"
+        },
+        "mobileUsabilityResult": {
+            "verdict": "VERDICT_UNSPECIFIED"
+        },
+        "richResultsResult": {
+            "verdict": "FAIL",
+            "detectedItems": [
+                {
+                    "richResultType": "Product snippets",
+                    "items": [
+                        {
+                            "name": "Unnamed item",
+                            "issues": [
+                                {
+                                    "issueMessage": "Missing field \"name\"",
+                                    "severity": "ERROR"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}

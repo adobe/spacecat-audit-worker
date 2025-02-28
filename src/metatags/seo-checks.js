@@ -26,6 +26,11 @@ class SeoChecks {
       [DESCRIPTION]: {},
       [H1]: {},
     };
+    this.healthyTags = {
+      [TITLE]: [],
+      [DESCRIPTION]: [],
+      [H1]: [],
+    };
   }
 
   /**
@@ -108,6 +113,8 @@ class SeoChecks {
           [SEO_RECOMMENDATION]: recommendation,
           ...(tagContent && { tagContent }),
         });
+      } else {
+        this.healthyTags[tagName].push(tagContent);
       }
     };
     checkTag(TITLE, pageTags[TITLE]);
@@ -116,6 +123,8 @@ class SeoChecks {
   }
 
   /**
+   * Disabled, this check might be included in later iterations
+   * https://cq-dev.slack.com/archives/C05A45JBP9N/p1739989459286999
    * Checks if there are more than one H1 tags and adds to detected tags array if found lacking.
    * @param {string} urlPath - The URL of the page.
    * @param {object} pageTags - An object containing the tags of the page.
@@ -186,7 +195,6 @@ class SeoChecks {
     }
     this.checkForMissingTags(urlPath, pageTags);
     this.checkForTagsLength(urlPath, pageTags);
-    this.checkForH1Count(urlPath, pageTags);
     // store tag data in all tags object to be used in later checks like uniqueness
     this.addToAllTags(urlPath, TITLE, pageTags[TITLE]);
     this.addToAllTags(urlPath, DESCRIPTION, pageTags[DESCRIPTION]);
@@ -199,6 +207,18 @@ class SeoChecks {
    */
   getDetectedTags() {
     return this.detectedTags;
+  }
+
+  /**
+   * Gets 20 healthy tags for this site, later to be used to generate brand guidelines
+   * @returns {*|{[p: string]: [], "[DESCRIPTION]": *[], "[H1]": *[], "[TITLE]": *[]}}
+   */
+  getFewHealthyTags() {
+    return {
+      [TITLE]: this.healthyTags[TITLE].slice(0, 15),
+      [DESCRIPTION]: this.healthyTags[DESCRIPTION].slice(0, 15),
+      [H1]: this.healthyTags[H1].slice(0, 15),
+    };
   }
 
   finalChecks() {

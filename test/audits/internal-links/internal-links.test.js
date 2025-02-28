@@ -17,7 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 
-import { internalLinksAuditRunner, convertToOpportunity } from '../../../src/internal-links/handler.js';
+import { internalLinksAuditRunner, opportunityAndSuggestions } from '../../../src/internal-links/handler.js';
 import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -98,18 +98,16 @@ describe('broken-internal-links audit to opportunity conversion', () => {
   let opportunity;
   let auditData;
 
-  const context = new MockContextBuilder()
-    .withSandbox(sandbox)
-    .withOverrides({
-      runtime: { name: 'aws-lambda', region: 'us-east-1' },
-      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
-      rumApiClient: {
-        query: sinon.stub().resolves(internalLinksData),
-      },
-    })
-    .build();
+  let context;
 
   beforeEach(() => {
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+      })
+      .build();
     context.log = {
       info: sandbox.stub(),
       error: sandbox.stub(),
@@ -159,7 +157,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await opportunityAndSuggestions(auditUrl, auditData, context);
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
 
@@ -173,7 +171,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
 
-    await expect(convertToOpportunity(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
+    await expect(opportunityAndSuggestions(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
     expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id-1 and auditId audit-id-1: big error happened');
@@ -183,13 +181,16 @@ describe('broken-internal-links audit to opportunity conversion', () => {
   }).timeout(5000);
 
   it('allBySiteIdAndStatus method fails', async () => {
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('Some Error'));
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
     context.dataAccess.Opportunity.create.resolves(opportunity);
-
-    await convertToOpportunity(auditUrl, auditData, context);
+    try {
+      await opportunityAndSuggestions(auditUrl, auditData, context);
+    } catch (err) {
+      expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id-1: some-error');
+    }
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
-    expect(context.log.error).to.have.been.calledOnceWith('Fetching opportunities for siteId site-id-1 failed with error: Some Error');
+    expect(context.log.error).to.have.been.calledOnceWith('Fetching opportunities for siteId site-id-1 failed with error: some-error');
 
     // make sure that no new suggestions are added
     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
@@ -204,17 +205,18 @@ describe('broken-internal-links audit to opportunity conversion', () => {
       save: sinon.stub(),
       getData: () => (suggestion.data),
       setData: sinon.stub(),
+      getStatus: sinon.stub().returns('NEW'),
     }));
     opportunity.getSuggestions.resolves(existingSuggestions);
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await opportunityAndSuggestions(auditUrl, auditData, context);
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(opportunity.setAuditId).to.have.been.calledOnceWith('audit-id-1');
     expect(opportunity.save).to.have.been.calledOnce;
 
-    // make sure that 1 old suggestion is removed
-    expect(existingSuggestions[1].remove).to.have.been.calledOnce;
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
+      .calledOnceWith([existingSuggestions[1]], 'OUTDATED');
 
     // make sure that 1 existing suggestion is updated
     expect(existingSuggestions[0].setData).to.have.been.calledOnce;

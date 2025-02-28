@@ -9,6 +9,11 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
+import {
+  getHighPageViewsLowFormCtrMetrics,
+} from '@adobe/spacecat-shared-utils';
+
 const DAILY_PAGEVIEW_THRESHOLD = 200;
 const CR_THRESHOLD_RATIO = 0.3;
 const MOBILE = 'mobile';
@@ -83,11 +88,12 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-function convertToOpportunityData(urlObject) {
+function convertToOpportunityData(opportunityName, urlObject) {
   const {
-    url, pageViews, formViews, formSubmit,
+    url, pageViews, formViews, formSubmit, CTA,
   } = urlObject;
-  const conversionRate = formSubmit / formViews;
+  let conversionRate = formSubmit / formViews;
+  conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
 
   const opportunity = {
     form: url,
@@ -104,15 +110,57 @@ function convertToOpportunityData(urlObject) {
         page: conversionRate,
       },
     }],
+    ...(opportunityName === 'high-page-views-low-form-nav' && { formNavigation: CTA }),
   };
   return opportunity;
 }
 
-export default function generateOpptyData(formVitals) {
+export function generateOpptyData(formVitals) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
   const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
-  return getHighFormViewsLowConversion(7, formVitalsByDevice).map(convertToOpportunityData);
+  return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion));
+}
+
+export function generateOpptyDataForHighPageViewsLowFormNav(formVitals) {
+  const formVitalsCollection = formVitals.filter(
+    (row) => row.formengagement && row.formsubmit && row.formview,
+  );
+
+  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-nav', highPageViewsLowFormCtr));
+}
+
+/**
+ * filter login and search forms from the opportunities
+ * @param formOpportunities
+ * @param scrapedData
+ * @param log
+ * @returns {*}
+ */
+export function filterForms(formOpportunities, scrapedData, log) {
+  if (!scrapedData?.formData || !Array.isArray(scrapedData.formData)) {
+    log.debug('No valid scraped data available.');
+    return formOpportunities; // Return original opportunities if no valid scraped data
+  }
+
+  return formOpportunities.filter((opportunity) => {
+    // Find matching form in scraped data
+    const matchingForm = scrapedData.formData.find((form) => {
+      const urlMatches = form.finalUrl === opportunity?.form;
+
+      const isSearchForm = Array.isArray(form.scrapeResult)
+          && form.scrapeResult.some((result) => result?.formType === 'search' || result?.classList?.includes('search') || result?.classList?.includes('unsubscribe') || result?.action?.endsWith('search.html'));
+
+      return urlMatches && isSearchForm;
+    });
+
+    if (matchingForm) {
+      log.debug(`Filtered out search form: ${opportunity?.form}`);
+      return false;
+    }
+
+    return true;
+  });
 }
