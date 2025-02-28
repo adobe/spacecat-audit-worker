@@ -1,3 +1,24 @@
+## [1.62.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.1...v1.62.2) (2025-02-28)
+
+
+### Bug Fixes
+
+* forms opportunity handling mechanism fixed ([#718](https://github.com/adobe/spacecat-audit-worker/issues/718)) ([fbb3983](https://github.com/adobe/spacecat-audit-worker/commit/fbb3983f6fc3398531ddd2368615b69fba62b6f9))
+
+## [1.62.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.0...v1.62.1) (2025-02-27)
+
+
+### Bug Fixes
+
+* handle missing S3 contents and refine scrape file selection ([#709](https://github.com/adobe/spacecat-audit-worker/issues/709)) ([c5c86f4](https://github.com/adobe/spacecat-audit-worker/commit/c5c86f4cfb1cf9c35d06b13007a4b55c0c314897))
+
+# [1.62.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.61.0...v1.62.0) (2025-02-27)
+
+
+### Features
+
+* Auto-suggest for structured data audit ([#692](https://github.com/adobe/spacecat-audit-worker/issues/692)) ([6f86c2b](https://github.com/adobe/spacecat-audit-worker/commit/6f86c2b67fa6435b79dfa5d0324eaab37bf09247))
+
 # [1.61.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.60.4...v1.61.0) (2025-02-27)
 
 

@@ -229,10 +229,9 @@ export const getScrapedDataForSiteId = async (site, context) => {
     const listResponse = await s3Client.send(listCommand);
     if (listResponse && listResponse.Contents) {
       allFiles = allFiles.concat(
-        listResponse.Contents.filter((file) => file.Key?.endsWith('.json')),
+        listResponse.Contents?.filter((file) => file.Key?.endsWith('.json')),
       );
     }
-
     isTruncated = listResponse.IsTruncated;
     continuationToken = listResponse.NextContinuationToken;
 
@@ -263,7 +262,10 @@ export const getScrapedDataForSiteId = async (site, context) => {
     }),
   );
 
-  const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
+  const indexFile = allFiles
+    .filter((file) => file.Key.includes(`${siteId}/`) && file.Key.endsWith('scrape.json'))
+    .sort((a, b) => a.Key.split('/').length - b.Key.split('/').length)[0];
+
   const indexFileContent = await getObjectFromKey(
     s3Client,
     env.S3_SCRAPER_BUCKET_NAME,
@@ -301,4 +303,47 @@ export async function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+export function generatePlainHtml($) {
+  let main = $('main');
+  if (!main.length) {
+    main = $('body');
+  }
+
+  // Remove HTML comments
+  $('*').contents().filter((i, el) => el.type === 'comment').remove();
+
+  // Remove non-essential tags
+  const essentialTags = ['main', 'img', 'a', 'ul', 'li', 'dl', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+  main.find('*').each((i, el) => {
+    // Skip if tag in essential list
+    if (essentialTags.includes(el.tagName.toLowerCase())) {
+      return;
+    }
+    $(el).replaceWith($(el).contents());
+  });
+
+  // Remove non-essential attributes
+  const allowedAttributes = ['href', 'src', 'alt', 'title'];
+  main.find('*').each((i, el) => {
+    Object.keys(el.attribs).forEach((attr) => {
+      if (!allowedAttributes.includes(attr)) {
+        $(el).removeAttr(attr);
+      }
+    });
+  });
+
+  return main.prop('outerHTML');
+}
+
+export async function getScrapeForPath(path, context, site) {
+  const { log, s3Client } = context;
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const prefix = `scrapes/${site.getId()}${path}/scrape.json`;
+  const result = await getObjectFromKey(s3Client, bucketName, prefix, log);
+  if (!result) {
+    throw new Error(`No scrape found for path ${path}`);
+  }
+  return result;
 }

@@ -87,6 +87,62 @@ describe('Image Alt Text Handler', () => {
 
       expect(result).to.be.null;
     });
+
+    it('should filter and process only supported image formats', async () => {
+      const mockHtml = `
+        <html>
+          <body>
+            <img src="test1.jpg" alt="Test 1">
+            <img src="test2.png" alt="Test 2">
+            <img src="test3.gif" alt="Test 3">
+            <img src="test3.gif" alt="Test 3">
+            <img src="test4.bmp" alt="Test 4">
+            <img src="test5.123" alt="Test 5">
+          </body>
+        </html>
+      `;
+
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          Contents: [
+            { Key: 'scrapes/site-id/page1/scrape.json' },
+            { Key: 'scrapes/site-id/page2/scrape.json' },
+          ],
+        });
+
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand))
+        .resolves({
+          Body: {
+            transformToString: () => JSON.stringify({
+              scrapeResult: {
+                rawBody: mockHtml,
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        });
+
+      const result = await fetchAndProcessPageObject(
+        s3ClientStub,
+        'test-bucket',
+        'scrapes/site-id/page1/scrape.json',
+        'scrapes/site-id/',
+        logStub,
+      );
+
+      // Assuming the function filters out unsupported formats like .bmp
+      expect(result).to.deep.equal({
+        '/page1': {
+          images: [
+            { src: 'test1.jpg', alt: 'Test 1' },
+            { src: 'test2.png', alt: 'Test 2' },
+            { src: 'test3.gif', alt: 'Test 3' },
+          ],
+        },
+      });
+    });
   });
 
   describe('auditImageAltTextRunner', () => {
@@ -152,7 +208,7 @@ describe('Image Alt Text Handler', () => {
           Body: {
             transformToString: () => JSON.stringify({
               scrapeResult: {
-                // Empty scrape result to simulate no tags extracted
+              // Empty scrape result to simulate no tags extracted
               },
             }),
           },
