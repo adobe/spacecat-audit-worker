@@ -14,7 +14,7 @@ import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import suggestionsEngine from './suggestionsEngine.js';
-import { getRUMUrl } from '../support/utils.js';
+import { getRUMUrl, toggleWWW } from '../support/utils.js';
 
 const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -81,7 +81,6 @@ const getProjectedMetrics = async ({
   };
 
   const results = await rumAPIClient.query('traffic-acquisition', options);
-  log.info(`[${AUDIT_TYPE}]: RUM API results: ${JSON.stringify(results)}`);
 
   const pageUrlToOrganicTrafficMap = results.reduce((acc, page) => {
     acc[page.url] = {
@@ -89,28 +88,28 @@ const getProjectedMetrics = async ({
       imagesWithoutAltText: 0,
     };
     return acc;
-  });
-  log.info(`[${AUDIT_TYPE}]: Page URL to organic traffic map: ${JSON.stringify(pageUrlToOrganicTrafficMap)}`);
+  }, {});
 
   images.forEach((image) => {
     const fullPageUrl = new URL(image.pageUrl, auditUrl).toString();
+
+    // Images from RUM (might) come with www while our scraper gives us always non-www pages
     if (pageUrlToOrganicTrafficMap[fullPageUrl]) {
       pageUrlToOrganicTrafficMap[fullPageUrl].imagesWithoutAltText += 1;
+    } else if (pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)]) {
+      pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)].imagesWithoutAltText += 1;
     } else {
-      log.error(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} not found in RUM API results`);
+      log.error(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} or ${toggleWWW(fullPageUrl)} not found in RUM API results`);
     }
   });
-  log.info(`[${AUDIT_TYPE}]: Page URL to organic traffic map after processing images: ${JSON.stringify(pageUrlToOrganicTrafficMap)}`);
 
   const projectedTrafficLost = Object.values(pageUrlToOrganicTrafficMap)
     .reduce(
       (acc, page) => acc + (page.organicTraffic * PENALTY_PER_IMAGE * page.imagesWithoutAltText),
       0,
     );
-  log.info(`[${AUDIT_TYPE}]: Projected traffic lost: ${projectedTrafficLost}`);
 
   const projectedTrafficValue = projectedTrafficLost * CPC;
-  log.info(`[${AUDIT_TYPE}]: Projected traffic value: ${projectedTrafficValue}`);
   return {
     projectedTrafficLost,
     projectedTrafficValue,
@@ -141,9 +140,13 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
+  const opportunityData = await getProjectedMetrics({
+    images: detectedTags.imagesWithoutAltText, auditUrl, context, log,
+  });
+
   try {
     if (!altTextOppty) {
-      const opportunityData = {
+      const opportunityDTO = {
         siteId: auditData.siteId,
         auditId: auditData.id,
         runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
@@ -161,15 +164,14 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
             },
           ],
         },
-        data: await getProjectedMetrics({
-          images: detectedTags.imagesWithoutAltText, auditUrl, context, log,
-        }),
+        data: opportunityData,
         tags: ['seo', 'accessibility'],
       };
-      altTextOppty = await Opportunity.create(opportunityData);
+      altTextOppty = await Opportunity.create(opportunityDTO);
       log.debug(`[${AUDIT_TYPE}]: Opportunity created`);
     } else {
       altTextOppty.setAuditId(auditData.id);
+      altTextOppty.setData(opportunityData);
       await altTextOppty.save();
     }
   } catch (e) {

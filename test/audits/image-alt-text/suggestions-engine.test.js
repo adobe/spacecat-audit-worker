@@ -91,7 +91,16 @@ describe('getImageSuggestions', () => {
 
     const result = await suggestionsEngine.getImageSuggestions(imageUrls, auditUrl, context);
 
-    expect(result).to.deep.equal({});
+    expect(result).to.deep.equal({
+      'http://example.com/image1.png': {
+        image_url: 'http://example.com/image1.png',
+        suggestion: 'Image 1 description',
+      },
+      'http://example.com/image2.png': {
+        image_url: 'http://example.com/image2.png',
+        suggestion: 'Image 2 description',
+      },
+    });
     expect(context.log.info.calledWith('[alt-text]: Other images:', ['http://other.com/image1.png', 'http://other.com/image2.png'])).to.be.true;
   });
 
@@ -116,7 +125,7 @@ describe('getImageSuggestions', () => {
     const result = await suggestionsEngine.getImageSuggestions(imageUrls, auditUrl, context);
 
     expect(result).to.deep.equal({});
-    expect(context.log.info.calledWith('[alt-text]: Total images from host:', 0)).to.be.true;
+    expect(context.log.info.calledWith('[alt-text]: Images from host:', [])).to.be.true;
   });
 
   it('should handle finish_reason not being a stop', async () => {
