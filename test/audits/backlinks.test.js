@@ -42,6 +42,7 @@ import {
   suggestions,
 } from '../fixtures/broken-backlinks/suggestion.js';
 import { organicTraffic } from '../fixtures/broken-backlinks/organic-traffic.js';
+import calculateKpiMetrics from '../../src/backlinks/kpi-metrics.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -470,6 +471,42 @@ describe('Backlinks Tests', function () {
         },
       ]);
       expect(context.log.error).to.have.been.calledWith('Batch processing error: Firefall error');
+    });
+  });
+
+  describe('calculateKpiMetrics', () => {
+    it('should calculate metrics correctly for a single broken backlink', async () => {
+      const auditData = {
+        auditResult: {
+          brokenBacklinks: [
+            { traffic_domain: 25000001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
+            { traffic_domain: 10000001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
+            { traffic_domain: 10001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
+            { traffic_domain: 100, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
+          ],
+        },
+      };
+
+      const result = await calculateKpiMetrics(auditData, context, site);
+      expect(result.projectedTrafficLost).to.equal(22854.719999999998);
+      expect(result.projectedTrafficValue).to.equal(455827.5360970677);
+    });
+
+    it('returns early if there is no RUM traffic data', async () => {
+      context.s3.s3Client.send.onCall(0).resolves(null);
+      const auditData = {
+        auditResult: {
+          brokenBacklinks: [
+            { traffic_domain: 25000001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
+            { traffic_domain: 10000001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
+            { traffic_domain: 10001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
+            { traffic_domain: 100, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
+          ],
+        },
+      };
+
+      const result = await calculateKpiMetrics(auditData, context, site);
+      expect(result).to.be.null;
     });
   });
 });
