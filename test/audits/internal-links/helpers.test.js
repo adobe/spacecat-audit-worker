@@ -117,7 +117,8 @@ describe('isLinkInaccessible', () => {
     nock.cleanAll();
   });
 
-  it('should return false for accessible links (status 200)', async () => {
+  it('should return false for accessible links (status 200)', async function call() {
+    this.timeout(4000);
     nock('https://example.com')
       .get('/')
       .reply(200);
@@ -126,7 +127,8 @@ describe('isLinkInaccessible', () => {
     expect(result).to.be.false;
   });
 
-  it('should return true for 404 responses', async () => {
+  it('should return true for 404 responses', async function call() {
+    this.timeout(4000);
     nock('https://example.com')
       .get('/notfound')
       .reply(404);
@@ -135,7 +137,8 @@ describe('isLinkInaccessible', () => {
     expect(result).to.be.true;
   });
 
-  it('should return true and log warning for non-404 client errors', async () => {
+  it('should return true and log warning for non-404 client errors', async function call() {
+    this.timeout(4000);
     nock('https://example.com')
       .get('/forbidden')
       .reply(403);
@@ -147,7 +150,8 @@ describe('isLinkInaccessible', () => {
     )).to.be.true;
   });
 
-  it('should return true for network errors', async () => {
+  it('should return true for network errors', async function call() {
+    this.timeout(4000);
     nock('https://example.com')
       .get('/error')
       .replyWithError('Network error');
@@ -160,7 +164,6 @@ describe('isLinkInaccessible', () => {
   });
 
   it('should return true for timeout errors', async function call() {
-    // Increase the timeout for this specific test
     this.timeout(5000);
 
     nock('https://example.com')

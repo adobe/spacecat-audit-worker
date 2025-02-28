@@ -89,13 +89,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
   let finalLinks = calculatePriority(transformedLinks);
 
-  finalLinks = finalLinks.filter(async (link) => {
-    const isInaccessible = await isLinkInaccessible(link.urlTo, log);
-    if (!isInaccessible) {
-      log.info(`broken-internal-links audit: Removing link ${link.urlTo} because it is accessible.`);
-    }
-    return isInaccessible;
-  });
+  finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
 
   const auditResult = {
     brokenInternalLinks: finalLinks,
