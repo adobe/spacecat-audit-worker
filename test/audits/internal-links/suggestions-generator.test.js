@@ -127,6 +127,35 @@ describe('generateSuggestionData', async function test() {
     expect(context.log.info).to.have.been.calledWith('broken-internal-links audit: Auto-suggest is disabled for site');
   });
 
+  it('if sitedata is not found, return audit object as is', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+      ],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+    context.s3Client.send.resolves(mockFileResponse);
+    configuration.isHandlerEnabledForSite.returns(true);
+    expect(configuration.isHandlerEnabledForSite()).to.equal(true);
+    firefallClient.fetchChatCompletion.resolves({
+      choices: [{
+        message: { content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }) },
+        finish_reason: 'stop',
+      }],
+    });
+    firefallClient.fetchChatCompletion.onCall(3).resolves({
+      choices: [{
+        message: { content: JSON.stringify({ some_other_property: 'some other value' }) },
+        finish_reason: 'stop',
+      }],
+    });
+
+    await generateSuggestionData('https://example.com', auditData, context, site);
+    expect(context.log.info.getCall(1).args[0]).to.equal('broken-internal-links audit: No site data found, skipping suggestions generation');
+
+    expect(firefallClient.fetchChatCompletion).to.not.have.been.called;
+  });
+
   it('processes suggestions for broken internal links, defaults to base URL if none found', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [
