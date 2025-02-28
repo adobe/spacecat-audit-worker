@@ -30,15 +30,14 @@ const calculateKpiMetrics = async (auditData, context, site) => {
     context,
   );
 
-  if (!isNonEmptyArray(organicTrafficData)) {
-    log.info(`No organic traffic data found for site ${siteId}`);
-    return null;
-  }
+  let CPC = 1;
 
-  const latestOrganicTrafficData = organicTrafficData.sort(
-    (a, b) => new Date(b.time) - new Date(a.time),
-  )[0];
-  const CPC = latestOrganicTrafficData.cost / latestOrganicTrafficData.value;
+  if (isNonEmptyArray(organicTrafficData)) {
+    const latestOrganicTrafficData = organicTrafficData.sort(
+      (a, b) => new Date(b.time) - new Date(a.time),
+    )[0];
+    CPC = latestOrganicTrafficData.cost / latestOrganicTrafficData.value;
+  }
 
   const projectedTrafficLost = auditData.auditResult.brokenBacklinks.reduce((sum, backlink) => {
     const { traffic_domain: referringTraffic, urlsSuggested } = backlink;
