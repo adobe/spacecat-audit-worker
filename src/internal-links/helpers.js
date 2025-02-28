@@ -66,7 +66,7 @@ export const calculateKpiDeltasForAudit = (auditData) => {
 };
 
 /**
- * Checks if a URL is reachable/inaccessible by attempting to fetch it.
+ * Checks if a URL is inaccessible/not reachable by attempting to fetch it.
  * A URL is considered inaccessible if:
  * - The fetch request fails (network errors or timeouts)
  * - The response status code is >= 400 (400-499)
@@ -78,7 +78,6 @@ export const calculateKpiDeltasForAudit = (auditData) => {
  * false if reachable/accessible
  */
 export async function isLinkInaccessible(url, log) {
-  // Setup AbortController for timeout
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), LINK_TIMEOUT);
 
@@ -92,12 +91,12 @@ export async function isLinkInaccessible(url, log) {
       log.info(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
     }
 
-    // URL is valid if status code is less than 400
+    // URL is valid if status code is less than 400, otherwise it is invalid
     return status >= 400;
   } catch (error) {
     clearTimeout(timeoutId);
     log.info(`broken-internal-links audit: Error checking ${url}: ${error instanceof AbortError ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
-    // Any error means the URL is invalid
+    // Any error means the URL is inaccessible
     return true;
   }
 }
