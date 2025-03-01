@@ -97,7 +97,8 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   // Get top pages for a site
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  const topPagesSet = new Set(topPages.map((page) => `scrapes/${site.getId()}/${page.url}scrape.json`));
+  const topPagesSet = new Set(topPages.map((page) => new URL(page.url).pathname.replace(/\/$/, ''))
+    .map((page) => `scrapes/${site.getId()}${page}/scrape.json`));
 
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
