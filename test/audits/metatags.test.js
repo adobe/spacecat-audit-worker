@@ -450,6 +450,7 @@ describe('Meta Tags', () => {
         }))).returns({
           Body: {
             transformToString: () => JSON.stringify({
+              finalUrl: 'https://example.com/blog/page1/',
               scrapeResult: {
                 tags: {
                   title: 'This is an SEO optimal page1 valid title.',
@@ -495,7 +496,7 @@ describe('Meta Tags', () => {
                 tags: {
                   title: 'This is an SEO optimal page1 valid title.',
                   description: 'This is a dummy description that is optimal from SEO perspective for page1. It has the correct length of characters, and is unique across all pages.',
-                  h1: [],
+                  h1: undefined,
                 },
               },
             }),
