@@ -13,10 +13,10 @@
 import {
   getHighPageViewsLowFormCtrMetrics,
 } from '@adobe/spacecat-shared-utils';
-// import {GetObjectCommand} from "@aws-sdk/client-s3";
-// import {getSignedUrl} from "@aws-sdk/s3-request-presigner";
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-// const EXPIRY_IN_SECONDS = 25 * 60;
+const EXPIRY_IN_SECONDS = 25 * 60;
 const DAILY_PAGEVIEW_THRESHOLD = 200;
 const CR_THRESHOLD_RATIO = 0.3;
 const MOBILE = 'mobile';
@@ -91,24 +91,24 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-// async function getPresignedUrl(fileName, context, url, site) {
-//   const { log, s3Client: s3ClientObj } = context;
-//   const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
-//   try {
-//     log.info(`Generating presigned URL for ${screenshotPath}`);
-//     const command = new GetObjectCommand({
-//       Bucket: process.env.S3_BUCKET_NAME,
-//       Key: screenshotPath,
-//     });
-//     const signedUrl = await getSignedUrl(s3ClientObj, command, {
-//       expiresIn: EXPIRY_IN_SECONDS,
-//     });
-//     return signedUrl;
-//   } catch (error) {
-//     log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
-//     return '';
-//   }
-// }
+async function getPresignedUrl(context, screenshotPath) {
+  const { log, s3Client: s3ClientObj } = context;
+  // const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
+  try {
+    log.info(`Generating presigned URL for ${screenshotPath}`);
+    const command = new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: screenshotPath,
+    });
+    const signedUrl = await getSignedUrl(s3ClientObj, command, {
+      expiresIn: EXPIRY_IN_SECONDS,
+    });
+    return signedUrl;
+  } catch (error) {
+    log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
+    return '';
+  }
+}
 
 function convertToOpportunityData(opportunityName, urlObject, scrapedData, context) {
   const {
@@ -129,6 +129,16 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
     screenshot = matchedData ? matchedData.screenshots || '' : '';
   }
   log.info(`debug log screenshots ${JSON.stringify(screenshot, null, 2)}`);
+
+  const screenshoturl = `${url}/forms/screenshot-iphone-6-fullpage.png`;
+  let presignedurl;
+  try {
+    presignedurl = getPresignedUrl(context, screenshoturl);
+  } catch (error) {
+    log.error(`Error generating presigned URL: ${error.message}`);
+    presignedurl = null;
+  }
+  log.info(`debug log screenshots presigned url: ${presignedurl}`);
 
   const opportunity = {
     form: url,
