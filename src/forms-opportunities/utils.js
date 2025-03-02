@@ -96,6 +96,7 @@ async function getPresignedUrl(context, screenshotPath) {
   // const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
   try {
     log.info(`Generating presigned URL for ${screenshotPath}`);
+    log.info(`bucket name ${process.env.S3_BUCKET_NAME}`);
     const command = new GetObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
       Key: screenshotPath,
