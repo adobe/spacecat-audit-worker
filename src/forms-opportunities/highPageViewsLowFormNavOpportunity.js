@@ -39,7 +39,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
   const { formVitals } = auditData.auditResult;
   log.debug(`scraped data for form ${JSON.stringify(scrapedData, null, 2)}`);
   // eslint-disable-next-line max-len
-  const formOpportunities = generateOpptyDataForHighPageViewsLowFormNav(formVitals, scrapedData, context);
+  const formOpportunities = await generateOpptyDataForHighPageViewsLowFormNav(formVitals, scrapedData, context);
   log.debug(`forms opportunities high page views low form navigation ${JSON.stringify(formOpportunities, null, 2)}`);
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
   log.info(`filtered opportunties for form for high page views low form navigation ${JSON.stringify(filteredOpportunities, null, 2)}`);

@@ -109,7 +109,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
 //   }
 // }
 
-function convertToOpportunityData(opportunityName, urlObject, scrapedData, context) {
+async function convertToOpportunityData(opportunityName, urlObject, scrapedData, context) {
   const {
     url, pageViews, formViews, formSubmit, CTA,
   } = urlObject;
@@ -162,7 +162,7 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
   }
 
   // Ensure all presigned URLs are generated before proceeding
-  Promise.all(screenshotPromises)
+  await Promise.all(screenshotPromises)
     .then((resolvedScreenshots) => {
       // Handle resolved screenshots here
       log.info('Presigned URLs generated successfully', resolvedScreenshots);
@@ -170,46 +170,6 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
     .catch((error) => {
       log.error('Error generating presigned URLs:', error);
     });
-
-  // eslint-disable-next-line max-len
-  // const screenshoturl = 'scrapes/5a377a31-b6c3-411c-8b00-62d7e1b116ac/account/forms/screenshot-iphone-6-fullpage.png';
-  //
-  // let presignedurl;
-  //
-  // // Generate presigned URL synchronously
-  // // let presignedurl = '';
-  // try {
-  //   const command = new GetObjectCommand({
-  //     Bucket: process.env.S3_BUCKET_NAME,
-  //     Key: screenshoturl,
-  //   });
-  //
-  //   // Use getSignedUrl synchronously
-  //   // presignedurl = getSignedUrl(s3ClientObj, command, {
-  //   //   expiresIn: EXPIRY_IN_SECONDS,
-  //   // });
-  //
-  //   // Call getSignedUrl and wait for it to resolve
-  //   log.info(`s3 object:  ${JSON.stringify(s3ClientObj, null, 2)}`);
-  //   getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
-  //     .then((url1) => {
-  //       log.info(`Generated presigned URL: ${url1}`);
-  //       presignedurl = url1; // Assign the resolved URL
-  //       log.info(`Generated presigned URL 1: ${presignedurl}`); // Log the actual URL her
-  //       return url1;
-  //     })
-  //     .catch((error) => {
-  //       log.error(`Error generating presigned URL: ${error.message}`);
-  //       return '';
-  //     });
-  //
-  //   log.info(`Generated presigned URL for ${screenshoturl}`);
-  // } catch (error) {
-  //   log.error(`Error generating presigned URL: ${error.message}`);
-  //   presignedurl = '';
-  // }
-
-  // log.info(`debug log screenshots presigned url: ${presignedurl}`);
 
   const opportunity = {
     form: url,
@@ -231,21 +191,44 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
   return opportunity;
 }
 
-export function generateOpptyData(formVitals, scrapedData, context) {
+export async function generateOpptyData(formVitals, scrapedData, context) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
   const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
-  return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion, scrapedData, context));
+  // eslint-disable-next-line max-len
+  // return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion, scrapedData, context));
+
+  return Promise.all(
+    getHighFormViewsLowConversion(7, formVitalsByDevice)
+      .map((highFormViewsLowConversion) => convertToOpportunityData(
+        'high-page-views-low-conversion',
+        highFormViewsLowConversion,
+        scrapedData,
+        context,
+      )),
+  );
 }
 
-export function generateOpptyDataForHighPageViewsLowFormNav(formVitals, scrapedData, context) {
+// eslint-disable-next-line max-len
+export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, scrapedData, context) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
-  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-nav', highPageViewsLowFormCtr, scrapedData, context));
+  // eslint-disable-next-line max-len
+  // return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-nav', highPageViewsLowFormCtr, scrapedData, context));
+
+  return Promise.all(
+    getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7)
+      .map((highPageViewsLowFormCtr) => convertToOpportunityData(
+        'high-page-views-low-form-nav',
+        highPageViewsLowFormCtr,
+        scrapedData,
+        context,
+      )),
+  );
 }
 
 /**
