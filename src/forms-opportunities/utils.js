@@ -91,32 +91,32 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-async function getPresignedUrl(context, screenshotPath) {
-  const { log, s3Client: s3ClientObj } = context;
-  // const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
-  try {
-    log.info(`Generating presigned URL for ${screenshotPath}`);
-    log.info(`bucket name ${process.env.S3_BUCKET_NAME}`);
-    const command = new GetObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: screenshotPath,
-    });
-    const signedUrl = await getSignedUrl(s3ClientObj, command, {
-      expiresIn: EXPIRY_IN_SECONDS,
-    });
-    return signedUrl;
-  } catch (error) {
-    log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
-    return '';
-  }
-}
+// async function getPresignedUrl(context, screenshotPath) {
+//   const { log, s3Client: s3ClientObj } = context;
+//   // const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
+//   try {
+//     log.info(`Generating presigned URL for ${screenshotPath}`);
+//     log.info(`bucket name ${process.env.S3_BUCKET_NAME}`);
+//     const command = new GetObjectCommand({
+//       Bucket: process.env.S3_BUCKET_NAME,
+//       Key: screenshotPath,
+//     });
+//     const signedUrl = await getSignedUrl(s3ClientObj, command, {
+//       expiresIn: EXPIRY_IN_SECONDS,
+//     });
+//     return signedUrl;
+//   } catch (error) {
+//     log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
+//     return '';
+//   }
+// }
 
 function convertToOpportunityData(opportunityName, urlObject, scrapedData, context) {
   const {
     url, pageViews, formViews, formSubmit, CTA,
   } = urlObject;
   const {
-    log,
+    log, s3Client: s3ClientObj,
   } = context;
 
   let conversionRate = formSubmit / formViews;
@@ -135,14 +135,33 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
 
   let presignedurl;
 
-  getPresignedUrl(context, screenshoturl)
-    .then((signedurl) => {
-      presignedurl = signedurl; // Assign the resolved value
-      log.info(`debug log screenshots presigned url: ${presignedurl}`);
-    })
-    .catch((error) => {
-      log.error(`Error generating presigned URL: ${error.message}`);
+  // Generate presigned URL synchronously
+  // let presignedurl = '';
+  try {
+    const command = new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: screenshoturl,
     });
+
+    // Use getSignedUrl synchronously
+    presignedurl = getSignedUrl(s3ClientObj, command, {
+      expiresIn: EXPIRY_IN_SECONDS,
+    });
+
+    log.info(`Generated presigned URL for ${screenshoturl}`);
+  } catch (error) {
+    log.error(`Error generating presigned URL: ${error.message}`);
+    presignedurl = '';
+  }
+
+  // getPresignedUrl(context, screenshoturl)
+  //   .then((signedurl) => {
+  //     presignedurl = signedurl; // Assign the resolved value
+  //     log.info(`debug log screenshots presigned url: ${presignedurl}`);
+  //   })
+  //   .catch((error) => {
+  //     log.error(`Error generating presigned URL: ${error.message}`);
+  //   });
 
   // try {
   //   presignedurl = getPresignedUrl(context, screenshoturl);
