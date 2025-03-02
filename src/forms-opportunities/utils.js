@@ -131,7 +131,7 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
   }
   log.info(`debug log screenshots ${JSON.stringify(screenshot, null, 2)}`);
 
-  const screenshoturl = `${url}/forms/screenshot-iphone-6-fullpage.png`;
+  const screenshoturl = 'scrapes/5a377a31-b6c3-411c-8b00-62d7e1b116ac/account/forms/screenshot-iphone-6-fullpage.png';
 
   let presignedurl;
 
