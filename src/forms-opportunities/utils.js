@@ -137,28 +137,67 @@ async function convertToOpportunityData(opportunityName, urlObject, scrapedData,
   let screenshotPromises;
 
   // Create presigned URL promises for each screenshot
-  if (screenshots) {
-    screenshotPromises = screenshots.map((screenshot) => {
-      const screenshotPath = `${s3Key}${screenshot.fileName}`;
-      log.info(`debug log screenshot path ${screenshotPath}`);
-      const command = new GetObjectCommand({
-        Bucket: process.env.S3_BUCKET_NAME,
-        Key: screenshotPath,
-      });
+  // if (screenshots) {
+  //   screenshotPromises = screenshots.map((screenshot) => {
+  //     const screenshotPath = `${s3Key}${screenshot.fileName}`;
+  //     log.info(`debug log screenshot path ${screenshotPath}`);
+  //     const command = new GetObjectCommand({
+  //       Bucket: process.env.S3_BUCKET_NAME,
+  //       Key: screenshotPath,
+  //     });
+  //
+  //     return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
+  //       .then((presignedurl) => ({
+  //         ...screenshot,
+  //         presignedurl,
+  //       }))
+  //       .catch((error) => {
+  // eslint-disable-next-line max-len
+  //         log.error(`Error generating presigned URL for ${screenshot.fileName}: ${error.message}`);
+  //         return {
+  //           ...screenshot,
+  //           presignedurl: '',
+  //         };
+  //       });
+  //   });
+  // }
 
-      return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
-        .then((presignedurl) => ({
-          ...screenshot,
-          presignedurl,
-        }))
-        .catch((error) => {
-          log.error(`Error generating presigned URL for ${screenshot.fileName}: ${error.message}`);
-          return {
-            ...screenshot,
-            presignedurl: '',
-          };
-        });
-    });
+  let processedScreenshots = [];
+
+  // Create presigned URLs for each screenshot
+  if (screenshots && Array.isArray(screenshots)) {
+    try {
+      processedScreenshots = await Promise.all(
+        screenshots.map(async (screenshot) => {
+          const screenshotPath = `${s3Key}${screenshot.fileName}`;
+          log.info(`debug log screenshot path ${screenshotPath}`);
+          try {
+            const command = new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: screenshotPath,
+            });
+            // eslint-disable-next-line max-len
+            const presignedurl = await getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS });
+            return {
+              ...screenshot,
+              presignedurl,
+            };
+          } catch (error) {
+            log.error(`Error generating presigned URL for ${screenshot.fileName}: ${error.message}`);
+            return {
+              ...screenshot,
+              presignedurl: '',
+            };
+          }
+        }),
+      );
+    } catch (error) {
+      log.error('Error processing screenshots:', error);
+      processedScreenshots = screenshots.map((screenshot) => ({
+        ...screenshot,
+        presignedurl: '',
+      }));
+    }
   }
 
   // Ensure all presigned URLs are generated before proceeding
@@ -173,7 +212,7 @@ async function convertToOpportunityData(opportunityName, urlObject, scrapedData,
 
   const opportunity = {
     form: url,
-    screenshot: screenshots,
+    screenshot: processedScreenshots,
     trackedFormKPIName: 'Conversion Rate',
     trackedFormKPIValue: conversionRate,
     formViews,
