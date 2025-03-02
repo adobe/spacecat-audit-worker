@@ -91,7 +91,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-function getPresignedUrl(context, screenshotPath) {
+async function getPresignedUrl(context, screenshotPath) {
   const { log, s3Client: s3ClientObj } = context;
   // const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
   try {
@@ -100,7 +100,7 @@ function getPresignedUrl(context, screenshotPath) {
       Bucket: process.env.S3_BUCKET_NAME,
       Key: screenshotPath,
     });
-    const signedUrl = getSignedUrl(s3ClientObj, command, {
+    const signedUrl = await getSignedUrl(s3ClientObj, command, {
       expiresIn: EXPIRY_IN_SECONDS,
     });
     return signedUrl;
@@ -133,12 +133,22 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
   const screenshoturl = `${url}/forms/screenshot-iphone-6-fullpage.png`;
 
   let presignedurl;
-  try {
-    presignedurl = getPresignedUrl(context, screenshoturl);
-  } catch (error) {
-    log.error(`Error generating presigned URL: ${error.message}`);
-    presignedurl = null;
-  }
+
+  getPresignedUrl(context, screenshoturl)
+    .then((signedurl) => {
+      presignedurl = signedurl; // Assign the resolved value
+      log.info(`debug log screenshots presigned url: ${presignedurl}`);
+    })
+    .catch((error) => {
+      log.error(`Error generating presigned URL: ${error.message}`);
+    });
+
+  // try {
+  //   presignedurl = getPresignedUrl(context, screenshoturl);
+  // } catch (error) {
+  //   log.error(`Error generating presigned URL: ${error.message}`);
+  //   presignedurl = null;
+  // }
   log.info(`debug log screenshots presigned url: ${presignedurl}`);
 
   const opportunity = {
