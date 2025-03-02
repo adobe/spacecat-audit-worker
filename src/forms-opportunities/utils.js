@@ -91,7 +91,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-async function getPresignedUrl(context, screenshotPath) {
+function getPresignedUrl(context, screenshotPath) {
   const { log, s3Client: s3ClientObj } = context;
   // const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
   try {
@@ -100,7 +100,7 @@ async function getPresignedUrl(context, screenshotPath) {
       Bucket: process.env.S3_BUCKET_NAME,
       Key: screenshotPath,
     });
-    const signedUrl = await getSignedUrl(s3ClientObj, command, {
+    const signedUrl = getSignedUrl(s3ClientObj, command, {
       expiresIn: EXPIRY_IN_SECONDS,
     });
     return signedUrl;
@@ -131,6 +131,7 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
   log.info(`debug log screenshots ${JSON.stringify(screenshot, null, 2)}`);
 
   const screenshoturl = `${url}/forms/screenshot-iphone-6-fullpage.png`;
+
   let presignedurl;
   try {
     presignedurl = getPresignedUrl(context, screenshoturl);
