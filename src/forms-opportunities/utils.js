@@ -162,7 +162,7 @@ async function convertToOpportunityData(opportunityName, urlObject, scrapedData,
   }
 
   // Ensure all presigned URLs are generated before proceeding
-  await Promise.all(screenshotPromises)
+  screenshots = await Promise.all(screenshotPromises)
     .then((resolvedScreenshots) => {
       // Handle resolved screenshots here
       log.info('Presigned URLs generated successfully', resolvedScreenshots);
