@@ -114,9 +114,7 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
   const {
     url, pageViews, formViews, formSubmit, CTA,
   } = urlObject;
-  const {
-    log,
-  } = context;
+  const log = context?.log ?? console.log;
 
   let conversionRate = formSubmit / formViews;
   conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
