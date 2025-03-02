@@ -150,9 +150,11 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
 
     // Call getSignedUrl and wait for it to resolve
     log.info(`s3 object:  ${JSON.stringify(s3ClientObj, null, 2)}`);
-    presignedurl = getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
+    getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
       .then((url1) => {
         log.info(`Generated presigned URL: ${url1}`);
+        presignedurl = url1; // Assign the resolved URL
+        log.info(`Generated presigned URL 1: ${presignedurl}`); // Log the actual URL her
         return url1;
       })
       .catch((error) => {
@@ -166,21 +168,6 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
     presignedurl = '';
   }
 
-  // getPresignedUrl(context, screenshoturl)
-  //   .then((signedurl) => {
-  //     presignedurl = signedurl; // Assign the resolved value
-  //     log.info(`debug log screenshots presigned url: ${presignedurl}`);
-  //   })
-  //   .catch((error) => {
-  //     log.error(`Error generating presigned URL: ${error.message}`);
-  //   });
-
-  // try {
-  //   presignedurl = getPresignedUrl(context, screenshoturl);
-  // } catch (error) {
-  //   log.error(`Error generating presigned URL: ${error.message}`);
-  //   presignedurl = null;
-  // }
   log.info(`debug log screenshots presigned url: ${presignedurl}`);
 
   const opportunity = {
