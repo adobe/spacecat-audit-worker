@@ -149,6 +149,7 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
     // });
 
     // Call getSignedUrl and wait for it to resolve
+    log.info(`s3 object:  ${JSON.stringify(s3ClientObj, null, 2)}`);
     presignedurl = getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
       .then((url1) => {
         log.info(`Generated presigned URL: ${url1}`);
