@@ -110,19 +110,25 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
 //   }
 // }
 
-function convertToOpportunityData(opportunityName, urlObject, scrapedData) {
+function convertToOpportunityData(opportunityName, urlObject, scrapedData, context) {
   const {
     url, pageViews, formViews, formSubmit, CTA,
   } = urlObject;
+  const {
+    log,
+  } = context;
+
   let conversionRate = formSubmit / formViews;
   conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
 
   // Find matching entry in scrapedData
   let screenshot = '';
+  log.info(`debug log scraped data ${JSON.stringify(scrapedData, null, 2)}`);
   if (scrapedData) {
     const matchedData = scrapedData.formData.find((data) => data.finalUrl === url);
-    screenshot = matchedData ? matchedData.screenshot || '' : '';
+    screenshot = matchedData ? matchedData.screenshots || '' : '';
   }
+  log.info(`debug log screenshots ${JSON.stringify(screenshot, null, 2)}`);
 
   const opportunity = {
     form: url,
@@ -144,21 +150,21 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData) {
   return opportunity;
 }
 
-export function generateOpptyData(formVitals, scrapedData) {
+export function generateOpptyData(formVitals, scrapedData, context) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
   const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
-  return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion, scrapedData));
+  return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion, scrapedData, context));
 }
 
-export function generateOpptyDataForHighPageViewsLowFormNav(formVitals, scrapedData) {
+export function generateOpptyDataForHighPageViewsLowFormNav(formVitals, scrapedData, context) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
-  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-nav', highPageViewsLowFormCtr, scrapedData));
+  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-nav', highPageViewsLowFormCtr, scrapedData, context));
 }
 
 /**

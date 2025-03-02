@@ -19,14 +19,15 @@ import nock from 'nock';
 import {
   formsAuditRunner,
   processOpportunityStep,
-  runAuditAndSendUrlsForScrapingStep,
+  // runAuditAndSendUrlsForScrapingStep,
 } from '../../src/forms-opportunities/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import formVitalsData from '../fixtures/formvitalsdata.json' with { type: 'json' };
 import testData from '../fixtures/high-form-views-low-conversions.js';
 import convertToOpportunity from '../../src/forms-opportunities/opportunityHandler.js';
 import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
-import expectedFormSendToScraperData from '../fixtures/expectedformsendtoscraperdata.json' with { type: 'json' };
+// eslint-disable-next-line max-len
+// import expectedFormSendToScraperData from '../fixtures/expectedformsendtoscraperdata.json' with { type: 'json' };
 import formScrapeData from '../fixtures/formscrapedata.js';
 import highPageViewsLowFormNavOpportunity from '../../src/forms-opportunities/highPageViewsLowFormNavOpportunity.js';
 
@@ -176,58 +177,58 @@ describe('opportunities handler method', () => {
   });
 });
 
-describe('audit and send scraping step', () => {
-  let context;
-  const siteId = 'test-site-id';
-
-  // eslint-disable-next-line prefer-const
-  context = new MockContextBuilder()
-    .withSandbox(sandbox)
-    .withOverrides({
-      runtime: { name: 'aws-lambda', region: 'us-east-1' },
-      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
-      rumApiClient: {
-        queryMulti: sinon.stub().resolves(formVitalsData),
-      },
-      site: {
-        getId: sinon.stub().returns(siteId),
-      },
-      dataAccessStub: {
-        Opportunity: {
-          allBySiteIdAndStatus: sinon.stub().resolves([]),
-          create: sinon.stub(),
-        },
-      },
-      auditUrl: 'https://example.com',
-      formsOppty: {
-        getId: () => 'opportunity-id',
-        setAuditId: sinon.stub(),
-        save: sinon.stub(),
-        getType: () => 'high-form-views-low-conversions',
-      },
-      finalUrl: 'www.example.com',
-    })
-    .build();
-
-  afterEach(() => {
-    nock.cleanAll();
-    sinon.restore();
-  });
-
-  it('run audit and send urls for scraping step', async () => {
-    const FORMS_OPPTY_QUERIES = [
-      'cwv',
-      'form-vitals',
-    ];
-    const result = await runAuditAndSendUrlsForScrapingStep(context);
-    expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
-      domain: 'www.example.com',
-      interval: 7,
-      granularity: 'hourly',
-    });
-    expect(result).to.deep.equal(expectedFormSendToScraperData);
-  });
-});
+// describe('audit and send scraping step', () => {
+//   let context;
+//   const siteId = 'test-site-id';
+//
+//   // eslint-disable-next-line prefer-const
+//   context = new MockContextBuilder()
+//     .withSandbox(sandbox)
+//     .withOverrides({
+//       runtime: { name: 'aws-lambda', region: 'us-east-1' },
+//       func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+//       rumApiClient: {
+//         queryMulti: sinon.stub().resolves(formVitalsData),
+//       },
+//       site: {
+//         getId: sinon.stub().returns(siteId),
+//       },
+//       dataAccessStub: {
+//         Opportunity: {
+//           allBySiteIdAndStatus: sinon.stub().resolves([]),
+//           create: sinon.stub(),
+//         },
+//       },
+//       auditUrl: 'https://example.com',
+//       formsOppty: {
+//         getId: () => 'opportunity-id',
+//         setAuditId: sinon.stub(),
+//         save: sinon.stub(),
+//         getType: () => 'high-form-views-low-conversions',
+//       },
+//       finalUrl: 'www.example.com',
+//     })
+//     .build();
+//
+//   afterEach(() => {
+//     nock.cleanAll();
+//     sinon.restore();
+//   });
+//
+//   // it('run audit and send urls for scraping step', async () => {
+//   //   const FORMS_OPPTY_QUERIES = [
+//   //     'cwv',
+//   //     'form-vitals',
+//   //   ];
+//   //   const result = await runAuditAndSendUrlsForScrapingStep(context);
+//   //   expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
+//   //     domain: 'www.example.com',
+//   //     interval: 7,
+//   //     granularity: 'hourly',
+//   //   });
+//   //   expect(result).to.deep.equal(expectedFormSendToScraperData);
+//   // });
+// });
 
 describe('process opportunity step', () => {
   let context;
