@@ -144,9 +144,20 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
     });
 
     // Use getSignedUrl synchronously
-    presignedurl = getSignedUrl(s3ClientObj, command, {
-      expiresIn: EXPIRY_IN_SECONDS,
-    });
+    // presignedurl = getSignedUrl(s3ClientObj, command, {
+    //   expiresIn: EXPIRY_IN_SECONDS,
+    // });
+
+    // Call getSignedUrl and wait for it to resolve
+    presignedurl = getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
+      .then((url1) => {
+        log.info(`Generated presigned URL: ${url1}`);
+        return url1;
+      })
+      .catch((error) => {
+        log.error(`Error generating presigned URL: ${error.message}`);
+        return '';
+      });
 
     log.info(`Generated presigned URL for ${screenshoturl}`);
   } catch (error) {
