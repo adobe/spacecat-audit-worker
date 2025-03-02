@@ -93,10 +93,8 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
 
 // async function getPresignedUrl(context, screenshotPath) {
 //   const { log, s3Client: s3ClientObj } = context;
-//   // const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
 //   try {
 //     log.info(`Generating presigned URL for ${screenshotPath}`);
-//     log.info(`bucket name ${process.env.S3_BUCKET_NAME}`);
 //     const command = new GetObjectCommand({
 //       Bucket: process.env.S3_BUCKET_NAME,
 //       Key: screenshotPath,
@@ -123,56 +121,96 @@ function convertToOpportunityData(opportunityName, urlObject, scrapedData, conte
   conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
 
   // Find matching entry in scrapedData
-  let screenshot = '';
+  let screenshots = '';
+  let s3Key = '';
   log.info(`debug log scraped data ${JSON.stringify(scrapedData, null, 2)}`);
   if (scrapedData) {
     const matchedData = scrapedData.formData.find((data) => data.finalUrl === url);
-    screenshot = matchedData ? matchedData.screenshots || '' : '';
+    screenshots = matchedData ? matchedData.screenshots || '' : '';
+    s3Key = matchedData ? matchedData.s3Key || '' : '';
+    if (s3Key.endsWith('scrape.json')) {
+      s3Key = s3Key.replace(/scrape\.json$/, '');
+    }
   }
-  log.info(`debug log screenshots ${JSON.stringify(screenshot, null, 2)}`);
+  log.info(`debug log screenshots ${JSON.stringify(screenshots, null, 2)}`);
+  log.info(`debug log s3Key ${s3Key}`);
 
-  const screenshoturl = 'scrapes/5a377a31-b6c3-411c-8b00-62d7e1b116ac/account/forms/screenshot-iphone-6-fullpage.png';
-
-  let presignedurl;
-
-  // Generate presigned URL synchronously
-  // let presignedurl = '';
-  try {
+  // Create presigned URL promises for each screenshot
+  const screenshotPromises = screenshots.map((screenshot) => {
+    const screenshotPath = `${s3Key}${screenshot.fileName}`;
+    log.info(`debug log screenshot path ${screenshotPath}`);
     const command = new GetObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
-      Key: screenshoturl,
+      Key: screenshotPath,
     });
 
-    // Use getSignedUrl synchronously
-    // presignedurl = getSignedUrl(s3ClientObj, command, {
-    //   expiresIn: EXPIRY_IN_SECONDS,
-    // });
-
-    // Call getSignedUrl and wait for it to resolve
-    log.info(`s3 object:  ${JSON.stringify(s3ClientObj, null, 2)}`);
-    getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
-      .then((url1) => {
-        log.info(`Generated presigned URL: ${url1}`);
-        presignedurl = url1; // Assign the resolved URL
-        log.info(`Generated presigned URL 1: ${presignedurl}`); // Log the actual URL her
-        return url1;
-      })
+    return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
+      .then((presignedurl) => ({
+        ...screenshot,
+        presignedurl,
+      }))
       .catch((error) => {
-        log.error(`Error generating presigned URL: ${error.message}`);
-        return '';
+        log.error(`Error generating presigned URL for ${screenshot.fileName}: ${error.message}`);
+        return {
+          ...screenshot,
+          presignedurl: '',
+        };
       });
+  });
 
-    log.info(`Generated presigned URL for ${screenshoturl}`);
-  } catch (error) {
-    log.error(`Error generating presigned URL: ${error.message}`);
-    presignedurl = '';
-  }
+  // Ensure all presigned URLs are generated before proceeding
+  Promise.all(screenshotPromises)
+    .then((resolvedScreenshots) => {
+      // Handle resolved screenshots here
+      log.info('Presigned URLs generated successfully', resolvedScreenshots);
+    })
+    .catch((error) => {
+      log.error('Error generating presigned URLs:', error);
+    });
 
-  log.info(`debug log screenshots presigned url: ${presignedurl}`);
+  // eslint-disable-next-line max-len
+  // const screenshoturl = 'scrapes/5a377a31-b6c3-411c-8b00-62d7e1b116ac/account/forms/screenshot-iphone-6-fullpage.png';
+  //
+  // let presignedurl;
+  //
+  // // Generate presigned URL synchronously
+  // // let presignedurl = '';
+  // try {
+  //   const command = new GetObjectCommand({
+  //     Bucket: process.env.S3_BUCKET_NAME,
+  //     Key: screenshoturl,
+  //   });
+  //
+  //   // Use getSignedUrl synchronously
+  //   // presignedurl = getSignedUrl(s3ClientObj, command, {
+  //   //   expiresIn: EXPIRY_IN_SECONDS,
+  //   // });
+  //
+  //   // Call getSignedUrl and wait for it to resolve
+  //   log.info(`s3 object:  ${JSON.stringify(s3ClientObj, null, 2)}`);
+  //   getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
+  //     .then((url1) => {
+  //       log.info(`Generated presigned URL: ${url1}`);
+  //       presignedurl = url1; // Assign the resolved URL
+  //       log.info(`Generated presigned URL 1: ${presignedurl}`); // Log the actual URL her
+  //       return url1;
+  //     })
+  //     .catch((error) => {
+  //       log.error(`Error generating presigned URL: ${error.message}`);
+  //       return '';
+  //     });
+  //
+  //   log.info(`Generated presigned URL for ${screenshoturl}`);
+  // } catch (error) {
+  //   log.error(`Error generating presigned URL: ${error.message}`);
+  //   presignedurl = '';
+  // }
+
+  // log.info(`debug log screenshots presigned url: ${presignedurl}`);
 
   const opportunity = {
     form: url,
-    screenshot,
+    screenshot: screenshots,
     trackedFormKPIName: 'Conversion Rate',
     trackedFormKPIValue: conversionRate,
     formViews,
