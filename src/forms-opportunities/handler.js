@@ -111,7 +111,7 @@ export async function processOpportunityStep(context) {
   } = context;
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity message ${JSON.stringify(scrapedData, null, 2)}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity message ${JSON.stringify(message, null, 2)}`);
 
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
