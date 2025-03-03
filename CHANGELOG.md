@@ -1,3 +1,10 @@
+# [1.63.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.4...v1.63.0) (2025-03-03)
+
+
+### Features
+
+* add alt-text projected traffic metrics to opportunity ([#723](https://github.com/adobe/spacecat-audit-worker/issues/723)) ([1ae73f0](https://github.com/adobe/spacecat-audit-worker/commit/1ae73f03744e4267de672c669cef777de0fc425b))
+
 ## [1.62.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.3...v1.62.4) (2025-03-03)
 
 
