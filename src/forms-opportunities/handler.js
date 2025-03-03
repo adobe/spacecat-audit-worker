@@ -107,10 +107,12 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
 export async function processOpportunityStep(context) {
   const {
-    log, site, finalUrl,
+    log, site, finalUrl, message,
   } = context;
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity message ${JSON.stringify(scrapedData, null, 2)}`);
+
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
