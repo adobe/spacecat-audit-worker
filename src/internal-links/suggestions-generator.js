@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { getPrompt } from '@adobe/spacecat-shared-utils';
+import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 
@@ -45,7 +45,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   );
 
   // return early if site data is not found
-  if (siteData.length === 0) {
+  if (!isNonEmptyArray(siteData)) {
     log.info('broken-internal-links audit: No site data found, skipping suggestions generation');
     return { ...auditData };
   }
