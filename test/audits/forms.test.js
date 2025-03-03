@@ -117,7 +117,11 @@ describe('opportunities handler method', () => {
       dataAccess: dataAccessStub,
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique',
       },
+    };
+    context.sqs = {
+      sendMessage: sinon.stub().resolves({}),
     };
     auditData = testData.auditData3;
   });
@@ -403,7 +407,11 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       dataAccess: dataAccessStub,
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique',
       },
+    };
+    context.sqs = {
+      sendMessage: sinon.stub().resolves({}),
     };
     auditData = testData.oppty2AuditData;
   });

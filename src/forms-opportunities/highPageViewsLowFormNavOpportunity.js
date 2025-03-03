@@ -19,7 +19,9 @@ import { filterForms, generateOpptyDataForHighPageViewsLowFormNav } from './util
  */
 // eslint-disable-next-line max-len
 export default async function highPageViewsLowFormNavOpportunity(auditUrl, auditDataObject, scrapedData, context) {
-  const { dataAccess, log } = context;
+  const {
+    dataAccess, log, env, sqs,
+  } = context;
   const { Opportunity } = dataAccess;
 
   // eslint-disable-next-line no-param-reassign
@@ -80,6 +82,11 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormNavOppty.save();
       }
+      // eslint-disable-next-line no-await-in-loop
+      log.info(`mystique url: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, highPageViewsLowFormNavOppty);
+      log.info(`forms opportunity sent to mystique: ${JSON.stringify(highPageViewsLowFormNavOppty)}`);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form nav for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
