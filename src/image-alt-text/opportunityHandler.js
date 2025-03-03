@@ -15,6 +15,7 @@ import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/space
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import suggestionsEngine from './suggestionsEngine.js';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
+import { CPC, PENALTY_PER_IMAGE, RUM_INTERVAL } from './constants.js';
 
 const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -68,16 +69,12 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
 const getProjectedMetrics = async ({
   images, auditUrl, context, log,
 }) => {
-  const CPC = 1; // $1
-  const PENALTY_PER_IMAGE = 0.01; // 1%
-
   const finalUrl = await getRUMUrl(auditUrl);
-  const INTERVAL = 30; // days
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
     domain: finalUrl,
-    interval: INTERVAL,
+    interval: RUM_INTERVAL,
   };
 
   const results = await rumAPIClient.query('traffic-acquisition', options);
