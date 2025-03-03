@@ -178,7 +178,7 @@ async function convertToOpportunityData(opportunityName, urlObject, scrapedData,
 
   // Generate presigned URLs for screenshots
   // const processedScreenshots = await generatePresignedUrls(screenshots, s3Key, s3ClientObj, log);
-  signedScreenshot = await getPresignedUrl('screenshot-desktop.png', context, url, site);
+  signedScreenshot = await getPresignedUrl('screenshot-desktop-fullpage.png', context, url, site);
 
   const opportunity = {
     form: url,
