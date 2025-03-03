@@ -194,7 +194,10 @@ export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, sc
 export function filterForms(formOpportunities, scrapedData, log) {
   if (!scrapedData?.formData || !Array.isArray(scrapedData.formData)) {
     log.debug('No valid scraped data available.');
-    return formOpportunities; // Return original opportunities if no valid scraped data
+    return formOpportunities.map((opportunity) => ({
+      ...opportunity,
+      scraperStatus: 'failed',
+    }));
   }
 
   return formOpportunities.filter((opportunity) => {
@@ -207,6 +210,9 @@ export function filterForms(formOpportunities, scrapedData, log) {
 
       return urlMatches && isSearchForm;
     });
+
+    // eslint-disable-next-line no-param-reassign
+    opportunity.scraperStatus = matchingForm ? 'completed' : 'failed';
 
     if (matchingForm) {
       log.debug(`Filtered out search form: ${opportunity?.form}`);
