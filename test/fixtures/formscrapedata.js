@@ -15,7 +15,6 @@ const formScrapeData = {
     formData: [
       {
         finalUrl: 'https://www.surest.com/contact-us',
-        s3Key: 'abc/forms/scrape.json',
         scrapeResult: [
           {
             id: '',
