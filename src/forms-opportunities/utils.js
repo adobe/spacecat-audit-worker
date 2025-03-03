@@ -117,7 +117,7 @@ async function getPresignedUrl(fileName, context, url, site) {
     });
 }
 
-async function convertToOpportunityData(opportunityName, urlObject, scrapedData, context) {
+async function convertToOpportunityData(opportunityName, urlObject, context) {
   const {
     url, pageViews, formViews, formSubmit, CTA,
   } = urlObject;
@@ -150,7 +150,7 @@ async function convertToOpportunityData(opportunityName, urlObject, scrapedData,
   return opportunity;
 }
 
-export async function generateOpptyData(formVitals, context, scrapedData) {
+export async function generateOpptyData(formVitals, context) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
@@ -161,14 +161,13 @@ export async function generateOpptyData(formVitals, context, scrapedData) {
       .map((highFormViewsLowConversion) => convertToOpportunityData(
         'high-page-views-low-conversion',
         highFormViewsLowConversion,
-        scrapedData,
         context,
       )),
   );
 }
 
 // eslint-disable-next-line max-len
-export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, context, scrapedData) {
+export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, context) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
@@ -178,7 +177,6 @@ export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, co
       .map((highPageViewsLowFormCtr) => convertToOpportunityData(
         'high-page-views-low-form-nav',
         highPageViewsLowFormCtr,
-        scrapedData,
         context,
       )),
   );
