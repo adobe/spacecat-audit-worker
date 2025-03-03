@@ -79,7 +79,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   const { formVitals } = formsAuditRunnerResult.auditResult;
 
   // generating opportunity data from audit to be send to scraper
-  let formOpportunities = await generateOpptyData(formVitals, undefined, context);
+  let formOpportunities = await generateOpptyData(formVitals, context, undefined);
   const uniqueUrls = new Set();
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
@@ -88,7 +88,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   // generating opportunity data from audit to be send to scraper
   // high page views low form navigation
   // eslint-disable-next-line max-len
-  formOpportunities = await generateOpptyDataForHighPageViewsLowFormNav(formVitals, undefined, context);
+  formOpportunities = await generateOpptyDataForHighPageViewsLowFormNav(formVitals, context, undefined);
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
   }
@@ -111,7 +111,7 @@ export async function processOpportunityStep(context) {
     log, site, finalUrl,
   } = context;
 
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity 1`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);

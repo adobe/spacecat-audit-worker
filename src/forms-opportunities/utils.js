@@ -16,7 +16,7 @@ import {
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-const EXPIRY_IN_SECONDS = 60 * 60;
+const EXPIRY_IN_SECONDS = 3600;
 const DAILY_PAGEVIEW_THRESHOLD = 200;
 const CR_THRESHOLD_RATIO = 0.3;
 const MOBILE = 'mobile';
@@ -150,7 +150,7 @@ async function convertToOpportunityData(opportunityName, urlObject, scrapedData,
   return opportunity;
 }
 
-export async function generateOpptyData(formVitals, scrapedData, context) {
+export async function generateOpptyData(formVitals, context, scrapedData) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
@@ -168,7 +168,7 @@ export async function generateOpptyData(formVitals, scrapedData, context) {
 }
 
 // eslint-disable-next-line max-len
-export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, scrapedData, context) {
+export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, context, scrapedData) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
@@ -196,7 +196,7 @@ export function filterForms(formOpportunities, scrapedData, log) {
     log.debug('No valid scraped data available.');
     return formOpportunities.map((opportunity) => ({
       ...opportunity,
-      scraperStatus: 'failed',
+      scrapedStatus: false,
     }));
   }
 
@@ -212,7 +212,7 @@ export function filterForms(formOpportunities, scrapedData, log) {
     });
 
     // eslint-disable-next-line no-param-reassign
-    opportunity.scraperStatus = matchingForm ? 'completed' : 'failed';
+    opportunity.scrapedStatus = !!matchingForm;
 
     if (matchingForm) {
       log.debug(`Filtered out search form: ${opportunity?.form}`);

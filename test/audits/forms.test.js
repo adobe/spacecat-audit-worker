@@ -434,7 +434,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
         formViews: 300,
         pageViews: 8670,
         samples: 8670,
-        scraperStatus: 'failed',
+        scrapedStatus: false,
         metrics: [
           {
             type: 'conversionRate',

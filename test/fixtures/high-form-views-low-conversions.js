@@ -487,7 +487,7 @@ const testData = {
       formViews: 6690,
       pageViews: 6690,
       samples: 6690,
-      scraperStatus: 'failed',
+      scrapedStatus: false,
       metrics: [
         {
           type: 'conversionRate',
