@@ -118,6 +118,9 @@ describe('opportunities handler method', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      site: {
+        getId: sinon.stub().returns('test-site-id'),
+      },
     };
     auditData = testData.auditData3;
   });
@@ -404,6 +407,9 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      site: {
+        getId: sinon.stub().returns('test-site-id'),
+      },
     };
     auditData = testData.oppty2AuditData;
   });
@@ -428,6 +434,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
         formViews: 300,
         pageViews: 8670,
         samples: 8670,
+        scrapedStatus: false,
         metrics: [
           {
             type: 'conversionRate',
