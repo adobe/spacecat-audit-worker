@@ -91,20 +91,19 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-async function generatePresignedUrls(screenshots, s3Key, s3ClientObj, log) {
+export async function generatePresignedUrls(screenshots, s3Key, s3ClientObj, log) {
   return Promise.all(screenshots.map(async (screenshot) => {
     const screenshotPath = `${s3Key}${screenshot.fileName}`;
     log.info(`debug log screenshot path ${screenshotPath}`);
+    // eslint-disable-next-line max-len
+    const command = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: screenshotPath });
 
-    try {
-      // eslint-disable-next-line max-len
-      const command = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: screenshotPath });
-      // eslint-disable-next-line max-len
-      return { ...screenshot, presignedurl: await getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS }) };
-    } catch (error) {
-      log.error(`Error generating presigned URL for ${screenshot.fileName}: ${error.message}`);
-      return { ...screenshot, presignedurl: '' };
-    }
+    return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
+      .then((presignedUrl) => ({ ...screenshot, presignedurl: presignedUrl }))
+      .catch((error) => {
+        log.error(`Error generating presigned URL for ${screenshot.fileName}: ${error.message}`);
+        return { ...screenshot, presignedurl: '' };
+      });
   }));
 }
 
