@@ -91,21 +91,65 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-export async function generatePresignedUrls(screenshots, s3Key, s3ClientObj, log) {
-  return Promise.all(screenshots.map(async (screenshot) => {
-    const screenshotPath = `${s3Key}${screenshot.fileName}`;
-    log.info(`debug log screenshot path ${screenshotPath}`);
-    // eslint-disable-next-line max-len
-    const command = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: screenshotPath });
-
-    return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
-      .then((presignedUrl) => ({ ...screenshot, presignedurl: presignedUrl }))
-      .catch((error) => {
-        log.error(`Error generating presigned URL for ${screenshot.fileName}: ${error.message}`);
-        return { ...screenshot, presignedurl: '' };
-      });
-  }));
+function getS3PathPrefix(url, site) {
+  const urlObj = new URL(url);
+  let { pathname } = urlObj;
+  pathname = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  return `scrapes/${site.getId()}${pathname}`;
 }
+
+async function getPresignedUrl(fileName, context, url, site) {
+  const { log, s3Client: s3ClientObj } = context;
+  const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
+  // let signedUrl = '';
+
+  log.info(`Generating presigned URL for ${screenshotPath}`);
+
+  const command = new GetObjectCommand({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: screenshotPath,
+  });
+
+  return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
+  // eslint-disable-next-line no-shadow
+    .then((signedUrl) => signedUrl)
+    .catch((error) => {
+      log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
+      return ''; // Ensure the function always returns something
+    });
+
+  // try {
+  //   log.info(`Generating presigned URL for ${screenshotPath}`);
+  //   const command = new GetObjectCommand({
+  //     Bucket: process.env.S3_BUCKET_NAME,
+  //     Key: screenshotPath,
+  //   });
+  //   signedUrl = await getSignedUrl(s3ClientObj, command, {
+  //     expiresIn: EXPIRY_IN_SECONDS,
+  //   });
+  // } catch (error) {
+  //   log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
+  // }
+  //
+  // return signedUrl;
+}
+
+// export async function generatePresignedUrls(screenshots, s3Key, s3ClientObj, log) {
+//   return Promise.all(screenshots.map(async (screenshot) => {
+//     const screenshotPath = `${s3Key}${screenshot.fileName}`;
+//     log.info(`debug log screenshot path ${screenshotPath}`);
+//     // eslint-disable-next-line max-len
+// eslint-disable-next-line max-len
+//     const command = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: screenshotPath });
+//
+//     return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
+//       .then((presignedUrl) => ({ ...screenshot, presignedurl: presignedUrl }))
+//       .catch((error) => {
+//         log.error(`Error generating presigned URL for ${screenshot.fileName}: ${error.message}`);
+//         return { ...screenshot, presignedurl: '' };
+//       });
+//   }));
+// }
 
 async function convertToOpportunityData(opportunityName, urlObject, scrapedData, context) {
   const {
@@ -113,31 +157,32 @@ async function convertToOpportunityData(opportunityName, urlObject, scrapedData,
   } = urlObject;
 
   const {
-    log, s3Client: s3ClientObj,
+    site,
   } = context;
 
   // Find matching entry in scrapedData
-  let screenshots = [];
-  let s3Key = '';
+  let signedScreenshot = '';
+  // let s3Key = '';
 
   let conversionRate = formSubmit / formViews;
   conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
 
-  if (scrapedData) {
-    const matchedData = scrapedData.formData.find((data) => data.finalUrl === url);
-    screenshots = matchedData?.screenshots ?? [];
-    s3Key = matchedData?.s3Key ?? '';
-    if (s3Key.endsWith('scrape.json')) {
-      s3Key = s3Key.replace(/scrape\.json$/, '');
-    }
-  }
+  // if (scrapedData) {
+  //   const matchedData = scrapedData.formData.find((data) => data.finalUrl === url);
+  //   screenshots = matchedData?.screenshots ?? [];
+  //   s3Key = matchedData?.s3Key ?? '';
+  //   if (s3Key.endsWith('scrape.json')) {
+  //     s3Key = s3Key.replace(/scrape\.json$/, '');
+  //   }
+  // }
 
   // Generate presigned URLs for screenshots
-  const processedScreenshots = await generatePresignedUrls(screenshots, s3Key, s3ClientObj, log);
+  // const processedScreenshots = await generatePresignedUrls(screenshots, s3Key, s3ClientObj, log);
+  signedScreenshot = await getPresignedUrl('screenshot-desktop.png', context, url, site);
 
   const opportunity = {
     form: url,
-    screenshot: processedScreenshots,
+    screenshot: signedScreenshot,
     trackedFormKPIName: 'Conversion Rate',
     trackedFormKPIValue: conversionRate,
     formViews,
