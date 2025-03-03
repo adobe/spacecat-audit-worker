@@ -1,3 +1,31 @@
+# [1.63.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.4...v1.63.0) (2025-03-03)
+
+
+### Features
+
+* add alt-text projected traffic metrics to opportunity ([#723](https://github.com/adobe/spacecat-audit-worker/issues/723)) ([1ae73f0](https://github.com/adobe/spacecat-audit-worker/commit/1ae73f03744e4267de672c669cef777de0fc425b))
+
+## [1.62.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.3...v1.62.4) (2025-03-03)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#726](https://github.com/adobe/spacecat-audit-worker/issues/726)) ([9249e84](https://github.com/adobe/spacecat-audit-worker/commit/9249e84d74631747fe3ecc1c42f42bf10738e195))
+
+## [1.62.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.2...v1.62.3) (2025-02-28)
+
+
+### Bug Fixes
+
+* **override-base-url:** use overrideBaseURL from site.config.fetchConfig ([#719](https://github.com/adobe/spacecat-audit-worker/issues/719)) ([3149d47](https://github.com/adobe/spacecat-audit-worker/commit/3149d4780647e1b9f52d8a002e5381d20355eb33)), closes [adobe/spacecat-shared#633](https://github.com/adobe/spacecat-shared/issues/633)
+
+## [1.62.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.1...v1.62.2) (2025-02-28)
+
+
+### Bug Fixes
+
+* forms opportunity handling mechanism fixed ([#718](https://github.com/adobe/spacecat-audit-worker/issues/718)) ([fbb3983](https://github.com/adobe/spacecat-audit-worker/commit/fbb3983f6fc3398531ddd2368615b69fba62b6f9))
+
 ## [1.62.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.0...v1.62.1) (2025-02-27)
 
 
