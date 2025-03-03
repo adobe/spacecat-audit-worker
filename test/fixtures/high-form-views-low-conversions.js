@@ -481,7 +481,7 @@ const testData = {
     ],
     data: {
       form: 'https://www.surest.com/contact-us',
-      screenshot: '',
+      screenshot: [],
       trackedFormKPIName: 'Conversion Rate',
       trackedFormKPIValue: 0.014947683109118086,
       formViews: 6690,

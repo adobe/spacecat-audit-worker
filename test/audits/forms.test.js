@@ -422,7 +422,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       ],
       data: {
         form: 'https://www.surest.com/newsletter',
-        screenshot: '',
+        screenshot: [],
         trackedFormKPIName: 'Conversion Rate',
         trackedFormKPIValue: null,
         formViews: 300,

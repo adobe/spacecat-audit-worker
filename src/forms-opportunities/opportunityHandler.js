@@ -36,7 +36,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
 
   const { formVitals } = auditData.auditResult;
   log.debug(`scraped data for form ${JSON.stringify(scrapedData, null, 2)}`);
-  const formOpportunities = generateOpptyData(formVitals);
+  const formOpportunities = await generateOpptyData(formVitals, scrapedData, context);
   log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
   log.info(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);

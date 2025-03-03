@@ -13,7 +13,10 @@
 import {
   getHighPageViewsLowFormCtrMetrics,
 } from '@adobe/spacecat-shared-utils';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+const EXPIRY_IN_SECONDS = 60 * 60;
 const DAILY_PAGEVIEW_THRESHOLD = 200;
 const CR_THRESHOLD_RATIO = 0.3;
 const MOBILE = 'mobile';
@@ -88,16 +91,54 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-function convertToOpportunityData(opportunityName, urlObject) {
+async function generatePresignedUrls(screenshots, s3Key, s3ClientObj, log) {
+  return Promise.all(screenshots.map(async (screenshot) => {
+    const screenshotPath = `${s3Key}${screenshot.fileName}`;
+    log.info(`debug log screenshot path ${screenshotPath}`);
+
+    try {
+      // eslint-disable-next-line max-len
+      const command = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: screenshotPath });
+      // eslint-disable-next-line max-len
+      return { ...screenshot, presignedurl: await getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS }) };
+    } catch (error) {
+      log.error(`Error generating presigned URL for ${screenshot.fileName}: ${error.message}`);
+      return { ...screenshot, presignedurl: '' };
+    }
+  }));
+}
+
+async function convertToOpportunityData(opportunityName, urlObject, scrapedData, context) {
   const {
     url, pageViews, formViews, formSubmit, CTA,
   } = urlObject;
+
+  const {
+    log, s3Client: s3ClientObj,
+  } = context;
+
+  // Find matching entry in scrapedData
+  let screenshots = [];
+  let s3Key = '';
+
   let conversionRate = formSubmit / formViews;
   conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
 
+  if (scrapedData) {
+    const matchedData = scrapedData.formData.find((data) => data.finalUrl === url);
+    screenshots = matchedData?.screenshots ?? [];
+    s3Key = matchedData?.s3Key ?? '';
+    if (s3Key.endsWith('scrape.json')) {
+      s3Key = s3Key.replace(/scrape\.json$/, '');
+    }
+  }
+
+  // Generate presigned URLs for screenshots
+  const processedScreenshots = await generatePresignedUrls(screenshots, s3Key, s3ClientObj, log);
+
   const opportunity = {
     form: url,
-    screenshot: '',
+    screenshot: processedScreenshots,
     trackedFormKPIName: 'Conversion Rate',
     trackedFormKPIValue: conversionRate,
     formViews,
@@ -115,21 +156,38 @@ function convertToOpportunityData(opportunityName, urlObject) {
   return opportunity;
 }
 
-export function generateOpptyData(formVitals) {
+export async function generateOpptyData(formVitals, scrapedData, context) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
   const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
-  return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion));
+  return Promise.all(
+    getHighFormViewsLowConversion(7, formVitalsByDevice)
+      .map((highFormViewsLowConversion) => convertToOpportunityData(
+        'high-page-views-low-conversion',
+        highFormViewsLowConversion,
+        scrapedData,
+        context,
+      )),
+  );
 }
 
-export function generateOpptyDataForHighPageViewsLowFormNav(formVitals) {
+// eslint-disable-next-line max-len
+export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, scrapedData, context) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
-  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-nav', highPageViewsLowFormCtr));
+  return Promise.all(
+    getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7)
+      .map((highPageViewsLowFormCtr) => convertToOpportunityData(
+        'high-page-views-low-form-nav',
+        highPageViewsLowFormCtr,
+        scrapedData,
+        context,
+      )),
+  );
 }
 
 /**
