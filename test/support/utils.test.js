@@ -502,7 +502,6 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
       ],
       formData: [{
         finalUrl: 'https://example.com/contact',
-        s3Key: 'scrapes/site-id/forms/scrape.json',
         scrapeResult: [
           {
             id: '',
@@ -609,7 +608,6 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
       formData: [
         {
           finalUrl: 'https://example.com/contact',
-          s3Key: 'scrapes/site-id/forms/scrape.json',
           scrapeResult: [
             {
               id: '',
@@ -653,7 +651,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       siteData: [],
-      formData: [{ s3Key: 'scrapes/site-id/forms/scrape.json' }],
+      formData: [null],
     });
   });
 });

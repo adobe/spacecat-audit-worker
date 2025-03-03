@@ -287,10 +287,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
           file.Key,
           log,
         );
-        return {
-          ...fileContent,
-          s3Key: file.Key,
-        };
+        return fileContent;
       }),
     );
   }
