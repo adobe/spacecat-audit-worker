@@ -199,9 +199,13 @@ export function filterForms(formOpportunities, scrapedData, log) {
   }
 
   return formOpportunities.filter((opportunity) => {
+    let urlMatches = false;
     // Find matching form in scraped data
     const matchingForm = scrapedData.formData.find((form) => {
-      const urlMatches = form.finalUrl === opportunity?.form;
+      const formUrl = new URL(form.finalUrl);
+      const opportunityUrl = new URL(opportunity.form);
+      // eslint-disable-next-line max-len
+      urlMatches = opportunityUrl && formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname;
 
       const isSearchForm = Array.isArray(form.scrapeResult)
           && form.scrapeResult.some((result) => result?.formType === 'search' || result?.classList?.includes('search') || result?.classList?.includes('unsubscribe') || result?.action?.endsWith('search.html'));
@@ -210,7 +214,7 @@ export function filterForms(formOpportunities, scrapedData, log) {
     });
 
     // eslint-disable-next-line no-param-reassign
-    opportunity.scrapedStatus = !!matchingForm;
+    opportunity.scrapedStatus = !!urlMatches;
 
     if (matchingForm) {
       log.debug(`Filtered out search form: ${opportunity?.form}`);

@@ -58,7 +58,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
 
       const opportunityData = {
         siteId: auditData.siteId,
-        auditId: auditData.id,
+        auditId: auditData.auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
         type: 'high-page-views-low-form-nav',
         origin: 'AUTOMATION',
@@ -85,7 +85,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
       } else {
-        highPageViewsLowFormNavOppty.setAuditId(auditData.siteId);
+        highPageViewsLowFormNavOppty.setAuditId(auditData.auditId);
         highPageViewsLowFormNavOppty.setData({
           ...highPageViewsLowFormNavOppty.getData(),
           ...opportunityData.data,
