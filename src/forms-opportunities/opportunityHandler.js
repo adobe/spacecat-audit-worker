@@ -19,7 +19,9 @@ import { filterForms, generateOpptyData } from './utils.js';
  */
 // eslint-disable-next-line max-len
 export default async function convertToOpportunity(auditUrl, auditDataObject, scrapedData, context) {
-  const { dataAccess, log } = context;
+  const {
+    dataAccess, log, env, sqs,
+  } = context;
   const { Opportunity } = dataAccess;
 
   // eslint-disable-next-line no-param-reassign
@@ -77,6 +79,12 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         await highFormViewsLowConversionsOppty.save();
         log.debug('Forms Opportunity high form views low conversion updated');
       }
+
+      // eslint-disable-next-line no-await-in-loop
+      log.info(`mystique url 1: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, highFormViewsLowConversionsOppty);
+      log.info(`forms opportunity sent to mystique 1: ${JSON.stringify(highFormViewsLowConversionsOppty)}`);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
