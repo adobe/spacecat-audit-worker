@@ -28,27 +28,27 @@ export default async function handler(message, context) {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setGuidance(guidance);
     opportunity = await opportunity.save();
+
+    const existingSuggestions = await opportunity.getSuggestions();
+    // delete previous suggestions if any
+    await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+
+    // map the suggestions received from M to PSS
+    const suggestionData = {
+      opportunityId: opportunity.getId(),
+      type: 'CONTENT_UPDATE',
+      rank: 1,
+      status: 'NEW',
+      data: {
+        variations: suggestions,
+      },
+      kpiDeltas: {
+        estimatedKPILift: 0,
+      },
+    };
+
+    await Suggestion.create(suggestionData);
   }
-
-  const existingSuggestions = await opportunity.getSuggestions();
-  // delete previous suggestions if any
-  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
-
-  // map the suggestions received from M to PSS
-  const suggestionData = {
-    opportunityId: opportunity.getId(),
-    type: 'CONTENT_UPDATE',
-    rank: 1,
-    status: 'NEW',
-    data: {
-      variations: suggestions,
-    },
-    kpiDeltas: {
-      estimatedKPILift: 0,
-    },
-  };
-
-  await Suggestion.create(suggestionData);
 
   return ok();
 }

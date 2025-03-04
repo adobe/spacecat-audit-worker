@@ -29,6 +29,7 @@ import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' wit
 import expectedFormSendToScraperData from '../fixtures/expectedformsendtoscraperdata.json' with { type: 'json' };
 import formScrapeData from '../fixtures/formscrapedata.js';
 import highPageViewsLowFormNavOpportunity from '../../src/forms-opportunities/highPageViewsLowFormNavOpportunity.js';
+import highFormViewsLowConversionGuidance from '../../src/forms-opportunities/guidance/highFormViewsLowConversionGuidance.js';
 
 use(sinonChai);
 
@@ -505,5 +506,132 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+  });
+});
+
+describe('High Form Views Low Conversion Guidance Handler', () => {
+  let context;
+  let message;
+  let logStub;
+  let opportunityStub;
+  let suggestionStub;
+  let existingOpportunity;
+  let existingSuggestions;
+
+  beforeEach(() => {
+    existingOpportunity = {
+      getId: () => 'opp-123',
+      getData: () => ({ form: 'https://example.com/form' }),
+      setGuidance: sinon.stub(),
+      save: sinon.stub().resolves({
+        getId: () => 'opp-123',
+        getSuggestions: sinon.stub().resolves([
+          { remove: sinon.stub().resolves() },
+          { remove: sinon.stub().resolves() },
+        ]),
+      }),
+      getSuggestions: sinon.stub(),
+    };
+
+    existingSuggestions = [
+      { remove: sinon.stub().resolves() },
+      { remove: sinon.stub().resolves() },
+    ];
+
+    logStub = {
+      info: sinon.stub(),
+      error: sinon.stub(),
+    };
+
+    opportunityStub = {
+      allBySiteId: sinon.stub().resolves([existingOpportunity]),
+    };
+
+    suggestionStub = {
+      create: sinon.stub().resolves({ id: 'suggestion-123' }),
+    };
+
+    context = {
+      log: logStub,
+      dataAccess: {
+        Opportunity: opportunityStub,
+        Suggestion: suggestionStub,
+      },
+    };
+
+    message = {
+      siteId: 'site-123',
+      data: {
+        url: 'https://example.com/form',
+        guidance: 'Test guidance',
+        suggestions: ['suggestion1', 'suggestion2'],
+      },
+    };
+
+    existingOpportunity.getSuggestions.resolves(existingSuggestions);
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should update existing opportunity and create new suggestion', async () => {
+    await highFormViewsLowConversionGuidance(message, context);
+
+    // Verify logs
+    expect(logStub.info).to.have.been.calledWith(
+      `Message received in guidance high form views low conversions handler: ${JSON.stringify(message, null, 2)}`,
+    );
+    expect(logStub.info).to.have.been.calledWith(
+      'Existing Opportunity found for page: https://example.com/form. Updating it with new data.',
+    );
+
+    // Verify opportunity handling
+    expect(opportunityStub.allBySiteId).to.have.been.calledWith('site-123');
+    expect(existingOpportunity.setGuidance).to.have.been.calledWith('Test guidance');
+    expect(existingOpportunity.save).to.have.been.called;
+
+    // Verify new suggestion was created
+    expect(suggestionStub.create).to.have.been.calledWith({
+      opportunityId: 'opp-123',
+      type: 'CONTENT_UPDATE',
+      rank: 1,
+      status: 'NEW',
+      data: {
+        variations: ['suggestion1', 'suggestion2'],
+      },
+      kpiDeltas: {
+        estimatedKPILift: 0,
+      },
+    });
+  });
+
+  it('should handle case when opportunity is not found', async () => {
+    opportunityStub.allBySiteId.resolves([]);
+    await highFormViewsLowConversionGuidance(message, context);
+
+    expect(suggestionStub.create).to.not.have.been.called;
+  });
+
+  it('should handle errors during suggestion removal', async () => {
+    const error = new Error('Failed to remove suggestion');
+    existingSuggestions[0].remove.rejects(error);
+
+    try {
+      await highFormViewsLowConversionGuidance(message, context);
+    } catch (err) {
+      expect(err).to.equal(error);
+    }
+  });
+
+  it('should handle errors during suggestion creation', async () => {
+    const error = new Error('Failed to create suggestion');
+    suggestionStub.create.rejects(error);
+
+    try {
+      await highFormViewsLowConversionGuidance(message, context);
+    } catch (err) {
+      expect(err).to.equal(error);
+    }
   });
 });
