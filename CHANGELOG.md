@@ -1,3 +1,10 @@
+# [1.66.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.65.3...v1.66.0) (2025-03-04)
+
+
+### Features
+
+* broken internal links audit improvements - verify links ([#722](https://github.com/adobe/spacecat-audit-worker/issues/722)) ([7e087b1](https://github.com/adobe/spacecat-audit-worker/commit/7e087b10ba307ad25fede78c62d9b8c8965d2d57))
+
 ## [1.65.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.65.2...v1.65.3) (2025-03-04)
 
 
