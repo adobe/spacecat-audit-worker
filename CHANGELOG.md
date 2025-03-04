@@ -1,3 +1,10 @@
+# [1.65.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.64.3...v1.65.0) (2025-03-04)
+
+
+### Features
+
+* sites-29509 added check for audit to run for top-pages only ([#727](https://github.com/adobe/spacecat-audit-worker/issues/727)) ([68d4f70](https://github.com/adobe/spacecat-audit-worker/commit/68d4f707d3c31850722ee18f2ca69c4c1bd9fc96))
+
 ## [1.64.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.64.2...v1.64.3) (2025-03-04)
 
 
