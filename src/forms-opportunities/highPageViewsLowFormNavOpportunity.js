@@ -86,6 +86,8 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
 
       // eslint-disable-next-line no-await-in-loop
       log.info(`mystique url: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+      log.info(`mystique message: ${JSON.stringify(highPageViewsLowFormNavOppty)}`);
+
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, highPageViewsLowFormNavOppty);
       log.info(`forms opportunity sent to mystique: ${JSON.stringify(highPageViewsLowFormNavOppty)}`);

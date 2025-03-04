@@ -83,6 +83,22 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
       // eslint-disable-next-line no-await-in-loop
       log.info(`mystique url 1: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
       // eslint-disable-next-line no-await-in-loop
+      highFormViewsLowConversionsOppty = `{
+    "type": "guidance:high-form-views-low-conversions",
+    "siteId": "cf54cfe7-820b-4e72-a0dd-1f18f609f67f",
+    "auditId": "6fd19794-96a4-4f55-86d6-19b80caa8583",
+    "deliveryType": "other",
+    "time": "2025-02-25T05:46:47.030Z",
+    "data": {
+        "url": "https://www.prudential.com/login",
+        "ctr": 0.13371757925072045,
+        "siteAgerageCtr": 0.21925011431184271
+    }
+}`;
+
+      log.info(`mystique message: ${JSON.stringify(highFormViewsLowConversionsOppty)}`);
+
+      // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, highFormViewsLowConversionsOppty);
       log.info(`forms opportunity sent to mystique 1: ${JSON.stringify(highFormViewsLowConversionsOppty)}`);
     }
