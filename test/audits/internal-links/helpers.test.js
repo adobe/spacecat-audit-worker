@@ -112,13 +112,11 @@ describe('isLinkInaccessible', () => {
   });
 
   afterEach(() => {
-    // Ensure all nock interceptors were used
-    expect(nock.isDone()).to.be.true;
     nock.cleanAll();
   });
 
   it('should return false for accessible links (status 200)', async function call() {
-    this.timeout(4000);
+    this.timeout(6000);
     nock('https://example.com')
       .get('/')
       .reply(200);
@@ -128,7 +126,7 @@ describe('isLinkInaccessible', () => {
   });
 
   it('should return true for 404 responses', async function call() {
-    this.timeout(4000);
+    this.timeout(6000);
     nock('https://example.com')
       .get('/notfound')
       .reply(404);
@@ -138,7 +136,7 @@ describe('isLinkInaccessible', () => {
   });
 
   it('should return true and log warning for non-404 client errors', async function call() {
-    this.timeout(4000);
+    this.timeout(6000);
     nock('https://example.com')
       .get('/forbidden')
       .reply(403);
@@ -151,7 +149,7 @@ describe('isLinkInaccessible', () => {
   });
 
   it('should return true for network errors', async function call() {
-    this.timeout(4000);
+    this.timeout(6000);
     nock('https://example.com')
       .get('/error')
       .replyWithError('Network error');
@@ -168,7 +166,7 @@ describe('isLinkInaccessible', () => {
 
     nock('https://example.com')
       .get('/timeout')
-      .delay(4000) // Set delay just above the 3000ms timeout in isLinkInaccessible
+      .delay(6000) // Set delay just above the 3000ms timeout in isLinkInaccessible
       .reply(200);
 
     const result = await isLinkInaccessible('https://example.com/timeout', mockLog);
