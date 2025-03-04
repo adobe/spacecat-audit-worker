@@ -449,6 +449,16 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
           url: 'https://www.surest.com/about-us',
         },
       },
+      guidance: {
+        recommendations: [
+          {
+            insight: 'The CTA element in the page: https://www.surest.com/about-us is not placed in the most optimal positions for visibility and engagement',
+            recommendation: 'Reposition the CTA to be more centrally located and ensure they are above the fold.',
+            type: 'guidance',
+            rationale: 'CTAs placed above the fold and in central positions are more likely to be seen and clicked by users, leading to higher engagement rates.',
+          },
+        ],
+      },
     };
 
     formsCTAOppty.getType = () => 'high-page-views-low-form-nav';
