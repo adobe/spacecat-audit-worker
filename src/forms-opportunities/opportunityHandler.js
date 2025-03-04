@@ -20,7 +20,7 @@ import { filterForms, generateOpptyData } from './utils.js';
 // eslint-disable-next-line max-len
 export default async function convertToOpportunity(auditUrl, auditDataObject, scrapedData, context) {
   const {
-    dataAccess, log, env, sqs,
+    dataAccess, log, env, sqs, site,
   } = context;
   const { Opportunity } = dataAccess;
 
@@ -52,7 +52,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
 
       const opportunityData = {
         siteId: auditData.siteId,
-        auditId: auditData.id ?? auditData.latestAuditId,
+        auditId: auditData.auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
         type: 'high-form-views-low-conversions',
         origin: 'AUTOMATION',
@@ -81,9 +81,18 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
       }
 
       const mystiqueMessage = {
-        ...opportunityData,
         type: 'guidance:high-form-views-low-conversions',
+        siteId: auditData.siteId,
+        auditId: auditData.auditId,
+        deliveryType: site.getDeliveryType(),
+        time: new Date().toISOString(),
+        data: {
+          url: opportunityData.data.form,
+          cr: opportunityData.data.trackedFormKPIValue,
+          screenshot: opportunityData.data.screenshot,
+        },
       };
+
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
       log.info(`forms opportunity high form views low conversions sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
