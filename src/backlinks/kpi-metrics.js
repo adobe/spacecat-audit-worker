@@ -18,7 +18,7 @@ const calculateKpiMetrics = async (auditData, context, site) => {
   const { log } = context;
   const siteId = site.getId();
   const rumTrafficData = await getStoredMetrics(
-    { source: 'rum', metric: 'rum-traffic', siteId },
+    { source: 'rum', metric: 'all-traffic', siteId },
     context,
   );
 

@@ -19,7 +19,7 @@ import nock from 'nock';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
 import auditDataSuggestionsMock from '../fixtures/broken-backlinks/auditWithSuggestions.json' with { type: 'json' };
-import rumTraffic from '../fixtures/broken-backlinks/rum-traffic.json' with { type: 'json' };
+import rumTraffic from '../fixtures/broken-backlinks/all-traffic.json' with { type: 'json' };
 import { brokenBacklinksAuditRunner, opportunityAndSuggestions, generateSuggestionData } from '../../src/backlinks/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import {
