@@ -380,6 +380,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       save: sinon.stub(),
       getType: () => 'high-page-views-low-form-nav',
       setData: sinon.stub(),
+      setGuidance: sinon.stub(),
       getData: sinon.stub().returns({
         form: 'https://www.surest.com/newsletter',
         screenshot: '',
