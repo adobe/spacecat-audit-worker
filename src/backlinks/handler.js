@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL, getPrompt, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { getPrompt, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { AbortController, AbortError } from '@adobe/fetch';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
@@ -281,7 +281,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
 }
 
 export default new AuditBuilder()
-  .withUrlResolver((site) => composeAuditURL(site.getBaseURL()))
+  .withUrlResolver((site) => site.resolveFinalURL())
   .withRunner(brokenBacklinksAuditRunner)
   .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
   .build();
