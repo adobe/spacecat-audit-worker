@@ -10,77 +10,45 @@
  * governing permissions and limitations under the License.
  */
 
-// import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
-// import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
-
 import { ok } from '@adobe/spacecat-shared-http-utils';
 
 export default async function handler(message, context) {
-  const { log } = context;
-  // const { Audit, Opportunity, Suggestion } = dataAccess;
-  // const { auditId, siteId, data } = message;
-  // const { url, guidance, suggestions } = data;
+  const { log, dataAccess } = context;
+  const { Opportunity, Suggestion } = dataAccess;
+  const { siteId, data } = message;
+  const { url, guidance, suggestions } = data;
   log.info(`Message received in guidance high form views low conversions handler: ${JSON.stringify(message, null, 2)}`);
 
-  // const audit = await Audit.findById(auditId);
-  // if (!audit) {
-  //   log.warn(`No audit found for auditId: ${auditId}`);
-  //   return notFound();
-  // }
+  const existingOpportunities = await Opportunity.allBySiteId(siteId);
+  let opportunity = existingOpportunities.find(
+    (oppty) => oppty.getData()?.form === url,
+  );
 
-  // const auditOpportunity = audit.getAuditResult()?.experimentationOpportunities
-  //   ?.filter((oppty) => oppty.type === 'high-organic-low-ctr')
-  //   .find((oppty) => oppty.page === url);
+  if (opportunity) {
+    log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
+    opportunity.setGuidance(guidance);
+    opportunity = await opportunity.save();
+  }
 
-  // if (!auditOpportunity) {
-  //   log.info(
-  // eslint-disable-next-line max-len
-  //     `No raw opportunity found of type 'high-organic-low-ctr' for URL: ${url}. Nothing to process.`,
-  //   );
-  //   return notFound();
-  // }
+  const existingSuggestions = await opportunity.getSuggestions();
+  // delete previous suggestions if any
+  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
 
-  // const entity = convertToOpportunityEntity(siteId, auditId, auditOpportunity, guidance);
+  // map the suggestions received from M to PSS
+  const suggestionData = {
+    opportunityId: opportunity.getId(),
+    type: 'CONTENT_UPDATE',
+    rank: 1,
+    status: 'NEW',
+    data: {
+      variations: suggestions,
+    },
+    kpiDeltas: {
+      estimatedKPILift: 0,
+    },
+  };
 
-  // const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  // let opportunity = existingOpportunities.find(
-  //   (oppty) => oppty.getData()?.page === url,
-  // );
-
-  // if (!opportunity) {
-  //   log.info(`No existing Opportunity found for page: ${url}. Creating a new one.`);
-  //   opportunity = await Opportunity.create(entity);
-  // } else {
-  //   log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
-  //   opportunity.setAuditId(auditId);
-  //   opportunity.setData({
-  //     ...opportunity.getData(),
-  //     ...entity.data,
-  //   });
-  //   opportunity.setGuidance(entity.guidance);
-  //   opportunity = await opportunity.save();
-  // }
-  //
-  // const existingSuggestions = await opportunity.getSuggestions();
-  //
-  // // delete previous suggestions if any
-  // await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
-  //
-  // // map the suggestions received from M to PSS
-  // const suggestionData = {
-  //   opportunityId: opportunity.getId(),
-  //   type: 'CONTENT_UPDATE',
-  //   rank: 1,
-  //   status: 'NEW',
-  //   data: {
-  //     variations: suggestions,
-  //   },
-  //   kpiDeltas: {
-  //     estimatedKPILift: 0,
-  //   },
-  // };
-  //
-  // await Suggestion.create(suggestionData);
+  await Suggestion.create(suggestionData);
 
   return ok();
 }

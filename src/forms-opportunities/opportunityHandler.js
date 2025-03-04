@@ -44,13 +44,13 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
   log.info(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
-    for (const opptyData of formOpportunities) {
+    for (const opptyData of filteredOpportunities) {
       let highFormViewsLowConversionsOppty = opportunities.find(
         (oppty) => oppty.getType() === 'high-form-views-low-conversions'
               && oppty.getData().form === opptyData.form,
       );
 
-      let opportunityData = {
+      const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.id ?? auditData.latestAuditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
@@ -80,28 +80,13 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         log.debug('Forms Opportunity high form views low conversion updated');
       }
 
+      const mystiqueMessage = {
+        ...opportunityData,
+        type: 'guidance:high-form-views-low-conversions',
+      };
       // eslint-disable-next-line no-await-in-loop
-      log.info(`mystique url 1: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
-      // eslint-disable-next-line no-await-in-loop
-      opportunityData = `{
-          "type": "guidance:high-organic-low-ctr",
-          "siteId": "cf54cfe7-820b-4e72-a0dd-1f18f609f67f",
-          "auditId": "6fd19794-96a4-4f55-86d6-19b80caa8583",
-          "deliveryType": "other",
-          "time": "2025-02-25T05:46:47.030Z",
-          "data": {
-              "url": "https://www.prudential.com/login",
-              "ctr": 0.13371757925072045,
-              "siteAgerageCtr": 0.21925011431184271
-          }
-      }`;
-
-      // opportunityData.type = 'guidance:high-form-views-low-conversions';
-      log.info(`mystique message: ${JSON.stringify(opportunityData)}`);
-
-      // eslint-disable-next-line no-await-in-loop
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, opportunityData);
-      log.info(`forms opportunity sent to mystique 1: ${JSON.stringify(opportunityData)}`);
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+      log.info(`forms opportunity high form views low conversions sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);

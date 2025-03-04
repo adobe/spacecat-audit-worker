@@ -121,6 +121,9 @@ describe('opportunities handler method', () => {
       site: {
         getId: sinon.stub().returns('test-site-id'),
       },
+      sqs: {
+        sendMessage: sinon.stub().resolves({}),
+      },
     };
     auditData = testData.auditData3;
   });
@@ -129,7 +132,7 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData, undefined, context);
-    // expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
@@ -146,14 +149,14 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData2, formScrapeData.scrapeData2, context);
-    // expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should use existing opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
     await convertToOpportunity(auditUrl, auditData, undefined, context);
-    // expect(formsOppty.save).to.be.callCount(1);
+    expect(formsOppty.save).to.be.callCount(1);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
@@ -415,50 +418,49 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
   });
 
   it('should create new high page views low form navigation opportunity', async () => {
-    // const expectedOpportunityData = {
-    //   siteId: 'site-id',
-    //   auditId: 'audit-id',
-    //   runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
-    //   type: 'high-page-views-low-form-nav',
-    //   origin: 'AUTOMATION',
-    //   title: 'Form has low views',
-    // eslint-disable-next-line max-len
-    //   description: 'The form has low views due to low navigations in the page containing its CTA',
-    //   tags: [
-    //     'Forms Conversion',
-    //   ],
-    //   data: {
-    //     form: 'https://www.surest.com/newsletter',
-    //     screenshot: '',
-    //     trackedFormKPIName: 'Conversion Rate',
-    //     trackedFormKPIValue: null,
-    //     formViews: 300,
-    //     pageViews: 8670,
-    //     samples: 8670,
-    //     scrapedStatus: false,
-    //     metrics: [
-    //       {
-    //         type: 'conversionRate',
-    //         vendor: '*',
-    //         value: {
-    //           page: null,
-    //         },
-    //       },
-    //     ],
-    //     formNavigation: {
-    //       source: '#teaser-related02 .cmp-teaser__action-link',
-    //       url: 'https://www.surest.com/about-us',
-    //     },
-    //   },
-    // };
+    const expectedOpportunityData = {
+      siteId: 'site-id',
+      auditId: 'audit-id',
+      runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
+      type: 'high-page-views-low-form-nav',
+      origin: 'AUTOMATION',
+      title: 'Form has low views',
+      description: 'The form has low views due to low navigations in the page containing its CTA',
+      tags: [
+        'Forms Conversion',
+      ],
+      data: {
+        form: 'https://www.surest.com/newsletter',
+        screenshot: '',
+        trackedFormKPIName: 'Conversion Rate',
+        trackedFormKPIValue: null,
+        formViews: 300,
+        pageViews: 8670,
+        samples: 8670,
+        scrapedStatus: false,
+        metrics: [
+          {
+            type: 'conversionRate',
+            vendor: '*',
+            value: {
+              page: null,
+            },
+          },
+        ],
+        formNavigation: {
+          source: '#teaser-related02 .cmp-teaser__action-link',
+          url: 'https://www.surest.com/about-us',
+        },
+      },
+    };
 
     formsCTAOppty.getType = () => 'high-page-views-low-form-nav';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
 
     await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
 
-    dataAccessStub.Opportunity.create.getCall(0).args[0];
-    // expect(actualCall).to.deep.equal(expectedOpportunityData);
+    const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
+    expect(actualCall).to.deep.equal(expectedOpportunityData);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });
 
