@@ -12,6 +12,7 @@
 
 import { JSDOM } from 'jsdom';
 import { hasText } from '@adobe/spacecat-shared-utils';
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import {
   getObjectFromKey,
   getObjectKeysUsingPrefix,
@@ -22,7 +23,7 @@ import { noopUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
 
 const filterImages = (imageTags) => {
-  const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg)(?=\?|$)/i;
+  const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg|svg|bmp|tiff|ico)(?=\?|$)/i;
   const supportedImages = [];
   const unsupportedFormatImages = [];
 
@@ -58,7 +59,8 @@ export async function fetchAndProcessPageObject(
     alt: img.getAttribute('alt'),
   }));
 
-  const { supportedImages } = filterImages(images);
+  const { supportedImages, unsupportedFormatImages } = filterImages(images);
+  log.info(`[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Handler.js - Unsupported image formats:`, unsupportedFormatImages);
   const uniqueSupportedImages = Array.from(
     new Map(supportedImages.map((img) => [img.src, img])).values(),
   );

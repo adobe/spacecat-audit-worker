@@ -30,3 +30,4 @@ Your response must be a valid JSON object using the following structure:
 
 ### Task:
 Given the following list of images: {{images}}, suggest a description for the alt attribute of each image that is helpful for the user.
+Use the base64 blob if the image is not supported by Firefall.
