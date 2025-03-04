@@ -491,7 +491,7 @@ const testData = {
       metrics: [
         {
           type: 'conversionRate',
-          vendor: '*',
+          device: '*',
           value: {
             page: 0.014947683109118086,
           },

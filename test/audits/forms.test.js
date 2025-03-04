@@ -438,7 +438,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
         metrics: [
           {
             type: 'conversionRate',
-            vendor: '*',
+            device: '*',
             value: {
               page: null,
             },

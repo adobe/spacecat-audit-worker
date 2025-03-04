@@ -140,7 +140,7 @@ async function convertToOpportunityData(opportunityName, urlObject, context) {
     samples: pageViews, // todo: get the actual number of samples
     metrics: [{
       type: 'conversionRate',
-      vendor: '*',
+      device: '*',
       value: {
         page: conversionRate,
       },
