@@ -50,7 +50,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
 
       const opportunityData = {
         siteId: auditData.siteId,
-        auditId: auditData.id ?? auditData.latestAuditId,
+        auditId: auditData.auditId ?? auditData.latestAuditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
         type: 'high-form-views-low-conversions',
         origin: 'AUTOMATION',

@@ -201,7 +201,11 @@ export function filterForms(formOpportunities, scrapedData, log) {
   return formOpportunities.filter((opportunity) => {
     // Find matching form in scraped data
     const matchingForm = scrapedData.formData.find((form) => {
-      const urlMatches = form.finalUrl === opportunity?.form;
+      const formUrl = new URL(form.finalUrl);
+      const opportunityUrl = new URL(opportunity.form);
+      // eslint-disable-next-line max-len
+      const urlMatches = opportunityUrl && formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname;
+      // const urlMatches = form.finalUrl === opportunity?.form;
 
       const isSearchForm = Array.isArray(form.scrapeResult)
           && form.scrapeResult.some((result) => result?.formType === 'search' || result?.classList?.includes('search') || result?.classList?.includes('unsubscribe') || result?.action?.endsWith('search.html'));
