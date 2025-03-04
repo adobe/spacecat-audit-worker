@@ -12,6 +12,8 @@
 
 import { getStoredMetrics, isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 
+const CPC_DEFAULT_VALUE = 2.69;
+
 const calculateKpiMetrics = async (auditData, context, site) => {
   const { log } = context;
   const siteId = site.getId();
@@ -30,7 +32,7 @@ const calculateKpiMetrics = async (auditData, context, site) => {
     context,
   );
 
-  let CPC = 1;
+  let CPC = CPC_DEFAULT_VALUE;
 
   if (isNonEmptyArray(organicTrafficData)) {
     const latestOrganicTrafficData = organicTrafficData.sort(
@@ -56,7 +58,7 @@ const calculateKpiMetrics = async (auditData, context, site) => {
     } else {
       trafficBand = 0.001;
     }
-    const proposedTargetTraffic = rumTrafficData[urlsSuggested[0]]?.earned ?? 0;
+    const proposedTargetTraffic = rumTrafficData[urlsSuggested?.[0]]?.earned ?? 0;
     return sum + (proposedTargetTraffic * trafficBand);
   }, 0);
 

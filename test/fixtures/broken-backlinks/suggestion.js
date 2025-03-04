@@ -54,7 +54,11 @@ export const suggestions = [
     opportunityId: 'test-opportunity-id',
     type: 'REDIRECT_UPDATE',
     rank: 1100000,
-    data: auditDataSuggestionsMock.auditResult.brokenBacklinks[3],
+    data: {
+      ...auditDataSuggestionsMock.auditResult.brokenBacklinks[3],
+      urlsSuggested: [],
+      aiRationale: '',
+    },
   },
 ];
 

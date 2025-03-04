@@ -82,18 +82,6 @@ describe('Backlinks Tests', function () {
       })
       .build(message);
 
-    context.s3.s3Client.send.onCall(0).resolves({
-      Body: {
-        transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),
-      },
-    });
-
-    context.s3.s3Client.send.onCall(1).resolves({
-      Body: {
-        transformToString: sinon.stub().resolves(JSON.stringify(organicTraffic(site))),
-      },
-    });
-
     nock('https://foo.com')
       .get('/returns-404')
       .reply(404);
@@ -146,6 +134,17 @@ describe('Backlinks Tests', function () {
   });
 
   it('should transform the audit result into an opportunity in the post processor and create a new opportunity', async () => {
+    context.s3.s3Client.send.onCall(0).resolves({
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),
+      },
+    });
+
+    context.s3.s3Client.send.onCall(1).resolves({
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify(organicTraffic(site))),
+      },
+    });
     context.dataAccess.Site.findById = sinon.stub().withArgs('site1').resolves(site);
     context.dataAccess.Opportunity.create.resolves(brokenBacklinksOpportunity);
     brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
@@ -475,35 +474,55 @@ describe('Backlinks Tests', function () {
   });
 
   describe('calculateKpiMetrics', () => {
+    const auditData = {
+      auditResult: {
+        brokenBacklinks: [
+          { traffic_domain: 25000001, urlsSuggested: ['https://foo.com/bar/redirect'] },
+          { traffic_domain: 10000001, urlsSuggested: ['https://foo.com/bar/baz/redirect'] },
+          { traffic_domain: 10001, urlsSuggested: ['https://foo.com/qux/redirect'] },
+          { traffic_domain: 100, urlsSuggested: ['https://foo.com/bar/baz/qux/redirect'] },
+        ],
+      },
+    };
+
     it('should calculate metrics correctly for a single broken backlink', async () => {
-      const auditData = {
-        auditResult: {
-          brokenBacklinks: [
-            { traffic_domain: 25000001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
-            { traffic_domain: 10000001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
-            { traffic_domain: 10001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
-            { traffic_domain: 100, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
-          ],
+      context.s3.s3Client.send.onCall(0).resolves({
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),
         },
-      };
+      });
+
+      context.s3.s3Client.send.onCall(1).resolves({
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify(organicTraffic(site))),
+        },
+      });
 
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result.projectedTrafficLost).to.equal(22854.719999999998);
-      expect(result.projectedTrafficValue).to.equal(455827.5360970677);
+      expect(result.projectedTrafficLost).to.equal(26788.645);
+      expect(result.projectedTrafficValue).to.equal(534287.974025892);
+    });
+
+    it('skips URL if no RUM data is available for just individual URLs', async () => {
+      delete rumTraffic['https://foo.com/bar/redirect'].earned;
+      context.s3.s3Client.send.onCall(0).resolves({
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),
+        },
+      });
+
+      context.s3.s3Client.send.onCall(1).resolves({
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify(organicTraffic(site))),
+        },
+      });
+
+      const result = await calculateKpiMetrics(auditData, context, site);
+      expect(result.projectedTrafficLost).to.equal(14545.045000000002);
     });
 
     it('returns early if there is no RUM traffic data', async () => {
       context.s3.s3Client.send.onCall(0).resolves(null);
-      const auditData = {
-        auditResult: {
-          brokenBacklinks: [
-            { traffic_domain: 25000001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
-            { traffic_domain: 10000001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
-            { traffic_domain: 10001, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
-            { traffic_domain: 100, urlsSuggested: ['https://foo.com/redirects-throws-error-1'] },
-          ],
-        },
-      };
 
       const result = await calculateKpiMetrics(auditData, context, site);
       expect(result).to.be.null;

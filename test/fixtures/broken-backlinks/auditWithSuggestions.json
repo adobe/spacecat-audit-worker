@@ -31,8 +31,6 @@
         "title": "backlink that returns 404",
         "url_from": "https://from.com/from-1",
         "url_to": "https://foo.com/returns-404",
-        "urlsSuggested": ["https://foo.com/returns-404-suggestion-1", "https://foo.com/returns-404-suggestion-2"],
-        "aiRationale": "The suggested URLs are similar to the original URL and are likely to be the correct destination.",
         "traffic_domain": 1100000
       }
     ]
