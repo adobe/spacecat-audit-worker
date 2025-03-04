@@ -115,7 +115,7 @@ describe('generateSuggestionData', async function test() {
     const result = await generateSuggestionData('https://example.com', auditData, context, site);
 
     expect(result).to.deep.equal(auditData);
-    expect(context.log.info).to.have.been.calledWith('Audit failed, skipping suggestions generation');
+    expect(context.log.info).to.have.been.calledWith('broken-internal-links audit: Audit failed, skipping suggestions generation');
   });
 
   it('returns original auditData if auto-suggest is disabled for the site', async () => {
@@ -124,7 +124,36 @@ describe('generateSuggestionData', async function test() {
     const result = await generateSuggestionData('https://example.com', auditData, context, site);
 
     expect(result).to.deep.equal(auditData);
-    expect(context.log.info).to.have.been.calledWith('Auto-suggest is disabled for site');
+    expect(context.log.info).to.have.been.calledWith('broken-internal-links audit: Auto-suggest is disabled for site');
+  });
+
+  it('if sitedata is not found, return audit object as is', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+      ],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+    context.s3Client.send.resolves(mockFileResponse);
+    configuration.isHandlerEnabledForSite.returns(true);
+    expect(configuration.isHandlerEnabledForSite()).to.equal(true);
+    firefallClient.fetchChatCompletion.resolves({
+      choices: [{
+        message: { content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }) },
+        finish_reason: 'stop',
+      }],
+    });
+    firefallClient.fetchChatCompletion.onCall(3).resolves({
+      choices: [{
+        message: { content: JSON.stringify({ some_other_property: 'some other value' }) },
+        finish_reason: 'stop',
+      }],
+    });
+
+    await generateSuggestionData('https://example.com', auditData, context, site);
+    expect(context.log.info.getCall(1).args[0]).to.equal('broken-internal-links audit: No site data found, skipping suggestions generation');
+
+    expect(firefallClient.fetchChatCompletion).to.not.have.been.called;
   });
 
   it('processes suggestions for broken internal links, defaults to base URL if none found', async () => {
@@ -165,7 +194,7 @@ describe('generateSuggestionData', async function test() {
         aiRationale: 'No suitable suggestions found',
       },
     ]);
-    expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
+    expect(context.log.info).to.have.been.calledWith('broken-internal-links audit: Suggestions generation complete.');
   });
 
   it('generates suggestions in multiple batches if there are more than 300 alternative URLs', async () => {
@@ -232,7 +261,7 @@ describe('generateSuggestionData', async function test() {
         urlTo: 'https://example.com/broken2',
       },
     ]);
-    expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
+    expect(context.log.info).to.have.been.calledWith('broken-internal-links audit: Suggestions generation complete.');
   }).timeout(20000);
 
   it('handles Firefall client errors gracefully and continues processing, should suggest base URL instead', async () => {
@@ -280,6 +309,6 @@ describe('generateSuggestionData', async function test() {
         urlTo: 'https://example.com/broken2',
       },
     ]);
-    expect(context.log.error).to.have.been.calledWith('Batch processing error: Firefall error');
+    expect(context.log.error).to.have.been.calledWith('broken-internal-links audit: Batch processing error: Firefall error');
   }).timeout(20000);
 });
