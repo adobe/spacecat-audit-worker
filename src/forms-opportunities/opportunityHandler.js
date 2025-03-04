@@ -88,7 +88,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         time: new Date().toISOString(),
         data: {
           url: opportunityData.data.form,
-          cr: opportunityData.data.trackedFormKPIValue,
+          ctr: opportunityData.data.trackedFormKPIValue,
           screenshot: opportunityData.data.screenshot,
         },
       };
