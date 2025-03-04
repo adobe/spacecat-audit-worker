@@ -1,3 +1,10 @@
+## [1.65.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.65.0...v1.65.1) (2025-03-04)
+
+
+### Bug Fixes
+
+* forms opportunity bug fixes ([#733](https://github.com/adobe/spacecat-audit-worker/issues/733)) ([8cd3fa6](https://github.com/adobe/spacecat-audit-worker/commit/8cd3fa64c439aba496d2d648a331f2f543f00013))
+
 # [1.65.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.64.3...v1.65.0) (2025-03-04)
 
 
