@@ -1,3 +1,17 @@
+## [1.64.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.64.0...v1.64.1) (2025-03-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#724](https://github.com/adobe/spacecat-audit-worker/issues/724)) ([7260564](https://github.com/adobe/spacecat-audit-worker/commit/726056416af3e019e77bef3b2b6004421caf5c12))
+
+# [1.64.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.63.0...v1.64.0) (2025-03-03)
+
+
+### Features
+
+* capturing screenshots for forms opportunity handler ([#728](https://github.com/adobe/spacecat-audit-worker/issues/728)) ([d4e4017](https://github.com/adobe/spacecat-audit-worker/commit/d4e401714946eb0d3899a39ce36d1902cafafadc))
+
 # [1.63.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.62.4...v1.63.0) (2025-03-03)
 
 
