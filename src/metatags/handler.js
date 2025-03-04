@@ -97,8 +97,10 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   // Get top pages for a site
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  const topPagesSet = new Set(topPages.map((page) => new URL(page.url).pathname.replace(/\/$/, ''))
-    .map((page) => `scrapes/${site.getId()}${page}/scrape.json`));
+  const topPagesSet = new Set(topPages.map((page) => {
+    const pathname = new URL(page.url).pathname.replace(/\/$/, '');
+    return `scrapes/${site.getId()}${pathname}/scrape.json`;
+  }));
 
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
@@ -106,12 +108,7 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
   const extractedTags = {};
   const pageMetadataResults = await Promise.all(scrapedObjectKeys
-    .map((key) => {
-      const isTopPage = topPagesSet.has(key);
-      log.info(`Checking page ${key}: ${isTopPage ? 'is' : 'is not'} in top pages set`);
-      return isTopPage ? key : null;
-    })
-    .filter(Boolean)
+    .filter((key) => topPagesSet.has(key))
     .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)));
   pageMetadataResults.forEach((pageMetadata) => {
     if (pageMetadata) {
