@@ -1,3 +1,10 @@
+## [1.66.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.66.0...v1.66.1) (2025-03-04)
+
+
+### Bug Fixes
+
+* update forms oppoty schema ([#738](https://github.com/adobe/spacecat-audit-worker/issues/738)) ([ad20a03](https://github.com/adobe/spacecat-audit-worker/commit/ad20a032f38cadd2c1737f9721a7598a8609a088))
+
 # [1.66.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.65.3...v1.66.0) (2025-03-04)
 
 
