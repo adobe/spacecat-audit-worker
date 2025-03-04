@@ -50,7 +50,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
   log.info(`filtered opportunties for form for high page views low form navigation ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
-    for (const opptyData of filteredOpportunities) {
+    for (const opptyData of formOpportunities) {
       let highPageViewsLowFormNavOppty = opportunities.find(
         (oppty) => oppty.getType() === 'high-page-views-low-form-nav'
               && oppty.getData().form === opptyData.form,

@@ -44,7 +44,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
   log.info(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
-    for (const opptyData of filteredOpportunities) {
+    for (const opptyData of formOpportunities) {
       let highFormViewsLowConversionsOppty = opportunities.find(
         (oppty) => oppty.getType() === 'high-form-views-low-conversions'
               && oppty.getData().form === opptyData.form,
