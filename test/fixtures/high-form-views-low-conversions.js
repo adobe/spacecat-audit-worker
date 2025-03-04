@@ -502,7 +502,7 @@ const testData = {
   auditData2: {
     type: 'high-form-views-low-conversions',
     siteId: 'site-id',
-    latestAuditId: 'audit-id',
+    auditId: 'audit-id',
     auditResult: {
       formVitals: [
         {
