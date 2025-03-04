@@ -16,7 +16,7 @@ export default class AuditEngine {
   constructor(log) {
     this.log = log;
     this.auditedTags = {
-      imagesWithoutAltText: [],
+      imagesWithoutAltText: new Map(), // use only unique images
     };
   }
 
@@ -28,7 +28,7 @@ export default class AuditEngine {
 
     pageTags.images.forEach((image) => {
       if (!hasText(image.alt?.trim())) {
-        this.auditedTags.imagesWithoutAltText.push({
+        this.auditedTags.imagesWithoutAltText.set(image.src, {
           pageUrl,
           src: image.src,
         });
@@ -44,6 +44,6 @@ export default class AuditEngine {
   }
 
   getAuditedTags() {
-    return this.auditedTags;
+    return { imagesWithoutAltText: Array.from(this.auditedTags.imagesWithoutAltText.values()) };
   }
 }

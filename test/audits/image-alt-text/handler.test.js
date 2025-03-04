@@ -139,6 +139,7 @@ describe('Image Alt Text Handler', () => {
             { src: 'test1.jpg', alt: 'Test 1' },
             { src: 'test2.png', alt: 'Test 2' },
             { src: 'test3.gif', alt: 'Test 3' },
+            { src: 'test4.bmp', alt: 'Test 4' },
           ],
         },
       });
@@ -161,7 +162,6 @@ describe('Image Alt Text Handler', () => {
         .resolves({
           Contents: [
             { Key: 'scrapes/site-id/page1/scrape.json' },
-            { Key: 'scrapes/site-id/page2/scrape.json' },
           ],
         });
 
@@ -187,7 +187,57 @@ describe('Image Alt Text Handler', () => {
       expect(result).to.have.property('auditResult');
       expect(result.auditResult).to.have.property('detectedTags');
       expect(result.auditResult.detectedTags).to.have.property('imagesWithoutAltText');
-      expect(result.auditResult.detectedTags.imagesWithoutAltText.length).to.equal(2);
+      expect(result.auditResult.detectedTags.imagesWithoutAltText.length).to.equal(1);
+      expect(result.auditResult.detectedTags.imagesWithoutAltText[0].src).to.equal('test2.jpg');
+      expect(result.auditResult).to.have.property('sourceS3Folder', 'test-bucket/scrapes/site-id/');
+      expect(result.auditResult).to.have.property('finalUrl', 'http://example.com');
+      expect(result).to.have.property('fullAuditRef', 'http://example.com');
+    });
+
+    it('should filter out duplicate images across multiple pages', async () => {
+      const mockHtml = `
+        <html>
+          <body>
+            <img src="test1.jpg" alt="Test 1">
+            <img src="test2.jpg" alt="">
+          </body>
+        </html>
+      `;
+
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          Contents: [
+            { Key: 'scrapes/site-id/page1/scrape.json' },
+            { Key: 'scrapes/site-id/page2/scrape.json' },
+            { Key: 'scrapes/site-id/page3/scrape.json' },
+          ],
+        });
+
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(GetObjectCommand))
+        .resolves({
+          Body: {
+            transformToString: () => JSON.stringify({
+              scrapeResult: {
+                rawBody: mockHtml,
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        });
+
+      const result = await auditImageAltTextRunner(
+        'http://example.com',
+        context,
+        { getId: () => 'site-id' },
+      );
+
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.have.property('detectedTags');
+      expect(result.auditResult.detectedTags).to.have.property('imagesWithoutAltText');
+      expect(result.auditResult.detectedTags.imagesWithoutAltText.length).to.equal(1);
+      expect(result.auditResult.detectedTags.imagesWithoutAltText[0].src).to.equal('test2.jpg');
       expect(result.auditResult).to.have.property('sourceS3Folder', 'test-bucket/scrapes/site-id/');
       expect(result.auditResult).to.have.property('finalUrl', 'http://example.com');
       expect(result).to.have.property('fullAuditRef', 'http://example.com');

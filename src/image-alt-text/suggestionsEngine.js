@@ -70,21 +70,6 @@ const getFirefallResponse = async (prompt, firefallClient, firefallOptions, log)
   }
 };
 
-// const generateBatchPromises = (
-//   imageBatches,
-//   firefallClient,
-//   log,
-// ) => imageBatches.map(async (batch, index) => {
-//   await sleep(index * BATCH_DELAY);
-
-//   const firefallOptions = {
-//     imageUrls: batch,
-//     model: MODEL,
-//   };
-//   const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
-//   return getFirefallResponse(prompt, firefallClient, firefallOptions, log);
-// });
-
 const promptOnlyBatchPromises = (
   imageBatches,
   firefallClient,
