@@ -1,3 +1,10 @@
+## [1.64.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.64.2...v1.64.3) (2025-03-04)
+
+
+### Bug Fixes
+
+* filter low nav forms opporty by urls and generate default guidance ([#734](https://github.com/adobe/spacecat-audit-worker/issues/734)) ([3fb0eb6](https://github.com/adobe/spacecat-audit-worker/commit/3fb0eb63853da93c7e326a3d5342e1dabaed4f30))
+
 ## [1.64.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.64.1...v1.64.2) (2025-03-04)
 
 
