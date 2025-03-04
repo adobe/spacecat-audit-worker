@@ -1,3 +1,10 @@
+## [1.65.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.65.1...v1.65.2) (2025-03-04)
+
+
+### Bug Fixes
+
+* filter out images with nullish sources ([#736](https://github.com/adobe/spacecat-audit-worker/issues/736)) ([4b2573f](https://github.com/adobe/spacecat-audit-worker/commit/4b2573fdf67d8664f622564e6bfc0d83ce7a2929))
+
 ## [1.65.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.65.0...v1.65.1) (2025-03-04)
 
 
