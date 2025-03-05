@@ -13,6 +13,22 @@
 import { getStoredMetrics, isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 
 const CPC_DEFAULT_VALUE = 2.69;
+const TRAFFIC_BANDS = [
+  { threshold: 25000000, band: 0.03 },
+  { threshold: 10000000, band: 0.02 },
+  { threshold: 1000000, band: 0.01 },
+  { threshold: 500000, band: 0.0075 },
+  { threshold: 10000, band: 0.005 },
+];
+
+const getTrafficBand = (traffic) => {
+  for (const { threshold, band } of TRAFFIC_BANDS) {
+    if (traffic > threshold) {
+      return band;
+    }
+  }
+  return 0.001;
+};
 
 const calculateKpiMetrics = async (auditData, context, site) => {
   const { log } = context;
@@ -41,23 +57,10 @@ const calculateKpiMetrics = async (auditData, context, site) => {
     CPC = latestOrganicTrafficData.cost / latestOrganicTrafficData.value;
   }
 
-  const projectedTrafficLost = auditData.auditResult.brokenBacklinks.reduce((sum, backlink) => {
+  const projectedTrafficLost = auditData?.auditResult?.brokenBacklinks?.reduce((sum, backlink) => {
     const { traffic_domain: referringTraffic, urlsSuggested } = backlink;
 
-    let trafficBand;
-    if (referringTraffic > 25000000) {
-      trafficBand = 0.03;
-    } else if (referringTraffic > 10000000) {
-      trafficBand = 0.02;
-    } else if (referringTraffic > 1000000) {
-      trafficBand = 0.01;
-    } else if (referringTraffic > 500000) {
-      trafficBand = 0.0075;
-    } else if (referringTraffic > 10000) {
-      trafficBand = 0.005;
-    } else {
-      trafficBand = 0.001;
-    }
+    const trafficBand = getTrafficBand(referringTraffic);
     const proposedTargetTraffic = rumTrafficData[urlsSuggested?.[0]]?.earned ?? 0;
     return sum + (proposedTargetTraffic * trafficBand);
   }, 0);
