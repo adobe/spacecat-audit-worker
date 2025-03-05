@@ -19,7 +19,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
-import { calculateKpiDeltasForAudit } from './helpers.js';
+import { calculateKpiDeltasForAudit, isLinkInaccessible } from './helpers.js';
 
 const INTERVAL = 30; // days
 const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
@@ -78,7 +78,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     granularity: 'hourly',
   };
 
-  log.info(`${auditType}: Options for RUM call: `, JSON.stringify(options));
+  log.info(`broken-internal-links audit: ${auditType}: Options for RUM call: `, JSON.stringify(options));
 
   const internal404Links = await rumAPIClient.query('404-internal-links', options);
   const transformedLinks = internal404Links.map((link) => ({
@@ -87,9 +87,12 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     trafficDomain: link.traffic_domain,
   }));
 
-  const priorityLinks = calculatePriority(transformedLinks);
+  let finalLinks = calculatePriority(transformedLinks);
+
+  finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
+
   const auditResult = {
-    brokenInternalLinks: priorityLinks,
+    brokenInternalLinks: finalLinks,
     fullAuditRef: auditUrl,
     finalUrl,
     auditContext: {

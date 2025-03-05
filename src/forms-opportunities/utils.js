@@ -13,7 +13,10 @@
 import {
   getHighPageViewsLowFormCtrMetrics,
 } from '@adobe/spacecat-shared-utils';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+const EXPIRY_IN_SECONDS = 3600 * 24;
 const DAILY_PAGEVIEW_THRESHOLD = 200;
 const CR_THRESHOLD_RATIO = 0.3;
 const MOBILE = 'mobile';
@@ -88,16 +91,48 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-function convertToOpportunityData(opportunityName, urlObject) {
+function getS3PathPrefix(url, site) {
+  const urlObj = new URL(url);
+  let { pathname } = urlObj;
+  pathname = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  return `scrapes/${site.getId()}${pathname}/forms`;
+}
+
+async function getPresignedUrl(fileName, context, url, site) {
+  const { log, s3Client: s3ClientObj } = context;
+  const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
+  log.info(`Generating presigned URL for ${screenshotPath}`);
+
+  const command = new GetObjectCommand({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: screenshotPath,
+  });
+
+  return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
+  // eslint-disable-next-line no-shadow
+    .then((signedUrl) => signedUrl)
+    .catch((error) => {
+      log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
+      return ''; // Ensure the function always returns something
+    });
+}
+
+async function convertToOpportunityData(opportunityName, urlObject, context) {
   const {
     url, pageViews, formViews, formSubmit, CTA,
   } = urlObject;
+
+  const {
+    site,
+  } = context;
+
   let conversionRate = formSubmit / formViews;
   conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
+  const signedScreenshot = await getPresignedUrl('screenshot-desktop-fullpage.png', context, url, site);
 
   const opportunity = {
     form: url,
-    screenshot: '',
+    screenshot: signedScreenshot,
     trackedFormKPIName: 'Conversion Rate',
     trackedFormKPIValue: conversionRate,
     formViews,
@@ -105,7 +140,7 @@ function convertToOpportunityData(opportunityName, urlObject) {
     samples: pageViews, // todo: get the actual number of samples
     metrics: [{
       type: 'conversionRate',
-      vendor: '*',
+      device: '*',
       value: {
         page: conversionRate,
       },
@@ -115,21 +150,36 @@ function convertToOpportunityData(opportunityName, urlObject) {
   return opportunity;
 }
 
-export function generateOpptyData(formVitals) {
+export async function generateOpptyData(formVitals, context) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
   const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
-  return getHighFormViewsLowConversion(7, formVitalsByDevice).map((highFormViewsLowConversion) => convertToOpportunityData('high-page-views-low-conversion', highFormViewsLowConversion));
+  return Promise.all(
+    getHighFormViewsLowConversion(7, formVitalsByDevice)
+      .map((highFormViewsLowConversion) => convertToOpportunityData(
+        'high-page-views-low-conversion',
+        highFormViewsLowConversion,
+        context,
+      )),
+  );
 }
 
-export function generateOpptyDataForHighPageViewsLowFormNav(formVitals) {
+// eslint-disable-next-line max-len
+export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, context) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
-  return getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7).map((highPageViewsLowFormCtr) => convertToOpportunityData('high-page-views-low-form-nav', highPageViewsLowFormCtr));
+  return Promise.all(
+    getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7)
+      .map((highPageViewsLowFormCtr) => convertToOpportunityData(
+        'high-page-views-low-form-nav',
+        highPageViewsLowFormCtr,
+        context,
+      )),
+  );
 }
 
 /**
@@ -142,19 +192,29 @@ export function generateOpptyDataForHighPageViewsLowFormNav(formVitals) {
 export function filterForms(formOpportunities, scrapedData, log) {
   if (!scrapedData?.formData || !Array.isArray(scrapedData.formData)) {
     log.debug('No valid scraped data available.');
-    return formOpportunities; // Return original opportunities if no valid scraped data
+    return formOpportunities.map((opportunity) => ({
+      ...opportunity,
+      scrapedStatus: false,
+    }));
   }
 
   return formOpportunities.filter((opportunity) => {
+    let urlMatches = false;
     // Find matching form in scraped data
     const matchingForm = scrapedData.formData.find((form) => {
-      const urlMatches = form.finalUrl === opportunity?.form;
+      const formUrl = new URL(form.finalUrl);
+      const opportunityUrl = new URL(opportunity.form);
+      // eslint-disable-next-line max-len
+      urlMatches = opportunityUrl && formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname;
 
       const isSearchForm = Array.isArray(form.scrapeResult)
           && form.scrapeResult.some((result) => result?.formType === 'search' || result?.classList?.includes('search') || result?.classList?.includes('unsubscribe') || result?.action?.endsWith('search.html'));
 
       return urlMatches && isSearchForm;
     });
+
+    // eslint-disable-next-line no-param-reassign
+    opportunity.scrapedStatus = !!urlMatches;
 
     if (matchingForm) {
       log.debug(`Filtered out search form: ${opportunity?.form}`);

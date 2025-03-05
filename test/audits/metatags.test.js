@@ -218,6 +218,7 @@ describe('Meta Tags', () => {
         },
         SiteTopPage: {
           allBySiteId: sinon.stub(),
+          allBySiteIdAndSourceAndGeo: sinon.stub(),
         },
       };
       s3ClientStub = {
@@ -245,6 +246,7 @@ describe('Meta Tags', () => {
           Configuration: {
             findLatest: latestConfigStub,
           },
+          SiteTopPage: dataAccessStub.SiteTopPage,
         },
       };
     });
@@ -415,7 +417,17 @@ describe('Meta Tags', () => {
         { getURL: 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') },
         { getURL: 'http://example.com/', getTopKeyword: sinon.stub().returns('Test') }];
 
+      const getTopPagesForSiteStub = [
+        { getUrl: () => 'http://example.com/blog/page1' },
+        {
+          getUrl: () => 'http://example.com/blog/page2',
+        },
+        {
+          getUrl: () => 'http://example.com/',
+        },
+      ];
       dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
+      dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(getTopPagesForSiteStub);
 
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
@@ -438,6 +450,7 @@ describe('Meta Tags', () => {
         }))).returns({
           Body: {
             transformToString: () => JSON.stringify({
+              finalUrl: 'https://example.com/blog/page1/',
               scrapeResult: {
                 tags: {
                   title: 'This is an SEO optimal page1 valid title.',
@@ -483,7 +496,7 @@ describe('Meta Tags', () => {
                 tags: {
                   title: 'This is an SEO optimal page1 valid title.',
                   description: 'This is a dummy description that is optimal from SEO perspective for page1. It has the correct length of characters, and is unique across all pages.',
-                  h1: [],
+                  h1: undefined,
                 },
               },
             }),
