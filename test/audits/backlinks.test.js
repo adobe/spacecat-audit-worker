@@ -69,12 +69,7 @@ describe('Backlinks Tests', function () {
           AHREFS_API_BASE_URL: 'https://ahrefs.com',
           AHREFS_API_KEY: 'ahrefs-api',
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        },
-        s3: {
-          s3Bucket: 'test-bucket',
-          s3Client: {
-            send: sandbox.stub(),
-          },
+          S3_IMPORTER_BUCKET_NAME: 'test-import-bucket',
         },
         s3Client: {
           send: sandbox.stub(),
@@ -134,13 +129,13 @@ describe('Backlinks Tests', function () {
   });
 
   it('should transform the audit result into an opportunity in the post processor and create a new opportunity', async () => {
-    context.s3.s3Client.send.onCall(0).resolves({
+    context.s3Client.send.onCall(0).resolves({
       Body: {
         transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),
       },
     });
 
-    context.s3.s3Client.send.onCall(1).resolves({
+    context.s3Client.send.onCall(1).resolves({
       Body: {
         transformToString: sinon.stub().resolves(JSON.stringify(organicTraffic(site))),
       },
@@ -486,13 +481,13 @@ describe('Backlinks Tests', function () {
     };
 
     it('should calculate metrics correctly for a single broken backlink', async () => {
-      context.s3.s3Client.send.onCall(0).resolves({
+      context.s3Client.send.onCall(0).resolves({
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),
         },
       });
 
-      context.s3.s3Client.send.onCall(1).resolves({
+      context.s3Client.send.onCall(1).resolves({
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify(organicTraffic(site))),
         },
@@ -505,13 +500,13 @@ describe('Backlinks Tests', function () {
 
     it('skips URL if no RUM data is available for just individual URLs', async () => {
       delete rumTraffic['https://foo.com/bar/redirect'].earned;
-      context.s3.s3Client.send.onCall(0).resolves({
+      context.s3Client.send.onCall(0).resolves({
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),
         },
       });
 
-      context.s3.s3Client.send.onCall(1).resolves({
+      context.s3Client.send.onCall(1).resolves({
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify(organicTraffic(site))),
         },
@@ -522,7 +517,7 @@ describe('Backlinks Tests', function () {
     });
 
     it('returns early if there is no RUM traffic data', async () => {
-      context.s3.s3Client.send.onCall(0).resolves(null);
+      context.s3Client.send.onCall(0).resolves(null);
 
       const result = await calculateKpiMetrics(auditData, context, site);
       expect(result).to.be.null;

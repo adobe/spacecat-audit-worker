@@ -34,8 +34,10 @@ const calculateKpiMetrics = async (auditData, context, site) => {
   const { log } = context;
   const storedMetricsConfig = {
     ...context,
-    s3Bucket: context.env?.S3_IMPORTER_BUCKET_NAME,
-    s3Client: context.s3Client,
+    s3: {
+      s3Bucket: context.env?.S3_IMPORTER_BUCKET_NAME,
+      s3Client: context.s3Client,
+    },
   };
 
   const siteId = site.getId();
