@@ -90,6 +90,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
           ...highPageViewsLowFormNavOppty.getData(),
           ...opportunityData.data,
         });
+        highPageViewsLowFormNavOppty.setGuidance(opportunityData.guidance);
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormNavOppty.save();
       }
