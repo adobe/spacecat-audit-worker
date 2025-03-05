@@ -177,12 +177,17 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   }
 
   const imageUrls = detectedTags.imagesWithoutAltText.map(
-    (image) => new URL(image.src, auditUrl).toString(),
+    (image) => {
+      const el = { url: new URL(image.src, auditUrl).toString() };
+      if (image.blob) {
+        el.blob = image.blob;
+      }
+      return el;
+    },
   );
 
   const imageSuggestions = await suggestionsEngine.getImageSuggestions(
     imageUrls,
-    auditUrl,
     context,
   );
 

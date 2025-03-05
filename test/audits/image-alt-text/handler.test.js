@@ -15,13 +15,14 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { auditImageAltTextRunner, fetchAndProcessPageObject } from '../../../src/image-alt-text/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
+const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 describe('Image Alt Text Handler', () => {
   let s3ClientStub;
   let logStub;
@@ -67,8 +68,8 @@ describe('Image Alt Text Handler', () => {
       );
 
       expect(result).to.be.null;
-      expect(logStub.error).to.have.been.calledWith(
-        'No raw HTML content found in S3 scrapes/site-id/page1/scrape.json object',
+      expect(logStub.debug).to.have.been.calledWith(
+        `[${AUDIT_TYPE}]: No raw HTML content found in S3 scrapes/site-id/page1/scrape.json object`,
       );
     });
 
@@ -86,63 +87,6 @@ describe('Image Alt Text Handler', () => {
       );
 
       expect(result).to.be.null;
-    });
-
-    it('should filter and process only supported image formats', async () => {
-      const mockHtml = `
-        <html>
-          <body>
-            <img src="test1.jpg" alt="Test 1">
-            <img src="test2.png" alt="Test 2">
-            <img src="test3.gif" alt="Test 3">
-            <img src="test3.gif" alt="Test 3">
-            <img src="test4.bmp" alt="Test 4">
-            <img src="test5.123" alt="Test 5">
-          </body>
-        </html>
-      `;
-
-      s3ClientStub.send
-        .withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          Contents: [
-            { Key: 'scrapes/site-id/page1/scrape.json' },
-            { Key: 'scrapes/site-id/page2/scrape.json' },
-          ],
-        });
-
-      s3ClientStub.send
-        .withArgs(sinon.match.instanceOf(GetObjectCommand))
-        .resolves({
-          Body: {
-            transformToString: () => JSON.stringify({
-              scrapeResult: {
-                rawBody: mockHtml,
-              },
-            }),
-          },
-          ContentType: 'application/json',
-        });
-
-      const result = await fetchAndProcessPageObject(
-        s3ClientStub,
-        'test-bucket',
-        'scrapes/site-id/page1/scrape.json',
-        'scrapes/site-id/',
-        logStub,
-      );
-
-      // Assuming the function filters out unsupported formats like .bmp
-      expect(result).to.deep.equal({
-        '/page1': {
-          images: [
-            { src: 'test1.jpg', alt: 'Test 1' },
-            { src: 'test2.png', alt: 'Test 2' },
-            { src: 'test3.gif', alt: 'Test 3' },
-            { src: 'test4.bmp', alt: 'Test 4' },
-          ],
-        },
-      });
     });
   });
 
@@ -271,8 +215,10 @@ describe('Image Alt Text Handler', () => {
       );
 
       expect(result.auditResult.detectedTags).to.deep.equal({ imagesWithoutAltText: [] });
-      expect(logStub.error).to.have.been.calledWith(
-        'Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/',
+
+      // Check the first call
+      expect(logStub.debug.firstCall).to.have.been.calledWith(
+        `[${AUDIT_TYPE}]: No raw HTML content found in S3 scrapes/site-id/page1/scrape.json object`,
       );
     });
   });

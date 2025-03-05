@@ -22,22 +22,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
 
-const filterImages = (imageTags) => {
-  const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg|svg|bmp|tiff|ico)(?=\?|$)/i;
-  const supportedImages = [];
-  const unsupportedFormatImages = [];
-
-  imageTags.forEach((imageTag) => {
-    if (!SUPPORTED_FORMATS.test(imageTag.src)) {
-      unsupportedFormatImages.push(imageTag);
-    } else {
-      supportedImages.push(imageTag);
-    }
-  });
-
-  return { unsupportedFormatImages, supportedImages };
-};
-
+const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 export async function fetchAndProcessPageObject(
   s3Client,
   bucketName,
@@ -47,7 +32,7 @@ export async function fetchAndProcessPageObject(
 ) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!hasText(object?.scrapeResult?.rawBody)) {
-    log.error(`No raw HTML content found in S3 ${key} object`);
+    log.debug(`[${AUDIT_TYPE}]: No raw HTML content found in S3 ${key} object`);
     return null;
   }
 
@@ -59,16 +44,10 @@ export async function fetchAndProcessPageObject(
     alt: img.getAttribute('alt'),
   }));
 
-  const { supportedImages, unsupportedFormatImages } = filterImages(images);
-  log.info(`[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Handler.js - Unsupported image formats:`, unsupportedFormatImages);
-  const uniqueSupportedImages = Array.from(
-    new Map(supportedImages.map((img) => [img.src, img])).values(),
-  );
-
   const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', '');
   return {
     [pageUrl]: {
-      images: uniqueSupportedImages,
+      images,
     },
   };
 }
@@ -100,17 +79,18 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
   const extractedTagsCount = Object.entries(extractedTags).length;
   if (extractedTagsCount === 0) {
     log.error(
-      `Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`,
+      `[${AUDIT_TYPE}]: Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`,
     );
   }
   log.info(
-    `Performing image alt text audit for ${extractedTagsCount} elements`,
+    `[${AUDIT_TYPE}]: Performing image alt text audit for ${extractedTagsCount} elements`,
   );
   // Perform Image Alt Text audit
   const auditEngine = new AuditEngine(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
     auditEngine.performPageAudit(pageUrl, pageTags);
   }
+  auditEngine.filterImages();
   auditEngine.finalizeAudit();
   const detectedTags = auditEngine.getAuditedTags();
 
