@@ -11,7 +11,7 @@
  */
 
 import {
-  getHighPageViewsLowFormCtrMetrics,
+  getHighPageViewsLowFormCtrMetrics, isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -208,7 +208,7 @@ export function filterForms(formOpportunities, scrapedData, log) {
 
       if (formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
         urlMatches = true;
-        isSearchForm = Array.isArray(form.scrapeResult)
+        isSearchForm = isNonEmptyArray(form.scrapeResult)
             && form.scrapeResult.some((result) => result?.formType === 'search'
                 || result?.classList?.includes('search')
                 || result?.classList?.includes('unsubscribe')
