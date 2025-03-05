@@ -30,12 +30,12 @@ const getMimeType = async (url) => {
   return mimeTypesForBase64[extension];
 };
 
-const convertImagesToBase64 = async (imageUrls, log) => {
+const convertImagesToBase64 = async (imageUrls, auditUrl, log) => {
   const base64Blobs = [];
 
   const fetchPromises = imageUrls.map(async (url) => {
     try {
-      const response = await fetch(url);
+      const response = await fetch(new URL(url, auditUrl).toString());
       if (!response.ok) {
         throw new Error(`Failed to fetch image from ${url}`);
       }
@@ -78,12 +78,12 @@ export default class AuditEngine {
     });
   }
 
-  async filterImages() {
+  async filterImages(baseURL) {
     try {
       const imageUrls = Array.from(this.auditedTags.imagesWithoutAltText.keys());
       const supportedBlobUrls = imageUrls.filter((url) => SUPPORTED_BLOB_FORMATS.test(url));
       const supportedImageUrls = imageUrls.filter((url) => SUPPORTED_FORMATS.test(url));
-      const base64Blobs = await convertImagesToBase64(supportedBlobUrls, this.log);
+      const base64Blobs = await convertImagesToBase64(supportedBlobUrls, baseURL, this.log);
       const filteredImages = new Map();
 
       // Add supported images directly to the map

@@ -228,19 +228,26 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.svg', alt: '' },
+          { src: 'image1.tiff', alt: '' },
           { src: 'image2.bmp', alt: '' },
-          { src: 'image3.tiff', alt: '' },
-        ],
+          { src: 'image3.svg', alt: '' }],
       };
+
+      function createRandomArrayBuffer(size) {
+        const array = new Uint8Array(size);
+        for (let i = 0; i < size; i += 1) {
+          array[i] = Math.floor(Math.random() * 256); // Random value between 0 and 255
+        }
+        return array.buffer;
+      }
 
       fetchStub.resolves({
         ok: true,
-        arrayBuffer: async () => new ArrayBuffer(8),
+        arrayBuffer: async () => createRandomArrayBuffer(256),
       });
 
       auditEngine.performPageAudit(pageUrl, pageTags);
-      await auditEngine.filterImages();
+      await auditEngine.filterImages('https://example.com');
 
       const auditedTags = auditEngine.getAuditedTags();
       expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(3);
@@ -262,7 +269,7 @@ describe('AuditEngine', () => {
       });
 
       auditEngine.performPageAudit(pageUrl, pageTags);
-      await auditEngine.filterImages();
+      await auditEngine.filterImages('https://example.com');
 
       const auditedTags = auditEngine.getAuditedTags();
       expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(1);
@@ -282,7 +289,7 @@ describe('AuditEngine', () => {
       });
 
       auditEngine.performPageAudit(pageUrl, pageTags);
-      await auditEngine.filterImages();
+      await auditEngine.filterImages('https://example.com');
 
       const auditedTags = auditEngine.getAuditedTags();
       expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
