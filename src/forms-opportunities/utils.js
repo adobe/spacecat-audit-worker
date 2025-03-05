@@ -200,23 +200,27 @@ export function filterForms(formOpportunities, scrapedData, log) {
 
   return formOpportunities.filter((opportunity) => {
     let urlMatches = false;
-    // Find matching form in scraped data
-    const matchingForm = scrapedData.formData.find((form) => {
+    let isSearchForm = false;
+
+    for (const form of scrapedData.formData) {
       const formUrl = new URL(form.finalUrl);
       const opportunityUrl = new URL(opportunity.form);
-      // eslint-disable-next-line max-len
-      urlMatches = opportunityUrl && formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname;
 
-      const isSearchForm = Array.isArray(form.scrapeResult)
-          && form.scrapeResult.some((result) => result?.formType === 'search' || result?.classList?.includes('search') || result?.classList?.includes('unsubscribe') || result?.action?.endsWith('search.html'));
-
-      return urlMatches && isSearchForm;
-    });
+      if (formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
+        urlMatches = true;
+        isSearchForm = Array.isArray(form.scrapeResult)
+            && form.scrapeResult.some((result) => result?.formType === 'search'
+                || result?.classList?.includes('search')
+                || result?.classList?.includes('unsubscribe')
+                || result?.action?.endsWith('search.html'));
+        break; // Stop looping once we find a match
+      }
+    }
 
     // eslint-disable-next-line no-param-reassign
-    opportunity.scrapedStatus = !!urlMatches;
+    opportunity.scrapedStatus = urlMatches;
 
-    if (matchingForm) {
+    if (urlMatches && isSearchForm) {
       log.debug(`Filtered out search form: ${opportunity?.form}`);
       return false;
     }
