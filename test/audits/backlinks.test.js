@@ -499,7 +499,7 @@ describe('Backlinks Tests', function () {
     });
 
     it('skips URL if no RUM data is available for just individual URLs', async () => {
-      delete rumTraffic['https://foo.com/bar/redirect'].earned;
+      delete rumTraffic[0].earned;
       context.s3Client.send.onCall(0).resolves({
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),

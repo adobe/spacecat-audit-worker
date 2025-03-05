@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStoredMetrics, isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { getStoredMetrics, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 
 const CPC_DEFAULT_VALUE = 2.69;
 const TRAFFIC_BANDS = [
@@ -46,7 +46,7 @@ const calculateKpiMetrics = async (auditData, context, site) => {
     storedMetricsConfig,
   );
 
-  if (!isNonEmptyObject(rumTrafficData)) {
+  if (!isNonEmptyArray(rumTrafficData)) {
     log.info(`No RUM traffic data found for site ${siteId}`);
     return null;
   }
@@ -67,9 +67,10 @@ const calculateKpiMetrics = async (auditData, context, site) => {
 
   const projectedTrafficLost = auditData?.auditResult?.brokenBacklinks?.reduce((sum, backlink) => {
     const { traffic_domain: referringTraffic, urlsSuggested } = backlink;
-
     const trafficBand = getTrafficBand(referringTraffic);
-    const proposedTargetTraffic = rumTrafficData[urlsSuggested?.[0]]?.earned ?? 0;
+    const targetUrl = urlsSuggested?.[0];
+    const targetTrafficData = rumTrafficData.find((data) => data.url === targetUrl);
+    const proposedTargetTraffic = targetTrafficData?.earned ?? 0;
     return sum + (proposedTargetTraffic * trafficBand);
   }, 0);
 
