@@ -1,3 +1,10 @@
+## [1.66.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.66.4...v1.66.5) (2025-03-05)
+
+
+### Bug Fixes
+
+* forms presigned url expiry time change ([#742](https://github.com/adobe/spacecat-audit-worker/issues/742)) ([dc85ce0](https://github.com/adobe/spacecat-audit-worker/commit/dc85ce004d52fae00ccb76c7629dc22c801f49ff))
+
 ## [1.66.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.66.3...v1.66.4) (2025-03-05)
 
 
