@@ -138,7 +138,12 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   }
 
   const opportunityData = await getProjectedMetrics({
-    images: detectedTags.imagesWithoutAltText, auditUrl, context, log,
+    images:
+      detectedTags.imagesWithoutAltText
+        .map((image) => ({ src: image.src, pageUrl: image.pageUrl })),
+    auditUrl,
+    context,
+    log,
   });
 
   try {

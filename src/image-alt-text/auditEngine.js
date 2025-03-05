@@ -101,7 +101,16 @@ export default class AuditEngine {
           uniqueBlobsMap.set(blob, { ...originalData, blob });
         }
       });
-      this.log.info(`[${AUDIT_TYPE}]: Unique blobs:`, Array.from(uniqueBlobsMap.values()));
+
+      // Log unique blobs with blob existence as true/false
+      this.log.info(
+        `[${AUDIT_TYPE}]: Unique blobs:`,
+        Array.from(uniqueBlobsMap.values()).map((data) => ({
+          ...data,
+          blob: !!data.blob,
+        })),
+      );
+
       // Add unique blobs to the filtered map
       uniqueBlobsMap.forEach((originalData) => {
         filteredImages.set(originalData.src, originalData);
