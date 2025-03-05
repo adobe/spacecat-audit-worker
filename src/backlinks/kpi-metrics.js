@@ -32,10 +32,16 @@ const getTrafficBand = (traffic) => {
 
 const calculateKpiMetrics = async (auditData, context, site) => {
   const { log } = context;
+  const storedMetricsConfig = {
+    ...context,
+    s3Bucket: context.env?.S3_IMPORTER_BUCKET_NAME,
+    s3Client: context.s3Client,
+  };
+
   const siteId = site.getId();
   const rumTrafficData = await getStoredMetrics(
     { source: 'rum', metric: 'all-traffic', siteId },
-    context,
+    storedMetricsConfig,
   );
 
   if (!isNonEmptyObject(rumTrafficData)) {
@@ -45,7 +51,7 @@ const calculateKpiMetrics = async (auditData, context, site) => {
 
   const organicTrafficData = await getStoredMetrics(
     { source: 'ahrefs', metric: 'organic-traffic', siteId },
-    context,
+    storedMetricsConfig,
   );
 
   let CPC = CPC_DEFAULT_VALUE;
