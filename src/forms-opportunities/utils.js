@@ -212,7 +212,8 @@ export function filterForms(formOpportunities, scrapedData, log) {
             && form.scrapeResult.some((result) => result?.formType === 'search'
                 || result?.classList?.includes('search')
                 || result?.classList?.includes('unsubscribe')
-                || result?.action?.endsWith('search.html'));
+                || result?.action?.endsWith('search.html')
+                || (result?.fieldsLabels && isNonEmptyArray(result.fieldsLabels) && result.fieldsLabels.every((label) => label.toLowerCase().includes('search'))));
 
         if (isSearchForm) {
           break; // Stop looping once we find a match
