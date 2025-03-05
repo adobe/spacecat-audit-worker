@@ -50,7 +50,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
 
       const opportunityData = {
         siteId: auditData.siteId,
-        auditId: auditData.id ?? auditData.latestAuditId,
+        auditId: auditData.auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
         type: 'high-form-views-low-conversions',
         origin: 'AUTOMATION',
@@ -68,7 +68,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
         log.debug('Forms Opportunity high form views low conversion created');
       } else {
-        highFormViewsLowConversionsOppty.setAuditId(auditData.siteId);
+        highFormViewsLowConversionsOppty.setAuditId(auditData.auditId);
         highFormViewsLowConversionsOppty.setData({
           ...highFormViewsLowConversionsOppty.getData(),
           ...opportunityData.data,

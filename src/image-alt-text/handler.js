@@ -42,7 +42,7 @@ export async function fetchAndProcessPageObject(
   const images = Array.from(imageElements).map((img) => ({
     src: img.getAttribute('src'),
     alt: img.getAttribute('alt'),
-  }));
+  })).filter((img) => img.src);
 
   const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', '');
   return {
