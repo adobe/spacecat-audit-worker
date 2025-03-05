@@ -136,7 +136,7 @@ const testData = {
   oppty2AuditData: {
     type: 'high-page-views-low-form-nav',
     siteId: 'site-id',
-    id: 'audit-id',
+    auditId: 'audit-id',
     auditResult: {
       formVitals: [
         {
@@ -330,7 +330,7 @@ const testData = {
   auditData3: {
     type: 'high-form-views-low-conversions',
     siteId: 'site-id',
-    id: 'audit-id',
+    auditId: 'audit-id',
     auditResult: {
       formVitals: [
         {
@@ -491,7 +491,7 @@ const testData = {
       metrics: [
         {
           type: 'conversionRate',
-          vendor: '*',
+          device: '*',
           value: {
             page: 0.014947683109118086,
           },
@@ -502,7 +502,7 @@ const testData = {
   auditData2: {
     type: 'high-form-views-low-conversions',
     siteId: 'site-id',
-    latestAuditId: 'audit-id',
+    auditId: 'audit-id',
     auditResult: {
       formVitals: [
         {
