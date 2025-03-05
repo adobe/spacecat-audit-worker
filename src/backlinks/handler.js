@@ -245,7 +245,11 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
  */
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
+  const { log } = context;
+
   const kpiDeltas = await calculateKpiDeltasForAudit(auditData, context, site);
+  log.info(`KPI deltas for audit ${auditData.id}: ${JSON.stringify(kpiDeltas)}`);
+
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
@@ -254,7 +258,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
     auditType,
     kpiDeltas,
   );
-  const { log } = context;
 
   const buildKey = (data) => `${data.url_from}|${data.url_to}`;
 
