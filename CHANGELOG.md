@@ -1,3 +1,10 @@
+## [1.66.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.66.3...v1.66.4) (2025-03-05)
+
+
+### Bug Fixes
+
+* update guidance for existing low form navigation oppty ([#740](https://github.com/adobe/spacecat-audit-worker/issues/740)) ([abe1af7](https://github.com/adobe/spacecat-audit-worker/commit/abe1af79815b30edb9b1a322fc60c704ea825e93))
+
 ## [1.66.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.66.2...v1.66.3) (2025-03-05)
 
 
