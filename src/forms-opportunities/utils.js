@@ -213,7 +213,10 @@ export function filterForms(formOpportunities, scrapedData, log) {
                 || result?.classList?.includes('search')
                 || result?.classList?.includes('unsubscribe')
                 || result?.action?.endsWith('search.html'));
-        break; // Stop looping once we find a match
+
+        if (isSearchForm) {
+          break; // Stop looping once we find a match
+        }
       }
     }
 
