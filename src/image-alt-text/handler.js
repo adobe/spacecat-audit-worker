@@ -90,7 +90,7 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
     auditEngine.performPageAudit(pageUrl, pageTags);
   }
-  auditEngine.filterImages(baseURL);
+  await auditEngine.filterImages(baseURL);
   auditEngine.finalizeAudit();
   const detectedTags = auditEngine.getAuditedTags();
 
