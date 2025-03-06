@@ -40,8 +40,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     },
   );
   const { log } = context;
-  log.info(`projected traffic data - ${auditData.auditResult.projectedTrafficLost} , ${auditData.auditResult.projectedTrafficValue}`);
-  log.info(`Opportunity data - ${opportunity.getData()}`);
   const { detectedTags } = auditData.auditResult;
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
