@@ -1,3 +1,10 @@
+## [1.68.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.1...v1.68.2) (2025-03-06)
+
+
+### Bug Fixes
+
+* remove debug log ([#748](https://github.com/adobe/spacecat-audit-worker/issues/748)) ([6faa1fd](https://github.com/adobe/spacecat-audit-worker/commit/6faa1fd1019c1a8c676d4a3c81b377c47308050e))
+
 ## [1.68.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.0...v1.68.1) (2025-03-06)
 
 
