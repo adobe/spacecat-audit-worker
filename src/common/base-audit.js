@@ -14,7 +14,9 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { toggleWWWHostname } from '../support/utils.js';
 
 // eslint-disable-next-line no-empty-function
 export async function defaultMessageSender() {}
@@ -57,10 +59,36 @@ export async function defaultUrlResolver(site) {
   return composeAuditURL(site.getBaseURL());
 }
 
-export function wwwUrlResolver(site) {
+export async function wwwUrlResolver(site, context) {
+  const { log } = context;
+
   const baseURL = site.getBaseURL();
   const uri = new URI(baseURL);
-  return hasText(uri.subdomain()) ? baseURL.replace(/https?:\/\//, '') : baseURL.replace(/https?:\/\//, 'www.');
+  const hostname = uri.hostname();
+  const subdomain = uri.subdomain();
+
+  if (hasText(subdomain) && subdomain !== 'www') {
+    return hostname;
+  }
+
+  const rumApiClient = RUMAPIClient.createFrom(context);
+
+  try {
+    const wwwToggledHostname = toggleWWWHostname(hostname);
+    await rumApiClient.retrieveDomainkey(wwwToggledHostname);
+    return wwwToggledHostname;
+  } catch (e) {
+    log.info(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
+  }
+
+  try {
+    await rumApiClient.retrieveDomainkey(hostname);
+    return hostname;
+  } catch (e) {
+    log.info(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
+  }
+
+  return hostname.startsWith('www.') ? hostname : `www.${hostname}`;
 }
 
 export async function noopUrlResolver(site) {
