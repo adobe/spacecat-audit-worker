@@ -220,6 +220,7 @@ describe('Meta Tags', () => {
         },
         SiteTopPage: {
           allBySiteId: sinon.stub(),
+          allBySiteIdAndSourceAndGeo: sinon.stub(),
         },
       };
       s3ClientStub = {
@@ -247,6 +248,7 @@ describe('Meta Tags', () => {
           Configuration: {
             findLatest: latestConfigStub,
           },
+          SiteTopPage: dataAccessStub.SiteTopPage,
         },
       };
     });
@@ -452,7 +454,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(5);
+      expect(logStub.info.callCount).to.equal(6);
     });
 
     it('should process site tags and perform SEO checks for pages with invalid H1s', async () => {
@@ -488,7 +490,17 @@ describe('Meta Tags', () => {
       dataAccessStub.Configuration.findLatest.resolves({
         isHandlerEnabledForSite: sinon.stub().returns(true),
       });
+      const getTopPagesForSiteStub = [
+        { getUrl: () => 'http://example.com/blog/page1' },
+        {
+          getUrl: () => 'http://example.com/blog/page2',
+        },
+        {
+          getUrl: () => 'http://example.com/',
+        },
+      ];
       dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
+      dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(getTopPagesForSiteStub);
 
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
@@ -511,6 +523,7 @@ describe('Meta Tags', () => {
         }))).returns({
           Body: {
             transformToString: () => JSON.stringify({
+              finalUrl: 'https://example.com/blog/page1/',
               scrapeResult: {
                 tags: {
                   title: 'This is an SEO optimal page1 valid title.',
@@ -556,7 +569,7 @@ describe('Meta Tags', () => {
                 tags: {
                   title: 'This is an SEO optimal page1 valid title.',
                   description: 'This is a dummy description that is optimal from SEO perspective for page1. It has the correct length of characters, and is unique across all pages.',
-                  h1: [],
+                  h1: undefined,
                 },
               },
             }),
@@ -627,7 +640,7 @@ describe('Meta Tags', () => {
         },
       }));
       expect(addAuditStub.calledOnce).to.be.true;
-      expect(logStub.info.callCount).to.equal(5);
+      expect(logStub.info.callCount).to.equal(7);
     });
 
     it('should handle gracefully if S3 object has no rawbody', async () => {

@@ -118,6 +118,9 @@ describe('opportunities handler method', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      site: {
+        getId: sinon.stub().returns('test-site-id'),
+      },
     };
     auditData = testData.auditData3;
   });
@@ -134,6 +137,14 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData1, context);
+    // expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+  });
+
+  it('should create new forms opportunity with scraped data available with all field labels containing search', async () => {
+    formsOppty.getType = () => 'high-form-views-low-conversions';
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData3, context);
     // expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
@@ -377,6 +388,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       save: sinon.stub(),
       getType: () => 'high-page-views-low-form-nav',
       setData: sinon.stub(),
+      setGuidance: sinon.stub(),
       getData: sinon.stub().returns({
         form: 'https://www.surest.com/newsletter',
         screenshot: '',
@@ -404,6 +416,9 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      site: {
+        getId: sinon.stub().returns('test-site-id'),
+      },
     };
     auditData = testData.oppty2AuditData;
   });
@@ -428,10 +443,11 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
         formViews: 300,
         pageViews: 8670,
         samples: 8670,
+        scrapedStatus: false,
         metrics: [
           {
             type: 'conversionRate',
-            vendor: '*',
+            device: '*',
             value: {
               page: null,
             },
@@ -441,6 +457,16 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
           source: '#teaser-related02 .cmp-teaser__action-link',
           url: 'https://www.surest.com/about-us',
         },
+      },
+      guidance: {
+        recommendations: [
+          {
+            insight: 'The CTA element in the page: https://www.surest.com/about-us is not placed in the most optimal positions for visibility and engagement',
+            recommendation: 'Reposition the CTA to be more centrally located and ensure they are above the fold.',
+            type: 'guidance',
+            rationale: 'CTAs placed above the fold and in central positions are more likely to be seen and clicked by users, leading to higher engagement rates.',
+          },
+        ],
       },
     };
 

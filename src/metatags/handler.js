@@ -19,6 +19,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver, wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
+import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getIssueRanking, removeTrailingSlash } from './opportunity-utils.js';
 import { DESCRIPTION, H1, TITLE } from './constants.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -168,15 +169,23 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
 }
 
 export async function auditMetaTagsRunner(baseURL, context, site) {
-  const { log, s3Client } = context;
+  const { log, s3Client, dataAccess } = context;
+  // Get top pages for a site
+  const siteId = site.getId();
+  const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+  const topPagesSet = new Set(topPages.map((page) => {
+    const pathname = new URL(page.url).pathname.replace(/\/$/, '');
+    return `scrapes/${site.getId()}${pathname}/scrape.json`;
+  }));
+
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const prefix = `scrapes/${site.getId()}/`;
   const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
   const extractedTags = {};
-  const pageMetadataResults = await Promise.all(scrapedObjectKeys.map(
-    (key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log),
-  ));
+  const pageMetadataResults = await Promise.all(scrapedObjectKeys
+    .filter((key) => topPagesSet.has(key))
+    .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)));
   pageMetadataResults.forEach((pageMetadata) => {
     if (pageMetadata) {
       Object.assign(extractedTags, pageMetadata);
