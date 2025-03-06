@@ -12,7 +12,6 @@
 
 import { getPrompt, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { AbortController, AbortError } from '@adobe/fetch';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -27,23 +26,15 @@ const TIMEOUT = 3000;
 
 async function filterOutValidBacklinks(backlinks, log) {
   const fetchWithTimeout = async (url, timeout) => {
-    const controller = new AbortController();
-    const { signal } = controller;
-    const id = setTimeout(() => controller.abort(), timeout);
-
     try {
-      const response = await fetch(url, { signal });
-      clearTimeout(id);
-      return response;
+      return await fetch(url, { timeout });
     } catch (error) {
-      if (error instanceof AbortError) {
+      if (error.code === 'ETIMEOUT') {
         log.warn(`Request to ${url} timed out after ${timeout}ms`);
         return { ok: false, status: 408 };
       } else {
         log.warn(`Request to ${url} failed with error: ${error.message}`);
       }
-    } finally {
-      clearTimeout(id);
     }
     return { ok: false, status: 500 };
   };
@@ -57,7 +48,16 @@ async function filterOutValidBacklinks(backlinks, log) {
     return !response.ok;
   };
 
-  const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
+  const backlinkStatuses = [];
+  for (const backlink of backlinks) {
+    log.info(`Checking backlink: ${backlink.url_to}`);
+
+    // eslint-disable-next-line no-await-in-loop
+    const result = await isStillBrokenBacklink(backlink);
+    backlinkStatuses.push(result);
+  }
+
+  // const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 

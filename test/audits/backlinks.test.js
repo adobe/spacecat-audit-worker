@@ -233,6 +233,9 @@ describe('Backlinks Tests', function () {
     nock(site.getBaseURL())
       .get(/.*/)
       .replyWithError('connection refused');
+    nock('https://ahrefs.com')
+      .get(/.*/)
+      .reply(404);
 
     const auditResult = await brokenBacklinksAuditRunner(auditUrl, context, site);
 
