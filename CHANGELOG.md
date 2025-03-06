@@ -1,3 +1,10 @@
+# [1.68.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.67.1...v1.68.0) (2025-03-06)
+
+
+### Features
+
+* Surface structured data errors without auto suggestion ([#744](https://github.com/adobe/spacecat-audit-worker/issues/744)) ([7164725](https://github.com/adobe/spacecat-audit-worker/commit/716472526b246c2725c54cd35d75fa0b7c16d479))
+
 ## [1.67.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.67.0...v1.67.1) (2025-03-06)
 
 
