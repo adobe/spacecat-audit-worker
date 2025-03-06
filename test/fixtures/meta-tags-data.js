@@ -379,7 +379,7 @@ const testData = {
     tags: [
       'Traffic acquisition',
     ],
-    data: null,
+    data: { projectedTrafficLost: 100, projectedTrafficValue: 50 },
   },
 };
 

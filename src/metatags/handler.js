@@ -34,6 +34,10 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     context,
     createOpportunityData,
     auditType,
+    {
+      projectedTrafficLost: auditData.auditResult.projectedTrafficLost,
+      projectedTrafficValue: auditData.auditResult.projectedTrafficValue,
+    },
   );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
