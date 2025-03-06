@@ -42,7 +42,7 @@ const getFirefallResponse = async (prompt, firefallClient, firefallOptions, log)
     log.info(`[${AUDIT_TYPE}]: Loaded ${answer.length} alt-text suggestions for batch`);
     return answer;
   } catch (err) {
-    log.error(`[${AUDIT_TYPE}]: Error calling Firefall for alt-text suggestion generation for batch`, err);
+    log.error(`[${AUDIT_TYPE}]: Error calling Firefall for alt-text suggestion generation for batch: ${prompt}`, err);
     return [];
   }
 };
