@@ -101,7 +101,7 @@ describe('getImageSuggestions', () => {
     const result = await suggestionsEngine.getImageSuggestions(images, context);
 
     expect(result).to.deep.equal({});
-    expect(context.log.error.calledWith('[alt-text]: Error calling Firefall for alt-text suggestion generation for batch')).to.be.true;
+    expect(context.log.error.calledWith(sinon.match((value) => typeof value === 'string' && value.includes('[alt-text]: Error calling Firefall for alt-text suggestion generation for batch')))).to.be.true;
   });
 
   it('should handle empty image list', async () => {

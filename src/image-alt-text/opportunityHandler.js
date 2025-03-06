@@ -220,5 +220,5 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     log,
   });
 
-  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and alt-text audit type.`);
+  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${auditData.siteId} and alt-text audit type.`);
 }
