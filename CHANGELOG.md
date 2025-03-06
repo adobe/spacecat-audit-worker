@@ -1,3 +1,10 @@
+## [1.68.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.0...v1.68.1) (2025-03-06)
+
+
+### Bug Fixes
+
+* projected traffic calculation for meta-tags ([#573](https://github.com/adobe/spacecat-audit-worker/issues/573)) ([cf335a6](https://github.com/adobe/spacecat-audit-worker/commit/cf335a63cb7679cbfda3c84f67f3dd42fd934781))
+
 # [1.68.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.67.1...v1.68.0) (2025-03-06)
 
 
