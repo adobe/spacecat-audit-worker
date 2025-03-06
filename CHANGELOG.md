@@ -1,3 +1,24 @@
+## [1.67.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.67.0...v1.67.1) (2025-03-06)
+
+
+### Bug Fixes
+
+* forms opportunity handling for search forms ([#746](https://github.com/adobe/spacecat-audit-worker/issues/746)) ([8909738](https://github.com/adobe/spacecat-audit-worker/commit/8909738806420cdd6fa29e7d02f415cc812aa8b5))
+
+# [1.67.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.66.7...v1.67.0) (2025-03-06)
+
+
+### Features
+
+* introduce KPI metrics for broken-backlinks ([#725](https://github.com/adobe/spacecat-audit-worker/issues/725)) ([7111f59](https://github.com/adobe/spacecat-audit-worker/commit/7111f5937ae9a9188265933798b6c4048ab43b6d))
+
+## [1.66.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.66.6...v1.66.7) (2025-03-06)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#745](https://github.com/adobe/spacecat-audit-worker/issues/745)) ([76dc80e](https://github.com/adobe/spacecat-audit-worker/commit/76dc80e49b1df9ffff7aa51e76bf483b9f031eb9))
+
 ## [1.66.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.66.5...v1.66.6) (2025-03-05)
 
 

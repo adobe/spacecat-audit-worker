@@ -200,7 +200,7 @@ export function filterForms(formOpportunities, scrapedData, log) {
 
   return formOpportunities.filter((opportunity) => {
     let urlMatches = false;
-    let isSearchForm = false;
+    let allSearchForms = true; // Assume all forms are search forms initially
 
     for (const form of scrapedData.formData) {
       const formUrl = new URL(form.finalUrl);
@@ -208,15 +208,16 @@ export function filterForms(formOpportunities, scrapedData, log) {
 
       if (formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
         urlMatches = true;
-        isSearchForm = isNonEmptyArray(form.scrapeResult)
-            && form.scrapeResult.some((result) => result?.formType === 'search'
-                || result?.classList?.includes('search')
-                || result?.classList?.includes('unsubscribe')
-                || result?.action?.endsWith('search.html')
-                || (result?.fieldsLabels && isNonEmptyArray(result.fieldsLabels) && result.fieldsLabels.every((label) => label.toLowerCase().includes('search'))));
+        for (const result of form.scrapeResult) {
+          const isSearchForm = result?.formType === 'search'
+              || result?.classList?.includes('search')
+              || result?.classList?.includes('unsubscribe')
+              || result?.action?.endsWith('search.html')
+              || (result?.fieldsLabels && isNonEmptyArray(result.fieldsLabels) && result.fieldsLabels.every((label) => label.toLowerCase().includes('search')));
 
-        if (isSearchForm) {
-          break; // Stop looping once we find a match
+          if (!isSearchForm) {
+            allSearchForms = false; // If any form is NOT a search form, set false
+          }
         }
       }
     }
@@ -224,7 +225,7 @@ export function filterForms(formOpportunities, scrapedData, log) {
     // eslint-disable-next-line no-param-reassign
     opportunity.scrapedStatus = urlMatches;
 
-    if (urlMatches && isSearchForm) {
+    if (urlMatches && allSearchForms) {
       log.debug(`Filtered out search form: ${opportunity?.form}`);
       return false;
     }

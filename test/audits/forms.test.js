@@ -141,20 +141,22 @@ describe('opportunities handler method', () => {
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
-  it('should create new forms opportunity with scraped data available with all field labels containing search', async () => {
-    formsOppty.getType = () => 'high-form-views-low-conversions';
-    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
-    await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData3, context);
-    // expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
-  });
-
   it('should create new forms opportunity with scraped data available not matched', async () => {
     const { auditData2 } = testData;
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData2, formScrapeData.scrapeData2, context);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+  });
+
+  it('should create new forms opportunity with scraped data available with all field labels containing search', async () => {
+    formsOppty.getType = () => 'high-form-views-low-conversions';
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData3, context);
+    const expectedOpportunityData = { ...testData.opportunityData };
+    expectedOpportunityData.data.scrapedStatus = true;
+    expect(dataAccessStub.Opportunity.create).to.be.calledWith(expectedOpportunityData);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 

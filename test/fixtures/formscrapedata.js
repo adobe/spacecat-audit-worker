@@ -489,6 +489,24 @@ const formScrapeData = {
             ],
             visibleInViewPortFieldCount: 5,
           },
+          {
+            id: '',
+            formType: 'search3',
+            classList: 'abc',
+            visibleATF: true,
+            fieldCount: 7,
+            visibleFieldCount: 5,
+            fieldsLabels: [
+              'Any\nDog\nCat\nOther',
+              'Any',
+              'Any',
+              'Enter Zip/Postal Code',
+              '✕',
+              'Search',
+              'Create Search Alert',
+            ],
+            visibleInViewPortFieldCount: 5,
+          },
         ],
         screenshots: [
           {
