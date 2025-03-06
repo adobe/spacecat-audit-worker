@@ -1,3 +1,10 @@
+## [1.68.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.2...v1.68.3) (2025-03-06)
+
+
+### Bug Fixes
+
+* wwwUrlResolver now checks rum data dynamically ([#749](https://github.com/adobe/spacecat-audit-worker/issues/749)) ([88a09c3](https://github.com/adobe/spacecat-audit-worker/commit/88a09c3fa31a73c2aae3f5bfdb6444ea0b14fd5e))
+
 ## [1.68.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.1...v1.68.2) (2025-03-06)
 
 
