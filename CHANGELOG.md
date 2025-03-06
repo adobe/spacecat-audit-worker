@@ -1,3 +1,10 @@
+# [1.67.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.66.7...v1.67.0) (2025-03-06)
+
+
+### Features
+
+* introduce KPI metrics for broken-backlinks ([#725](https://github.com/adobe/spacecat-audit-worker/issues/725)) ([7111f59](https://github.com/adobe/spacecat-audit-worker/commit/7111f5937ae9a9188265933798b6c4048ab43b6d))
+
 ## [1.66.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.66.6...v1.66.7) (2025-03-06)
 
 

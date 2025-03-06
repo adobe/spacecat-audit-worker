@@ -20,6 +20,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import calculateKpiDeltasForAudit from './kpi-metrics.js';
 
 const auditType = Audit.AUDIT_TYPES.BROKEN_BACKLINKS;
 const TIMEOUT = 3000;
@@ -235,22 +236,27 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 };
 
 /**
-  * Converts audit data to an opportunity and synchronizes suggestions.
-  *
-  * @param {string} auditUrl - The URL of the audit.
-  * @param {Object} auditData - The data from the audit.
-  * @param {Object} context - The context contains logging and data access utilities.
-  */
+ * Converts audit data to an opportunity and synchronizes suggestions.
+ *
+ * @param {string} auditUrl - The URL of the audit.
+ * @param {Object} auditData - The data from the audit.
+ * @param {Object} context - The context contains logging and data access utilities.
+ * @param {Object} site - The site object.
+ */
 
-export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
+  const { log } = context;
+
+  const kpiDeltas = await calculateKpiDeltasForAudit(auditData, context, site);
+
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
     context,
     createOpportunityData,
     auditType,
+    kpiDeltas,
   );
-  const { log } = context;
 
   const buildKey = (data) => `${data.url_from}|${data.url_to}`;
 
