@@ -68,6 +68,7 @@ export async function wwwUrlResolver(site, context) {
   const subdomain = uri.subdomain();
 
   if (hasText(subdomain) && subdomain !== 'www') {
+    log.info(`Resolved URL ${hostname} since ${baseURL} contains subdomain`);
     return hostname;
   }
 
@@ -76,6 +77,7 @@ export async function wwwUrlResolver(site, context) {
   try {
     const wwwToggledHostname = toggleWWWHostname(hostname);
     await rumApiClient.retrieveDomainkey(wwwToggledHostname);
+    log.info(`Resolved URL ${wwwToggledHostname} for ${baseURL} using RUM API Client`);
     return wwwToggledHostname;
   } catch (e) {
     log.info(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
@@ -83,12 +85,15 @@ export async function wwwUrlResolver(site, context) {
 
   try {
     await rumApiClient.retrieveDomainkey(hostname);
+    log.info(`Resolved URL ${hostname} for ${baseURL} using RUM API Client`);
     return hostname;
   } catch (e) {
     log.info(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
   }
 
-  return hostname.startsWith('www.') ? hostname : `www.${hostname}`;
+  const fallback = hostname.startsWith('www.') ? hostname : `www.${hostname}`;
+  log.info(`Fallback to ${fallback} for URL resolution for ${baseURL}`);
+  return fallback;
 }
 
 export async function noopUrlResolver(site) {
