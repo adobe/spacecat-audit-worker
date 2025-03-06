@@ -78,6 +78,9 @@ describe('getImageSuggestions', () => {
     fetchStub.resolves({
       ok: true,
       arrayBuffer: async () => new ArrayBuffer(8),
+      headers: {
+        get: sinon.stub().returns('256'),
+      },
     });
 
     await suggestionsEngine.getImageSuggestions(images, context, fetchStub);
