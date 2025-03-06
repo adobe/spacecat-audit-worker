@@ -1,3 +1,10 @@
+## [1.68.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.5...v1.68.6) (2025-03-06)
+
+
+### Bug Fixes
+
+* [alt-text] improves logs ([#753](https://github.com/adobe/spacecat-audit-worker/issues/753)) ([6405e16](https://github.com/adobe/spacecat-audit-worker/commit/6405e16f64ede2c4ed19d75ef01cf25cb398d66c))
+
 ## [1.68.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.4...v1.68.5) (2025-03-06)
 
 
