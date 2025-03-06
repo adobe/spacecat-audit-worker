@@ -16,7 +16,7 @@ import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver, wwwUrlResolver } from '../common/index.js';
+import { wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
@@ -137,10 +137,10 @@ function getOrganicTrafficForEndpoint(endpoint, rumDataMapMonthly, rumDataMapBiM
 }
 
 // Calculate the projected traffic lost for a site
-async function calculateProjectedTraffic(context, site, detectedTags, log) {
+async function calculateProjectedTraffic(context, auditUrl, detectedTags, log) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
-    domain: wwwUrlResolver(site),
+    domain: auditUrl,
     interval: 30,
     granularity: 'DAILY',
   };
@@ -172,7 +172,7 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
   return projectedTraffic;
 }
 
-export async function auditMetaTagsRunner(baseURL, context, site) {
+export async function auditMetaTagsRunner(auditUrl, context, site) {
   const { log, s3Client, dataAccess } = context;
   // Get top pages for a site
   const siteId = site.getId();
@@ -227,18 +227,18 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
     detectedTags: updatedDetectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: '',
-    finalUrl: baseURL,
+    finalUrl: auditUrl,
     projectedTrafficLost,
     projectedTrafficValue,
   };
   return {
     auditResult,
-    fullAuditRef: baseURL,
+    fullAuditRef: auditUrl,
   };
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver(wwwUrlResolver)
   .withRunner(auditMetaTagsRunner)
   .withPostProcessors([opportunityAndSuggestions])
   .build();
