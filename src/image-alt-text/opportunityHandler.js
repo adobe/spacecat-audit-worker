@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, tracingFetch } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import suggestionsEngine from './suggestionsEngine.js';
@@ -138,7 +138,12 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   }
 
   const opportunityData = await getProjectedMetrics({
-    images: detectedTags.imagesWithoutAltText, auditUrl, context, log,
+    images:
+      detectedTags.imagesWithoutAltText
+        .map((image) => ({ src: image.src, pageUrl: image.pageUrl })),
+    auditUrl,
+    context,
+    log,
   });
 
   try {
@@ -177,13 +182,19 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   }
 
   const imageUrls = detectedTags.imagesWithoutAltText.map(
-    (image) => new URL(image.src, auditUrl).toString(),
+    (image) => {
+      const el = { url: new URL(image.src, auditUrl).toString() };
+      if (image.blob) {
+        el.blob = image.blob;
+      }
+      return el;
+    },
   );
 
   const imageSuggestions = await suggestionsEngine.getImageSuggestions(
     imageUrls,
-    auditUrl,
     context,
+    tracingFetch,
   );
 
   const suggestions = detectedTags.imagesWithoutAltText.map((image) => {

@@ -13,33 +13,14 @@ import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { sleep } from '../support/utils.js';
+import { convertImagesToBase64 } from './auditEngine.js';
 
 const PROMPT_FILE = 'image-alt-text';
 const BATCH_SIZE = 3;
 const BATCH_DELAY = 5000;
 const MODEL = 'gpt-4o';
 // https://platform.openai.com/docs/guides/vision
-const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg)(?=\?|$)/i;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
-
-const filterImages = (imageUrls, auditUrl) => {
-  const imagesFromHost = [];
-  const otherImages = [];
-  const unsupportedFormatImages = [];
-
-  imageUrls.forEach((imageUrl) => {
-    if (!SUPPORTED_FORMATS.test(imageUrl)) {
-      unsupportedFormatImages.push(imageUrl);
-    } else if (imageUrl.includes(auditUrl.replace('https://', ''))) {
-      imagesFromHost.push(imageUrl);
-    } else {
-      otherImages.push(imageUrl);
-      imagesFromHost.push(imageUrl);
-    }
-  });
-
-  return { imagesFromHost, otherImages, unsupportedFormatImages };
-};
 
 const chunkArray = (array, chunkSize) => {
   const chunks = [];
@@ -49,18 +30,7 @@ const chunkArray = (array, chunkSize) => {
   return chunks;
 };
 
-const generateBatchPromises = (
-  imageBatches,
-  firefallClient,
-  log,
-) => imageBatches.map(async (batch, index) => {
-  await sleep(index * BATCH_DELAY);
-
-  const firefallOptions = {
-    imageUrls: batch,
-    model: MODEL,
-  };
-  const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
+const getFirefallResponse = async (prompt, firefallClient, firefallOptions, log) => {
   try {
     log.info(`[${AUDIT_TYPE}]: Batch prompt:`, prompt);
     const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
@@ -75,30 +45,52 @@ const generateBatchPromises = (
     log.error(`[${AUDIT_TYPE}]: Error calling Firefall for alt-text suggestion generation for batch`, err);
     return [];
   }
+};
+
+const promptOnlyBatchPromises = (
+  imageBatches,
+  firefallClient,
+  log,
+) => imageBatches.map(async (batch, index) => {
+  await sleep(index * BATCH_DELAY);
+
+  const firefallOptions = {
+    model: MODEL,
+  };
+  const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
+  return getFirefallResponse(prompt, firefallClient, firefallOptions, log);
 });
 
-const getImageSuggestions = async (imageUrls, auditUrl, context) => {
+const getImageSuggestions = async (images, context, fetch) => {
   const { log } = context;
   const firefallClient = FirefallClient.createFrom(context);
 
-  const filteredImages = filterImages(imageUrls, auditUrl);
+  // Filter images with blob: true
+  const imagesWithBlob = images.filter((image) => image.blob);
+  const base64Blobs = await convertImagesToBase64(imagesWithBlob
+    .map((img) => img.url), context.auditUrl, log, fetch);
 
-  log.info(`[${AUDIT_TYPE}]: Images from host:`, filteredImages.imagesFromHost);
-  log.info(`[${AUDIT_TYPE}]: Other images:`, filteredImages.otherImages);
-  log.info(`[${AUDIT_TYPE}]: Unsupported format images:`, filteredImages.unsupportedFormatImages);
+  // Merge base64Blobs with original images
+  const mergedImages = images.map((image) => {
+    const base64Blob = base64Blobs.find((blob) => blob.url === image.url);
+    if (base64Blob) {
+      return { ...image, blob: base64Blob.blob };
+    }
+    return image;
+  });
 
-  const supportedImageBatches = chunkArray(filteredImages.imagesFromHost, BATCH_SIZE);
-
-  const batchPromises = generateBatchPromises(supportedImageBatches, firefallClient, log);
+  const imageBatches = chunkArray(mergedImages, BATCH_SIZE);
+  const batchPromises = promptOnlyBatchPromises(imageBatches, firefallClient, log);
 
   const batchedResults = await Promise.all(batchPromises);
 
-  const suggestionsByImageUrl = batchedResults.reduce((acc, result) => {
-    result.forEach((item) => {
-      acc[item.image_url] = item;
-    });
-    return acc;
-  }, {});
+  const suggestionsByImageUrl = [...batchedResults]
+    .reduce((acc, result) => {
+      result.forEach((item) => {
+        acc[item.image_url] = item;
+      });
+      return acc;
+    }, {});
 
   log.info(`[${AUDIT_TYPE}]: Final Merged Suggestions: ${Object.keys(suggestionsByImageUrl).length}`);
 

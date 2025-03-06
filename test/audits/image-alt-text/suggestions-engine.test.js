@@ -19,7 +19,7 @@ import suggestionsEngine from '../../../src/image-alt-text/suggestionsEngine.js'
 describe('getImageSuggestions', () => {
   let context;
   let firefallClientStub;
-
+  let fetchStub;
   beforeEach(() => {
     context = {
       log: {
@@ -44,6 +44,7 @@ describe('getImageSuggestions', () => {
     });
 
     sinon.stub(FirefallClient, 'createFrom').returns(firefallClientStub);
+    fetchStub = sinon.stub();
   });
 
   afterEach(() => {
@@ -51,18 +52,16 @@ describe('getImageSuggestions', () => {
   });
 
   it('should return expected finalResults for a happy path', async () => {
-    const imageUrls = [
-      'https://example.com/image1.png',
-      'https://example.com/image2.png',
+    const images = [
+      { url: 'https://example.com/image1.png' },
+      { url: 'https://example.com/image2.png' },
     ];
-    const auditUrl = 'https://example.com';
-
     const expectedResults = {
       'http://example.com/image1.png': { image_url: 'http://example.com/image1.png', suggestion: 'Image 1 description' },
       'http://example.com/image2.png': { image_url: 'http://example.com/image2.png', suggestion: 'Image 2 description' },
     };
 
-    const result = await suggestionsEngine.getImageSuggestions(imageUrls, auditUrl, context);
+    const result = await suggestionsEngine.getImageSuggestions(images, context);
 
     expect(result).to.deep.equal(expectedResults);
     expect(context.log.info.called).to.be.true;
@@ -70,49 +69,36 @@ describe('getImageSuggestions', () => {
   });
 
   it('should handle unsupported image formats', async () => {
-    const imageUrls = [
-      'http://example.com/image1.bmp',
-      'http://example.com/image2.tiff',
+    const images = [
+      { url: 'https://example.com/image1.png' },
+      { url: 'http://example.com/image1.bmp', blob: true },
+      { url: 'http://example.com/image2.tiff', blob: true },
     ];
-    const auditUrl = 'http://example.com';
 
-    const result = await suggestionsEngine.getImageSuggestions(imageUrls, auditUrl, context);
-
-    expect(result).to.deep.equal({});
-    expect(context.log.info.calledWith('[alt-text]: Unsupported format images:', ['http://example.com/image1.bmp', 'http://example.com/image2.tiff'])).to.be.true;
-  });
-
-  it('should handle images not from host', async () => {
-    const imageUrls = [
-      'http://other.com/image1.png',
-      'http://other.com/image2.png',
-    ];
-    const auditUrl = 'http://example.com';
-
-    const result = await suggestionsEngine.getImageSuggestions(imageUrls, auditUrl, context);
-
-    expect(result).to.deep.equal({
-      'http://example.com/image1.png': {
-        image_url: 'http://example.com/image1.png',
-        suggestion: 'Image 1 description',
-      },
-      'http://example.com/image2.png': {
-        image_url: 'http://example.com/image2.png',
-        suggestion: 'Image 2 description',
+    fetchStub.resolves({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(8),
+      headers: {
+        get: sinon.stub().returns('256'),
       },
     });
-    expect(context.log.info.calledWith('[alt-text]: Other images:', ['http://other.com/image1.png', 'http://other.com/image2.png'])).to.be.true;
+
+    await suggestionsEngine.getImageSuggestions(images, context, fetchStub);
+
+    expect(firefallClientStub.fetchChatCompletion).to.have.been.calledWith(
+      sinon.match((value) => typeof value === 'string' && value.includes(JSON.stringify('http://example.com/image1.bmp'))),
+    );
   });
 
   it('should handle errors from FirefallClient', async () => {
     firefallClientStub.fetchChatCompletion.rejects(new Error('Firefall error'));
 
-    const imageUrls = [
-      'http://example.com/image1.png',
+    const images = [
+      { url: 'http://example.com/image1.bmp', blob: 'some blob' },
+      { url: 'http://example.com/image2.tiff', blob: 'some other blob' },
     ];
-    const auditUrl = 'http://example.com';
 
-    const result = await suggestionsEngine.getImageSuggestions(imageUrls, auditUrl, context);
+    const result = await suggestionsEngine.getImageSuggestions(images, context);
 
     expect(result).to.deep.equal({});
     expect(context.log.error.calledWith('[alt-text]: Error calling Firefall for alt-text suggestion generation for batch')).to.be.true;
@@ -120,12 +106,10 @@ describe('getImageSuggestions', () => {
 
   it('should handle empty image list', async () => {
     const imageUrls = [];
-    const auditUrl = 'http://example.com';
 
-    const result = await suggestionsEngine.getImageSuggestions(imageUrls, auditUrl, context);
+    const result = await suggestionsEngine.getImageSuggestions(imageUrls, context);
 
     expect(result).to.deep.equal({});
-    expect(context.log.info.calledWith('[alt-text]: Images from host:', [])).to.be.true;
   });
 
   it('should handle finish_reason not being a stop', async () => {
@@ -142,12 +126,12 @@ describe('getImageSuggestions', () => {
         },
       ],
     });
-    const imageUrls = [
-      'http://example.com/special-case-image.png',
+    const images = [
+      { url: 'http://example.com/image1.bmp', blob: 'some blob' },
+      { url: 'http://example.com/image2.tiff', blob: 'some other blob' },
     ];
-    const auditUrl = 'http://example.com';
 
-    await suggestionsEngine.getImageSuggestions(imageUrls, auditUrl, context);
+    await suggestionsEngine.getImageSuggestions(images, context);
 
     expect(context.log.error.calledWith('[alt-text]: No final suggestions found for batch')).to.be.true;
   });

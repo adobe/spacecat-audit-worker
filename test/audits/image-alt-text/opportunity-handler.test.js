@@ -87,6 +87,7 @@ describe('Image Alt Text Opportunity Handler', () => {
           imagesWithoutAltText: [
             { pageUrl: '/page1', src: 'image1.jpg' },
             { pageUrl: '/page2', src: 'image2.jpg' },
+            { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
           ],
         },
       },
@@ -154,6 +155,7 @@ describe('Image Alt Text Opportunity Handler', () => {
 
     expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
     expect(altTextOppty.save).to.have.been.called;
+
     expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
   });
 
