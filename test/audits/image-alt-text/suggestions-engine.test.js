@@ -19,7 +19,7 @@ import suggestionsEngine from '../../../src/image-alt-text/suggestionsEngine.js'
 describe('getImageSuggestions', () => {
   let context;
   let firefallClientStub;
-
+  let fetchStub;
   beforeEach(() => {
     context = {
       log: {
@@ -44,6 +44,7 @@ describe('getImageSuggestions', () => {
     });
 
     sinon.stub(FirefallClient, 'createFrom').returns(firefallClientStub);
+    fetchStub = sinon.stub(global, 'fetch');
   });
 
   afterEach(() => {
@@ -69,14 +70,20 @@ describe('getImageSuggestions', () => {
 
   it('should handle unsupported image formats', async () => {
     const images = [
-      { url: 'http://example.com/image1.bmp', blob: {} },
-      { url: 'http://example.com/image2.tiff', blob: {} },
+      { url: 'https://example.com/image1.png' },
+      { url: 'http://example.com/image1.bmp', blob: true },
+      { url: 'http://example.com/image2.tiff', blob: true },
     ];
+
+    fetchStub.resolves({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(8),
+    });
 
     await suggestionsEngine.getImageSuggestions(images, context);
 
     expect(firefallClientStub.fetchChatCompletion).to.have.been.calledWith(
-      sinon.match((value) => typeof value === 'string' && value.includes(JSON.stringify(images))),
+      sinon.match((value) => typeof value === 'string' && value.includes(JSON.stringify('http://example.com/image1.bmp'))),
     );
   });
 

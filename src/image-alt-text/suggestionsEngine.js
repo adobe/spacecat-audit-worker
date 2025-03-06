@@ -65,17 +65,21 @@ const getImageSuggestions = async (images, context) => {
   const { log } = context;
   const firefallClient = FirefallClient.createFrom(context);
 
-  const processedImages = images.map((image) => {
-    if (image.blob) {
-      return {
-        ...image,
-        blob: convertImagesToBase64(image),
-      };
+  // Filter images with blob: true
+  const imagesWithBlob = images.filter((image) => image.blob);
+  const base64Blobs = await convertImagesToBase64(imagesWithBlob
+    .map((img) => img.url), context.auditUrl, log);
+
+  // Merge base64Blobs with original images
+  const mergedImages = images.map((image) => {
+    const base64Blob = base64Blobs.find((blob) => blob.url === image.url);
+    if (base64Blob) {
+      return { ...image, blob: base64Blob.blob };
     }
     return image;
   });
 
-  const imageBatches = chunkArray(processedImages, BATCH_SIZE);
+  const imageBatches = chunkArray(mergedImages, BATCH_SIZE);
   const batchPromises = promptOnlyBatchPromises(imageBatches, firefallClient, log);
 
   const batchedResults = await Promise.all(batchPromises);
