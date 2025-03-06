@@ -916,6 +916,7 @@ describe('Meta Tags', () => {
         addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
         getType: () => 'meta-tags',
         setData: () => {},
+        getData: () => {},
       };
       logStub = {
         info: sinon.stub(),

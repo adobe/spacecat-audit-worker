@@ -23,7 +23,7 @@ import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 
 URI.preventInvalidHostname = true;
-const DEFAULT_CPC_VALUE = 1; // $1
+const DEFAULT_CPC_VALUE = 2.69; // $2.69
 
 // weekly pageview threshold to eliminate urls with lack of samples
 
