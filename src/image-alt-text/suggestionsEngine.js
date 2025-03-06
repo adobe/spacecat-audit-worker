@@ -32,7 +32,6 @@ const chunkArray = (array, chunkSize) => {
 
 const getFirefallResponse = async (prompt, firefallClient, firefallOptions, log) => {
   try {
-    log.info(`[${AUDIT_TYPE}]: Batch prompt:`, prompt);
     const response = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
     if (isNonEmptyArray(response.choices) && response.choices[0].finish_reason !== 'stop') {
       log.error(`[${AUDIT_TYPE}]: No final suggestions found for batch`);
