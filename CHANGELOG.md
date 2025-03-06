@@ -1,3 +1,10 @@
+## [1.68.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.3...v1.68.4) (2025-03-06)
+
+
+### Bug Fixes
+
+* metatags proper url resolution ([#750](https://github.com/adobe/spacecat-audit-worker/issues/750)) ([89f4c7e](https://github.com/adobe/spacecat-audit-worker/commit/89f4c7e5aa07062026bec936bb2790be8d8b5a77))
+
 ## [1.68.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.2...v1.68.3) (2025-03-06)
 
 
