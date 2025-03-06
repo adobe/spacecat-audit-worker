@@ -305,6 +305,30 @@ describe('AuditEngine', () => {
       expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
     });
 
+    it('should filter out blobs that are too large', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.svg', alt: '' },
+          { src: 'image2.svg', alt: '' },
+        ],
+      };
+
+      tracingFetchStub.resolves({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(130000),
+        headers: {
+          get: sinon.stub().returns(1024),
+        },
+      });
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
+
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+    });
+
     it('should handle bad response from tracingFetch', async () => {
       const pageUrl = '/test-page';
       const pageTags = {

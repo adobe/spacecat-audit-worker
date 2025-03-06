@@ -52,7 +52,14 @@ export const convertImagesToBase64 = async (imageUrls, auditUrl, log, fetch) => 
       const arrayBuffer = await response.arrayBuffer();
       const base64String = Buffer.from(arrayBuffer).toString('base64');
       const mimeType = await getMimeType(url);
-      base64Blobs.push({ url, blob: `data:${mimeType};base64,${base64String}` });
+      const base64Blob = `data:${mimeType};base64,${base64String}`;
+
+      if (Buffer.byteLength(base64Blob, 'utf8') > MAX_SIZE_BYTES) {
+        log.info(`[${AUDIT_TYPE}]: Skipping base64 image ${url} as it exceeds ${MAX_SIZE_KB}KB`);
+        return;
+      }
+
+      base64Blobs.push({ url, blob: base64Blob });
     } catch (error) {
       log.error(`[${AUDIT_TYPE}]: Error downloading blob for ${url}:`, error);
     }
