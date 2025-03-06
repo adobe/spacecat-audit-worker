@@ -26,6 +26,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generatePlainHtml, getScrapeForPath } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
+const auditAutoSuggestType = Audit.AUDIT_TYPES.STRUCTURED_DATA_AUTO_SUGGEST;
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -258,7 +259,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
 
   // Check if auto suggest was enabled
   const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('structured-data-auto-suggest', site)) {
+  if (!configuration.isHandlerEnabledForSite(auditAutoSuggestType, site)) {
     log.info('Auto-suggest is disabled for site');
     return { ...auditData };
   }
