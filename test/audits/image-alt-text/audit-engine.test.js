@@ -244,6 +244,9 @@ describe('AuditEngine', () => {
       tracingFetchStub.resolves({
         ok: true,
         arrayBuffer: async () => createRandomArrayBuffer(256),
+        headers: {
+          get: sinon.stub().returns('256'),
+        },
       });
 
       auditEngine.performPageAudit(pageUrl, pageTags);
@@ -266,6 +269,9 @@ describe('AuditEngine', () => {
       tracingFetchStub.resolves({
         ok: true,
         arrayBuffer: async () => new ArrayBuffer(8),
+        headers: {
+          get: sinon.stub().returns('256'),
+        },
       });
 
       auditEngine.performPageAudit(pageUrl, pageTags);
@@ -273,6 +279,30 @@ describe('AuditEngine', () => {
 
       const auditedTags = auditEngine.getAuditedTags();
       expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(1);
+    });
+
+    it('should filter out images that are too large', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.svg', alt: '' },
+          { src: 'image2.svg', alt: '' },
+        ],
+      };
+
+      tracingFetchStub.resolves({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(8),
+        headers: {
+          get: sinon.stub().returns(21 * 1024 * 1024),
+        },
+      });
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
+
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
     });
 
     it('should handle bad response from tracingFetch', async () => {
