@@ -61,14 +61,14 @@ const promptOnlyBatchPromises = (
   return getFirefallResponse(prompt, firefallClient, firefallOptions, log);
 });
 
-const getImageSuggestions = async (images, context) => {
+const getImageSuggestions = async (images, context, fetch) => {
   const { log } = context;
   const firefallClient = FirefallClient.createFrom(context);
 
   // Filter images with blob: true
   const imagesWithBlob = images.filter((image) => image.blob);
   const base64Blobs = await convertImagesToBase64(imagesWithBlob
-    .map((img) => img.url), context.auditUrl, log);
+    .map((img) => img.url), context.auditUrl, log, fetch);
 
   // Merge base64Blobs with original images
   const mergedImages = images.map((image) => {

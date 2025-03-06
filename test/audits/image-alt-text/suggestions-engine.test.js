@@ -44,7 +44,7 @@ describe('getImageSuggestions', () => {
     });
 
     sinon.stub(FirefallClient, 'createFrom').returns(firefallClientStub);
-    fetchStub = sinon.stub(global, 'fetch');
+    fetchStub = sinon.stub();
   });
 
   afterEach(() => {
@@ -80,7 +80,7 @@ describe('getImageSuggestions', () => {
       arrayBuffer: async () => new ArrayBuffer(8),
     });
 
-    await suggestionsEngine.getImageSuggestions(images, context);
+    await suggestionsEngine.getImageSuggestions(images, context, fetchStub);
 
     expect(firefallClientStub.fetchChatCompletion).to.have.been.calledWith(
       sinon.match((value) => typeof value === 'string' && value.includes(JSON.stringify('http://example.com/image1.bmp'))),

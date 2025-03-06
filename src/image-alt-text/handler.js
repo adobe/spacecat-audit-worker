@@ -11,7 +11,7 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { hasText } from '@adobe/spacecat-shared-utils';
+import { hasText, tracingFetch } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import {
   getObjectFromKey,
@@ -90,7 +90,7 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
     auditEngine.performPageAudit(pageUrl, pageTags);
   }
-  await auditEngine.filterImages(baseURL);
+  await auditEngine.filterImages(baseURL, tracingFetch);
   auditEngine.finalizeAudit();
   const detectedTags = auditEngine.getAuditedTags();
 

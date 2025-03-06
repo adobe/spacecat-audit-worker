@@ -19,6 +19,7 @@ import AuditEngine from '../../../src/image-alt-text/auditEngine.js';
 describe('AuditEngine', () => {
   let auditEngine;
   let logStub;
+  let tracingFetchStub;
 
   beforeEach(() => {
     logStub = {
@@ -28,6 +29,7 @@ describe('AuditEngine', () => {
       error: sinon.stub(),
     };
     auditEngine = new AuditEngine(logStub);
+    tracingFetchStub = sinon.stub();
   });
 
   afterEach(() => {
@@ -197,10 +199,8 @@ describe('AuditEngine', () => {
   });
 
   describe('filterImages', () => {
-    let fetchStub;
-
     beforeEach(() => {
-      fetchStub = sinon.stub(global, 'fetch');
+      tracingFetchStub = sinon.stub(global, 'fetch');
     });
 
     afterEach(() => {
@@ -241,13 +241,13 @@ describe('AuditEngine', () => {
         return array.buffer;
       }
 
-      fetchStub.resolves({
+      tracingFetchStub.resolves({
         ok: true,
         arrayBuffer: async () => createRandomArrayBuffer(256),
       });
 
       auditEngine.performPageAudit(pageUrl, pageTags);
-      await auditEngine.filterImages('https://example.com');
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
 
       const auditedTags = auditEngine.getAuditedTags();
       expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(3);
@@ -263,19 +263,19 @@ describe('AuditEngine', () => {
         ],
       };
 
-      fetchStub.resolves({
+      tracingFetchStub.resolves({
         ok: true,
         arrayBuffer: async () => new ArrayBuffer(8),
       });
 
       auditEngine.performPageAudit(pageUrl, pageTags);
-      await auditEngine.filterImages('https://example.com');
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
 
       const auditedTags = auditEngine.getAuditedTags();
       expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(1);
     });
 
-    it('should handle bad response from fetch', async () => {
+    it('should handle bad response from tracingFetch', async () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
@@ -283,20 +283,20 @@ describe('AuditEngine', () => {
         ],
       };
 
-      fetchStub.resolves({
+      tracingFetchStub.resolves({
         ok: false,
         arrayBuffer: async () => new ArrayBuffer(8),
       });
 
       auditEngine.performPageAudit(pageUrl, pageTags);
-      await auditEngine.filterImages('https://example.com');
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
 
       const auditedTags = auditEngine.getAuditedTags();
       expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
       expect(logStub.error).to.have.been.calledWithMatch(`[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Error downloading blob for image1.svg:`);
     });
 
-    it('should handle fetch errors gracefully', async () => {
+    it('should handle tracingFetch errors gracefully', async () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
@@ -304,7 +304,7 @@ describe('AuditEngine', () => {
         ],
       };
 
-      fetchStub.rejects(new Error('Network error'));
+      tracingFetchStub.rejects(new Error('Network error'));
 
       auditEngine.performPageAudit(pageUrl, pageTags);
       await auditEngine.filterImages();

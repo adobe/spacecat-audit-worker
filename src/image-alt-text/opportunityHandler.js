@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, tracingFetch } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import suggestionsEngine from './suggestionsEngine.js';
@@ -194,6 +194,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const imageSuggestions = await suggestionsEngine.getImageSuggestions(
     imageUrls,
     context,
+    tracingFetch,
   );
 
   const suggestions = detectedTags.imagesWithoutAltText.map((image) => {
