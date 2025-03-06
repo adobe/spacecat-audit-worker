@@ -1,3 +1,10 @@
+## [1.68.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.6...v1.68.7) (2025-03-06)
+
+
+### Bug Fixes
+
+* update title for forms opporty ([#751](https://github.com/adobe/spacecat-audit-worker/issues/751)) ([73f7a55](https://github.com/adobe/spacecat-audit-worker/commit/73f7a55194e2ea856562892cce866c8173372ad4))
+
 ## [1.68.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.5...v1.68.6) (2025-03-06)
 
 
