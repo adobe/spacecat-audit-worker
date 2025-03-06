@@ -13,6 +13,7 @@ import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { sleep } from '../support/utils.js';
+import { convertImagesToBase64 } from './auditEngine.js';
 
 const PROMPT_FILE = 'image-alt-text';
 const BATCH_SIZE = 3;
@@ -64,7 +65,17 @@ const getImageSuggestions = async (images, context) => {
   const { log } = context;
   const firefallClient = FirefallClient.createFrom(context);
 
-  const imageBatches = chunkArray(images, BATCH_SIZE);
+  const processedImages = images.map((image) => {
+    if (image.blob) {
+      return {
+        ...image,
+        blob: convertImagesToBase64(image),
+      };
+    }
+    return image;
+  });
+
+  const imageBatches = chunkArray(processedImages, BATCH_SIZE);
   const batchPromises = promptOnlyBatchPromises(imageBatches, firefallClient, log);
 
   const batchedResults = await Promise.all(batchPromises);

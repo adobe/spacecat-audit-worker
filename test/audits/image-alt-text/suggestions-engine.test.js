@@ -69,8 +69,8 @@ describe('getImageSuggestions', () => {
 
   it('should handle unsupported image formats', async () => {
     const images = [
-      { url: 'http://example.com/image1.bmp', blob: 'some blob' },
-      { url: 'http://example.com/image2.tiff', blob: 'some other blob' },
+      { url: 'http://example.com/image1.bmp', blob: {} },
+      { url: 'http://example.com/image2.tiff', blob: {} },
     ];
 
     await suggestionsEngine.getImageSuggestions(images, context);

@@ -30,7 +30,7 @@ const getMimeType = async (url) => {
   return mimeTypesForBase64[extension];
 };
 
-const convertImagesToBase64 = async (imageUrls, auditUrl, log) => {
+export const convertImagesToBase64 = async (imageUrls, auditUrl, log) => {
   const base64Blobs = [];
 
   const fetchPromises = imageUrls.map(async (url) => {
@@ -113,7 +113,7 @@ export default class AuditEngine {
 
       // Add unique blobs to the filtered map
       uniqueBlobsMap.forEach((originalData) => {
-        filteredImages.set(originalData.src, originalData);
+        filteredImages.set(originalData.src, { ...originalData, blob: !!originalData.blob });
       });
 
       this.auditedTags.imagesWithoutAltText = filteredImages;
