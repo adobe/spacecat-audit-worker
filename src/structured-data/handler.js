@@ -26,6 +26,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generatePlainHtml, getScrapeForPath } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
+const auditAutoSuggestType = Audit.AUDIT_TYPES.STRUCTURED_DATA_AUTO_SUGGEST;
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -125,6 +126,14 @@ export async function processStructuredData(baseURL, context, pages) {
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
+
+  // Check if audit was successful
+  if (auditData.auditResult.success === false) {
+    log.info('Audit failed, skipping opportunity generation');
+    return { ...auditData };
+  }
+
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
@@ -132,7 +141,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     createOpportunityData,
     auditType,
   );
-  const { log } = context;
 
   const buildKey = (data) => `${data.inspectionUrl}`;
 
@@ -177,6 +185,15 @@ ${JSON.stringify(correctedLdjson, null, 4)}
 ${aiRationale}
 
 _Confidence score: ${score}_`;
+            } else {
+              // Surface errors even without suggestion
+              fix = `
+## Issues Detected for ${error.richResultType}
+${error.items.map((item) => `
+* ${item.name}
+${item.issues.map((issue) => `    * ${issue.issueMessage}`).join('\n')}
+`).join('\n')}
+`;
             }
 
             return {
@@ -190,6 +207,8 @@ _Confidence score: ${score}_`;
     },
     log,
   });
+
+  return { ...auditData };
 }
 
 export async function structuredDataHandler(baseURL, context, site) {
@@ -240,7 +259,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
 
   // Check if auto suggest was enabled
   const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('structured-data-auto-suggest', site)) {
+  if (!configuration.isHandlerEnabledForSite(auditAutoSuggestType, site)) {
     log.info('Auto-suggest is disabled for site');
     return { ...auditData };
   }

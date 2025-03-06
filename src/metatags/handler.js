@@ -10,11 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/index.js';
+import { wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
@@ -32,6 +34,10 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     context,
     createOpportunityData,
     auditType,
+    {
+      projectedTrafficLost: auditData.auditResult.projectedTrafficLost,
+      projectedTrafficValue: auditData.auditResult.projectedTrafficValue,
+    },
   );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
@@ -92,7 +98,81 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
   };
 }
 
-export async function auditMetaTagsRunner(baseURL, context, site) {
+// Extract endpoint from a url, removes trailing slash if present
+function extractEndpoint(url) {
+  const urlObj = new URL(url);
+  return urlObj.pathname.replace(/\/$/, '');
+}
+
+// Preprocess RUM data into a map with endpoint as the key
+function preprocessRumData(rumDataMonthly, rumDataBiMonthly) {
+  const rumDataMapMonthly = new Map();
+  const rumDataMapBiMonthly = new Map();
+  rumDataMonthly.forEach((item) => {
+    const endpoint = extractEndpoint(item.url);
+    rumDataMapMonthly.set(endpoint, item);
+  });
+  rumDataBiMonthly.forEach((item) => {
+    const endpoint = extractEndpoint(item.url);
+    rumDataMapBiMonthly.set(endpoint, item);
+  });
+  return {
+    rumDataMapMonthly,
+    rumDataMapBiMonthly,
+  };
+}
+
+// Get organic traffic for a given endpoint
+function getOrganicTrafficForEndpoint(endpoint, rumDataMapMonthly, rumDataMapBiMonthly, log) {
+  // remove trailing slash from endpoint, if present, and then find in the datamap
+  const target = rumDataMapMonthly.get(endpoint.replace(/\/$/, ''))
+    || rumDataMapBiMonthly.get(endpoint.replace(/\/$/, ''));
+  if (!target) {
+    log.warn(`No rum data found for ${endpoint}.`);
+    return 0;
+  }
+  const trafficSum = target.earned + target.paid;
+  log.info(`Found ${trafficSum} page views for ${endpoint}.`);
+  return trafficSum;
+}
+
+// Calculate the projected traffic lost for a site
+async function calculateProjectedTraffic(context, auditUrl, detectedTags, log) {
+  const rumAPIClient = RUMAPIClient.createFrom(context);
+  const options = {
+    domain: auditUrl,
+    interval: 30,
+    granularity: 'DAILY',
+  };
+  const queryResultsMonthly = await rumAPIClient.query('traffic-acquisition', options);
+  const queryResultsBiMonthly = await rumAPIClient.query('traffic-acquisition', {
+    ...options,
+    interval: 60,
+  });
+  const { rumDataMapMonthly, rumDataMapBiMonthly } = preprocessRumData(
+    queryResultsMonthly,
+    queryResultsBiMonthly,
+  );
+  let projectedTraffic = 0;
+  Object.entries(detectedTags).forEach(([endpoint, tags]) => {
+    const organicTraffic = getOrganicTrafficForEndpoint(
+      endpoint,
+      rumDataMapMonthly,
+      rumDataMapBiMonthly,
+      log,
+    );
+    Object.values((tags)).forEach((tagIssueDetails) => {
+      // Multiplying by 1% for missing tags, and 0.5% for other tag issues
+      // For duplicate tags, each page's traffic is multiplied by .5% so
+      // it amounts to 0.5% * number of duplicates.
+      const multiplier = tagIssueDetails.issue.includes('Missing') ? 0.01 : 0.005;
+      projectedTraffic += organicTraffic * multiplier;
+    });
+  });
+  return projectedTraffic;
+}
+
+export async function auditMetaTagsRunner(auditUrl, context, site) {
   const { log, s3Client, dataAccess } = context;
   // Get top pages for a site
   const siteId = site.getId();
@@ -119,33 +199,46 @@ export async function auditMetaTagsRunner(baseURL, context, site) {
   if (extractedTagsCount === 0) {
     log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
   }
-  log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
+
   // Perform SEO checks
+  log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
   const seoChecks = new SeoChecks(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
     seoChecks.performChecks(pageUrl, pageTags);
   }
   seoChecks.finalChecks();
+  const detectedTags = seoChecks.getDetectedTags();
+
+  // Calculate projected traffic lost
+  const projectedTrafficLost = await calculateProjectedTraffic(context, site, detectedTags, log);
+  const cpcValue = await calculateCPCValue(context, site.getId());
+  log.info(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
+  const projectedTrafficValue = projectedTrafficLost * cpcValue;
+
+  // Generate AI suggestions for detected tags if auto-suggest enabled for site
   const allTags = {
     detectedTags: seoChecks.getDetectedTags(),
     healthyTags: seoChecks.getFewHealthyTags(),
     extractedTags,
   };
   const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
+
   const auditResult = {
     detectedTags: updatedDetectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
-    fullAuditRef: 'na',
-    finalUrl: baseURL,
+    fullAuditRef: '',
+    finalUrl: auditUrl,
+    projectedTrafficLost,
+    projectedTrafficValue,
   };
   return {
     auditResult,
-    fullAuditRef: baseURL,
+    fullAuditRef: auditUrl,
   };
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver(wwwUrlResolver)
   .withRunner(auditMetaTagsRunner)
   .withPostProcessors([opportunityAndSuggestions])
   .build();

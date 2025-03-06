@@ -11,7 +11,7 @@
  */
 
 import {
-  getHighPageViewsLowFormCtrMetrics,
+  getHighPageViewsLowFormCtrMetrics, isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -200,23 +200,32 @@ export function filterForms(formOpportunities, scrapedData, log) {
 
   return formOpportunities.filter((opportunity) => {
     let urlMatches = false;
-    // Find matching form in scraped data
-    const matchingForm = scrapedData.formData.find((form) => {
+    let allSearchForms = true; // Assume all forms are search forms initially
+
+    for (const form of scrapedData.formData) {
       const formUrl = new URL(form.finalUrl);
       const opportunityUrl = new URL(opportunity.form);
-      // eslint-disable-next-line max-len
-      urlMatches = opportunityUrl && formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname;
 
-      const isSearchForm = Array.isArray(form.scrapeResult)
-          && form.scrapeResult.some((result) => result?.formType === 'search' || result?.classList?.includes('search') || result?.classList?.includes('unsubscribe') || result?.action?.endsWith('search.html'));
+      if (formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
+        urlMatches = true;
+        for (const result of form.scrapeResult) {
+          const isSearchForm = result?.formType === 'search'
+              || result?.classList?.includes('search')
+              || result?.classList?.includes('unsubscribe')
+              || result?.action?.endsWith('search.html')
+              || (result?.fieldsLabels && isNonEmptyArray(result.fieldsLabels) && result.fieldsLabels.every((label) => label.toLowerCase().includes('search')));
 
-      return urlMatches && isSearchForm;
-    });
+          if (!isSearchForm) {
+            allSearchForms = false; // If any form is NOT a search form, set false
+          }
+        }
+      }
+    }
 
     // eslint-disable-next-line no-param-reassign
-    opportunity.scrapedStatus = !!urlMatches;
+    opportunity.scrapedStatus = urlMatches;
 
-    if (matchingForm) {
+    if (urlMatches && allSearchForms) {
       log.debug(`Filtered out search form: ${opportunity?.form}`);
       return false;
     }
