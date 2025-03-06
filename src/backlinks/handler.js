@@ -248,7 +248,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
   const { log } = context;
 
   const kpiDeltas = await calculateKpiDeltasForAudit(auditData, context, site);
-  log.info(`KPI deltas for audit ${auditData.id}: ${JSON.stringify(kpiDeltas)}`);
 
   const opportunity = await convertToOpportunity(
     auditUrl,

@@ -65,14 +65,11 @@ const calculateKpiMetrics = async (auditData, context, site) => {
     CPC = latestOrganicTrafficData.cost / latestOrganicTrafficData.value;
   }
 
-  log.info(`CPC for site ${siteId} is ${CPC}`);
-
   const projectedTrafficLost = auditData?.auditResult?.brokenBacklinks?.reduce((sum, backlink) => {
     const { traffic_domain: referringTraffic, urlsSuggested } = backlink;
     const trafficBand = getTrafficBand(referringTraffic);
     const targetUrl = urlsSuggested?.[0];
     const targetTrafficData = rumTrafficData.find((data) => data.url === targetUrl);
-    log.info(`Target URL: ${targetUrl}, Traffic: ${targetTrafficData?.earned}`);
     const proposedTargetTraffic = targetTrafficData?.earned ?? 0;
     return sum + (proposedTargetTraffic * trafficBand);
   }, 0);
