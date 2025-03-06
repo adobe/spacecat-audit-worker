@@ -1,3 +1,11 @@
+## [1.68.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.4...v1.68.5) (2025-03-06)
+
+
+### Bug Fixes
+
+* [alt-text] supports more image mimetypes  ([#737](https://github.com/adobe/spacecat-audit-worker/issues/737)) ([5e79c69](https://github.com/adobe/spacecat-audit-worker/commit/5e79c69e5959331ed3a8eb1f06a18916be2acd40))
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.22.0 ([#747](https://github.com/adobe/spacecat-audit-worker/issues/747)) ([1bf200d](https://github.com/adobe/spacecat-audit-worker/commit/1bf200dbc0d0afa6776ed09068bb395edb329a14))
+
 ## [1.68.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.3...v1.68.4) (2025-03-06)
 
 
