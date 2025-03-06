@@ -294,7 +294,7 @@ describe('AuditEngine', () => {
         ok: true,
         arrayBuffer: async () => new ArrayBuffer(8),
         headers: {
-          get: sinon.stub().returns(21 * 1024 * 1024),
+          get: sinon.stub().returns(130 * 1024),
         },
       });
 

@@ -32,8 +32,9 @@ const getMimeType = async (url) => {
 
 export const convertImagesToBase64 = async (imageUrls, auditUrl, log, fetch) => {
   const base64Blobs = [];
-  const MAX_SIZE_MB = 20;
-  const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+  // ~120KB is the max size for a blob that GPT will digest
+  const MAX_SIZE_KB = 120;
+  const MAX_SIZE_BYTES = MAX_SIZE_KB * 1024;
 
   const fetchPromises = imageUrls.map(async (url) => {
     try {
@@ -41,10 +42,10 @@ export const convertImagesToBase64 = async (imageUrls, auditUrl, log, fetch) => 
       if (!response.ok) {
         throw new Error(`Failed to fetch image from ${url}`);
       }
-      const contentLength = response.headers.get('Content-Length');
 
+      const contentLength = response.headers.get('Content-Length');
       if (contentLength && parseInt(contentLength, 10) > MAX_SIZE_BYTES) {
-        log.info(`[${AUDIT_TYPE}]: Skipping image ${url} as it exceeds ${MAX_SIZE_MB}MB`);
+        log.info(`[${AUDIT_TYPE}]: Skipping image ${url} as it exceeds ${MAX_SIZE_KB}KB`);
         return;
       }
 
