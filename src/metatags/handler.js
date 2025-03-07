@@ -175,10 +175,9 @@ async function calculateProjectedTraffic(context, auditUrl, siteId, detectedTags
 
     const cpcValue = await calculateCPCValue(context, siteId);
     log.info(`Calculated cpc value: ${cpcValue} for site: ${siteId}`);
-
     const projectedTrafficValue = projectedTrafficLost * cpcValue;
-    // Skip updating projected traffic data if lost traffic value is insignificant
 
+    // Skip updating projected traffic data if lost traffic value is insignificant
     return projectedTrafficValue > 500 ? { projectedTrafficLost, projectedTrafficValue } : {};
   } catch (err) {
     log.warn(`Error while calculating projected traffic for ${auditUrl} : ${siteId}`, err);
