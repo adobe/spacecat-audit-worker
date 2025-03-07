@@ -303,10 +303,10 @@ describe('Image Alt Text Opportunity Handler', () => {
     await convertToOpportunity(auditUrl, auditData, context);
 
     // Verify the error was logged for both missing pages with correct www/non-www format
-    expect(logStub.error).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Page URL https://example.com/page1 or https://www.example.com/page1 not found in RUM API results',
     );
-    expect(logStub.error).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Page URL https://example.com/page2 or https://www.example.com/page2 not found in RUM API results',
     );
 
@@ -383,7 +383,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     expect(setDataCall.args[0].projectedTrafficValue).to.equal(expectedTrafficValue);
 
     // Verify that no errors were logged about missing URLs
-    expect(logStub.error).to.not.have.been.calledWith(
+    expect(logStub.debug).to.not.have.been.calledWith(
       sinon.match(/Page URL .* not found in RUM API results/),
     );
   });

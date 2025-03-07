@@ -106,7 +106,7 @@ const getProjectedMetrics = async ({
     } else if (pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)]) {
       pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)].imagesWithoutAltText += 1;
     } else {
-      log.error(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} or ${toggleWWW(fullPageUrl)} not found in RUM API results`);
+      log.debug(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} or ${toggleWWW(fullPageUrl)} not found in RUM API results`);
     }
   });
 
