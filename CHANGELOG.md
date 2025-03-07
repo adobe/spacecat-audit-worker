@@ -1,3 +1,10 @@
+## [1.68.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.9...v1.68.10) (2025-03-07)
+
+
+### Bug Fixes
+
+* Prevent alt-text audit from failing when RUM has no data for site ([#756](https://github.com/adobe/spacecat-audit-worker/issues/756)) ([9c4e46e](https://github.com/adobe/spacecat-audit-worker/commit/9c4e46ee81248d0c97b5552686b8c02eec73c054))
+
 ## [1.68.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.8...v1.68.9) (2025-03-07)
 
 
