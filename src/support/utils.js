@@ -71,6 +71,17 @@ export function toggleWWW(baseUrl) {
 }
 
 /**
+ * Toggles the www subdomain in a given hostname.
+ * @param {string} hostname - The URL to toggle the www subdomain in.
+ * @returns {string} - The URL with the www subdomain toggled.
+ */
+export function toggleWWWHostname(hostname) {
+  /* c8 ignore next 1 */
+  if (hasNonWWWSubdomain(`https://${hostname}`)) return hostname;
+  return hostname.startsWith('www.') ? hostname.replace('www.', '') : `www.${hostname}`;
+}
+
+/**
  * Extracts the domain and protocol from a given URL.
  *
  * @param {string} inputUrl - The URL to extract domain and protocol from.

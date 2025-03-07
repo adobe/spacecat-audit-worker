@@ -87,6 +87,7 @@ describe('Image Alt Text Opportunity Handler', () => {
           imagesWithoutAltText: [
             { pageUrl: '/page1', src: 'image1.jpg' },
             { pageUrl: '/page2', src: 'image2.jpg' },
+            { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
           ],
         },
       },
@@ -154,6 +155,7 @@ describe('Image Alt Text Opportunity Handler', () => {
 
     expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
     expect(altTextOppty.save).to.have.been.called;
+
     expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
   });
 
@@ -301,10 +303,10 @@ describe('Image Alt Text Opportunity Handler', () => {
     await convertToOpportunity(auditUrl, auditData, context);
 
     // Verify the error was logged for both missing pages with correct www/non-www format
-    expect(logStub.error).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Page URL https://example.com/page1 or https://www.example.com/page1 not found in RUM API results',
     );
-    expect(logStub.error).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Page URL https://example.com/page2 or https://www.example.com/page2 not found in RUM API results',
     );
 
@@ -381,8 +383,37 @@ describe('Image Alt Text Opportunity Handler', () => {
     expect(setDataCall.args[0].projectedTrafficValue).to.equal(expectedTrafficValue);
 
     // Verify that no errors were logged about missing URLs
-    expect(logStub.error).to.not.have.been.calledWith(
+    expect(logStub.debug).to.not.have.been.calledWith(
       sinon.match(/Page URL .* not found in RUM API results/),
+    );
+  });
+
+  it('should handle errors when fetching RUM API results', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+
+    // Make RUM API client throw an error
+    const rumError = new Error('RUM API connection failed');
+    rumClientStub.query.rejects(rumError);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    // Verify error was logged
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Failed to get RUM results for https://example.com with error: RUM API connection failed',
+    );
+
+    // Verify opportunity was still created/updated with default metrics
+    expect(altTextOppty.setData).to.have.been.calledWith({
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+    });
+
+    expect(altTextOppty.save).to.have.been.called;
+
+    // Verify suggestions were still created despite RUM API failure
+    expect(altTextOppty.addSuggestions).to.have.been.called;
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Successfully synced Opportunity And Suggestions for site: https://example.com siteId: site-id and alt-text audit type.',
     );
   });
 });

@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, tracingFetch } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import suggestionsEngine from './suggestionsEngine.js';
@@ -69,15 +69,25 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
 const getProjectedMetrics = async ({
   images, auditUrl, context, log,
 }) => {
-  const finalUrl = await getRUMUrl(auditUrl);
+  let finalUrl;
+  let results;
 
-  const rumAPIClient = RUMAPIClient.createFrom(context);
-  const options = {
-    domain: finalUrl,
-    interval: RUM_INTERVAL,
-  };
+  try {
+    finalUrl = await getRUMUrl(auditUrl);
+    const rumAPIClient = RUMAPIClient.createFrom(context);
+    const options = {
+      domain: finalUrl,
+      interval: RUM_INTERVAL,
+    };
 
-  const results = await rumAPIClient.query('traffic-acquisition', options);
+    results = await rumAPIClient.query('traffic-acquisition', options);
+  } catch (err) {
+    log.error(`[${AUDIT_TYPE}]: Failed to get RUM results for ${auditUrl} with error: ${err.message}`);
+    return {
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+    };
+  }
 
   const pageUrlToOrganicTrafficMap = results.reduce((acc, page) => {
     acc[page.url] = {
@@ -96,7 +106,7 @@ const getProjectedMetrics = async ({
     } else if (pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)]) {
       pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)].imagesWithoutAltText += 1;
     } else {
-      log.error(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} or ${toggleWWW(fullPageUrl)} not found in RUM API results`);
+      log.debug(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} or ${toggleWWW(fullPageUrl)} not found in RUM API results`);
     }
   });
 
@@ -138,7 +148,12 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   }
 
   const opportunityData = await getProjectedMetrics({
-    images: detectedTags.imagesWithoutAltText, auditUrl, context, log,
+    images:
+      detectedTags.imagesWithoutAltText
+        .map((image) => ({ src: image.src, pageUrl: image.pageUrl })),
+    auditUrl,
+    context,
+    log,
   });
 
   try {
@@ -177,13 +192,19 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   }
 
   const imageUrls = detectedTags.imagesWithoutAltText.map(
-    (image) => new URL(image.src, auditUrl).toString(),
+    (image) => {
+      const el = { url: new URL(image.src, auditUrl).toString() };
+      if (image.blob) {
+        el.blob = image.blob;
+      }
+      return el;
+    },
   );
 
   const imageSuggestions = await suggestionsEngine.getImageSuggestions(
     imageUrls,
-    auditUrl,
     context,
+    tracingFetch,
   );
 
   const suggestions = detectedTags.imagesWithoutAltText.map((image) => {
@@ -209,5 +230,5 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     log,
   });
 
-  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and alt-text audit type.`);
+  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${auditData.siteId} and alt-text audit type.`);
 }

@@ -1,3 +1,88 @@
+## [1.68.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.13...v1.68.14) (2025-03-07)
+
+
+### Bug Fixes
+
+* kpi deltas undefined value ([#759](https://github.com/adobe/spacecat-audit-worker/issues/759)) ([4a5d4b5](https://github.com/adobe/spacecat-audit-worker/commit/4a5d4b5d9b98350dff93a6d1c1e72272081b76f9))
+
+## [1.68.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.12...v1.68.13) (2025-03-07)
+
+
+### Bug Fixes
+
+* Temporarily mute logs about RUM / scraped pages mismatch ([#758](https://github.com/adobe/spacecat-audit-worker/issues/758)) ([f29ed0b](https://github.com/adobe/spacecat-audit-worker/commit/f29ed0bc2f47a99f463c226f2da5d51371543a8a))
+
+## [1.68.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.11...v1.68.12) (2025-03-07)
+
+
+### Bug Fixes
+
+* generate default guidance for low conv opportunity ([#757](https://github.com/adobe/spacecat-audit-worker/issues/757)) ([8d6deaf](https://github.com/adobe/spacecat-audit-worker/commit/8d6deaf59a8fb1cdcb031a1bcfd8b0b3fb074793))
+
+## [1.68.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.10...v1.68.11) (2025-03-07)
+
+
+### Bug Fixes
+
+* handling site RUM missing for meta-tags ([#755](https://github.com/adobe/spacecat-audit-worker/issues/755)) ([cb74ffd](https://github.com/adobe/spacecat-audit-worker/commit/cb74ffdf808032f06f1e112f3566f2388d8aef1f))
+
+## [1.68.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.9...v1.68.10) (2025-03-07)
+
+
+### Bug Fixes
+
+* Prevent alt-text audit from failing when RUM has no data for site ([#756](https://github.com/adobe/spacecat-audit-worker/issues/756)) ([9c4e46e](https://github.com/adobe/spacecat-audit-worker/commit/9c4e46ee81248d0c97b5552686b8c02eec73c054))
+
+## [1.68.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.8...v1.68.9) (2025-03-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-ahrefs-client to v1.6.12 ([#754](https://github.com/adobe/spacecat-audit-worker/issues/754)) ([4d687a9](https://github.com/adobe/spacecat-audit-worker/commit/4d687a9d7fe5105dff614d2c398892ad2e5a0048))
+
+## [1.68.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.7...v1.68.8) (2025-03-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.35.0 ([#752](https://github.com/adobe/spacecat-audit-worker/issues/752)) ([5e4c471](https://github.com/adobe/spacecat-audit-worker/commit/5e4c471b41f4d7fac05b92f72d7f08c629bbc7b6))
+
+## [1.68.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.6...v1.68.7) (2025-03-06)
+
+
+### Bug Fixes
+
+* update title for forms opporty ([#751](https://github.com/adobe/spacecat-audit-worker/issues/751)) ([73f7a55](https://github.com/adobe/spacecat-audit-worker/commit/73f7a55194e2ea856562892cce866c8173372ad4))
+
+## [1.68.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.5...v1.68.6) (2025-03-06)
+
+
+### Bug Fixes
+
+* [alt-text] improves logs ([#753](https://github.com/adobe/spacecat-audit-worker/issues/753)) ([6405e16](https://github.com/adobe/spacecat-audit-worker/commit/6405e16f64ede2c4ed19d75ef01cf25cb398d66c))
+
+## [1.68.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.4...v1.68.5) (2025-03-06)
+
+
+### Bug Fixes
+
+* [alt-text] supports more image mimetypes  ([#737](https://github.com/adobe/spacecat-audit-worker/issues/737)) ([5e79c69](https://github.com/adobe/spacecat-audit-worker/commit/5e79c69e5959331ed3a8eb1f06a18916be2acd40))
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.22.0 ([#747](https://github.com/adobe/spacecat-audit-worker/issues/747)) ([1bf200d](https://github.com/adobe/spacecat-audit-worker/commit/1bf200dbc0d0afa6776ed09068bb395edb329a14))
+
+## [1.68.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.3...v1.68.4) (2025-03-06)
+
+
+### Bug Fixes
+
+* metatags proper url resolution ([#750](https://github.com/adobe/spacecat-audit-worker/issues/750)) ([89f4c7e](https://github.com/adobe/spacecat-audit-worker/commit/89f4c7e5aa07062026bec936bb2790be8d8b5a77))
+
+## [1.68.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.2...v1.68.3) (2025-03-06)
+
+
+### Bug Fixes
+
+* wwwUrlResolver now checks rum data dynamically ([#749](https://github.com/adobe/spacecat-audit-worker/issues/749)) ([88a09c3](https://github.com/adobe/spacecat-audit-worker/commit/88a09c3fa31a73c2aae3f5bfdb6444ea0b14fd5e))
+
 ## [1.68.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.1...v1.68.2) (2025-03-06)
 
 
