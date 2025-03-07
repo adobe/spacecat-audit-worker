@@ -310,7 +310,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
   // Go through audit results, one for each URL
   for (const auditResult of results) {
     // Abort early if too many Firefall requests are used.
-    if (firefallRequests > FIREFALL_REQUEST_LIMIT) {
+    if (firefallRequests >= FIREFALL_REQUEST_LIMIT) {
       log.error(`Aborting suggestion generation as more than ${FIREFALL_REQUEST_LIMIT} Firefall requests have been used.`);
       break;
     }
