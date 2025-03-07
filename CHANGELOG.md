@@ -1,3 +1,10 @@
+## [1.68.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.12...v1.68.13) (2025-03-07)
+
+
+### Bug Fixes
+
+* Temporarily mute logs about RUM / scraped pages mismatch ([#758](https://github.com/adobe/spacecat-audit-worker/issues/758)) ([f29ed0b](https://github.com/adobe/spacecat-audit-worker/commit/f29ed0bc2f47a99f463c226f2da5d51371543a8a))
+
 ## [1.68.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.11...v1.68.12) (2025-03-07)
 
 
