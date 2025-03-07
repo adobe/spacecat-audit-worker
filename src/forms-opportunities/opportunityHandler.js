@@ -10,7 +10,72 @@
  * governing permissions and limitations under the License.
  */
 
-import { filterForms, generateOpptyData } from './utils.js';
+import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { filterForms, generateOpptyData, isSearchForm } from './utils.js';
+
+function generateDefaultGuidance(scrapedData, oppoty) {
+  if (isNonEmptyArray(scrapedData?.formData)) {
+    for (const form of scrapedData.formData) {
+      const formUrl = new URL(form.finalUrl);
+      const opportunityUrl = new URL(oppoty.form);
+      if (formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
+        const nonSearchForms = form.scrapeResult.filter((x) => !isSearchForm(x));
+        if (nonSearchForms.length !== 0) {
+          const { isLargeForm, isBelowTheFold } = nonSearchForms.reduce((
+            acc,
+            { visibleATF, visibleFieldCount },
+          ) => {
+            if (visibleFieldCount > 6) {
+              acc.isLargeForm = true;
+            }
+            if (!visibleATF) {
+              acc.isBelowTheFold = true;
+            }
+            return acc;
+          }, { isLargeForm: false, isBelowTheFold: false });
+          if (isLargeForm) {
+            return {
+              recommendations: [
+                {
+                  insight: 'The form contains a large number of fields, which can be overwhelming and increase cognitive load for users',
+                  recommendation: 'Consider using progressive disclosure techniques, such as multi-step forms, to make the process less daunting.',
+                  type: 'guidance',
+                  rationale: 'Progressive disclosure can help by breaking the form into smaller, more manageable steps that can decrease cognitive load and make it more likely for users to complete the form.',
+                },
+              ],
+            };
+          }
+          // visibility takes precedence and overwrites large form guidance
+          // if both issues are detected.
+          if (isBelowTheFold) {
+            return {
+              recommendations: [
+                {
+                  insight: 'The form is not visible above the fold, which can reduce its visibility and accessibility to users',
+                  recommendation: 'Move the form higher on the page so that it is visible without scrolling.',
+                  type: 'guidance',
+                  rationale: 'Forms that are visible above the fold are more likely to be seen and interacted with by users, leading to higher conversion rates.',
+                },
+              ],
+            };
+          }
+          // eslint-disable-next-line max-len
+          return Number(oppoty.trackedFormKPIValue) > 0 && Number(oppoty.trackedFormKPIValue) < 6 && {
+            recommendations: [
+              {
+                insight: `The form has a conversion rate of ${oppoty.trackedFormKPIValue.toFixed(2) * 100}%`,
+                recommendation: 'Ensure that the form communicates a compelling reason for users to fill it out. ',
+                type: 'guidance',
+                rationale: 'A strong, benefit-driven headline and a concise supporting message can improve engagement.',
+              },
+            ],
+          };
+        }
+      }
+    }
+  }
+  return {};
+}
 
 /**
  * @param auditUrl - The URL of the audit
@@ -45,9 +110,8 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
     for (const opptyData of filteredOpportunities) {
       let highFormViewsLowConversionsOppty = opportunities.find(
         (oppty) => oppty.getType() === 'high-form-views-low-conversions'
-              && oppty.getData().form === opptyData.form,
+          && oppty.getData().form === opptyData.form,
       );
-
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.auditId,
@@ -60,6 +124,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         data: {
           ...opptyData,
         },
+        guidance: generateDefaultGuidance(scrapedData, opptyData),
       };
 
       log.info(`Forms Opportunity high form views low conversion ${JSON.stringify(opportunityData, null, 2)}`);
@@ -73,6 +138,9 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
           ...highFormViewsLowConversionsOppty.getData(),
           ...opportunityData.data,
         });
+        if (!isNonEmptyObject(highFormViewsLowConversionsOppty.guidance)) {
+          highFormViewsLowConversionsOppty.setGuidance(opportunityData.guidance);
+        }
         // eslint-disable-next-line no-await-in-loop
         await highFormViewsLowConversionsOppty.save();
         log.debug('Forms Opportunity high form views low conversion updated');
