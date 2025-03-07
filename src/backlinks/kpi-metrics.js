@@ -48,7 +48,10 @@ const calculateKpiMetrics = async (auditData, context, site) => {
 
   if (!isNonEmptyArray(rumTrafficData)) {
     log.info(`No RUM traffic data found for site ${siteId}`);
-    return null;
+    return {
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+    };
   }
 
   const organicTrafficData = await getStoredMetrics(
