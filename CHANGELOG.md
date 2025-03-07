@@ -1,3 +1,10 @@
+## [1.68.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.10...v1.68.11) (2025-03-07)
+
+
+### Bug Fixes
+
+* handling site RUM missing for meta-tags ([#755](https://github.com/adobe/spacecat-audit-worker/issues/755)) ([cb74ffd](https://github.com/adobe/spacecat-audit-worker/commit/cb74ffdf808032f06f1e112f3566f2388d8aef1f))
+
 ## [1.68.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.9...v1.68.10) (2025-03-07)
 
 
