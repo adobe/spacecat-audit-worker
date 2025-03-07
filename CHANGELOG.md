@@ -1,3 +1,10 @@
+## [1.68.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.13...v1.68.14) (2025-03-07)
+
+
+### Bug Fixes
+
+* kpi deltas undefined value ([#759](https://github.com/adobe/spacecat-audit-worker/issues/759)) ([4a5d4b5](https://github.com/adobe/spacecat-audit-worker/commit/4a5d4b5d9b98350dff93a6d1c1e72272081b76f9))
+
 ## [1.68.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.12...v1.68.13) (2025-03-07)
 
 
