@@ -137,39 +137,53 @@ function getOrganicTrafficForEndpoint(endpoint, rumDataMapMonthly, rumDataMapBiM
 }
 
 // Calculate the projected traffic lost for a site
-async function calculateProjectedTraffic(context, auditUrl, detectedTags, log) {
-  const rumAPIClient = RUMAPIClient.createFrom(context);
+async function calculateProjectedTraffic(context, auditUrl, siteId, detectedTags, log) {
   const options = {
     domain: auditUrl,
     interval: 30,
     granularity: 'DAILY',
   };
-  const queryResultsMonthly = await rumAPIClient.query('traffic-acquisition', options);
-  const queryResultsBiMonthly = await rumAPIClient.query('traffic-acquisition', {
-    ...options,
-    interval: 60,
-  });
-  const { rumDataMapMonthly, rumDataMapBiMonthly } = preprocessRumData(
-    queryResultsMonthly,
-    queryResultsBiMonthly,
-  );
-  let projectedTraffic = 0;
-  Object.entries(detectedTags).forEach(([endpoint, tags]) => {
-    const organicTraffic = getOrganicTrafficForEndpoint(
-      endpoint,
-      rumDataMapMonthly,
-      rumDataMapBiMonthly,
-      log,
-    );
-    Object.values((tags)).forEach((tagIssueDetails) => {
-      // Multiplying by 1% for missing tags, and 0.5% for other tag issues
-      // For duplicate tags, each page's traffic is multiplied by .5% so
-      // it amounts to 0.5% * number of duplicates.
-      const multiplier = tagIssueDetails.issue.includes('Missing') ? 0.01 : 0.005;
-      projectedTraffic += organicTraffic * multiplier;
+  try {
+    const rumAPIClient = RUMAPIClient.createFrom(context);
+    const queryResultsMonthly = await rumAPIClient.query('traffic-acquisition', options);
+    const queryResultsBiMonthly = await rumAPIClient.query('traffic-acquisition', {
+      ...options,
+      interval: 60,
     });
-  });
-  return projectedTraffic;
+
+    const { rumDataMapMonthly, rumDataMapBiMonthly } = preprocessRumData(
+      queryResultsMonthly,
+      queryResultsBiMonthly,
+    );
+
+    let projectedTrafficLost = 0;
+    Object.entries(detectedTags).forEach(([endpoint, tags]) => {
+      const organicTraffic = getOrganicTrafficForEndpoint(
+        endpoint,
+        rumDataMapMonthly,
+        rumDataMapBiMonthly,
+        log,
+      );
+      Object.values((tags)).forEach((tagIssueDetails) => {
+        // Multiplying by 1% for missing tags, and 0.5% for other tag issues
+        // For duplicate tags, each page's traffic is multiplied by .5% so
+        // it amounts to 0.5% * number of duplicates.
+        const multiplier = tagIssueDetails.issue.includes('Missing') ? 0.01 : 0.005;
+        projectedTrafficLost += organicTraffic * multiplier;
+      });
+    });
+
+    const cpcValue = await calculateCPCValue(context, siteId);
+    log.info(`Calculated cpc value: ${cpcValue} for site: ${siteId}`);
+
+    const projectedTrafficValue = projectedTrafficLost * cpcValue;
+    // Skip updating projected traffic data if lost traffic value is insignificant
+
+    return projectedTrafficValue < 500 ? {} : { projectedTrafficLost, projectedTrafficValue };
+  } catch (err) {
+    log.warn(`Error while calculating projected traffic for ${auditUrl} : ${siteId}`, err);
+    return {};
+  }
 }
 
 export async function auditMetaTagsRunner(auditUrl, context, site) {
@@ -210,10 +224,16 @@ export async function auditMetaTagsRunner(auditUrl, context, site) {
   const detectedTags = seoChecks.getDetectedTags();
 
   // Calculate projected traffic lost
-  const projectedTrafficLost = await calculateProjectedTraffic(context, site, detectedTags, log);
-  const cpcValue = await calculateCPCValue(context, site.getId());
-  log.info(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
-  const projectedTrafficValue = projectedTrafficLost * cpcValue;
+  const {
+    projectedTrafficLost,
+    projectedTrafficValue,
+  } = await calculateProjectedTraffic(
+    context,
+    auditUrl,
+    siteId,
+    detectedTags,
+    log,
+  );
 
   // Generate AI suggestions for detected tags if auto-suggest enabled for site
   const allTags = {
