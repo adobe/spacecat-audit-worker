@@ -91,6 +91,7 @@ describe('opportunities handler method', () => {
       save: sinon.stub(),
       getType: () => 'high-form-views-low-conversions',
       setData: sinon.stub(),
+      setGuidance: sinon.stub(),
       getData: sinon.stub().returns({
         form: 'https://www.surest.com/info/win-1',
         screenshot: '',
@@ -129,7 +130,9 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData, undefined, context);
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(5);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+    // with empty guidance due to no scraping
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
@@ -137,6 +140,7 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData1, context);
+    // with BTF guidance
     // expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
@@ -146,7 +150,8 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData2, formScrapeData.scrapeData2, context);
-    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData2);
+    // with empty guidance due to scrapedStatus = false
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
@@ -154,9 +159,20 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData3, context);
-    const expectedOpportunityData = { ...testData.opportunityData };
+    const expectedOpportunityData = { ...testData.opportunityData3 };
+    // with large form guidance
     expectedOpportunityData.data.scrapedStatus = true;
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(expectedOpportunityData);
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+  });
+
+  it('should create new forms opportunity with scraped data available and matched with Generic guidance', async () => {
+    const { auditData2 } = testData;
+    formsOppty.getType = () => 'high-form-views-low-conversions';
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    await convertToOpportunity(auditUrl, auditData2, formScrapeData.scrapeData4, context);
+    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData4);
+    // with Generic guidance
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 

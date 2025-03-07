@@ -1,3 +1,10 @@
+## [1.68.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.11...v1.68.12) (2025-03-07)
+
+
+### Bug Fixes
+
+* generate default guidance for low conv opportunity ([#757](https://github.com/adobe/spacecat-audit-worker/issues/757)) ([8d6deaf](https://github.com/adobe/spacecat-audit-worker/commit/8d6deaf59a8fb1cdcb031a1bcfd8b0b3fb074793))
+
 ## [1.68.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.10...v1.68.11) (2025-03-07)
 
 
