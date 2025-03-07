@@ -182,6 +182,14 @@ export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, co
   );
 }
 
+export function isSearchForm(scrapedFormData) {
+  return scrapedFormData?.formType === 'search'
+    || scrapedFormData?.classList?.includes('search')
+    || scrapedFormData?.classList?.includes('unsubscribe')
+    || scrapedFormData?.action?.endsWith('search.html')
+    || (scrapedFormData?.fieldsLabels && isNonEmptyArray(scrapedFormData.fieldsLabels) && scrapedFormData.fieldsLabels.every((label) => label.toLowerCase().includes('search')));
+}
+
 /**
  * filter login and search forms from the opportunities
  * @param formOpportunities
@@ -190,46 +198,28 @@ export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, co
  * @returns {*}
  */
 export function filterForms(formOpportunities, scrapedData, log) {
-  if (!scrapedData?.formData || !Array.isArray(scrapedData.formData)) {
-    log.debug('No valid scraped data available.');
-    return formOpportunities.map((opportunity) => ({
-      ...opportunity,
-      scrapedStatus: false,
-    }));
-  }
-
   return formOpportunities.filter((opportunity) => {
     let urlMatches = false;
-    let allSearchForms = true; // Assume all forms are search forms initially
+    if (opportunity.form.includes('search')) {
+      return false; // exclude search pages
+    }
+    if (isNonEmptyArray(scrapedData?.formData)) {
+      for (const form of scrapedData.formData) {
+        const formUrl = new URL(form.finalUrl);
+        const opportunityUrl = new URL(opportunity.form);
 
-    for (const form of scrapedData.formData) {
-      const formUrl = new URL(form.finalUrl);
-      const opportunityUrl = new URL(opportunity.form);
-
-      if (formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
-        urlMatches = true;
-        for (const result of form.scrapeResult) {
-          const isSearchForm = result?.formType === 'search'
-              || result?.classList?.includes('search')
-              || result?.classList?.includes('unsubscribe')
-              || result?.action?.endsWith('search.html')
-              || (result?.fieldsLabels && isNonEmptyArray(result.fieldsLabels) && result.fieldsLabels.every((label) => label.toLowerCase().includes('search')));
-
-          if (!isSearchForm) {
-            allSearchForms = false; // If any form is NOT a search form, set false
+        if (formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
+          urlMatches = true;
+          const nonSearchForms = form.scrapeResult.filter((sr) => !isSearchForm(sr));
+          if (urlMatches && nonSearchForms.length === 0) {
+            log.debug(`Filtered out search form: ${opportunity?.form}`);
+            return false;
           }
         }
       }
     }
-
     // eslint-disable-next-line no-param-reassign
     opportunity.scrapedStatus = urlMatches;
-
-    if (urlMatches && allSearchForms) {
-      log.debug(`Filtered out search form: ${opportunity?.form}`);
-      return false;
-    }
-
     return true;
   });
 }
