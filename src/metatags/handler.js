@@ -21,7 +21,12 @@ import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getIssueRanking, removeTrailingSlash } from './opportunity-utils.js';
-import { DESCRIPTION, H1, TITLE } from './constants.js';
+import {
+  DESCRIPTION,
+  H1,
+  PROJECTED_VALUE_THRESHOLD,
+  TITLE,
+} from './constants.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
@@ -178,7 +183,8 @@ async function calculateProjectedTraffic(context, auditUrl, siteId, detectedTags
     const projectedTrafficValue = projectedTrafficLost * cpcValue;
 
     // Skip updating projected traffic data if lost traffic value is insignificant
-    return projectedTrafficValue > 500 ? { projectedTrafficLost, projectedTrafficValue } : {};
+    return projectedTrafficValue > PROJECTED_VALUE_THRESHOLD
+      ? { projectedTrafficLost, projectedTrafficValue } : {};
   } catch (err) {
     log.warn(`Error while calculating projected traffic for ${auditUrl} : ${siteId}`, err);
     return {};
