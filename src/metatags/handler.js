@@ -247,8 +247,8 @@ export async function auditMetaTagsRunner(auditUrl, context, site) {
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: '',
     finalUrl: auditUrl,
-    projectedTrafficLost,
-    projectedTrafficValue,
+    ...(projectedTrafficLost && { projectedTrafficLost }),
+    ...(projectedTrafficValue && { projectedTrafficValue }),
   };
   return {
     auditResult,

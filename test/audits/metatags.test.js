@@ -974,6 +974,17 @@ describe('Meta Tags', () => {
           },
           ContentType: 'application/json',
         });
+      const getTopPagesForSiteStub = [
+        { getUrl: () => 'http://example.com/blog/page1' },
+        {
+          getUrl: () => 'http://example.com/blog/page2',
+        },
+        {
+          getUrl: () => 'http://example.com/',
+        },
+      ];
+      dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
+      dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(getTopPagesForSiteStub);
       const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
       dataAccessStub.Audit.create = addAuditStub;
       const mockCalculateCPCValue = sinon.stub().resolves(2);
@@ -982,8 +993,8 @@ describe('Meta Tags', () => {
         '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
       });
       const auditInstance = auditStub.default;
-      await auditInstance.runner('http://example.com', context, site);
-      expect(addAuditStub.calledWithMatch({
+      const response = await auditInstance.runner('http://example.com', context, site);
+      expect(response).to.deep.equal({
         auditResult: {
           detectedTags: {
             '/blog/page1': {
@@ -999,12 +1010,8 @@ describe('Meta Tags', () => {
                 issue: 'Duplicate Title',
                 issueDetails: '2 pages share same title',
                 seoRecommendation: 'Unique across pages',
-                duplicates: [
-                  '/blog/page2',
-                ],
               },
               description: {
-                tagContent: '',
                 seoImpact: 'High',
                 issue: 'Empty Description',
                 issueDetails: 'Description tag is empty',
@@ -1024,9 +1031,6 @@ describe('Meta Tags', () => {
                 issue: 'Duplicate Title',
                 issueDetails: '2 pages share same title',
                 seoRecommendation: 'Unique across pages',
-                duplicates: [
-                  '/blog/page1',
-                ],
               },
               h1: {
                 tagContent: 'This is a dummy H1 that is intentionally made to be overly lengthy from SEO perspective',
@@ -1037,8 +1041,12 @@ describe('Meta Tags', () => {
               },
             },
           },
+          finalUrl: 'http://example.com',
+          fullAuditRef: '',
+          sourceS3Folder: 'test-bucket/scrapes/site-id/',
         },
-      }));
+        fullAuditRef: 'http://example.com',
+      });
     }).timeout(5000);
 
     it('should calculate projected traffic for detected tags', async () => {
@@ -1048,9 +1056,9 @@ describe('Meta Tags', () => {
             {
               url: 'http://example.com/blog/page1',
               total: 100,
-              earned: 20,
+              earned: 50000,
               owned: 70,
-              paid: 10,
+              paid: 10000,
             },
           ]),
         }),
@@ -1129,6 +1137,17 @@ describe('Meta Tags', () => {
           },
           ContentType: 'application/json',
         });
+      const getTopPagesForSiteStub = [
+        { getUrl: () => 'http://example.com/blog/page1' },
+        {
+          getUrl: () => 'http://example.com/blog/page2',
+        },
+        {
+          getUrl: () => 'http://example.com/',
+        },
+      ];
+      dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
+      dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(getTopPagesForSiteStub);
       const addAuditStub = sinon.stub().resolves({ getId: () => 'audit-id' });
       dataAccessStub.Audit.create = addAuditStub;
       const mockCalculateCPCValue = sinon.stub().resolves(2);
@@ -1137,11 +1156,11 @@ describe('Meta Tags', () => {
         '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
       });
       const auditInstance = auditStub.default;
-      await auditInstance.runner('http://example.com', context, site);
-      expect(addAuditStub.calledWithMatch({
+      const response = await auditInstance.runner('http://example.com', context, site);
+      expect(response).to.deep.equal({
         auditResult: {
-          projectedTraffic: 600,
-          projectedTrafficValue: 600,
+          projectedTrafficValue: 2400,
+          projectedTrafficLost: 1200,
           detectedTags: {
             '/blog/page1': {
               h1: {
@@ -1156,12 +1175,8 @@ describe('Meta Tags', () => {
                 issue: 'Duplicate Title',
                 issueDetails: '2 pages share same title',
                 seoRecommendation: 'Unique across pages',
-                duplicates: [
-                  '/blog/page2',
-                ],
               },
               description: {
-                tagContent: '',
                 seoImpact: 'High',
                 issue: 'Empty Description',
                 issueDetails: 'Description tag is empty',
@@ -1181,9 +1196,6 @@ describe('Meta Tags', () => {
                 issue: 'Duplicate Title',
                 issueDetails: '2 pages share same title',
                 seoRecommendation: 'Unique across pages',
-                duplicates: [
-                  '/blog/page1',
-                ],
               },
               h1: {
                 tagContent: 'This is a dummy H1 that is intentionally made to be overly lengthy from SEO perspective',
@@ -1194,8 +1206,12 @@ describe('Meta Tags', () => {
               },
             },
           },
+          finalUrl: 'http://example.com',
+          fullAuditRef: '',
+          sourceS3Folder: 'test-bucket/scrapes/site-id/',
         },
-      }));
+        fullAuditRef: 'http://example.com',
+      });
     }).timeout(5000);
   });
 
