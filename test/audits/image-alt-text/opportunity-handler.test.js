@@ -387,4 +387,33 @@ describe('Image Alt Text Opportunity Handler', () => {
       sinon.match(/Page URL .* not found in RUM API results/),
     );
   });
+
+  it('should handle errors when fetching RUM API results', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+
+    // Make RUM API client throw an error
+    const rumError = new Error('RUM API connection failed');
+    rumClientStub.query.rejects(rumError);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    // Verify error was logged
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Failed to get RUM results for https://example.com with error: RUM API connection failed',
+    );
+
+    // Verify opportunity was still created/updated with default metrics
+    expect(altTextOppty.setData).to.have.been.calledWith({
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+    });
+
+    expect(altTextOppty.save).to.have.been.called;
+
+    // Verify suggestions were still created despite RUM API failure
+    expect(altTextOppty.addSuggestions).to.have.been.called;
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Successfully synced Opportunity And Suggestions for site: https://example.com siteId: site-id and alt-text audit type.',
+    );
+  });
 });

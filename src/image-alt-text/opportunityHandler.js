@@ -69,15 +69,25 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
 const getProjectedMetrics = async ({
   images, auditUrl, context, log,
 }) => {
-  const finalUrl = await getRUMUrl(auditUrl);
+  let finalUrl;
+  let results;
 
-  const rumAPIClient = RUMAPIClient.createFrom(context);
-  const options = {
-    domain: finalUrl,
-    interval: RUM_INTERVAL,
-  };
+  try {
+    finalUrl = await getRUMUrl(auditUrl);
+    const rumAPIClient = RUMAPIClient.createFrom(context);
+    const options = {
+      domain: finalUrl,
+      interval: RUM_INTERVAL,
+    };
 
-  const results = await rumAPIClient.query('traffic-acquisition', options);
+    results = await rumAPIClient.query('traffic-acquisition', options);
+  } catch (err) {
+    log.error(`[${AUDIT_TYPE}]: Failed to get RUM results for ${auditUrl} with error: ${err.message}`);
+    return {
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+    };
+  }
 
   const pageUrlToOrganicTrafficMap = results.reduce((acc, page) => {
     acc[page.url] = {
