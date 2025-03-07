@@ -523,7 +523,10 @@ describe('Backlinks Tests', function () {
       context.s3Client.send.onCall(0).resolves(null);
 
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result).to.be.null;
+      expect(result).to.deep.equal({
+        projectedTrafficLost: 0,
+        projectedTrafficValue: 0,
+      });
     });
   });
 });
