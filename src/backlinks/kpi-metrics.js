@@ -65,7 +65,8 @@ const calculateKpiMetrics = async (auditData, context, site) => {
     const latestOrganicTrafficData = organicTrafficData.sort(
       (a, b) => new Date(b.time) - new Date(a.time),
     )[0];
-    CPC = latestOrganicTrafficData.cost / latestOrganicTrafficData.value;
+    // cost in USD cents, so divide by 100 to get USD
+    CPC = (latestOrganicTrafficData.cost / latestOrganicTrafficData.value) / 100;
   }
 
   const projectedTrafficLost = auditData?.auditResult?.brokenBacklinks?.reduce((sum, backlink) => {
