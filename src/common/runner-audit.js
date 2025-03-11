@@ -40,7 +40,7 @@ export class RunnerAudit extends BaseAudit {
         return ok();
       }
 
-      const finalUrl = await this.urlResolver(site);
+      const finalUrl = await this.urlResolver(site, context);
       const result = await this.runner(finalUrl, context, site);
 
       return this.processAuditResult(

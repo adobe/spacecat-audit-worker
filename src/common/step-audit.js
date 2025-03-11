@@ -106,7 +106,7 @@ export class StepAudit extends BaseAudit {
         stepContext.audit = await loadExistingAudit(auditContext.auditId, context);
       } else {
         // For first step, resolve URL
-        stepContext.finalUrl = await this.urlResolver(site);
+        stepContext.finalUrl = await this.urlResolver(site, context);
       }
 
       // Run the step

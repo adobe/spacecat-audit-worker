@@ -61,7 +61,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
       return opportunity;
     } else {
       opportunity.setAuditId(auditData.id);
-      if (auditType === Audit.AUDIT_TYPES.CWV) {
+      if (auditType === Audit.AUDIT_TYPES.CWV || auditType === Audit.AUDIT_TYPES.META_TAGS) {
         opportunity.setData({
           ...opportunity.getData(),
           ...props, // kpiDeltas
