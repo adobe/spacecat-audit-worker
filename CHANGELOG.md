@@ -1,3 +1,10 @@
+## [1.68.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.15...v1.68.16) (2025-03-13)
+
+
+### Bug Fixes
+
+* cpc cost in broken backlinks audit ([#762](https://github.com/adobe/spacecat-audit-worker/issues/762)) ([c76b94a](https://github.com/adobe/spacecat-audit-worker/commit/c76b94a5c69f7c23cb2919f9eb57aa97a80f2553))
+
 ## [1.68.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.14...v1.68.15) (2025-03-08)
 
 
