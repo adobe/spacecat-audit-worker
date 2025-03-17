@@ -25,8 +25,8 @@ import convertToOpportunity from './opportunityHandler.js';
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
 const isImagePresentational = (img) => {
-  const isHiddenForScreenReader = img.hasAttribute('aria-hidden') && img.getAttribute('aria-hidden') === 'true';
-  const hasRolePresentation = img.hasAttribute('role') && img.getAttribute('role') === 'presentation';
+  const isHiddenForScreenReader = img.getAttribute('aria-hidden') === 'true';
+  const hasRolePresentation = img.getAttribute('role') === 'presentation';
   const hasAltAttribute = img.hasAttribute('alt');
   // For presentational images, an image MUST have the alt attribute WITH a falsy value
   // Not having it at all is not the same, the image is not considered presentational
