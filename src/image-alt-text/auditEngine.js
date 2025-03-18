@@ -152,15 +152,11 @@ export default class AuditEngine {
     this.log.info(
       `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedTags.imagesWithoutAltText.values()).length} images without alt text`,
     );
-    this.log.info(
-      `[${AUDIT_TYPE}]: Found and skipped ${this.presentationalImagesCount} presentational images`,
-    );
   }
 
   getAuditedTags() {
     return {
       imagesWithoutAltText: Array.from(this.auditedTags.imagesWithoutAltText.values()),
-      presentationalImagesCount: this.presentationalImagesCount,
     };
   }
 }
