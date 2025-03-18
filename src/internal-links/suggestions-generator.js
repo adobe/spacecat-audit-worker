@@ -10,29 +10,30 @@
  * governing permissions and limitations under the License.
  */
 
-import { getPrompt } from '@adobe/spacecat-shared-utils';
+import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 
 export const generateSuggestionData = async (finalUrl, auditData, context, site) => {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
+  const { FIREFALL_MODEL } = context.env;
 
   if (auditData.auditResult.success === false) {
-    log.info('Audit failed, skipping suggestions generation');
+    log.info('broken-internal-links audit: Audit failed, skipping suggestions generation');
     return { ...auditData };
   }
 
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
-    log.info('Auto-suggest is disabled for site');
+    log.info('broken-internal-links audit: Auto-suggest is disabled for site');
     return { ...auditData };
   }
 
-  log.info(`Generating suggestions for site ${finalUrl}`);
+  log.info(`broken-internal-links audit: Generating suggestions for site ${finalUrl}`);
 
   const firefallClient = FirefallClient.createFrom(context);
-  const firefallOptions = { responseFormat: 'json_object' };
+  const firefallOptions = { responseFormat: 'json_object', model: FIREFALL_MODEL };
   const BATCH_SIZE = 300;
 
   const data = await getScrapedDataForSiteId(site, context);
@@ -43,13 +44,19 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     (_, i) => siteData.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
   );
 
-  log.info(`Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
+  // return early if site data is not found
+  if (!isNonEmptyArray(siteData)) {
+    log.info('broken-internal-links audit: No site data found, skipping suggestions generation');
+    return { ...auditData };
+  }
+
+  log.info(`broken-internal-links audit: Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
 
   const processBatch = async (batch, urlTo) => {
     const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
     const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
     if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-      log.error(`No suggestions found for ${urlTo}`);
+      log.error(`broken-internal-links audit: No suggestions found for ${urlTo}`);
       return null;
     }
 
@@ -66,7 +73,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
           results.push(result);
         }
       } catch (error) {
-        log.error(`Batch processing error: ${error.message}`);
+        log.error(`broken-internal-links audit: Batch processing error: ${error.message}`);
       }
     }
     return results;
@@ -79,41 +86,41 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
    * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
    */
   const processLink = async (link, headerSuggestions) => {
-    log.info(`Processing link: ${link.urlTo}`);
+    log.info(`broken-internal-links audit: Processing link: ${link.urlTo}`);
     const suggestions = await processBatches(dataBatches, link.urlTo);
 
     if (totalBatches > 1) {
-      log.info(`Compiling final suggestions for: ${link.urlTo}`);
+      log.info(`broken-internal-links audit: Compiling final suggestions for: ${link.urlTo}`);
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.urlTo }, 'broken-backlinks-followup', log);
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
 
         if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
-          log.error(`No final suggestions found for ${link.urlTo}`);
+          log.error(`broken-internal-links audit: No final suggestions found for ${link.urlTo}`);
           return { ...link };
         }
 
         const answer = JSON.parse(finalResponse.choices[0].message.content);
-        log.info(`Final suggestion for ${link.urlTo}:, ${JSON.stringify(answer)}`, answer);
+        log.info(`broken-internal-links audit: Final suggestion for ${link.urlTo}:, ${JSON.stringify(answer)}`, answer);
         return {
           ...link,
           urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
-          aiRationale: answer.ai_rationale?.length > 0 ? answer.ai_rationale : 'No suitable suggestions found',
+          aiRationale: answer.aiRationale?.length > 0 ? answer.aiRationale : 'No suitable suggestions found',
         };
       } catch (error) {
-        log.error(`Final suggestion error for ${link.urlTo}: ${error.message}`);
+        log.error(`broken-internal-links audit: Final suggestion error for ${link.urlTo}: ${error.message}`);
         return { ...link };
       }
     }
 
-    log.info(`Suggestions for ${link.urlTo}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
+    log.info(`broken-internal-links audit: Suggestions for ${link.urlTo}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
     return {
       ...link,
       urlsSuggested:
         suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
       aiRationale:
-        suggestions[0]?.ai_rationale?.length > 0 ? suggestions[0]?.ai_rationale : 'No suitable suggestions found',
+        suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
     };
   };
 
@@ -125,7 +132,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
       // eslint-disable-next-line no-await-in-loop
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-        log.error(`No header suggestions for ${link.urlTo}`);
+        log.error(`broken-internal-links audit: No header suggestions for ${link.urlTo}`);
         headerSuggestionsResults.push(null);
         // eslint-disable-next-line no-continue
         continue;
@@ -133,7 +140,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 
       headerSuggestionsResults.push(JSON.parse(response.choices[0].message.content));
     } catch (error) {
-      log.error(`Header suggestion error: ${error.message}`);
+      log.error(`broken-internal-links audit: Header suggestion error: ${error.message}`);
       headerSuggestionsResults.push(null);
     }
   }
@@ -147,7 +154,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     updatedInternalLinks.push(updatedLink);
   }
 
-  log.info('Suggestions generation complete.');
+  log.info('broken-internal-links audit: Suggestions generation complete.');
   return {
     ...auditData,
     auditResult: {

@@ -14,7 +14,9 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
+import { toggleWWWHostname } from '../support/utils.js';
 
 // eslint-disable-next-line no-empty-function
 export async function defaultMessageSender() {}
@@ -57,10 +59,41 @@ export async function defaultUrlResolver(site) {
   return composeAuditURL(site.getBaseURL());
 }
 
-export function wwwUrlResolver(site) {
+export async function wwwUrlResolver(site, context) {
+  const { log } = context;
+
   const baseURL = site.getBaseURL();
   const uri = new URI(baseURL);
-  return hasText(uri.subdomain()) ? baseURL.replace(/https?:\/\//, '') : baseURL.replace(/https?:\/\//, 'www.');
+  const hostname = uri.hostname();
+  const subdomain = uri.subdomain();
+
+  if (hasText(subdomain) && subdomain !== 'www') {
+    log.info(`Resolved URL ${hostname} since ${baseURL} contains subdomain`);
+    return hostname;
+  }
+
+  const rumApiClient = RUMAPIClient.createFrom(context);
+
+  try {
+    const wwwToggledHostname = toggleWWWHostname(hostname);
+    await rumApiClient.retrieveDomainkey(wwwToggledHostname);
+    log.info(`Resolved URL ${wwwToggledHostname} for ${baseURL} using RUM API Client`);
+    return wwwToggledHostname;
+  } catch (e) {
+    log.info(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
+  }
+
+  try {
+    await rumApiClient.retrieveDomainkey(hostname);
+    log.info(`Resolved URL ${hostname} for ${baseURL} using RUM API Client`);
+    return hostname;
+  } catch (e) {
+    log.info(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
+  }
+
+  const fallback = hostname.startsWith('www.') ? hostname : `www.${hostname}`;
+  log.info(`Fallback to ${fallback} for URL resolution for ${baseURL}`);
+  return fallback;
 }
 
 export async function noopUrlResolver(site) {
@@ -107,7 +140,13 @@ export class BaseAudit {
 
     const audit = await this.persister(auditData, context);
     context.audit = audit;
-    return this.runPostProcessors(audit, result, { ...params, auditData }, context);
+    return this.runPostProcessors(
+      audit,
+      result,
+      // add auditId for the post-processing
+      { ...params, auditData: { ...auditData, id: audit.getId() } },
+      context,
+    );
   }
 
   async runPostProcessors(audit, result, params, context) {

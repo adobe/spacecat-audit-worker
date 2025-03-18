@@ -23,6 +23,7 @@ import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 
 URI.preventInvalidHostname = true;
+const DEFAULT_CPC_VALUE = 2.69; // $2.69
 
 // weekly pageview threshold to eliminate urls with lack of samples
 
@@ -35,7 +36,10 @@ export async function getRUMUrl(url) {
     },
   });
   const finalUrl = resp.url.split('://')[1];
-  return finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : /* c8 ignore next */ finalUrl;
+  /* Return just the domain part by splitting on '/' and taking first segment.
+   * This is to avoid returning the full URL with path. It will also remove any trailing /.
+   */
+  return finalUrl.split('/')[0];
 }
 
 /**
@@ -64,6 +68,17 @@ export function toggleWWW(baseUrl) {
   return baseUrl.startsWith('https://www')
     ? baseUrl.replace('https://www.', 'https://')
     : baseUrl.replace('https://', 'https://www.');
+}
+
+/**
+ * Toggles the www subdomain in a given hostname.
+ * @param {string} hostname - The URL to toggle the www subdomain in.
+ * @returns {string} - The URL with the www subdomain toggled.
+ */
+export function toggleWWWHostname(hostname) {
+  /* c8 ignore next 1 */
+  if (hasNonWWWSubdomain(`https://${hostname}`)) return hostname;
+  return hostname.startsWith('www.') ? hostname.replace('www.', '') : `www.${hostname}`;
 }
 
 /**
@@ -208,6 +223,48 @@ export const extractLinksFromHeader = (data, baseUrl, log) => {
   return links;
 };
 
+/**
+ * Fetches the organic traffic data for a site from S3 and calculate the CPC value as per
+ * https://wiki.corp.adobe.com/pages/viewpage.action?spaceKey=AEMSites&title=Success+Studio+Projected+Business+Impact+Metrics#SuccessStudioProjectedBusinessImpactMetrics-IdentifyingCPCvalueforadomain
+ * @param context
+ * @param siteId
+ * @returns {number} CPC value
+ */
+export async function calculateCPCValue(context, siteId) {
+  if (!context?.env?.S3_IMPORTER_BUCKET_NAME) {
+    throw new Error('S3 importer bucket name is required');
+  }
+  if (!context.s3Client) {
+    throw new Error('S3 client is required');
+  }
+  if (!context.log) {
+    throw new Error('Logger is required');
+  }
+  if (!siteId) {
+    throw new Error('SiteId is required');
+  }
+  const { s3Client, log } = context;
+  const bucketName = context.env.S3_IMPORTER_BUCKET_NAME;
+  const key = `metrics/${siteId}/ahrefs/organic-traffic.json`;
+  try {
+    const organicTrafficData = await getObjectFromKey(s3Client, bucketName, key, log);
+    if (!Array.isArray(organicTrafficData) || organicTrafficData.length === 0) {
+      log.warn(`Organic traffic data not available for ${siteId}. Using Default CPC value.`);
+      return DEFAULT_CPC_VALUE;
+    }
+    const lastTraffic = organicTrafficData[organicTrafficData.length - 1];
+    if (!lastTraffic.cost || !lastTraffic.value) {
+      log.warn(`Invalid organic traffic data present for ${siteId} - cost:${lastTraffic.cost} value:${lastTraffic.value}, Using Default CPC value.`);
+      return DEFAULT_CPC_VALUE;
+    }
+    // dividing by 100 for cents to dollar conversion
+    return lastTraffic.cost / lastTraffic.value / 100;
+  } catch (err) {
+    log.error(`Error fetching organic traffic data for site ${siteId}. Using Default CPC value.`, err);
+    return DEFAULT_CPC_VALUE;
+  }
+}
+
 export const getScrapedDataForSiteId = async (site, context) => {
   const { s3Client, env, log } = context;
   const siteId = site.getId();
@@ -224,9 +281,11 @@ export const getScrapedDataForSiteId = async (site, context) => {
     });
 
     const listResponse = await s3Client.send(listCommand);
-    allFiles = allFiles.concat(
-      listResponse.Contents.filter((file) => file.Key.endsWith('.json')),
-    );
+    if (listResponse && listResponse.Contents) {
+      allFiles = allFiles.concat(
+        listResponse.Contents?.filter((file) => file.Key?.endsWith('.json')),
+      );
+    }
     isTruncated = listResponse.IsTruncated;
     continuationToken = listResponse.NextContinuationToken;
 
@@ -240,6 +299,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   if (!isNonEmptyArray(allFiles)) {
     return {
       headerLinks: [],
+      formData: [],
       siteData: [],
     };
   }
@@ -256,7 +316,10 @@ export const getScrapedDataForSiteId = async (site, context) => {
     }),
   );
 
-  const indexFile = allFiles.find((file) => file.Key.endsWith(`${siteId}/scrape.json`));
+  const indexFile = allFiles
+    .filter((file) => file.Key.includes(`${siteId}/`) && file.Key.endsWith('scrape.json'))
+    .sort((a, b) => a.Key.split('/').length - b.Key.split('/').length)[0];
+
   const indexFileContent = await getObjectFromKey(
     s3Client,
     env.S3_SCRAPER_BUCKET_NAME,
@@ -264,10 +327,28 @@ export const getScrapedDataForSiteId = async (site, context) => {
     log,
   );
   const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
-
   log.info(`siteData: ${JSON.stringify(extractedData)}`);
+
+  let scrapedFormData;
+  log.info(`all files: ${JSON.stringify(allFiles)}`);
+  if (allFiles) {
+    const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
+    scrapedFormData = await Promise.all(
+      formFiles.map(async (file) => {
+        const fileContent = await getObjectFromKey(
+          s3Client,
+          env.S3_SCRAPER_BUCKET_NAME,
+          file.Key,
+          log,
+        );
+        return fileContent;
+      }),
+    );
+  }
+
   return {
     headerLinks,
+    formData: scrapedFormData,
     siteData: extractedData.filter(Boolean),
   };
 };
@@ -276,4 +357,47 @@ export async function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+export function generatePlainHtml($) {
+  let main = $('main');
+  if (!main.length) {
+    main = $('body');
+  }
+
+  // Remove HTML comments
+  $('*').contents().filter((i, el) => el.type === 'comment').remove();
+
+  // Remove non-essential tags
+  const essentialTags = ['main', 'img', 'a', 'ul', 'li', 'dl', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+  main.find('*').each((i, el) => {
+    // Skip if tag in essential list
+    if (essentialTags.includes(el.tagName.toLowerCase())) {
+      return;
+    }
+    $(el).replaceWith($(el).contents());
+  });
+
+  // Remove non-essential attributes
+  const allowedAttributes = ['href', 'src', 'alt', 'title'];
+  main.find('*').each((i, el) => {
+    Object.keys(el.attribs).forEach((attr) => {
+      if (!allowedAttributes.includes(attr)) {
+        $(el).removeAttr(attr);
+      }
+    });
+  });
+
+  return main.prop('outerHTML');
+}
+
+export async function getScrapeForPath(path, context, site) {
+  const { log, s3Client } = context;
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const prefix = `scrapes/${site.getId()}${path}/scrape.json`;
+  const result = await getObjectFromKey(s3Client, bucketName, prefix, log);
+  if (!result) {
+    throw new Error(`No scrape found for path ${path}`);
+  }
+  return result;
 }

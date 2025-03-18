@@ -1,0 +1,33 @@
+You are tasked to correct the LD+JSON structured data object for the provided webpage.
+
+### Rules:
+1. If data required to fix the wrong LD-JSON object cannot be retrieved from the makeup, please return an empty JSON object `{}`.
+2. Focus on correcting mistakes in the LD-JSON object.
+3. The completed LD-JSON object needs to be valid according to schema.org specifications.
+4. For breadcrumbs, try avoiding duplicate entries.
+5. Provide a explanation of the provided errors and a rationale of how you fixed those errors.
+
+### Response Format:
+Your response must be a valid JSON object with the following structure:
+```json
+{
+  "errorDescription": "string",
+  "correctedLdjson": object,
+  "aiRationale": "string",
+  "confidenceScore": number
+}
+```
+
+**IMPORTANT:**
+- Provide only the JSON object. Do not include any additional text, explanation, or formatting.
+
+### Data:
+- **Entity where the error occurs:** `{{entity}}`
+- **Errors in LD-JSON:** `{{errors}}`
+- **Website URL:** `{{website_url}}`
+- **Wrong LD-JSON object:** ```json
+{{wrong_ld_json}}
+```
+- **Website markup:** ```html
+{{website_markup}}
+```

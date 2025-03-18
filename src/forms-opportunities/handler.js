@@ -11,10 +11,15 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { generateOpptyData, generateOpptyDataForHighPageViewsLowFormNav } from './utils.js';
+import { getScrapedDataForSiteId } from '../support/utils.js';
 import convertToOpportunity from './opportunityHandler.js';
+import highPageViewsLowFormNavOpportunity from './highPageViewsLowFormNavOpportunity.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const DAILY_THRESHOLD = 200;
 const INTERVAL = 7; // days
 const FORMS_OPPTY_QUERIES = [
@@ -64,8 +69,61 @@ export async function formsAuditRunner(auditUrl, context) {
   };
 }
 
+export async function runAuditAndSendUrlsForScrapingStep(context) {
+  const {
+    site, log, finalUrl,
+  } = context;
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit`);
+  const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
+  const { formVitals } = formsAuditRunnerResult.auditResult;
+
+  // generating opportunity data from audit to be send to scraper
+  let formOpportunities = await generateOpptyData(formVitals, context);
+  const uniqueUrls = new Set();
+  for (const opportunity of formOpportunities) {
+    uniqueUrls.add(opportunity.form);
+  }
+
+  // generating opportunity data from audit to be send to scraper
+  // high page views low form navigation
+  // eslint-disable-next-line max-len
+  formOpportunities = await generateOpptyDataForHighPageViewsLowFormNav(formVitals, context);
+  for (const opportunity of formOpportunities) {
+    uniqueUrls.add(opportunity.form);
+  }
+
+  const result = {
+    auditResult: formsAuditRunnerResult.auditResult,
+    fullAuditRef: formsAuditRunnerResult.fullAuditRef,
+    processingType: 'form',
+    jobId: site.getId(),
+    urls: Array.from(uniqueUrls).map((url) => ({ url })),
+    siteId: site.getId(),
+  };
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping`);
+  return result;
+}
+
+export async function processOpportunityStep(context) {
+  const {
+    log, site, finalUrl,
+  } = context;
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
+  const scrapedData = await getScrapedDataForSiteId(site, context);
+  const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
+  await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
+  await highPageViewsLowFormNavOpportunity(finalUrl, latestAudit, scrapedData, context);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
+  return {
+    status: 'complete',
+  };
+}
+
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(formsAuditRunner)
-  .withPostProcessors([convertToOpportunity])
+  .addStep('runAuditAndSendUrlsForScraping', runAuditAndSendUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('processOpportunity', processOpportunityStep)
   .build();

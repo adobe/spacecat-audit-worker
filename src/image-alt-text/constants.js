@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-// TO-DO: migrate to spacecat-shared-data-access Audit.AUDIT_TYPES
-export const OPPORTUNITY_TYPES = {
-  MISSING_ALT_TEXT: 'alt-text',
-};
+// Projected traffic metrics
+export const CPC = 1; // $1
+export const PENALTY_PER_IMAGE = 0.01; // 1%
+export const RUM_INTERVAL = 30; // days

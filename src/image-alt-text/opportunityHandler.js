@@ -10,8 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { OPPORTUNITY_TYPES } from './constants.js';
+import { isNonEmptyArray, tracingFetch } from '@adobe/spacecat-shared-utils';
+import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import suggestionsEngine from './suggestionsEngine.js';
+import { getRUMUrl, toggleWWW } from '../support/utils.js';
+import { CPC, PENALTY_PER_IMAGE, RUM_INTERVAL } from './constants.js';
+
+const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
+const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
 /**
  * Synchronizes existing suggestions with new data
@@ -19,37 +26,102 @@ import { OPPORTUNITY_TYPES } from './constants.js';
  *
  * @param {Object} params - The parameters for the sync operation.
  * @param {Object} params.opportunity - The opportunity object to synchronize suggestions for.
- * @param {Array} params.newSuggestions - Array of new data objects to sync.
+ * @param {Array} params.newSuggestionDTOs - Array of new data objects (not models) to sync.
  * @param {Object} params.log - Logger object for error reporting.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
-export async function syncAltTextSuggestions({ opportunity, newSuggestions, log }) {
+export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
   const existingSuggestions = await opportunity.getSuggestions();
 
-  // Remove existing suggestions
-  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+  const ignoredSuggestions = existingSuggestions.filter(
+    (s) => s.getStatus() === SuggestionModel.STATUSES.SKIPPED,
+  );
+  const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
+
+  // Remove existing suggestions that were not ignored
+  await Promise.all(existingSuggestions
+    .filter(
+      (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
+    )
+    .map((suggestion) => suggestion.remove()));
+
+  const suggestionsToAdd = newSuggestionDTOs.filter(
+    (s) => !ignoredSuggestionIds.includes(s.data.recommendations[0].id),
+  );
 
   // Add new suggestions to oppty
-  if (isNonEmptyArray(newSuggestions)) {
-    const updateResult = await opportunity.addSuggestions(newSuggestions);
+  if (isNonEmptyArray(suggestionsToAdd)) {
+    const updateResult = await opportunity.addSuggestions(suggestionsToAdd);
 
     if (isNonEmptyArray(updateResult.errorItems)) {
-      log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
+      log.error(`[${AUDIT_TYPE}]: Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
       updateResult.errorItems.forEach((errorItem) => {
-        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+        log.error(`[${AUDIT_TYPE}]: Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
       });
 
       if (!isNonEmptyArray(updateResult.createdItems)) {
-        throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+        throw new Error(`[${AUDIT_TYPE}]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
       }
     }
   }
 }
-// TO-DO: Implement in https://jira.corp.adobe.com/browse/ASSETS-47371
-const getProjectedMetrics = () => ({
-  projectedTrafficLost: 3871,
-  projectedTrafficValue: 7355,
-});
+
+const getProjectedMetrics = async ({
+  images, auditUrl, context, log,
+}) => {
+  let finalUrl;
+  let results;
+
+  try {
+    finalUrl = await getRUMUrl(auditUrl);
+    const rumAPIClient = RUMAPIClient.createFrom(context);
+    const options = {
+      domain: finalUrl,
+      interval: RUM_INTERVAL,
+    };
+
+    results = await rumAPIClient.query('traffic-acquisition', options);
+  } catch (err) {
+    log.error(`[${AUDIT_TYPE}]: Failed to get RUM results for ${auditUrl} with error: ${err.message}`);
+    return {
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+    };
+  }
+
+  const pageUrlToOrganicTrafficMap = results.reduce((acc, page) => {
+    acc[page.url] = {
+      organicTraffic: page.earned,
+      imagesWithoutAltText: 0,
+    };
+    return acc;
+  }, {});
+
+  images.forEach((image) => {
+    const fullPageUrl = new URL(image.pageUrl, auditUrl).toString();
+
+    // Images from RUM (might) come with www while our scraper gives us always non-www pages
+    if (pageUrlToOrganicTrafficMap[fullPageUrl]) {
+      pageUrlToOrganicTrafficMap[fullPageUrl].imagesWithoutAltText += 1;
+    } else if (pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)]) {
+      pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)].imagesWithoutAltText += 1;
+    } else {
+      log.debug(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} or ${toggleWWW(fullPageUrl)} not found in RUM API results`);
+    }
+  });
+
+  const projectedTrafficLost = Object.values(pageUrlToOrganicTrafficMap)
+    .reduce(
+      (acc, page) => acc + (page.organicTraffic * PENALTY_PER_IMAGE * page.imagesWithoutAltText),
+      0,
+    );
+
+  const projectedTrafficValue = projectedTrafficLost * CPC;
+  return {
+    projectedTrafficLost: Math.round(projectedTrafficLost),
+    projectedTrafficValue: Math.round(projectedTrafficValue),
+  };
+};
 
 /**
  * @param auditUrl - The URL of the audit
@@ -62,26 +134,35 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const { Opportunity } = dataAccess;
   const { detectedTags } = auditData.auditResult;
 
-  log.info(`Syncing opportunity and suggestions for ${auditData.siteId}`);
+  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${auditData.siteId}`);
   let altTextOppty;
 
   try {
     const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
     altTextOppty = opportunities.find(
-      (oppty) => oppty.getType() === OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+      (oppty) => oppty.getType() === AUDIT_TYPE,
     );
   } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
+
+  const opportunityData = await getProjectedMetrics({
+    images:
+      detectedTags.imagesWithoutAltText
+        .map((image) => ({ src: image.src, pageUrl: image.pageUrl })),
+    auditUrl,
+    context,
+    log,
+  });
 
   try {
     if (!altTextOppty) {
-      const opportunityData = {
+      const opportunityDTO = {
         siteId: auditData.siteId,
         auditId: auditData.id,
         runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
-        type: OPPORTUNITY_TYPES.MISSING_ALT_TEXT,
+        type: AUDIT_TYPE,
         origin: 'AUTOMATION',
         title: 'Missing alt text for images decreases accessibility and discoverability of content',
         description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
@@ -95,37 +176,59 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
             },
           ],
         },
-        data: getProjectedMetrics(),
+        data: opportunityData,
         tags: ['seo', 'accessibility'],
       };
-      altTextOppty = await Opportunity.create(opportunityData);
-      log.debug('Alt-text Opportunity created');
+      altTextOppty = await Opportunity.create(opportunityDTO);
+      log.debug(`[${AUDIT_TYPE}]: Opportunity created`);
     } else {
       altTextOppty.setAuditId(auditData.id);
+      altTextOppty.setData(opportunityData);
       await altTextOppty.save();
     }
   } catch (e) {
-    log.error(`Creating alt-text opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
-    throw new Error(`Failed to create alt-text opportunity for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: Creating alt-text opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
+    throw new Error(`[${AUDIT_TYPE}]: Failed to create alt-text opportunity for siteId ${auditData.siteId}: ${e.message}`);
   }
 
-  const suggestions = detectedTags.imagesWithoutAltText.map((image) => ({
-    pageUrl: new URL(image.pageUrl, auditUrl).toString(),
-    imageUrl: new URL(image.src, auditUrl).toString(),
-  }));
+  const imageUrls = detectedTags.imagesWithoutAltText.map(
+    (image) => {
+      const el = { url: new URL(image.src, auditUrl).toString() };
+      if (image.blob) {
+        el.blob = image.blob;
+      }
+      return el;
+    },
+  );
 
-  log.debug(`Suggestions: ${JSON.stringify(suggestions)}`);
+  const imageSuggestions = await suggestionsEngine.getImageSuggestions(
+    imageUrls,
+    context,
+    tracingFetch,
+  );
+
+  const suggestions = detectedTags.imagesWithoutAltText.map((image) => {
+    const imageUrl = new URL(image.src, auditUrl).toString();
+    return {
+      id: getImageSuggestionIdentifier(image),
+      pageUrl: new URL(image.pageUrl, auditUrl).toString(),
+      imageUrl,
+      altText: imageSuggestions[imageUrl]?.suggestion || '',
+    };
+  });
+
+  log.debug(`[${AUDIT_TYPE}]: Suggestions: ${JSON.stringify(suggestions)}`);
 
   await syncAltTextSuggestions({
     opportunity: altTextOppty,
-    newSuggestions: suggestions.map((suggestion) => ({
+    newSuggestionDTOs: suggestions.map((suggestion) => ({
       opportunityId: altTextOppty.getId(),
-      type: 'CONTENT_UPDATE',
+      type: SuggestionModel.TYPES.CONTENT_UPDATE,
       data: { recommendations: [suggestion] },
       rank: 1,
     })),
     log,
   });
 
-  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and alt-text audit type.`);
+  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${auditData.siteId} and alt-text audit type.`);
 }

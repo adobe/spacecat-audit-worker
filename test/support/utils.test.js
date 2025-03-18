@@ -15,12 +15,15 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
+import esmock from 'esmock';
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { load as cheerioLoad } from 'cheerio';
 import {
   extractLinksFromHeader,
   getBaseUrlPagesFromSitemapContents,
   getScrapedDataForSiteId,
   getUrlWithoutPath, sleep,
+  generatePlainHtml,
 } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -57,6 +60,109 @@ describe('getBaseUrlPagesFromSitemapContents', () => {
   it('should return an empty array when the sitemap content is empty', () => {
     const result = getBaseUrlPagesFromSitemapContents('https://my-site.adbe', undefined);
     expect(result).to.deep.equal([]);
+  });
+});
+
+describe('utils.calculateCPCValue', () => {
+  let context;
+  let utils;
+  let getObjectFromKey;
+  beforeEach(async () => {
+    sinon.restore();
+    getObjectFromKey = sinon.stub().returns([
+      {
+        cost: 200,
+        value: 100,
+      },
+    ]);
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    context = {
+      env: { S3_IMPORTER_BUCKET_NAME: 'my-bucket' },
+      s3Client: {},
+      log: {
+        info: sinon.stub(),
+        error: sinon.stub(),
+        warn: sinon.stub(),
+      },
+    };
+  });
+  it('should throw an error if S3_IMPORTER_BUCKET_NAME is missing', async () => {
+    context.env.S3_IMPORTER_BUCKET_NAME = null;
+    await expect(utils.calculateCPCValue(context, 'siteId')).to.be.rejectedWith('S3 importer bucket name is required');
+  });
+
+  it('should throw an error if s3Client is missing', async () => {
+    context.s3Client = null;
+    await expect(utils.calculateCPCValue(context, 'siteId')).to.be.rejectedWith('S3 client is required');
+  });
+
+  it('should throw an error if logger is missing', async () => {
+    context.log = null;
+    await expect(utils.calculateCPCValue(context, 'siteId')).to.be.rejectedWith('Logger is required');
+  });
+
+  it('should throw an error if siteId is missing', async () => {
+    await expect(utils.calculateCPCValue(context)).to.be.rejectedWith('SiteId is required');
+  });
+
+  it('should return default cpc value if organicTrafficData array is empty', async () => {
+    getObjectFromKey = sinon.stub().returns([]);
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    const result = await utils.calculateCPCValue(context, 'siteId');
+    expect(result).to.equal(2.69);
+    expect(context.log.warn.calledOnce).to.be.true;
+    expect(context.log.warn.calledWith('Organic traffic data not available for siteId. Using Default CPC value.')).to.be.true;
+  });
+
+  it('should return default cpc value if organicTrafficData is not an array', async () => {
+    getObjectFromKey = sinon.stub().returns('dummy');
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    const result = await utils.calculateCPCValue(context, 'siteId');
+    expect(result).to.equal(2.69);
+  });
+
+  it('should calculate CPC correctly if organicTrafficData is valid', async () => {
+    getObjectFromKey = sinon.stub().returns([
+      { cost: 10000, value: 50 },
+      { cost: 20000, value: 100 },
+    ]);
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    const result = await utils.calculateCPCValue(context, 'siteId');
+    expect(result).to.equal(2); // (20000 / 100)
+  });
+
+  it('should handle errors during data fetching and return 1', async () => {
+    getObjectFromKey = sinon.stub().throws(new Error('Fetch error'));
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    const result = await utils.calculateCPCValue(context, 'siteId');
+    expect(result).to.equal(2.69);
+    expect(context.log.error.calledOnce).to.be.true;
+    expect(context.log.error.calledWith('Error fetching organic traffic data for site siteId. Using Default CPC value.', sinon.match.instanceOf(Error))).to.be.true;
+  });
+
+  it('should return default cpc value if cost or value not available', async () => {
+    getObjectFromKey = sinon.stub().returns([
+      {
+        value: 100,
+      },
+    ]);
+    utils = await esmock('../../src/support/utils.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    });
+    const result = await utils.calculateCPCValue(context, 'siteId');
+    expect(result).to.equal(2.69);
+    expect(context.log.warn.calledOnce).to.be.true;
+    expect(context.log.warn.calledWith('Invalid organic traffic data present for siteId - cost:undefined value:100, Using Default CPC value.')).to.be.true;
   });
 });
 
@@ -127,6 +233,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: ['https://example.com/home', 'https://example.com/about'],
+      formData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -151,8 +258,42 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
   });
 
   it('returns empty arrays when no files are found', async () => {
+    context.s3Client.send.resolves({});
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      formData: [],
+      siteData: [],
+    });
+  });
+
+  it('returns empty arrays without content when no files are found', async () => {
     context.s3Client.send.resolves({
-      Contents: [],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    let result;
+    try {
+      result = await getScrapedDataForSiteId(site, context);
+    } catch (e) {
+      expect.fail(`Test failed due to error: ${e.message}`);
+    }
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      formData: [],
+      siteData: [],
+    });
+  });
+
+  it('returns empty arrays when no json files are found', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/scrape.txt' },
+      ],
       IsTruncated: false,
       NextContinuationToken: null,
     });
@@ -161,6 +302,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [],
     });
   });
@@ -197,6 +339,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -208,10 +351,95 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     });
   });
 
+  it('can find the root scrape file when it is nested in a subdirectory', async () => {
+    const root = 'scrapes/site-id/root/scrape.json';
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: root },
+        { Key: 'scrapes/site-id/root/page/scrape.json' },
+        { Key: 'scrapes/site-id/invalid.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    let callCount = 0;
+
+    context.s3Client.send.callsFake((command) => {
+      if (command.input && command.input.Key === root) {
+        return Promise.resolve({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sandbox.stub().resolves(JSON.stringify({
+              finalUrl: 'https://example.com/root-page',
+              scrapeResult: {
+                rawBody: '<html><body><header><a href="/home">Home</a><a href="https://example.com/about">About</a></header></body></html>',
+                tags: {
+                  title: `Page ${callCount} Title`,
+                  description: `Page ${callCount} Description`,
+                  h1: [`Page ${callCount} H1`],
+                },
+              },
+            })),
+          },
+        });
+      }
+
+      callCount += 1;
+      return Promise.resolve({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sandbox.stub().resolves(JSON.stringify({
+            finalUrl: `https://example.com/page${callCount}`,
+            scrapeResult: {
+              tags: {
+                title: `Page ${callCount} Title`,
+                description: `Page ${callCount} Description`,
+                h1: [`Page ${callCount} H1`],
+              },
+            },
+          })),
+        },
+      });
+    });
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      formData: [],
+      headerLinks:
+        [
+          'https://example.com/home',
+          'https://example.com/about',
+        ],
+      siteData:
+        [
+          {
+            description: 'Page 0 Description',
+            h1: 'Page 0 H1',
+            title: 'Page 0 Title',
+            url: 'https://example.com/root-page',
+          },
+          {
+            description: 'Page 1 Description',
+            h1: 'Page 1 H1',
+            title: 'Page 1 Title',
+            url: 'https://example.com/page1',
+          },
+          {
+            description: 'Page 2 Description',
+            h1: 'Page 2 H1',
+            title: 'Page 2 Title',
+            url: 'https://example.com/page2',
+          },
+        ],
+    });
+  });
+
   it('returns only the metadata if there is no root file', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [
-        { Key: 'scrapes/site-id/page/scrape.json' },
+        { Key: 'scrapes/site-id/page/invalid.json' },
       ],
       IsTruncated: false,
       NextContinuationToken: null,
@@ -239,6 +467,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -285,6 +514,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formData: [],
       siteData: [
         {
           url: '',
@@ -293,6 +523,239 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
           h1: '',
         },
       ],
+    });
+  });
+
+  it('handles form data extraction from forms/scrape.json', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    const mockFormFileResponse = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://example.com/contact',
+          scrapeResult: [
+            {
+              id: '',
+              formType: 'search',
+              classList: '',
+              visibleATF: true,
+              fieldCount: 2,
+              visibleFieldCount: 0,
+              fieldsLabels: [
+                'Search articles',
+                'search-btn',
+              ],
+              visibleInViewPortFieldCount: 0,
+            },
+            {
+              id: '',
+              formType: 'search',
+              classList: '',
+              visibleATF: true,
+              fieldCount: 2,
+              visibleFieldCount: 2,
+              fieldsLabels: [
+                'Search articles',
+                'search-btn',
+              ],
+              visibleInViewPortFieldCount: 2,
+            },
+            {
+              id: '',
+              formType: 'search',
+              classList: 'adopt-search-results-box-wrapper',
+              visibleATF: true,
+              fieldCount: 7,
+              visibleFieldCount: 5,
+              fieldsLabels: [
+                'Any\nDog\nCat\nOther',
+                'Any',
+                'Any',
+                'Enter Zip/Postal Code',
+                '✕',
+                'Search',
+                'Create Search Alert',
+              ],
+              visibleInViewPortFieldCount: 5,
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.resolves(mockFormFileResponse);
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      siteData: [
+        {
+          description: '',
+          h1: '',
+          title: '',
+          url: 'https://example.com/contact',
+        },
+      ],
+      formData: [{
+        finalUrl: 'https://example.com/contact',
+        scrapeResult: [
+          {
+            id: '',
+            formType: 'search',
+            classList: '',
+            visibleATF: true,
+            fieldCount: 2,
+            visibleFieldCount: 0,
+            fieldsLabels: [
+              'Search articles',
+              'search-btn',
+            ],
+            visibleInViewPortFieldCount: 0,
+          },
+          {
+            id: '',
+            formType: 'search',
+            classList: '',
+            visibleATF: true,
+            fieldCount: 2,
+            visibleFieldCount: 2,
+            fieldsLabels: [
+              'Search articles',
+              'search-btn',
+            ],
+            visibleInViewPortFieldCount: 2,
+          },
+          {
+            id: '',
+            formType: 'search',
+            classList: 'adopt-search-results-box-wrapper',
+            visibleATF: true,
+            fieldCount: 7,
+            visibleFieldCount: 5,
+            fieldsLabels: [
+              'Any\nDog\nCat\nOther',
+              'Any',
+              'Any',
+              'Enter Zip/Postal Code',
+              '✕',
+              'Search',
+              'Create Search Alert',
+            ],
+            visibleInViewPortFieldCount: 5,
+          },
+        ],
+      }],
+    });
+  });
+
+  it('handles multiple form files', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+        { Key: 'scrapes/site-id/forms/other/scrape.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    const mockFormResponse1 = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://example.com/contact',
+          scrapeResult: [
+            {
+              id: '',
+              formType: 'search',
+              classList: '',
+              visibleATF: true,
+              fieldCount: 2,
+              visibleFieldCount: 0,
+              fieldsLabels: [
+                'Search articles',
+                'search-btn',
+              ],
+              visibleInViewPortFieldCount: 0,
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.resolves(mockFormResponse1);
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      siteData: [
+        {
+          description: '',
+          h1: '',
+          title: '',
+          url: 'https://example.com/contact',
+        },
+        {
+          description: '',
+          h1: '',
+          title: '',
+          url: 'https://example.com/contact',
+        },
+      ],
+      formData: [
+        {
+          finalUrl: 'https://example.com/contact',
+          scrapeResult: [
+            {
+              id: '',
+              formType: 'search',
+              classList: '',
+              visibleATF: true,
+              fieldCount: 2,
+              visibleFieldCount: 0,
+              fieldsLabels: [
+                'Search articles',
+                'search-btn',
+              ],
+              visibleInViewPortFieldCount: 0,
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('handles invalid form data files', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    const mockInvalidFormResponse = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves('invalid json'),
+      },
+    };
+
+    context.s3Client.send.resolves(mockInvalidFormResponse);
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      siteData: [],
+      formData: [null],
     });
   });
 });
@@ -389,5 +852,31 @@ describe('sleep', () => {
     await clock.runAllAsync();
 
     expect(isFulfilled).to.be.true;
+  });
+});
+
+describe('generatePlainHtml', () => {
+  it('removes comments', () => {
+    const html = '<main><!-- Some comment --><h1>Hello World</h1></main>';
+    const parsed = cheerioLoad(html);
+    expect(generatePlainHtml(parsed)).to.equal('<main><h1>Hello World</h1></main>');
+  });
+
+  it('strips out non essential tags', () => {
+    const html = '<body><main><div><img src="my-image.png"><h1>Hello World</h1></div></main></body>';
+    const parsed = cheerioLoad(html);
+    expect(generatePlainHtml(parsed)).to.equal('<main><img src="my-image.png"><h1>Hello World</h1></main>');
+  });
+
+  it('removes non-essential attributes', () => {
+    const html = '<main><img src="my-image.png" class="abc" style="width: 100px;"></main>';
+    const parsed = cheerioLoad(html);
+    expect(generatePlainHtml(parsed)).to.equal('<main><img src="my-image.png"></main>');
+  });
+
+  it('falls back to body if no main element is available', () => {
+    const html = '<body><h1>Hello World</h1></body>';
+    const parsed = cheerioLoad(html);
+    expect(generatePlainHtml(parsed)).to.equal('<body><h1>Hello World</h1></body>');
   });
 });

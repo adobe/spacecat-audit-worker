@@ -1,0 +1,44 @@
+[
+  {
+    "url": "https://foo.com/bar/redirect",
+    "total": 3864740,
+    "paid": 5640,
+    "earned": 408120,
+    "owned": 3450980
+  },
+  {
+    "url": "https://foo.com/bar/baz/redirect",
+    "total": 419400,
+    "paid": 226500,
+    "earned": 565477,
+    "owned": 192900
+  },
+  {
+    "url": "https://foo.com/baz/bar/redirect",
+    "total": 3864740,
+    "paid": 5640,
+    "earned": 408120,
+    "owned": 3450980
+  },
+  {
+    "url": "https://foo.com/qux/redirect",
+    "total": 419400,
+    "paid": 226500,
+    "earned": 565477,
+    "owned": 192900
+  },
+  {
+    "url": "https://foo.com/bar/qux/redirect",
+    "total": 3864740,
+    "paid": 5640,
+    "earned": 408120,
+    "owned": 3450980
+  },
+  {
+    "url": "https://foo.com/bar/baz/qux/redirect",
+    "total": 3864740,
+    "paid": 5640,
+    "earned": 408120,
+    "owned": 3450980
+  }
+]

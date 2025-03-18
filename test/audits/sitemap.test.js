@@ -797,7 +797,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('should create redirect recommendation when urls_suggested is present', () => {
+    it('should create redirect recommendation when urlsSuggested is present', () => {
       const auditDataWithRedirect = {
         siteId: 'site-id',
         id: 'audit-id',
@@ -810,7 +810,7 @@ describe('Sitemap Audit', () => {
                 {
                   url: 'https://example.com/old-page',
                   statusCode: 301,
-                  urls_suggested: 'https://example.com/new-page',
+                  urlsSuggested: 'https://example.com/new-page',
                 },
               ],
             },
@@ -829,7 +829,7 @@ describe('Sitemap Audit', () => {
         sitemapUrl: 'https://example.com/sitemap.xml',
         pageUrl: 'https://example.com/old-page',
         statusCode: 301,
-        urls_suggested: 'https://example.com/new-page',
+        urlsSuggested: 'https://example.com/new-page',
         recommendedAction: 'use this url instead: https://example.com/new-page',
       });
     });
@@ -999,7 +999,7 @@ describe('Sitemap Audit', () => {
             ],
           },
           tags: ['Traffic Acquisition'],
-          data: {},
+          data: null,
         },
       );
     });
@@ -1026,6 +1026,63 @@ describe('Sitemap Audit', () => {
         context.dataAccess.Opportunity.setAuditId,
       ).to.have.been.calledOnceWith('audit-id');
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
+      expect(
+        context.dataAccess.Opportunity.addSuggestions,
+      ).to.have.been.calledOnceWith(
+        auditDataFailure.suggestions.map((suggestion) => ({
+          opportunityId: opptyId,
+          type: 'REDIRECT_UPDATE',
+          rank: 0,
+          data: suggestion,
+        })),
+      );
+    });
+
+    it('should handle updating when opportunity was already defined with new suggestions', async () => {
+      const opptyId = 'oppty-id';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([
+        context.dataAccess.Opportunity,
+      ]);
+      context.dataAccess.Opportunity.getType.returns('sitemap');
+      context.dataAccess.Opportunity.getId.returns(opptyId);
+      context.dataAccess.Opportunity.save.resolves();
+      const suggestionData = {
+        type: 'url',
+        sitemapUrl: 'https://some-domain2.adobe/sitemap.xml',
+        pageUrl: 'https://some-domain2.adobe/foo',
+        statusCode: 404,
+        recommendedAction:
+          'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
+      };
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: suggestionData,
+          remove: sinon.stub(),
+          getData: sinon.stub().returns(suggestionData),
+          setData: sinon.stub(),
+          save: sinon.stub().resolves(),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+      context.dataAccess.Opportunity.getSuggestions.resolves(existingSuggestions);
+      context.dataAccess.Opportunity.addSuggestions.resolves({
+        createdItems: auditDataFailure.suggestions,
+      });
+      await opportunityAndSuggestions(
+        'https://example.com',
+        auditDataFailure,
+        context,
+      );
+
+      expect(
+        context.dataAccess.Opportunity.setAuditId,
+      ).to.have.been.calledOnceWith('audit-id');
+      expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        existingSuggestions,
+        'OUTDATED',
+      );
       expect(
         context.dataAccess.Opportunity.addSuggestions,
       ).to.have.been.calledOnceWith(
@@ -1098,12 +1155,12 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/permanent-redirect',
         statusCode: 301,
-        urls_suggested: 'https://example.com/new-location',
+        urlsSuggested: 'https://example.com/new-location',
       },
       {
         url: 'https://example.com/temporary-redirect',
         statusCode: 302,
-        urls_suggested: 'https://example.com/temp-location',
+        urlsSuggested: 'https://example.com/temp-location',
       },
       {
         url: 'https://example.com/not-found',
@@ -1128,7 +1185,7 @@ describe('filterValidUrls with redirect handling', () => {
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/broken-redirect',
-        urls_suggested: 'https://example.com/error',
+        urlsSuggested: 'https://example.com/error',
         statusCode: 301,
       },
     ]);
@@ -1196,7 +1253,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/redirect',
         statusCode: 301,
-        urls_suggested: 'https://example.com/new-location',
+        urlsSuggested: 'https://example.com/new-location',
       },
       {
         url: 'https://example.com/not-found',
@@ -1252,7 +1309,7 @@ describe('filterValidUrls with redirect handling', () => {
 });
 
 describe('getPagesWithIssues', () => {
-  it('should include urls_suggested in the output when present in the input', () => {
+  it('should include urlsSuggested in the output when present in the input', () => {
     const auditData = {
       auditResult: {
         details: {
@@ -1261,7 +1318,7 @@ describe('getPagesWithIssues', () => {
               {
                 url: 'https://example.com/old-page',
                 statusCode: 301,
-                urls_suggested: 'https://example.com/new-page',
+                urlsSuggested: 'https://example.com/new-page',
               },
               {
                 url: 'https://example.com/not-found',
@@ -1280,7 +1337,7 @@ describe('getPagesWithIssues', () => {
       sitemapUrl: 'https://example.com/sitemap.xml',
       pageUrl: 'https://example.com/old-page',
       statusCode: 301,
-      urls_suggested: 'https://example.com/new-page',
+      urlsSuggested: 'https://example.com/new-page',
     });
     expect(result[1]).to.deep.equal({
       type: 'url',
@@ -1340,12 +1397,12 @@ describe('filterValidUrls with status code tracking', () => {
       {
         url: 'https://example.com/permanent-redirect',
         statusCode: 301,
-        urls_suggested: 'https://example.com/new',
+        urlsSuggested: 'https://example.com/new',
       },
       {
         url: 'https://example.com/temp-redirect',
         statusCode: 302,
-        urls_suggested: 'https://example.com/temp',
+        urlsSuggested: 'https://example.com/temp',
       },
       {
         url: 'https://example.com/not-found',
@@ -1383,7 +1440,7 @@ describe('filterValidUrls with status code tracking', () => {
       {
         url: 'https://example.com/redirect',
         statusCode: 301,
-        urls_suggested: 'https://example.com/new',
+        urlsSuggested: 'https://example.com/new',
       },
       {
         url: 'https://example.com/not-found',
@@ -1427,7 +1484,7 @@ describe('filterValidUrls with status code tracking', () => {
       {
         url: 'https://example.com/redirect',
         statusCode: 301,
-        urls_suggested: 'https://example.com/new',
+        urlsSuggested: 'https://example.com/new',
       },
       {
         url: 'https://example.com/not-found',

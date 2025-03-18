@@ -11,7 +11,8 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { hasText } from '@adobe/spacecat-shared-utils';
+import { hasText, tracingFetch } from '@adobe/spacecat-shared-utils';
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import {
   getObjectFromKey,
   getObjectKeysUsingPrefix,
@@ -21,6 +22,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
 
+const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 export async function fetchAndProcessPageObject(
   s3Client,
   bucketName,
@@ -30,7 +32,7 @@ export async function fetchAndProcessPageObject(
 ) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!hasText(object?.scrapeResult?.rawBody)) {
-    log.error(`No raw HTML content found in S3 ${key} object`);
+    log.debug(`[${AUDIT_TYPE}]: No raw HTML content found in S3 ${key} object`);
     return null;
   }
 
@@ -40,7 +42,7 @@ export async function fetchAndProcessPageObject(
   const images = Array.from(imageElements).map((img) => ({
     src: img.getAttribute('src'),
     alt: img.getAttribute('alt'),
-  }));
+  })).filter((img) => img.src);
 
   const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', '');
   return {
@@ -77,17 +79,18 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
   const extractedTagsCount = Object.entries(extractedTags).length;
   if (extractedTagsCount === 0) {
     log.error(
-      `Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`,
+      `[${AUDIT_TYPE}]: Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`,
     );
   }
   log.info(
-    `Performing image alt text audit for ${extractedTagsCount} elements`,
+    `[${AUDIT_TYPE}]: Performing image alt text audit for ${extractedTagsCount} elements`,
   );
   // Perform Image Alt Text audit
   const auditEngine = new AuditEngine(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
     auditEngine.performPageAudit(pageUrl, pageTags);
   }
+  await auditEngine.filterImages(baseURL, tracingFetch);
   auditEngine.finalizeAudit();
   const detectedTags = auditEngine.getAuditedTags();
 

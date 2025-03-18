@@ -59,6 +59,8 @@ const testData = {
           },
         },
       },
+      projectedTrafficLost: 100,
+      projectedTrafficValue: 50,
     },
   },
   expectedSuggestions: [
@@ -197,6 +199,8 @@ const testData = {
       },
       remove: () => {},
       getStatus: () => 'NEW',
+      setData: () => {},
+      save: () => {},
       getData: () => ({
         tagContent: 'The BigOne Insert modified',
         seoRecommendation: '140-160 characters long',
@@ -226,6 +230,8 @@ const testData = {
       },
       remove: () => {},
       getStatus: () => 'SKIPPED',
+      setData: () => {},
+      save: () => {},
       getData: () => ({
         seoRecommendation: 'Should be present',
         issue: 'Missing H1',
@@ -255,6 +261,8 @@ const testData = {
       },
       remove: () => {},
       getStatus: () => 'NEW',
+      setData: () => {},
+      save: () => {},
       getData: () => ({
         tagContent: '["We Can All Win Together","We Say As We Do"]',
         seoRecommendation: '1 H1 on a page',
@@ -371,7 +379,7 @@ const testData = {
     tags: [
       'Traffic acquisition',
     ],
-    data: { },
+    data: { projectedTrafficLost: 100, projectedTrafficValue: 50 },
   },
 };
 
