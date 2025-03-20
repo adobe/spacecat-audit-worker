@@ -95,7 +95,7 @@ jobs:
           aws_role_to_assume: 'arn:aws:iam::${{secrets.AWS_ACCOUNT_ID_DEV}}:role/spacecat-role-github-actions'
 
       - name: Branch Deployment
-        run: npm run deploy-ci
+        run: npm run deploy-dev
         env:
           AWS_REGION: us-east-1
           AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
