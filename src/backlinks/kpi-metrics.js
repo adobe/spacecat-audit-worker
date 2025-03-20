@@ -48,7 +48,10 @@ const calculateKpiMetrics = async (auditData, context, site) => {
 
   if (!isNonEmptyArray(rumTrafficData)) {
     log.info(`No RUM traffic data found for site ${siteId}`);
-    return null;
+    return {
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+    };
   }
 
   const organicTrafficData = await getStoredMetrics(
@@ -62,7 +65,8 @@ const calculateKpiMetrics = async (auditData, context, site) => {
     const latestOrganicTrafficData = organicTrafficData.sort(
       (a, b) => new Date(b.time) - new Date(a.time),
     )[0];
-    CPC = latestOrganicTrafficData.cost / latestOrganicTrafficData.value;
+    // cost in USD cents, so divide by 100 to get USD
+    CPC = (latestOrganicTrafficData.cost / latestOrganicTrafficData.value) / 100;
   }
 
   const projectedTrafficLost = auditData?.auditResult?.brokenBacklinks?.reduce((sum, backlink) => {

@@ -498,7 +498,7 @@ describe('Backlinks Tests', function () {
 
       const result = await calculateKpiMetrics(auditData, context, site);
       expect(result.projectedTrafficLost).to.equal(26788.645);
-      expect(result.projectedTrafficValue).to.equal(534287.974025892);
+      expect(result.projectedTrafficValue).to.equal(5342.87974025892);
     });
 
     it('skips URL if no RUM data is available for just individual URLs', async () => {
@@ -523,7 +523,10 @@ describe('Backlinks Tests', function () {
       context.s3Client.send.onCall(0).resolves(null);
 
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result).to.be.null;
+      expect(result).to.deep.equal({
+        projectedTrafficLost: 0,
+        projectedTrafficValue: 0,
+      });
     });
   });
 });

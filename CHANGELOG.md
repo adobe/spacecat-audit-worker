@@ -1,3 +1,38 @@
+## [1.68.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.15...v1.68.16) (2025-03-13)
+
+
+### Bug Fixes
+
+* cpc cost in broken backlinks audit ([#762](https://github.com/adobe/spacecat-audit-worker/issues/762)) ([c76b94a](https://github.com/adobe/spacecat-audit-worker/commit/c76b94a5c69f7c23cb2919f9eb57aa97a80f2553))
+
+## [1.68.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.14...v1.68.15) (2025-03-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.13.1 ([#761](https://github.com/adobe/spacecat-audit-worker/issues/761)) ([4ab408c](https://github.com/adobe/spacecat-audit-worker/commit/4ab408c218ea0a7a2f96e30bed2efbb9669e5f51))
+
+## [1.68.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.13...v1.68.14) (2025-03-07)
+
+
+### Bug Fixes
+
+* kpi deltas undefined value ([#759](https://github.com/adobe/spacecat-audit-worker/issues/759)) ([4a5d4b5](https://github.com/adobe/spacecat-audit-worker/commit/4a5d4b5d9b98350dff93a6d1c1e72272081b76f9))
+
+## [1.68.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.12...v1.68.13) (2025-03-07)
+
+
+### Bug Fixes
+
+* Temporarily mute logs about RUM / scraped pages mismatch ([#758](https://github.com/adobe/spacecat-audit-worker/issues/758)) ([f29ed0b](https://github.com/adobe/spacecat-audit-worker/commit/f29ed0bc2f47a99f463c226f2da5d51371543a8a))
+
+## [1.68.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.11...v1.68.12) (2025-03-07)
+
+
+### Bug Fixes
+
+* generate default guidance for low conv opportunity ([#757](https://github.com/adobe/spacecat-audit-worker/issues/757)) ([8d6deaf](https://github.com/adobe/spacecat-audit-worker/commit/8d6deaf59a8fb1cdcb031a1bcfd8b0b3fb074793))
+
 ## [1.68.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.10...v1.68.11) (2025-03-07)
 
 
