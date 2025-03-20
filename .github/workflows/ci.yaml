@@ -64,6 +64,17 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_PROD}}
 
+      - name: Configure AWS for STAGE
+        uses: ./.github/actions/configure-aws
+        with:
+          aws_role_to_assume: 'arn:aws:iam::${{secrets.AWS_ACCOUNT_ID_STAGE}}:role/spacecat-role-github-actions'
+
+      - name: Branch Deployment
+        run: npm run deploy-stage
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_STAGE}}
+
 
   branch-deploy:
     runs-on: ubuntu-latest

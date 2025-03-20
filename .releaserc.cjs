@@ -14,7 +14,6 @@ module.exports = {
     }],
     ['@semantic-release/exec', {
       prepareCmd: 'npm run deploy && npm run test-postdeploy',
-      publishCmd: 'npm run deploy-routes'
     }],
     ["@semantic-release/github", {}]
   ],
