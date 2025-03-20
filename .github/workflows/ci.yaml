@@ -92,13 +92,13 @@ jobs:
       - name: Configure AWS
         uses: ./.github/actions/configure-aws
         with:
-          aws_role_to_assume: 'arn:aws:iam::${{secrets.AWS_ACCOUNT_ID_DEV}}:role/spacecat-role-github-actions'
+          aws_role_to_assume: 'arn:aws:iam::${{secrets.AWS_ACCOUNT_ID_STAGE}}:role/spacecat-role-github-actions'
 
       - name: Branch Deployment
-        run: npm run deploy-ci
+        run: npm run deploy-stage
         env:
           AWS_REGION: us-east-1
-          AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
+          AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_STAGE}}
 
       - name: Post-Deployment Integration Test
         run: npm run test-postdeploy
