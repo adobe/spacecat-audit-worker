@@ -198,14 +198,17 @@ export function filterForms(formOpportunities, scrapedData, log) {
     }));
   }
 
-  return formOpportunities.filter((opportunity) => {
+  return formOpportunities.map((opportunity) => {
     let urlMatches = false;
     // Find matching form in scraped data
     const matchingForm = scrapedData.formData.find((form) => {
       const formUrl = new URL(form.finalUrl);
       const opportunityUrl = new URL(opportunity.form);
+
       // eslint-disable-next-line max-len
-      urlMatches = opportunityUrl && formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname;
+      if (opportunityUrl && formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
+        urlMatches = true;
+      }
 
       const isSearchForm = Array.isArray(form.scrapeResult)
           && form.scrapeResult.some((result) => result?.formType === 'search' || result?.classList?.includes('search') || result?.classList?.includes('unsubscribe') || result?.action?.endsWith('search.html'));
@@ -214,13 +217,13 @@ export function filterForms(formOpportunities, scrapedData, log) {
     });
 
     // eslint-disable-next-line no-param-reassign
-    opportunity.scrapedStatus = !!urlMatches;
+    opportunity.scrapedStatus = urlMatches;
 
     if (matchingForm) {
       log.debug(`Filtered out search form: ${opportunity?.form}`);
-      return false;
+      return null; // Filter out the opportunity
     }
 
-    return true;
-  });
+    return opportunity;
+  }).filter(Boolean);
 }
