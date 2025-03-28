@@ -143,7 +143,7 @@ export async function processImportStep(context) {
   return {
     auditResult: { status: 'preparing' },
     fullAuditRef: s3BucketPath,
-    type: 'content-import',
+    type: 'top-pages',
     siteId: site.getId(),
   };
 }
