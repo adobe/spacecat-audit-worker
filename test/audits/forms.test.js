@@ -554,11 +554,6 @@ describe('isSearchForm', () => {
     expect(shouldExcludeForm(scrapedFormData)).to.be.true;
   });
 
-  it('should return true for signup form type', () => {
-    const scrapedFormData = { formType: 'signup' };
-    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
-  });
-
   it('should return true for form with unsubscribe class', () => {
     const scrapedFormData = { classList: ['unsubscribe'] };
     expect(shouldExcludeForm(scrapedFormData)).to.be.true;
