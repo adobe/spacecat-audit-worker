@@ -23,8 +23,6 @@ import convertToOpportunity from './opportunityHandler.js';
 import highPageViewsLowFormNavOpportunity from './highPageViewsLowFormNavOpportunity.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-// const DAILY_THRESHOLD = 200;
-// export const INTERVAL = 15; // days
 const FORMS_OPPTY_QUERIES = [
   'cwv',
   'form-vitals',
