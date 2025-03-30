@@ -14,14 +14,17 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { generateOpptyData, generateOpptyDataForHighPageViewsLowFormNav } from './utils.js';
+import {
+  // eslint-disable-next-line max-len
+  generateOpptyData, generateOpptyDataForHighPageViewsLowFormNav, INTERVAL, DAILY_PAGEVIEW_THRESHOLD,
+} from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import convertToOpportunity from './opportunityHandler.js';
 import highPageViewsLowFormNavOpportunity from './highPageViewsLowFormNavOpportunity.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const DAILY_THRESHOLD = 200;
-const INTERVAL = 7; // days
+// const DAILY_THRESHOLD = 200;
+// export const INTERVAL = 15; // days
 const FORMS_OPPTY_QUERIES = [
   'cwv',
   'form-vitals',
@@ -46,7 +49,7 @@ export async function formsAuditRunner(auditUrl, context) {
     formVitals: queryResults['form-vitals'].filter((data) => {
       // Calculate the sum of all values inside the `pageview` object
       const pageviewsSum = Object.values(data.pageview).reduce((sum, value) => sum + value, 0);
-      return pageviewsSum >= DAILY_THRESHOLD * INTERVAL;
+      return pageviewsSum >= DAILY_PAGEVIEW_THRESHOLD * INTERVAL;
     })
       .map((formVital) => {
         const cwvData = cwvMap.get(formVital.url);
