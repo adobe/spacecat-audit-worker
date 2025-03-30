@@ -16,7 +16,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
   // eslint-disable-next-line max-len
-  generateOpptyData, generateOpptyDataForHighPageViewsLowFormNav, INTERVAL, DAILY_PAGEVIEW_THRESHOLD,
+  generateOpptyData, generateOpptyDataForHighPageViewsLowFormNav, INTERVAL,
 } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import convertToOpportunity from './opportunityHandler.js';
@@ -44,21 +44,16 @@ export async function formsAuditRunner(auditUrl, context) {
   );
 
   const auditResult = {
-    formVitals: queryResults['form-vitals'].filter((data) => {
-      // Calculate the sum of all values inside the `pageview` object
-      const pageviewsSum = Object.values(data.pageview).reduce((sum, value) => sum + value, 0);
-      return pageviewsSum >= DAILY_PAGEVIEW_THRESHOLD * INTERVAL;
-    })
-      .map((formVital) => {
-        const cwvData = cwvMap.get(formVital.url);
-        const filteredCwvData = cwvData
-          ? Object.fromEntries(Object.entries(cwvData).filter(([key]) => key !== 'url' && key !== 'pageviews' && key !== 'type'))
-          : {};
-        return {
-          ...formVital,
-          cwv: filteredCwvData, // Append cwv data
-        };
-      }),
+    formVitals: queryResults['form-vitals'].map((formVital) => {
+      const cwvData = cwvMap.get(formVital.url);
+      const filteredCwvData = cwvData
+        ? Object.fromEntries(Object.entries(cwvData).filter(([key]) => key !== 'url' && key !== 'pageviews' && key !== 'type'))
+        : {};
+      return {
+        ...formVital,
+        cwv: filteredCwvData, // Append cwv data
+      };
+    }),
     auditContext: {
       interval: INTERVAL,
     },
