@@ -184,7 +184,8 @@ export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, co
 
 export function isSearchForm(scrapedFormData) {
   return scrapedFormData?.formType === 'search'
-    || scrapedFormData?.classList?.includes('search')
+    || scrapedFormData?.formType === 'login'
+    || scrapedFormData?.formType === 'signup'
     || scrapedFormData?.classList?.includes('unsubscribe')
     || scrapedFormData?.action?.endsWith('search.html')
     || (scrapedFormData?.fieldsLabels && isNonEmptyArray(scrapedFormData.fieldsLabels) && scrapedFormData.fieldsLabels.every((label) => label.toLowerCase().includes('search')));

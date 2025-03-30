@@ -25,6 +25,7 @@ import { MockContextBuilder } from '../shared.js';
 import formVitalsData from '../fixtures/formvitalsdata.json' with { type: 'json' };
 import testData from '../fixtures/high-form-views-low-conversions.js';
 import convertToOpportunity from '../../src/forms-opportunities/opportunityHandler.js';
+import { isSearchForm } from '../../src/forms-opportunities/utils.js';
 import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../fixtures/expectedformsendtoscraperdata.json' with { type: 'json' };
 import formScrapeData from '../fixtures/formscrapedata.js';
@@ -539,5 +540,44 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+  });
+});
+
+describe('isSearchForm', () => {
+  it('should return true for search form type', () => {
+    const scrapedFormData = { formType: 'search' };
+    expect(isSearchForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return true for login form type', () => {
+    const scrapedFormData = { formType: 'login' };
+    expect(isSearchForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return true for signup form type', () => {
+    const scrapedFormData = { formType: 'signup' };
+    expect(isSearchForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return true for form with unsubscribe class', () => {
+    const scrapedFormData = { classList: ['unsubscribe'] };
+    expect(isSearchForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return true for form with action ending in search.html', () => {
+    const scrapedFormData = { action: 'https://example.com/search.html' };
+    expect(isSearchForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return true for form with all field labels containing search', () => {
+    const scrapedFormData = { fieldsLabels: ['Search', 'Advanced Search'] };
+    expect(isSearchForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return false for non-search form', () => {
+    const scrapedFormData = {
+      formType: 'contact', classList: ['subscribe'], action: 'https://example.com/contact.html', fieldsLabels: ['Name', 'Email'],
+    };
+    expect(isSearchForm(scrapedFormData)).to.be.false;
   });
 });
