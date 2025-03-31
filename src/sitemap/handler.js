@@ -70,7 +70,10 @@ export async function fetchContent(targetUrl) {
   if (!response.ok) {
     throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
   }
-  return { payload: await response.text(), type: response.headers.get('content-type') };
+  return {
+    payload: await response.text(),
+    type: response.headers.get('content-type'),
+  };
 }
 
 /**
@@ -203,27 +206,37 @@ export async function filterValidUrls(urls) {
           // Check if the redirect destination is a 404 or contains '404' in the path
           const is404 = redirectResponse.status === 404
             || finalUrl.includes('/404/')
-            || finalUrl.includes('404.html');
+            || finalUrl.includes('404.html')
+            || finalUrl.includes('/errors/404/');
+
+          // Extract the base URL to use as homepage suggestion if needed
+          const homeUrl = new URL(url);
+          homeUrl.pathname = '/';
 
           return {
             status: NOT_OK,
             url,
             statusCode: response.status,
             finalUrl: redirectResponse.url,
-            // Only suggest the URL if it's not a 404
-            ...(is404 ? {} : { urlsSuggested: redirectResponse.url }),
+            // Only suggest the homepage for redirects that lead to 404 pages
+            urlsSuggested: is404 ? homeUrl.toString() : redirectResponse.url,
           };
         } catch {
+          // In case of error following the redirect, still suggest the homepage
+          const homeUrl = new URL(url);
+          homeUrl.pathname = '/';
+
           return {
             status: NOT_OK,
             url,
             statusCode: response.status,
             finalUrl,
+            urlsSuggested: homeUrl.toString(),
           };
         }
       }
 
-      // Track 404 status code
+      // Track 404 status code - no suggestion for direct 404s
       if (response.status === 404) {
         return { status: NOT_OK, url, statusCode: response.status };
       }
@@ -274,7 +287,7 @@ export async function filterValidUrls(urls) {
         acc.notOk.push({
           url: result.url,
           statusCode: result.statusCode,
-          ...(result.finalUrl && { urlsSuggested: result.finalUrl }),
+          ...(result.urlsSuggested && { urlsSuggested: result.urlsSuggested }),
         });
       }
       return acc;
