@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.69.0",
+  "version": "1.70.0",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -115,7 +115,7 @@
     "nock": "14.0.1",
     "nodemon": "3.1.9",
     "semantic-release": "24.2.3",
-    "sinon": "19.0.2",
+    "sinon": "20.0.0",
     "sinon-chai": "4.0.0",
     "typescript": "5.8.2",
     "yaml": "2.7.0"

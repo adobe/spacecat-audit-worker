@@ -11,7 +11,7 @@
  */
 
 import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
-import { filterForms, generateOpptyData, isSearchForm } from './utils.js';
+import { filterForms, generateOpptyData, shouldExcludeForm } from './utils.js';
 
 function generateDefaultGuidance(scrapedData, oppoty) {
   if (isNonEmptyArray(scrapedData?.formData)) {
@@ -19,7 +19,7 @@ function generateDefaultGuidance(scrapedData, oppoty) {
       const formUrl = new URL(form.finalUrl);
       const opportunityUrl = new URL(oppoty.form);
       if (formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
-        const nonSearchForms = form.scrapeResult.filter((x) => !isSearchForm(x));
+        const nonSearchForms = form.scrapeResult.filter((x) => !shouldExcludeForm(x));
         if (nonSearchForms.length !== 0) {
           const { isLargeForm, isBelowTheFold } = nonSearchForms.reduce((
             acc,
