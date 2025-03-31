@@ -16,7 +16,7 @@ import {
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-const EXPIRY_IN_SECONDS = 3600 * 24;
+const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
 const DAILY_PAGEVIEW_THRESHOLD = 200;
 const CR_THRESHOLD_RATIO = 0.3;
 const MOBILE = 'mobile';
