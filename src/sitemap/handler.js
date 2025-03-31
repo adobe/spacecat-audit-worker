@@ -201,7 +201,9 @@ export async function filterValidUrls(urls) {
           });
 
           // Check if the redirect destination is a 404 or contains '404' in the path
-          const is404 = redirectResponse.status === 404 || finalUrl.includes('/404/');
+          const is404 = redirectResponse.status === 404
+            || finalUrl.includes('/404/')
+            || finalUrl.includes('404.html');
 
           return {
             status: NOT_OK,
