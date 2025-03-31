@@ -199,11 +199,17 @@ export async function filterValidUrls(urls) {
             method: 'HEAD',
             redirect: 'follow',
           });
+
+          // Check if the redirect destination is a 404 or contains '404' in the path
+          const is404 = redirectResponse.status === 404 || finalUrl.includes('/404/');
+
           return {
             status: NOT_OK,
             url,
             statusCode: response.status,
             finalUrl: redirectResponse.url,
+            // Only suggest the URL if it's not a 404
+            ...(is404 ? {} : { urlsSuggested: redirectResponse.url }),
           };
         } catch {
           return {
