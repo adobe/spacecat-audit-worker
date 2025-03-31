@@ -10,9 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeAuditURL, getPrompt, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { getPrompt, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { AbortController, AbortError } from '@adobe/fetch';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -20,29 +19,22 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import calculateKpiDeltasForAudit from './kpi-metrics.js';
 
 const auditType = Audit.AUDIT_TYPES.BROKEN_BACKLINKS;
 const TIMEOUT = 3000;
 
 async function filterOutValidBacklinks(backlinks, log) {
   const fetchWithTimeout = async (url, timeout) => {
-    const controller = new AbortController();
-    const { signal } = controller;
-    const id = setTimeout(() => controller.abort(), timeout);
-
     try {
-      const response = await fetch(url, { signal });
-      clearTimeout(id);
-      return response;
+      return await fetch(url, { timeout });
     } catch (error) {
-      if (error instanceof AbortError) {
+      if (error.code === 'ETIMEOUT') {
         log.warn(`Request to ${url} timed out after ${timeout}ms`);
         return { ok: false, status: 408 };
       } else {
         log.warn(`Request to ${url} failed with error: ${error.message}`);
       }
-    } finally {
-      clearTimeout(id);
     }
     return { ok: false, status: 500 };
   };
@@ -56,7 +48,16 @@ async function filterOutValidBacklinks(backlinks, log) {
     return !response.ok;
   };
 
-  const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
+  const backlinkStatuses = [];
+  for (const backlink of backlinks) {
+    log.info(`Checking backlink: ${backlink.url_to}`);
+
+    // eslint-disable-next-line no-await-in-loop
+    const result = await isStillBrokenBacklink(backlink);
+    backlinkStatuses.push(result);
+  }
+
+  // const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
@@ -235,22 +236,27 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
 };
 
 /**
-  * Converts audit data to an opportunity and synchronizes suggestions.
-  *
-  * @param {string} auditUrl - The URL of the audit.
-  * @param {Object} auditData - The data from the audit.
-  * @param {Object} context - The context contains logging and data access utilities.
-  */
+ * Converts audit data to an opportunity and synchronizes suggestions.
+ *
+ * @param {string} auditUrl - The URL of the audit.
+ * @param {Object} auditData - The data from the audit.
+ * @param {Object} context - The context contains logging and data access utilities.
+ * @param {Object} site - The site object.
+ */
 
-export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
+  const { log } = context;
+
+  const kpiDeltas = await calculateKpiDeltasForAudit(auditData, context, site);
+
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
     context,
     createOpportunityData,
     auditType,
+    kpiDeltas,
   );
-  const { log } = context;
 
   const buildKey = (data) => `${data.url_from}|${data.url_to}`;
 
@@ -277,7 +283,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver((site) => composeAuditURL(site.getBaseURL()))
+  .withUrlResolver((site) => site.resolveFinalURL())
   .withRunner(brokenBacklinksAuditRunner)
   .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
   .build();

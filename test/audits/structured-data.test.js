@@ -507,6 +507,26 @@ describe('Structured Data Audit', () => {
     expect(logCall.args[1]).to.equal('{"@type":"AggregateRating","ratingValue":4.5}');
   });
 
+  it('skips transforming the audit data into opportunities if audit failed', async () => {
+    const auditData = {
+      fullAuditRef: baseUrl,
+      auditResult: {
+        error: 'Failed to inspect URL',
+        success: false,
+      },
+    };
+
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+    context.dataAccess.Opportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
+    const result = await opportunityAndSuggestions(baseUrl, auditData, context);
+
+    expect(context.log.info).to.have.been.calledWith('Audit failed, skipping opportunity generation');
+    expect(result).to.deep.equal(auditData);
+  });
+
   it('transforms the audit data into opportunities with no auto-suggestion', async () => {
     const auditData = createAuditData(baseUrl, 'Product snippets', 'Missing field "name"');
 
@@ -516,6 +536,9 @@ describe('Structured Data Audit', () => {
     context.dataAccess.Opportunity.getId.returns('opportunity-id');
     context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
     await opportunityAndSuggestions(baseUrl, auditData, context);
+
+    // eslint-disable-next-line quotes
+    const expectedFix = `\n## Issues Detected for Product snippets\n\n* Unnamed item\n    * Missing field "name"\n\n`;
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledWith(expectedOppty);
     expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledWith([{
@@ -528,7 +551,7 @@ describe('Structured Data Audit', () => {
         errors: [{
           id: 'productsnippets',
           errorTitle: 'Product snippets',
-          fix: '',
+          fix: expectedFix,
         }],
       },
     }]);

@@ -91,8 +91,9 @@ describe('opportunities handler method', () => {
       save: sinon.stub(),
       getType: () => 'high-form-views-low-conversions',
       setData: sinon.stub(),
+      setGuidance: sinon.stub(),
       getData: sinon.stub().returns({
-        form: 'https://example.com/form1',
+        form: 'https://www.surest.com/info/win-1',
         screenshot: '',
         trackedFormKPIName: 'Conversion Rate',
         trackedFormKPIValue: 0.5,
@@ -118,6 +119,9 @@ describe('opportunities handler method', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      site: {
+        getId: sinon.stub().returns('test-site-id'),
+      },
     };
     auditData = testData.auditData3;
   });
@@ -126,7 +130,9 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData, undefined, context);
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(5);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+    // with empty guidance due to no scraping
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
@@ -134,6 +140,7 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData1, context);
+    // with BTF guidance
     // expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
@@ -143,14 +150,36 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData2, formScrapeData.scrapeData2, context);
-    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData2);
+    // with empty guidance due to scrapedStatus = false
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+  });
+
+  it('should create new forms opportunity with scraped data available with all field labels containing search', async () => {
+    formsOppty.getType = () => 'high-form-views-low-conversions';
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData3, context);
+    const expectedOpportunityData = { ...testData.opportunityData3 };
+    // with large form guidance
+    expectedOpportunityData.data.scrapedStatus = true;
+    expect(dataAccessStub.Opportunity.create).to.be.calledWith(expectedOpportunityData);
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+  });
+
+  it('should create new forms opportunity with scraped data available and matched with Generic guidance', async () => {
+    const { auditData2 } = testData;
+    formsOppty.getType = () => 'high-form-views-low-conversions';
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    await convertToOpportunity(auditUrl, auditData2, formScrapeData.scrapeData4, context);
+    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData4);
+    // with Generic guidance
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should use existing opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
     await convertToOpportunity(auditUrl, auditData, undefined, context);
-    expect(formsOppty.save).to.be.callCount(5);
+    expect(formsOppty.save).to.be.callCount(1);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
@@ -377,8 +406,9 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       save: sinon.stub(),
       getType: () => 'high-page-views-low-form-nav',
       setData: sinon.stub(),
+      setGuidance: sinon.stub(),
       getData: sinon.stub().returns({
-        form: 'https://example.com/form1',
+        form: 'https://www.surest.com/newsletter',
         screenshot: '',
         trackedFormKPIName: 'Conversion Rate',
         trackedFormKPIValue: 0.5,
@@ -404,8 +434,11 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      site: {
+        getId: sinon.stub().returns('test-site-id'),
+      },
     };
-    auditData = testData.auditData;
+    auditData = testData.oppty2AuditData;
   });
 
   it('should create new high page views low form navigation opportunity', async () => {
@@ -428,10 +461,11 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
         formViews: 300,
         pageViews: 8670,
         samples: 8670,
+        scrapedStatus: false,
         metrics: [
           {
             type: 'conversionRate',
-            vendor: '*',
+            device: '*',
             value: {
               page: null,
             },
@@ -441,6 +475,16 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
           source: '#teaser-related02 .cmp-teaser__action-link',
           url: 'https://www.surest.com/about-us',
         },
+      },
+      guidance: {
+        recommendations: [
+          {
+            insight: 'The CTA element in the page: https://www.surest.com/about-us is not placed in the most optimal positions for visibility and engagement',
+            recommendation: 'Reposition the CTA to be more centrally located and ensure they are above the fold.',
+            type: 'guidance',
+            rationale: 'CTAs placed above the fold and in central positions are more likely to be seen and clicked by users, leading to higher engagement rates.',
+          },
+        ],
       },
     };
 

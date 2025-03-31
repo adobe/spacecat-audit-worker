@@ -13,18 +13,23 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import AuditEngine from '../../../src/image-alt-text/auditEngine.js';
 
 describe('AuditEngine', () => {
   let auditEngine;
   let logStub;
+  let tracingFetchStub;
 
   beforeEach(() => {
     logStub = {
+      debug: sinon.stub(),
       info: sinon.stub(),
       warn: sinon.stub(),
+      error: sinon.stub(),
     };
     auditEngine = new AuditEngine(logStub);
+    tracingFetchStub = sinon.stub();
   });
 
   afterEach(() => {
@@ -33,7 +38,8 @@ describe('AuditEngine', () => {
 
   describe('constructor', () => {
     it('should initialize with empty imagesWithoutAltText array', () => {
-      expect(auditEngine.auditedTags).to.deep.equal({
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags).to.deep.equal({
         imagesWithoutAltText: [],
       });
     });
@@ -96,8 +102,8 @@ describe('AuditEngine', () => {
 
       auditEngine.performPageAudit(pageUrl, pageTags);
 
-      expect(logStub.warn).to.have.been.calledWith(
-        'No images found for page /no-images',
+      expect(logStub.debug).to.have.been.calledWith(
+        `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: No images found for page /no-images`,
       );
       expect(
         auditEngine.getAuditedTags().imagesWithoutAltText,
@@ -109,8 +115,8 @@ describe('AuditEngine', () => {
 
       auditEngine.performPageAudit(pageUrl, null);
 
-      expect(logStub.warn).to.have.been.calledWith(
-        'No images found for page /null-tags',
+      expect(logStub.debug).to.have.been.calledWith(
+        `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: No images found for page /null-tags`,
       );
       expect(
         auditEngine.getAuditedTags().imagesWithoutAltText,
@@ -125,8 +131,8 @@ describe('AuditEngine', () => {
 
       auditEngine.performPageAudit(pageUrl, pageTags);
 
-      expect(logStub.warn).to.have.been.calledWith(
-        'No images found for page /invalid-images',
+      expect(logStub.debug).to.have.been.calledWith(
+        `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: No images found for page /invalid-images`,
       );
       expect(
         auditEngine.getAuditedTags().imagesWithoutAltText,
@@ -146,9 +152,8 @@ describe('AuditEngine', () => {
 
       auditEngine.performPageAudit('/test', pageTags);
       auditEngine.finalizeAudit();
-
       expect(logStub.info).to.have.been.calledWith(
-        'Found 2 images without alt text',
+        `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Found 2 images without alt text`,
       );
     });
 
@@ -164,7 +169,7 @@ describe('AuditEngine', () => {
       auditEngine.finalizeAudit();
 
       expect(logStub.info).to.have.been.calledWith(
-        'Found 0 images without alt text',
+        `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Found 0 images without alt text`,
       );
     });
   });
@@ -190,6 +195,212 @@ describe('AuditEngine', () => {
       const auditedTags = auditEngine.getAuditedTags();
 
       expect(auditedTags.imagesWithoutAltText).to.be.an('array').that.is.empty;
+    });
+  });
+
+  describe('filterImages', () => {
+    beforeEach(() => {
+      tracingFetchStub = sinon.stub(global, 'fetch');
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should retain images with supported formats', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.jpg', alt: '' },
+          { src: 'image2.png', alt: '' },
+          { src: 'image3.gif', alt: '' },
+        ],
+      };
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages();
+
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(3);
+    });
+
+    it('should convert and retain unique blobs for supported blob formats', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.tiff', alt: '' },
+          { src: 'image2.bmp', alt: '' },
+          { src: 'image3.svg', alt: '' }],
+      };
+
+      function createRandomArrayBuffer(size) {
+        const array = new Uint8Array(size);
+        for (let i = 0; i < size; i += 1) {
+          array[i] = Math.floor(Math.random() * 256); // Random value between 0 and 255
+        }
+        return array.buffer;
+      }
+
+      tracingFetchStub.resolves({
+        ok: true,
+        arrayBuffer: async () => createRandomArrayBuffer(256),
+        headers: {
+          get: sinon.stub().returns('256'),
+        },
+      });
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
+
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(3);
+      expect(auditedTags.imagesWithoutAltText[0].blob).to.exist;
+    });
+
+    it('should filter out duplicate blobs', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.svg', alt: '' },
+          { src: 'image2.svg', alt: '' },
+        ],
+      };
+
+      tracingFetchStub.resolves({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(8),
+        headers: {
+          get: sinon.stub().returns('256'),
+        },
+      });
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
+
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(1);
+    });
+
+    it('should filter out images that are too large', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.svg', alt: '' },
+          { src: 'image2.svg', alt: '' },
+        ],
+      };
+
+      tracingFetchStub.resolves({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(8),
+        headers: {
+          get: sinon.stub().returns(130 * 1024),
+        },
+      });
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
+
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+    });
+
+    it('should filter out blobs that are too large', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.svg', alt: '' },
+          { src: 'image2.svg', alt: '' },
+        ],
+      };
+
+      tracingFetchStub.resolves({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(130000),
+        headers: {
+          get: sinon.stub().returns(1024),
+        },
+      });
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
+
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+    });
+
+    it('should handle bad response from tracingFetch', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.svg', alt: '' },
+        ],
+      };
+
+      tracingFetchStub.resolves({
+        ok: false,
+        arrayBuffer: async () => new ArrayBuffer(8),
+      });
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
+
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+      expect(logStub.error).to.have.been.calledWithMatch(`[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Error downloading blob for image1.svg:`);
+    });
+
+    it('should handle tracingFetch errors gracefully', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.svg', alt: '' },
+        ],
+      };
+
+      tracingFetchStub.rejects(new Error('Network error'));
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages();
+
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+      expect(logStub.error).to.have.been.calledWithMatch(
+        `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Error downloading blob for image1.svg:`,
+      );
+    });
+
+    it('should not retain images with unsupported formats', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.unsupported', alt: '' },
+        ],
+      };
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages();
+
+      const auditedTags = auditEngine.getAuditedTags();
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+    });
+
+    it('should handle bad input', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { someparam: 'image1.svg', alt: '' },
+          { src: 'image2.svg', alt: '' },
+        ],
+      };
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      auditEngine.auditedTags.imagesWithoutAltText = {};
+      await auditEngine.filterImages();
+
+      expect(logStub.error).to.have.been.calledWithMatch(
+        `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Error processing images for base64 conversion`,
+      );
     });
   });
 });

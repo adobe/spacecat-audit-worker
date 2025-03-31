@@ -12,6 +12,7 @@
 
 import { filterForms, generateOpptyDataForHighPageViewsLowFormNav } from './utils.js';
 
+const formPathSegments = ['contact', 'newsletter', 'sign', 'enrol', 'subscribe', 'register', 'join', 'apply', 'quote', 'buy', 'trial', 'demo', 'offer'];
 /**
  * @param auditUrl - The URL of the audit
  * @param auditData - The audit data containing the audit result and additional details.
@@ -25,28 +26,39 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
   // eslint-disable-next-line no-param-reassign
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
   log.info(`Syncing high page views low form nav opportunity for ${auditData.siteId}`);
-  let highPageViewsLowFormNavOppty;
+  let opportunities;
 
   try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
-    highPageViewsLowFormNavOppty = opportunities.find((oppty) => oppty.getType() === 'high-page-views-low-form-nav');
+    opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
-  log.info(`Fetching existing high-page-views-low-form-nav opportunities for siteId ${JSON.stringify(highPageViewsLowFormNavOppty, null, 2)}`);
   const { formVitals } = auditData.auditResult;
-  const formOpportunities = generateOpptyDataForHighPageViewsLowFormNav(formVitals);
-  log.debug(`forms opportunities high page views low form navigation ${JSON.stringify(formOpportunities, null, 2)}`);
-  const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
-  log.info(`filtered opportunties for form for high page views low form navigation ${JSON.stringify(filteredOpportunities, null, 2)}`);
+  // eslint-disable-next-line max-len
+  const formOpportunities = await generateOpptyDataForHighPageViewsLowFormNav(formVitals, context);
+  log.debug(`forms opportunities high-page-views-low-form-navigations: ${JSON.stringify(formOpportunities, null, 2)}`);
+
+  // for opportunity type high page views low form navigation
+  // excluding opportunities whose cta page has search in it.
+  // eslint-disable-next-line max-len
+  const filteredOpportunitiesByNavigation = formOpportunities.filter((opportunity) => formPathSegments.some((substring) => opportunity.form?.includes(substring)
+    && !opportunity.formNavigation?.url?.includes('search')));
+
+  const filteredOpportunities = filterForms(filteredOpportunitiesByNavigation, scrapedData, log);
+  log.info(`filtered opportunities: high-page-views-low-form-navigations:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
     for (const opptyData of filteredOpportunities) {
+      let highPageViewsLowFormNavOppty = opportunities.find(
+        (oppty) => oppty.getType() === 'high-page-views-low-form-nav'
+              && oppty.getData().form === opptyData.form,
+      );
+
       const opportunityData = {
         siteId: auditData.siteId,
-        auditId: auditData.id,
+        auditId: auditData.auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
         type: 'high-page-views-low-form-nav',
         origin: 'AUTOMATION',
@@ -56,6 +68,16 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         data: {
           ...opptyData,
         },
+        guidance: {
+          recommendations: [
+            {
+              insight: `The CTA element in the page: ${opptyData?.formNavigation?.url} is not placed in the most optimal positions for visibility and engagement`,
+              recommendation: 'Reposition the CTA to be more centrally located and ensure they are above the fold.',
+              type: 'guidance',
+              rationale: 'CTAs placed above the fold and in central positions are more likely to be seen and clicked by users, leading to higher engagement rates.',
+            },
+          ],
+        },
       };
 
       log.info(`Forms Opportunity created high page views low form nav ${JSON.stringify(opportunityData, null, 2)}`);
@@ -63,11 +85,12 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
       } else {
-        highPageViewsLowFormNavOppty.setAuditId(auditData.siteId);
+        highPageViewsLowFormNavOppty.setAuditId(auditData.auditId);
         highPageViewsLowFormNavOppty.setData({
           ...highPageViewsLowFormNavOppty.getData(),
           ...opportunityData.data,
         });
+        highPageViewsLowFormNavOppty.setGuidance(opportunityData.guidance);
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormNavOppty.save();
       }
