@@ -23,6 +23,17 @@ import { noopUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
+
+const isImagePresentational = (img) => {
+  const isHiddenForScreenReader = img.getAttribute('aria-hidden') === 'true';
+  const hasRolePresentation = img.getAttribute('role') === 'presentation';
+  const hasAltAttribute = img.hasAttribute('alt');
+  // For presentational images, an image MUST have the alt attribute WITH a falsy value
+  // Not having it at all is not the same, the image is not considered presentational
+  const isAltEmpty = hasAltAttribute && !img.getAttribute('alt');
+  return isHiddenForScreenReader || hasRolePresentation || isAltEmpty;
+};
+
 export async function fetchAndProcessPageObject(
   s3Client,
   bucketName,
@@ -40,6 +51,7 @@ export async function fetchAndProcessPageObject(
   const dom = new JSDOM(object.scrapeResult.rawBody);
   const imageElements = dom.window.document.getElementsByTagName('img');
   const images = Array.from(imageElements).map((img) => ({
+    isPresentational: isImagePresentational(img),
     src: img.getAttribute('src'),
     alt: img.getAttribute('alt'),
   })).filter((img) => img.src);
