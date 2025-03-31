@@ -209,29 +209,23 @@ export async function filterValidUrls(urls) {
             || finalUrl.includes('404.html')
             || finalUrl.includes('/errors/404/');
 
-          // Extract the base URL to use as homepage suggestion if needed
-          const homeUrl = new URL(url);
-          homeUrl.pathname = '/';
+          const originalUrl = new URL(url);
+          const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
 
           return {
             status: NOT_OK,
             url,
             statusCode: response.status,
             finalUrl: redirectResponse.url,
-            // Only suggest the homepage for redirects that lead to 404 pages
-            urlsSuggested: is404 ? homeUrl.toString() : redirectResponse.url,
+            urlsSuggested: is404 ? homepageUrl : finalUrl,
           };
         } catch {
-          // In case of error following the redirect, still suggest the homepage
-          const homeUrl = new URL(url);
-          homeUrl.pathname = '/';
-
           return {
             status: NOT_OK,
             url,
             statusCode: response.status,
             finalUrl,
-            urlsSuggested: homeUrl.toString(),
+            urlsSuggested: finalUrl,
           };
         }
       }

@@ -1169,6 +1169,64 @@ describe('filterValidUrls with redirect handling', () => {
     ]);
   });
 
+  it('should suggest homepage URL for redirects to 404 status pages', async () => {
+    const urls = [
+      'https://example.com/redirect-to-404',
+      'https://example.com/redirect-to-200',
+      'https://example.com/redirect-to-404-custom-path',
+      'https://subdomain.example.com/redirect-to-404',
+    ];
+
+    // Redirect to a page that returns 404
+    nock('https://example.com')
+      .head('/redirect-to-404')
+      .reply(301, '', { Location: 'https://example.com/not-found' });
+    nock('https://example.com').head('/not-found').reply(404);
+
+    // Redirect to a page that returns 200
+    nock('https://example.com')
+      .head('/redirect-to-200')
+      .reply(302, '', { Location: 'https://example.com/valid-page' });
+    nock('https://example.com').head('/valid-page').reply(200);
+
+    // Redirect to a URL that contains '404.html' in the path
+    nock('https://example.com')
+      .head('/redirect-to-404-custom-path')
+      .reply(301, '', { Location: 'https://example.com/errors/404.html' });
+    nock('https://example.com').head('/errors/404.html').reply(200); // Even with 200 response, path detection should work
+
+    // Test with subdomain
+    nock('https://subdomain.example.com')
+      .head('/redirect-to-404')
+      .reply(302, '', { Location: 'https://subdomain.example.com/not-found' });
+    nock('https://subdomain.example.com').head('/not-found').reply(404);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect-to-404',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com',
+      },
+      {
+        url: 'https://example.com/redirect-to-200',
+        statusCode: 302,
+        urlsSuggested: 'https://example.com/valid-page',
+      },
+      {
+        url: 'https://example.com/redirect-to-404-custom-path',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com',
+      },
+      {
+        url: 'https://subdomain.example.com/redirect-to-404',
+        statusCode: 302,
+        urlsSuggested: 'https://subdomain.example.com',
+      },
+    ]);
+  });
+
   it('should handle failed redirect follows', async () => {
     const urls = ['https://example.com/broken-redirect'];
 
