@@ -9,17 +9,24 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
+/* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
+
 const DAYS = 7;
 
+const HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE = 'high-organic-low-ctr';
+const RAGECLICK_OPPTY_TYPE = 'rageclick';
+const HIGH_INORGANIC_HIGH_BOUNCE_RATE_OPPTY_TYPE = 'high-inorganic-high-bounce-rate';
+
 const OPPTY_QUERIES = [
-  'rageclick',
-  'high-inorganic-high-bounce-rate',
-  'high-organic-low-ctr',
+  RAGECLICK_OPPTY_TYPE,
+  HIGH_INORGANIC_HIGH_BOUNCE_RATE_OPPTY_TYPE,
+  HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
 ];
 
 function getRageClickOpportunityImpact(oppty) {
@@ -39,33 +46,43 @@ function processRageClickOpportunities(opportunities) {
     });
 }
 
-export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
-  const { log, sqs, env } = context;
-  const { auditResult, isError = false } = auditData;
+export async function generateOpportunityAndSuggestions(context) {
+  const {
+    log, sqs, env, site, audit, finalUrl,
+  } = context;
+  const { auditResult, isError = false } = audit;
+  console.log(`auditId: ${audit.id}`);
   if (isError) {
-    log.error(`Experimentation opportunities audit failed for ${auditUrl}. AuditRef: ${auditResult.fullAuditRef}`);
+    log.error(`Experimentation opportunities audit failed for ${finalUrl}. AuditRef: ${auditResult.fullAuditRef}`);
     return;
   }
 
-  const messages = auditResult.experimentationOpportunities?.filter((oppty) => oppty.type === 'high-organic-low-ctr')
-    .map((oppty) => ({
-      type: 'guidance:high-organic-low-ctr',
-      siteId: auditData.siteId,
-      auditId: auditData.id,
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      data: {
-        url: oppty.page,
-        ctr: oppty.trackedPageKPIValue,
-        siteAgerageCtr: oppty.trackedKPISiteAverage,
-      },
-    }));
+  const messages = auditResult.experimentationOpportunities?.filter(
+    (oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+  ).map((oppty) => ({
+    type: 'guidance:high-organic-low-ctr',
+    siteId: site.getId(),
+    auditId: audit.id,
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      url: oppty.page,
+      ctr: oppty.trackedPageKPIValue,
+      siteAgerageCtr: oppty.trackedKPISiteAverage,
+    },
+  }));
 
   for (const message of messages) {
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(`Message sent: ${JSON.stringify(message)}`);
   }
+}
+
+function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
+  return experimentationOpportunities.filter(
+    (oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+  ).map((oppty) => oppty.page);
 }
 
 /**
@@ -76,31 +93,61 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
  * @returns
  */
 
-export async function handler(auditUrl, context) {
-  const { log } = context;
+export async function detectAndScrapeStep(context) {
+  const { site, log, finalUrl } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
-    domain: auditUrl,
+    domain: finalUrl,
     interval: DAYS,
     granularity: 'hourly',
   };
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   await processRageClickOpportunities(experimentationOpportunities);
-  log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
+  log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${finalUrl}`);
 
   return {
     auditResult: {
       experimentationOpportunities,
     },
-    fullAuditRef: auditUrl,
+    fullAuditRef: finalUrl,
+    jobId: site.getId(),
+    urls: getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities).map((url) => ({ url })),
+    siteId: site.getId(),
+  };
+}
+
+function organicKeywordsStep(context) {
+  const {
+    site, log, finalUrl, audit,
+  } = context;
+  const urls = getHighOrganicLowCtrOpportunityUrls(audit.experimentationOpportunities);
+  log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
+  return {
+    type: 'organic-keywords',
+    siteId: site.getId(),
+    // TODO: change to all urls, after support is added to the organic-keywords importter
+    pageUrl: urls?.[0],
+  };
+}
+
+function importAllTrafficStep(context) {
+  const {
+    site, log, finalUrl,
+  } = context;
+  log.info(`Import all traffic step for ${finalUrl}`);
+  return {
+    type: 'all-traffic',
+    siteId: site.getId(),
   };
 }
 
 export default new AuditBuilder()
-  .withRunner(handler)
   .withUrlResolver(wwwUrlResolver)
-  .withPostProcessors([opportunityAndSuggestions])
-  .withMessageSender(() => true)
+  .addStep('detectAndScrapeStep', detectAndScrapeStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('organicKeywordsStep', organicKeywordsStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('importAllTrafficStep', importAllTrafficStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('generateOpportunityAndSuggestions', generateOpportunityAndSuggestions)
   .build();
+/* c8 ignore end */
