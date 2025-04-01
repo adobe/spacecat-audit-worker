@@ -24,6 +24,7 @@ import gscExample1 from '../fixtures/structured-data/gsc-example1.json' with { t
 import gscExample2 from '../fixtures/structured-data/gsc-example2.json' with { type: 'json' };
 import gscExample3 from '../fixtures/structured-data/gsc-example3.json' with { type: 'json' };
 import gscExample4 from '../fixtures/structured-data/gsc-example4.json' with { type: 'json' };
+import gscExample5 from '../fixtures/structured-data/gsc-example5.json' with { type: 'json' };
 
 import expectedOppty from '../fixtures/structured-data/oppty.json' with { type: 'json' };
 
@@ -322,6 +323,68 @@ describe('Structured Data Audit', () => {
     expect(result.auditResult.length).to.equal(2);
   });
 
+  it('filters out duplicate issue entries', async () => {
+    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
+    urlInspectStub.resolves(gscExample5);
+
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([
+      createPageStub('https://example.com/product/1'),
+    ]);
+
+    const result = await structuredDataHandler(baseUrl, context, siteStub);
+    expect(urlInspectStub).to.have.been.calledOnce;
+    expect(result.auditResult).to.deep.equal([
+      {
+        inspectionUrl: 'https://example.com/product/1',
+        indexStatusResult: {
+          verdict: 'PASS',
+          lastCrawlTime: '2024-08-13T22:35:22Z',
+        },
+        richResults: {
+          verdict: 'FAIL',
+          detectedItemTypes: [
+            'Review snippets',
+            'Product snippets',
+          ],
+          detectedIssues: [
+            {
+              richResultType: 'Review snippets',
+              items: [
+                {
+                  name: 'Unnamed item',
+                  issues: [
+                    {
+                      issueMessage: 'Missing field "itemReviewed"',
+                      severity: 'ERROR',
+                    },
+                    {
+                      issueMessage: 'Missing field "author"',
+                      severity: 'ERROR',
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              richResultType: 'Product snippets',
+              items: [
+                {
+                  name: 'Unnamed item',
+                  issues: [
+                    {
+                      issueMessage: 'Missing field "name"',
+                      severity: 'ERROR',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
   it('skips generating suggestions if audit failed', async () => {
     const auditData = {
       fullAuditRef: baseUrl,
@@ -381,7 +444,7 @@ describe('Structured Data Audit', () => {
     const result = await generateSuggestionsData(baseUrl, auditData, context, siteStub);
     expect(result).to.deep.equal(auditData);
 
-    expect(context.log.error).to.have.been.calledWith('Could not find entity mapping for issue of type Something random');
+    expect(context.log.error).to.have.been.calledWith('Could not find entity mapping for issue of type Something random for URL https://example.com/product/1');
   });
 
   it('skips issue if entity cannot be found in structured data', async () => {
@@ -397,7 +460,7 @@ describe('Structured Data Audit', () => {
     const result = await generateSuggestionsData(baseUrl, auditData, context, siteStub);
     expect(result).to.deep.equal(auditData);
 
-    expect(context.log.error).to.have.been.calledWith('Could not find structured data for issue of type Product');
+    expect(context.log.error).to.have.been.calledWith('Could not find structured data for issue of type Product for URL https://example.com/product/1');
   });
 
   it('skips issue if Firefall does not return a suggestion', async () => {
@@ -414,7 +477,7 @@ describe('Structured Data Audit', () => {
 
     const result = await generateSuggestionsData(baseUrl, auditData, context, siteStub);
     expect(result).to.deep.equal(auditData);
-    expect(context.log.error).to.have.been.calledWith('Could not create suggestion because Firefall did not return any suggestions for issue of type Product snippets');
+    expect(context.log.error).to.have.been.calledWith('Could not create suggestion because Firefall did not return any suggestions for issue of type Product snippets for URL https://example.com/product/1');
   });
 
   it('skips issue if Firefall response cannot be parsed', async () => {
@@ -436,7 +499,7 @@ describe('Structured Data Audit', () => {
 
     const result = await generateSuggestionsData(baseUrl, auditData, context, siteStub);
     expect(result).to.deep.equal(auditData);
-    expect(context.log.error).to.have.been.calledWith('Could not parse Firefall response for issue of type Product snippets');
+    expect(context.log.error).to.have.been.calledWith('Could not parse Firefall response for issue of type Product snippets for URL https://example.com/product/1');
   });
 
   it('skips issue if Firefall confidence score is below 60%', async () => {
@@ -459,7 +522,41 @@ describe('Structured Data Audit', () => {
 
     const result = await generateSuggestionsData(baseUrl, auditData, context, siteStub);
     expect(result).to.deep.equal(auditData);
-    expect(context.log.error).to.have.been.calledWith('Confidence score too low, skip suggestion of type Product snippets');
+    expect(context.log.error).to.have.been.calledWith('Confidence score too low, skip suggestion of type Product snippets for URL https://example.com/product/1');
+  });
+
+  it('skips generating suggestions once more than 50 Firefall requests have been made', async () => {
+    const auditData = createAuditData(baseUrl, 'Product snippets', 'Missing field "name"');
+    // Duplicate audit result entries 51 times and change issue message
+    auditData.auditResult = Array
+      .from({ length: 51 }, () => structuredClone(auditData.auditResult[0]));
+    auditData.auditResult = auditData.auditResult
+      .map((result, index) => {
+        // eslint-disable-next-line no-param-reassign
+        result.richResults.detectedIssues[0].items[0].issues[0].issueMessage = `Missing field "name" ${index}`;
+        return result;
+      });
+
+    const suggestion = {
+      errorDescription: 'Missing field "name"',
+      correctedLdjson: '{"@type":"Product","name":"Example Product Name"}',
+      aiRationale: 'The product name is missing.',
+      confidenceScore: 0.95,
+    };
+    firefallClientStub.fetchChatCompletion.resolves(createFirefallSuggestion(suggestion));
+    s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
+      scrapeResult: {
+        rawBody: '<main></main>',
+        structuredData: [{
+          '@type': 'Product',
+        }],
+      },
+    })));
+
+    const result = await generateSuggestionsData(baseUrl, auditData, context, siteStub);
+    // Should still get all 51 results
+    expect(result.auditResult.length).to.equal(51);
+    expect(context.log.error).to.have.been.calledWith('Aborting suggestion generation as more than 50 Firefall requests have been used.');
   });
 
   it('generates suggestion for a Product', async () => {
@@ -482,6 +579,37 @@ describe('Structured Data Audit', () => {
 
     const result = await generateSuggestionsData(baseUrl, auditData, context, siteStub);
     expect(result).to.deep.equal(createAuditData(baseUrl, 'Product snippets', 'Missing field "name"', suggestion));
+  });
+
+  it('re-uses existing suggestions for the same issue', async () => {
+    const auditData = createAuditData(baseUrl, 'Product snippets', 'Missing field "name"');
+    // Duplicate same issue
+    auditData.auditResult = Array
+      .from({ length: 2 }, () => structuredClone(auditData.auditResult[0]));
+
+    const suggestion = {
+      errorDescription: 'Missing field "name"',
+      correctedLdjson: '{"@type":"Product","name":"Example Product Name"}',
+      aiRationale: 'The product name is missing.',
+      confidenceScore: 0.95,
+    };
+    firefallClientStub.fetchChatCompletion.resolves(createFirefallSuggestion(suggestion));
+    s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
+      scrapeResult: {
+        rawBody: '<main></main>',
+        structuredData: [{
+          '@type': 'Product',
+        }],
+      },
+    })));
+
+    const result = await generateSuggestionsData(baseUrl, auditData, context, siteStub);
+    expect(context.log.info).to.have.been.calledWith('Re-use existing suggestion for type Product snippets and URL https://example.com/product/1');
+
+    const expectedAuditData = createAuditData(baseUrl, 'Product snippets', 'Missing field "name"', suggestion);
+    expectedAuditData.auditResult = Array
+      .from({ length: 2 }, () => structuredClone(expectedAuditData.auditResult[0]));
+    expect(result).to.deep.equal(expectedAuditData);
   });
 
   it('calls Firefall with AggregateRating structured data', async () => {
