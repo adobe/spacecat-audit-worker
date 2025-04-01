@@ -69,12 +69,18 @@ export async function prepareScrapingStep(context) {
 
 export async function processAltTextAuditStep(context) {
   const {
-    site, log, finalUrl, s3Client, audit,
+    log, finalUrl, s3Client, audit,
   } = context;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-  const prefix = `scrapes/${site.getId()}/`;
 
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] processing scraped content`);
+  // Temporary workaround to get the siteId from the audit
+  const auditId = audit.getId() || context.auditId;
+  const siteId = AuditModel.findById(auditId).getSite();
+  log.info(`[${AUDIT_TYPE}] [AuditId: ${auditId}] [Site Id: ${siteId}]`);
+
+  const prefix = `scrapes/${siteId}/`;
+
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] processing scraped content`);
 
   const scrapedObjectKeys = await getObjectKeysUsingPrefix(
     s3Client,
@@ -84,10 +90,10 @@ export async function processAltTextAuditStep(context) {
   );
 
   if (scrapedObjectKeys.length === 0) {
-    log.error(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] no scraped content found, cannot proceed with audit`);
+    log.error(`[${AUDIT_TYPE}] [Site Id: ${siteId}] no scraped content found, cannot proceed with audit`);
   }
 
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] found ${scrapedObjectKeys.length} scraped pages to analyze`);
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] found ${scrapedObjectKeys.length} scraped pages to analyze`);
 
   const extractedTags = {};
   const pageAuditResults = await Promise.all(
@@ -120,11 +126,11 @@ export async function processAltTextAuditStep(context) {
   const detectedTags = auditEngine.getAuditedTags();
 
   // Process opportunity
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] processing opportunity`);
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] processing opportunity`);
   const auditResult = audit.getAuditResult();
 
   await convertToOpportunity(finalUrl, auditResult, context);
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] opportunity identified`);
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] opportunity identified`);
 
   return {
     detectedTags,
