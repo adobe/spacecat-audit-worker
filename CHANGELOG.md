@@ -1,3 +1,29 @@
+# [1.70.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.69.0...v1.70.0) (2025-03-31)
+
+
+### Bug Fixes
+
+* forms screenshot url expiration ([#764](https://github.com/adobe/spacecat-audit-worker/issues/764)) ([f03487d](https://github.com/adobe/spacecat-audit-worker/commit/f03487d0dedeab2d6d0854b98f5bf79ff6fc4b10))
+
+
+### Features
+
+* modifying criteria to exclude login and signup forms for forms oppty ([#770](https://github.com/adobe/spacecat-audit-worker/issues/770)) ([d021dcd](https://github.com/adobe/spacecat-audit-worker/commit/d021dcda4dad003f6f750260e3036eec0eb14234))
+
+# [1.69.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.17...v1.69.0) (2025-03-31)
+
+
+### Features
+
+* add presentational check when extracting images ([#765](https://github.com/adobe/spacecat-audit-worker/issues/765)) ([5a072d0](https://github.com/adobe/spacecat-audit-worker/commit/5a072d087fcca18d9756fbf46e4173b99cfa98e3))
+
+## [1.68.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.16...v1.68.17) (2025-03-31)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#772](https://github.com/adobe/spacecat-audit-worker/issues/772)) ([139bece](https://github.com/adobe/spacecat-audit-worker/commit/139bece6a7311f40a1e8ee816343b5539b72c856))
+
 ## [1.68.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.68.15...v1.68.16) (2025-03-13)
 
 

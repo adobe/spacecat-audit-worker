@@ -16,7 +16,7 @@ import {
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-const EXPIRY_IN_SECONDS = 3600 * 24;
+const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
 const DAILY_PAGEVIEW_THRESHOLD = 200;
 const CR_THRESHOLD_RATIO = 0.3;
 const MOBILE = 'mobile';
@@ -182,9 +182,9 @@ export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, co
   );
 }
 
-export function isSearchForm(scrapedFormData) {
+export function shouldExcludeForm(scrapedFormData) {
   return scrapedFormData?.formType === 'search'
-    || scrapedFormData?.classList?.includes('search')
+    || scrapedFormData?.formType === 'login'
     || scrapedFormData?.classList?.includes('unsubscribe')
     || scrapedFormData?.action?.endsWith('search.html')
     || (scrapedFormData?.fieldsLabels && isNonEmptyArray(scrapedFormData.fieldsLabels) && scrapedFormData.fieldsLabels.every((label) => label.toLowerCase().includes('search')));
@@ -210,7 +210,7 @@ export function filterForms(formOpportunities, scrapedData, log) {
 
         if (formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
           urlMatches = true;
-          const nonSearchForms = form.scrapeResult.filter((sr) => !isSearchForm(sr));
+          const nonSearchForms = form.scrapeResult.filter((sr) => !shouldExcludeForm(sr));
           if (urlMatches && nonSearchForms.length === 0) {
             log.debug(`Filtered out search form: ${opportunity?.form}`);
             return false;
