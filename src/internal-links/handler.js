@@ -15,47 +15,20 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { syncSuggestions } from '../utils/data-access.js';
-import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
-import { generateSuggestionData } from './suggestions-generator.js';
-import { calculateKpiDeltasForAudit, isLinkInaccessible } from './helpers.js';
+import { getTopPagesForSiteId } from '../canonical/handler.js';
+// import { syncSuggestions } from '../utils/data-access.js';
+// import { convertToOpportunity } from '../common/opportunity.js';
+// import { createOpportunityData } from './opportunity-data-mapper.js';
+// import { generateSuggestionData } from './suggestions-generator.js';
+import {
+  // calculateKpiDeltasForAudit,
+  isLinkInaccessible,
+  calculatePriority,
+} from './helpers.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
-const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-
-/**
- * Classifies links into priority categories based on views
- * High: top 25%, Medium: next 25%, Low: bottom 50%
- * @param {Array} links - Array of objects with views property
- * @returns {Array} - Links with priority classifications included
- */
-function calculatePriority(links) {
-  // Sort links by views in descending order
-  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
-
-  // Calculate indices for the 25% and 50% marks
-  const quarterIndex = Math.ceil(sortedLinks.length * 0.25);
-  const halfIndex = Math.ceil(sortedLinks.length * 0.5);
-
-  // Map through sorted links and assign priority
-  return sortedLinks.map((link, index) => {
-    let priority;
-
-    if (index < quarterIndex) {
-      priority = 'high';
-    } else if (index < halfIndex) {
-      priority = 'medium';
-    } else {
-      priority = 'low';
-    }
-
-    return {
-      ...link,
-      priority,
-    };
-  });
-}
+const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
  * Perform an audit to check which internal links for domain are broken.
@@ -67,7 +40,7 @@ function calculatePriority(links) {
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
 export async function internalLinksAuditRunner(auditUrl, context) {
-  const { log } = context;
+  const { log, site } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -78,9 +51,15 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     granularity: 'hourly',
   };
 
-  log.info(`broken-internal-links audit: ${auditType}: Options for RUM call: `, JSON.stringify(options));
+  log.info(
+    `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] Options for RUM call: `,
+    JSON.stringify(options),
+  );
 
-  const internal404Links = await rumAPIClient.query('404-internal-links', options);
+  const internal404Links = await rumAPIClient.query(
+    '404-internal-links',
+    options,
+  );
   const transformedLinks = internal404Links.map((link) => ({
     urlFrom: link.url_from,
     urlTo: link.url_to,
@@ -106,46 +85,116 @@ export async function internalLinksAuditRunner(auditUrl, context) {
   };
 }
 
-export async function opportunityAndSuggestions(auditUrl, auditData, context) {
-  const kpiDeltas = calculateKpiDeltasForAudit(auditData);
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
+export async function runAuditAndImportTopPagesStep(context) {
+  const { site, log, finalUrl } = context;
+
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] starting audit`);
+  const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
+    finalUrl,
     context,
-    createOpportunityData,
-    auditType,
-    {
-      kpiDeltas,
-    },
   );
-  const { log } = context;
 
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  // const uniqueUrls = new Set();
+  const result = {
+    auditResult: internalLinksAuditRunnerResult.auditResult,
+    fullAuditRef: internalLinksAuditRunnerResult.fullAuditRef,
+    type: 'top-pages',
+    siteId: site.getId(),
+    jobId: site.getId(),
+  };
 
-  await syncSuggestions({
-    opportunity,
-    newData: auditData?.auditResult?.brokenInternalLinks,
-    context,
-    buildKey,
-    mapNewSuggestion: (entry) => ({
-      opportunityId: opportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
-        trafficDomain: entry.trafficDomain,
-      },
-    }),
-    log,
-  });
+  log.info(
+    `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] finished audit, now scraping top urls`,
+  );
+  return result;
+}
+
+export async function prepareScrapingStep(context) {
+  const {
+    site, log, dataAccess,
+  } = context;
+
+  // fetch top pages for site
+  const topPages = await getTopPagesForSiteId(dataAccess, site.getId(), context, log);
+
+  log.info(
+    `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`,
+  );
+
+  return {
+    processingType: 'broken-internal-links',
+    jobId: site.getId(),
+    urls: topPages.map((page) => ({ url: page.url })),
+    siteId: site.getId(),
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function opportunityAndSuggestionsStep(context) {
+  // const {
+  //   log, site, finalUrl,
+  // } = context;
+  // log.info(`broken-internal-links audit: [Site Id: ${site.getId()}] starting audit`);
+  // const internalLinksAuditRunnerResult = await internalLinksAuditRunner(finalUrl, context);
+  // const kpiDeltas = calculateKpiDeltasForAudit(auditData);
+  // const opportunity = await convertToOpportunity(
+  //   auditUrl,
+  //   auditData,
+  //   context,
+  //   createOpportunityData,
+  //   auditType,
+  //   {
+  //     kpiDeltas,
+  //   },
+  // );
+  // // const { log } = context;
+  // const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  // await syncSuggestions({
+  //   opportunity,
+  //   newData: auditData?.auditResult?.brokenInternalLinks,
+  //   context,
+  //   buildKey,
+  //   mapNewSuggestion: (entry) => ({
+  //     opportunityId: opportunity.getId(),
+  //     type: 'CONTENT_UPDATE',
+  //     rank: entry.trafficDomain,
+  //     data: {
+  //       title: entry.title,
+  //       urlFrom: entry.urlFrom,
+  //       urlTo: entry.urlTo,
+  //       urlsSuggested: entry.urlsSuggested || [],
+  //       aiRationale: entry.aiRationale || '',
+  //       trafficDomain: entry.trafficDomain,
+  //     },
+  //   }),
+  //   log,
+  // });
+}
+
+export async function processImportStep(context) {
+  const { site } = context;
+
+  return {
+    auditResult: { status: 'preparing' },
+    fullAuditRef: `scrapes/${site.getId()}/`,
+    type: 'top-pages',
+    siteId: site.getId(),
+  };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .withRunner(internalLinksAuditRunner)
-  .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
+  .addStep(
+    'runAuditAndImportTopPages',
+    runAuditAndImportTopPagesStep,
+    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  )
+  .addStep(
+    'processImport',
+    processImportStep,
+    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
+  )
+  .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
+  // .withRunner(internalLinksAuditRunner)
+  // .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
   .build();
