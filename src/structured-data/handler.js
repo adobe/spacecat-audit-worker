@@ -28,9 +28,6 @@ import { generatePlainHtml, getScrapeForPath } from '../support/utils.js';
 const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 const auditAutoSuggestType = Audit.AUDIT_TYPES.STRUCTURED_DATA_AUTO_SUGGEST;
 
-// Limit to avoid excessive Firefall requests. Can be increased if needed.
-const FIREFALL_REQUEST_LIMIT = 50;
-
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
  *
@@ -277,6 +274,9 @@ export async function structuredDataHandler(baseURL, context, site) {
 export async function generateSuggestionsData(auditUrl, auditData, context, site) {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
+  const {
+    AUDIT_STRUCTURED_DATA_FIREFALL_REQ_LIMIT = 50,
+  } = context.env;
 
   // Check if audit was successful
   if (auditData.auditResult.success === false) {
@@ -309,9 +309,9 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
 
   // Go through audit results, one for each URL
   for (const auditResult of results) {
-    // Abort early if too many Firefall requests are used.
-    if (firefallRequests >= FIREFALL_REQUEST_LIMIT) {
-      log.error(`Aborting suggestion generation as more than ${FIREFALL_REQUEST_LIMIT} Firefall requests have been used.`);
+    // Limit to avoid excessive Firefall requests. Can be increased if needed.
+    if (firefallRequests >= parseInt(AUDIT_STRUCTURED_DATA_FIREFALL_REQ_LIMIT, 10)) {
+      log.error(`Aborting suggestion generation as more than ${AUDIT_STRUCTURED_DATA_FIREFALL_REQ_LIMIT} Firefall requests have been used.`);
       break;
     }
 
