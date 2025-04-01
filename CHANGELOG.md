@@ -1,3 +1,10 @@
+## [1.70.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.1...v1.70.2) (2025-04-01)
+
+
+### Bug Fixes
+
+* Group structured data issues before generating suggestions ([#760](https://github.com/adobe/spacecat-audit-worker/issues/760)) ([f1ee66b](https://github.com/adobe/spacecat-audit-worker/commit/f1ee66b3b254e20acbec3619f574b76096dd153d))
+
 ## [1.70.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.0...v1.70.1) (2025-04-01)
 
 
