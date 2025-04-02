@@ -23,6 +23,7 @@ import { noopUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
+const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 
 const isImagePresentational = (img) => {
   const isHiddenForScreenReader = img.getAttribute('aria-hidden') === 'true';
@@ -64,17 +65,46 @@ export async function fetchAndProcessPageObject(
   };
 }
 
-export async function auditImageAltTextRunner(baseURL, context, site) {
-  const { log, s3Client } = context;
-  // Fetch site's scraped content from S3
+export async function prepareScrapingStep(context) {
+  const { site, log, finalUrl } = context;
+
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`);
+
+  return {
+    processingType: 'alt-text', // TO-DO: Is this needed?
+    jobId: site.getId(),
+    urls: [{ url: finalUrl }],
+    siteId: site.getId(),
+  };
+}
+
+export async function processAltTextAuditStep(context) {
+  const {
+    log, finalUrl, s3Client, audit,
+  } = context;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-  const prefix = `scrapes/${site.getId()}/`;
+
+  // Temporary workaround to get the siteId from the audit
+  const auditId = audit.getId() || context.auditId;
+  const siteId = AuditModel.findById(auditId).getSite();
+  log.info(`[${AUDIT_TYPE}] [AuditId: ${auditId}] [Site Id: ${siteId}]`);
+
+  const prefix = `scrapes/${siteId}/`;
+
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] processing scraped content`);
+
   const scrapedObjectKeys = await getObjectKeysUsingPrefix(
     s3Client,
     bucketName,
     prefix,
     log,
   );
+
+  if (scrapedObjectKeys.length === 0) {
+    log.error(`[${AUDIT_TYPE}] [Site Id: ${siteId}] no scraped content found, cannot proceed with audit`);
+  }
+
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] found ${scrapedObjectKeys.length} scraped pages to analyze`);
 
   const extractedTags = {};
   const pageAuditResults = await Promise.all(
@@ -90,37 +120,54 @@ export async function auditImageAltTextRunner(baseURL, context, site) {
   });
   const extractedTagsCount = Object.entries(extractedTags).length;
   if (extractedTagsCount === 0) {
-    log.error(
-      `[${AUDIT_TYPE}]: Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`,
+    log.info(
+      `[${AUDIT_TYPE}]: Found no images with issues from the scraped content in bucket ${bucketName} with path ${prefix}`,
     );
   }
   log.info(
     `[${AUDIT_TYPE}]: Performing image alt text audit for ${extractedTagsCount} elements`,
   );
-  // Perform Image Alt Text audit
+
   const auditEngine = new AuditEngine(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
     auditEngine.performPageAudit(pageUrl, pageTags);
   }
-  await auditEngine.filterImages(baseURL, tracingFetch);
+  await auditEngine.filterImages(finalUrl, tracingFetch);
   auditEngine.finalizeAudit();
   const detectedTags = auditEngine.getAuditedTags();
 
-  const auditResult = {
+  // Process opportunity
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] processing opportunity`);
+  const auditResult = audit.getAuditResult();
+
+  await convertToOpportunity(finalUrl, auditResult, context);
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] opportunity identified`);
+
+  return {
     detectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: prefix,
-    finalUrl: baseURL,
+    finalUrl,
+    status: 'complete',
   };
+}
+
+export async function processImportStep(context) {
+  const { site } = context;
+
+  const s3BucketPath = `scrapes/${site.getId()}/`;
 
   return {
-    auditResult,
-    fullAuditRef: baseURL,
+    auditResult: { status: 'preparing' },
+    fullAuditRef: s3BucketPath,
+    type: 'top-pages',
+    siteId: site.getId(),
   };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .withRunner(auditImageAltTextRunner)
-  .withPostProcessors([convertToOpportunity])
+  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('prepareScraping', prepareScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('processAltTextAudit', processAltTextAuditStep)
   .build();
