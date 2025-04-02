@@ -11,85 +11,12 @@
  */
 
 import {
-  getHighPageViewsLowFormCtrMetrics, isNonEmptyArray,
+  getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics, isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-const EXPIRY_IN_SECONDS = 3600 * 24;
-const DAILY_PAGEVIEW_THRESHOLD = 200;
-const CR_THRESHOLD_RATIO = 0.3;
-const MOBILE = 'mobile';
-const DESKTOP = 'desktop';
-
-function hasHighPageViews(interval, pageViews) {
-  return pageViews > DAILY_PAGEVIEW_THRESHOLD * interval;
-}
-
-function hasLowerConversionRate(formSubmit, formViews) {
-  return formSubmit / formViews < CR_THRESHOLD_RATIO;
-}
-
-function getHighFormViewsLowConversion(interval, resultMap) {
-  const urls = [];
-  resultMap.forEach((metrics, url) => {
-    const pageViews = metrics.pageview.total;
-    // Default to pageViews if formViews are not available
-    const formViews = metrics.formview.total || pageViews;
-    const formEngagement = metrics.formengagement.total;
-    const formSubmit = metrics.formsubmit.total || formEngagement;
-
-    if (hasHighPageViews(interval, pageViews) && hasLowerConversionRate(formSubmit, formViews)) {
-      urls.push({
-        url,
-        pageViews,
-        formViews,
-        formEngagement,
-        formSubmit,
-      });
-    }
-  });
-  return urls;
-}
-
-function aggregateFormVitalsByDevice(formVitalsCollection) {
-  const resultMap = new Map();
-
-  formVitalsCollection.forEach((item) => {
-    const {
-      url, formview = {}, formengagement = {}, pageview = {}, formsubmit = {},
-    } = item;
-
-    const totals = {
-      formview: { total: 0, desktop: 0, mobile: 0 },
-      formengagement: { total: 0, desktop: 0, mobile: 0 },
-      pageview: { total: 0, desktop: 0, mobile: 0 },
-      formsubmit: { total: 0, desktop: 0, mobile: 0 },
-    };
-
-    const calculateSums = (metric, initialTarget) => {
-      const updatedTarget = { ...initialTarget }; // Create a new object to store the updated totals
-      Object.entries(metric).forEach(([key, value]) => {
-        updatedTarget.total += value;
-        if (key.startsWith(DESKTOP)) {
-          updatedTarget.desktop += value;
-        } else if (key.startsWith(MOBILE)) {
-          updatedTarget.mobile += value;
-        }
-      });
-      return updatedTarget; // Return the updated target
-    };
-
-    totals.formview = calculateSums(formview, totals.formview);
-    totals.formengagement = calculateSums(formengagement, totals.formengagement);
-    totals.pageview = calculateSums(pageview, totals.pageview);
-    totals.formsubmit = calculateSums(formsubmit, totals.formsubmit);
-
-    resultMap.set(url, totals);
-  });
-
-  return resultMap;
-}
+const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -155,9 +82,8 @@ export async function generateOpptyData(formVitals, context) {
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
 
-  const formVitalsByDevice = aggregateFormVitalsByDevice(formVitalsCollection);
   return Promise.all(
-    getHighFormViewsLowConversion(7, formVitalsByDevice)
+    getHighFormViewsLowConversionMetrics(formVitalsCollection)
       .map((highFormViewsLowConversion) => convertToOpportunityData(
         'high-page-views-low-conversion',
         highFormViewsLowConversion,
@@ -173,7 +99,7 @@ export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, co
   );
 
   return Promise.all(
-    getHighPageViewsLowFormCtrMetrics(formVitalsCollection, 7)
+    getHighPageViewsLowFormCtrMetrics(formVitalsCollection)
       .map((highPageViewsLowFormCtr) => convertToOpportunityData(
         'high-page-views-low-form-nav',
         highPageViewsLowFormCtr,
@@ -182,8 +108,9 @@ export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, co
   );
 }
 
-export function isSearchForm(scrapedFormData) {
+export function shouldExcludeForm(scrapedFormData) {
   return scrapedFormData?.formType === 'search'
+    || scrapedFormData?.formType === 'login'
     || scrapedFormData?.classList?.includes('search')
     || scrapedFormData?.classList?.includes('unsubscribe')
     || scrapedFormData?.action?.endsWith('search.html')
@@ -210,7 +137,7 @@ export function filterForms(formOpportunities, scrapedData, log) {
 
         if (formUrl.origin + formUrl.pathname === opportunityUrl.origin + opportunityUrl.pathname) {
           urlMatches = true;
-          const nonSearchForms = form.scrapeResult.filter((sr) => !isSearchForm(sr));
+          const nonSearchForms = form.scrapeResult.filter((sr) => !shouldExcludeForm(sr));
           if (urlMatches && nonSearchForms.length === 0) {
             log.debug(`Filtered out search form: ${opportunity?.form}`);
             return false;

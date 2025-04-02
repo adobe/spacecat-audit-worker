@@ -96,7 +96,7 @@ describe('Image Alt Text Handler', () => {
         <html>
           <body>
             <img src="test1.jpg" alt="Test 1">
-            <img src="test2.jpg" alt="">
+            <img src="test2.jpg">
           </body>
         </html>
       `;
@@ -143,7 +143,7 @@ describe('Image Alt Text Handler', () => {
         <html>
           <body>
             <img src="test1.jpg" alt="Test 1">
-            <img src="test2.jpg" alt="">
+            <img src="test2.jpg">
           </body>
         </html>
       `;

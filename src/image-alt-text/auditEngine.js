@@ -85,6 +85,10 @@ export default class AuditEngine {
     }
 
     pageTags.images.forEach((image) => {
+      if (image.isPresentational) {
+        return;
+      }
+
       if (!hasText(image.alt?.trim())) {
         this.auditedTags.imagesWithoutAltText.set(image.src, {
           pageUrl,
@@ -151,6 +155,8 @@ export default class AuditEngine {
   }
 
   getAuditedTags() {
-    return { imagesWithoutAltText: Array.from(this.auditedTags.imagesWithoutAltText.values()) };
+    return {
+      imagesWithoutAltText: Array.from(this.auditedTags.imagesWithoutAltText.values()),
+    };
   }
 }
