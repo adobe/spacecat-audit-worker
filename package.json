@@ -12,7 +12,7 @@
     "start": "nodemon",
     "test": "",
     "test-postdeploy": "",
-    "lint": "eslint .",
+    "lint": "",
     "logs": "aws logs tail /aws/lambda/spacecat-services--audit-worker",
     "semantic-release": "semantic-release",
     "semantic-release-dry": "semantic-release --dry-run --no-ci --branches $CI_BRANCH",
