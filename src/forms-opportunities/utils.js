@@ -111,6 +111,7 @@ export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, co
 export function shouldExcludeForm(scrapedFormData) {
   return scrapedFormData?.formType === 'search'
     || scrapedFormData?.formType === 'login'
+    || scrapedFormData?.classList?.includes('search')
     || scrapedFormData?.classList?.includes('unsubscribe')
     || scrapedFormData?.action?.endsWith('search.html')
     || (scrapedFormData?.fieldsLabels && isNonEmptyArray(scrapedFormData.fieldsLabels) && scrapedFormData.fieldsLabels.every((label) => label.toLowerCase().includes('search')));
