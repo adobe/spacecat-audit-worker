@@ -99,7 +99,7 @@ export default class AuditEngine {
       }
     });
 
-    this.log.debug(`[${AUDIT_TYPE}]: Presentational images:`, presentationalImages.length);
+    this.log.info(`[${AUDIT_TYPE}]: Presentational images:`, presentationalImages.length);
   }
 
   async filterImages(baseURL, fetch) {
