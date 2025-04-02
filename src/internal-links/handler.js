@@ -16,12 +16,12 @@ import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
-// import { syncSuggestions } from '../utils/data-access.js';
-// import { convertToOpportunity } from '../common/opportunity.js';
-// import { createOpportunityData } from './opportunity-data-mapper.js';
-// import { generateSuggestionData } from './suggestions-generator.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+import { generateSuggestionData } from './suggestions-generator.js';
 import {
-  // calculateKpiDeltasForAudit,
+  calculateKpiDeltasForAudit,
   isLinkInaccessible,
   calculatePriority,
 } from './helpers.js';
@@ -110,12 +110,15 @@ export async function runAuditAndImportTopPagesStep(context) {
 }
 
 export async function prepareScrapingStep(context) {
-  const {
-    site, log, dataAccess,
-  } = context;
+  const { site, log, dataAccess } = context;
 
   // fetch top pages for site
-  const topPages = await getTopPagesForSiteId(dataAccess, site.getId(), context, log);
+  const topPages = await getTopPagesForSiteId(
+    dataAccess,
+    site.getId(),
+    context,
+    log,
+  );
 
   log.info(
     `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`,
@@ -131,54 +134,55 @@ export async function prepareScrapingStep(context) {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function opportunityAndSuggestionsStep(context) {
-  // const {
-  //   log, site, finalUrl,
-  // } = context;
-  // log.info(`broken-internal-links audit: [Site Id: ${site.getId()}] starting audit`);
-  // const internalLinksAuditRunnerResult = await internalLinksAuditRunner(finalUrl, context);
-  // const kpiDeltas = calculateKpiDeltasForAudit(auditData);
-  // const opportunity = await convertToOpportunity(
-  //   auditUrl,
-  //   auditData,
-  //   context,
-  //   createOpportunityData,
-  //   auditType,
-  //   {
-  //     kpiDeltas,
-  //   },
-  // );
-  // // const { log } = context;
-  // const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
-  // await syncSuggestions({
-  //   opportunity,
-  //   newData: auditData?.auditResult?.brokenInternalLinks,
-  //   context,
-  //   buildKey,
-  //   mapNewSuggestion: (entry) => ({
-  //     opportunityId: opportunity.getId(),
-  //     type: 'CONTENT_UPDATE',
-  //     rank: entry.trafficDomain,
-  //     data: {
-  //       title: entry.title,
-  //       urlFrom: entry.urlFrom,
-  //       urlTo: entry.urlTo,
-  //       urlsSuggested: entry.urlsSuggested || [],
-  //       aiRationale: entry.aiRationale || '',
-  //       trafficDomain: entry.trafficDomain,
-  //     },
-  //   }),
-  //   log,
-  // });
-}
+  const { log, site, finalUrl } = context;
+  log.info(
+    `broken-internal-links audit: [Site Id: ${site.getId()}] starting audit`,
+  );
 
-export async function processImportStep(context) {
-  const { site } = context;
+  const latestAuditData = await site.getLatestAuditByAuditType(AUDIT_TYPE);
 
+  // generate suggestions
+  const auditDataWithSuggestions = await generateSuggestionData(
+    finalUrl,
+    latestAuditData,
+    context,
+    site,
+  );
+
+  const kpiDeltas = calculateKpiDeltasForAudit(auditDataWithSuggestions);
+  const opportunity = await convertToOpportunity(
+    finalUrl,
+    auditDataWithSuggestions,
+    context,
+    createOpportunityData,
+    AUDIT_TYPE,
+    {
+      kpiDeltas,
+    },
+  );
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  await syncSuggestions({
+    opportunity,
+    newData: auditDataWithSuggestions?.auditResult?.brokenInternalLinks,
+    context,
+    buildKey,
+    mapNewSuggestion: (entry) => ({
+      opportunityId: opportunity.getId(),
+      type: 'CONTENT_UPDATE',
+      rank: entry.trafficDomain,
+      data: {
+        title: entry.title,
+        urlFrom: entry.urlFrom,
+        urlTo: entry.urlTo,
+        urlsSuggested: entry.urlsSuggested || [],
+        aiRationale: entry.aiRationale || '',
+        trafficDomain: entry.trafficDomain,
+      },
+    }),
+    log,
+  });
   return {
-    auditResult: { status: 'preparing' },
-    fullAuditRef: `scrapes/${site.getId()}/`,
-    type: 'top-pages',
-    siteId: site.getId(),
+    status: 'complete',
   };
 }
 
@@ -187,14 +191,12 @@ export default new AuditBuilder()
   .addStep(
     'runAuditAndImportTopPages',
     runAuditAndImportTopPagesStep,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
-  )
-  .addStep(
-    'processImport',
-    processImportStep,
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
+  .addStep(
+    'prepareScraping',
+    prepareScrapingStep,
+    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  )
   .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
-  // .withRunner(internalLinksAuditRunner)
-  // .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
   .build();
