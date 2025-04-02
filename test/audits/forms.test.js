@@ -25,6 +25,7 @@ import { MockContextBuilder } from '../shared.js';
 import formVitalsData from '../fixtures/formvitalsdata.json' with { type: 'json' };
 import testData from '../fixtures/high-form-views-low-conversions.js';
 import convertToOpportunity from '../../src/forms-opportunities/opportunityHandler.js';
+import { shouldExcludeForm } from '../../src/forms-opportunities/utils.js';
 import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../fixtures/expectedformsendtoscraperdata.json' with { type: 'json' };
 import formScrapeData from '../fixtures/formscrapedata.js';
@@ -67,7 +68,7 @@ describe('Forms Vitals audit', () => {
     );
     expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
       domain: 'www.example.com',
-      interval: 7,
+      interval: 15,
       granularity: 'hourly',
     });
     expect(result).to.deep.equal(expectedFormVitalsData);
@@ -251,7 +252,7 @@ describe('audit and send scraping step', () => {
     const result = await runAuditAndSendUrlsForScrapingStep(context);
     expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
       domain: 'www.example.com',
-      interval: 7,
+      interval: 15,
       granularity: 'hourly',
     });
     expect(result).to.deep.equal(expectedFormSendToScraperData);
@@ -539,5 +540,39 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+  });
+});
+
+describe('isSearchForm', () => {
+  it('should return true for search form type', () => {
+    const scrapedFormData = { formType: 'search' };
+    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return true for login form type', () => {
+    const scrapedFormData = { formType: 'login' };
+    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return true for form with unsubscribe class', () => {
+    const scrapedFormData = { classList: ['unsubscribe'] };
+    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return true for form with action ending in search.html', () => {
+    const scrapedFormData = { action: 'https://example.com/search.html' };
+    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return true for form with all field labels containing search', () => {
+    const scrapedFormData = { fieldsLabels: ['Search', 'Advanced Search'] };
+    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return false for non-search form', () => {
+    const scrapedFormData = {
+      formType: 'contact', classList: ['subscribe'], action: 'https://example.com/contact.html', fieldsLabels: ['Name', 'Email'],
+    };
+    expect(shouldExcludeForm(scrapedFormData)).to.be.false;
   });
 });
