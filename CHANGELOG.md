@@ -1,3 +1,11 @@
+## [1.70.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.4...v1.70.5) (2025-04-02)
+
+
+### Bug Fixes
+
+* alt text prompt using image tags ([#768](https://github.com/adobe/spacecat-audit-worker/issues/768)) ([dec96e8](https://github.com/adobe/spacecat-audit-worker/commit/dec96e8c8c1ce26208ec9445afeaa770869beb71))
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.10.2 ([#781](https://github.com/adobe/spacecat-audit-worker/issues/781)) ([04f3d88](https://github.com/adobe/spacecat-audit-worker/commit/04f3d88aaf0f9bbcfe4d1c4d8ccd0f109165e265))
+
 ## [1.70.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.3...v1.70.4) (2025-04-02)
 
 
