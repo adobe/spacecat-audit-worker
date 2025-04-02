@@ -79,6 +79,7 @@ export default class AuditEngine {
   }
 
   performPageAudit(pageUrl, pageTags) {
+    const presentationalImages = [];
     if (!isNonEmptyArray(pageTags?.images)) {
       this.log.debug(`[${AUDIT_TYPE}]: No images found for page ${pageUrl}`);
       return;
@@ -86,6 +87,7 @@ export default class AuditEngine {
 
     pageTags.images.forEach((image) => {
       if (image.isPresentational) {
+        presentationalImages.push(image);
         return;
       }
 
@@ -96,6 +98,8 @@ export default class AuditEngine {
         });
       }
     });
+
+    this.log.debug(`[${AUDIT_TYPE}]: Presentational images:`, presentationalImages.length);
   }
 
   async filterImages(baseURL, fetch) {

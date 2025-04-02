@@ -16,7 +16,7 @@ import { sleep } from '../support/utils.js';
 import { convertImagesToBase64 } from './auditEngine.js';
 
 const PROMPT_FILE = 'image-alt-text';
-const BATCH_SIZE = 1;
+const BATCH_SIZE = 3;
 const BATCH_DELAY = 5000;
 const MODEL = 'gpt-4o';
 // https://platform.openai.com/docs/guides/vision
