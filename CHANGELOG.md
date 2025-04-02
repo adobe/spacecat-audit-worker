@@ -4,6 +4,14 @@
 ### Bug Fixes
 
 * aws subscription  ([#650](https://github.com/adobe/spacecat-audit-worker/issues/650)) ([c64b936](https://github.com/adobe/spacecat-audit-worker/commit/c64b93632a958bb6cf534c3e107dd12ac1396485))
+* semantic release ([#782](https://github.com/adobe/spacecat-audit-worker/issues/782)) ([2b0241c](https://github.com/adobe/spacecat-audit-worker/commit/2b0241c0cf8f167daa614fc7877ce52979122f0e))
+
+## [1.70.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.5...v1.70.6) (2025-04-02)
+
+
+### Bug Fixes
+
+* aws subscription  ([#650](https://github.com/adobe/spacecat-audit-worker/issues/650)) ([c64b936](https://github.com/adobe/spacecat-audit-worker/commit/c64b93632a958bb6cf534c3e107dd12ac1396485))
 
 ## [1.70.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.4...v1.70.5) (2025-04-02)
 
