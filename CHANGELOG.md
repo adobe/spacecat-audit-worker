@@ -1,3 +1,10 @@
+## [1.70.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.3...v1.70.4) (2025-04-02)
+
+
+### Bug Fixes
+
+* adding forms constants at common place and refactoring methods ([#779](https://github.com/adobe/spacecat-audit-worker/issues/779)) ([7cd9d9c](https://github.com/adobe/spacecat-audit-worker/commit/7cd9d9c48f536e4706785caaaf57c2347205ed4a))
+
 ## [1.70.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.2...v1.70.3) (2025-04-02)
 
 
