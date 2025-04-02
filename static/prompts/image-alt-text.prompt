@@ -31,4 +31,3 @@ Your response must be a valid JSON object using the following structure:
 ### Task:
 Given the following list of images: {{images}}, suggest a description for the alt attribute of each image that is helpful for the user.
 Use the base64 blob provided if the image format is not supported.
-If there is any text in the image, extract it and use it as the alt text.
