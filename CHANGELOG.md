@@ -1,3 +1,10 @@
+## [1.70.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.5...v1.70.6) (2025-04-02)
+
+
+### Bug Fixes
+
+* aws subscription  ([#650](https://github.com/adobe/spacecat-audit-worker/issues/650)) ([c64b936](https://github.com/adobe/spacecat-audit-worker/commit/c64b93632a958bb6cf534c3e107dd12ac1396485))
+
 ## [1.70.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.4...v1.70.5) (2025-04-02)
 
 
