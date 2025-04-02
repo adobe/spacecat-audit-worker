@@ -13,7 +13,7 @@ module.exports = {
       message: "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
     }],
     ['@semantic-release/exec', {
-      prepareCmd: 'AWS_ACCOUNT_ID=640168421876 npm run deploy && npm run test-postdeploy && npm run docs',
+      prepareCmd: 'AWS_ACCOUNT_ID=640168421876 npm run deploy && npm run test-postdeploy',
     }],
     ["@semantic-release/github", {}]
   ],
