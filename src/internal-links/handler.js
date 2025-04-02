@@ -113,12 +113,16 @@ export async function prepareScrapingStep(context) {
   const { site, log, dataAccess } = context;
 
   // fetch top pages for site
+
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] fetching top pages`);
   const topPages = await getTopPagesForSiteId(
     dataAccess,
     site.getId(),
     context,
     log,
   );
+
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] top pages: ${JSON.stringify(topPages)}`);
 
   log.info(
     `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`,
