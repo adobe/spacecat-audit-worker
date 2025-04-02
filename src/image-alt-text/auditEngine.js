@@ -79,12 +79,18 @@ export default class AuditEngine {
   }
 
   performPageAudit(pageUrl, pageTags) {
+    const presentationalImages = [];
     if (!isNonEmptyArray(pageTags?.images)) {
       this.log.debug(`[${AUDIT_TYPE}]: No images found for page ${pageUrl}`);
       return;
     }
 
     pageTags.images.forEach((image) => {
+      if (image.isPresentational) {
+        presentationalImages.push(image);
+        return;
+      }
+
       if (!hasText(image.alt?.trim())) {
         this.auditedTags.imagesWithoutAltText.set(image.src, {
           pageUrl,
@@ -92,6 +98,8 @@ export default class AuditEngine {
         });
       }
     });
+
+    this.log.info(`[${AUDIT_TYPE}]: Presentational images:`, presentationalImages.length);
   }
 
   async filterImages(baseURL, fetch) {
@@ -151,6 +159,8 @@ export default class AuditEngine {
   }
 
   getAuditedTags() {
-    return { imagesWithoutAltText: Array.from(this.auditedTags.imagesWithoutAltText.values()) };
+    return {
+      imagesWithoutAltText: Array.from(this.auditedTags.imagesWithoutAltText.values()),
+    };
   }
 }
