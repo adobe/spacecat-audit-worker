@@ -1,3 +1,10 @@
+## [1.70.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.6...v1.70.7) (2025-04-03)
+
+
+### Bug Fixes
+
+* fixes running audits locally for new env setup ([#784](https://github.com/adobe/spacecat-audit-worker/issues/784)) ([2636b42](https://github.com/adobe/spacecat-audit-worker/commit/2636b4239fb81676151e70c98d3bc9215280ef33))
+
 ## [1.70.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.5...v1.70.6) (2025-04-02)
 
 
