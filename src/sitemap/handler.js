@@ -293,10 +293,7 @@ export async function filterValidUrls(urls) {
       return acc;
     },
     {
-      ok: [],
-      notOk: [],
-      networkErrors: [],
-      otherStatusCodes: [],
+      ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
     },
   );
 }
@@ -329,9 +326,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
     if (urlData.existsAndIsValid) {
       if (urlData.details.isSitemapIndex) {
         // Handle sitemap index by extracting more URLs and recursively check them
-        const extractedSitemaps = getSitemapUrlsFromSitemapIndex(
-          urlData.details.sitemapContent,
-        );
+        const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
         extractedSitemaps.forEach((extractedSitemapUrl) => {
           if (!contentsCache[extractedSitemapUrl]) {
             matchingUrls.push(extractedSitemapUrl);
@@ -497,9 +492,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(
-    `Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`,
-  );
+  log.info(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
 
   return {
     fullAuditRef: baseURL,
