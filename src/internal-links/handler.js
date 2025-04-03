@@ -95,6 +95,9 @@ export async function runAuditAndImportTopPagesStep(context) {
   );
 
   // const uniqueUrls = new Set();
+
+  // Issue in this message object here? "audit failed for site undefined at step prepareScraping.
+  // Reason: Error getting site undefined: Validation failed in site: siteId must be a valid UUID"
   const result = {
     auditResult: internalLinksAuditRunnerResult.auditResult,
     fullAuditRef: internalLinksAuditRunnerResult.fullAuditRef,
@@ -112,8 +115,11 @@ export async function runAuditAndImportTopPagesStep(context) {
 export async function prepareScrapingStep(context) {
   const { site, log, dataAccess } = context;
 
-  // fetch top pages for site
+  log.info(
+    `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`,
+  );
 
+  // fetch top pages for site
   log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] fetching top pages`);
   const topPages = await getTopPagesForSiteId(
     dataAccess,
@@ -122,10 +128,10 @@ export async function prepareScrapingStep(context) {
     log,
   );
 
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] top pages: ${JSON.stringify(topPages)}`);
-
   log.info(
-    `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`,
+    `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] top pages: ${JSON.stringify(
+      topPages,
+    )}`,
   );
 
   return {
