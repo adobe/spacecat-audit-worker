@@ -42,6 +42,7 @@ const getFirefallResponse = async (prompt, firefallClient, firefallOptions, log)
     return answer;
   } catch (err) {
     log.error(`[${AUDIT_TYPE}]: Error calling Firefall for alt-text suggestion generation for batch: ${prompt}`, err);
+    log.error(`[${AUDIT_TYPE}]: With images: ${firefallOptions.imageUrls.join(', ')}`);
     return [];
   }
 };
@@ -55,6 +56,7 @@ const promptOnlyBatchPromises = (
 
   const firefallOptions = {
     model: MODEL,
+    imageUrls: batch.filter((image) => !image.blob).map((image) => image.url),
   };
   const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
   return getFirefallResponse(prompt, firefallClient, firefallOptions, log);

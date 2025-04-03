@@ -12,6 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { generateOpptyData, generateOpptyDataForHighPageViewsLowFormNav } from './utils.js';
@@ -20,8 +21,6 @@ import convertToOpportunity from './opportunityHandler.js';
 import highPageViewsLowFormNavOpportunity from './highPageViewsLowFormNavOpportunity.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const DAILY_THRESHOLD = 200;
-const INTERVAL = 7; // days
 const FORMS_OPPTY_QUERIES = [
   'cwv',
   'form-vitals',
@@ -31,7 +30,7 @@ export async function formsAuditRunner(auditUrl, context) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
     domain: auditUrl,
-    interval: INTERVAL,
+    interval: FORMS_AUDIT_INTERVAL,
     granularity: 'hourly',
   };
 
@@ -43,23 +42,18 @@ export async function formsAuditRunner(auditUrl, context) {
   );
 
   const auditResult = {
-    formVitals: queryResults['form-vitals'].filter((data) => {
-      // Calculate the sum of all values inside the `pageview` object
-      const pageviewsSum = Object.values(data.pageview).reduce((sum, value) => sum + value, 0);
-      return pageviewsSum >= DAILY_THRESHOLD * INTERVAL;
-    })
-      .map((formVital) => {
-        const cwvData = cwvMap.get(formVital.url);
-        const filteredCwvData = cwvData
-          ? Object.fromEntries(Object.entries(cwvData).filter(([key]) => key !== 'url' && key !== 'pageviews' && key !== 'type'))
-          : {};
-        return {
-          ...formVital,
-          cwv: filteredCwvData, // Append cwv data
-        };
-      }),
+    formVitals: queryResults['form-vitals'].map((formVital) => {
+      const cwvData = cwvMap.get(formVital.url);
+      const filteredCwvData = cwvData
+        ? Object.fromEntries(Object.entries(cwvData).filter(([key]) => key !== 'url' && key !== 'pageviews' && key !== 'type'))
+        : {};
+      return {
+        ...formVital,
+        cwv: filteredCwvData, // Append cwv data
+      };
+    }),
     auditContext: {
-      interval: INTERVAL,
+      interval: FORMS_AUDIT_INTERVAL,
     },
   };
 
