@@ -100,7 +100,7 @@ export async function runAuditAndImportTopPagesStep(context) {
   // Reason: Error getting site undefined: Validation failed in site: siteId must be a valid UUID"
   const result = {
     auditResult: internalLinksAuditRunnerResult.auditResult,
-    fullAuditRef: internalLinksAuditRunnerResult.fullAuditRef,
+    fullAuditRef: `scrapes/${site.getId()}/`,
     type: 'top-pages',
     siteId: site.getId(),
     jobId: site.getId(),
