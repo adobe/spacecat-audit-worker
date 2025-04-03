@@ -203,7 +203,7 @@ export async function filterValidUrls(urls) {
             redirect: 'follow',
           });
 
-          // Check if the redirect destination is a 404 or contains '404' in the path
+          // check if the redirect destination returns a 404 status code or contains 404 in the path
           const is404 = redirectResponse.status === 404
             || finalUrl.includes('/404/')
             || finalUrl.includes('404.html')
@@ -216,16 +216,22 @@ export async function filterValidUrls(urls) {
             status: NOT_OK,
             url,
             statusCode: response.status,
-            finalUrl: redirectResponse.url,
             urlsSuggested: is404 ? homepageUrl : finalUrl,
           };
         } catch {
+          // Also check for 404 patterns in the redirect URL when there's an error
+          const is404 = finalUrl.includes('/404/')
+            || finalUrl.includes('404.html')
+            || finalUrl.includes('/errors/404/');
+
+          const originalUrl = new URL(url);
+          const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
+
           return {
             status: NOT_OK,
             url,
             statusCode: response.status,
-            finalUrl,
-            urlsSuggested: finalUrl,
+            urlsSuggested: is404 ? homepageUrl : finalUrl,
           };
         }
       }
@@ -287,7 +293,10 @@ export async function filterValidUrls(urls) {
       return acc;
     },
     {
-      ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
+      ok: [],
+      notOk: [],
+      networkErrors: [],
+      otherStatusCodes: [],
     },
   );
 }
@@ -320,7 +329,9 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
     if (urlData.existsAndIsValid) {
       if (urlData.details.isSitemapIndex) {
         // Handle sitemap index by extracting more URLs and recursively check them
-        const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
+        const extractedSitemaps = getSitemapUrlsFromSitemapIndex(
+          urlData.details.sitemapContent,
+        );
         extractedSitemaps.forEach((extractedSitemapUrl) => {
           if (!contentsCache[extractedSitemapUrl]) {
             matchingUrls.push(extractedSitemapUrl);
@@ -486,7 +497,9 @@ export async function sitemapAuditRunner(baseURL, context) {
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
+  log.info(
+    `Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`,
+  );
 
   return {
     fullAuditRef: baseURL,
