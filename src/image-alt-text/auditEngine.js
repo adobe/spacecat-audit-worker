@@ -75,11 +75,11 @@ export default class AuditEngine {
     this.log = log;
     this.auditedTags = {
       imagesWithoutAltText: new Map(),
+      presentationalImagesCount: 0,
     };
   }
 
   performPageAudit(pageUrl, pageTags) {
-    const presentationalImages = [];
     if (!isNonEmptyArray(pageTags?.images)) {
       this.log.debug(`[${AUDIT_TYPE}]: No images found for page ${pageUrl}`);
       return;
@@ -87,8 +87,7 @@ export default class AuditEngine {
 
     pageTags.images.forEach((image) => {
       if (image.isPresentational) {
-        presentationalImages.push(image);
-        return;
+        this.auditedTags.presentationalImagesCount += 1;
       }
 
       if (!hasText(image.alt?.trim())) {
@@ -98,8 +97,6 @@ export default class AuditEngine {
         });
       }
     });
-
-    this.log.info(`[${AUDIT_TYPE}]: Presentational images:`, presentationalImages.length);
   }
 
   async filterImages(baseURL, fetch) {
@@ -156,11 +153,15 @@ export default class AuditEngine {
     this.log.info(
       `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedTags.imagesWithoutAltText.values()).length} images without alt text`,
     );
+    this.log.info(
+      `[${AUDIT_TYPE}]: Found ${this.auditedTags.presentationalImagesCount} presentational images`,
+    );
   }
 
   getAuditedTags() {
     return {
       imagesWithoutAltText: Array.from(this.auditedTags.imagesWithoutAltText.values()),
+      presentationalImagesCount: this.auditedTags.presentationalImagesCount,
     };
   }
 }

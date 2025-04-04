@@ -406,6 +406,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     expect(altTextOppty.setData).to.have.been.calledWith({
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
+      presentationalImagesCount: 0,
     });
 
     expect(altTextOppty.save).to.have.been.called;
