@@ -89,6 +89,7 @@ describe('Image Alt Text Opportunity Handler', () => {
             { pageUrl: '/page2', src: 'image2.jpg' },
             { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
           ],
+          presentationalImagesCount: 0,
         },
       },
     };
