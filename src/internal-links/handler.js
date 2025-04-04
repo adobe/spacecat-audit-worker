@@ -136,7 +136,6 @@ export async function prepareScrapingStep(context) {
   console.log(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] >> ~ urls:`, urls);
 
   return {
-    // processingType: 'broken-internal-links',
     jobId: site.getId(),
     urls,
     siteId: site.getId(),
@@ -204,10 +203,10 @@ export default new AuditBuilder()
     runAuditAndImportTopPagesStep,
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
-  .addStep(
-    'prepareScraping',
-    prepareScrapingStep,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
-  )
+  // .addStep(
+  //   'prepareScraping',
+  //   prepareScrapingStep,
+  //   AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  // )
   .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
   .build();
