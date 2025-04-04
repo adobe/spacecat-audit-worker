@@ -52,7 +52,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
   };
 
   log.info(
-    `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] Options for RUM call: `,
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] Options for RUM call: `,
     JSON.stringify(options),
   );
 
@@ -88,7 +88,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 export async function runAuditAndImportTopPagesStep(context) {
   const { site, log, finalUrl } = context;
 
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] starting audit`);
+  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] starting audit`);
   const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
     finalUrl,
     context,
@@ -107,7 +107,7 @@ export async function runAuditAndImportTopPagesStep(context) {
   };
 
   log.info(
-    `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] finished audit, now scraping top urls`,
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] finished audit, now scraping top urls`,
   );
   return result;
 }
@@ -116,11 +116,11 @@ export async function prepareScrapingStep(context) {
   const { site, log, dataAccess } = context;
 
   log.info(
-    `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`,
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] preparing scraping step`,
   );
 
   // fetch top pages for site
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] fetching top pages`);
+  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] fetching top pages`);
   const topPages = await getTopPagesForSiteId(
     dataAccess,
     site.getId(),
@@ -129,7 +129,7 @@ export async function prepareScrapingStep(context) {
   );
 
   log.info(
-    `[${AUDIT_TYPE}] [Site Id: ${site.getId()}] top pages: ${JSON.stringify(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] top pages: ${JSON.stringify(
       topPages,
     )}`,
   );
@@ -146,7 +146,7 @@ export async function prepareScrapingStep(context) {
 export async function opportunityAndSuggestionsStep(context) {
   const { log, site, finalUrl } = context;
   log.info(
-    `broken-internal-links audit: [Site Id: ${site.getId()}] starting audit`,
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] starting audit`,
   );
 
   const latestAuditData = await site.getLatestAuditByAuditType(AUDIT_TYPE);
