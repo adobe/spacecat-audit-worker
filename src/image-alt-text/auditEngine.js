@@ -75,7 +75,7 @@ export default class AuditEngine {
     this.log = log;
     this.auditedTags = {
       imagesWithoutAltText: new Map(),
-      presentationalImagesWithoutAltTextCount: 0,
+      presentationalImagesWithoutAltText: new Map(),
     };
   }
 
@@ -88,7 +88,10 @@ export default class AuditEngine {
     pageTags.images.forEach((image) => {
       if (!hasText(image.alt?.trim())) {
         if (image.isPresentational) {
-          this.auditedTags.presentationalImagesWithoutAltTextCount += 1;
+          this.auditedTags.presentationalImagesWithoutAltText.set(image.src, {
+            pageUrl,
+            src: image.src,
+          });
         }
 
         this.auditedTags.imagesWithoutAltText.set(image.src, {
@@ -156,14 +159,16 @@ export default class AuditEngine {
       `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedTags.imagesWithoutAltText.values()).length} images without alt text`,
     );
     this.log.info(
-      `[${AUDIT_TYPE}]: Found ${this.auditedTags.presentationalImagesWithoutAltTextCount} presentational images`,
+      `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedTags.presentationalImagesWithoutAltText.values()).length} presentational images`,
     );
   }
 
   getAuditedTags() {
     return {
       imagesWithoutAltText: Array.from(this.auditedTags.imagesWithoutAltText.values()),
-      presentationalImagesCount: this.auditedTags.presentationalImagesWithoutAltTextCount,
+      presentationalImagesCount: Array.from(
+        this.auditedTags.presentationalImagesWithoutAltText.values(),
+      ).length,
     };
   }
 }
