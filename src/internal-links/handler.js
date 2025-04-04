@@ -94,29 +94,26 @@ export async function runAuditAndImportTopPagesStep(context) {
     context,
   );
 
-  // const uniqueUrls = new Set();
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] finished audit, now scraping top urls`,
+  );
 
   // Issue in this message object here? "audit failed for site undefined at step prepareScraping.
   // Reason: Error getting site undefined: Validation failed in site: siteId must be a valid UUID"
-  const result = {
+  return {
     auditResult: internalLinksAuditRunnerResult.auditResult,
-    fullAuditRef: `scrapes/${site.getId()}/`,
+    fullAuditRef: finalUrl,
     type: 'top-pages',
     siteId: site.getId(),
     jobId: site.getId(),
   };
-
-  log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] finished audit, now scraping top urls`,
-  );
-  return result;
 }
 
 export async function prepareScrapingStep(context) {
   const { site, log, dataAccess } = context;
 
   log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] preparing scraping step`,
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] start: preparing scraping step`,
   );
 
   // fetch top pages for site
@@ -134,10 +131,14 @@ export async function prepareScrapingStep(context) {
     )}`,
   );
 
+  const urls = topPages.map((page) => ({ url: page.url }));
+
+  console.log(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] >> ~ urls:`, urls);
+
   return {
-    processingType: 'broken-internal-links',
+    // processingType: 'broken-internal-links',
     jobId: site.getId(),
-    urls: topPages.map((page) => ({ url: page.url })),
+    urls,
     siteId: site.getId(),
   };
 }
