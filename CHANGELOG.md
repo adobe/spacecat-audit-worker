@@ -1,3 +1,10 @@
+## [1.71.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.71.0...v1.71.1) (2025-04-04)
+
+
+### Bug Fixes
+
+* check 404 statuses on redirects ([#774](https://github.com/adobe/spacecat-audit-worker/issues/774)) ([ac6174f](https://github.com/adobe/spacecat-audit-worker/commit/ac6174fac10e1e3af7d5d28dc4bfb1e805c9c8d8))
+
 # [1.71.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.7...v1.71.0) (2025-04-04)
 
 
