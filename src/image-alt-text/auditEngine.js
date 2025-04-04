@@ -75,31 +75,31 @@ export default class AuditEngine {
     this.log = log;
     this.auditedTags = {
       imagesWithoutAltText: new Map(),
+      presentationalImagesWithoutAltText: new Map(),
     };
   }
 
   performPageAudit(pageUrl, pageTags) {
-    const presentationalImages = [];
     if (!isNonEmptyArray(pageTags?.images)) {
       this.log.debug(`[${AUDIT_TYPE}]: No images found for page ${pageUrl}`);
       return;
     }
 
     pageTags.images.forEach((image) => {
-      if (image.isPresentational) {
-        presentationalImages.push(image);
-        return;
-      }
-
       if (!hasText(image.alt?.trim())) {
+        if (image.isPresentational) {
+          this.auditedTags.presentationalImagesWithoutAltText.set(image.src, {
+            pageUrl,
+            src: image.src,
+          });
+        }
+
         this.auditedTags.imagesWithoutAltText.set(image.src, {
           pageUrl,
           src: image.src,
         });
       }
     });
-
-    this.log.info(`[${AUDIT_TYPE}]: Presentational images:`, presentationalImages.length);
   }
 
   async filterImages(baseURL, fetch) {
@@ -139,6 +139,8 @@ export default class AuditEngine {
           blob: !!data.blob,
         })),
       );
+      // Log total blobs
+      this.log.info(`[${AUDIT_TYPE}]: Total blobs:`, base64Blobs.length);
 
       // Add unique blobs to the filtered map
       uniqueBlobsMap.forEach((originalData) => {
@@ -156,11 +158,17 @@ export default class AuditEngine {
     this.log.info(
       `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedTags.imagesWithoutAltText.values()).length} images without alt text`,
     );
+    this.log.info(
+      `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedTags.presentationalImagesWithoutAltText.values()).length} presentational images`,
+    );
   }
 
   getAuditedTags() {
     return {
       imagesWithoutAltText: Array.from(this.auditedTags.imagesWithoutAltText.values()),
+      presentationalImagesCount: Array.from(
+        this.auditedTags.presentationalImagesWithoutAltText.values(),
+      ).length,
     };
   }
 }

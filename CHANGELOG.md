@@ -1,3 +1,10 @@
+# [1.71.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.7...v1.71.0) (2025-04-04)
+
+
+### Features
+
+* include presentational images in alt-text audit ([#786](https://github.com/adobe/spacecat-audit-worker/issues/786)) ([95abd7a](https://github.com/adobe/spacecat-audit-worker/commit/95abd7a1c15048708977a408f056cf8987524fa6))
+
 ## [1.70.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.6...v1.70.7) (2025-04-03)
 
 
