@@ -136,6 +136,8 @@ export default class AuditEngine {
           blob: !!data.blob,
         })),
       );
+      // Log total blobs
+      this.log.info(`[${AUDIT_TYPE}]: Total blobs:`, base64Blobs.length);
 
       // Add unique blobs to the filtered map
       uniqueBlobsMap.forEach((originalData) => {
