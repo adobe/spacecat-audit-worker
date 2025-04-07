@@ -1079,9 +1079,8 @@ describe('Sitemap Audit', () => {
         context.dataAccess.Opportunity.setAuditId,
       ).to.have.been.calledOnceWith('audit-id');
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
-      expect(
-        context.dataAccess.Opportunity.addSuggestions,
-      ).to.have.been.calledOnceWith(
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(existingSuggestions, 'OUTDATED');
+      expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(
         auditDataFailure.suggestions.map((suggestion) => ({
           opportunityId: opptyId,
           type: 'REDIRECT_UPDATE',
@@ -1344,7 +1343,6 @@ describe('filterValidUrls with redirect handling', () => {
           .head(`/url${i + 1}`)
           .reply(200);
       } else {
-        // Remaining URLs are not found
         nock('https://example.com')
           .head(`/url${i + 1}`)
           .reply(404);
@@ -1486,7 +1484,6 @@ describe('filterValidUrls with status code tracking', () => {
 
     const result = await filterValidUrls(urls);
 
-    // Should include 200 responses in ok array
     expect(result.ok).to.deep.equal([
       'https://example.com/ok',
     ]);
@@ -1542,7 +1539,6 @@ describe('filterValidUrls with status code tracking', () => {
 
     const result = await filterValidUrls(urls);
 
-    // All redirects should be in notOk array
     expect(result.notOk).to.have.length(4);
 
     // Redirects to 404 patterns should suggest homepage URL
