@@ -1366,6 +1366,49 @@ describe('filterValidUrls with redirect handling', () => {
       expect(error).to.have.property('error', 'NETWORK_ERROR');
     });
   });
+
+  it('should not flag redirects to login pages as issues', async () => {
+    const urls = [
+      'https://example.com/myaccount',
+      'https://example.com/profile',
+      'https://example.com/cart/checkout',
+      'https://example.com/normal-redirect',
+    ];
+
+    // Redirect to login pages
+    nock('https://example.com')
+      .head('/myaccount')
+      .reply(302, '', { Location: 'https://example.com/login.html' });
+
+    nock('https://example.com')
+      .head('/profile')
+      .reply(302, '', { Location: 'https://example.com/signin' });
+
+    nock('https://example.com')
+      .head('/cart/checkout')
+      .reply(302, '', { Location: 'https://example.com/auth/user' });
+
+    // Normal redirect to non-login page
+    nock('https://example.com')
+      .head('/normal-redirect')
+      .reply(302, '', { Location: 'https://example.com/some-page' });
+
+    nock('https://example.com').head('/some-page').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    // Login redirects should be treated as OK
+    expect(result.ok).to.include('https://example.com/myaccount');
+    expect(result.ok).to.include('https://example.com/profile');
+    expect(result.ok).to.include('https://example.com/cart/checkout');
+
+    // Normal redirects should still be in notOk
+    expect(result.notOk).to.deep.include({
+      url: 'https://example.com/normal-redirect',
+      statusCode: 302,
+      urlsSuggested: 'https://example.com/some-page',
+    });
+  });
 });
 
 describe('getPagesWithIssues', () => {

@@ -182,6 +182,13 @@ export async function filterValidUrls(urls) {
   const OTHER_STATUS = 3;
   const BATCH_SIZE = 50;
 
+  /**
+   * Helper function to detect if a URL is a login/authentication page
+   * @param {string} url - URL to check
+   * @returns {boolean} - True if it looks like a login page
+   */
+  const isLoginPage = (url) => /login|signin|sign-in|auth|authentication/i.test(url);
+
   const fetchUrl = async (url) => {
     try {
       const response = await fetch(url, {
@@ -197,6 +204,13 @@ export async function filterValidUrls(urls) {
       if (response.status === 301 || response.status === 302) {
         const redirectUrl = response.headers.get('location');
         const finalUrl = new URL(redirectUrl, url).href;
+
+        // Check if the redirect leads to a login page
+        if (isLoginPage(finalUrl)) {
+          // For login-related redirects, treat them as valid URLs
+          return { status: OK, url };
+        }
+
         try {
           const redirectResponse = await fetch(finalUrl, {
             method: 'HEAD',
