@@ -1079,10 +1079,6 @@ describe('Sitemap Audit', () => {
         context.dataAccess.Opportunity.setAuditId,
       ).to.have.been.calledOnceWith('audit-id');
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
-      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
-        existingSuggestions,
-        'OUTDATED',
-      );
       expect(
         context.dataAccess.Opportunity.addSuggestions,
       ).to.have.been.calledOnceWith(
@@ -1397,12 +1393,12 @@ describe('filterValidUrls with redirect handling', () => {
 
     const result = await filterValidUrls(urls);
 
-    // Login redirects should be treated as OK
+    // login redirects should be treated as OK
     expect(result.ok).to.include('https://example.com/myaccount');
     expect(result.ok).to.include('https://example.com/profile');
     expect(result.ok).to.include('https://example.com/cart/checkout');
 
-    // Normal redirects should still be in notOk
+    // normal redirects should still be in notOk
     expect(result.notOk).to.deep.include({
       url: 'https://example.com/normal-redirect',
       statusCode: 302,

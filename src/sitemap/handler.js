@@ -23,6 +23,7 @@ import {
   getSitemapUrlsFromSitemapIndex,
   getUrlWithoutPath,
   toggleWWW,
+  isLoginPage,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -182,13 +183,6 @@ export async function filterValidUrls(urls) {
   const OTHER_STATUS = 3;
   const BATCH_SIZE = 50;
 
-  /**
-   * Helper function to detect if a URL is a login/authentication page
-   * @param {string} url - URL to check
-   * @returns {boolean} - True if it looks like a login page
-   */
-  const isLoginPage = (url) => /login|signin|sign-in|auth|authentication/i.test(url);
-
   const fetchUrl = async (url) => {
     try {
       const response = await fetch(url, {
@@ -205,9 +199,8 @@ export async function filterValidUrls(urls) {
         const redirectUrl = response.headers.get('location');
         const finalUrl = new URL(redirectUrl, url).href;
 
-        // Check if the redirect leads to a login page
+        // check if the redirect leads to a login page and treat it as valid URL
         if (isLoginPage(finalUrl)) {
-          // For login-related redirects, treat them as valid URLs
           return { status: OK, url };
         }
 
