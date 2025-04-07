@@ -1,3 +1,10 @@
+# [1.72.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.71.1...v1.72.0) (2025-04-07)
+
+
+### Features
+
+* backport prompt tweaks from AI Ethics audit ([#789](https://github.com/adobe/spacecat-audit-worker/issues/789)) ([e79d202](https://github.com/adobe/spacecat-audit-worker/commit/e79d2025a576d987f2598b446cdd440223a652c5))
+
 ## [1.71.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.71.0...v1.71.1) (2025-04-04)
 
 

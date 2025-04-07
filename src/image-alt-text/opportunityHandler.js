@@ -219,6 +219,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       pageUrl: new URL(image.pageUrl, auditUrl).toString(),
       imageUrl,
       altText: imageSuggestions[imageUrl]?.suggestion || '',
+      isAppropriate: imageSuggestions[imageUrl]?.is_appropriate ?? null,
     };
   });
 
