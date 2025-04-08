@@ -34,7 +34,7 @@ const DEFAULT_CPC_VALUE = 2.69; // $2.69
  * @returns {boolean} - True if it looks like a login or authentication page
  */
 export function isLoginPage(url) {
-  return /login|signin|sign-in|auth|authentication/i.test(url);
+  return /login|log-in|signin|sign-in|auth|authentication/i.test(url);
 }
 
 export async function getRUMUrl(url) {
