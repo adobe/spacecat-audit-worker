@@ -23,6 +23,7 @@ import {
   getSitemapUrlsFromSitemapIndex,
   getUrlWithoutPath,
   toggleWWW,
+  isLoginPage,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -197,6 +198,12 @@ export async function filterValidUrls(urls) {
       if (response.status === 301 || response.status === 302) {
         const redirectUrl = response.headers.get('location');
         const finalUrl = new URL(redirectUrl, url).href;
+
+        // check if the redirect leads to a login page and treat it as valid URL
+        if (isLoginPage(finalUrl)) {
+          return { status: OK, url };
+        }
+
         try {
           const redirectResponse = await fetch(finalUrl, {
             method: 'HEAD',
