@@ -30,6 +30,7 @@ export default async function handler(message, context) {
     // Wrap the guidance data under the recommendation key
     const wrappedGuidance = { recommendation: guidance };
     opportunity.setGuidance(wrappedGuidance);
+    log.info(`high-form-views-low-conversions guidance updated oppty : ${JSON.stringify(opportunity, null, 2)}`);
     opportunity = await opportunity.save();
 
     const existingSuggestions = await opportunity.getSuggestions();
