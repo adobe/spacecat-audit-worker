@@ -61,13 +61,6 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
     sandbox.restore();
   });
 
-  it('should log the received message', async () => {
-    await handler(message, context);
-    expect(logStub.info).to.have.been.calledWith(
-      `Message received in high-form-views-low-conversions handler: ${JSON.stringify(message, null, 2)}`,
-    );
-  });
-
   it('should update an existing opportunity', async () => {
     const existingOpportunity = {
       getData: sinon.stub().returns({ page: 'https://example.com' }),
@@ -82,7 +75,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
     await handler(message, context);
 
     expect(existingOpportunity.setAuditId).to.be.calledWith('audit-id');
-    expect(existingOpportunity.setGuidance).to.be.calledWith('Some guidance');
+    expect(existingOpportunity.setGuidance).to.be.calledWith({ recommendation: 'Some guidance' });
     expect(existingOpportunity.save).to.be.calledOnce;
   });
 

@@ -17,7 +17,7 @@ export default async function handler(message, context) {
   const { Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { url, guidance, suggestions } = data;
-  log.info(`Message received in high-form-views-low-conversions handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`Message received in high-form-views-low-conversions guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities.find(
@@ -27,7 +27,9 @@ export default async function handler(message, context) {
   if (opportunity) {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
-    opportunity.setGuidance(guidance);
+    // Wrap the guidance data under the recommendation key
+    const wrappedGuidance = { recommendation: guidance };
+    opportunity.setGuidance(wrappedGuidance);
     opportunity = await opportunity.save();
 
     const existingSuggestions = await opportunity.getSuggestions();
@@ -43,6 +45,7 @@ export default async function handler(message, context) {
       status: 'NEW',
       data: {
         variations: suggestions,
+        recommendation: guidance, // Add guidance under recommendation key
       },
       kpiDeltas: {
         estimatedKPILift: 0,
