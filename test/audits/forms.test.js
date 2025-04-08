@@ -122,6 +122,10 @@ describe('opportunities handler method', () => {
       },
       site: {
         getId: sinon.stub().returns('test-site-id'),
+        getDeliveryType: sinon.stub().returns('eds'),
+      },
+      sqs: {
+        sendMessage: sinon.stub().resolves({}),
       },
     };
     auditData = testData.auditData3;
@@ -180,7 +184,7 @@ describe('opportunities handler method', () => {
   it('should use existing opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
     await convertToOpportunity(auditUrl, auditData, undefined, context);
-    // expect(formsOppty.save).to.be.callCount(1);
+    expect(formsOppty.save).to.be.callCount(1);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
