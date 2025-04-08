@@ -1,3 +1,10 @@
+## [1.72.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.72.1...v1.72.2) (2025-04-08)
+
+
+### Bug Fixes
+
+* ignore login/auth redirects as suggestions ([#790](https://github.com/adobe/spacecat-audit-worker/issues/790)) ([97df924](https://github.com/adobe/spacecat-audit-worker/commit/97df924eeb0d3704a66906a3558cf05b2727cc54))
+
 ## [1.72.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.72.0...v1.72.1) (2025-04-07)
 
 
