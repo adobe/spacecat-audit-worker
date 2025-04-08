@@ -135,7 +135,7 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await convertToOpportunity(auditUrl, auditData, undefined, context);
-    // expect(dataAccessStub.Opportunity.create).to.be.callCount(5);
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(5);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     // with empty guidance due to no scraping
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
