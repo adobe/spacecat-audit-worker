@@ -1,3 +1,10 @@
+## [1.72.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.72.0...v1.72.1) (2025-04-07)
+
+
+### Bug Fixes
+
+* [alt-text] improves prompt for images with text ([#785](https://github.com/adobe/spacecat-audit-worker/issues/785)) ([e10f23c](https://github.com/adobe/spacecat-audit-worker/commit/e10f23c06acfc42bd1c3e6030e473a3e7f265510))
+
 # [1.72.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.71.1...v1.72.0) (2025-04-07)
 
 
