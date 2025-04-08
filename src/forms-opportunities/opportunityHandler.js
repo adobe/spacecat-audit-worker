@@ -148,7 +148,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         log.debug('Forms Opportunity high form views low conversion updated');
       }
 
-      log.info('sending message to mystique');
+      log.info('sending message to mystique 1');
       const mystiqueMessage = {
         type: 'guidance:high-form-views-low-conversions',
         siteId: auditData.siteId,
