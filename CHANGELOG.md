@@ -1,3 +1,10 @@
+# [1.74.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.73.0...v1.74.0) (2025-04-09)
+
+
+### Features
+
+* forms mystique integration ([#787](https://github.com/adobe/spacecat-audit-worker/issues/787)) ([8f08937](https://github.com/adobe/spacecat-audit-worker/commit/8f08937dbe6db88c079afc425209d7be449056d8))
+
 # [1.73.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.72.2...v1.73.0) (2025-04-09)
 
 
