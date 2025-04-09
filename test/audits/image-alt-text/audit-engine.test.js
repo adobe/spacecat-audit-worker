@@ -41,6 +41,7 @@ describe('AuditEngine', () => {
       const auditedTags = auditEngine.getAuditedTags();
       expect(auditedTags).to.deep.equal({
         imagesWithoutAltText: [],
+        presentationalImagesCount: 0,
       });
     });
   });
@@ -50,16 +51,18 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '' },
-          { src: 'image2.jpg' },
-          { src: 'image3.jpg', alt: null },
+          { src: 'image1.jpg', alt: '', isPresentational: false },
+          { src: 'image2.jpg', isPresentational: false },
+          { src: 'image3.jpg', alt: null, isPresentational: false },
+          { src: 'image4.jpg', alt: null, isPresentational: true },
         ],
       };
 
       auditEngine.performPageAudit(pageUrl, pageTags);
       const auditedTags = auditEngine.getAuditedTags();
 
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(3);
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(4);
+      expect(auditedTags.presentationalImagesCount).to.equal(1);
       expect(auditedTags.imagesWithoutAltText[0]).to.deep.equal({
         pageUrl,
         src: 'image1.jpg',

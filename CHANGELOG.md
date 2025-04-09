@@ -1,3 +1,45 @@
+## [1.72.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.72.1...v1.72.2) (2025-04-08)
+
+
+### Bug Fixes
+
+* ignore login/auth redirects as suggestions ([#790](https://github.com/adobe/spacecat-audit-worker/issues/790)) ([97df924](https://github.com/adobe/spacecat-audit-worker/commit/97df924eeb0d3704a66906a3558cf05b2727cc54))
+
+## [1.72.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.72.0...v1.72.1) (2025-04-07)
+
+
+### Bug Fixes
+
+* [alt-text] improves prompt for images with text ([#785](https://github.com/adobe/spacecat-audit-worker/issues/785)) ([e10f23c](https://github.com/adobe/spacecat-audit-worker/commit/e10f23c06acfc42bd1c3e6030e473a3e7f265510))
+
+# [1.72.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.71.1...v1.72.0) (2025-04-07)
+
+
+### Features
+
+* backport prompt tweaks from AI Ethics audit ([#789](https://github.com/adobe/spacecat-audit-worker/issues/789)) ([e79d202](https://github.com/adobe/spacecat-audit-worker/commit/e79d2025a576d987f2598b446cdd440223a652c5))
+
+## [1.71.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.71.0...v1.71.1) (2025-04-04)
+
+
+### Bug Fixes
+
+* check 404 statuses on redirects ([#774](https://github.com/adobe/spacecat-audit-worker/issues/774)) ([ac6174f](https://github.com/adobe/spacecat-audit-worker/commit/ac6174fac10e1e3af7d5d28dc4bfb1e805c9c8d8))
+
+# [1.71.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.7...v1.71.0) (2025-04-04)
+
+
+### Features
+
+* include presentational images in alt-text audit ([#786](https://github.com/adobe/spacecat-audit-worker/issues/786)) ([95abd7a](https://github.com/adobe/spacecat-audit-worker/commit/95abd7a1c15048708977a408f056cf8987524fa6))
+
+## [1.70.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.6...v1.70.7) (2025-04-03)
+
+
+### Bug Fixes
+
+* fixes running audits locally for new env setup ([#784](https://github.com/adobe/spacecat-audit-worker/issues/784)) ([2636b42](https://github.com/adobe/spacecat-audit-worker/commit/2636b4239fb81676151e70c98d3bc9215280ef33))
+
 ## [1.70.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.70.5...v1.70.6) (2025-04-02)
 
 

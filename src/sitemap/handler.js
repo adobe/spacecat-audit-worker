@@ -23,6 +23,7 @@ import {
   getSitemapUrlsFromSitemapIndex,
   getUrlWithoutPath,
   toggleWWW,
+  isLoginPage,
 } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -70,7 +71,10 @@ export async function fetchContent(targetUrl) {
   if (!response.ok) {
     throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
   }
-  return { payload: await response.text(), type: response.headers.get('content-type') };
+  return {
+    payload: await response.text(),
+    type: response.headers.get('content-type'),
+  };
 }
 
 /**
@@ -169,7 +173,7 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
-* @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
+ * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
  * Array<{url: string, statusCode: number}>}>} - A Promise that resolves to an object containing
  */
 export async function filterValidUrls(urls) {
@@ -194,28 +198,52 @@ export async function filterValidUrls(urls) {
       if (response.status === 301 || response.status === 302) {
         const redirectUrl = response.headers.get('location');
         const finalUrl = new URL(redirectUrl, url).href;
+
+        // check if the redirect leads to a login page and treat it as valid URL
+        if (isLoginPage(finalUrl)) {
+          return { status: OK, url };
+        }
+
         try {
           const redirectResponse = await fetch(finalUrl, {
             method: 'HEAD',
             redirect: 'follow',
           });
+
+          // check if the redirect destination returns a 404 status code or contains 404 in the path
+          const is404 = redirectResponse.status === 404
+            || finalUrl.includes('/404/')
+            || finalUrl.includes('404.html')
+            || finalUrl.includes('/errors/404/');
+
+          const originalUrl = new URL(url);
+          const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
+
           return {
             status: NOT_OK,
             url,
             statusCode: response.status,
-            finalUrl: redirectResponse.url,
+            urlsSuggested: is404 ? homepageUrl : finalUrl,
           };
         } catch {
+          // Also check for 404 patterns in the redirect URL when there's an error
+          const is404 = finalUrl.includes('/404/')
+            || finalUrl.includes('404.html')
+            || finalUrl.includes('/errors/404/');
+
+          const originalUrl = new URL(url);
+          const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
+
           return {
             status: NOT_OK,
             url,
             statusCode: response.status,
-            finalUrl,
+            urlsSuggested: is404 ? homepageUrl : finalUrl,
           };
         }
       }
 
-      // Track 404 status code
+      // Track 404 status code - no suggestion for direct 404s
       if (response.status === 404) {
         return { status: NOT_OK, url, statusCode: response.status };
       }
@@ -266,7 +294,7 @@ export async function filterValidUrls(urls) {
         acc.notOk.push({
           url: result.url,
           statusCode: result.statusCode,
-          ...(result.finalUrl && { urlsSuggested: result.finalUrl }),
+          ...(result.urlsSuggested && { urlsSuggested: result.urlsSuggested }),
         });
       }
       return acc;
