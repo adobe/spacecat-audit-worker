@@ -97,6 +97,7 @@ export default class AuditEngine {
         this.auditedTags.imagesWithoutAltText.set(image.src, {
           pageUrl,
           src: image.src,
+          xpath: image.xpath,
         });
       }
     });
