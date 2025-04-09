@@ -1,3 +1,10 @@
+# [1.73.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.72.2...v1.73.0) (2025-04-09)
+
+
+### Features
+
+* add image xpath to alt-text audit results ([#791](https://github.com/adobe/spacecat-audit-worker/issues/791)) ([d8d1f6e](https://github.com/adobe/spacecat-audit-worker/commit/d8d1f6ec945442ca432514f3101193253973f055))
+
 ## [1.72.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.72.1...v1.72.2) (2025-04-08)
 
 
