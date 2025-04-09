@@ -86,6 +86,7 @@ export class StepAudit extends BaseAudit {
     const { log } = context;
     const { type, siteId, auditContext = {} } = message;
 
+    log.info(`[broken-internal-links] [${type}]-1  in step run >> ~ message:`, message);
     log.info(`[broken-internal-links] [${type}]-1  [Site Id: ${siteId}] in step run >> ~ auditContext:`, auditContext);
 
     try {
