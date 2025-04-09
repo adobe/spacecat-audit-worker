@@ -122,6 +122,10 @@ describe('opportunities handler method', () => {
       },
       site: {
         getId: sinon.stub().returns('test-site-id'),
+        getDeliveryType: sinon.stub().returns('eds'),
+      },
+      sqs: {
+        sendMessage: sinon.stub().resolves({}),
       },
     };
     auditData = testData.auditData3;
