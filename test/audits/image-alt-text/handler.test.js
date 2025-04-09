@@ -214,7 +214,10 @@ describe('Image Alt Text Handler', () => {
         { getId: () => 'site-id' },
       );
 
-      expect(result.auditResult.detectedTags).to.deep.equal({ imagesWithoutAltText: [] });
+      expect(result.auditResult.detectedTags).to.deep.equal({
+        imagesWithoutAltText: [],
+        presentationalImagesCount: 0,
+      });
 
       // Check the first call
       expect(logStub.debug.firstCall).to.have.been.calledWith(

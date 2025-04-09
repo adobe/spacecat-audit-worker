@@ -89,6 +89,7 @@ describe('Image Alt Text Opportunity Handler', () => {
             { pageUrl: '/page2', src: 'image2.jpg' },
             { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
           ],
+          presentationalImagesCount: 0,
         },
       },
     };
@@ -406,6 +407,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     expect(altTextOppty.setData).to.have.been.calledWith({
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
+      presentationalImagesCount: 0,
     });
 
     expect(altTextOppty.save).to.have.been.called;

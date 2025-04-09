@@ -147,7 +147,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
-  const opportunityData = await getProjectedMetrics({
+  const projectedMetrics = await getProjectedMetrics({
     images:
       detectedTags.imagesWithoutAltText
         .map((image) => ({ src: image.src, pageUrl: image.pageUrl })),
@@ -155,6 +155,11 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     context,
     log,
   });
+
+  const opportunityData = {
+    ...projectedMetrics,
+    presentationalImagesCount: detectedTags.presentationalImagesCount,
+  };
 
   try {
     if (!altTextOppty) {
@@ -214,6 +219,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       pageUrl: new URL(image.pageUrl, auditUrl).toString(),
       imageUrl,
       altText: imageSuggestions[imageUrl]?.suggestion || '',
+      isAppropriate: imageSuggestions[imageUrl]?.is_appropriate ?? null,
     };
   });
 
