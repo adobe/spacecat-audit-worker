@@ -51,10 +51,16 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '', isPresentational: false },
-          { src: 'image2.jpg', isPresentational: false },
-          { src: 'image3.jpg', alt: null, isPresentational: false },
-          { src: 'image4.jpg', alt: null, isPresentational: true },
+          {
+            src: 'image1.jpg', alt: '', isPresentational: false, xpath: '/html/body/img[1]',
+          },
+          { src: 'image2.jpg', isPresentational: false, xpath: '/html/body/img[2]' },
+          {
+            src: 'image3.jpg', alt: null, isPresentational: false, xpath: '/html/body/img[3]',
+          },
+          {
+            src: 'image4.jpg', alt: null, isPresentational: true, xpath: '/html/body/img[4]',
+          },
         ],
       };
 
@@ -66,6 +72,7 @@ describe('AuditEngine', () => {
       expect(auditedTags.imagesWithoutAltText[0]).to.deep.equal({
         pageUrl,
         src: 'image1.jpg',
+        xpath: '/html/body/img[1]',
       });
     });
 
@@ -73,8 +80,8 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: 'Valid alt text' },
-          { src: 'image2.jpg', alt: '  Padded alt text  ' },
+          { src: 'image1.jpg', alt: 'Valid alt text', xpath: '/html/body/img[1]' },
+          { src: 'image2.jpg', alt: '  Padded alt text  ', xpath: '/html/body/img[2]' },
         ],
       };
 
@@ -88,8 +95,8 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '   ' },
-          { src: 'image2.jpg', alt: '\n\t' },
+          { src: 'image1.jpg', alt: '   ', xpath: '/html/body/img[1]' },
+          { src: 'image2.jpg', alt: '\n\t', xpath: '/html/body/img[2]' },
         ],
       };
 

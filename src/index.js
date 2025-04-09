@@ -78,12 +78,11 @@ function getElapsedSeconds(startTime) {
  * @returns {Response} a response
  */
 async function run(message, context) {
-  console.log('broken-internal-links-debug: Received message:', message, context);
-
   const { log } = context;
   const { type, siteId } = message;
 
-  log.info(`broken-internal-links-debug:Received ${type} audit request for: ${siteId}`);
+  log.info(`Received ${type} audit request for: ${siteId}`);
+  log.info(`Message ${message}`);
 
   const handler = HANDLERS[type];
   if (!handler) {

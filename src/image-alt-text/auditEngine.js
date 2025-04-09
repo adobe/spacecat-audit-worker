@@ -91,12 +91,14 @@ export default class AuditEngine {
           this.auditedTags.presentationalImagesWithoutAltText.set(image.src, {
             pageUrl,
             src: image.src,
+            xpath: image.xpath,
           });
         }
 
         this.auditedTags.imagesWithoutAltText.set(image.src, {
           pageUrl,
           src: image.src,
+          xpath: image.xpath,
         });
       }
     });

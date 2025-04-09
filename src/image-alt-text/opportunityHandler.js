@@ -220,6 +220,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       imageUrl,
       altText: imageSuggestions[imageUrl]?.suggestion || '',
       isAppropriate: imageSuggestions[imageUrl]?.is_appropriate ?? null,
+      xpath: image.xpath,
     };
   });
 

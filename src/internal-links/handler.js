@@ -133,7 +133,7 @@ export async function prepareScrapingStep(context) {
 
   const urls = topPages.map((page) => ({ url: page.url }));
 
-  console.log(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] >> ~ urls:`, urls);
+  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] >> ~ urls:`, urls);
 
   return {
     jobId: site.getId(),
@@ -203,10 +203,10 @@ export default new AuditBuilder()
     runAuditAndImportTopPagesStep,
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
-  // .addStep(
-  //   'prepareScraping',
-  //   prepareScrapingStep,
-  //   AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
-  // )
+  .addStep(
+    'prepareScraping',
+    prepareScrapingStep,
+    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  )
   .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
   .build();
