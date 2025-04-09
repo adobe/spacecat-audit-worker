@@ -67,6 +67,8 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
   const { log } = context;
   const siteId = site.getId();
 
+  log.error('###Starting broken backlinks audit');
+
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     const {
@@ -272,12 +274,15 @@ export const generateSuggestionData = async (context) => {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
-  .withRunner(brokenBacklinksAuditRunner)
   .addStep('pre-process-suggestions', async (context) => {
-    const { site } = context;
+    const { site, finalUrl } = context;
+    const auditResult = await brokenBacklinksAuditRunner(finalUrl, context, site);
+
     return {
       type: 'top-pages',
       siteId: site.getId(),
+      auditResult,
+      fullAuditRef: auditResult.fullAuditRef,
     };
   }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('audit', async (context) => {
