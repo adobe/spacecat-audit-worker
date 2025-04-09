@@ -84,7 +84,9 @@ export class StepAudit extends BaseAudit {
   async run(message, context) {
     const { stepNames } = this;
     const { log } = context;
-    const { type, siteId, auditContext = {} } = message;
+    const { type, auditContext = {} } = message;
+
+    const siteId = message.siteId || message.config.siteId;
 
     log.info(`[broken-internal-links] [${type}]-1  in step run >> ~ message:`, message);
     log.info(`[broken-internal-links] [${type}]-1  [Site Id: ${siteId}] in step run >> ~ auditContext:`, auditContext);
