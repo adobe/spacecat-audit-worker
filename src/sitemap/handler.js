@@ -449,7 +449,7 @@ export async function findSitemap(inputUrl) {
           trackedIssues.forEach((issue) => {
             if (issue.urlsSuggested && existingPages.ok.includes(issue.urlsSuggested)) {
               // eslint-disable-next-line no-param-reassign
-              issue.remove = true;
+              issue.urlsSuggested = 'Remove this url';
             }
           });
 
@@ -584,25 +584,18 @@ export function generateSuggestions(auditUrl, auditData, context) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
-
-  // Map each issue to a suggestion.
   const suggestions = [...response, ...pagesWithIssues]
     .filter(Boolean)
-    .map((issue) => {
-      let recommendedAction = 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.';
-      if (issue.urlsSuggested) {
-        // if the issue is flagged for removal because the suggested URL already exists in sitemap
-        if (issue.remove) {
-          recommendedAction = `Remove ${issue.pageUrl} from the sitemap as ${issue.urlsSuggested} is already present.`;
-        } else {
-          recommendedAction = `Use this url instead: ${issue.urlsSuggested}`;
-        }
-      }
-      return {
-        ...issue,
-        recommendedAction,
-      };
-    });
+    .map((issue) => ({
+      ...issue,
+      // Use the string already set in urlsSuggested.
+      // eslint-disable-next-line no-nested-ternary
+      recommendedAction: issue.urlsSuggested
+        ? (issue.urlsSuggested === 'Remove this url'
+          ? `Remove ${issue.pageUrl} from the sitemap as the canonical URL is already present.`
+          : `Use this url instead: ${issue.urlsSuggested}`)
+        : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+    }));
 
   log.info(`Classified suggestions: ${JSON.stringify(suggestions)}`);
   return {
