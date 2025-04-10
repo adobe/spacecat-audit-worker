@@ -11,7 +11,8 @@
  */
 
 import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
-import { filterForms, generateOpptyData, shouldExcludeForm } from './utils.js';
+import { filterForms, generateOpptyData, shouldExcludeForm } from '../utils.js';
+import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 
 function generateDefaultGuidance(scrapedData, oppoty) {
   if (isNonEmptyArray(scrapedData?.formData)) {
@@ -60,7 +61,7 @@ function generateDefaultGuidance(scrapedData, oppoty) {
             };
           }
           // eslint-disable-next-line max-len
-          return Number(oppoty.trackedFormKPIValue) > 0 && Number(oppoty.trackedFormKPIValue) < 6 && {
+          return Number(oppoty.trackedFormKPIValue) > 0 && Number(oppoty.trackedFormKPIValue) < 0.1 && {
             recommendations: [
               {
                 insight: `The form has a conversion rate of ${oppoty.trackedFormKPIValue.toFixed(2) * 100}%`,
@@ -83,7 +84,7 @@ function generateDefaultGuidance(scrapedData, oppoty) {
  * @param context - The context object containing the data access and logger objects.
  */
 // eslint-disable-next-line max-len
-export default async function convertToOpportunity(auditUrl, auditDataObject, scrapedData, context) {
+export default async function createLowConversionOpportunities(auditUrl, auditDataObject, scrapedData, context) {
   const {
     dataAccess, log, sqs, site, env,
   } = context;
@@ -103,7 +104,8 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
 
   const { formVitals } = auditData.auditResult;
   log.debug(`scraped data for form ${JSON.stringify(scrapedData, null, 2)}`);
-  const formOpportunities = await generateOpptyData(formVitals, context);
+  // eslint-disable-next-line max-len
+  const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]);
   log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
   log.info(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
