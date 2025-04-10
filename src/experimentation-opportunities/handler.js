@@ -112,6 +112,8 @@ export async function detectAndScrapeStep(context) {
       experimentationOpportunities,
     },
     fullAuditRef: finalUrl,
+    type: 'experimentation-opportunities',
+    processingType: 'default',
     jobId: site.getId(),
     urls: getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities).map((url) => ({ url })),
     siteId: site.getId(),
