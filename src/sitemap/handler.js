@@ -440,7 +440,7 @@ export async function findSitemap(inputUrl) {
         // eslint-disable-next-line no-await-in-loop
         const existingPages = await filterValidUrls(urlsToCheck);
 
-        // Look at issues flagged as 301, 302, or 404.
+        // Only collect tracked status codes in issues
         if (existingPages.notOk && existingPages.notOk.length > 0) {
           // eslint-disable-next-line max-len
           const trackedIssues = existingPages.notOk.filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
@@ -588,7 +588,6 @@ export function generateSuggestions(auditUrl, auditData, context) {
     .filter(Boolean)
     .map((issue) => ({
       ...issue,
-      // Use the string already set in urlsSuggested.
       // eslint-disable-next-line no-nested-ternary
       recommendedAction: issue.urlsSuggested
         ? (issue.urlsSuggested === 'Remove this url'
