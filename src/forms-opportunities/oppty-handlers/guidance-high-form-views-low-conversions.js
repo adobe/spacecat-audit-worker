@@ -20,9 +20,9 @@ export default async function handler(message, context) {
   log.info(`Message received in high-form-views-low-conversions guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  let opportunity = existingOpportunities.find(
-    (oppty) => oppty.getData()?.page === url,
-  );
+  let opportunity = existingOpportunities
+    .filter((oppty) => oppty.getType() === 'forms-opportunities')
+    .find((oppty) => oppty.getData()?.page === url);
 
   if (opportunity) {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
