@@ -84,7 +84,9 @@ function generateDefaultGuidance(scrapedData, oppoty) {
  */
 // eslint-disable-next-line max-len
 export default async function convertToOpportunity(auditUrl, auditDataObject, scrapedData, context) {
-  const { dataAccess, log } = context;
+  const {
+    dataAccess, log, sqs, site, env,
+  } = context;
   const { Opportunity } = dataAccess;
 
   // eslint-disable-next-line no-param-reassign
@@ -145,6 +147,24 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         await highFormViewsLowConversionsOppty.save();
         log.debug('Forms Opportunity high form views low conversion updated');
       }
+
+      log.info('sending message to mystique 1');
+      const mystiqueMessage = {
+        type: 'guidance:high-form-views-low-conversions',
+        siteId: auditData.siteId,
+        auditId: auditData.auditId,
+        deliveryType: site.getDeliveryType(),
+        time: new Date().toISOString(),
+        data: {
+          url: opportunityData.data.form,
+          cr: opportunityData.data.trackedFormKPIValue,
+          screenshot: opportunityData.data.screenshot,
+        },
+      };
+
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+      log.info(`forms opportunity high form views low conversions sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);

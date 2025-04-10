@@ -1079,13 +1079,8 @@ describe('Sitemap Audit', () => {
         context.dataAccess.Opportunity.setAuditId,
       ).to.have.been.calledOnceWith('audit-id');
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
-      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
-        existingSuggestions,
-        'OUTDATED',
-      );
-      expect(
-        context.dataAccess.Opportunity.addSuggestions,
-      ).to.have.been.calledOnceWith(
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(existingSuggestions, 'OUTDATED');
+      expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(
         auditDataFailure.suggestions.map((suggestion) => ({
           opportunityId: opptyId,
           type: 'REDIRECT_UPDATE',
@@ -1348,7 +1343,6 @@ describe('filterValidUrls with redirect handling', () => {
           .head(`/url${i + 1}`)
           .reply(200);
       } else {
-        // Remaining URLs are not found
         nock('https://example.com')
           .head(`/url${i + 1}`)
           .reply(404);
@@ -1364,6 +1358,49 @@ describe('filterValidUrls with redirect handling', () => {
     result.networkErrors.forEach((error) => {
       expect(error).to.have.property('url');
       expect(error).to.have.property('error', 'NETWORK_ERROR');
+    });
+  });
+
+  it('should not flag redirects to login pages as issues', async () => {
+    const urls = [
+      'https://example.com/myaccount',
+      'https://example.com/profile',
+      'https://example.com/cart/checkout',
+      'https://example.com/normal-redirect',
+    ];
+
+    // Redirect to login pages
+    nock('https://example.com')
+      .head('/myaccount')
+      .reply(302, '', { Location: 'https://example.com/login.html' });
+
+    nock('https://example.com')
+      .head('/profile')
+      .reply(302, '', { Location: 'https://example.com/signin' });
+
+    nock('https://example.com')
+      .head('/cart/checkout')
+      .reply(302, '', { Location: 'https://example.com/auth/user' });
+
+    // Normal redirect to non-login page
+    nock('https://example.com')
+      .head('/normal-redirect')
+      .reply(302, '', { Location: 'https://example.com/some-page' });
+
+    nock('https://example.com').head('/some-page').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    // login redirects should be treated as OK
+    expect(result.ok).to.include('https://example.com/myaccount');
+    expect(result.ok).to.include('https://example.com/profile');
+    expect(result.ok).to.include('https://example.com/cart/checkout');
+
+    // normal redirects should still be in notOk
+    expect(result.notOk).to.deep.include({
+      url: 'https://example.com/normal-redirect',
+      statusCode: 302,
+      urlsSuggested: 'https://example.com/some-page',
     });
   });
 });
@@ -1447,7 +1484,6 @@ describe('filterValidUrls with status code tracking', () => {
 
     const result = await filterValidUrls(urls);
 
-    // Should include 200 responses in ok array
     expect(result.ok).to.deep.equal([
       'https://example.com/ok',
     ]);
@@ -1503,7 +1539,6 @@ describe('filterValidUrls with status code tracking', () => {
 
     const result = await filterValidUrls(urls);
 
-    // All redirects should be in notOk array
     expect(result.notOk).to.have.length(4);
 
     // Redirects to 404 patterns should suggest homepage URL
