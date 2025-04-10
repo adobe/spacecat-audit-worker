@@ -1,3 +1,10 @@
+# [1.75.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.74.2...v1.75.0) (2025-04-10)
+
+
+### Features
+
+* registering forms guidance handler ([#796](https://github.com/adobe/spacecat-audit-worker/issues/796)) ([3f65cf9](https://github.com/adobe/spacecat-audit-worker/commit/3f65cf9e6bd93d0ff27efd73cbc0562b31adb7bf))
+
 ## [1.74.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.74.1...v1.74.2) (2025-04-10)
 
 
