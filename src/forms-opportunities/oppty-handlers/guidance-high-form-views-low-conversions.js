@@ -11,49 +11,28 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
+import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Opportunity, Suggestion } = dataAccess;
+  const { Opportunity } = dataAccess;
   const { auditId, siteId, data } = message;
-  const { url, guidance, suggestions } = data;
+  const { url, guidance } = data;
   log.info(`Message received in high-form-views-low-conversions guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  let opportunity = existingOpportunities
-    .filter((oppty) => oppty.getType() === 'forms-opportunities')
-    .find((oppty) => oppty.getData()?.page === url);
+  const opportunity = existingOpportunities
+    .filter((oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION)
+    .find((oppty) => oppty.getData()?.form === url);
 
   if (opportunity) {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     // Wrap the guidance data under the recommendation key
-    const wrappedGuidance = { recommendation: guidance };
+    const wrappedGuidance = { recommendations: guidance };
     opportunity.setGuidance(wrappedGuidance);
+    await opportunity.save();
     log.info(`high-form-views-low-conversions guidance updated oppty : ${JSON.stringify(opportunity, null, 2)}`);
-    opportunity = await opportunity.save();
-
-    const existingSuggestions = await opportunity.getSuggestions();
-
-    // delete previous suggestions if any
-    await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
-
-    // map the suggestions received from M to PSS
-    const suggestionData = {
-      opportunityId: opportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: 1,
-      status: 'NEW',
-      data: {
-        variations: suggestions,
-        recommendation: guidance, // Add guidance under recommendation key
-      },
-      kpiDeltas: {
-        estimatedKPILift: 0,
-      },
-    };
-
-    await Suggestion.create(suggestionData);
   }
 
   return ok();
