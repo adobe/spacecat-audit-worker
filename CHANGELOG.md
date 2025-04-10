@@ -1,3 +1,24 @@
+## [1.74.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.74.0...v1.74.1) (2025-04-09)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.13.3 ([#792](https://github.com/adobe/spacecat-audit-worker/issues/792)) ([b37dcc8](https://github.com/adobe/spacecat-audit-worker/commit/b37dcc84db92435e37c3a39c09b26131da7e4ad5))
+
+# [1.74.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.73.0...v1.74.0) (2025-04-09)
+
+
+### Features
+
+* forms mystique integration ([#787](https://github.com/adobe/spacecat-audit-worker/issues/787)) ([8f08937](https://github.com/adobe/spacecat-audit-worker/commit/8f08937dbe6db88c079afc425209d7be449056d8))
+
+# [1.73.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.72.2...v1.73.0) (2025-04-09)
+
+
+### Features
+
+* add image xpath to alt-text audit results ([#791](https://github.com/adobe/spacecat-audit-worker/issues/791)) ([d8d1f6e](https://github.com/adobe/spacecat-audit-worker/commit/d8d1f6ec945442ca432514f3101193253973f055))
+
 ## [1.72.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.72.1...v1.72.2) (2025-04-08)
 
 
