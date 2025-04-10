@@ -1,3 +1,10 @@
+## [1.75.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.0...v1.75.1) (2025-04-10)
+
+
+### Bug Fixes
+
+* adding oppty type check in forms guidance ([#798](https://github.com/adobe/spacecat-audit-worker/issues/798)) ([778e033](https://github.com/adobe/spacecat-audit-worker/commit/778e03391c2c4a0d74f83afd716681cb51574541))
+
 # [1.75.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.74.2...v1.75.0) (2025-04-10)
 
 
