@@ -31,7 +31,7 @@ const formScrapeData = {
           },
           {
             id: '',
-            formType: 'search2',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -101,7 +101,7 @@ const formScrapeData = {
         scrapeResult: [
           {
             id: '',
-            formType: '',
+            formType: 'search',
             classList: '',
             visibleATF: true,
             fieldCount: 2,
@@ -114,7 +114,7 @@ const formScrapeData = {
           },
           {
             id: '',
-            formType: 'search2',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -171,7 +171,7 @@ const formScrapeData = {
         scrapeResult: [
           {
             id: '',
-            formType: 'search1',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -184,7 +184,7 @@ const formScrapeData = {
           },
           {
             id: '',
-            formType: 'search2',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -254,7 +254,7 @@ const formScrapeData = {
           },
           {
             id: '',
-            formType: 'search2',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -311,7 +311,7 @@ const formScrapeData = {
         scrapeResult: [
           {
             id: '',
-            formType: 'search1',
+            formType: 'search',
             classList: '',
             action: '/abc/search.html',
             visibleATF: true,
@@ -325,7 +325,7 @@ const formScrapeData = {
           },
           {
             id: '',
-            formType: 'search2',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -471,7 +471,7 @@ const formScrapeData = {
           },
           {
             id: '',
-            formType: 'search2',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -568,7 +568,7 @@ const formScrapeData = {
           },
           {
             id: '',
-            formType: 'search2',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -625,7 +625,7 @@ const formScrapeData = {
         scrapeResult: [
           {
             id: '',
-            formType: 'search1',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -638,7 +638,7 @@ const formScrapeData = {
           },
           {
             id: '',
-            formType: 'search2',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -708,7 +708,7 @@ const formScrapeData = {
           },
           {
             id: '',
-            formType: 'search2',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,
@@ -765,7 +765,7 @@ const formScrapeData = {
         scrapeResult: [
           {
             id: '',
-            formType: 'search1',
+            formType: 'search',
             classList: '',
             action: '/abc/search.html',
             visibleATF: true,
@@ -779,7 +779,7 @@ const formScrapeData = {
           },
           {
             id: '',
-            formType: 'search2',
+            formType: 'search',
             classList: 'search',
             visibleATF: true,
             fieldCount: 2,

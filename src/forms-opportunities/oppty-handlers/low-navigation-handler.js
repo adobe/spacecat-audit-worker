@@ -10,7 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { filterForms, generateOpptyDataForHighPageViewsLowFormNav } from './utils.js';
+import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
+import { filterForms, generateOpptyData } from '../utils.js';
 
 const formPathSegments = ['contact', 'newsletter', 'sign', 'enrol', 'subscribe', 'register', 'join', 'apply', 'quote', 'buy', 'trial', 'demo', 'offer'];
 /**
@@ -19,7 +20,7 @@ const formPathSegments = ['contact', 'newsletter', 'sign', 'enrol', 'subscribe',
  * @param context - The context object containing the data access and logger objects.
  */
 // eslint-disable-next-line max-len
-export default async function highPageViewsLowFormNavOpportunity(auditUrl, auditDataObject, scrapedData, context) {
+export default async function createLowNavigationOpportunities(auditUrl, auditDataObject, scrapedData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 
@@ -37,7 +38,7 @@ export default async function highPageViewsLowFormNavOpportunity(auditUrl, audit
 
   const { formVitals } = auditData.auditResult;
   // eslint-disable-next-line max-len
-  const formOpportunities = await generateOpptyDataForHighPageViewsLowFormNav(formVitals, context);
+  const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]);
   log.debug(`forms opportunities high-page-views-low-form-navigations: ${JSON.stringify(formOpportunities, null, 2)}`);
 
   // for opportunity type high page views low form navigation

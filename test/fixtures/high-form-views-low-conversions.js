@@ -511,6 +511,20 @@ const testData = {
             page: 0.014947683109118086,
           },
         },
+        {
+          type: 'bounceRate',
+          device: '*',
+          value: {
+            page: 0.8505231689088191,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: '*',
+          value: {
+            page: 0.9,
+          },
+        },
       ],
     },
     guidance: {},
@@ -543,6 +557,20 @@ const testData = {
             page: 0.014947683109118086,
           },
         },
+        {
+          type: 'bounceRate',
+          device: '*',
+          value: {
+            page: 0.8505231689088191,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: '*',
+          value: {
+            page: 0.9,
+          },
+        },
       ],
     },
     guidance: {},
@@ -573,6 +601,20 @@ const testData = {
           device: '*',
           value: {
             page: 0.014947683109118086,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: '*',
+          value: {
+            page: 0.8505231689088191,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: '*',
+          value: {
+            page: 0.9,
           },
         },
       ],
@@ -614,6 +656,20 @@ const testData = {
           device: '*',
           value: {
             page: 0.014947683109118086,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: '*',
+          value: {
+            page: 0.8505231689088191,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: '*',
+          value: {
+            page: 0.9,
           },
         },
       ],

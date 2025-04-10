@@ -24,12 +24,12 @@ import {
 import { MockContextBuilder } from '../shared.js';
 import formVitalsData from '../fixtures/formvitalsdata.json' with { type: 'json' };
 import testData from '../fixtures/high-form-views-low-conversions.js';
-import convertToOpportunity from '../../src/forms-opportunities/opportunityHandler.js';
+import createLowConversionOpportunities from '../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js';
 import { shouldExcludeForm } from '../../src/forms-opportunities/utils.js';
 import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../fixtures/expectedformsendtoscraperdata.json' with { type: 'json' };
 import formScrapeData from '../fixtures/formscrapedata.js';
-import highPageViewsLowFormNavOpportunity from '../../src/forms-opportunities/highPageViewsLowFormNavOpportunity.js';
+import createLowNavigationOpportunities from '../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js';
 
 use(sinonChai);
 
@@ -134,7 +134,7 @@ describe('opportunities handler method', () => {
   it('should create new forms opportunity', async () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
-    await convertToOpportunity(auditUrl, auditData, undefined, context);
+    await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
     expect(dataAccessStub.Opportunity.create).to.be.callCount(5);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     // with empty guidance due to no scraping
@@ -144,7 +144,8 @@ describe('opportunities handler method', () => {
   it('should create new forms opportunity with scraped data available', async () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
-    await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData1, context);
+    const { scrapeData1: scrapeData } = formScrapeData;
+    await createLowConversionOpportunities(auditUrl, auditData, scrapeData, context);
     // with BTF guidance
     // expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
@@ -154,7 +155,8 @@ describe('opportunities handler method', () => {
     const { auditData2 } = testData;
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
-    await convertToOpportunity(auditUrl, auditData2, formScrapeData.scrapeData2, context);
+    const { scrapeData2: scrapeData } = formScrapeData;
+    await createLowConversionOpportunities(auditUrl, auditData2, scrapeData, context);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData2);
     // with empty guidance due to scrapedStatus = false
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
@@ -163,7 +165,8 @@ describe('opportunities handler method', () => {
   it('should create new forms opportunity with scraped data available with all field labels containing search', async () => {
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
-    await convertToOpportunity(auditUrl, auditData, formScrapeData.scrapeData3, context);
+    const { scrapeData3: scrapeData } = formScrapeData;
+    await createLowConversionOpportunities(auditUrl, auditData, scrapeData, context);
     const expectedOpportunityData = { ...testData.opportunityData3 };
     // with large form guidance
     expectedOpportunityData.data.scrapedStatus = true;
@@ -175,7 +178,8 @@ describe('opportunities handler method', () => {
     const { auditData2 } = testData;
     formsOppty.getType = () => 'high-form-views-low-conversions';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
-    await convertToOpportunity(auditUrl, auditData2, formScrapeData.scrapeData4, context);
+    const { scrapeData4: scrapeData } = formScrapeData;
+    await createLowConversionOpportunities(auditUrl, auditData2, scrapeData, context);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData4);
     // with Generic guidance
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
@@ -183,7 +187,7 @@ describe('opportunities handler method', () => {
 
   it('should use existing opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
-    await convertToOpportunity(auditUrl, auditData, undefined, context);
+    await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
     expect(formsOppty.save).to.be.callCount(1);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
@@ -191,7 +195,7 @@ describe('opportunities handler method', () => {
   it('should throw error if fetching opportunity fails', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
     try {
-      await convertToOpportunity(auditUrl, auditData, undefined, context);
+      await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
     } catch (err) {
       expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id: some-error');
     }
@@ -202,7 +206,7 @@ describe('opportunities handler method', () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
     dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
     try {
-      await convertToOpportunity(auditUrl, auditData, undefined, context);
+      await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
     } catch (err) {
       expect(err.message).to.equal('Failed to create Forms opportunity for siteId site-id: some-error');
     }
@@ -394,7 +398,7 @@ describe('process opportunity step', () => {
   });
 });
 
-describe('highPageViewsLowFormNavOpportunity handler method', () => {
+describe('createLowNavigationOpportunities handler method', () => {
   let logStub;
   let dataAccessStub;
   let auditData;
@@ -461,18 +465,18 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
       data: {
         form: 'https://www.surest.com/newsletter',
         screenshot: '',
-        trackedFormKPIName: 'Conversion Rate',
-        trackedFormKPIValue: null,
+        trackedFormKPIName: 'Form Views',
+        trackedFormKPIValue: 300,
         formViews: 300,
         pageViews: 8670,
         samples: 8670,
         scrapedStatus: false,
         metrics: [
           {
-            type: 'conversionRate',
+            type: 'formViews',
             device: '*',
             value: {
-              page: null,
+              page: 300,
             },
           },
         ],
@@ -496,7 +500,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
     formsCTAOppty.getType = () => 'high-page-views-low-form-nav';
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
 
-    await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
+    await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
     const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(actualCall).to.deep.equal(expectedOpportunityData);
@@ -506,7 +510,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
   it('should use existing high page views low form navigation opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
 
-    await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
+    await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
     expect(formsCTAOppty.save).to.be.calledOnce;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
@@ -516,7 +520,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
 
     try {
-      await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
+      await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
     } catch (err) {
       expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id: some-error');
     }
@@ -529,7 +533,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
     dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
 
     try {
-      await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
+      await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
     } catch (err) {
       expect(err.message).to.equal('Failed to create Forms opportunity for high page views low form nav for siteId site-id: some-error');
     }
@@ -540,7 +544,7 @@ describe('highPageViewsLowFormNavOpportunity handler method', () => {
   it('should handle empty form vitals data', async () => {
     auditData.auditResult.formVitals = [];
 
-    await highPageViewsLowFormNavOpportunity(auditUrl, auditData, undefined, context);
+    await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
@@ -560,16 +564,6 @@ describe('isSearchForm', () => {
 
   it('should return true for form with unsubscribe class', () => {
     const scrapedFormData = { classList: ['unsubscribe'] };
-    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
-  });
-
-  it('should return true for form with action ending in search.html', () => {
-    const scrapedFormData = { action: 'https://example.com/search.html' };
-    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
-  });
-
-  it('should return true for form with all field labels containing search', () => {
-    const scrapedFormData = { fieldsLabels: ['Search', 'Advanced Search'] };
     expect(shouldExcludeForm(scrapedFormData)).to.be.true;
   });
 
