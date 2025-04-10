@@ -380,6 +380,9 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
  * @param {string} inputUrl - The URL for which to find and validate the sitemap
  * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
  */
+// In findSitemap, update the loop that processes each sitemap’s pages.
+// Look for the section that handles checking each sitemap URL.
+
 export async function findSitemap(inputUrl) {
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
@@ -440,21 +443,34 @@ export async function findSitemap(inputUrl) {
         // eslint-disable-next-line no-await-in-loop
         const existingPages = await filterValidUrls(urlsToCheck);
 
-        // Only collect tracked status codes in issues
+        // Look at issues flagged as 301, 302, or 404.
         if (existingPages.notOk && existingPages.notOk.length > 0) {
-          const trackedIssues = existingPages.notOk
-            .filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
+          // Filter to issues we are tracking.
+          // eslint-disable-next-line max-len
+          const trackedIssues = existingPages.notOk.filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
+
+          // check if the suggested URL already exists in the valid list.
+          // if so, mark this issue for removal.
+          trackedIssues.forEach((issue) => {
+            if (issue.urlsSuggested && existingPages.ok.includes(issue.urlsSuggested)) {
+              // eslint-disable-next-line no-param-reassign
+              issue.remove = true;
+            }
+          });
+
           if (trackedIssues.length > 0) {
             notOkPagesFromSitemap[s] = trackedIssues;
           }
         }
 
+        // determine if there are any valid URLs.
         const hasValidUrls = existingPages.ok.length > 0
           || existingPages.notOk.some((issue) => [301, 302].includes(issue.statusCode));
 
         if (!hasValidUrls) {
           delete extractedPaths[s];
         } else {
+          // replace with the cleaned list of valid URLs.
           extractedPaths[s] = existingPages.ok;
         }
       }
@@ -575,14 +591,26 @@ export function generateSuggestions(auditUrl, auditData, context) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
+
+  // Map each issue to a suggestion.
   const suggestions = [...response, ...pagesWithIssues]
     .filter(Boolean)
-    .map((issue) => ({
-      ...issue,
-      recommendedAction: issue.urlsSuggested
-        ? `use this url instead: ${issue.urlsSuggested}`
-        : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
-    }));
+    .map((issue) => {
+      let recommendedAction = 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.';
+      if (issue.urlsSuggested) {
+        // if the issue is flagged for removal because the suggested URL already exists,
+        // then recommend to remove the duplicate URL from the sitemap.
+        if (issue.remove) {
+          recommendedAction = `Remove ${issue.pageUrl} from the sitemap as ${issue.urlsSuggested} is already present.`;
+        } else {
+          recommendedAction = `Use this url instead: ${issue.urlsSuggested}`;
+        }
+      }
+      return {
+        ...issue,
+        recommendedAction,
+      };
+    });
 
   log.info(`Classified suggestions: ${JSON.stringify(suggestions)}`);
   return {

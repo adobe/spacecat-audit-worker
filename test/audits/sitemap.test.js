@@ -830,7 +830,7 @@ describe('Sitemap Audit', () => {
         pageUrl: 'https://example.com/old-page',
         statusCode: 301,
         urlsSuggested: 'https://example.com/new-page',
-        recommendedAction: 'use this url instead: https://example.com/new-page',
+        recommendedAction: 'Use this url instead: https://example.com/new-page',
       });
     });
   });
