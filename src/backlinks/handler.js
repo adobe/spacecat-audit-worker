@@ -294,9 +294,8 @@ export default new AuditBuilder()
     }
 
     return {
-      urls: toppages.map((topPage) => topPage.getUrl()),
+      urls: toppages.map((topPage) => ({ url: topPage.getUrl() })),
       siteId: site.getId(),
-      jobId: site.getId(),
       type: 'broken-backlinks',
     };
   }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
