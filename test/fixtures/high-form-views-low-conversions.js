@@ -511,6 +511,30 @@ const testData = {
             page: 0.014947683109118086,
           },
         },
+        {
+          type: 'conversionRate',
+          device: 'mobile',
+          value: {
+            page: 0,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'desktop',
+          value: {
+            page: 0.01757469244288225,
+          },
+        },
+        {
+          type: 'traffic',
+          device: '*',
+          value: {
+            total: null,
+            paid: null,
+            earned: null,
+            owned: null,
+          },
+        },
       ],
     },
     guidance: {},
@@ -543,6 +567,30 @@ const testData = {
             page: 0.014947683109118086,
           },
         },
+        {
+          type: 'conversionRate',
+          device: 'mobile',
+          value: {
+            page: 0,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'desktop',
+          value: {
+            page: 0.01757469244288225,
+          },
+        },
+        {
+          type: 'traffic',
+          device: '*',
+          value: {
+            total: null,
+            paid: null,
+            earned: null,
+            owned: null,
+          },
+        },
       ],
     },
     guidance: {},
@@ -573,6 +621,30 @@ const testData = {
           device: '*',
           value: {
             page: 0.014947683109118086,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'mobile',
+          value: {
+            page: 0,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'desktop',
+          value: {
+            page: 0.01757469244288225,
+          },
+        },
+        {
+          type: 'traffic',
+          device: '*',
+          value: {
+            total: null,
+            paid: null,
+            earned: null,
+            owned: null,
           },
         },
       ],
@@ -614,6 +686,30 @@ const testData = {
           device: '*',
           value: {
             page: 0.014947683109118086,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'mobile',
+          value: {
+            page: 0,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'desktop',
+          value: {
+            page: 0.01757469244288225,
+          },
+        },
+        {
+          type: 'traffic',
+          device: '*',
+          value: {
+            total: null,
+            paid: null,
+            earned: null,
+            owned: null,
           },
         },
       ],
