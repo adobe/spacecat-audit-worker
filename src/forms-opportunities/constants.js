@@ -10,6 +10,6 @@
  * governing permissions and limitations under the License.
  */
 export const FORM_OPPORTUNITY_TYPES = {
-  LOW_CONVERSION: 'high-page-views-low-conversion',
+  LOW_CONVERSION: 'high-form-views-low-conversions',
   LOW_NAVIGATION: 'high-page-views-low-form-nav',
 };
