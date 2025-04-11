@@ -15,47 +15,20 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
+import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
-import { calculateKpiDeltasForAudit, isLinkInaccessible } from './helpers.js';
+import {
+  calculateKpiDeltasForAudit,
+  isLinkInaccessible,
+  calculatePriority,
+} from './helpers.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
-const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-
-/**
- * Classifies links into priority categories based on views
- * High: top 25%, Medium: next 25%, Low: bottom 50%
- * @param {Array} links - Array of objects with views property
- * @returns {Array} - Links with priority classifications included
- */
-function calculatePriority(links) {
-  // Sort links by views in descending order
-  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
-
-  // Calculate indices for the 25% and 50% marks
-  const quarterIndex = Math.ceil(sortedLinks.length * 0.25);
-  const halfIndex = Math.ceil(sortedLinks.length * 0.5);
-
-  // Map through sorted links and assign priority
-  return sortedLinks.map((link, index) => {
-    let priority;
-
-    if (index < quarterIndex) {
-      priority = 'high';
-    } else if (index < halfIndex) {
-      priority = 'medium';
-    } else {
-      priority = 'low';
-    }
-
-    return {
-      ...link,
-      priority,
-    };
-  });
-}
+const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
  * Perform an audit to check which internal links for domain are broken.
@@ -67,7 +40,7 @@ function calculatePriority(links) {
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
 export async function internalLinksAuditRunner(auditUrl, context) {
-  const { log } = context;
+  const { log, site } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -78,9 +51,15 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     granularity: 'hourly',
   };
 
-  log.info(`broken-internal-links audit: ${auditType}: Options for RUM call: `, JSON.stringify(options));
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] Options for RUM call: `,
+    JSON.stringify(options),
+  );
 
-  const internal404Links = await rumAPIClient.query('404-internal-links', options);
+  const internal404Links = await rumAPIClient.query(
+    '404-internal-links',
+    options,
+  );
   const transformedLinks = internal404Links.map((link) => ({
     urlFrom: link.url_from,
     urlTo: link.url_to,
@@ -106,25 +85,97 @@ export async function internalLinksAuditRunner(auditUrl, context) {
   };
 }
 
-export async function opportunityAndSuggestions(auditUrl, auditData, context) {
-  const kpiDeltas = calculateKpiDeltasForAudit(auditData);
+export async function runAuditAndImportTopPagesStep(context) {
+  const { site, log, finalUrl } = context;
+
+  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] starting audit`);
+  const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
+    finalUrl,
+    context,
+  );
+
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] finished audit, now scraping top urls`,
+  );
+
+  // Issue in this message object here? "audit failed for site undefined at step prepareScraping.
+  // Reason: Error getting site undefined: Validation failed in site: siteId must be a valid UUID"
+  return {
+    auditResult: internalLinksAuditRunnerResult.auditResult,
+    fullAuditRef: finalUrl,
+    type: 'top-pages',
+    siteId: site.getId(),
+    jobId: site.getId(),
+  };
+}
+
+export async function prepareScrapingStep(context) {
+  const { site, log, dataAccess } = context;
+
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] start: preparing scraping step`,
+  );
+
+  // fetch top pages for site
+  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] fetching top pages`);
+  const topPages = await getTopPagesForSiteId(
+    dataAccess,
+    site.getId(),
+    context,
+    log,
+  );
+
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] top pages: ${JSON.stringify(
+      topPages,
+    )}`,
+  );
+
+  const urls = topPages.map((page) => ({ url: page.url }));
+
+  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] >> ~ urls:`, urls);
+
+  return {
+    jobId: site.getId(),
+    urls,
+    siteId: site.getId(),
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function opportunityAndSuggestionsStep(context) {
+  const { log, site, finalUrl } = context;
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] starting audit`,
+  );
+
+  const latestAuditData = await site.getLatestAuditByAuditType(AUDIT_TYPE);
+
+  // generate suggestions
+  const auditDataWithSuggestions = await generateSuggestionData(
+    finalUrl,
+    latestAuditData,
+    context,
+    site,
+  );
+
+  // TODO: skip opportunity creation if no internal link items are found in the audit data
+
+  const kpiDeltas = calculateKpiDeltasForAudit(auditDataWithSuggestions);
   const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
+    finalUrl,
+    auditDataWithSuggestions,
     context,
     createOpportunityData,
-    auditType,
+    AUDIT_TYPE,
     {
       kpiDeltas,
     },
   );
-  const { log } = context;
-
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
-
   await syncSuggestions({
     opportunity,
-    newData: auditData?.auditResult?.brokenInternalLinks,
+    newData: auditDataWithSuggestions?.auditResult?.brokenInternalLinks,
     context,
     buildKey,
     mapNewSuggestion: (entry) => ({
@@ -142,10 +193,22 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     }),
     log,
   });
+  return {
+    status: 'complete',
+  };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .withRunner(internalLinksAuditRunner)
-  .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
+  .addStep(
+    'runAuditAndImportTopPages',
+    runAuditAndImportTopPagesStep,
+    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
+  )
+  .addStep(
+    'prepareScraping',
+    prepareScrapingStep,
+    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  )
+  .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
   .build();
