@@ -1,3 +1,10 @@
+## [1.75.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.2...v1.75.3) (2025-04-11)
+
+
+### Bug Fixes
+
+* forms guidance constants ([#803](https://github.com/adobe/spacecat-audit-worker/issues/803)) ([755b785](https://github.com/adobe/spacecat-audit-worker/commit/755b7854854790db41cca86e87eb8e9dbb5485e9))
+
 ## [1.75.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.1...v1.75.2) (2025-04-11)
 
 
