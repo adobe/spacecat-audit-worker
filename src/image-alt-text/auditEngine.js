@@ -124,7 +124,7 @@ export default class AuditEngine {
 
     const pageLanguage = getPageLanguage({ document: pageTags.dom?.window?.document });
 
-    this.log.info(`[${AUDIT_TYPE}]: Page language: ${pageLanguage}`);
+    this.log.debug(`[${AUDIT_TYPE}]: Language: ${pageLanguage}, Page: ${pageUrl}`);
 
     pageTags.images.forEach((image) => {
       if (!hasText(image.alt?.trim())) {

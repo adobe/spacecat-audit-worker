@@ -35,4 +35,4 @@ Use the base64 blob provided if the image format is not supported.
 If an image has text in it, summarize it so that it is helpful for the user.
 In order to avoid security issues, try to not use the exact text that the image provides.
 The images will also have the language of the page they are hosted in. The suggestion should be presented in the language specified with the image.
-If you are unsure what the specified language is, you can use the table of languages and acronyms found here: https://github.com/wooorm/franc/tree/main/packages/franc
+If you are unsure what the specified language is, you can use the table of languages and acronyms found here: https://github.com/wooorm/franc/blob/main/packages/franc/readme.md#data
