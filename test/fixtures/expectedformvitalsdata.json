@@ -25,7 +25,9 @@
           "desktop:windows": 100
         },
         "formsubmit": {},
-        "formview": {},
+        "formview": {
+          "desktop:windows": 7898
+        },
         "pageview": {
           "desktop:windows": 7898
         },
@@ -66,7 +68,12 @@
           "desktop:windows": 100
         },
         "formsubmit": {},
-        "formview": {},
+        "formview": {
+          "desktop:mac": 6789,
+          "desktop:windows": 1900,
+          "mobile:android": 300,
+          "mobile:ios": 100
+        },
         "pageview": {
           "desktop:mac": 6789,
           "desktop:windows": 1900,
@@ -98,7 +105,9 @@
         "formsubmit": {
           "desktop:windows": 200
         },
-        "formview": {},
+        "formview": {
+          "desktop:windows": 8000
+        },
         "pageview": {
           "desktop:windows": 8000
         },
