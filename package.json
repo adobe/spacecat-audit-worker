@@ -86,6 +86,7 @@
     "aws-xray-sdk": "3.10.3",
     "cheerio": "1.0.0",
     "diff": "7.0.0",
+    "franc": "^6.2.0",
     "get-xpath": "^3.3.0",
     "jsdom": "26.0.0",
     "urijs": "1.19.11"

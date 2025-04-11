@@ -12,6 +12,7 @@
 
 import { isNonEmptyArray, hasText } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { franc } from 'franc';
 
 // GPT support: https://platform.openai.com/docs/guides/vision
 const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg)(?=\?|$)/i;
@@ -23,6 +24,7 @@ const mimeTypesForBase64 = {
   ico: 'image/x-icon',
 };
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
+const UNKNOWN_LANGUAGE = 'unknown';
 
 const getMimeType = async (url) => {
   const match = url.match(SUPPORTED_BLOB_FORMATS);
@@ -70,6 +72,41 @@ export const convertImagesToBase64 = async (imageUrls, auditUrl, log, fetch) => 
   return base64Blobs;
 };
 
+function detectLanguageFromText(text) {
+  const langCode = franc(text);
+  return langCode !== 'und' ? langCode : UNKNOWN_LANGUAGE;
+}
+
+function detectLanguageFromDom({ document }) {
+  const htmlTag = document.querySelector('html');
+  if (htmlTag && htmlTag.hasAttribute('lang')) {
+    return htmlTag.getAttribute('lang');
+  }
+
+  const metaTags = document.querySelectorAll('meta[http-equiv="Content-Language"], meta[name="language"]');
+  for (const meta of metaTags) {
+    if (meta.hasAttribute('content')) {
+      return meta.getAttribute('content');
+    }
+  }
+
+  return UNKNOWN_LANGUAGE;
+}
+
+const getPageLanguage = ({ document }) => {
+  let lang = UNKNOWN_LANGUAGE;
+  if (!document) {
+    return lang;
+  }
+
+  lang = detectLanguageFromDom({ document });
+  if (lang === UNKNOWN_LANGUAGE) {
+    const bodyText = document.querySelector('body').textContent;
+    lang = detectLanguageFromText(bodyText);
+  }
+  return lang;
+};
+
 export default class AuditEngine {
   constructor(log) {
     this.log = log;
@@ -85,6 +122,10 @@ export default class AuditEngine {
       return;
     }
 
+    const pageLanguage = getPageLanguage({ document: pageTags.dom?.window?.document });
+
+    this.log.info(`[${AUDIT_TYPE}]: Page language: ${pageLanguage}`);
+
     pageTags.images.forEach((image) => {
       if (!hasText(image.alt?.trim())) {
         if (image.isPresentational) {
@@ -99,6 +140,7 @@ export default class AuditEngine {
           pageUrl,
           src: image.src,
           xpath: image.xpath,
+          language: pageLanguage,
         });
       }
     });
@@ -174,3 +216,5 @@ export default class AuditEngine {
     };
   }
 }
+
+export { getPageLanguage, detectLanguageFromText };
