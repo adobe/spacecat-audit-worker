@@ -113,14 +113,14 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   try {
     for (const opptyData of filteredOpportunities) {
       let highFormViewsLowConversionsOppty = opportunities.find(
-        (oppty) => oppty.getType() === 'high-form-views-low-conversions'
+        (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION
           && oppty.getData().form === opptyData.form,
       );
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
-        type: 'high-form-views-low-conversions',
+        type: FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
         origin: 'AUTOMATION',
         title: 'Form has low conversions',
         description: 'Form has high views but low conversions',
@@ -150,7 +150,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         log.debug('Forms Opportunity high form views low conversion updated');
       }
 
-      log.info('sending message to mystique 1');
+      log.info('sending message to mystique');
       const mystiqueMessage = {
         type: 'guidance:high-form-views-low-conversions',
         siteId: auditData.siteId,

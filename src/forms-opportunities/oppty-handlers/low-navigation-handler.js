@@ -53,7 +53,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
   try {
     for (const opptyData of filteredOpportunities) {
       let highPageViewsLowFormNavOppty = opportunities.find(
-        (oppty) => oppty.getType() === 'high-page-views-low-form-nav'
+        (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION
               && oppty.getData().form === opptyData.form,
       );
 
@@ -61,7 +61,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         siteId: auditData.siteId,
         auditId: auditData.auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
-        type: 'high-page-views-low-form-nav',
+        type: FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
         origin: 'AUTOMATION',
         title: 'Form has low views',
         description: 'The form has low views due to low navigations in the page containing its CTA',
