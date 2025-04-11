@@ -1,3 +1,10 @@
+## [1.75.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.1...v1.75.2) (2025-04-11)
+
+
+### Bug Fixes
+
+* [alt-text] adds locale to suggestions ([#802](https://github.com/adobe/spacecat-audit-worker/issues/802)) ([9faa25a](https://github.com/adobe/spacecat-audit-worker/commit/9faa25aafaec57cd92a2cc8c4eb2486b23351224))
+
 ## [1.75.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.0...v1.75.1) (2025-04-10)
 
 
