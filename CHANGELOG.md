@@ -1,3 +1,31 @@
+## [1.75.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.2...v1.75.3) (2025-04-11)
+
+
+### Bug Fixes
+
+* forms guidance constants ([#803](https://github.com/adobe/spacecat-audit-worker/issues/803)) ([755b785](https://github.com/adobe/spacecat-audit-worker/commit/755b7854854790db41cca86e87eb8e9dbb5485e9))
+
+## [1.75.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.1...v1.75.2) (2025-04-11)
+
+
+### Bug Fixes
+
+* [alt-text] adds locale to suggestions ([#802](https://github.com/adobe/spacecat-audit-worker/issues/802)) ([9faa25a](https://github.com/adobe/spacecat-audit-worker/commit/9faa25aafaec57cd92a2cc8c4eb2486b23351224))
+
+## [1.75.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.0...v1.75.1) (2025-04-10)
+
+
+### Bug Fixes
+
+* adding oppty type check in forms guidance ([#798](https://github.com/adobe/spacecat-audit-worker/issues/798)) ([778e033](https://github.com/adobe/spacecat-audit-worker/commit/778e03391c2c4a0d74f83afd716681cb51574541))
+
+# [1.75.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.74.2...v1.75.0) (2025-04-10)
+
+
+### Features
+
+* registering forms guidance handler ([#796](https://github.com/adobe/spacecat-audit-worker/issues/796)) ([3f65cf9](https://github.com/adobe/spacecat-audit-worker/commit/3f65cf9e6bd93d0ff27efd73cbc0562b31adb7bf))
+
 ## [1.74.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.74.1...v1.74.2) (2025-04-10)
 
 

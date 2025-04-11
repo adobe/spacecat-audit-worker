@@ -11,7 +11,8 @@
  */
 
 import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
-import { filterForms, generateOpptyData, shouldExcludeForm } from './utils.js';
+import { filterForms, generateOpptyData, shouldExcludeForm } from '../utils.js';
+import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 
 function generateDefaultGuidance(scrapedData, oppoty) {
   if (isNonEmptyArray(scrapedData?.formData)) {
@@ -60,7 +61,7 @@ function generateDefaultGuidance(scrapedData, oppoty) {
             };
           }
           // eslint-disable-next-line max-len
-          return Number(oppoty.trackedFormKPIValue) > 0 && Number(oppoty.trackedFormKPIValue) < 6 && {
+          return Number(oppoty.trackedFormKPIValue) > 0 && Number(oppoty.trackedFormKPIValue) < 0.1 && {
             recommendations: [
               {
                 insight: `The form has a conversion rate of ${oppoty.trackedFormKPIValue.toFixed(2) * 100}%`,
@@ -83,7 +84,7 @@ function generateDefaultGuidance(scrapedData, oppoty) {
  * @param context - The context object containing the data access and logger objects.
  */
 // eslint-disable-next-line max-len
-export default async function convertToOpportunity(auditUrl, auditDataObject, scrapedData, context) {
+export default async function createLowConversionOpportunities(auditUrl, auditDataObject, scrapedData, context) {
   const {
     dataAccess, log, sqs, site, env,
   } = context;
@@ -103,7 +104,8 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
 
   const { formVitals } = auditData.auditResult;
   log.debug(`scraped data for form ${JSON.stringify(scrapedData, null, 2)}`);
-  const formOpportunities = await generateOpptyData(formVitals, context);
+  // eslint-disable-next-line max-len
+  const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]);
   log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
   log.info(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
@@ -111,14 +113,14 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
   try {
     for (const opptyData of filteredOpportunities) {
       let highFormViewsLowConversionsOppty = opportunities.find(
-        (oppty) => oppty.getType() === 'high-form-views-low-conversions'
+        (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION
           && oppty.getData().form === opptyData.form,
       );
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
-        type: 'high-form-views-low-conversions',
+        type: FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
         origin: 'AUTOMATION',
         title: 'Form has low conversions',
         description: 'Form has high views but low conversions',
@@ -148,7 +150,7 @@ export default async function convertToOpportunity(auditUrl, auditDataObject, sc
         log.debug('Forms Opportunity high form views low conversion updated');
       }
 
-      log.info('sending message to mystique 1');
+      log.info('sending message to mystique');
       const mystiqueMessage = {
         type: 'guidance:high-form-views-low-conversions',
         siteId: auditData.siteId,
