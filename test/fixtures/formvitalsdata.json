@@ -203,7 +203,7 @@
 
       },
       "formview": {
-
+        "desktop:windows": 7898
       },
       "formengagement": {
         "desktop:windows": 100
@@ -235,7 +235,10 @@
 
       },
       "formview": {
-
+        "desktop:mac": 6789,
+        "desktop:windows": 1900,
+        "mobile:ios": 100,
+        "mobile:android": 300
       },
       "formengagement": {
         "desktop:windows": 100
@@ -253,7 +256,7 @@
         "desktop:windows": 200
       },
       "formview": {
-
+        "desktop:windows": 8000
       },
       "formengagement": {
         "desktop:windows": 200
