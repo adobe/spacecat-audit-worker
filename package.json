@@ -24,7 +24,6 @@
     "prepare": "husky",
     "local-build": "sam build",
     "local-run": "sam local invoke"
-
   },
   "wsk": {
     "target": "aws",
