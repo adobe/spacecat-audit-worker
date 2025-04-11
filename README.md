@@ -553,7 +553,7 @@ You can run the audit locally using AWS SAM and Docker.
 
 1. Ensure you have [Docker](https://docs.docker.com/desktop/setup/install/mac-install/), [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) and [jq](https://jqlang.org/) installed.
 2. Login to AWS using [KLAM](https://klam.corp.adobe.com/) and login with your AWS CLI.
-3. To provide secrets to the audit, please run `./populate-env.sh` once. It will fetch all secrets from the AWS Secret Manager.
+3. To provide secrets to the audit, please run `./scripts/populate-env.sh` once. It will fetch all secrets from the AWS Secret Manager.
 4. To run the audit locally, execute the following commands:
     ```bash
     source env.sh
@@ -561,5 +561,6 @@ You can run the audit locally using AWS SAM and Docker.
     npm run local-run
     ```
 5. Starting point of the execution is `src/index-local.js`. Output of the audit can be found in `output.txt`.
+6. To hot reload any changes in the `/src` folder, you can use `npm run local-watch`
 
 If you need to add additional secrets, make sure to adjust the Lambda `template.yml` accordingly.

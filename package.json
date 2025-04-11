@@ -23,7 +23,9 @@
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
     "prepare": "husky",
     "local-build": "sam build",
-    "local-run": "sam local invoke -l output.txt"
+    "local-run": "sam local invoke",
+    "local-watch": "node scripts/watch-and-copy.js"
+
   },
   "wsk": {
     "target": "aws",
@@ -105,6 +107,7 @@
     "c8": "10.1.3",
     "chai": "5.2.0",
     "chai-as-promised": "8.0.1",
+    "chokidar": "^4.0.3",
     "dotenv": "16.4.7",
     "eslint": "8.57.1",
     "esmock": "2.7.0",
