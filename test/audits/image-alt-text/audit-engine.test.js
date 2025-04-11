@@ -74,6 +74,7 @@ describe('AuditEngine', () => {
         pageUrl,
         src: 'image1.jpg',
         xpath: '/html/body/img[1]',
+        language: 'unknown',
       });
     });
 

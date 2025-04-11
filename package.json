@@ -23,7 +23,7 @@
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
     "prepare": "husky",
     "local-build": "sam build",
-    "local-run": "sam local invoke"
+    "local-run": "sam local invoke - output.txt"
   },
   "wsk": {
     "target": "aws",
