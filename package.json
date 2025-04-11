@@ -73,7 +73,7 @@
     "@adobe/spacecat-shared-google-client": "1.4.17",
     "@adobe/spacecat-shared-gpt-client": "1.5.6",
     "@adobe/spacecat-shared-http-utils": "1.10.2",
-    "@adobe/spacecat-shared-rum-api-client": "2.22.2",
+    "@adobe/spacecat-shared-rum-api-client": "2.22.3",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.36.1",
     "@aws-sdk/client-lambda": "3.758.0",
