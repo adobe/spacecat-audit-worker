@@ -62,6 +62,7 @@ export async function fetchAndProcessPageObject(
   return {
     [pageUrl]: {
       images,
+      dom,
     },
   };
 }
