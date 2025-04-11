@@ -159,6 +159,8 @@ export async function opportunityAndSuggestionsStep(context) {
     site,
   );
 
+  // TODO: skip opportunity creation if no internal link items are found in the audit data
+
   const kpiDeltas = calculateKpiDeltasForAudit(auditDataWithSuggestions);
   const opportunity = await convertToOpportunity(
     finalUrl,

@@ -17,7 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 
-import { internalLinksAuditRunner, opportunityAndSuggestions } from '../../../src/internal-links/handler.js';
+import { internalLinksAuditRunner, opportunityAndSuggestionsStep } from '../../../src/internal-links/handler.js';
 import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -48,10 +48,18 @@ const sandbox = sinon.createSandbox();
 
 const baseURL = 'https://example.com';
 const auditUrl = 'www.example.com';
+const site = {
+  getBaseURL: () => baseURL,
+  getId: () => 'site-id-1',
+  getLatestAuditByAuditType: () => ({
+    auditResult: {
+      brokenInternalLinks: AUDIT_RESULT_DATA,
+      success: true,
+    },
+  }),
+};
 
 describe('Broken internal links audit', () => {
-  const site = { getBaseURL: () => baseURL };
-
   const context = new MockContextBuilder()
     .withSandbox(sandbox)
     .withOverrides({
@@ -59,6 +67,14 @@ describe('Broken internal links audit', () => {
       func: { package: 'spacecat-services', version: 'ci', name: 'test' },
       rumApiClient: {
         query: sinon.stub().resolves(internalLinksData),
+      },
+      site,
+      dataAccess: {
+        Configuration: {
+          findLatest: () => ({
+            isHandlerEnabledForSite: () => true,
+          }),
+        },
       },
     })
     .build();
@@ -106,6 +122,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
       .withOverrides({
         runtime: { name: 'aws-lambda', region: 'us-east-1' },
         func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+        finalUrl: 'www.example.com',
       })
       .build();
     context.log = {
@@ -113,10 +130,18 @@ describe('broken-internal-links audit to opportunity conversion', () => {
       error: sandbox.stub(),
     };
 
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+
     context.dataAccess.Opportunity = {
       allBySiteIdAndStatus: sandbox.stub(),
       create: sandbox.stub(),
     };
+
+    context.site = site;
 
     addSuggestionsResponse = {
       createdItems: [],
@@ -157,7 +182,8 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
 
-    await opportunityAndSuggestions(auditUrl, auditData, context);
+    // await opportunityAndSuggestionsStep(auditUrl, auditData, context);
+    await opportunityAndSuggestionsStep(context);
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
 
@@ -171,7 +197,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
 
-    await expect(opportunityAndSuggestions(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
+    await expect(opportunityAndSuggestionsStep(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
     expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id-1 and auditId audit-id-1: big error happened');
@@ -184,7 +210,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
     context.dataAccess.Opportunity.create.resolves(opportunity);
     try {
-      await opportunityAndSuggestions(auditUrl, auditData, context);
+      await opportunityAndSuggestionsStep(auditUrl, auditData, context);
     } catch (err) {
       expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id-1: some-error');
     }
@@ -209,7 +235,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     }));
     opportunity.getSuggestions.resolves(existingSuggestions);
 
-    await opportunityAndSuggestions(auditUrl, auditData, context);
+    await opportunityAndSuggestionsStep(auditUrl, auditData, context);
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(opportunity.setAuditId).to.have.been.calledOnceWith('audit-id-1');
