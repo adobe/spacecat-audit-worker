@@ -202,6 +202,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       if (image.blob) {
         el.blob = image.blob;
       }
+      el.language = image.language;
       return el;
     },
   );
@@ -221,6 +222,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       altText: imageSuggestions[imageUrl]?.suggestion || '',
       isAppropriate: imageSuggestions[imageUrl]?.is_appropriate ?? null,
       xpath: image.xpath,
+      language: image.language,
     };
   });
 
