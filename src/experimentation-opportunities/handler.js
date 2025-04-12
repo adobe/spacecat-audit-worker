@@ -80,9 +80,9 @@ export async function generateOpportunityAndSuggestions(context) {
 }
 
 function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
-  return experimentationOpportunities.filter(
+  return experimentationOpportunities?.filter(
     (oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
-  ).map((oppty) => oppty.page);
+  )?.map((oppty) => oppty.page);
 }
 
 /**
@@ -124,7 +124,11 @@ function organicKeywordsStep(context) {
   const {
     site, log, finalUrl, audit,
   } = context;
-  const urls = getHighOrganicLowCtrOpportunityUrls(audit.experimentationOpportunities);
+  const auditData = audit.getFullAuditRef();
+  const auditResult = audit.getAuditResult();
+  console.log('auditref', JSON.stringify(auditData, null, 2));
+  console.log('auditResult', JSON.stringify(auditResult, null, 2));
+  const urls = getHighOrganicLowCtrOpportunityUrls(auditResult.experimentationOpportunities);
   log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
   return {
     type: 'organic-keywords',
