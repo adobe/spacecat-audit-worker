@@ -48,16 +48,12 @@ function processRageClickOpportunities(opportunities) {
 
 export async function generateOpportunityAndSuggestions(context) {
   const {
-    log, sqs, env, site, audit, finalUrl,
+    log, sqs, env, site, audit,
   } = context;
-  const { auditResult, isError = false } = audit;
-  console.log(`auditId: ${audit.id}`);
-  if (isError) {
-    log.error(`Experimentation opportunities audit failed for ${finalUrl}. AuditRef: ${auditResult.fullAuditRef}`);
-    return;
-  }
+  const auditResult = audit.getAuditResult();
+  log.info('auditResult in generateOpportunityAndSuggestions: ', JSON.stringify(auditResult, null, 2));
 
-  const messages = auditResult.experimentationOpportunities?.filter(
+  const messages = auditResult?.experimentationOpportunities?.filter(
     (oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
   ).map((oppty) => ({
     type: 'guidance:high-organic-low-ctr',
@@ -75,7 +71,7 @@ export async function generateOpportunityAndSuggestions(context) {
   for (const message of messages) {
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`Message sent: ${JSON.stringify(message)}`);
+    log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
   }
 }
 
@@ -126,8 +122,8 @@ function organicKeywordsStep(context) {
   } = context;
   const auditData = audit.getFullAuditRef();
   const auditResult = audit.getAuditResult();
-  console.log('auditref', JSON.stringify(auditData, null, 2));
-  console.log('auditResult', JSON.stringify(auditResult, null, 2));
+  log.info('auditref', JSON.stringify(auditData, null, 2));
+  log.info('auditResult', JSON.stringify(auditResult, null, 2));
   const urls = getHighOrganicLowCtrOpportunityUrls(auditResult.experimentationOpportunities);
   log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
   return {
