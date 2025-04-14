@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import sinonChai from 'sinon-chai';
 import handler from '../../src/forms-opportunities/oppty-handlers/guidance-high-form-views-low-conversions.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../src/forms-opportunities/constants.js';
 
 use(sinonChai);
 
@@ -64,7 +65,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
   it('should update an existing opportunity', async () => {
     const existingOpportunity = {
       getData: sinon.stub().returns({ form: 'https://example.com' }),
-      getType: sinon.stub().returns('high-page-views-low-conversion'),
+      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_CONVERSION),
       setAuditId: sinon.stub(),
       setGuidance: sinon.stub(),
       save: sinon.stub().resolvesThis(),

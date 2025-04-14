@@ -30,6 +30,7 @@ import expectedFormVitalsData from '../fixtures/expectedformvitalsdata.json' wit
 import expectedFormSendToScraperData from '../fixtures/expectedformsendtoscraperdata.json' with { type: 'json' };
 import formScrapeData from '../fixtures/formscrapedata.js';
 import createLowNavigationOpportunities from '../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../src/forms-opportunities/constants.js';
 
 use(sinonChai);
 
@@ -90,7 +91,7 @@ describe('opportunities handler method', () => {
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       save: sinon.stub(),
-      getType: () => 'high-form-views-low-conversions',
+      getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
       setData: sinon.stub(),
       setGuidance: sinon.stub(),
       getData: sinon.stub().returns({
@@ -132,7 +133,7 @@ describe('opportunities handler method', () => {
   });
 
   it('should create new forms opportunity', async () => {
-    formsOppty.getType = () => 'high-form-views-low-conversions';
+    formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
     expect(dataAccessStub.Opportunity.create).to.be.callCount(5);
@@ -142,7 +143,7 @@ describe('opportunities handler method', () => {
   });
 
   it('should create new forms opportunity with scraped data available', async () => {
-    formsOppty.getType = () => 'high-form-views-low-conversions';
+    formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     const { scrapeData1: scrapeData } = formScrapeData;
     await createLowConversionOpportunities(auditUrl, auditData, scrapeData, context);
@@ -153,7 +154,7 @@ describe('opportunities handler method', () => {
 
   it('should create new forms opportunity with scraped data available not matched', async () => {
     const { auditData2 } = testData;
-    formsOppty.getType = () => 'high-form-views-low-conversions';
+    formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     const { scrapeData2: scrapeData } = formScrapeData;
     await createLowConversionOpportunities(auditUrl, auditData2, scrapeData, context);
@@ -163,7 +164,7 @@ describe('opportunities handler method', () => {
   });
 
   it('should create new forms opportunity with scraped data available with all field labels containing search', async () => {
-    formsOppty.getType = () => 'high-form-views-low-conversions';
+    formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     const { scrapeData3: scrapeData } = formScrapeData;
     await createLowConversionOpportunities(auditUrl, auditData, scrapeData, context);
@@ -176,7 +177,7 @@ describe('opportunities handler method', () => {
 
   it('should create new forms opportunity with scraped data available and matched with Generic guidance', async () => {
     const { auditData2 } = testData;
-    formsOppty.getType = () => 'high-form-views-low-conversions';
+    formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     const { scrapeData4: scrapeData } = formScrapeData;
     await createLowConversionOpportunities(auditUrl, auditData2, scrapeData, context);
@@ -241,7 +242,7 @@ describe('audit and send scraping step', () => {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
         save: sinon.stub(),
-        getType: () => 'high-form-views-low-conversions',
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
       },
       finalUrl: 'www.example.com',
     })
@@ -275,7 +276,7 @@ describe('process opportunity step', () => {
     getId: () => 'opportunity-id',
     setAuditId: sinon.stub(),
     save: sinon.stub(),
-    getType: () => 'high-form-views-low-conversions',
+    getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
   };
 
   let dataAccessStub = {
@@ -290,7 +291,7 @@ describe('process opportunity step', () => {
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       save: sinon.stub(),
-      getType: () => 'high-form-views-low-conversions',
+      getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
     };
 
     dataAccessStub = {
@@ -334,7 +335,7 @@ describe('process opportunity step', () => {
           getId: 'opportunity-id',
           setAuditId: sinon.stub(),
           save: sinon.stub(),
-          getType: 'high-form-views-low-conversions',
+          getType: FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
         },
       },
       env: {
@@ -388,7 +389,7 @@ describe('process opportunity step', () => {
     };
 
     context.s3Client.send.resolves(mockFileResponse);
-    formsOppty.getType = () => 'high-form-views-low-conversions';
+    formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
 
     const result = await processOpportunityStep(context);
@@ -413,7 +414,7 @@ describe('createLowNavigationOpportunities handler method', () => {
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       save: sinon.stub(),
-      getType: () => 'high-page-views-low-form-nav',
+      getType: () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
       setData: sinon.stub(),
       setGuidance: sinon.stub(),
       getData: sinon.stub().returns({
@@ -455,7 +456,7 @@ describe('createLowNavigationOpportunities handler method', () => {
       siteId: 'site-id',
       auditId: 'audit-id',
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
-      type: 'high-page-views-low-form-nav',
+      type: FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
       origin: 'AUTOMATION',
       title: 'Form has low views',
       description: 'The form has low views due to low navigations in the page containing its CTA',
@@ -497,7 +498,7 @@ describe('createLowNavigationOpportunities handler method', () => {
       },
     };
 
-    formsCTAOppty.getType = () => 'high-page-views-low-form-nav';
+    formsCTAOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION;
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
 
     await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);

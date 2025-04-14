@@ -1,3 +1,31 @@
+## [1.75.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.5...v1.75.6) (2025-04-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.22.4 ([#807](https://github.com/adobe/spacecat-audit-worker/issues/807)) ([66112a4](https://github.com/adobe/spacecat-audit-worker/commit/66112a4afa436709868ae49e762cc7d7caf89c49))
+
+## [1.75.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.4...v1.75.5) (2025-04-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.22.3 ([#806](https://github.com/adobe/spacecat-audit-worker/issues/806)) ([eb909dc](https://github.com/adobe/spacecat-audit-worker/commit/eb909dc3c45be2ff4f522d2a80a1a88b5c452b67))
+
+## [1.75.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.3...v1.75.4) (2025-04-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.14.0 ([#805](https://github.com/adobe/spacecat-audit-worker/issues/805)) ([02110b7](https://github.com/adobe/spacecat-audit-worker/commit/02110b7526f2aa49d1438abd48c5bad7dbe208d3))
+
+## [1.75.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.2...v1.75.3) (2025-04-11)
+
+
+### Bug Fixes
+
+* forms guidance constants ([#803](https://github.com/adobe/spacecat-audit-worker/issues/803)) ([755b785](https://github.com/adobe/spacecat-audit-worker/commit/755b7854854790db41cca86e87eb8e9dbb5485e9))
+
 ## [1.75.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.1...v1.75.2) (2025-04-11)
 
 
