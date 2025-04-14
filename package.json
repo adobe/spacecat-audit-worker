@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.75.6",
+  "version": "1.76.0",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -25,7 +25,6 @@
     "local-build": "sam build",
     "local-run": "sam local invoke",
     "local-watch": "node scripts/watch-and-copy.js"
-
   },
   "wsk": {
     "target": "aws",

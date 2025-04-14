@@ -1,3 +1,10 @@
+# [1.76.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.6...v1.76.0) (2025-04-14)
+
+
+### Features
+
+* adds local-watch script ([#800](https://github.com/adobe/spacecat-audit-worker/issues/800)) ([47836d3](https://github.com/adobe/spacecat-audit-worker/commit/47836d3758f86a95b0c1ac9de87ece072f6ff728))
+
 ## [1.75.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.75.5...v1.75.6) (2025-04-11)
 
 
