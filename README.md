@@ -561,6 +561,6 @@ You can run the audit locally using AWS SAM and Docker.
     npm run local-run
     ```
 5. Starting point of the execution is `src/index-local.js`. Output of the audit can be found in `output.txt`.
-6. To hot reload any changes in the `/src` folder, you can use `npm run local-watch`
+6. To hot reload any changes in the `/src` folder, you can use `npm run local-watch`. Note: This will require to run `npm run local-build` at least once beforehand.
 
 If you need to add additional secrets, make sure to adjust the Lambda `template.yml` accordingly.
