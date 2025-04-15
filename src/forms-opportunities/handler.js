@@ -15,10 +15,10 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { generateOpptyData, generateOpptyDataForHighPageViewsLowFormNav } from './utils.js';
+import { generateOpptyData } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
-import convertToOpportunity from './opportunityHandler.js';
-import highPageViewsLowFormNavOpportunity from './highPageViewsLowFormNavOpportunity.js';
+import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
+import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -73,16 +73,8 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   const { formVitals } = formsAuditRunnerResult.auditResult;
 
   // generating opportunity data from audit to be send to scraper
-  let formOpportunities = await generateOpptyData(formVitals, context);
+  const formOpportunities = await generateOpptyData(formVitals, context);
   const uniqueUrls = new Set();
-  for (const opportunity of formOpportunities) {
-    uniqueUrls.add(opportunity.form);
-  }
-
-  // generating opportunity data from audit to be send to scraper
-  // high page views low form navigation
-  // eslint-disable-next-line max-len
-  formOpportunities = await generateOpptyDataForHighPageViewsLowFormNav(formVitals, context);
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
   }
@@ -108,8 +100,8 @@ export async function processOpportunityStep(context) {
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
-  await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
-  await highPageViewsLowFormNavOpportunity(finalUrl, latestAudit, scrapedData, context);
+  await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context);
+  await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',
