@@ -167,7 +167,13 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     const { scrapeData3: scrapeData } = formScrapeData;
-    await createLowConversionOpportunities(auditUrl, auditData, scrapeData, context);
+    const { auditDataOpportunitiesWithSearchFields } = testData;
+    await createLowConversionOpportunities(
+      auditUrl,
+      auditDataOpportunitiesWithSearchFields,
+      scrapeData,
+      context,
+    );
     const expectedOpportunityData = { ...testData.opportunityData3 };
     // with large form guidance
     expectedOpportunityData.data.scrapedStatus = true;
@@ -182,13 +188,20 @@ describe('opportunities handler method', () => {
     const { scrapeData4: scrapeData } = formScrapeData;
     await createLowConversionOpportunities(auditUrl, auditData2, scrapeData, context);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData4);
+
     // with Generic guidance
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should use existing opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
-    await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
+    const { auditDataWithExistingOppty } = testData;
+    await createLowConversionOpportunities(
+      auditUrl,
+      auditDataWithExistingOppty,
+      undefined,
+      context,
+    );
     expect(formsOppty.save).to.be.callCount(1);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
@@ -212,6 +225,21 @@ describe('opportunities handler method', () => {
       expect(err.message).to.equal('Failed to create Forms opportunity for siteId site-id: some-error');
     }
     expect(logStub.error).to.be.calledWith('Creating Forms opportunity for siteId site-id failed with error: some-error');
+  });
+
+  it('should create new forms opportunity with device wise metrics and traffic ', async () => {
+    formsOppty.getType = () => 'high-form-views-low-conversions';
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    const { auditDataWithTrafficMetrics } = testData;
+    await createLowConversionOpportunities(
+      auditUrl,
+      auditDataWithTrafficMetrics,
+      undefined,
+      context,
+    );
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(1);
+    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData5);
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 });
 
@@ -478,6 +506,30 @@ describe('createLowNavigationOpportunities handler method', () => {
             device: '*',
             value: {
               page: 300,
+            },
+          },
+          {
+            type: 'formViews',
+            device: 'mobile',
+            value: {
+              page: 300,
+            },
+          },
+          {
+            type: 'formViews',
+            device: 'desktop',
+            value: {
+              page: 0,
+            },
+          },
+          {
+            type: 'traffic',
+            device: '*',
+            value: {
+              paid: 4670,
+              total: 8670,
+              earned: 2000,
+              owned: 2000,
             },
           },
         ],
