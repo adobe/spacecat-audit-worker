@@ -1,3 +1,10 @@
+## [1.77.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.77.0...v1.77.1) (2025-04-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/helix-universal to v5.2.0 ([#810](https://github.com/adobe/spacecat-audit-worker/issues/810)) ([fbd02d1](https://github.com/adobe/spacecat-audit-worker/commit/fbd02d1b3a230a931c6b70319f6735e4402ddb64))
+
 # [1.77.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.76.1...v1.77.0) (2025-04-15)
 
 
