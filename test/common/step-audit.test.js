@@ -183,6 +183,7 @@ describe('Step-based Audit Tests', () => {
         jobId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
         processingType: 'default',
         skipMessage: false,
+        allowCache: true,
         completionQueueUrl: 'https://space.cat/audit-results',
         auditContext: {
           next: 'process',
@@ -230,6 +231,7 @@ describe('Step-based Audit Tests', () => {
       const expectedPayload = {
         type: 'content-import',
         siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        allowCache: true,
         auditContext: {
           next: 'analyze',
           auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
