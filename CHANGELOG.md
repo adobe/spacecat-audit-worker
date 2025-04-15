@@ -1,3 +1,15 @@
+# [1.77.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.76.1...v1.77.0) (2025-04-15)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#809](https://github.com/adobe/spacecat-audit-worker/issues/809)) ([b349ebb](https://github.com/adobe/spacecat-audit-worker/commit/b349ebb2a306ac4f64fe34f177e0169bdcec0be7))
+
+
+### Features
+
+* form device-wise metric collection ([#801](https://github.com/adobe/spacecat-audit-worker/issues/801)) ([d19cfe2](https://github.com/adobe/spacecat-audit-worker/commit/d19cfe26df3a3ea0ad84d8919fa312173cdf86aa))
+
 ## [1.76.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.76.0...v1.76.1) (2025-04-15)
 
 
