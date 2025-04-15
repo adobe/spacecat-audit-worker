@@ -67,8 +67,6 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
   const { log } = context;
   const siteId = site.getId();
 
-  log.error('###Starting broken backlinks audit');
-
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     const {
