@@ -33,7 +33,7 @@
       "playwright"
     ],
     "awsLayers": [
-      "arn:aws:lambda:us-east-1:${env.AWS_ACCOUNT_ID}:layer:spacecat-playwright:1"
+      "arn:aws:lambda:us-east-1:${env.AWS_ACCOUNT_ID}:layer:spacecat-playwright:2"
     ],
     "memory": 6144,
     "awsRole!important": "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/spacecat-role-lambda-generic",
