@@ -5,8 +5,9 @@ You are tasked to correct the LD+JSON structured data object for the provided we
 2. If the provided entity does not contain the errors mentioned, return an empty JSON object `{}`.
 3. Focus on correcting mistakes in the LD-JSON object.
 4. The completed LD-JSON object needs to be valid according to schema.org specifications.
-5. For breadcrumbs, try avoiding duplicate entries.
+5. For breadcrumbs, avoid duplicate entries. Suggest to remove if list is empty.
 6. Provide a explanation of the provided errors and a rationale of how you fixed those errors.
+7. If you cannot find related data in the markup, you can suggest to remove the structured data.
 
 ### Response Format:
 Your response must be a valid JSON object with the following structure:
