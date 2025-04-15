@@ -17,6 +17,7 @@
     "semantic-release": "semantic-release",
     "semantic-release-dry": "semantic-release --dry-run --no-ci --branches $CI_BRANCH",
     "build": "hedy -v --test-bundle",
+    "build:layer": "mkdir -p dist && cd layers/playwright && npm install && cd .. && zip -r ../dist/spacecat-layer-playwright.zip .",
     "deploy": "hedy -v --deploy --aws-deploy-bucket=spacecat-prod-deploy --pkgVersion=latest",
     "deploy-stage": "hedy -v --deploy --aws-deploy-bucket=spacecat-stage-deploy --pkgVersion=latest",
     "deploy-dev": "hedy -v --deploy --pkgVersion=ci$CI_BUILD_NUM -l latest --aws-deploy-bucket=spacecat-dev-deploy --cleanup-ci=24h",
@@ -28,6 +29,12 @@
   "wsk": {
     "target": "aws",
     "name": "spacecat-services/audit-worker@${version}",
+    "externals": [
+      "playwright"
+    ],
+    "awsLayers": [
+      "arn:aws:lambda:us-east-1:${env.AWS_ACCOUNT_ID}:layer:spacecat-playwright:1"
+    ],
     "memory": 6144,
     "awsRole!important": "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/spacecat-role-lambda-generic",
     "testUrl": "/_status_check/healthcheck.json",
