@@ -319,6 +319,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
     // Cache scrape of page, if needed
     let scrapeResult;
     let structuredData;
+    let structuredDataNewFormat = false;
     let plainPage;
 
     // Mapping between GSC rich result types and schema.org entities
@@ -361,7 +362,13 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
 
         // Get extracted LD-JSON from scrape
         structuredData = scrapeResult?.scrapeResult?.structuredData;
-        if (!isNonEmptyArray(structuredData)) {
+
+        // structuredData is either an array (old format) or an object (new format)
+        if (isNonEmptyArray(structuredData)) {
+          structuredDataNewFormat = false;
+        } else if (isNonEmptyObject(structuredData)) {
+          structuredDataNewFormat = true;
+        } else {
           // If structured data is loaded late on the page, e.g. in delayed phase,
           // the scraper might not pick it up. You would need to fine tune wait for
           // check of the scraper for this site.
@@ -375,18 +382,24 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
       }
 
       // Filter structured data relevant to this issue
-      let wrongLdJson = structuredData.find((data) => entity === data['@type']);
+      let wrongLdJson;
+      if (structuredDataNewFormat) {
+        [wrongLdJson] = structuredData.jsonld[entity];
+      } else {
+        wrongLdJson = structuredData.find((data) => entity === data['@type']);
 
-      // If not found in the first level objects, try second level objects.
-      // This typically happens for reviews within the Product entity.
-      if (!wrongLdJson) {
-        const children = structuredData
-          .flatMap((parent) => Object.keys(parent).map((key) => parent[key]))
-          .filter((data) => isObject(data) && data['@type'] === entity);
-        if (children.length >= 1) {
-          [wrongLdJson] = children;
+        // If not found in the first level objects, try second level objects.
+        // This typically happens for reviews within the Product entity.
+        if (!wrongLdJson) {
+          const children = structuredData
+            .flatMap((parent) => Object.keys(parent).map((key) => parent[key]))
+            .filter((data) => isObject(data) && data['@type'] === entity);
+          if (children.length >= 1) {
+            [wrongLdJson] = children;
+          }
         }
       }
+
       if (!isNonEmptyObject(wrongLdJson)) {
         log.error(`Could not find structured data for issue of type ${entity} for URL ${auditResult.inspectionUrl}`);
         continue;

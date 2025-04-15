@@ -581,6 +581,32 @@ describe('Structured Data Audit', () => {
     expect(result).to.deep.equal(createAuditData(baseUrl, 'Product snippets', 'Missing field "name"', suggestion));
   });
 
+  it('generates suggestion for a Product using new structured data format', async () => {
+    const auditData = createAuditData(baseUrl, 'Product snippets', 'Missing field "name"');
+    const suggestion = {
+      errorDescription: 'Missing field "name"',
+      correctedLdjson: '{"@type":"Product","name":"Example Product Name"}',
+      aiRationale: 'The product name is missing.',
+      confidenceScore: 0.95,
+    };
+    firefallClientStub.fetchChatCompletion.resolves(createFirefallSuggestion(suggestion));
+    s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
+      scrapeResult: {
+        rawBody: '<main></main>',
+        structuredData: {
+          jsonld: {
+            Product: [{
+              '@type': 'Product',
+            }],
+          },
+        },
+      },
+    })));
+
+    const result = await generateSuggestionsData(baseUrl, auditData, context, siteStub);
+    expect(result).to.deep.equal(createAuditData(baseUrl, 'Product snippets', 'Missing field "name"', suggestion));
+  });
+
   it('re-uses existing suggestions for the same issue', async () => {
     const auditData = createAuditData(baseUrl, 'Product snippets', 'Missing field "name"');
     // Duplicate same issue
