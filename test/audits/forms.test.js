@@ -136,8 +136,7 @@ describe('opportunities handler method', () => {
     formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
-    // formView is present only for 1 form
-    expect(dataAccessStub.Opportunity.create).to.be.callCount(1);
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(5);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     // with empty guidance due to no scraping
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
@@ -527,10 +526,10 @@ describe('createLowNavigationOpportunities handler method', () => {
             type: 'traffic',
             device: '*',
             value: {
-              earned: null,
-              owned: null,
-              paid: null,
-              total: null,
+              paid: 4670,
+              total: 8670,
+              earned: 2000,
+              owned: 2000,
             },
           },
         ],

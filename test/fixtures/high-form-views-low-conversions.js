@@ -194,6 +194,14 @@ const testData = {
             'desktop:windows': 4670,
             'mobile:ios': 4000,
           },
+          trafficacquisition: {
+            paid: 4670,
+            maxTimeDelta: 3060,
+            total: 8670,
+            earned: 2000,
+            sources: [],
+            owned: 2000,
+          },
           forminternalnavigation: [
             {
               url: 'https://www.surest.com/about-us',
@@ -338,7 +346,10 @@ const testData = {
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 700,
             'mobile:ios': 300,
@@ -353,7 +364,10 @@ const testData = {
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 700,
             'mobile:ios': 300,
@@ -368,7 +382,10 @@ const testData = {
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 4000,
             'mobile:ios': 300,
@@ -383,7 +400,10 @@ const testData = {
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 4000,
             'mobile:ios': 300,
@@ -398,7 +418,10 @@ const testData = {
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 4000,
             'mobile:ios': 300,
