@@ -16,8 +16,8 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import sinonChai from 'sinon-chai';
-import handler from '../../src/forms-opportunities/oppty-handlers/guidance-high-form-views-low-conversions.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../src/forms-opportunities/constants.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
+import handler from '../../../src/forms-opportunities/oppty-handlers/guidance-high-form-views-low-conversions.js';
 
 use(sinonChai);
 
