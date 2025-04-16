@@ -11,10 +11,13 @@
  */
 
 import {
-  getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics, isNonEmptyArray,
+  isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import {
+  getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
+} from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES } from './constants.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
