@@ -99,6 +99,33 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
   }
 }
 
+export async function runAuditAndImportTopPages(context) {
+  const { site, finalUrl } = context;
+  const result = await brokenBacklinksAuditRunner(finalUrl, context, site);
+
+  return {
+    type: 'top-pages',
+    siteId: site.getId(),
+    auditResult: result.auditResult,
+    fullAuditRef: result.fullAuditRef,
+  };
+}
+
+export async function submitForScraping(context) {
+  const { site, dataAccess } = context;
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (topPages.length === 0) {
+    throw new Error('No top pages found for site');
+  }
+
+  return {
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'broken-backlinks',
+  };
+}
+
 export const generateSuggestionData = async (context) => {
   const {
     site, audit, finalUrl, dataAccess, log,
@@ -272,30 +299,7 @@ export const generateSuggestionData = async (context) => {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
-  .addStep('pre-process-suggestions', async (context) => {
-    const { site, finalUrl } = context;
-    const auditResult = await brokenBacklinksAuditRunner(finalUrl, context, site);
-
-    return {
-      type: 'top-pages',
-      siteId: site.getId(),
-      auditResult,
-      fullAuditRef: auditResult.fullAuditRef,
-    };
-  }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('audit', async (context) => {
-    const { site, dataAccess } = context;
-    const { SiteTopPage } = dataAccess;
-    const toppages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-    if (toppages.length === 0) {
-      throw new Error('No top pages found for site');
-    }
-
-    return {
-      urls: toppages.map((topPage) => ({ url: topPage.getUrl() })),
-      siteId: site.getId(),
-      type: 'broken-backlinks',
-    };
-  }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-  .addStep('suggestions', generateSuggestionData)
+  .addStep('audit-and-import-top-pages', runAuditAndImportTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('generate-suggestions', generateSuggestionData)
   .build();
