@@ -53,6 +53,8 @@ export class StepAudit extends BaseAudit {
   }
 
   async chainStep(step, stepResult, context) {
+    console.log('[broken-internal-links] in chain step, stepResult, context', step, stepResult, context);
+
     const { audit, log } = context;
 
     if (!hasText(step?.destination)) {
@@ -71,7 +73,7 @@ export class StepAudit extends BaseAudit {
       auditType: audit.getAuditType(),
       fullAuditRef: audit.getFullAuditRef(),
     };
-
+    console.log('[broken-internal-links] in chain step, audit context', auditContext);
     const queueUrl = destination.getQueueUrl(context);
     const payload = destination.formatPayload(stepResult, auditContext);
     await sendContinuationMessage({ queueUrl, payload }, context);
