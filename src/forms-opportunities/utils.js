@@ -17,6 +17,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
+  getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES } from './constants.js';
 
@@ -90,10 +91,10 @@ function getFormMetrics(metricObject) {
   });
 }
 
-function convertToLowNavOpptyData(metricObject) {
+function convertToLowViewOpptyData(metricObject) {
   const {
     formview: { total: formViews, mobile: formViewsMobile, desktop: formViewsDesktop },
-    CTA, trafficacquisition,
+    trafficacquisition,
   } = metricObject;
   return {
     trackedFormKPIName: 'Form Views',
@@ -131,8 +132,16 @@ function convertToLowNavOpptyData(metricObject) {
         },
       },
     ],
-    formNavigation: CTA,
   };
+}
+
+function convertToLowNavOpptyData(metricObject) {
+  const {
+    CTA,
+  } = metricObject;
+  const opptyData = convertToLowViewOpptyData(metricObject);
+  opptyData.formNavigation = CTA;
+  return opptyData;
 }
 
 function convertToLowConversionOpptyData(metricObject) {
@@ -204,6 +213,8 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
     opportunityData = convertToLowConversionOpptyData(metricObject);
   } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION) {
     opportunityData = convertToLowNavOpptyData(metricObject);
+  } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_VIEWS) {
+    opportunityData = convertToLowViewOpptyData(metricObject);
   }
 
   const screenshot = await getPresignedUrl('screenshot-desktop-fullpage.png', context, url, site);
@@ -222,7 +233,8 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
 export async function generateOpptyData(
   formVitals,
   context,
-  opportunityTypes = [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION, FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION],
+  opportunityTypes = [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+    FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION, FORM_OPPORTUNITY_TYPES.LOW_VIEWS],
 ) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
@@ -231,6 +243,7 @@ export async function generateOpptyData(
     Object.entries({
       [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: getHighFormViewsLowConversionMetrics,
       [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]: getHighPageViewsLowFormCtrMetrics,
+      [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]: getHighPageViewsLowFormViewsMetrics,
     })
       .filter(([opportunityType]) => opportunityTypes.includes(opportunityType))
       .flatMap(([opportunityType, metricsMethod]) => metricsMethod(formVitalsCollection)
@@ -249,12 +262,13 @@ export function shouldExcludeForm(scrapedFormData) {
  * @param formOpportunities
  * @param scrapedData
  * @param log
+ * @param excludeUrls urls to exclude from opportunity creation
  * @returns {*}
  */
-export function filterForms(formOpportunities, scrapedData, log) {
+export function filterForms(formOpportunities, scrapedData, log, excludeUrls = new Set()) {
   return formOpportunities.filter((opportunity) => {
     let urlMatches = false;
-    if (opportunity.form.includes('search')) {
+    if (opportunity.form.includes('search') || excludeUrls.has(opportunity.form)) {
       return false; // exclude search pages
     }
     if (isNonEmptyArray(scrapedData?.formData)) {

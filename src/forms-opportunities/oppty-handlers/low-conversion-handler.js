@@ -82,9 +82,10 @@ function generateDefaultGuidance(scrapedData, oppoty) {
  * @param auditUrl - The URL of the audit
  * @param auditData - The audit data containing the audit result and additional details.
  * @param context - The context object containing the data access and logger objects.
+ * @param excludeUrls - A set of URLs to exclude from the opportunity creation process.
  */
 // eslint-disable-next-line max-len
-export default async function createLowConversionOpportunities(auditUrl, auditDataObject, scrapedData, context) {
+export default async function createLowConversionOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeUrls = new Set()) {
   const {
     dataAccess, log, sqs, site, env,
   } = context;
@@ -107,9 +108,9 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   // eslint-disable-next-line max-len
   const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]);
   log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
-  const filteredOpportunities = filterForms(formOpportunities, scrapedData, log);
+  const filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeUrls);
+  filteredOpportunities.forEach((oppty) => excludeUrls.add(oppty.form));
   log.info(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
-
   try {
     for (const opptyData of filteredOpportunities) {
       let highFormViewsLowConversionsOppty = opportunities.find(

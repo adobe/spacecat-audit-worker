@@ -19,6 +19,7 @@ import { generateOpptyData } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
+import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -100,8 +101,10 @@ export async function processOpportunityStep(context) {
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
-  await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context);
-  await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context);
+  const excludeUrls = new Set();
+  await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeUrls);
+  await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeUrls);
+  await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeUrls);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',
