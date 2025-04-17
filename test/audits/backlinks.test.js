@@ -18,9 +18,13 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
-import auditDataSuggestionsMock from '../fixtures/broken-backlinks/auditWithSuggestions.json' with { type: 'json' };
 import rumTraffic from '../fixtures/broken-backlinks/all-traffic.json' with { type: 'json' };
-import { brokenBacklinksAuditRunner, opportunityAndSuggestions, generateSuggestionData } from '../../src/backlinks/handler.js';
+import {
+  brokenBacklinksAuditRunner,
+  generateSuggestionData,
+  runAuditAndImportTopPages,
+  submitForScraping,
+} from '../../src/backlinks/handler.js';
 import { MockContextBuilder } from '../shared.js';
 import {
   brokenBacklinkWithTimeout,
@@ -33,13 +37,9 @@ import {
 import { ahrefsMock, mockFixedBacklinks } from '../fixtures/broken-backlinks/ahrefs.js';
 import {
   brokenBacklinksOpportunity,
-  opportunityData,
-  otherOpportunity,
 } from '../fixtures/broken-backlinks/opportunity.js';
 import {
-  brokenBacklinkExistingSuggestions,
   brokenBacklinksSuggestions,
-  suggestions,
 } from '../fixtures/broken-backlinks/suggestion.js';
 import { organicTraffic } from '../fixtures/broken-backlinks/organic-traffic.js';
 import calculateKpiMetrics from '../../src/backlinks/kpi-metrics.js';
@@ -53,6 +53,16 @@ describe('Backlinks Tests', function () {
   let message;
   let context;
   const auditUrl = 'https://audit.url';
+  const audit = {
+    getId: () => auditDataMock.id,
+    getAuditType: () => 'broken-backlinks',
+    getFullAuditRef: () => auditUrl,
+    getAuditResult: sinon.stub(),
+  };
+  const contextSite = {
+    getId: () => 'site-id',
+    getBaseURL: () => 'https://example.com',
+  };
 
   const sandbox = sinon.createSandbox();
 
@@ -74,6 +84,9 @@ describe('Backlinks Tests', function () {
         s3Client: {
           send: sandbox.stub(),
         },
+        audit,
+        site: contextSite,
+        finalUrl: auditUrl,
       })
       .build(message);
 
@@ -114,6 +127,48 @@ describe('Backlinks Tests', function () {
     expect(auditData.auditResult.brokenBacklinks).to.deep.equal(withoutExcluded);
   });
 
+  it('should run audit and send urls for scraping step', async () => {
+    const { brokenBacklinks } = auditDataMock.auditResult;
+    const expectedBrokenBacklinks = auditDataMock.auditResult.brokenBacklinks.filter(
+      (a) => a.url_to !== excludedUrl,
+    );
+    context.site = siteWithExcludedUrls;
+    ahrefsMock(siteWithExcludedUrls.getBaseURL(), { backlinks: brokenBacklinks });
+
+    const result = await runAuditAndImportTopPages(context);
+    expect(result).to.deep.equal({
+      type: 'top-pages',
+      siteId: siteWithExcludedUrls.getId(),
+      auditResult: {
+        brokenBacklinks: expectedBrokenBacklinks,
+        finalUrl: auditUrl,
+      },
+      fullAuditRef: auditDataMock.fullAuditRef,
+    });
+  });
+
+  it('should submit urls for scraping step', async () => {
+    const topPages = [{ getUrl: () => 'https://example.com/blog/page1' }, { getUrl: () => 'https://example.com/blog/page2' }];
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    const result = await submitForScraping(context);
+
+    expect(result).to.deep.equal({
+      siteId: contextSite.getId(),
+      type: 'broken-backlinks',
+      urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    });
+  });
+
+  it('throws error if top pages cannot be fetched', async () => {
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+    };
+
+    await expect(submitForScraping(context)).to.be.rejectedWith('No top pages found for site');
+  });
+
   it('should filter out broken backlinks that return ok (even with redirection)', async () => {
     const allBacklinks = auditDataMock.auditResult.brokenBacklinks
       .concat(fixedBacklinks)
@@ -126,84 +181,6 @@ describe('Backlinks Tests', function () {
       .to
       .deep
       .equal(auditDataMock.auditResult.brokenBacklinks.concat(brokenBacklinkWithTimeout));
-  });
-
-  it('should transform the audit result into an opportunity in the post processor and create a new opportunity', async () => {
-    context.s3Client.send.onCall(0).resolves({
-      Body: {
-        transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),
-      },
-    });
-
-    context.s3Client.send.onCall(1).resolves({
-      Body: {
-        transformToString: sinon.stub().resolves(JSON.stringify(organicTraffic(site))),
-      },
-    });
-    context.dataAccess.Site.findById = sinon.stub().withArgs('site1').resolves(site);
-    context.dataAccess.Opportunity.create.resolves(brokenBacklinksOpportunity);
-    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
-    brokenBacklinksOpportunity.getSuggestions.resolves([]);
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOpportunity]);
-
-    ahrefsMock(site.getBaseURL(), auditDataMock.auditResult);
-
-    await opportunityAndSuggestions(auditUrl, auditDataSuggestionsMock, context, site);
-
-    const kpiDeltas = {
-      projectedTrafficLost: sinon.match.number,
-      projectedTrafficValue: sinon.match.number,
-    };
-
-    expect(context.dataAccess.Opportunity.create)
-      .to
-      .have
-      .been
-      .calledOnceWith(opportunityData(auditDataMock.siteId, auditDataMock.id, kpiDeltas));
-    expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledOnceWith(suggestions);
-  });
-
-  it('should transform the audit result into an opportunity in the post processor and add it to an existing opportunity', async () => {
-    context.dataAccess.Site.findById = sinon.stub().withArgs('site1').resolves(site);
-    brokenBacklinksOpportunity.addSuggestions.resolves(brokenBacklinksSuggestions);
-    brokenBacklinksOpportunity.getSuggestions.resolves(brokenBacklinkExistingSuggestions);
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves(
-      [brokenBacklinksOpportunity, otherOpportunity],
-    );
-
-    ahrefsMock(site.getBaseURL(), auditDataMock.auditResult);
-
-    await opportunityAndSuggestions(auditUrl, auditDataSuggestionsMock, context, site);
-
-    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
-    expect(brokenBacklinksOpportunity.setAuditId).to.have.been.calledOnceWith(auditDataMock.id);
-
-    expect(brokenBacklinksOpportunity.save).to.have.been.calledOnce;
-    expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledWith(
-      suggestions.filter((s) => brokenBacklinkExistingSuggestions[0].data.url_to !== s.data.url_to),
-    );
-  });
-
-  it('should throw an error if opportunity creation fails', async () => {
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.throws('broken-backlinks opportunity-error');
-    const errorMessage = 'Sinon-provided broken-backlinks opportunity-error';
-
-    nock(site.getBaseURL())
-      .get(/.*/)
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(200, auditDataMock.auditResult);
-
-    try {
-      await opportunityAndSuggestions(auditUrl, auditDataSuggestionsMock, context, site);
-    } catch (e) {
-      expect(e.message).to.equal(errorMessage);
-    }
-
-    expect(context.log.error).to.have.been.calledWith(`Failed to create new opportunity for siteId site-id and auditId audit-id: ${errorMessage}`);
   });
 
   it('should handle audit api errors gracefully', async () => {
@@ -250,7 +227,6 @@ describe('Backlinks Tests', function () {
     });
   });
   describe('generateSuggestionData', async () => {
-    let auditData;
     let configuration;
     let firefallClient;
 
@@ -272,19 +248,11 @@ describe('Backlinks Tests', function () {
     };
 
     beforeEach(() => {
-      auditData = {
-        auditResult: {
-          success: true,
-          brokenBacklinks: [
-            { url_to: 'https://example.com/broken1' },
-            { url_to: 'https://example.com/broken2' },
-          ],
-        },
-      };
       configuration = {
         isHandlerEnabledForSite: sandbox.stub(),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([brokenBacklinksOpportunity]);
 
       firefallClient = {
         fetchChatCompletion: sandbox.stub(),
@@ -296,22 +264,25 @@ describe('Backlinks Tests', function () {
       sandbox.restore();
     });
 
-    it('returns original auditData if audit result is unsuccessful', async () => {
-      auditData.auditResult.success = false;
+    it('throws error if audit result is unsuccessful', async () => {
+      context.audit.getAuditResult.returns({ success: false });
 
-      const result = await generateSuggestionData('https://example.com', auditData, context, site);
-
-      expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith('Audit failed, skipping suggestions generation');
+      try {
+        await generateSuggestionData(context);
+      } catch (error) {
+        expect(error.message).to.equal('Audit failed, skipping suggestions generation');
+      }
     });
 
-    it('returns original auditData if auto-suggest is disabled for the site', async () => {
+    it('throws error if auto-suggest is disabled for the site', async () => {
+      context.audit.getAuditResult.returns({ success: true });
       configuration.isHandlerEnabledForSite.returns(false);
 
-      const result = await generateSuggestionData('https://example.com', auditData, context, site);
-
-      expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith('Auto-suggest is disabled for site');
+      try {
+        await generateSuggestionData(context);
+      } catch (error) {
+        expect(error.message).to.equal('Auto-suggest is disabled for site');
+      }
     });
 
     it('processes suggestions for broken backlinks, defaults to base URL if none found', async () => {
@@ -330,32 +301,40 @@ describe('Backlinks Tests', function () {
           finish_reason: 'stop',
         }],
       });
-      firefallClient.fetchChatCompletion.onCall(3).resolves({
+      firefallClient.fetchChatCompletion.onCall(2).resolves({
         choices: [{
           message: { content: JSON.stringify({ some_other_property: 'some other value' }) },
           finish_reason: 'length',
         }],
       });
+      firefallClient.fetchChatCompletion.onCall(6).resolves({
+        choices: [{
+          message: { content: JSON.stringify({ some_other_property: 'some other value' }) },
+          finish_reason: 'length',
+        }],
+      });
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
 
-      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+      const result = await generateSuggestionData(context);
 
-      expect(firefallClient.fetchChatCompletion).to.have.been.callCount(4);
-      expect(result.auditResult.brokenBacklinks).to.deep.equal([
-        {
-          url_to: 'https://example.com/broken1',
-          urlsSuggested: ['https://fix.com'],
-          aiRationale: 'Rationale',
-        },
-        {
-          url_to: 'https://example.com/broken2',
-          urlsSuggested: ['https://example.com'],
-          aiRationale: 'No suitable suggestions found',
-        },
-      ]);
-      expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
+      // 4x for headers + 4x for each page
+      expect(firefallClient.fetchChatCompletion).to.have.been.callCount(8);
+      expect(result.status).to.deep.equal('complete');
+      expect(context.log.info).to.have.been.calledWith(`Broken backlinks suggestions generation for ${contextSite.getId()} complete.`);
     });
 
     it('generates suggestions in multiple batches if there are more than 300 alternative URLs', async () => {
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
       context.s3Client.send.onCall(0).resolves({
         Contents: [
           // genereate 301 keys
@@ -376,7 +355,7 @@ describe('Backlinks Tests', function () {
         }],
       });
 
-      firefallClient.fetchChatCompletion.onCall(1).resolves({
+      firefallClient.fetchChatCompletion.onCall(7).resolves({
         choices: [{
           message: {
             content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
@@ -389,14 +368,22 @@ describe('Backlinks Tests', function () {
       firefallClient.fetchChatCompletion.onCall(6).resolves({
         choices: [{
           message: {
-            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
-            aiRationale: 'Rationale',
+            content: JSON.stringify({}),
           },
           finish_reason: 'stop',
         }],
       });
 
-      firefallClient.fetchChatCompletion.onCall(7).resolves({
+      firefallClient.fetchChatCompletion.onCall(13).resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({}),
+          },
+          finish_reason: 'stop',
+        }],
+      });
+
+      firefallClient.fetchChatCompletion.onCall(14).resolves({
         choices: [{
           message: {
             content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
@@ -406,20 +393,13 @@ describe('Backlinks Tests', function () {
         }],
       });
 
-      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+      firefallClient.fetchChatCompletion.onCall(15).rejects('Firefall error');
 
-      expect(firefallClient.fetchChatCompletion).to.have.been.callCount(8);
-      expect(result.auditResult.brokenBacklinks).to.deep.equal([
-        {
-          url_to: 'https://example.com/broken1',
-          urlsSuggested: ['https://fix.com'],
-          aiRationale: 'Rationale',
-        },
-        {
-          url_to: 'https://example.com/broken2',
-        },
-      ]);
-      expect(context.log.info).to.have.been.calledWith('Suggestions generation complete.');
+      const result = await generateSuggestionData(context);
+
+      expect(firefallClient.fetchChatCompletion).to.have.been.callCount(16);
+      expect(result.status).to.deep.equal('complete');
+      expect(context.log.info).to.have.been.calledWith(`Broken backlinks suggestions generation for ${contextSite.getId()} complete.`);
     });
 
     it('handles Firefall client errors gracefully and continues processing, should suggest base URL instead', async () => {
@@ -455,18 +435,9 @@ describe('Backlinks Tests', function () {
         }],
       });
 
-      const result = await generateSuggestionData('https://example.com', auditData, context, site);
+      const result = await generateSuggestionData(context);
 
-      expect(result.auditResult.brokenBacklinks).to.deep.equal([
-        {
-          url_to: 'https://example.com/broken1',
-          urlsSuggested: ['https://example.com'],
-          aiRationale: 'No suitable suggestions found',
-        },
-        {
-          url_to: 'https://example.com/broken2',
-        },
-      ]);
+      expect(result.status).to.deep.equal('complete');
       expect(context.log.error).to.have.been.calledWith('Batch processing error: Firefall error');
     });
   });
