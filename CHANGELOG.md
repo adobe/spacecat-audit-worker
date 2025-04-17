@@ -1,3 +1,10 @@
+# [1.78.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.77.3...v1.78.0) (2025-04-17)
+
+
+### Features
+
+* convert broken backlinks audit to stepped audit ([#793](https://github.com/adobe/spacecat-audit-worker/issues/793)) ([86b2d21](https://github.com/adobe/spacecat-audit-worker/commit/86b2d21b3e21d48b15046cd1a8bbf950ec2f916d))
+
 ## [1.77.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.77.2...v1.77.3) (2025-04-16)
 
 
