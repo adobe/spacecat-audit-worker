@@ -64,7 +64,7 @@ describe('Step-based Audit Tests', () => {
     context.env = {
       CONTENT_SCRAPER_QUEUE_URL: 'https://space.cat/content-scraper',
       IMPORT_WORKER_QUEUE_URL: 'https://space.cat/import-worker',
-      AUDIT_RESULTS_QUEUE_URL: 'https://space.cat/audit-results',
+      AUDIT_JOBS_QUEUE_URL: 'https://space.cat/audit-jobs',
     };
   });
 
@@ -184,7 +184,7 @@ describe('Step-based Audit Tests', () => {
         processingType: 'default',
         skipMessage: false,
         allowCache: true,
-        completionQueueUrl: 'https://space.cat/audit-results',
+        completionQueueUrl: 'https://space.cat/audit-jobs',
         auditContext: {
           next: 'process',
           auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
