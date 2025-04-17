@@ -11,15 +11,13 @@
  */
 
 import {
-  getHighPageViewsLowFormCtrMetrics,
-  getHighFormViewsLowConversionMetrics,
   isNonEmptyArray,
-  getHighPageViewsLowFormViewsMetrics,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
+  getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES } from './constants.js';
 

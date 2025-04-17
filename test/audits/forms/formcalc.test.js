@@ -48,15 +48,19 @@ describe('Form Calc functions', () => {
     expect(result).to.eql([
       {
         url: 'https://www.surest.com/info/win',
-        pageViews: 8670,
-        formViews: 300,
-        formEngagement: 4300,
+        formengagement: { total: 4300, desktop: 4000, mobile: 300 },
+        formsubmit: { total: 0, desktop: 0, mobile: 0 },
+        formview: { total: 300, desktop: 0, mobile: 300 },
+        pageview: { total: 8670, desktop: 4670, mobile: 4000 },
+        trafficacquisition: {},
       },
       {
         url: 'https://www.surest.com/newsletter',
-        pageViews: 8670,
-        formViews: 300,
-        formEngagement: 300,
+        formengagement: { total: 300, desktop: 0, mobile: 300 },
+        formsubmit: { total: 0, desktop: 0, mobile: 0 },
+        formview: { total: 300, desktop: 0, mobile: 300 },
+        pageview: { total: 8670, desktop: 4670, mobile: 4000 },
+        trafficacquisition: {},
       },
     ]);
   });
