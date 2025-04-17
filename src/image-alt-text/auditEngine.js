@@ -12,7 +12,7 @@
 
 import { isNonEmptyArray, hasText } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import { franc } from 'franc';
+import { franc } from 'franc-min';
 
 // GPT support: https://platform.openai.com/docs/guides/vision
 const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg)(?=\?|$)/i;

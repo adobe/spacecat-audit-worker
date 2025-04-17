@@ -11,10 +11,13 @@
  */
 
 import {
-  getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics, isNonEmptyArray,
+  isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import {
+  getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
+} from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES } from './constants.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
@@ -37,7 +40,7 @@ async function getPresignedUrl(fileName, context, url, site) {
   });
 
   return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
-  // eslint-disable-next-line no-shadow
+    // eslint-disable-next-line no-shadow
     .then((signedUrl) => signedUrl)
     .catch((error) => {
       log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
@@ -46,33 +49,51 @@ async function getPresignedUrl(fileName, context, url, site) {
 }
 
 function getFormMetrics(metricObject) {
-  const {
-    formViews, formEngagement, formSubmit,
-  } = metricObject;
+  const { formview, formengagement, formsubmit } = metricObject;
 
-  let bounceRate = 1;
-  let conversionRate = 0;
-  // if engagement is zero, it means bounce rate is 1, then dropoffRate does not makes sense
-  let dropoffRate = null;
+  const calculateMetrics = (_formSubmit, _formViews, _formEngagement) => {
+    let bounceRate = 1;
+    let conversionRate = 0;
+    // if engagement is zero, it means bounce rate is 1, then dropoffRate does not makes sense
+    let dropoffRate = null;
 
-  if (formViews > 0) {
-    conversionRate = formSubmit / formViews;
-    bounceRate = 1 - (formEngagement / formViews);
-  }
-  if (formEngagement > 0) {
-    dropoffRate = 1 - (formSubmit / formEngagement);
-  }
+    if (_formViews > 0) {
+      conversionRate = _formSubmit / _formViews;
+      bounceRate = 1 - (_formEngagement / _formViews);
+    }
+    if (_formEngagement > 0) {
+      dropoffRate = 1 - (_formSubmit / _formEngagement);
+    }
 
-  return {
-    conversionRate,
-    bounceRate,
-    dropoffRate,
+    return {
+      conversionRate,
+      bounceRate,
+      dropoffRate,
+    };
   };
+
+  return ['total', 'desktop', 'mobile'].map((device) => {
+    const formViews = formview[device] || 0;
+    const formEngagement = formengagement[device] || 0;
+    const formSubmit = formsubmit[device] || 0;
+    const {
+      conversionRate,
+      bounceRate,
+      dropoffRate,
+    } = calculateMetrics(formSubmit, formViews, formEngagement);
+    return {
+      device,
+      conversionRate,
+      bounceRate,
+      dropoffRate,
+    };
+  });
 }
 
 function convertToLowNavOpptyData(metricObject) {
   const {
-    formViews, CTA,
+    formview: { total: formViews, mobile: formViewsMobile, desktop: formViewsDesktop },
+    CTA, trafficacquisition,
   } = metricObject;
   return {
     trackedFormKPIName: 'Form Views',
@@ -85,46 +106,87 @@ function convertToLowNavOpptyData(metricObject) {
           page: formViews,
         },
       },
+      {
+        type: 'formViews',
+        device: 'mobile',
+        value: {
+          page: formViewsMobile,
+        },
+      },
+      {
+        type: 'formViews',
+        device: 'desktop',
+        value: {
+          page: formViewsDesktop,
+        },
+      },
+      {
+        type: 'traffic',
+        device: '*',
+        value: {
+          total: trafficacquisition.total ? trafficacquisition.total : null,
+          paid: trafficacquisition.paid ? trafficacquisition.paid : null,
+          earned: trafficacquisition.earned ? trafficacquisition.earned : null,
+          owned: trafficacquisition.owned ? trafficacquisition.owned : null,
+        },
+      },
     ],
     formNavigation: CTA,
   };
 }
 
 function convertToLowConversionOpptyData(metricObject) {
-  const { conversionRate, bounceRate, dropoffRate } = getFormMetrics(metricObject);
+  const { trafficacquisition } = metricObject;
+  const deviceWiseMetrics = getFormMetrics(metricObject);
+
+  let totalConversionRate = 0;
+
+  const metrics = [];
+
+  for (const metric of deviceWiseMetrics) {
+    const {
+      device, conversionRate, bounceRate, dropoffRate,
+    } = metric;
+    if (device === 'total') {
+      totalConversionRate = conversionRate;
+    }
+    const metricsConfig = [
+      { type: 'conversionRate', value: conversionRate },
+      { type: 'bounceRate', value: bounceRate },
+      { type: 'dropoffRate', value: dropoffRate },
+    ];
+    metricsConfig.forEach(({ type, value }) => {
+      metrics.push({
+        type,
+        device: device === 'total' ? '*' : device,
+        value: {
+          page: value,
+        },
+      });
+    });
+  }
+
+  metrics.push({
+    type: 'traffic',
+    device: '*',
+    value: {
+      total: trafficacquisition.total ? trafficacquisition.total : null,
+      paid: trafficacquisition.paid ? trafficacquisition.paid : null,
+      earned: trafficacquisition.earned ? trafficacquisition.earned : null,
+      owned: trafficacquisition.owned ? trafficacquisition.owned : null,
+    },
+  });
 
   return {
     trackedFormKPIName: 'Conversion Rate',
-    trackedFormKPIValue: conversionRate,
-    metrics: [
-      {
-        type: 'conversionRate',
-        device: '*',
-        value: {
-          page: conversionRate,
-        },
-      },
-      {
-        type: 'bounceRate',
-        device: '*',
-        value: {
-          page: bounceRate,
-        },
-      },
-      dropoffRate !== undefined && {
-        type: 'dropoffRate',
-        device: '*',
-        value: {
-          page: dropoffRate,
-        },
-      },
-    ],
+    trackedFormKPIValue: totalConversionRate,
+    metrics,
   };
 }
 
 async function convertToOpportunityData(opportunityType, metricObject, context) {
   const {
-    url, pageViews, formViews,
+    url, pageview: { total: pageViews }, formview: { total: formViews },
   } = metricObject;
 
   const {
@@ -178,8 +240,8 @@ export async function generateOpptyData(
 
 export function shouldExcludeForm(scrapedFormData) {
   return scrapedFormData?.formType === 'search'
-        || scrapedFormData?.formType === 'login'
-        || scrapedFormData?.classList?.includes('unsubscribe');
+    || scrapedFormData?.formType === 'login'
+    || scrapedFormData?.classList?.includes('unsubscribe');
 }
 
 /**
