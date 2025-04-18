@@ -17,6 +17,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
+  getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES } from './constants.js';
 
@@ -184,6 +185,72 @@ function convertToLowConversionOpptyData(metricObject) {
   };
 }
 
+function convertToLowFormViewOpptyData(metricObject) {
+  const {
+    formview: { total: formViews, mobile: formViewsMobile, desktop: formViewsDesktop },
+    pageview: { total: pageViews, mobile: pageViewsMobile, desktop: pageViewsDesktop },
+    trafficacquisition,
+  } = metricObject;
+  return {
+    trackedFormKPIName: 'Form Views',
+    trackedFormKPIValue: formViews,
+    metrics: [
+      {
+        type: 'formViews',
+        device: '*',
+        value: {
+          page: formViews,
+        },
+      },
+      {
+        type: 'formViews',
+        device: 'mobile',
+        value: {
+          page: formViewsMobile,
+        },
+      },
+      {
+        type: 'formViews',
+        device: 'desktop',
+        value: {
+          page: formViewsDesktop,
+        },
+      },
+      {
+        type: 'pageViews',
+        device: '*',
+        value: {
+          page: pageViews,
+        },
+      },
+      {
+        type: 'pageViews',
+        device: 'mobile',
+        value: {
+          page: pageViewsMobile,
+        },
+      },
+      {
+        type: 'pageViews',
+        device: 'desktop',
+        value: {
+          page: pageViewsDesktop,
+        },
+      },
+      {
+        type: 'traffic',
+        device: '*',
+        value: {
+          total: trafficacquisition.total ? trafficacquisition.total : null,
+          paid: trafficacquisition.paid ? trafficacquisition.paid : null,
+          earned: trafficacquisition.earned ? trafficacquisition.earned : null,
+          owned: trafficacquisition.owned ? trafficacquisition.owned : null,
+        },
+      },
+    ],
+  };
+}
+
 async function convertToOpportunityData(opportunityType, metricObject, context) {
   const {
     url, pageview: { total: pageViews }, formview: { total: formViews },
@@ -204,6 +271,8 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
     opportunityData = convertToLowConversionOpptyData(metricObject);
   } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION) {
     opportunityData = convertToLowNavOpptyData(metricObject);
+  } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_FORM_VIEWS) {
+    opportunityData = convertToLowFormViewOpptyData(metricObject);
   }
 
   const screenshot = await getPresignedUrl('screenshot-desktop-fullpage.png', context, url, site);
@@ -222,7 +291,8 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
 export async function generateOpptyData(
   formVitals,
   context,
-  opportunityTypes = [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION, FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION],
+  opportunityTypes = [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+    FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION, FORM_OPPORTUNITY_TYPES.LOW_FORM_VIEWS],
 ) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
@@ -231,6 +301,7 @@ export async function generateOpptyData(
     Object.entries({
       [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: getHighFormViewsLowConversionMetrics,
       [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]: getHighPageViewsLowFormCtrMetrics,
+      [FORM_OPPORTUNITY_TYPES.LOW_FORM_VIEWS]: getHighPageViewsLowFormViewsMetrics,
     })
       .filter(([opportunityType]) => opportunityTypes.includes(opportunityType))
       .flatMap(([opportunityType, metricsMethod]) => metricsMethod(formVitalsCollection)

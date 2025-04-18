@@ -116,14 +116,11 @@ export function getHighPageViewsLowFormViewsMetrics(formVitalsCollection) {
   resultMap.forEach((metrics, url) => {
     const { total: pageViews } = metrics.pageview;
     const { total: formViews } = metrics.formview;
-    const { total: formEngagement } = metrics.formengagement;
 
     if (hasHighPageViews(pageViews) && hasLowFormViews(pageViews, formViews)) {
       urls.push({
         url,
-        pageViews,
-        formViews,
-        formEngagement,
+        ...metrics,
       });
     }
   });

@@ -12,4 +12,5 @@
 export const FORM_OPPORTUNITY_TYPES = {
   LOW_CONVERSION: 'high-form-views-low-conversions',
   LOW_NAVIGATION: 'high-page-views-low-form-nav',
+  LOW_FORM_VIEWS: 'high-page-views-low-form-views',
 };

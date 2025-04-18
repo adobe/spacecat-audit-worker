@@ -335,6 +335,63 @@ const testData = {
       ],
     },
   },
+  lowFormviewsAuditData: {
+    type: 'high-page-views-low-form-nav',
+    siteId: 'site-id',
+    auditId: 'audit-id',
+    auditResult: {
+      formVitals: [
+        {
+          url: 'https://www.surest.com/high-page-low-form-view',
+          formsubmit: {
+            'desktop:windows': 0,
+          },
+          formview: {
+            'desktop:windows': 200,
+          },
+          formengagement: {
+            'desktop:windows': 100,
+          },
+          pageview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
+          trafficacquisition: {
+            paid: 2690,
+            maxTimeDelta: 3060,
+            total: 6690,
+            earned: 2000,
+            sources: [],
+            owned: 2000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/existing-opportunity',
+          formsubmit: {
+            'desktop:windows': 0,
+          },
+          formview: {
+            'desktop:windows': 200,
+          },
+          formengagement: {
+            'desktop:windows': 100,
+          },
+          pageview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
+          trafficacquisition: {
+            paid: 2690,
+            maxTimeDelta: 3060,
+            total: 6690,
+            earned: 2000,
+            sources: [],
+            owned: 2000,
+          },
+        },
+      ],
+    },
+  },
   auditData3: {
     type: 'high-form-views-low-conversions',
     siteId: 'site-id',
