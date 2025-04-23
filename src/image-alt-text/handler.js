@@ -75,7 +75,6 @@ export async function prepareScrapingStep(context) {
 
   return {
     type: 'alt-text',
-    jobId: site.getId(),
     urls: [{ url: finalUrl }],
     siteId: site.getId(),
   };
