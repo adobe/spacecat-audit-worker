@@ -11,6 +11,7 @@
  */
 
 import { JSDOM } from 'jsdom';
+import getXpath from 'get-xpath';
 import { hasText, tracingFetch } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import {
@@ -55,12 +56,14 @@ export async function fetchAndProcessPageObject(
     isPresentational: isImagePresentational(img),
     src: img.getAttribute('src'),
     alt: img.getAttribute('alt'),
+    xpath: getXpath(img),
   })).filter((img) => img.src);
 
   const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', '');
   return {
     [pageUrl]: {
       images,
+      dom,
     },
   };
 }

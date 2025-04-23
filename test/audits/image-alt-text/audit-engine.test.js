@@ -13,8 +13,9 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
+import { JSDOM } from 'jsdom';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import AuditEngine from '../../../src/image-alt-text/auditEngine.js';
+import AuditEngine, { getPageLanguage, detectLanguageFromText } from '../../../src/image-alt-text/auditEngine.js';
 
 describe('AuditEngine', () => {
   let auditEngine;
@@ -41,6 +42,7 @@ describe('AuditEngine', () => {
       const auditedTags = auditEngine.getAuditedTags();
       expect(auditedTags).to.deep.equal({
         imagesWithoutAltText: [],
+        presentationalImagesCount: 0,
       });
     });
   });
@@ -50,19 +52,29 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '' },
-          { src: 'image2.jpg' },
-          { src: 'image3.jpg', alt: null },
+          {
+            src: 'image1.jpg', alt: '', isPresentational: false, xpath: '/html/body/img[1]',
+          },
+          { src: 'image2.jpg', isPresentational: false, xpath: '/html/body/img[2]' },
+          {
+            src: 'image3.jpg', alt: null, isPresentational: false, xpath: '/html/body/img[3]',
+          },
+          {
+            src: 'image4.jpg', alt: null, isPresentational: true, xpath: '/html/body/img[4]',
+          },
         ],
       };
 
       auditEngine.performPageAudit(pageUrl, pageTags);
       const auditedTags = auditEngine.getAuditedTags();
 
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(3);
+      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(4);
+      expect(auditedTags.presentationalImagesCount).to.equal(1);
       expect(auditedTags.imagesWithoutAltText[0]).to.deep.equal({
         pageUrl,
         src: 'image1.jpg',
+        xpath: '/html/body/img[1]',
+        language: 'unknown',
       });
     });
 
@@ -70,8 +82,8 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: 'Valid alt text' },
-          { src: 'image2.jpg', alt: '  Padded alt text  ' },
+          { src: 'image1.jpg', alt: 'Valid alt text', xpath: '/html/body/img[1]' },
+          { src: 'image2.jpg', alt: '  Padded alt text  ', xpath: '/html/body/img[2]' },
         ],
       };
 
@@ -85,8 +97,8 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '   ' },
-          { src: 'image2.jpg', alt: '\n\t' },
+          { src: 'image1.jpg', alt: '   ', xpath: '/html/body/img[1]' },
+          { src: 'image2.jpg', alt: '\n\t', xpath: '/html/body/img[2]' },
         ],
       };
 
@@ -137,6 +149,19 @@ describe('AuditEngine', () => {
       expect(
         auditEngine.getAuditedTags().imagesWithoutAltText,
       ).to.have.lengthOf(0);
+    });
+
+    it('should handle missing window.document in pageTags', () => {
+      const pageUrl = '/invalid-images';
+      const pageTags = {
+        images: [
+          { src: 'image1.jpg', alt: '   ', xpath: '/html/body/img[1]' },
+          { src: 'image2.jpg', alt: '\n\t', xpath: '/html/body/img[2]' },
+        ],
+        dom: { window: { document: null } },
+      };
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
     });
   });
 
@@ -401,6 +426,48 @@ describe('AuditEngine', () => {
       expect(logStub.error).to.have.been.calledWithMatch(
         `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Error processing images for base64 conversion`,
       );
+    });
+  });
+
+  describe('Language Detection', () => {
+    describe('getPageLanguage', () => {
+      it('should return the language from the lang attribute', () => {
+        const dom = new JSDOM('<html lang="en"><body></body></html>').window.document;
+        const lang = getPageLanguage({ document: dom });
+        expect(lang).to.equal('en');
+      });
+
+      it('should return the language from meta tags', () => {
+        const dom = new JSDOM('<html><head><meta http-equiv="Content-Language" content="fr"></head><body></body></html>').window.document;
+        const lang = getPageLanguage({ document: dom });
+        expect(lang).to.equal('fr');
+      });
+
+      it('should return unknown if no language is detected', () => {
+        const dom = new JSDOM('<html><body></body></html>').window.document;
+        const lang = getPageLanguage({ document: dom });
+        expect(lang).to.equal('unknown');
+      });
+    });
+
+    describe('detectLanguageFromText', () => {
+      it('should detect English text', () => {
+        const text = 'This is a simple English sentence.';
+        const lang = detectLanguageFromText(text);
+        expect(lang).to.equal('eng');
+      });
+
+      it('should detect French text', () => {
+        const text = 'Ceci est une phrase française simple.';
+        const lang = detectLanguageFromText(text);
+        expect(lang).to.equal('fra');
+      });
+
+      it('should return unknown for undetermined language', () => {
+        const text = '1234567890';
+        const lang = detectLanguageFromText(text);
+        expect(lang).to.equal('unknown');
+      });
     });
   });
 });

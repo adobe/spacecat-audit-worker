@@ -11,10 +11,14 @@
  */
 
 import {
-  getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics, isNonEmptyArray,
+  isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import {
+  getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
+} from './formcalc.js';
+import { FORM_OPPORTUNITY_TYPES } from './constants.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
 
@@ -36,7 +40,7 @@ async function getPresignedUrl(fileName, context, url, site) {
   });
 
   return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
-  // eslint-disable-next-line no-shadow
+    // eslint-disable-next-line no-shadow
     .then((signedUrl) => signedUrl)
     .catch((error) => {
       log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
@@ -44,77 +48,200 @@ async function getPresignedUrl(fileName, context, url, site) {
     });
 }
 
-async function convertToOpportunityData(opportunityName, urlObject, context) {
+function getFormMetrics(metricObject) {
+  const { formview, formengagement, formsubmit } = metricObject;
+
+  const calculateMetrics = (_formSubmit, _formViews, _formEngagement) => {
+    let bounceRate = 1;
+    let conversionRate = 0;
+    // if engagement is zero, it means bounce rate is 1, then dropoffRate does not makes sense
+    let dropoffRate = null;
+
+    if (_formViews > 0) {
+      conversionRate = _formSubmit / _formViews;
+      bounceRate = 1 - (_formEngagement / _formViews);
+    }
+    if (_formEngagement > 0) {
+      dropoffRate = 1 - (_formSubmit / _formEngagement);
+    }
+
+    return {
+      conversionRate,
+      bounceRate,
+      dropoffRate,
+    };
+  };
+
+  return ['total', 'desktop', 'mobile'].map((device) => {
+    const formViews = formview[device] || 0;
+    const formEngagement = formengagement[device] || 0;
+    const formSubmit = formsubmit[device] || 0;
+    const {
+      conversionRate,
+      bounceRate,
+      dropoffRate,
+    } = calculateMetrics(formSubmit, formViews, formEngagement);
+    return {
+      device,
+      conversionRate,
+      bounceRate,
+      dropoffRate,
+    };
+  });
+}
+
+function convertToLowNavOpptyData(metricObject) {
   const {
-    url, pageViews, formViews, formSubmit, CTA,
-  } = urlObject;
+    formview: { total: formViews, mobile: formViewsMobile, desktop: formViewsDesktop },
+    CTA, trafficacquisition,
+  } = metricObject;
+  return {
+    trackedFormKPIName: 'Form Views',
+    trackedFormKPIValue: formViews,
+    metrics: [
+      {
+        type: 'formViews',
+        device: '*',
+        value: {
+          page: formViews,
+        },
+      },
+      {
+        type: 'formViews',
+        device: 'mobile',
+        value: {
+          page: formViewsMobile,
+        },
+      },
+      {
+        type: 'formViews',
+        device: 'desktop',
+        value: {
+          page: formViewsDesktop,
+        },
+      },
+      {
+        type: 'traffic',
+        device: '*',
+        value: {
+          total: trafficacquisition.total ? trafficacquisition.total : null,
+          paid: trafficacquisition.paid ? trafficacquisition.paid : null,
+          earned: trafficacquisition.earned ? trafficacquisition.earned : null,
+          owned: trafficacquisition.owned ? trafficacquisition.owned : null,
+        },
+      },
+    ],
+    formNavigation: CTA,
+  };
+}
+
+function convertToLowConversionOpptyData(metricObject) {
+  const { trafficacquisition } = metricObject;
+  const deviceWiseMetrics = getFormMetrics(metricObject);
+
+  let totalConversionRate = 0;
+
+  const metrics = [];
+
+  for (const metric of deviceWiseMetrics) {
+    const {
+      device, conversionRate, bounceRate, dropoffRate,
+    } = metric;
+    if (device === 'total') {
+      totalConversionRate = conversionRate;
+    }
+    const metricsConfig = [
+      { type: 'conversionRate', value: conversionRate },
+      { type: 'bounceRate', value: bounceRate },
+      { type: 'dropoffRate', value: dropoffRate },
+    ];
+    metricsConfig.forEach(({ type, value }) => {
+      metrics.push({
+        type,
+        device: device === 'total' ? '*' : device,
+        value: {
+          page: value,
+        },
+      });
+    });
+  }
+
+  metrics.push({
+    type: 'traffic',
+    device: '*',
+    value: {
+      total: trafficacquisition.total ? trafficacquisition.total : null,
+      paid: trafficacquisition.paid ? trafficacquisition.paid : null,
+      earned: trafficacquisition.earned ? trafficacquisition.earned : null,
+      owned: trafficacquisition.owned ? trafficacquisition.owned : null,
+    },
+  });
+
+  return {
+    trackedFormKPIName: 'Conversion Rate',
+    trackedFormKPIValue: totalConversionRate,
+    metrics,
+  };
+}
+
+async function convertToOpportunityData(opportunityType, metricObject, context) {
+  const {
+    url, pageview: { total: pageViews }, formview: { total: formViews },
+  } = metricObject;
 
   const {
     site,
   } = context;
 
-  let conversionRate = formSubmit / formViews;
-  conversionRate = Number.isNaN(conversionRate) ? null : conversionRate;
-  const signedScreenshot = await getPresignedUrl('screenshot-desktop-fullpage.png', context, url, site);
+  /*
+  if (formViews === 0 && (formSubmit > 0 || formEngagement > 0)) {
+    log.debug(`Form views are 0 but form engagement and submissions are > 0 for form: ${url}`);
+  } */
 
-  const opportunity = {
+  let opportunityData = {};
+
+  if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION) {
+    opportunityData = convertToLowConversionOpptyData(metricObject);
+  } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION) {
+    opportunityData = convertToLowNavOpptyData(metricObject);
+  }
+
+  const screenshot = await getPresignedUrl('screenshot-desktop-fullpage.png', context, url, site);
+  opportunityData = {
+    ...opportunityData,
     form: url,
-    screenshot: signedScreenshot,
-    trackedFormKPIName: 'Conversion Rate',
-    trackedFormKPIValue: conversionRate,
     formViews,
     pageViews,
+    screenshot,
     samples: pageViews, // todo: get the actual number of samples
-    metrics: [{
-      type: 'conversionRate',
-      device: '*',
-      value: {
-        page: conversionRate,
-      },
-    }],
-    ...(opportunityName === 'high-page-views-low-form-nav' && { formNavigation: CTA }),
   };
-  return opportunity;
+
+  return opportunityData;
 }
 
-export async function generateOpptyData(formVitals, context) {
+export async function generateOpptyData(
+  formVitals,
+  context,
+  opportunityTypes = [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION, FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION],
+) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
-
   return Promise.all(
-    getHighFormViewsLowConversionMetrics(formVitalsCollection)
-      .map((highFormViewsLowConversion) => convertToOpportunityData(
-        'high-page-views-low-conversion',
-        highFormViewsLowConversion,
-        context,
-      )),
-  );
-}
-
-// eslint-disable-next-line max-len
-export async function generateOpptyDataForHighPageViewsLowFormNav(formVitals, context) {
-  const formVitalsCollection = formVitals.filter(
-    (row) => row.formengagement && row.formsubmit && row.formview,
-  );
-
-  return Promise.all(
-    getHighPageViewsLowFormCtrMetrics(formVitalsCollection)
-      .map((highPageViewsLowFormCtr) => convertToOpportunityData(
-        'high-page-views-low-form-nav',
-        highPageViewsLowFormCtr,
-        context,
-      )),
+    Object.entries({
+      [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: getHighFormViewsLowConversionMetrics,
+      [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]: getHighPageViewsLowFormCtrMetrics,
+    })
+      .filter(([opportunityType]) => opportunityTypes.includes(opportunityType))
+      .flatMap(([opportunityType, metricsMethod]) => metricsMethod(formVitalsCollection)
+        .map((metric) => convertToOpportunityData(opportunityType, metric, context))),
   );
 }
 
 export function shouldExcludeForm(scrapedFormData) {
   return scrapedFormData?.formType === 'search'
     || scrapedFormData?.formType === 'login'
-    || scrapedFormData?.classList?.includes('search')
-    || scrapedFormData?.classList?.includes('unsubscribe')
-    || scrapedFormData?.action?.endsWith('search.html')
-    || (scrapedFormData?.fieldsLabels && isNonEmptyArray(scrapedFormData.fieldsLabels) && scrapedFormData.fieldsLabels.every((label) => label.toLowerCase().includes('search')));
+    || scrapedFormData?.classList?.includes('unsubscribe');
 }
 
 /**

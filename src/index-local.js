@@ -35,7 +35,7 @@ export const main = async () => {
       region: 'us-east-1',
     },
     func: {
-      version: 'ci',
+      version: 'latest',
     },
     invocation: {
       event: {
