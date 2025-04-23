@@ -74,7 +74,7 @@ export async function prepareScrapingStep(context) {
   log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`);
 
   return {
-    processingType: 'alt-text', // TO-DO: Is this needed?
+    type: 'alt-text',
     jobId: site.getId(),
     urls: [{ url: finalUrl }],
     siteId: site.getId(),
