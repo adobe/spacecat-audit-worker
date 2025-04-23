@@ -28,7 +28,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   formVitalsCollection.forEach((item) => {
     const {
       url, formview = {}, formengagement = {}, pageview = {}, formsubmit = {},
-      trafficacquisition = {},
+      trafficacquisition = {}, formsource = '',
     } = item;
 
     const totals = {
@@ -56,6 +56,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
     totals.pageview = calculateSums(pageview, totals.pageview);
     totals.formsubmit = calculateSums(formsubmit, totals.formsubmit);
     totals.trafficacquisition = trafficacquisition;
+    totals.formsource = formsource;
     resultMap.set(url, totals);
   });
 

@@ -38,6 +38,7 @@ export const formVitalsCollection = [
       'desktop:windows': 4670,
       'mobile:ios': 4000,
     },
+    formsource: '.myform',
   },
   {
     url: 'https://www.surest.com/newsletter',

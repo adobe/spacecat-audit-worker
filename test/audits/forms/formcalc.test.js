@@ -31,6 +31,7 @@ describe('Form Calc functions', () => {
         pageview: { total: 8670, desktop: 4670, mobile: 4000 },
         url: 'https://www.surest.com/info/win',
         trafficacquisition: {},
+        formsource: '.myform',
       },
       {
         formengagement: { total: 300, desktop: 0, mobile: 300 },
@@ -39,6 +40,7 @@ describe('Form Calc functions', () => {
         pageview: { total: 8670, desktop: 4670, mobile: 4000 },
         url: 'https://www.surest.com/newsletter',
         trafficacquisition: {},
+        formsource: '',
       },
     ]);
   });
@@ -53,6 +55,7 @@ describe('Form Calc functions', () => {
         formview: { total: 300, desktop: 0, mobile: 300 },
         pageview: { total: 8670, desktop: 4670, mobile: 4000 },
         trafficacquisition: {},
+        formsource: '.myform',
       },
       {
         url: 'https://www.surest.com/newsletter',
@@ -61,6 +64,7 @@ describe('Form Calc functions', () => {
         formview: { total: 300, desktop: 0, mobile: 300 },
         pageview: { total: 8670, desktop: 4670, mobile: 4000 },
         trafficacquisition: {},
+        formsource: '',
       },
     ]);
   });
@@ -74,6 +78,7 @@ describe('Form Calc functions', () => {
         formview: { total: 300, desktop: 0, mobile: 300 },
         formengagement: { total: 300, desktop: 0, mobile: 300 },
         formsubmit: { total: 0, desktop: 0, mobile: 0 },
+        formsource: '',
         trafficacquisition: {},
         CTA: {
           url: 'https://www.surest.com/about-us',

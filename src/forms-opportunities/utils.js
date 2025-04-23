@@ -196,6 +196,7 @@ function convertToLowConversionOpptyData(metricObject) {
 async function convertToOpportunityData(opportunityType, metricObject, context) {
   const {
     url, pageview: { total: pageViews }, formview: { total: formViews },
+    formsource = '',
   } = metricObject;
 
   const {
@@ -221,6 +222,7 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
   opportunityData = {
     ...opportunityData,
     form: url,
+    formsource,
     formViews,
     pageViews,
     screenshot,
@@ -268,7 +270,7 @@ export function shouldExcludeForm(scrapedFormData) {
 export function filterForms(formOpportunities, scrapedData, log, excludeUrls = new Set()) {
   return formOpportunities.filter((opportunity) => {
     let urlMatches = false;
-    if (opportunity.form.includes('search') || excludeUrls.has(opportunity.form)) {
+    if (opportunity.form.includes('search') || excludeUrls.has(opportunity.form + opportunity.formsource)) {
       return false; // exclude search pages
     }
     if (isNonEmptyArray(scrapedData?.formData)) {

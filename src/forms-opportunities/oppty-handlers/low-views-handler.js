@@ -17,10 +17,10 @@ import { filterForms, generateOpptyData } from '../utils.js';
  * @param auditUrl - The URL of the audit
  * @param auditData - The audit data containing the audit result and additional details.
  * @param context - The context object containing the data access and logger objects.
- * @param excludeUrls - A set of URLs to exclude from the opportunity creation process.
+ * @param excludeForms - A set of Forms to exclude from the opportunity creation process.
  */
 // eslint-disable-next-line max-len
-export default async function createLowViewsOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeUrls = new Set()) {
+export default async function createLowViewsOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeForms = new Set()) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
 
@@ -40,8 +40,8 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
   const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]);
   log.debug(`forms opportunities high-page-views-low-form-views: ${JSON.stringify(formOpportunities, null, 2)}`);
 
-  const filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeUrls);
-  filteredOpportunities.forEach((oppty) => excludeUrls.add(oppty.form));
+  const filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
+  filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
   log.info(`filtered opportunities: high-page-views-low-form-views:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
   try {
     for (const opptyData of filteredOpportunities) {

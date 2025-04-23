@@ -90,6 +90,7 @@ describe('createLowNavigationOpportunities handler method', () => {
         trackedFormKPIValue: 300,
         formViews: 300,
         pageViews: 8670,
+        formsource: '',
         samples: 8670,
         scrapedStatus: false,
         metrics: [
