@@ -20,7 +20,6 @@ import {
 } from '../utils/s3-utils.js';
 import AuditEngine from './auditEngine.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -69,14 +68,19 @@ export async function fetchAndProcessPageObject(
 }
 
 export async function prepareScrapingStep(context) {
-  const { site, log, finalUrl } = context;
-
+  const { site, log, dataAccess } = context;
   log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`);
 
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (topPages.length === 0) {
+    throw new Error('No top pages found for site');
+  }
+
   return {
-    type: 'alt-text',
-    urls: [{ url: finalUrl }],
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
+    type: 'alt-text',
   };
 }
 
@@ -169,7 +173,7 @@ export async function processImportStep(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver((site) => site.resolveFinalURL())
   .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('prepareScraping', prepareScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processAltTextAudit', processAltTextAuditStep)
