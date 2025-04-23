@@ -89,8 +89,9 @@ export async function processAltTextAuditStep(context) {
 
   // Temporary workaround to get the siteId from the audit
   const auditId = audit.getId() || context.auditId;
+  log.info(`[${AUDIT_TYPE}] [auditId: ${auditId}]`);
   const siteId = AuditModel.findById(auditId).getSite() || siteIdFromContext;
-  log.info(`[${AUDIT_TYPE}] [AuditId: ${auditId}] [Site Id: ${siteId}]`);
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}]`);
 
   const prefix = `scrapes/${siteId}/`;
 
