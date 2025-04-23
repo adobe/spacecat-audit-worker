@@ -146,11 +146,15 @@ export async function prepareScrapingStep(context) {
 export async function opportunityAndSuggestionsStep(context) {
   const { log, site, finalUrl } = context;
   log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] starting audit`,
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] starting audit in opportunityAndSuggestionsStep`,
   );
 
   const latestAuditData = await site.getLatestAuditByAuditType(AUDIT_TYPE);
 
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] latestAuditData`,
+    latestAuditData,
+  );
   // generate suggestions
   const auditDataWithSuggestions = await generateSuggestionData(
     finalUrl,
@@ -159,9 +163,18 @@ export async function opportunityAndSuggestionsStep(context) {
     site,
   );
 
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] auditDataWithSuggestions`,
+    auditDataWithSuggestions,
+  );
+
   // TODO: skip opportunity creation if no internal link items are found in the audit data
 
   const kpiDeltas = calculateKpiDeltasForAudit(auditDataWithSuggestions);
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] kpiDeltas`,
+    kpiDeltas,
+  );
   const opportunity = await convertToOpportunity(
     finalUrl,
     auditDataWithSuggestions,
@@ -171,6 +184,10 @@ export async function opportunityAndSuggestionsStep(context) {
     {
       kpiDeltas,
     },
+  );
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] opportunity`,
+    opportunity,
   );
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
   await syncSuggestions({
