@@ -16,9 +16,14 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import esmock from 'esmock';
 
-import { internalLinksAuditRunner, opportunityAndSuggestionsStep } from '../../../src/internal-links/handler.js';
-import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../../fixtures/internal-links-data.js';
+import { internalLinksAuditRunner } from '../../../src/internal-links/handler.js';
+import {
+  internalLinksData,
+  expectedOpportunity,
+  expectedSuggestions,
+} from '../../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../../shared.js';
 
 const AUDIT_RESULT_DATA = [
@@ -39,6 +44,35 @@ const AUDIT_RESULT_DATA = [
     urlTo: 'https://www.petplace.com/a01',
     urlFrom: 'https://www.petplace.com/a01nf',
     priority: 'low',
+  },
+];
+const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
+  {
+    trafficDomain: 1800,
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a02nf',
+    priority: 'high',
+    urlsSuggested: [
+      'https://petplace.com/suggestion1',
+      'https://petplace.com/suggestion12',
+    ],
+    aiRationale: 'Some Rationale',
+  },
+  {
+    trafficDomain: 1200,
+    urlTo: 'https://www.petplace.com/ax02',
+    urlFrom: 'https://www.petplace.com/ax02nf',
+    priority: 'medium',
+    urlsSuggested: ['https://petplace.com/suggestion2'],
+    aiRationale: 'Some Rationale',
+  },
+  {
+    trafficDomain: 200,
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a01nf',
+    priority: 'low',
+    urlsSuggested: ['https://petplace.com/suggestion3'],
+    aiRationale: 'Some Rationale',
   },
 ];
 
@@ -115,8 +149,9 @@ describe('broken-internal-links audit to opportunity conversion', () => {
   let auditData;
 
   let context;
+  let handler;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
@@ -172,51 +207,82 @@ describe('broken-internal-links audit to opportunity conversion', () => {
       },
       fullAuditRef: auditUrl,
     };
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => ({
+          ...auditData,
+          auditResult: {
+            brokenInternalLinks: AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+          },
+        }),
+      },
+    });
   });
 
   afterEach(() => {
     sandbox.restore();
   });
 
-  it('creates a new opportunity object', async () => {
+  it('creates a new opportunity object with mocked suggestions', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
+    context.site.getLatestAuditByAuditType = () => auditData;
 
-    // await opportunityAndSuggestionsStep(auditUrl, auditData, context);
-    await opportunityAndSuggestionsStep(context);
+    const result = await handler.opportunityAndSuggestionsStep(context);
 
-    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
-
-    // make sure that newly oppty has 3 new suggestions
+    expect(result.status).to.equal('complete');
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
     expect(opportunity.addSuggestions).to.have.been.calledOnce;
     const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
     expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
+    expect(suggestionsArg[0].data.urlTo).to.equal(
+      'https://www.petplace.com/a01',
+    );
+    expect(suggestionsArg[0].data.urlsSuggested).to.deep.equal([
+      'https://petplace.com/suggestion1',
+      'https://petplace.com/suggestion12',
+    ]);
+    expect(suggestionsArg[0].data.aiRationale).to.equal('Some Rationale');
   }).timeout(5000);
 
   it('creating a new opportunity object fails', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
+    context.dataAccess.Opportunity.create.rejects(
+      new Error('big error happened'),
+    );
 
-    await expect(opportunityAndSuggestionsStep(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
+    await expect(
+      handler.opportunityAndSuggestionsStep(context),
+    ).to.be.rejectedWith('big error happened');
 
-    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOpportunity);
-    expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id-1 and auditId audit-id-1: big error happened');
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
+      expectedOpportunity,
+    );
+    expect(context.log.error).to.have.been.calledOnceWith(
+      'Failed to create new opportunity for siteId site-id-1 and auditId audit-id-1: big error happened',
+    );
 
     // make sure that no new suggestions are added
     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
   }).timeout(5000);
 
   it('allBySiteIdAndStatus method fails', async () => {
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(
+      new Error('some-error'),
+    );
     context.dataAccess.Opportunity.create.resolves(opportunity);
     try {
-      await opportunityAndSuggestionsStep(auditUrl, auditData, context);
+      await handler.opportunityAndSuggestionsStep(context);
     } catch (err) {
-      expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id-1: some-error');
+      expect(err.message).to.equal(
+        'Failed to fetch opportunities for siteId site-id-1: some-error',
+      );
     }
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
-    expect(context.log.error).to.have.been.calledOnceWith('Fetching opportunities for siteId site-id-1 failed with error: some-error');
+    expect(context.log.error).to.have.been.calledOnceWith(
+      'Fetching opportunities for siteId site-id-1 failed with error: some-error',
+    );
 
     // make sure that no new suggestions are added
     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
@@ -229,20 +295,21 @@ describe('broken-internal-links audit to opportunity conversion', () => {
       opportunityId: opportunity.getId(),
       remove: sinon.stub(),
       save: sinon.stub(),
-      getData: () => (suggestion.data),
+      getData: () => suggestion.data,
       setData: sinon.stub(),
       getStatus: sinon.stub().returns('NEW'),
     }));
     opportunity.getSuggestions.resolves(existingSuggestions);
 
-    await opportunityAndSuggestionsStep(auditUrl, auditData, context);
+    await handler.opportunityAndSuggestionsStep(context);
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(opportunity.setAuditId).to.have.been.calledOnceWith('audit-id-1');
     expect(opportunity.save).to.have.been.calledOnce;
 
-    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
-      .calledOnceWith([existingSuggestions[1]], 'OUTDATED');
+    expect(
+      context.dataAccess.Suggestion.bulkUpdateStatus,
+    ).to.have.been.calledOnceWith([existingSuggestions[1]], 'OUTDATED');
 
     // make sure that 1 existing suggestion is updated
     expect(existingSuggestions[0].setData).to.have.been.calledOnce;
