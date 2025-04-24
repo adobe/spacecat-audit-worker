@@ -86,9 +86,10 @@ export async function prepareScrapingStep(context) {
 
 export async function processAltTextAuditStep(context) {
   const {
-    log, finalUrl, s3Client, audit, siteId,
+    log, finalUrl, s3Client, audit, site,
   } = context;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const siteId = site.getId();
 
   log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}]`);
 
