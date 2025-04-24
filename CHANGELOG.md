@@ -1,3 +1,10 @@
+# [1.79.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.78.1...v1.79.0) (2025-04-24)
+
+
+### Features
+
+* Low form views auto detect ([#814](https://github.com/adobe/spacecat-audit-worker/issues/814)) ([e282cdb](https://github.com/adobe/spacecat-audit-worker/commit/e282cdb06436f494a778b0c1e34ce81b7ffdda2e))
+
 ## [1.78.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.78.0...v1.78.1) (2025-04-17)
 
 
