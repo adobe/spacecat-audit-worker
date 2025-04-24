@@ -132,19 +132,19 @@ const getProjectedMetrics = async ({
 export default async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
-  const { detectedTags } = auditData.auditResult;
+  const { detectedTags, siteId, auditId } = auditData;
 
-  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${auditData.siteId}`);
+  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${siteId}`);
   let altTextOppty;
 
   try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
     altTextOppty = opportunities.find(
       (oppty) => oppty.getType() === AUDIT_TYPE,
     );
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
   const projectedMetrics = await getProjectedMetrics({
@@ -164,8 +164,8 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   try {
     if (!altTextOppty) {
       const opportunityDTO = {
-        siteId: auditData.siteId,
-        auditId: auditData.id,
+        siteId,
+        auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
         type: AUDIT_TYPE,
         origin: 'AUTOMATION',
@@ -187,13 +187,13 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       altTextOppty = await Opportunity.create(opportunityDTO);
       log.debug(`[${AUDIT_TYPE}]: Opportunity created`);
     } else {
-      altTextOppty.setAuditId(auditData.id);
+      altTextOppty.setAuditId(auditId);
       altTextOppty.setData(opportunityData);
       await altTextOppty.save();
     }
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Creating alt-text opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to create alt-text opportunity for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: Creating alt-text opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
+    throw new Error(`[${AUDIT_TYPE}]: Failed to create alt-text opportunity for siteId ${siteId}: ${e.message}`);
   }
 
   const imageUrls = detectedTags.imagesWithoutAltText.map(
@@ -239,5 +239,5 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     log,
   });
 
-  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${auditData.siteId} and alt-text audit type.`);
+  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${siteId} and alt-text audit type.`);
 }

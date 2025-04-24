@@ -142,16 +142,16 @@ export async function processAltTextAuditStep(context) {
 
   // Process opportunity
   log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] processing opportunity`);
-  const auditResult = audit.getAuditResult();
+  const auditResult = {
+    detectedTags,
+    siteId,
+    auditId: audit.getId(),
+  };
 
   await convertToOpportunity(finalUrl, auditResult, context);
   log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] opportunity identified`);
 
   return {
-    detectedTags,
-    sourceS3Folder: `${bucketName}/${prefix}`,
-    fullAuditRef: prefix,
-    finalUrl,
     status: 'complete',
   };
 }
