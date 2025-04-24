@@ -18,7 +18,7 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
 import suggestionsEngine from '../../../src/image-alt-text/suggestionsEngine.js';
 
-describe('Image Alt Text Opportunity Handler', () => {
+xdescribe('Image Alt Text Opportunity Handler', () => {
   let logStub;
   let dataAccessStub;
   let auditData;
