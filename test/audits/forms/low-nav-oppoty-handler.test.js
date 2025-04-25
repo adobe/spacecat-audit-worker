@@ -90,6 +90,7 @@ describe('createLowNavigationOpportunities handler method', () => {
         trackedFormKPIValue: 300,
         formViews: 300,
         pageViews: 8670,
+        formsource: '',
         samples: 8670,
         scrapedStatus: false,
         metrics: [
@@ -193,5 +194,12 @@ describe('createLowNavigationOpportunities handler method', () => {
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+  });
+
+  it('should not create low nav opportunity if another opportunity already exists', async () => {
+    const excludeUrls = new Set();
+    excludeUrls.add('https://www.surest.com/newsletter');
+    await createLowNavigationOpportunities(auditUrl, auditData, undefined, context, excludeUrls);
+    expect(dataAccessStub.Opportunity.create).to.not.be.called;
   });
 });

@@ -19,6 +19,7 @@ import { generateOpptyData } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
+import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -35,23 +36,8 @@ export async function formsAuditRunner(auditUrl, context) {
   };
 
   const queryResults = await rumAPIClient.queryMulti(FORMS_OPPTY_QUERIES, options);
-  const cwvMap = new Map(
-    queryResults.cwv
-      .filter((cwv) => cwv.type === 'url')
-      .map((cwv) => [cwv.url, cwv]),
-  );
-
   const auditResult = {
-    formVitals: queryResults['form-vitals'].map((formVital) => {
-      const cwvData = cwvMap.get(formVital.url);
-      const filteredCwvData = cwvData
-        ? Object.fromEntries(Object.entries(cwvData).filter(([key]) => key !== 'url' && key !== 'pageviews' && key !== 'type'))
-        : {};
-      return {
-        ...formVital,
-        cwv: filteredCwvData, // Append cwv data
-      };
-    }),
+    formVitals: queryResults['form-vitals'],
     auditContext: {
       interval: FORMS_AUDIT_INTERVAL,
     },
@@ -100,8 +86,10 @@ export async function processOpportunityStep(context) {
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
-  await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context);
-  await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context);
+  const excludeForms = new Set();
+  await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',
