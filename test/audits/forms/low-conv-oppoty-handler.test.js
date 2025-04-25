@@ -185,4 +185,15 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData5);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
+
+  it('should not create low conversion opportunity if another opportunity already exists', async () => {
+    const excludeUrls = new Set();
+    excludeUrls.add('https://www.surest.com/newsletter');
+    excludeUrls.add('https://www.surest.com/info/win-1.form');
+    await createLowConversionOpportunities(auditUrl, auditData, undefined, context, excludeUrls);
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(3);
+    expect(excludeUrls.has('https://www.surest.com/contact-us.mycontact')).to.be.true;
+    expect(excludeUrls.has('https://www.surest.com/info/win-2')).to.be.true;
+    expect(excludeUrls.has('https://www.surest.com/info/win')).to.be.true;
+  });
 });

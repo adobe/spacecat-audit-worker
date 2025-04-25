@@ -1,3 +1,31 @@
+## [1.79.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.2...v1.79.3) (2025-04-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.23.1 ([#818](https://github.com/adobe/spacecat-audit-worker/issues/818)) ([b077fca](https://github.com/adobe/spacecat-audit-worker/commit/b077fca07c80866cdccc8d85eef1a3b8dd30d78f))
+
+## [1.79.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.1...v1.79.2) (2025-04-25)
+
+
+### Bug Fixes
+
+* remove cwv data from forms audit ([#817](https://github.com/adobe/spacecat-audit-worker/issues/817)) ([9adf92c](https://github.com/adobe/spacecat-audit-worker/commit/9adf92cb65d277a441ba6829ec325342885a4c70))
+
+## [1.79.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.0...v1.79.1) (2025-04-24)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.16.0 ([#816](https://github.com/adobe/spacecat-audit-worker/issues/816)) ([74617aa](https://github.com/adobe/spacecat-audit-worker/commit/74617aa1b2bbb89a2a6c260b453c05c3afde012f))
+
+# [1.79.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.78.1...v1.79.0) (2025-04-24)
+
+
+### Features
+
+* Low form views auto detect ([#814](https://github.com/adobe/spacecat-audit-worker/issues/814)) ([e282cdb](https://github.com/adobe/spacecat-audit-worker/commit/e282cdb06436f494a778b0c1e34ce81b7ffdda2e))
+
 ## [1.78.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.78.0...v1.78.1) (2025-04-17)
 
 

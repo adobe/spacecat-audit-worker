@@ -28,7 +28,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   formVitalsCollection.forEach((item) => {
     const {
       url, formview = {}, formengagement = {}, pageview = {}, formsubmit = {},
-      trafficacquisition = {},
+      trafficacquisition = {}, formsource = '',
     } = item;
 
     const totals = {
@@ -56,6 +56,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
     totals.pageview = calculateSums(pageview, totals.pageview);
     totals.formsubmit = calculateSums(formsubmit, totals.formsubmit);
     totals.trafficacquisition = trafficacquisition;
+    totals.formsource = formsource;
     resultMap.set(url, totals);
   });
 
@@ -116,14 +117,11 @@ export function getHighPageViewsLowFormViewsMetrics(formVitalsCollection) {
   resultMap.forEach((metrics, url) => {
     const { total: pageViews } = metrics.pageview;
     const { total: formViews } = metrics.formview;
-    const { total: formEngagement } = metrics.formengagement;
 
     if (hasHighPageViews(pageViews) && hasLowFormViews(pageViews, formViews)) {
       urls.push({
         url,
-        pageViews,
-        formViews,
-        formEngagement,
+        ...metrics,
       });
     }
   });
