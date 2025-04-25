@@ -86,12 +86,14 @@ export async function prepareScrapingStep(context) {
 
 export async function processAltTextAuditStep(context) {
   const {
-    log, finalUrl, s3Client, audit, site,
+    log, s3Client, audit, site,
   } = context;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const siteId = site.getId();
-
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}]`);
+  let auditUrl = await site.resolveFinalURL();
+  if (!auditUrl.includes('https://')) {
+    auditUrl = `https://${auditUrl}`;
+  }
 
   const prefix = `scrapes/${siteId}/`;
 
@@ -136,7 +138,7 @@ export async function processAltTextAuditStep(context) {
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
     auditEngine.performPageAudit(pageUrl, pageTags);
   }
-  await auditEngine.filterImages(finalUrl, tracingFetch);
+  await auditEngine.filterImages(auditUrl, tracingFetch);
   auditEngine.finalizeAudit();
   const detectedTags = auditEngine.getAuditedTags();
 
@@ -148,7 +150,7 @@ export async function processAltTextAuditStep(context) {
     auditId: audit.getId(),
   };
 
-  await convertToOpportunity(finalUrl, auditResult, context);
+  await convertToOpportunity(auditUrl, auditResult, context);
   log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] opportunity identified`);
 
   return {
