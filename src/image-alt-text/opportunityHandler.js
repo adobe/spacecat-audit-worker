@@ -132,7 +132,7 @@ const getProjectedMetrics = async ({
 export default async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
-  const { detectedTags, siteId, auditId } = auditData;
+  const { detectedImages, siteId, auditId } = auditData;
 
   log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${siteId}`);
   let altTextOppty;
@@ -149,7 +149,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
 
   const projectedMetrics = await getProjectedMetrics({
     images:
-      detectedTags.imagesWithoutAltText
+      detectedImages.imagesWithoutAltText
         .map((image) => ({ src: image.src, pageUrl: image.pageUrl })),
     auditUrl,
     context,
@@ -158,7 +158,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
 
   const opportunityData = {
     ...projectedMetrics,
-    presentationalImagesCount: detectedTags.presentationalImagesCount,
+    presentationalImagesCount: detectedImages.presentationalImagesCount,
   };
 
   try {
@@ -196,7 +196,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     throw new Error(`[${AUDIT_TYPE}]: Failed to create alt-text opportunity for siteId ${siteId}: ${e.message}`);
   }
 
-  const imageUrls = detectedTags.imagesWithoutAltText.map(
+  const imageUrls = detectedImages.imagesWithoutAltText.map(
     (image) => {
       try {
         log.info(`[${AUDIT_TYPE}]: Creating URL for image ${image.src} and auditUrl ${auditUrl}`);
@@ -220,7 +220,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     tracingFetch,
   );
 
-  const suggestions = detectedTags.imagesWithoutAltText.map((image) => {
+  const suggestions = detectedImages.imagesWithoutAltText.map((image) => {
     const imageUrl = new URL(image.src, auditUrl).toString();
     return {
       id: getImageSuggestionIdentifier(image),
