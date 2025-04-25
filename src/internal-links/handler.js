@@ -167,7 +167,7 @@ export async function opportunityAndSuggestionsStep(context) {
 
   log.info(
     `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] latestAuditData`,
-    audit,
+    audit.getAuditResult(),
   );
   // generate suggestions
   const updatedInternalLinks = await generateSuggestionData(
