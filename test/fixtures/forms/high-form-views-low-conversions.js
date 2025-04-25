@@ -194,6 +194,14 @@ const testData = {
             'desktop:windows': 4670,
             'mobile:ios': 4000,
           },
+          trafficacquisition: {
+            paid: 4670,
+            maxTimeDelta: 3060,
+            total: 8670,
+            earned: 2000,
+            sources: [],
+            owned: 2000,
+          },
           forminternalnavigation: [
             {
               url: 'https://www.surest.com/about-us',
@@ -327,6 +335,63 @@ const testData = {
       ],
     },
   },
+  lowFormviewsAuditData: {
+    type: 'high-page-views-low-form-nav',
+    siteId: 'site-id',
+    auditId: 'audit-id',
+    auditResult: {
+      formVitals: [
+        {
+          url: 'https://www.surest.com/high-page-low-form-view',
+          formsubmit: {
+            'desktop:windows': 0,
+          },
+          formview: {
+            'desktop:windows': 200,
+          },
+          formengagement: {
+            'desktop:windows': 100,
+          },
+          pageview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
+          trafficacquisition: {
+            paid: 2690,
+            maxTimeDelta: 3060,
+            total: 6690,
+            earned: 2000,
+            sources: [],
+            owned: 2000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/existing-opportunity',
+          formsubmit: {
+            'desktop:windows': 0,
+          },
+          formview: {
+            'desktop:windows': 200,
+          },
+          formengagement: {
+            'desktop:windows': 100,
+          },
+          pageview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
+          trafficacquisition: {
+            paid: 2690,
+            maxTimeDelta: 3060,
+            total: 6690,
+            earned: 2000,
+            sources: [],
+            owned: 2000,
+          },
+        },
+      ],
+    },
+  },
   auditData3: {
     type: 'high-form-views-low-conversions',
     siteId: 'site-id',
@@ -338,7 +403,10 @@ const testData = {
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 700,
             'mobile:ios': 300,
@@ -350,10 +418,14 @@ const testData = {
         },
         {
           url: 'https://www.surest.com/contact-us',
+          formsource: '.mycontact',
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 700,
             'mobile:ios': 300,
@@ -368,7 +440,10 @@ const testData = {
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 4000,
             'mobile:ios': 300,
@@ -380,10 +455,14 @@ const testData = {
         },
         {
           url: 'https://www.surest.com/info/win-1',
+          formsource: '.form',
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 4000,
             'mobile:ios': 300,
@@ -398,7 +477,10 @@ const testData = {
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 4000,
             'mobile:ios': 300,
@@ -408,6 +490,7 @@ const testData = {
             'mobile:ios': 1000,
           },
         },
+
         {
           url: 'https://www.surest.com/newsletter',
           formsubmit: {
@@ -483,6 +566,168 @@ const testData = {
       ],
     },
   },
+  auditDataWithExistingOppty: {
+    type: 'high-form-views-low-conversions',
+    siteId: 'site-id',
+    auditId: 'audit-id',
+    auditResult: {
+      formVitals: [
+        {
+          url: 'https://www.surest.com/contact-us',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
+          formengagement: {
+            'desktop:windows': 700,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/info/win-1',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+          formengagement: {
+            'desktop:windows': 4000,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+        },
+      ],
+    },
+  },
+  auditDataWithTrafficMetrics: {
+    type: 'high-form-views-low-conversions',
+    siteId: 'site-id',
+    auditId: 'audit-id',
+    auditResult: {
+      formVitals: [
+        {
+          url: 'https://www.surest.com/contact-us',
+          formsubmit: {
+            'desktop:windows': 100,
+            'mobile:ios': 100,
+          },
+          formview: {
+            'desktop:windows': 2000,
+            'mobile:ios': 1000,
+          },
+          formengagement: {
+            'desktop:windows': 700,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 2000,
+          },
+          trafficacquisition: {
+            paid: 192200,
+            maxTimeDelta: 3060,
+            total: 211400,
+            earned: 4400,
+            sources: [],
+            owned: 14800,
+          },
+        },
+      ],
+    },
+  },
+  auditDataOpportunitiesWithSearchFields: {
+    type: 'high-form-views-low-conversions',
+    siteId: 'site-id',
+    auditId: 'audit-id',
+    auditResult: {
+      formVitals: [
+        {
+          url: 'https://www.surest.com/contact-us',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
+          formengagement: {
+            'desktop:windows': 700,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/info/win',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+          formengagement: {
+            'desktop:windows': 4000,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/info/win-1',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+          formengagement: {
+            'desktop:windows': 4000,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+        },
+        {
+          url: 'https://www.surest.com/info/win-2',
+          formsubmit: {
+            'desktop:windows': 100,
+          },
+          formview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+          formengagement: {
+            'desktop:windows': 4000,
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 1000,
+          },
+        },
+      ],
+    },
+  },
   opportunityData: {
     siteId: 'site-id',
     auditId: 'audit-id',
@@ -495,37 +740,90 @@ const testData = {
       'Forms Conversion',
     ],
     data: {
-      form: 'https://www.surest.com/contact-us',
-      screenshot: '',
       trackedFormKPIName: 'Conversion Rate',
-      trackedFormKPIValue: 0.014947683109118086,
-      formViews: 6690,
-      pageViews: 6690,
-      samples: 6690,
-      scrapedStatus: false,
+      trackedFormKPIValue: 0.03333333333333333,
       metrics: [
         {
           type: 'conversionRate',
           device: '*',
           value: {
-            page: 0.014947683109118086,
+            page: 0.03333333333333333,
           },
         },
         {
           type: 'bounceRate',
           device: '*',
           value: {
-            page: 0.8505231689088191,
+            page: 0.9,
           },
         },
         {
           type: 'dropoffRate',
           device: '*',
           value: {
+            page: 0.6666666666666667,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'desktop',
+          value: {
+            page: 0,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: 'desktop',
+          value: {
+            page: 1,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: 'desktop',
+          value: {
+            page: null,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'mobile',
+          value: {
+            page: 0,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: 'mobile',
+          value: {
             page: 0.9,
           },
         },
+        {
+          type: 'dropoffRate',
+          device: 'mobile',
+          value: {
+            page: 1,
+          },
+        },
+        {
+          type: 'traffic',
+          device: '*',
+          value: {
+            total: null,
+            paid: null,
+            earned: null,
+            owned: null,
+          },
+        },
       ],
+      form: 'https://www.surest.com/newsletter',
+      screenshot: '',
+      formViews: 3000,
+      pageViews: 8670,
+      formsource: '',
+      samples: 8670,
+      scrapedStatus: false,
     },
     guidance: {},
   },
@@ -547,6 +845,7 @@ const testData = {
       trackedFormKPIValue: 0.014947683109118086,
       formViews: 6690,
       pageViews: 6690,
+      formsource: '',
       samples: 6690,
       scrapedStatus: false,
       metrics: [
@@ -569,6 +868,58 @@ const testData = {
           device: '*',
           value: {
             page: 0.9,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'desktop',
+          value: {
+            page: 0.01757469244288225,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: 'desktop',
+          value: {
+            page: 0.8769771528998243,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: 'desktop',
+          value: {
+            page: 0.8571428571428572,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'mobile',
+          value: {
+            page: 0,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: 'mobile',
+          value: {
+            page: 0.7,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: 'mobile',
+          value: {
+            page: 1,
+          },
+        },
+        {
+          type: 'traffic',
+          device: '*',
+          value: {
+            total: null,
+            paid: null,
+            earned: null,
+            owned: null,
           },
         },
       ],
@@ -593,6 +944,7 @@ const testData = {
       trackedFormKPIValue: 0.014947683109118086,
       formViews: 6690,
       pageViews: 6690,
+      formsource: '',
       samples: 6690,
       scrapedStatus: false,
       metrics: [
@@ -615,6 +967,58 @@ const testData = {
           device: '*',
           value: {
             page: 0.9,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'desktop',
+          value: {
+            page: 0.01757469244288225,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: 'desktop',
+          value: {
+            page: 0.8769771528998243,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: 'desktop',
+          value: {
+            page: 0.8571428571428572,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'mobile',
+          value: {
+            page: 0,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: 'mobile',
+          value: {
+            page: 0.7,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: 'mobile',
+          value: {
+            page: 1,
+          },
+        },
+        {
+          type: 'traffic',
+          device: '*',
+          value: {
+            total: null,
+            paid: null,
+            earned: null,
+            owned: null,
           },
         },
       ],
@@ -648,6 +1052,7 @@ const testData = {
       trackedFormKPIValue: 0.014947683109118086,
       formViews: 6690,
       pageViews: 6690,
+      formsource: '',
       samples: 6690,
       scrapedStatus: true,
       metrics: [
@@ -672,6 +1077,58 @@ const testData = {
             page: 0.9,
           },
         },
+        {
+          type: 'conversionRate',
+          device: 'desktop',
+          value: {
+            page: 0.01757469244288225,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: 'desktop',
+          value: {
+            page: 0.8769771528998243,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: 'desktop',
+          value: {
+            page: 0.8571428571428572,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'mobile',
+          value: {
+            page: 0,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: 'mobile',
+          value: {
+            page: 0.7,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: 'mobile',
+          value: {
+            page: 1,
+          },
+        },
+        {
+          type: 'traffic',
+          device: '*',
+          value: {
+            total: null,
+            paid: null,
+            earned: null,
+            owned: null,
+          },
+        },
       ],
     },
     guidance: {
@@ -685,6 +1142,105 @@ const testData = {
       ],
     },
   },
+  opportunityData5: {
+    siteId: 'site-id',
+    auditId: 'audit-id',
+    runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
+    type: 'high-form-views-low-conversions',
+    origin: 'AUTOMATION',
+    title: 'Form has low conversions',
+    description: 'Form has high views but low conversions',
+    tags: [
+      'Forms Conversion',
+    ],
+    data: {
+      trackedFormKPIName: 'Conversion Rate',
+      trackedFormKPIValue: 0.06666666666666667,
+      metrics: [
+        {
+          type: 'conversionRate',
+          device: '*',
+          value: {
+            page: 0.06666666666666667,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: '*',
+          value: {
+            page: 0.6666666666666667,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: '*',
+          value: {
+            page: 0.8,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'desktop',
+          value: {
+            page: 0.05,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: 'desktop',
+          value: {
+            page: 0.65,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: 'desktop',
+          value: {
+            page: 0.8571428571428572,
+          },
+        },
+        {
+          type: 'conversionRate',
+          device: 'mobile',
+          value: {
+            page: 0.1,
+          },
+        },
+        {
+          type: 'bounceRate',
+          device: 'mobile',
+          value: {
+            page: 0.7,
+          },
+        },
+        {
+          type: 'dropoffRate',
+          device: 'mobile',
+          value: {
+            page: 0.6666666666666667,
+          },
+        },
+        {
+          type: 'traffic',
+          device: '*',
+          value: {
+            total: 211400,
+            paid: 192200,
+            earned: 4400,
+            owned: 14800,
+          },
+        },
+      ],
+      form: 'https://www.surest.com/contact-us',
+      formViews: 3000,
+      pageViews: 7690,
+      formsource: '',
+      screenshot: '',
+      samples: 7690,
+      scrapedStatus: false,
+    },
+    guidance: {},
+  },
   auditData2: {
     type: 'high-form-views-low-conversions',
     siteId: 'site-id',
@@ -696,7 +1252,10 @@ const testData = {
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: {},
+          formview: {
+            'desktop:windows': 5690,
+            'mobile:ios': 1000,
+          },
           formengagement: {
             'desktop:windows': 700,
             'mobile:ios': 300,

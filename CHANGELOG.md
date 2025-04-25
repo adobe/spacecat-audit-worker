@@ -1,3 +1,71 @@
+## [1.79.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.1...v1.79.2) (2025-04-25)
+
+
+### Bug Fixes
+
+* remove cwv data from forms audit ([#817](https://github.com/adobe/spacecat-audit-worker/issues/817)) ([9adf92c](https://github.com/adobe/spacecat-audit-worker/commit/9adf92cb65d277a441ba6829ec325342885a4c70))
+
+## [1.79.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.0...v1.79.1) (2025-04-24)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.16.0 ([#816](https://github.com/adobe/spacecat-audit-worker/issues/816)) ([74617aa](https://github.com/adobe/spacecat-audit-worker/commit/74617aa1b2bbb89a2a6c260b453c05c3afde012f))
+
+# [1.79.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.78.1...v1.79.0) (2025-04-24)
+
+
+### Features
+
+* Low form views auto detect ([#814](https://github.com/adobe/spacecat-audit-worker/issues/814)) ([e282cdb](https://github.com/adobe/spacecat-audit-worker/commit/e282cdb06436f494a778b0c1e34ce81b7ffdda2e))
+
+## [1.78.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.78.0...v1.78.1) (2025-04-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.15.2 ([#815](https://github.com/adobe/spacecat-audit-worker/issues/815)) ([ec65678](https://github.com/adobe/spacecat-audit-worker/commit/ec65678589da5417eac6f1ec033a78f32156bc77))
+
+# [1.78.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.77.3...v1.78.0) (2025-04-17)
+
+
+### Features
+
+* convert broken backlinks audit to stepped audit ([#793](https://github.com/adobe/spacecat-audit-worker/issues/793)) ([86b2d21](https://github.com/adobe/spacecat-audit-worker/commit/86b2d21b3e21d48b15046cd1a8bbf950ec2f916d))
+
+## [1.77.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.77.2...v1.77.3) (2025-04-16)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.23.0 ([#812](https://github.com/adobe/spacecat-audit-worker/issues/812)) ([3ea3f99](https://github.com/adobe/spacecat-audit-worker/commit/3ea3f9970fd723b5fda20ef4e1ff9ca31ebf0cf1))
+
+## [1.77.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.77.1...v1.77.2) (2025-04-16)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#811](https://github.com/adobe/spacecat-audit-worker/issues/811)) ([286362d](https://github.com/adobe/spacecat-audit-worker/commit/286362d1966c92815d79ed0b817fdcc001b309ee))
+
+## [1.77.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.77.0...v1.77.1) (2025-04-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/helix-universal to v5.2.0 ([#810](https://github.com/adobe/spacecat-audit-worker/issues/810)) ([fbd02d1](https://github.com/adobe/spacecat-audit-worker/commit/fbd02d1b3a230a931c6b70319f6735e4402ddb64))
+
+# [1.77.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.76.1...v1.77.0) (2025-04-15)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#809](https://github.com/adobe/spacecat-audit-worker/issues/809)) ([b349ebb](https://github.com/adobe/spacecat-audit-worker/commit/b349ebb2a306ac4f64fe34f177e0169bdcec0be7))
+
+
+### Features
+
+* form device-wise metric collection ([#801](https://github.com/adobe/spacecat-audit-worker/issues/801)) ([d19cfe2](https://github.com/adobe/spacecat-audit-worker/commit/d19cfe26df3a3ea0ad84d8919fa312173cdf86aa))
+
 ## [1.76.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.76.0...v1.76.1) (2025-04-15)
 
 
