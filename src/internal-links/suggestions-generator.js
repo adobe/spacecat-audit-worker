@@ -18,7 +18,7 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const { FIREFALL_MODEL } = context.env;
-  const { auditResult } = audit;
+  const { auditResult } = audit.getAuditResult();
 
   if (auditResult.success === false) {
     log.info('broken-internal-links audit: Audit failed, skipping suggestions generation');
