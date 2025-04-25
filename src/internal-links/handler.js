@@ -217,15 +217,15 @@ export async function opportunityAndSuggestionsStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .addStep(
-    'runAuditAndImportTopPages',
-    runAuditAndImportTopPagesStep,
-    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
-  )
-  .addStep(
-    'prepareScraping',
-    prepareScrapingStep,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
-  )
+  // .addStep(
+  //   'runAuditAndImportTopPages',
+  //   runAuditAndImportTopPagesStep,
+  //   AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
+  // )
+  // .addStep(
+  //   'prepareScraping',
+  //   prepareScrapingStep,
+  //   AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  // )
   .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
   .build();
