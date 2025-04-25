@@ -14,20 +14,21 @@ import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 
-export const generateSuggestionData = async (finalUrl, auditData, context, site) => {
+export const generateSuggestionData = async (finalUrl, audit, context, site) => {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const { FIREFALL_MODEL } = context.env;
+  const { auditResult } = audit;
 
-  if (auditData.auditResult.success === false) {
+  if (auditResult.success === false) {
     log.info('broken-internal-links audit: Audit failed, skipping suggestions generation');
-    return { ...auditData };
+    return audit;
   }
 
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
     log.info('broken-internal-links audit: Auto-suggest is disabled for site');
-    return { ...auditData };
+    return audit;
   }
 
   log.info(`broken-internal-links audit: Generating suggestions for site ${finalUrl}`);
@@ -47,7 +48,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   // return early if site data is not found
   if (!isNonEmptyArray(siteData)) {
     log.info('broken-internal-links audit: No site data found, skipping suggestions generation');
-    return { ...auditData };
+    return audit;
   }
 
   log.info(`broken-internal-links audit: Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
@@ -125,7 +126,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   };
 
   const headerSuggestionsResults = [];
-  for (const link of auditData.auditResult.brokenInternalLinks) {
+  for (const link of auditResult.brokenInternalLinks) {
     try {
       // eslint-disable-next-line no-await-in-loop
       const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: link.urlTo }, 'broken-backlinks', log);
@@ -146,8 +147,8 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   }
 
   const updatedInternalLinks = [];
-  for (let index = 0; index < auditData.auditResult.brokenInternalLinks.length; index += 1) {
-    const link = auditData.auditResult.brokenInternalLinks[index];
+  for (let index = 0; index < auditResult.brokenInternalLinks.length; index += 1) {
+    const link = auditResult.brokenInternalLinks[index];
     const headerSuggestions = headerSuggestionsResults[index];
     // eslint-disable-next-line no-await-in-loop
     const updatedLink = await processLink(link, headerSuggestions);
@@ -155,10 +156,6 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   }
 
   log.info('broken-internal-links audit: Suggestions generation complete.');
-  return {
-    ...auditData,
-    auditResult: {
-      brokenInternalLinks: updatedInternalLinks,
-    },
-  };
+
+  return updatedInternalLinks;
 };
