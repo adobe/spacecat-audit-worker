@@ -43,46 +43,58 @@ export async function internalLinksAuditRunner(auditUrl, context) {
   const { log, site } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
-  const rumAPIClient = RUMAPIClient.createFrom(context);
+  try {
+    const rumAPIClient = RUMAPIClient.createFrom(context);
 
-  const options = {
-    domain: finalUrl,
-    interval: INTERVAL,
-    granularity: 'hourly',
-  };
-
-  log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] Options for RUM call: `,
-    JSON.stringify(options),
-  );
-
-  const internal404Links = await rumAPIClient.query(
-    '404-internal-links',
-    options,
-  );
-  const transformedLinks = internal404Links.map((link) => ({
-    urlFrom: link.url_from,
-    urlTo: link.url_to,
-    trafficDomain: link.traffic_domain,
-  }));
-
-  let finalLinks = calculatePriority(transformedLinks);
-
-  finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
-
-  const auditResult = {
-    brokenInternalLinks: finalLinks,
-    fullAuditRef: auditUrl,
-    finalUrl,
-    auditContext: {
+    const options = {
+      domain: finalUrl,
       interval: INTERVAL,
-    },
-  };
+      granularity: 'hourly',
+    };
 
-  return {
-    auditResult,
-    fullAuditRef: auditUrl,
-  };
+    log.info(
+      `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] Options for RUM call: `,
+      JSON.stringify(options),
+    );
+
+    const internal404Links = await rumAPIClient.query(
+      '404-internal-links',
+      options,
+    );
+    const transformedLinks = internal404Links.map((link) => ({
+      urlFrom: link.url_from,
+      urlTo: link.url_to,
+      trafficDomain: link.traffic_domain,
+    }));
+
+    let finalLinks = calculatePriority(transformedLinks);
+
+    finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
+
+    const auditResult = {
+      brokenInternalLinks: finalLinks,
+      fullAuditRef: auditUrl,
+      finalUrl,
+      auditContext: {
+        interval: INTERVAL,
+      },
+    };
+
+    return {
+      auditResult,
+      fullAuditRef: auditUrl,
+    };
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] audit failed with error: ${error.message}`);
+    return {
+      fullAuditRef: auditUrl,
+      auditResult: {
+        finalUrl: auditUrl,
+        error: `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] audit failed with error: ${error.message}`,
+        success: false,
+      },
+    };
+  }
 }
 
 export async function runAuditAndImportTopPagesStep(context) {
@@ -144,21 +156,23 @@ export async function runAuditAndImportTopPagesStep(context) {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function opportunityAndSuggestionsStep(context) {
-  const { log, site, finalUrl } = context;
+  const {
+    log, site, finalUrl, audit,
+  } = context;
   log.info(
     `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] starting audit in opportunityAndSuggestionsStep`,
   );
 
-  const latestAuditData = await site.getLatestAuditByAuditType(AUDIT_TYPE);
+  // const latestAuditData = await site.getLatestAuditByAuditType(AUDIT_TYPE);
 
   log.info(
     `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] latestAuditData`,
-    latestAuditData,
+    audit,
   );
   // generate suggestions
   const auditDataWithSuggestions = await generateSuggestionData(
     finalUrl,
-    latestAuditData,
+    audit,
     context,
     site,
   );
