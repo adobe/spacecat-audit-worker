@@ -198,19 +198,13 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
 
   const imageUrls = detectedImages.imagesWithoutAltText.map(
     (image) => {
-      try {
-        log.info(`[${AUDIT_TYPE}]: Creating URL for image ${image.src} and auditUrl ${auditUrl}`);
-        const el = { url: new URL(image.src, auditUrl).toString() };
+      const el = { url: new URL(image.src, auditUrl).toString() };
 
-        if (image.blob) {
-          el.blob = image.blob;
-        }
-        el.language = image.language;
-        return el;
-      } catch (err) {
-        log.error(`[${AUDIT_TYPE}]: Failed to create URL for image ${image.src} and auditUrl ${auditUrl} with error: ${err.message}`);
-        return null;
+      if (image.blob) {
+        el.blob = image.blob;
       }
+      el.language = image.language;
+      return el;
     },
   ).filter((image) => image !== null);
 
