@@ -35,6 +35,36 @@ const isImagePresentational = (img) => {
   return isHiddenForScreenReader || hasRolePresentation || isAltEmpty;
 };
 
+export async function processImportStep(context) {
+  const { site } = context;
+
+  const s3BucketPath = `scrapes/${site.getId()}/`;
+
+  return {
+    auditResult: { status: 'preparing' },
+    fullAuditRef: s3BucketPath,
+    type: 'top-pages',
+    siteId: site.getId(),
+  };
+}
+
+export async function prepareScrapingStep(context) {
+  const { site, log, dataAccess } = context;
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`);
+
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (topPages.length === 0) {
+    throw new Error('No top pages found for site');
+  }
+
+  return {
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'alt-text',
+  };
+}
+
 export async function fetchAndProcessPageObject(
   s3Client,
   bucketName,
@@ -64,23 +94,6 @@ export async function fetchAndProcessPageObject(
       images,
       dom,
     },
-  };
-}
-
-export async function prepareScrapingStep(context) {
-  const { site, log, dataAccess } = context;
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`);
-
-  const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  if (topPages.length === 0) {
-    throw new Error('No top pages found for site');
-  }
-
-  return {
-    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
-    siteId: site.getId(),
-    type: 'alt-text',
   };
 }
 
@@ -155,19 +168,6 @@ export async function processAltTextAuditStep(context) {
 
   return {
     status: 'complete',
-  };
-}
-
-export async function processImportStep(context) {
-  const { site } = context;
-
-  const s3BucketPath = `scrapes/${site.getId()}/`;
-
-  return {
-    auditResult: { status: 'preparing' },
-    fullAuditRef: s3BucketPath,
-    type: 'top-pages',
-    siteId: site.getId(),
   };
 }
 
