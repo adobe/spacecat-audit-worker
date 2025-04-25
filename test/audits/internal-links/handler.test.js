@@ -320,4 +320,24 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
     expect(suggestionsArg).to.be.an('array').with.lengthOf(1);
   }).timeout(5000);
+
+  // it('should run audit and send urls for scraping step', async () => {
+  //   const { brokenBacklinks } = auditDataMock.auditResult;
+  //   const expectedBrokenBacklinks = auditDataMock.auditResult.brokenBacklinks.filter(
+  //     (a) => a.url_to !== excludedUrl,
+  //   );
+  //   context.site = siteWithExcludedUrls;
+  //   ahrefsMock(siteWithExcludedUrls.getBaseURL(), { backlinks: brokenBacklinks });
+
+  //   const result = await runAuditAndImportTopPages(context);
+  //   expect(result).to.deep.equal({
+  //     type: 'top-pages',
+  //     siteId: siteWithExcludedUrls.getId(),
+  //     auditResult: {
+  //       brokenBacklinks: expectedBrokenBacklinks,
+  //       finalUrl: auditUrl,
+  //     },
+  //     fullAuditRef: auditDataMock.fullAuditRef,
+  //   });
+  // });
 });
