@@ -134,19 +134,19 @@ export async function processAltTextAuditStep(context) {
 
   pageAuditResults.forEach((pageAudit) => {
     if (pageAudit) {
-      log.info(`pageAudit: ${JSON.stringify(pageAudit)}`);
       Object.assign(PageToImagesWithoutAltTextMap, pageAudit);
     }
   });
 
-  const pagesWithImagesWithoutAltTextCount = Object.entries(PageToImagesWithoutAltTextMap).length;
-  if (pagesWithImagesWithoutAltTextCount === 0) {
+  const imagesWithoutAltTextCount = Object
+    .values(PageToImagesWithoutAltTextMap).reduce((acc, page) => acc + page.images.length, 0);
+  if (imagesWithoutAltTextCount === 0) {
     log.info(
-      `[${AUDIT_TYPE}]: Found no pages with images without alt text from the scraped content in bucket ${bucketName} with path ${s3BucketPath}`,
+      `[${AUDIT_TYPE}]: Found no images without alt text from the scraped content in bucket ${bucketName} with path ${s3BucketPath}`,
     );
   }
   log.info(
-    `[${AUDIT_TYPE}]: Performing image alt text audit for ${pagesWithImagesWithoutAltTextCount} pages`,
+    `[${AUDIT_TYPE}]: Identified ${imagesWithoutAltTextCount} images (before filtering)`,
   );
 
   const auditEngine = new AuditEngine(log);
@@ -156,6 +156,9 @@ export async function processAltTextAuditStep(context) {
   await auditEngine.filterImages(auditUrl, tracingFetch);
   auditEngine.finalizeAudit();
   const detectedImages = auditEngine.getAuditedTags();
+  log.info(
+    `[${AUDIT_TYPE}]: Identified ${detectedImages.imagesWithoutAltText.length} images (after filtering)`,
+  );
 
   // Process opportunity
   log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] processing opportunity`);
@@ -166,7 +169,6 @@ export async function processAltTextAuditStep(context) {
   };
 
   await convertToOpportunity(auditUrl, auditResult, context);
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] opportunity identified`);
 
   return {
     status: 'complete',
