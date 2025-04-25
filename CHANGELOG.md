@@ -1,3 +1,10 @@
+## [1.79.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.1...v1.79.2) (2025-04-25)
+
+
+### Bug Fixes
+
+* remove cwv data from forms audit ([#817](https://github.com/adobe/spacecat-audit-worker/issues/817)) ([9adf92c](https://github.com/adobe/spacecat-audit-worker/commit/9adf92cb65d277a441ba6829ec325342885a4c70))
+
 ## [1.79.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.0...v1.79.1) (2025-04-24)
 
 
