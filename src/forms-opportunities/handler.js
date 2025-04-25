@@ -36,23 +36,8 @@ export async function formsAuditRunner(auditUrl, context) {
   };
 
   const queryResults = await rumAPIClient.queryMulti(FORMS_OPPTY_QUERIES, options);
-  const cwvMap = new Map(
-    queryResults.cwv
-      .filter((cwv) => cwv.type === 'url')
-      .map((cwv) => [cwv.url, cwv]),
-  );
-
   const auditResult = {
-    formVitals: queryResults['form-vitals'].map((formVital) => {
-      const cwvData = cwvMap.get(formVital.url);
-      const filteredCwvData = cwvData
-        ? Object.fromEntries(Object.entries(cwvData).filter(([key]) => key !== 'url' && key !== 'pageviews' && key !== 'type'))
-        : {};
-      return {
-        ...formVital,
-        cwv: filteredCwvData, // Append cwv data
-      };
-    }),
+    formVitals: queryResults['form-vitals'],
     auditContext: {
       interval: FORMS_AUDIT_INTERVAL,
     },
