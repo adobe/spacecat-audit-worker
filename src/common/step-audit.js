@@ -105,6 +105,8 @@ export class StepAudit extends BaseAudit {
       log.info(`stepName: ${stepName}`);
       log.info(`DEBUGGING: finalUrl: ${finalUrl}`);
       log.info(`hasNext: ${hasNext}`);
+      log.info(`context: ${JSON.stringify(context)}`);
+      log.info(`stepContext: ${JSON.stringify(stepContext)}`);
 
       // For subsequent steps, load existing audit
       if (hasNext) {
@@ -115,6 +117,7 @@ export class StepAudit extends BaseAudit {
       }
 
       // Run the step
+      log.info(`stepContext before handler call: ${JSON.stringify(stepContext)}`);
       const stepResult = await step.handler(stepContext);
       let response = ok();
 
