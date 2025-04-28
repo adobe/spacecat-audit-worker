@@ -50,7 +50,7 @@ export const expectedOpportunity = {
     'Traffic acquisition',
     'Engagement',
   ],
-  data: { projectedTrafficLost: 32, projectedTrafficValue: 32 },
+  data: { projectedTrafficLost: 32, projectedTrafficValue: 32, dataSources: ['Ahrefs', 'RUM', 'Site'] },
 };
 
 export const expectedSuggestions = [

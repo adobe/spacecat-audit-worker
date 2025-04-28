@@ -65,6 +65,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         opportunity.setData({
           ...opportunity.getData(),
           ...props, // kpiDeltas
+          dataSources: opportunityInstance.data?.dataSources,
         });
       }
       await opportunity.save();

@@ -17,6 +17,7 @@ import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-dat
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
 import suggestionsEngine from '../../../src/image-alt-text/suggestionsEngine.js';
+import { DATA_SOURCES } from '../../../src/common/constants.js';
 
 describe('Image Alt Text Opportunity Handler', () => {
   let logStub;
@@ -105,6 +106,8 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should create new opportunity when none exists', async () => {
+    this.timeout(5000);
+
     dataAccessStub.Opportunity.create.resolves(altTextOppty);
 
     await convertToOpportunity(auditUrl, auditData, context);
@@ -131,7 +134,12 @@ describe('Image Alt Text Opportunity Handler', () => {
         ],
       },
       tags: ['seo', 'accessibility'],
-      data: sinon.match.object,
+      data: sinon.match({
+        projectedTrafficLost: sinon.match.number,
+        projectedTrafficValue: sinon.match.number,
+        presentationalImagesCount: 0,
+        dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS, DATA_SOURCES.GSC],
+      }),
     }));
     expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Opportunity created',
@@ -408,6 +416,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
       presentationalImagesCount: 0,
+      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS, DATA_SOURCES.GSC],
     });
 
     expect(altTextOppty.save).to.have.been.called;

@@ -16,6 +16,7 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import suggestionsEngine from './suggestionsEngine.js';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
 import { CPC, PENALTY_PER_IMAGE, RUM_INTERVAL } from './constants.js';
+import { DATA_SOURCES } from '../common/constants.js';
 
 const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -160,6 +161,12 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     ...projectedMetrics,
     presentationalImagesCount: detectedTags.presentationalImagesCount,
   };
+  opportunityData.dataSources = [
+    DATA_SOURCES.RUM,
+    DATA_SOURCES.SITE,
+    DATA_SOURCES.AHREFS,
+    DATA_SOURCES.GSC,
+  ];
 
   try {
     if (!altTextOppty) {

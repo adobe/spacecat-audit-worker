@@ -20,6 +20,12 @@
   ],
   "data": {
     "projectedTrafficLost": 5.1,
-    "projectedTrafficValue": 5.1
+    "projectedTrafficValue": 5.1,
+    "dataSources": [
+      "Ahrefs",
+      "RUM",
+      "GSC",
+      "Site"
+    ]
   }
 }
