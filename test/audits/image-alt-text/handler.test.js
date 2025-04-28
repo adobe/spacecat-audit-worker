@@ -228,7 +228,7 @@ describe('Image Alt Text Handler', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.log.info).to.have.been.calledWith(
-        `[${AUDIT_TYPE}] [Site Id: site-id] processing scraped content`,
+        `[${AUDIT_TYPE}] [Site Id: site-id] [Audit Url: https://example.com] processing scraped content`,
       );
       expect(context.log.info).to.have.been.calledWith(
         `[${AUDIT_TYPE}] [Site Id: site-id] found 2 scraped pages to analyze`,
