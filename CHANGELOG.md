@@ -1,3 +1,10 @@
+## [1.79.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.5...v1.79.6) (2025-04-28)
+
+
+### Bug Fixes
+
+* local watch handles directory correctly ([#823](https://github.com/adobe/spacecat-audit-worker/issues/823)) ([43df7ab](https://github.com/adobe/spacecat-audit-worker/commit/43df7abfddd5a52737c52ea5775cf9fce46f4555))
+
 ## [1.79.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.4...v1.79.5) (2025-04-27)
 
 
