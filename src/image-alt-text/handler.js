@@ -99,14 +99,11 @@ export async function fetchPageScrapeAndRunAudit(
 
 export async function processAltTextAuditStep(context) {
   const {
-    log, s3Client, audit, site,
+    log, s3Client, audit, site, finalUrl,
   } = context;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const siteId = site.getId();
-  let auditUrl = await site.resolveFinalURL();
-  if (!auditUrl.includes('https://')) {
-    auditUrl = `https://${auditUrl}`;
-  }
+  const auditUrl = finalUrl;
 
   const s3BucketPath = `scrapes/${siteId}/`;
 

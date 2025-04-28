@@ -46,6 +46,7 @@ describe('Image Alt Text Handler', () => {
             ],
           }),
         },
+        finalUrl: 'https://example.com',
         site: {
           getId: () => 'site-id',
           resolveFinalURL: () => 'https://example.com',
@@ -297,47 +298,6 @@ describe('Image Alt Text Handler', () => {
       const expectedMessage = `[${AUDIT_TYPE}]: Found no images without alt text from the scraped content in bucket ${bucketName} with path ${s3BucketPath}`;
       expect(logMessages).to.include(expectedMessage);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
-    });
-
-    it('should add https:// prefix to audit URL if missing', async () => {
-      // Create a new context with a site that returns a URL without https://
-      const testContext = new MockContextBuilder()
-        .withSandbox(sandbox)
-        .withOverrides({
-          s3Client: {
-            send: sandbox.stub().resolves({
-              Contents: [
-                { Key: `${s3BucketPath}page1/scrape.json` },
-              ],
-            }),
-          },
-          site: {
-            getId: () => 'site-id',
-            resolveFinalURL: () => 'example.com',
-          },
-          audit: {
-            getId: () => 'audit-id',
-          },
-          env: {
-            S3_SCRAPER_BUCKET_NAME: bucketName,
-          },
-          dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
-            },
-            Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
-              create: sandbox.stub().resolves({}),
-            },
-          },
-        })
-        .build();
-
-      const result = await handlerModule.processAltTextAuditStep(testContext);
-
-      expect(result).to.deep.equal({ status: 'complete' });
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
-      expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
     });
   });
 });
