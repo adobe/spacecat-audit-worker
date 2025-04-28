@@ -29,6 +29,8 @@ Resources:
           IMS_CLIENT_CODE: !Ref IMS_CLIENT_CODE
           IMS_CLIENT_SECRET: !Ref IMS_CLIENT_SECRET
           DYNAMO_TABLE_NAME_DATA: !Ref DYNAMO_TABLE_NAME_DATA
+          RUM_ADMIN_KEY: !Ref RUM_ADMIN_KEY
+          RUM_DOMAIN_KEY: !Ref RUM_DOMAIN_KEY
       Role: arn:aws:iam::682033462621:role/spacecat-role-lambda-generic
       Events:
         ApiEvent:
@@ -36,7 +38,6 @@ Resources:
           Properties:
             Path: /{proxy+}
             Method: ANY
-
 Parameters:
   AWS_ACCESS_KEY_ID:
     Type: String
@@ -93,3 +94,9 @@ Parameters:
   DYNAMO_TABLE_NAME_DATA:
     Type: String
     Description: DynamoDB Table Name for Data
+  RUM_ADMIN_KEY:
+    Type: String
+    Description: RUM Admin Key
+  RUM_DOMAIN_KEY:
+    Type: String
+    Description: RUM Domain Key

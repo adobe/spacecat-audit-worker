@@ -17,8 +17,8 @@ import { wwwUrlResolver } from '../common/index.js';
 const DAYS = 7;
 
 const OPPTY_QUERIES = [
-  'rageclick',
-  'high-inorganic-high-bounce-rate',
+  // 'rageclick',
+  // 'high-inorganic-high-bounce-rate',
   'high-organic-low-ctr',
 ];
 
@@ -87,7 +87,8 @@ export async function handler(auditUrl, context) {
   };
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
-  await processRageClickOpportunities(experimentationOpportunities);
+  log.info('gori', JSON.stringify(experimentationOpportunities, null, 2));
+  // await processRageClickOpportunities(experimentationOpportunities);
   log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {
@@ -100,7 +101,7 @@ export async function handler(auditUrl, context) {
 
 export default new AuditBuilder()
   .withRunner(handler)
-  .withUrlResolver(wwwUrlResolver)
-  .withPostProcessors([opportunityAndSuggestions])
-  .withMessageSender(() => true)
+  // .withUrlResolver(wwwUrlResolver)
+  // .withPostProcessors([opportunityAndSuggestions])
+  // .withMessageSender(() => true)
   .build();

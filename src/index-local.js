@@ -13,7 +13,7 @@
 import { main as universalMain } from './index.js';
 
 export const main = async () => {
-  const messageBody = { type: 'structured-data', siteId: 'cccdac43-1a22-4659-9086-b762f59b9928' };
+  const messageBody = { type: 'experimentation-opportunities', siteId: '0f889afa-270c-46b1-b831-425818c3fdd4' };
 
   const message = {
     Records: [
