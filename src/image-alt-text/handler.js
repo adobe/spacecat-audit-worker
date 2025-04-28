@@ -105,7 +105,7 @@ export async function processAltTextAuditStep(context) {
   const siteId = site.getId();
   const auditUrl = finalUrl;
 
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] processing scraped content`);
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] [Audit Url: ${auditUrl}] processing scraped content`);
 
   const s3BucketPath = `scrapes/${siteId}/`;
   const scrapedPagesFullPathFilenames = await getObjectKeysUsingPrefix(
