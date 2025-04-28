@@ -127,14 +127,9 @@ export async function processAltTextAuditStep(context) {
 
   const PageToImagesWithoutAltTextMap = {};
   const pageAuditResults = await Promise.all(
-    scrapedPagesFullPathFilenames.map(async (scrape) => {
-      try {
-        return await fetchPageScrapeAndRunAudit(s3Client, bucketName, scrape, s3BucketPath, log);
-      } catch (error) {
-        log.error(`Error processing page ${scrape}: ${error.message}`);
-        return null;
-      }
-    }),
+    scrapedPagesFullPathFilenames.map(
+      async (scrape) => fetchPageScrapeAndRunAudit(s3Client, bucketName, scrape, s3BucketPath, log),
+    ),
   );
 
   pageAuditResults.forEach((pageAudit) => {

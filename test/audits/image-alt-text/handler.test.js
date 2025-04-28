@@ -13,8 +13,11 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
+
+const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
 describe('Image Alt Text Handler', () => {
   let sandbox;
@@ -179,7 +182,113 @@ describe('Image Alt Text Handler', () => {
     });
   });
 
-  xdescribe('processAltTextAuditStep', () => {
+  describe('processAltTextAuditStep', () => {
+    let convertToOpportunityStub;
+    let auditEngineStub;
+    let s3UtilsStub;
 
+    beforeEach(async () => {
+      convertToOpportunityStub = sandbox.stub().resolves();
+      auditEngineStub = {
+        performPageAudit: sandbox.stub(),
+        filterImages: sandbox.stub().resolves(),
+        finalizeAudit: sandbox.stub(),
+        getAuditedTags: sandbox.stub().returns({
+          imagesWithoutAltText: [
+            { src: 'image1.jpg', xpath: '//img[1]' },
+            { src: 'image2.jpg', xpath: '//img[2]' },
+          ],
+        }),
+      };
+
+      s3UtilsStub = {
+        getObjectKeysUsingPrefix: sandbox.stub().resolves([
+          `${s3BucketPath}page1/scrape.json`,
+          `${s3BucketPath}page2/scrape.json`,
+        ]),
+        getObjectFromKey: sandbox.stub().resolves({
+          scrapeResult: {
+            rawBody: '<html><body><img src="test.jpg" /></body></html>',
+          },
+        }),
+      };
+
+      // Mock the module with our stubs
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+        '../../../src/image-alt-text/opportunityHandler.js': { default: convertToOpportunityStub },
+        '../../../src/image-alt-text/auditEngine.js': { default: sandbox.stub().returns(auditEngineStub) },
+        '../../../src/utils/s3-utils.js': s3UtilsStub,
+      });
+    });
+
+    it('should process scraped pages and create opportunities', async () => {
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.info).to.have.been.calledWith(
+        `[${AUDIT_TYPE}] [Site Id: site-id] processing scraped content`,
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        `[${AUDIT_TYPE}] [Site Id: site-id] found 2 scraped pages to analyze`,
+      );
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
+      expect(convertToOpportunityStub.firstCall.args[1]).to.deep.include({
+        siteId: 'site-id',
+        auditId: 'audit-id',
+      });
+    });
+
+    it('should handle case when no scraped content is found', async () => {
+      s3UtilsStub.getObjectKeysUsingPrefix.resolves([]);
+      auditEngineStub.getAuditedTags.returns({ imagesWithoutAltText: [] });
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.error).to.have.been.calledWith(
+        `[${AUDIT_TYPE}] [Site Id: site-id] no scraped content found, cannot proceed with audit`,
+      );
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(convertToOpportunityStub.firstCall.args[1]).to.deep.include({
+        detectedImages: { imagesWithoutAltText: [] },
+        siteId: 'site-id',
+        auditId: 'audit-id',
+      });
+    });
+
+    it('should handle case when no images are found', async () => {
+      // Mock the page results to have no images
+      s3UtilsStub = {
+        getObjectKeysUsingPrefix: sandbox.stub().resolves([
+          `${s3BucketPath}page1/scrape.json`,
+        ]),
+        getObjectFromKey: sandbox.stub().resolves({
+          scrapeResult: {
+            rawBody: '<html><body></body></html>',
+          },
+        }),
+      };
+      sandbox.stub(handlerModule, 'fetchPageScrapeAndRunAudit').resolves({
+        '/page1': {
+          images: [],
+          dom: {},
+        },
+      });
+      auditEngineStub.getAuditedTags.returns(
+        { imagesWithoutAltText: [], presentationalImagesCount: 0 },
+      );
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      // Check that the message appears in any of the log calls
+      const logMessages = context.log.info.getCalls().map((call) => call.args[0]);
+      const expectedMessage = `[${AUDIT_TYPE}]: Found no images without alt text from the scraped content in bucket ${bucketName} with path ${s3BucketPath}`;
+      console.log({ logMessages });
+      expect(logMessages).to.include(expectedMessage);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+    });
   });
 });
