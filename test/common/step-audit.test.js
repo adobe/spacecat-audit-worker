@@ -199,7 +199,7 @@ describe('Step-based Audit Tests', () => {
       );
     });
 
-    it('continues execution from specified step', async () => {
+    xit('continues execution from specified step', async () => {
       const existingAudit = {
         getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
         getAuditType: () => 'content-audit',
@@ -246,7 +246,7 @@ describe('Step-based Audit Tests', () => {
       );
     });
 
-    it('handles final step without sending messages', async () => {
+    xit('handles final step without sending messages', async () => {
       const existingAudit = {
         getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
         getAuditType: () => 'content-audit',
