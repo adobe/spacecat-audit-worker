@@ -260,7 +260,7 @@ describe('Image Alt Text Handler', () => {
 
     it('should handle case when no images are found', async () => {
       // Mock the page results to have no images
-      s3UtilsStub = {
+      const noImagesS3UtilsStub = {
         getObjectKeysUsingPrefix: sandbox.stub().resolves([
           `${s3BucketPath}page1/scrape.json`,
         ]),
@@ -270,6 +270,15 @@ describe('Image Alt Text Handler', () => {
           },
         }),
       };
+
+      // Re-mock the module with our updated stubs
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+        '../../../src/image-alt-text/opportunityHandler.js': { default: convertToOpportunityStub },
+        '../../../src/image-alt-text/auditEngine.js': { default: sandbox.stub().returns(auditEngineStub) },
+        '../../../src/utils/s3-utils.js': noImagesS3UtilsStub,
+      });
+
       sandbox.stub(handlerModule, 'fetchPageScrapeAndRunAudit').resolves({
         '/page1': {
           images: [],
@@ -286,9 +295,49 @@ describe('Image Alt Text Handler', () => {
       // Check that the message appears in any of the log calls
       const logMessages = context.log.info.getCalls().map((call) => call.args[0]);
       const expectedMessage = `[${AUDIT_TYPE}]: Found no images without alt text from the scraped content in bucket ${bucketName} with path ${s3BucketPath}`;
-      console.log({ logMessages });
       expect(logMessages).to.include(expectedMessage);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
+    });
+
+    it('should add https:// prefix to audit URL if missing', async () => {
+      // Create a new context with a site that returns a URL without https://
+      const testContext = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Contents: [
+                { Key: `${s3BucketPath}page1/scrape.json` },
+              ],
+            }),
+          },
+          site: {
+            getId: () => 'site-id',
+            resolveFinalURL: () => 'example.com',
+          },
+          audit: {
+            getId: () => 'audit-id',
+          },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: bucketName,
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+            },
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              create: sandbox.stub().resolves({}),
+            },
+          },
+        })
+        .build();
+
+      const result = await handlerModule.processAltTextAuditStep(testContext);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
     });
   });
 });
