@@ -1,3 +1,24 @@
+## [1.79.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.4...v1.79.5) (2025-04-27)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#820](https://github.com/adobe/spacecat-audit-worker/issues/820)) ([0dc9723](https://github.com/adobe/spacecat-audit-worker/commit/0dc9723384e88af5f00ce24f73d3c5736e8da4ca))
+
+## [1.79.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.3...v1.79.4) (2025-04-26)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#819](https://github.com/adobe/spacecat-audit-worker/issues/819)) ([51db952](https://github.com/adobe/spacecat-audit-worker/commit/51db9526289840e29a70d9263bf784ae4354476f))
+
+## [1.79.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.2...v1.79.3) (2025-04-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.23.1 ([#818](https://github.com/adobe/spacecat-audit-worker/issues/818)) ([b077fca](https://github.com/adobe/spacecat-audit-worker/commit/b077fca07c80866cdccc8d85eef1a3b8dd30d78f))
+
 ## [1.79.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.1...v1.79.2) (2025-04-25)
 
 
