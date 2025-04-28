@@ -95,7 +95,7 @@ describe('Image Alt Text Handler', () => {
       const result = await handlerModule.processImportStep(context);
 
       expect(result).to.deep.equal({
-        auditResult: { status: 'preparing' },
+        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
         fullAuditRef: s3BucketPath,
         type: 'top-pages',
         siteId: 'site-id',

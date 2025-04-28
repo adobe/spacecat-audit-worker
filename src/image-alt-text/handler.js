@@ -36,12 +36,12 @@ const isImagePresentational = (img) => {
 };
 
 export async function processImportStep(context) {
-  const { site } = context;
+  const { site, finalUrl } = context;
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
 
   return {
-    auditResult: { status: 'preparing' },
+    auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
     type: 'top-pages',
     siteId: site.getId(),
