@@ -458,7 +458,7 @@ describe('AuditEngine', () => {
       });
 
       it('should detect French text', () => {
-        const text = 'Ceci est une phrase fran�aise simple.';
+        const text = 'Ceci est une phrase française simple.';
         const lang = detectLanguageFromText(text);
         expect(lang).to.equal('fra');
       });
