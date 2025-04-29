@@ -40,7 +40,7 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
 export async function internalLinksAuditRunner(auditUrl, context) {
-  const { log, site } = context;
+  const { log } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
   try {
@@ -53,7 +53,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     };
 
     log.info(
-      `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] Options for RUM call: `,
+      `[${AUDIT_TYPE}] [Site: ${finalUrl}] Options for RUM call: `,
       JSON.stringify(options),
     );
 
@@ -85,12 +85,12 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       fullAuditRef: auditUrl,
     };
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] audit failed with error: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}] [Site: ${finalUrl}] audit failed with error: ${error.message}`);
     return {
       fullAuditRef: auditUrl,
       auditResult: {
         finalUrl: auditUrl,
-        error: `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] audit failed with error: ${error.message}`,
+        error: `[${AUDIT_TYPE}] [Site: ${finalUrl}] audit failed with error: ${error.message}`,
         success: false,
       },
     };
@@ -100,18 +100,13 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 export async function runAuditAndImportTopPagesStep(context) {
   const { site, log, finalUrl } = context;
 
-  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] starting audit`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] starting audit`);
+
   const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
     finalUrl,
     context,
   );
 
-  log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] finished audit, now scraping top urls`,
-  );
-
-  // Issue in this message object here? "audit failed for site undefined at step prepareScraping.
-  // Reason: Error getting site undefined: Validation failed in site: siteId must be a valid UUID"
   return {
     auditResult: internalLinksAuditRunnerResult.auditResult,
     fullAuditRef: finalUrl,
@@ -122,14 +117,11 @@ export async function runAuditAndImportTopPagesStep(context) {
 }
 
 export async function prepareScrapingStep(context) {
-  const { site, log, dataAccess } = context;
-
-  log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] start: preparing scraping step`,
-  );
+  const {
+    site, log, dataAccess, finalUrl,
+  } = context;
 
   // fetch top pages for site
-  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] fetching top pages`);
   const topPages = await getTopPagesForSiteId(
     dataAccess,
     site.getId(),
@@ -138,15 +130,11 @@ export async function prepareScrapingStep(context) {
   );
 
   log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] top pages: ${JSON.stringify(
+    `[${AUDIT_TYPE}] [Site: ${finalUrl}] top pages: ${JSON.stringify(
       topPages,
     )}`,
   );
-
   const urls = topPages.map((page) => ({ url: page.url }));
-
-  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] >> ~ urls:`, urls);
-
   return {
     jobId: site.getId(),
     urls,
@@ -159,14 +147,9 @@ export async function opportunityAndSuggestionsStep(context) {
   const {
     log, site, finalUrl, audit,
   } = context;
-  log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] starting audit in opportunityAndSuggestionsStep`,
-  );
-
-  // const latestAuditData = await site.getLatestAuditByAuditType(AUDIT_TYPE);
 
   log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] latestAuditData`,
+    `[${AUDIT_TYPE}] [Site: ${finalUrl}] latestAuditData`,
     audit.getAuditResult(),
   );
 
@@ -179,22 +162,16 @@ export async function opportunityAndSuggestionsStep(context) {
       context,
       site,
     );
-
     log.info(
-      `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] auditDataWithSuggestions`,
+      `[${AUDIT_TYPE}] [Site: ${finalUrl}] auditDataWithSuggestions`,
       brokenInternalLinks,
     );
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] suggestion generation error: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}] [Site: ${finalUrl}] suggestion generation error: ${error.message}`);
   }
 
   // TODO: skip opportunity creation if no internal link items are found in the audit data
-
   const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
-  log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] kpiDeltas`,
-    kpiDeltas,
-  );
   const opportunity = await convertToOpportunity(
     finalUrl,
     { siteId: site.getId(), id: audit.getId() },
@@ -205,10 +182,7 @@ export async function opportunityAndSuggestionsStep(context) {
       kpiDeltas,
     },
   );
-  log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] opportunity`,
-    opportunity,
-  );
+
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
   await syncSuggestions({
     opportunity,
