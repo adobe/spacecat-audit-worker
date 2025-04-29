@@ -40,7 +40,7 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
 export async function internalLinksAuditRunner(auditUrl, context) {
-  const { log } = context;
+  const { log, site } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
   try {
@@ -53,7 +53,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     };
 
     log.info(
-      `[${AUDIT_TYPE}] [Site: ${finalUrl}] Options for RUM call: `,
+      `[${AUDIT_TYPE}] [Site: ${site.siteId}] Options for RUM call: `,
       JSON.stringify(options),
     );
 
@@ -85,12 +85,12 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       fullAuditRef: auditUrl,
     };
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${finalUrl}] audit failed with error: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.siteId}] audit failed with error: ${error.message}`);
     return {
       fullAuditRef: auditUrl,
       auditResult: {
         finalUrl: auditUrl,
-        error: `[${AUDIT_TYPE}] [Site: ${finalUrl}] audit failed with error: ${error.message}`,
+        error: `[${AUDIT_TYPE}] [Site: ${site.siteId}] audit failed with error: ${error.message}`,
         success: false,
       },
     };
@@ -100,7 +100,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 export async function runAuditAndImportTopPagesStep(context) {
   const { site, log, finalUrl } = context;
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] starting audit`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] starting audit`);
 
   const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
     finalUrl,
@@ -130,7 +130,7 @@ export async function prepareScrapingStep(context) {
   );
 
   log.info(
-    `[${AUDIT_TYPE}] [Site: ${finalUrl}] top pages: ${JSON.stringify(
+    `[${AUDIT_TYPE}] [Site: ${site.siteId}] top pages: ${JSON.stringify(
       topPages,
     )}`,
   );
@@ -149,7 +149,7 @@ export async function opportunityAndSuggestionsStep(context) {
   } = context;
 
   log.info(
-    `[${AUDIT_TYPE}] [Site: ${finalUrl}] latestAuditData`,
+    `[${AUDIT_TYPE}] [Site: ${site.siteId}] latestAuditData`,
     audit.getAuditResult(),
   );
 
@@ -163,11 +163,11 @@ export async function opportunityAndSuggestionsStep(context) {
       site,
     );
     log.info(
-      `[${AUDIT_TYPE}] [Site: ${finalUrl}] auditDataWithSuggestions`,
+      `[${AUDIT_TYPE}] [Site: ${site.siteId}] auditDataWithSuggestions`,
       brokenInternalLinks,
     );
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${finalUrl}] suggestion generation error: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.siteId}] suggestion generation error: ${error.message}`);
   }
 
   // TODO: skip opportunity creation if no internal link items are found in the audit data

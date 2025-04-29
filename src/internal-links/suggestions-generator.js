@@ -24,17 +24,17 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
   const { brokenInternalLinks } = audit.getAuditResult();
 
   if (audit.getAuditResult().success === false) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Audit failed, skipping suggestions generation`);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Audit failed, skipping suggestions generation`);
     return brokenInternalLinks;
   }
 
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Auto-suggest is disabled for site`);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Auto-suggest is disabled for site`);
     return brokenInternalLinks;
   }
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Generating suggestions for site ${finalUrl}`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Generating suggestions for site ${finalUrl}`);
 
   const firefallClient = FirefallClient.createFrom(context);
   const firefallOptions = { responseFormat: 'json_object', model: FIREFALL_MODEL };
@@ -50,17 +50,17 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
 
   // return early if site data is not found
   if (!isNonEmptyArray(siteData)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] No site data found, skipping suggestions generation`);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] No site data found, skipping suggestions generation`);
     return brokenInternalLinks;
   }
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
 
   const processBatch = async (batch, urlTo) => {
     const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
     const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
     if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-      log.error(`[${AUDIT_TYPE}] [Site: ${finalUrl}] No suggestions found for ${urlTo}`);
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.siteId}] No suggestions found for ${urlTo}`);
       return null;
     }
 
@@ -77,7 +77,7 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
           results.push(result);
         }
       } catch (error) {
-        log.error(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Batch processing error: ${error.message}`);
+        log.error(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Batch processing error: ${error.message}`);
       }
     }
     return results;
@@ -90,35 +90,35 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
    * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
    */
   const processLink = async (link, headerSuggestions) => {
-    log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Processing link: ${link.urlTo}`);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Processing link: ${link.urlTo}`);
     const suggestions = await processBatches(dataBatches, link.urlTo);
 
     if (totalBatches > 1) {
-      log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Compiling final suggestions for: ${link.urlTo}`);
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Compiling final suggestions for: ${link.urlTo}`);
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.urlTo }, 'broken-backlinks-followup', log);
         const finalResponse = await firefallClient
           .fetchChatCompletion(finalRequestBody, firefallOptions);
 
         if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
-          log.error(`[${AUDIT_TYPE}] [Site: ${finalUrl}] No final suggestions found for ${link.urlTo}`);
+          log.error(`[${AUDIT_TYPE}] [Site: ${site.siteId}] No final suggestions found for ${link.urlTo}`);
           return { ...link };
         }
 
         const answer = JSON.parse(finalResponse.choices[0].message.content);
-        log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Final suggestion for ${link.urlTo}:, ${JSON.stringify(answer)}`, answer);
+        log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Final suggestion for ${link.urlTo}:, ${JSON.stringify(answer)}`, answer);
         return {
           ...link,
           urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
           aiRationale: answer.aiRationale?.length > 0 ? answer.aiRationale : 'No suitable suggestions found',
         };
       } catch (error) {
-        log.error(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Final suggestion error for ${link.urlTo}: ${error.message}`);
+        log.error(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Final suggestion error for ${link.urlTo}: ${error.message}`);
         return { ...link };
       }
     }
 
-    log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Suggestions for ${link.urlTo}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Suggestions for ${link.urlTo}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
     return {
       ...link,
       urlsSuggested:
@@ -136,7 +136,7 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
       // eslint-disable-next-line no-await-in-loop
       const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-        log.error(`[${AUDIT_TYPE}] [Site: ${finalUrl}] No header suggestions for ${link.urlTo}`);
+        log.error(`[${AUDIT_TYPE}] [Site: ${site.siteId}] No header suggestions for ${link.urlTo}`);
         headerSuggestionsResults.push(null);
         // eslint-disable-next-line no-continue
         continue;
@@ -144,7 +144,7 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
 
       headerSuggestionsResults.push(JSON.parse(response.choices[0].message.content));
     } catch (error) {
-      log.error(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Header suggestion error: ${error.message}`);
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Header suggestion error: ${error.message}`);
       headerSuggestionsResults.push(null);
     }
   }
@@ -158,7 +158,7 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
     updatedInternalLinks.push(updatedLink);
   }
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${finalUrl}] Suggestions generation complete.`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] Suggestions generation complete.`);
 
   return updatedInternalLinks;
 };
