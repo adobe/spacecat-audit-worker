@@ -98,9 +98,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
 export async function runAuditAndImportTopPagesStep(context) {
   const { site, log, finalUrl } = context;
-
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`);
-
   const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
     finalUrl,
     context,
@@ -118,7 +116,6 @@ export async function prepareScrapingStep(context) {
   const {
     site, log, dataAccess,
   } = context;
-
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
@@ -135,17 +132,14 @@ export async function prepareScrapingStep(context) {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function opportunityAndSuggestionsStep(context) {
   const {
     log, site, finalUrl, audit,
   } = context;
-
   log.info(
     `[${AUDIT_TYPE}] [Site: ${site.getId()}] latestAuditData`,
     audit.getAuditResult(),
   );
-
   let { brokenInternalLinks } = audit.getAuditResult();
   // generate suggestions
   try {
