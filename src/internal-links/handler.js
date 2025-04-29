@@ -118,7 +118,7 @@ export async function runAuditAndImportTopPagesStep(context) {
 
 export async function prepareScrapingStep(context) {
   const {
-    site, log, dataAccess, finalUrl,
+    site, log, dataAccess,
   } = context;
 
   // fetch top pages for site
