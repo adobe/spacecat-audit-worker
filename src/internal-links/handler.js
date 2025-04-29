@@ -169,22 +169,28 @@ export async function opportunityAndSuggestionsStep(context) {
     `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] latestAuditData`,
     audit.getAuditResult(),
   );
-  // generate suggestions
-  const updatedInternalLinks = await generateSuggestionData(
-    finalUrl,
-    audit,
-    context,
-    site,
-  );
 
-  log.info(
-    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] auditDataWithSuggestions`,
-    updatedInternalLinks,
-  );
+  let updatedInternalLinks = audit.getAuditResult().brokenInternalLinks;
+  // generate suggestions
+  try {
+    updatedInternalLinks = await generateSuggestionData(
+      finalUrl,
+      audit,
+      context,
+      site,
+    );
+
+    log.info(
+      `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] auditDataWithSuggestions`,
+      updatedInternalLinks,
+    );
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] suggestion generation error: ${error.message}`);
+  }
 
   // TODO: skip opportunity creation if no internal link items are found in the audit data
 
-  const kpiDeltas = calculateKpiDeltasForAudit(updatedInternalLinks);
+  const kpiDeltas = calculateKpiDeltasForAudit(audit.getAuditResult());
   log.info(
     `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] kpiDeltas`,
     kpiDeltas,
