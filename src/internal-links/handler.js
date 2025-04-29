@@ -15,7 +15,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-// import { getTopPagesForSiteId } from '../canonical/handler.js';
+import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -121,38 +121,38 @@ export async function runAuditAndImportTopPagesStep(context) {
   };
 }
 
-// export async function prepareScrapingStep(context) {
-//   const { site, log, dataAccess } = context;
+export async function prepareScrapingStep(context) {
+  const { site, log, dataAccess } = context;
 
-//   log.info(
-//     `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] start: preparing scraping step`,
-//   );
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] start: preparing scraping step`,
+  );
 
-//   // fetch top pages for site
-//   log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] fetching top pages`);
-//   const topPages = await getTopPagesForSiteId(
-//     dataAccess,
-//     site.getId(),
-//     context,
-//     log,
-//   );
+  // fetch top pages for site
+  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] fetching top pages`);
+  const topPages = await getTopPagesForSiteId(
+    dataAccess,
+    site.getId(),
+    context,
+    log,
+  );
 
-//   log.info(
-//     `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] top pages: ${JSON.stringify(
-//       topPages,
-//     )}`,
-//   );
+  log.info(
+    `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] top pages: ${JSON.stringify(
+      topPages,
+    )}`,
+  );
 
-//   const urls = topPages.map((page) => ({ url: page.url }));
+  const urls = topPages.map((page) => ({ url: page.url }));
 
-//   log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] >> ~ urls:`, urls);
+  log.info(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] >> ~ urls:`, urls);
 
-//   return {
-//     jobId: site.getId(),
-//     urls,
-//     siteId: site.getId(),
-//   };
-// }
+  return {
+    jobId: site.getId(),
+    urls,
+    siteId: site.getId(),
+  };
+}
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function opportunityAndSuggestionsStep(context) {
