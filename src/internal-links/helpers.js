@@ -28,10 +28,9 @@ export const resolveCpcValue = () => CPC_DEFAULT_VALUE;
  * @param {Object} auditData - The audit data containing results
  * @returns {Object} KPI delta calculations
  */
-export const calculateKpiDeltasForAudit = (auditData) => {
+export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
   const cpcValue = resolveCpcValue();
 
-  const brokenInternalLinks = auditData?.auditResult?.brokenInternalLinks;
   const linksMap = {};
 
   for (const link of brokenInternalLinks) {
