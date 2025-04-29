@@ -13,7 +13,6 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
 
 const DAYS = 7;
 
@@ -49,22 +48,18 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
   }
 
   const messages = auditResult.experimentationOpportunities?.filter((oppty) => oppty.type === 'high-organic-low-ctr')
-    .map((oppty) => {
-      const opportunityEntity = convertToOpportunityEntity(auditData.siteId, auditData.id, oppty);
-      return {
-        type: 'guidance:high-organic-low-ctr',
-        siteId: auditData.siteId,
-        auditId: auditData.id,
-        deliveryType: site.getDeliveryType(),
-        time: new Date().toISOString(),
-        data: {
-          url: oppty.page,
-          ctr: oppty.trackedPageKPIValue,
-          siteAgerageCtr: oppty.trackedKPISiteAverage,
-          dataSources: opportunityEntity.data.dataSources,
-        },
-      };
-    });
+    .map((oppty) => ({
+      type: 'guidance:high-organic-low-ctr',
+      siteId: auditData.siteId,
+      auditId: auditData.id,
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        url: oppty.page,
+        ctr: oppty.trackedPageKPIValue,
+        siteAgerageCtr: oppty.trackedKPISiteAverage,
+      },
+    }));
 
   for (const message of messages) {
     // eslint-disable-next-line no-await-in-loop

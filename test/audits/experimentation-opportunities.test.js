@@ -153,7 +153,6 @@ describe('Opportunities Tests', () => {
         url: 'https://abc.com/oppty-one',
         ctr: '0.12',
         siteAgerageCtr: '0.25',
-        dataSources: ['Site', 'RUM', 'Ahrefs'],
       });
 
       const [queueArg2, messageArg2] = context.sqs.sendMessage.secondCall.args;
@@ -167,7 +166,6 @@ describe('Opportunities Tests', () => {
         url: 'https://abc.com/oppty-two',
         ctr: '0.08',
         siteAgerageCtr: '0.22',
-        dataSources: ['Site', 'RUM', 'Ahrefs'],
       });
     });
 

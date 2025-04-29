@@ -10,9 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
+/**
+ * Data sources for opportunities
+ */
 export const DATA_SOURCES = {
   AHREFS: 'Ahrefs',
   GSC: 'GSC',
   RUM: 'RUM',
   SITE: 'Site',
+  PAGE: 'Page',
 };

@@ -105,7 +105,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     sinon.restore();
   });
 
-  it('should create new opportunity when none exists', async () => {
+  it('should create new opportunity when none exists', async function createNewOpportunity() {
     this.timeout(5000);
 
     dataAccessStub.Opportunity.create.resolves(altTextOppty);
