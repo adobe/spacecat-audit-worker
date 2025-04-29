@@ -11,7 +11,8 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
@@ -19,6 +20,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
+
 import {
   calculateKpiDeltasForAudit,
   isLinkInaccessible,
@@ -134,7 +136,7 @@ export async function prepareScrapingStep(context) {
 
 export async function opportunityAndSuggestionsStep(context) {
   const {
-    log, site, finalUrl, audit,
+    log, site, finalUrl, audit, dataAccess,
   } = context;
   log.info(
     `[${AUDIT_TYPE}] [Site: ${site.getId()}] latestAuditData`,
@@ -159,6 +161,34 @@ export async function opportunityAndSuggestionsStep(context) {
 
   // TODO: skip opportunity creation if no internal link items are found in the audit data
   const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
+
+  if (!isNonEmptyArray(brokenInternalLinks)) {
+    // no broken internal links found
+    // fetch opportunity
+    const { Opportunity } = dataAccess;
+    let opportunity;
+    try {
+      // eslint-disable-next-line max-len
+      const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
+      opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+    } catch (e) {
+      log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
+      throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
+    }
+
+    if (!opportunity) {
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`);
+    } else {
+      // no broken internal links found, update opportunity status to RESOLVED
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found opportunity, updating status to RESOLVED`);
+      await opportunity.setStatus(Opportunity.STATUSES.RESOLVED);
+      await opportunity.save();
+    }
+    return {
+      status: 'complete',
+    };
+  }
+
   const opportunity = await convertToOpportunity(
     finalUrl,
     { siteId: site.getId(), id: audit.getId() },
