@@ -170,10 +170,10 @@ export async function opportunityAndSuggestionsStep(context) {
     audit.getAuditResult(),
   );
 
-  let updatedInternalLinks = audit.getAuditResult().brokenInternalLinks;
+  let brokenInternalLinks = audit.getAuditResult().brokenInternalLinks;
   // generate suggestions
   try {
-    updatedInternalLinks = await generateSuggestionData(
+    brokenInternalLinks = await generateSuggestionData(
       finalUrl,
       audit,
       context,
@@ -182,7 +182,7 @@ export async function opportunityAndSuggestionsStep(context) {
 
     log.info(
       `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] auditDataWithSuggestions`,
-      updatedInternalLinks,
+      brokenInternalLinks,
     );
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] suggestion generation error: ${error.message}`);
@@ -190,7 +190,7 @@ export async function opportunityAndSuggestionsStep(context) {
 
   // TODO: skip opportunity creation if no internal link items are found in the audit data
 
-  const kpiDeltas = calculateKpiDeltasForAudit(updatedInternalLinks);
+  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
   log.info(
     `[${AUDIT_TYPE}]-1 [Site Id: ${site.getId()}] kpiDeltas`,
     kpiDeltas,
@@ -212,7 +212,7 @@ export async function opportunityAndSuggestionsStep(context) {
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
   await syncSuggestions({
     opportunity,
-    newData: updatedInternalLinks,
+    newData: brokenInternalLinks,
     context,
     buildKey,
     mapNewSuggestion: (entry) => ({

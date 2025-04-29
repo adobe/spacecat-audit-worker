@@ -18,17 +18,17 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const { FIREFALL_MODEL } = context.env;
-  const auditResult = audit.getAuditResult();
+  const brokenInternalLinks = audit.getAuditResult().brokenInternalLinks;
 
-  if (auditResult.success === false) {
+  if (audit.getAuditResult().success === false) {
     log.info('broken-internal-links audit: Audit failed, skipping suggestions generation');
-    return audit;
+    return brokenInternalLinks;
   }
 
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
     log.info('broken-internal-links audit: Auto-suggest is disabled for site');
-    return audit;
+    return brokenInternalLinks;
   }
 
   log.info(`broken-internal-links audit: Generating suggestions for site ${finalUrl}`);
@@ -48,7 +48,7 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
   // return early if site data is not found
   if (!isNonEmptyArray(siteData)) {
     log.info('broken-internal-links audit: No site data found, skipping suggestions generation');
-    return audit;
+    return brokenInternalLinks;
   }
 
   log.info(`broken-internal-links audit: Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
@@ -126,7 +126,7 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
   };
 
   const headerSuggestionsResults = [];
-  for (const link of auditResult.brokenInternalLinks) {
+  for (const link of brokenInternalLinks) {
     try {
       // eslint-disable-next-line no-await-in-loop
       const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: link.urlTo }, 'broken-backlinks', log);
@@ -147,8 +147,8 @@ export const generateSuggestionData = async (finalUrl, audit, context, site) => 
   }
 
   const updatedInternalLinks = [];
-  for (let index = 0; index < auditResult.brokenInternalLinks.length; index += 1) {
-    const link = auditResult.brokenInternalLinks[index];
+  for (let index = 0; index < brokenInternalLinks.length; index += 1) {
+    const link = brokenInternalLinks[index];
     const headerSuggestions = headerSuggestionsResults[index];
     // eslint-disable-next-line no-await-in-loop
     const updatedLink = await processLink(link, headerSuggestions);
