@@ -18,8 +18,11 @@ import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import sinon from 'sinon';
 import nock from 'nock';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { generateSuggestionData } from '../../../src/internal-links/suggestions-generator.js';
 import { MockContextBuilder } from '../../shared.js';
+
+const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 const site = {
   getConfig: () => Config({}),
@@ -86,13 +89,13 @@ describe('generateSuggestionData', async function test() {
 
   beforeEach(() => {
     auditData = {
-      auditResult: {
+      getAuditResult: () => ({
         success: true,
         brokenInternalLinks: [
           { urlTo: 'https://example.com/broken1' },
           { urlTo: 'https://example.com/broken2' },
         ],
-      },
+      }),
     };
     configuration = {
       isHandlerEnabledForSite: sandbox.stub(),
@@ -110,12 +113,18 @@ describe('generateSuggestionData', async function test() {
   });
 
   it('returns original auditData if audit result is unsuccessful', async () => {
-    auditData.auditResult.success = false;
+    const FailureAuditData = {
+      ...auditData,
+      getAuditResult: () => ({
+        ...auditData.getAuditResult(),
+        success: false,
+      }),
+    };
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', FailureAuditData, context, site);
 
-    expect(result).to.deep.equal(auditData);
-    expect(context.log.info).to.have.been.calledWith('broken-internal-links audit: Audit failed, skipping suggestions generation');
+    expect(result).to.deep.equal(auditData.getAuditResult().brokenInternalLinks);
+    expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
   });
 
   it('returns original auditData if auto-suggest is disabled for the site', async () => {
@@ -123,8 +132,8 @@ describe('generateSuggestionData', async function test() {
 
     const result = await generateSuggestionData('https://example.com', auditData, context, site);
 
-    expect(result).to.deep.equal(auditData);
-    expect(context.log.info).to.have.been.calledWith('broken-internal-links audit: Auto-suggest is disabled for site');
+    expect(result).to.deep.equal(auditData.getAuditResult().brokenInternalLinks);
+    expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Auto-suggest is disabled for site`);
   });
 
   it('if sitedata is not found, return audit object as is', async () => {
@@ -151,7 +160,7 @@ describe('generateSuggestionData', async function test() {
     });
 
     await generateSuggestionData('https://example.com', auditData, context, site);
-    expect(context.log.info.getCall(1).args[0]).to.equal('broken-internal-links audit: No site data found, skipping suggestions generation');
+    expect(context.log.info.getCall(1).args[0]).to.equal(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No site data found, skipping suggestions generation`);
 
     expect(firefallClient.fetchChatCompletion).to.not.have.been.called;
   });
@@ -182,7 +191,7 @@ describe('generateSuggestionData', async function test() {
     const result = await generateSuggestionData('https://example.com', auditData, context, site);
 
     expect(firefallClient.fetchChatCompletion).to.have.been.callCount(4);
-    expect(result.auditResult.brokenInternalLinks).to.deep.equal([
+    expect(result).to.deep.equal([
       {
         urlTo: 'https://example.com/broken1',
         urlsSuggested: ['https://fix.com'],
@@ -194,7 +203,7 @@ describe('generateSuggestionData', async function test() {
         aiRationale: 'No suitable suggestions found',
       },
     ]);
-    expect(context.log.info).to.have.been.calledWith('broken-internal-links audit: Suggestions generation complete.');
+    expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete.`);
   });
 
   it('generates suggestions in multiple batches if there are more than 300 alternative URLs', async () => {
@@ -251,7 +260,7 @@ describe('generateSuggestionData', async function test() {
     const result = await generateSuggestionData('https://example.com', auditData, context, site);
 
     expect(firefallClient.fetchChatCompletion).to.have.been.callCount(8);
-    expect(result.auditResult.brokenInternalLinks).to.deep.equal([
+    expect(result).to.deep.equal([
       {
         urlTo: 'https://example.com/broken1',
         urlsSuggested: ['https://fix.com'],
@@ -261,7 +270,7 @@ describe('generateSuggestionData', async function test() {
         urlTo: 'https://example.com/broken2',
       },
     ]);
-    expect(context.log.info).to.have.been.calledWith('broken-internal-links audit: Suggestions generation complete.');
+    expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete.`);
   }).timeout(20000);
 
   it('handles Firefall client errors gracefully and continues processing, should suggest base URL instead', async () => {
@@ -299,7 +308,7 @@ describe('generateSuggestionData', async function test() {
 
     const result = await generateSuggestionData('https://example.com', auditData, context, site);
 
-    expect(result.auditResult.brokenInternalLinks).to.deep.equal([
+    expect(result).to.deep.equal([
       {
         urlTo: 'https://example.com/broken1',
         urlsSuggested: ['https://example.com'],
@@ -309,6 +318,6 @@ describe('generateSuggestionData', async function test() {
         urlTo: 'https://example.com/broken2',
       },
     ]);
-    expect(context.log.error).to.have.been.calledWith('broken-internal-links audit: Batch processing error: Firefall error');
+    expect(context.log.error).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Batch processing error: Firefall error`);
   }).timeout(20000);
 });

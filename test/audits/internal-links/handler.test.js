@@ -18,7 +18,11 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
 
-import { internalLinksAuditRunner } from '../../../src/internal-links/handler.js';
+import {
+  internalLinksAuditRunner,
+  runAuditAndImportTopPagesStep,
+  prepareScrapingStep,
+} from '../../../src/internal-links/handler.js';
 import {
   internalLinksData,
   expectedOpportunity,
@@ -93,25 +97,30 @@ const site = {
   }),
 };
 
-describe('Broken internal links audit', () => {
-  const context = new MockContextBuilder()
-    .withSandbox(sandbox)
-    .withOverrides({
-      runtime: { name: 'aws-lambda', region: 'us-east-1' },
-      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
-      rumApiClient: {
-        query: sinon.stub().resolves(internalLinksData),
-      },
-      site,
-      dataAccess: {
-        Configuration: {
-          findLatest: () => ({
-            isHandlerEnabledForSite: () => true,
-          }),
+describe('Broken internal links audit ', () => {
+  let context;
+
+  beforeEach(() => {
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+        rumApiClient: {
+          query: sinon.stub().resolves(internalLinksData),
         },
-      },
-    })
-    .build();
+        site,
+        dataAccess: {
+          Configuration: {
+            findLatest: () => ({
+              isHandlerEnabledForSite: () => true,
+            }),
+          },
+        },
+        finalUrl: 'www.example.com',
+      })
+      .build();
+  });
 
   afterEach(() => {
     nock.cleanAll();
@@ -141,9 +150,56 @@ describe('Broken internal links audit', () => {
       fullAuditRef: auditUrl,
     });
   }).timeout(5000);
+
+  it('broken-internal-links audit runs ans throws error incase of error in audit', async () => {
+    context.rumApiClient.query.rejects(new Error('error'));
+    expect(await internalLinksAuditRunner(
+      'www.example.com',
+      context,
+      site,
+    )).to.deep.equal({
+      fullAuditRef: auditUrl,
+      auditResult: {
+        finalUrl: auditUrl,
+        error: `[broken-internal-links] [Site: ${site.getId()}] audit failed with error: error`,
+        success: false,
+      },
+    });
+  }).timeout(5000);
+
+  it('runAuditAndImportTopPagesStep should run audit and import top pages', async () => {
+    const result = await runAuditAndImportTopPagesStep(context);
+    expect(result).to.deep.equal({
+      type: 'top-pages',
+      siteId: site.getId(),
+      auditResult: {
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        fullAuditRef: auditUrl,
+        finalUrl: 'www.example.com',
+        auditContext: {
+          interval: 30,
+        },
+      },
+      fullAuditRef: auditUrl,
+    });
+  });
+
+  it('prepareScrapingStep should send top pages to scraping service', async () => {
+    const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+
+    const result = await prepareScrapingStep(context);
+    expect(result).to.deep.equal({
+      siteId: site.getId(),
+      type: 'broken-internal-links',
+      urls: topPages.map((page) => ({ url: page.getUrl() })),
+    });
+  }).timeout(5000);
 });
 
-describe('broken-internal-links audit to opportunity conversion', () => {
+describe('broken-internal-links audit opportunity and suggestions', () => {
   let addSuggestionsResponse;
   let opportunity;
   let auditData;
@@ -196,6 +252,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     auditData = {
       siteId: 'site-id-1',
       id: 'audit-id-1',
+      getId: () => 'audit-id-1',
       isLive: true,
       auditedAt: new Date().toISOString(),
       auditType: 'broken-internal-links',
@@ -205,16 +262,20 @@ describe('broken-internal-links audit to opportunity conversion', () => {
           interval: 30,
         },
       },
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+        auditContext: {
+          interval: 30,
+        },
+      }),
       fullAuditRef: auditUrl,
     };
+    context.audit = auditData;
+
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
-        generateSuggestionData: () => ({
-          ...auditData,
-          auditResult: {
-            brokenInternalLinks: AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
-          },
-        }),
+        generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
       },
     });
   });
@@ -243,7 +304,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
       'https://petplace.com/suggestion12',
     ]);
     expect(suggestionsArg[0].data.aiRationale).to.equal('Some Rationale');
-  }).timeout(5000);
+  }).timeout(10000);
 
   it('creating a new opportunity object fails', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
@@ -264,6 +325,26 @@ describe('broken-internal-links audit to opportunity conversion', () => {
 
     // make sure that no new suggestions are added
     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
+  }).timeout(5000);
+
+  it('creating a new opportunity object suceeds even if suggestion generation error occurs', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    context.site.getLatestAuditByAuditType = () => auditData;
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => { throw new Error('error'); },
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+
+    expect(context.log.error).to.have.been.calledOnceWith(
+      `[broken-internal-links] [Site: ${site.getId()}] suggestion generation error: error`,
+    );
   }).timeout(5000);
 
   it('allBySiteIdAndStatus method fails', async () => {
@@ -320,24 +401,4 @@ describe('broken-internal-links audit to opportunity conversion', () => {
     const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
     expect(suggestionsArg).to.be.an('array').with.lengthOf(1);
   }).timeout(5000);
-
-  // it('should run audit and send urls for scraping step', async () => {
-  //   const { brokenBacklinks } = auditDataMock.auditResult;
-  //   const expectedBrokenBacklinks = auditDataMock.auditResult.brokenBacklinks.filter(
-  //     (a) => a.url_to !== excludedUrl,
-  //   );
-  //   context.site = siteWithExcludedUrls;
-  //   ahrefsMock(siteWithExcludedUrls.getBaseURL(), { backlinks: brokenBacklinks });
-
-  //   const result = await runAuditAndImportTopPages(context);
-  //   expect(result).to.deep.equal({
-  //     type: 'top-pages',
-  //     siteId: siteWithExcludedUrls.getId(),
-  //     auditResult: {
-  //       brokenBacklinks: expectedBrokenBacklinks,
-  //       finalUrl: auditUrl,
-  //     },
-  //     fullAuditRef: auditDataMock.fullAuditRef,
-  //   });
-  // });
 });

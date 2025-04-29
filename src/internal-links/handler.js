@@ -15,7 +15,6 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -53,7 +52,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     };
 
     log.info(
-      `[${AUDIT_TYPE}] [Site: ${site.siteId}] Options for RUM call: `,
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Options for RUM call: `,
       JSON.stringify(options),
     );
 
@@ -85,12 +84,12 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       fullAuditRef: auditUrl,
     };
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.siteId}] audit failed with error: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`);
     return {
       fullAuditRef: auditUrl,
       auditResult: {
         finalUrl: auditUrl,
-        error: `[${AUDIT_TYPE}] [Site: ${site.siteId}] audit failed with error: ${error.message}`,
+        error: `[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`,
         success: false,
       },
     };
@@ -100,7 +99,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 export async function runAuditAndImportTopPagesStep(context) {
   const { site, log, finalUrl } = context;
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.siteId}] starting audit`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`);
 
   const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
     finalUrl,
@@ -112,7 +111,6 @@ export async function runAuditAndImportTopPagesStep(context) {
     fullAuditRef: finalUrl,
     type: 'top-pages',
     siteId: site.getId(),
-    jobId: site.getId(),
   };
 }
 
@@ -121,24 +119,19 @@ export async function prepareScrapingStep(context) {
     site, log, dataAccess,
   } = context;
 
-  // fetch top pages for site
-  const topPages = await getTopPagesForSiteId(
-    dataAccess,
-    site.getId(),
-    context,
-    log,
-  );
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   log.info(
-    `[${AUDIT_TYPE}] [Site: ${site.siteId}] top pages: ${JSON.stringify(
+    `[${AUDIT_TYPE}] [Site: ${site.getId()}] top pages: ${JSON.stringify(
       topPages,
     )}`,
   );
-  const urls = topPages.map((page) => ({ url: page.url }));
+  const urls = topPages.map((page) => ({ url: page.getUrl() }));
   return {
-    jobId: site.getId(),
     urls,
     siteId: site.getId(),
+    type: 'broken-internal-links',
   };
 }
 
@@ -149,7 +142,7 @@ export async function opportunityAndSuggestionsStep(context) {
   } = context;
 
   log.info(
-    `[${AUDIT_TYPE}] [Site: ${site.siteId}] latestAuditData`,
+    `[${AUDIT_TYPE}] [Site: ${site.getId()}] latestAuditData`,
     audit.getAuditResult(),
   );
 
@@ -163,11 +156,11 @@ export async function opportunityAndSuggestionsStep(context) {
       site,
     );
     log.info(
-      `[${AUDIT_TYPE}] [Site: ${site.siteId}] auditDataWithSuggestions`,
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] auditDataWithSuggestions`,
       brokenInternalLinks,
     );
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.siteId}] suggestion generation error: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
   }
 
   // TODO: skip opportunity creation if no internal link items are found in the audit data

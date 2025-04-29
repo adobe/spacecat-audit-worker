@@ -27,13 +27,7 @@ import { auditData } from '../../fixtures/internal-links-data.js';
 
 describe('calculateKpiDeltasForAudit', () => {
   it('should return zero values when no broken links exist', () => {
-    const audit = {
-      auditResult: {
-        brokenInternalLinks: [],
-      },
-    };
-
-    const result = calculateKpiDeltasForAudit(audit);
+    const result = calculateKpiDeltasForAudit([]);
     expect(result).to.deep.equal({
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
@@ -41,17 +35,14 @@ describe('calculateKpiDeltasForAudit', () => {
   });
 
   it('should calculate KPIs correctly for a single broken link', () => {
-    const audit = {
-      auditResult: {
-        brokenInternalLinks: [{
-          urlFrom: 'https://example.com/source',
-          urlTo: 'https://example.com/broken',
-          trafficDomain: 1000,
-        }],
-      },
-    };
+    const
+      brokenInternalLinks = [{
+        urlFrom: 'https://example.com/source',
+        urlTo: 'https://example.com/broken',
+        trafficDomain: 1000,
+      }];
 
-    const result = calculateKpiDeltasForAudit(audit);
+    const result = calculateKpiDeltasForAudit(brokenInternalLinks);
     expect(result).to.deep.equal({
       projectedTrafficLost: 10, // 1000 * 0.01
       projectedTrafficValue: 10, // 10 * 1 (DEFAULT_CPC_VALUE)
@@ -59,7 +50,7 @@ describe('calculateKpiDeltasForAudit', () => {
   });
 
   it('should handle multiple broken links to the same target', () => {
-    const result = calculateKpiDeltasForAudit(auditData);
+    const result = calculateKpiDeltasForAudit(auditData.auditResult.brokenInternalLinks);
     expect(result).to.deep.equal({
       projectedTrafficLost: 83,
       projectedTrafficValue: 83,
@@ -74,11 +65,7 @@ describe('calculateKpiDeltasForAudit', () => {
       trafficDomain: 1000 * (i + 1), // Increasing traffic values
     }));
 
-    const audit = {
-      auditResult: { brokenInternalLinks: brokenLinks },
-    };
-
-    const result = calculateKpiDeltasForAudit(audit);
+    const result = calculateKpiDeltasForAudit(brokenLinks);
 
     // Should only consider top 10 traffic sources
     // Sum of top 10 traffic values: (11000 + 10000 + ... + 2000) * 0.01
