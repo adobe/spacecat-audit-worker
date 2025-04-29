@@ -242,10 +242,10 @@ export default new AuditBuilder()
     runAuditAndImportTopPagesStep,
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
-  // .addStep(
-  //   'prepareScraping',
-  //   prepareScrapingStep,
-  //   AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
-  // )
+  .addStep(
+    'prepareScraping',
+    prepareScrapingStep,
+    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  )
   .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
   .build();
