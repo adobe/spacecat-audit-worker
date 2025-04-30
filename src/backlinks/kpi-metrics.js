@@ -66,7 +66,7 @@ const calculateKpiMetrics = async (auditData, context, site) => {
       (a, b) => new Date(b.time) - new Date(a.time),
     )[0];
     // cost in USD cents, so divide by 100 to get USD
-    if (latestOrganicTrafficData.value > 0) {
+    if (latestOrganicTrafficData.cost > 0 && latestOrganicTrafficData.value > 0) {
       CPC = (latestOrganicTrafficData.cost / latestOrganicTrafficData.value) / 100;
     } else {
       CPC = CPC_DEFAULT_VALUE;
