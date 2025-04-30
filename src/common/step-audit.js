@@ -109,7 +109,6 @@ export class StepAudit extends BaseAudit {
       }
 
       // Run the step
-      log.info(`stepContext.finalUrl before handler call: ${stepContext.finalUrl}`);
       const stepResult = await step.handler(stepContext);
       let response = ok();
 
