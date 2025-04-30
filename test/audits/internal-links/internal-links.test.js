@@ -131,6 +131,8 @@ describe('broken-internal-links audit to opportunity conversion', () => {
       getSuggestions: sandbox.stub().resolves([]),
       setAuditId: sandbox.stub(),
       save: sandbox.stub().resolves(),
+      setData: () => {},
+      getData: () => {},
     };
 
     auditData = {
