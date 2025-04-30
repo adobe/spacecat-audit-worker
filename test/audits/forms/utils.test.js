@@ -30,6 +30,16 @@ describe('isSearchForm', () => {
     expect(shouldExcludeForm(scrapedFormData)).to.be.true;
   });
 
+  it('should return false for form with field count greater than zero', () => {
+    const scrapedFormData = { fieldCount: 2 };
+    expect(shouldExcludeForm(scrapedFormData)).to.be.false;
+  });
+
+  it('should return true for form with field count greater than zero', () => {
+    const scrapedFormData = { fieldCount: 0 };
+    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
+  });
+
   it('should return false for non-search form', () => {
     const scrapedFormData = {
       formType: 'contact', classList: ['subscribe'], action: 'https://example.com/contact.html', fieldsLabels: ['Name', 'Email'],
