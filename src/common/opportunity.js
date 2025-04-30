@@ -67,6 +67,11 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
           ...props, // kpiDeltas
           dataSources: opportunityInstance.data?.dataSources,
         });
+      } else {
+        opportunity.setData({
+          ...opportunity.getData(),
+          dataSources: opportunityInstance.data?.dataSources,
+        });
       }
       await opportunity.save();
       return opportunity;
