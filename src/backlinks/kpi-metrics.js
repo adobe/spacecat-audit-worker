@@ -81,8 +81,8 @@ const calculateKpiMetrics = async (auditData, context, site) => {
   const projectedTrafficValue = projectedTrafficLost * CPC;
 
   return {
-    projectedTrafficLost,
-    projectedTrafficValue,
+    projectedTrafficLost: projectedTrafficLost || 0,
+    projectedTrafficValue: projectedTrafficValue || 0,
   };
 };
 
