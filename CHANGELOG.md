@@ -1,3 +1,10 @@
+## [1.79.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.6...v1.79.7) (2025-04-30)
+
+
+### Bug Fixes
+
+* adding field count check for forms oppoty to eliminate forms with zero fields ([#826](https://github.com/adobe/spacecat-audit-worker/issues/826)) ([60cc1b8](https://github.com/adobe/spacecat-audit-worker/commit/60cc1b89aca0154e7997fd153cddccf276ea57d5))
+
 ## [1.79.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.5...v1.79.6) (2025-04-28)
 
 
