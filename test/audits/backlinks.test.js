@@ -490,6 +490,27 @@ describe('Backlinks Tests', function () {
       expect(result.projectedTrafficLost).to.equal(14545.045000000002);
     });
 
+    it('should cuse default CPC value if there is wrong organic traffic data', async () => {
+      const traffic = organicTraffic(site);
+      delete traffic[0].value;
+      delete traffic[1].value;
+
+      context.s3Client.send.onCall(0).resolves({
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify(rumTraffic)),
+        },
+      });
+
+      context.s3Client.send.onCall(1).resolves({
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify(traffic)),
+        },
+      });
+      const result = await calculateKpiMetrics(auditData, context, site);
+      expect(result.projectedTrafficLost).to.equal(14545.045000000002);
+      expect(result.projectedTrafficValue).to.equal(39126.171050000004);
+    });
+
     it('returns early if there is no RUM traffic data', async () => {
       context.s3Client.send.onCall(0).resolves(null);
 

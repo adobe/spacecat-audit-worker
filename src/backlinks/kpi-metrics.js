@@ -59,14 +59,18 @@ const calculateKpiMetrics = async (auditData, context, site) => {
     storedMetricsConfig,
   );
 
-  let CPC = CPC_DEFAULT_VALUE;
+  let CPC;
 
   if (isNonEmptyArray(organicTrafficData)) {
     const latestOrganicTrafficData = organicTrafficData.sort(
       (a, b) => new Date(b.time) - new Date(a.time),
     )[0];
     // cost in USD cents, so divide by 100 to get USD
-    CPC = (latestOrganicTrafficData.cost / latestOrganicTrafficData.value) / 100;
+    if (latestOrganicTrafficData.value > 0) {
+      CPC = (latestOrganicTrafficData.cost / latestOrganicTrafficData.value) / 100;
+    } else {
+      CPC = CPC_DEFAULT_VALUE;
+    }
   }
 
   const projectedTrafficLost = auditData?.auditResult?.brokenBacklinks?.reduce((sum, backlink) => {
@@ -81,8 +85,8 @@ const calculateKpiMetrics = async (auditData, context, site) => {
   const projectedTrafficValue = projectedTrafficLost * CPC;
 
   return {
-    projectedTrafficLost: projectedTrafficLost || 0,
-    projectedTrafficValue: projectedTrafficValue || 0,
+    projectedTrafficLost,
+    projectedTrafficValue,
   };
 };
 
