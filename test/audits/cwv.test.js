@@ -18,8 +18,10 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
+import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
 import rumData from '../fixtures/cwv/cwv.json' with { type: 'json' };
 
@@ -148,11 +150,13 @@ describe('CWVRunner Tests', () => {
     it('creates a new opportunity object', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
       expect(siteConfig.getGroupedURLs).to.have.been.calledWith(auditType);
 
+      expect(GoogleClient.createFrom).to.have.been.calledWith(context, auditUrl);
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
 
       // make sure that newly oppty has all 4 new suggestions
@@ -164,6 +168,7 @@ describe('CWVRunner Tests', () => {
     it('creating a new opportunity object fails', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await expect(opportunityAndSuggestions(auditUrl, auditData, context, site)).to.be.rejectedWith('big error happened');
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
@@ -174,6 +179,7 @@ describe('CWVRunner Tests', () => {
     });
 
     it('updates the existing opportunity object', async () => {
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
       const existingSuggestions = suggestions.map((suggestion) => ({
         ...suggestion,
@@ -208,6 +214,41 @@ describe('CWVRunner Tests', () => {
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
+    });
+
+    it('creates a new opportunity object when GSC connection returns null', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+
+      // Mock GoogleClient to return null/undefined
+      sinon.stub(GoogleClient, 'createFrom').resolves(null);
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      expect(GoogleClient.createFrom).to.have.been.calledWith(context, auditUrl);
+      expect(context.dataAccess.Opportunity.create)
+        .to.have.been.calledOnceWith(expectedOpptyWithoutGSC);
+
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+    });
+
+    it('creates a new opportunity object without GSC if not connected', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+
+      sinon.stub(GoogleClient, 'createFrom').rejects(new Error('GSC not connected'));
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      expect(GoogleClient.createFrom).to.have.been.calledWith(context, auditUrl);
+      expect(context.dataAccess.Opportunity.create)
+        .to.have.been.calledOnceWith(expectedOpptyWithoutGSC);
+
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
     });
   });
 });

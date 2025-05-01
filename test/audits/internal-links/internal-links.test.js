@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-
+import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { internalLinksAuditRunner, opportunityAndSuggestions } from '../../../src/internal-links/handler.js';
 import { internalLinksData, expectedOpportunity, expectedSuggestions } from '../../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../../shared.js';
@@ -172,6 +172,7 @@ describe('broken-internal-links audit to opportunity conversion', () => {
   it('creating a new opportunity object fails', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
 
     await expect(opportunityAndSuggestions(auditUrl, auditData, context)).to.be.rejectedWith('big error happened');
 
