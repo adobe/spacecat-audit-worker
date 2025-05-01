@@ -1,3 +1,10 @@
+## [1.79.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.7...v1.79.8) (2025-04-30)
+
+
+### Bug Fixes
+
+* broken backlinks opportunity not created in case of NaN kpi metrics ([#827](https://github.com/adobe/spacecat-audit-worker/issues/827)) ([3cad5af](https://github.com/adobe/spacecat-audit-worker/commit/3cad5af91c61af11ebab63cf7dc786b2e1925653))
+
 ## [1.79.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.6...v1.79.7) (2025-04-30)
 
 
