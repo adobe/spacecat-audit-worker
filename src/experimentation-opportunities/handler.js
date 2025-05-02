@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* c8 ignore start */
+
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -89,25 +89,25 @@ function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
  * @returns
  */
 
-export async function detectAndScrapeStep(context) {
-  const { site, log, finalUrl } = context;
+export async function experimentOpportunitiesAuditRunner(auditUrl, context, site) {
+  const { log } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
-    domain: finalUrl,
+    domain: auditUrl,
     interval: DAYS,
     granularity: 'hourly',
   };
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
-  await processRageClickOpportunities(experimentationOpportunities);
-  log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${finalUrl}`);
+  processRageClickOpportunities(experimentationOpportunities);
+  log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {
     auditResult: {
       experimentationOpportunities,
     },
-    fullAuditRef: finalUrl,
+    fullAuditRef: auditUrl,
     type: 'experimentation-opportunities',
     processingType: 'default',
     jobId: site.getId(),
@@ -116,7 +116,24 @@ export async function detectAndScrapeStep(context) {
   };
 }
 
-function organicKeywordsStep(context) {
+export async function runAuditAndScrapeStep(context) {
+  const { site, finalUrl } = context;
+  const result = await experimentOpportunitiesAuditRunner(finalUrl, context, site);
+
+  return {
+    auditResult: result.auditResult,
+    fullAuditRef: result.fullAuditRef,
+    type: 'experimentation-opportunities',
+    processingType: 'default',
+    jobId: site.getId(),
+    urls: getHighOrganicLowCtrOpportunityUrls(
+      result.auditResult?.experimentationOpportunities,
+    ).map((url) => ({ url })),
+    siteId: site.getId(),
+  };
+}
+
+export function organicKeywordsStep(context) {
   const {
     site, log, finalUrl, audit,
   } = context;
@@ -134,7 +151,7 @@ function organicKeywordsStep(context) {
   };
 }
 
-function importAllTrafficStep(context) {
+export function importAllTrafficStep(context) {
   const {
     site, log, finalUrl,
   } = context;
@@ -147,9 +164,8 @@ function importAllTrafficStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('detectAndScrapeStep', detectAndScrapeStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('runAuditAndScrapeStep', runAuditAndScrapeStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('organicKeywordsStep', organicKeywordsStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('importAllTrafficStep', importAllTrafficStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('generateOpportunityAndSuggestions', generateOpportunityAndSuggestions)
   .build();
-/* c8 ignore end */
