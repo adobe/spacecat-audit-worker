@@ -72,7 +72,7 @@ function hasLowerConversionRate(formSubmit, formViews) {
 }
 
 function hasLowFormViews(pageViews, formViews) {
-  return formViews > 0 && (formViews / pageViews) < 0.7;
+  return formViews > 0 && (formViews / pageViews) < 0.3;
 }
 
 function hasHighPageViewLowFormCtr(ctaPageViews, ctaClicks, ctaPageTotalClicks, formPageViews) {
