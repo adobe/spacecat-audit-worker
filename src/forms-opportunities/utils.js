@@ -256,7 +256,8 @@ export async function generateOpptyData(
 export function shouldExcludeForm(scrapedFormData) {
   return scrapedFormData?.formType === 'search'
     || scrapedFormData?.formType === 'login'
-    || scrapedFormData?.classList?.includes('unsubscribe');
+    || scrapedFormData?.classList?.includes('unsubscribe')
+    || scrapedFormData?.fieldCount === 0;
 }
 
 /**
