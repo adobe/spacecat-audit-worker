@@ -12,6 +12,7 @@
     "src/**/*.js"
   ],
   "exclude": [
-    "src/index-local.js"
+    "src/index-local.js",
+    "src/metatags/*"
   ]
 }

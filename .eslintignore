@@ -1,3 +1,4 @@
 .vscode/*
 coverage/*
 scripts/*
+test/audits/metatags.test.js
