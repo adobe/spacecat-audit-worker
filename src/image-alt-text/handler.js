@@ -172,7 +172,7 @@ export async function processAltTextAuditStep(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver((site) => site.resolveFinalURL())
+  .withUrlResolver((site) => site.getBaseURL())
   .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('prepareScraping', prepareScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processAltTextAudit', processAltTextAuditStep)
