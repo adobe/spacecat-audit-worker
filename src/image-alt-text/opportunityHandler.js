@@ -13,6 +13,7 @@
 import { isNonEmptyArray, tracingFetch } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import GoogleClient from '@adobe/spacecat-shared-google-client';
 import suggestionsEngine from './suggestionsEngine.js';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
 import { CPC, PENALTY_PER_IMAGE, RUM_INTERVAL } from './constants.js';
@@ -167,6 +168,18 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     DATA_SOURCES.AHREFS,
     DATA_SOURCES.GSC,
   ];
+
+  let isGoogleConnected = false;
+  try {
+    isGoogleConnected = !!await GoogleClient.createFrom(context, auditUrl);
+  } catch (error) {
+    log.error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
+  }
+
+  if (!isGoogleConnected && opportunityData.dataSources) {
+    opportunityData.dataSources = opportunityData.dataSources
+      .filter((source) => source !== DATA_SOURCES.GSC);
+  }
 
   try {
     if (!altTextOppty) {
