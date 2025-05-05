@@ -14,6 +14,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import GoogleClient from '@adobe/spacecat-shared-google-client';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
 import suggestionsEngine from '../../../src/image-alt-text/suggestionsEngine.js';
@@ -109,6 +110,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     this.timeout(5000);
 
     dataAccessStub.Opportunity.create.resolves(altTextOppty);
+    sinon.stub(GoogleClient, 'createFrom').resolves(true);
 
     await convertToOpportunity(auditUrl, auditData, context);
 
@@ -399,6 +401,7 @@ describe('Image Alt Text Opportunity Handler', () => {
 
   it('should handle errors when fetching RUM API results', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+    sinon.stub(GoogleClient, 'createFrom').resolves(true);
 
     // Make RUM API client throw an error
     const rumError = new Error('RUM API connection failed');
