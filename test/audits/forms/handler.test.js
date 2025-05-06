@@ -20,11 +20,13 @@ import {
   formsAuditRunner,
   processOpportunityStep,
   runAuditAndSendUrlsForScrapingStep,
+  sendA11yUrlsForScrapingStep,
 } from '../../../src/forms-opportunities/handler.js';
 import { MockContextBuilder } from '../../shared.js';
 import formVitalsData from '../../fixtures/forms/formvitalsdata.json' with { type: 'json' };
 import expectedFormVitalsData from '../../fixtures/forms/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../../fixtures/forms/expectedformsendtoscraperdata.json' with { type: 'json' };
+import expectedFormA11yScraperData from '../../fixtures/forms/expectedforma11yscraperdata.json' with { type: 'json' };
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 
 use(sinonChai);
@@ -121,6 +123,44 @@ describe('audit and send scraping step', () => {
       granularity: 'hourly',
     });
     expect(result).to.deep.equal(expectedFormSendToScraperData);
+  });
+});
+
+describe('send a11y urls for scraping step', () => {
+  let context;
+  const siteId = 'test-site-id';
+
+  // eslint-disable-next-line prefer-const
+  context = new MockContextBuilder()
+    .withSandbox(sandbox)
+    .withOverrides({
+      runtime: { name: 'aws-lambda', region: 'us-east-1' },
+      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+      site: {
+        getId: sinon.stub().returns(siteId),
+        getLatestAuditByAuditType: sinon.stub().resolves({
+          auditResult: {
+            formVitals: formVitalsData['form-vitals'],
+            auditContext: {
+              interval: 15,
+            },
+          },
+          fullAuditRef: 'www.example.com',
+          siteId: 'test-site-id',
+        }),
+      },
+    })
+    .build();
+
+  afterEach(() => {
+    nock.cleanAll();
+    sinon.restore();
+  });
+
+  it('send a11y urls for scraping step', async () => {
+    const result = await sendA11yUrlsForScrapingStep(context);
+    expect(context.site.getLatestAuditByAuditType).calledWith('forms-opportunities');
+    expect(result).to.deep.equal(expectedFormA11yScraperData);
   });
 });
 

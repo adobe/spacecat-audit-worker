@@ -310,6 +310,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
     return {
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [],
     };
   }
@@ -340,6 +341,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   log.info(`siteData: ${JSON.stringify(extractedData)}`);
 
   let scrapedFormData;
+  let scrapedFormA11yData;
   log.info(`all files: ${JSON.stringify(allFiles)}`);
   if (allFiles) {
     const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
@@ -354,11 +356,24 @@ export const getScrapedDataForSiteId = async (site, context) => {
         return fileContent;
       }),
     );
+    const a11yFiles = allFiles.filter((file) => file.Key.endsWith('forms-a11y/scrape.json'));
+    scrapedFormA11yData = await Promise.all(
+      a11yFiles.map(async (file) => {
+        const fileContent = await getObjectFromKey(
+          s3Client,
+          env.S3_SCRAPER_BUCKET_NAME,
+          file.Key,
+          log,
+        );
+        return fileContent;
+      }),
+    );
   }
 
   return {
     headerLinks,
     formData: scrapedFormData,
+    formA11yData: scrapedFormA11yData,
     siteData: extractedData.filter(Boolean),
   };
 };

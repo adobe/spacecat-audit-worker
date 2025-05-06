@@ -20,6 +20,7 @@ import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
+import createA11yOpportunities from './oppty-handlers/a11y-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -78,6 +79,35 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   return result;
 }
 
+export async function sendA11yUrlsForScrapingStep(context) {
+  const {
+    log, site,
+  } = context;
+
+  const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
+  const { formVitals } = JSON.parse(JSON.stringify(latestAudit.auditResult));
+
+  formVitals.sort((a, b) => {
+    const totalPageViewsA = Object.values(a.pageview).reduce((acc, curr) => acc + curr, 0);
+    const totalPageViewsB = Object.values(b.pageview).reduce((acc, curr) => acc + curr, 0);
+    return totalPageViewsB - totalPageViewsA;
+  });
+  const topFormVitals = formVitals.slice(0, 10);
+  const a11yUrls = topFormVitals.map((fv) => fv.url);
+
+  const result = {
+    auditResult: latestAudit.auditResult,
+    fullAuditRef: latestAudit.fullAuditRef,
+    processingType: 'form-a11y',
+    jobId: site.getId(),
+    urls: a11yUrls.map((url) => ({ url })),
+    siteId: site.getId(),
+  };
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit`);
+  return result;
+}
+
 export async function processOpportunityStep(context) {
   const {
     log, site, finalUrl,
@@ -90,6 +120,7 @@ export async function processOpportunityStep(context) {
   await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  await createA11yOpportunities(finalUrl, latestAudit, scrapedData, context);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',
@@ -99,5 +130,6 @@ export async function processOpportunityStep(context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('runAuditAndSendUrlsForScraping', runAuditAndSendUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('sendA11yUrlsForScrapingStep', sendA11yUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processOpportunity', processOpportunityStep)
   .build();
