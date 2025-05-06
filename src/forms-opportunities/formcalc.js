@@ -67,12 +67,12 @@ function hasHighPageViews(pageViews) {
   return pageViews > DAILY_PAGEVIEW_THRESHOLD * FORMS_AUDIT_INTERVAL;
 }
 
-function hasLowerConversionRate(formSubmit, formViews) {
-  return formSubmit / formViews < CR_THRESHOLD_RATIO;
+function hasLowerConversionRate(formSubmit, formViews, formEngagement) {
+  return formSubmit / formViews < CR_THRESHOLD_RATIO && formEngagement > 0;
 }
 
-function hasLowFormViews(pageViews, formViews) {
-  return formViews > 0 && (formViews / pageViews) < 0.7;
+function hasLowFormViews(pageViews, formViews, formEngagement) {
+  return formViews > 0 && (formViews / pageViews) < 0.7 && formEngagement > 0;
 }
 
 function hasHighPageViewLowFormCtr(ctaPageViews, ctaClicks, ctaPageTotalClicks, formPageViews) {
@@ -94,8 +94,10 @@ export function getHighFormViewsLowConversionMetrics(formVitalsCollection) {
     const pageViews = metrics.pageview.total;
     const formViews = metrics.formview.total;
     const formSubmit = metrics.formsubmit.total;
+    const formEngagement = metrics.formengagement.total;
 
-    if (hasHighPageViews(pageViews) && hasLowerConversionRate(formSubmit, formViews)) {
+    // eslint-disable-next-line max-len
+    if (hasHighPageViews(pageViews) && hasLowerConversionRate(formSubmit, formViews, formEngagement)) {
       urls.push({
         url,
         ...metrics,
@@ -117,8 +119,9 @@ export function getHighPageViewsLowFormViewsMetrics(formVitalsCollection) {
   resultMap.forEach((metrics, url) => {
     const { total: pageViews } = metrics.pageview;
     const { total: formViews } = metrics.formview;
+    const { total: formEngagement } = metrics.formengagement;
 
-    if (hasHighPageViews(pageViews) && hasLowFormViews(pageViews, formViews)) {
+    if (hasHighPageViews(pageViews) && hasLowFormViews(pageViews, formViews, formEngagement)) {
       urls.push({
         url,
         ...metrics,
