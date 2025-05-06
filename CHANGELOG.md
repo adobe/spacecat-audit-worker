@@ -1,3 +1,24 @@
+## [1.79.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.10...v1.79.11) (2025-05-06)
+
+
+### Bug Fixes
+
+* adding extra check to filter search forms in forms oppoty ([#830](https://github.com/adobe/spacecat-audit-worker/issues/830)) ([0f8190f](https://github.com/adobe/spacecat-audit-worker/commit/0f8190f7d360545cf9fd223cce1ace5fb290636f))
+
+## [1.79.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.9...v1.79.10) (2025-05-06)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#822](https://github.com/adobe/spacecat-audit-worker/issues/822)) ([4770ec3](https://github.com/adobe/spacecat-audit-worker/commit/4770ec3953d40bf2e6a0641e6855874300b8effd))
+
+## [1.79.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.8...v1.79.9) (2025-05-03)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#828](https://github.com/adobe/spacecat-audit-worker/issues/828)) ([c3dd4a1](https://github.com/adobe/spacecat-audit-worker/commit/c3dd4a179a76db94b354f846d5de2bf9906ae68d))
+
 ## [1.79.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.7...v1.79.8) (2025-04-30)
 
 
