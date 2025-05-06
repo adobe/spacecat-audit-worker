@@ -824,6 +824,10 @@ const testData = {
       formsource: '',
       samples: 8670,
       scrapedStatus: false,
+      dataSources: [
+        'RUM',
+        'Page',
+      ],
     },
     guidance: {},
   },
@@ -848,6 +852,7 @@ const testData = {
       formsource: '',
       samples: 6690,
       scrapedStatus: false,
+      dataSources: ['RUM', 'Page'],
       metrics: [
         {
           type: 'conversionRate',
@@ -947,6 +952,7 @@ const testData = {
       formsource: '',
       samples: 6690,
       scrapedStatus: false,
+      dataSources: ['RUM', 'Page'],
       metrics: [
         {
           type: 'conversionRate',
@@ -1055,6 +1061,7 @@ const testData = {
       formsource: '',
       samples: 6690,
       scrapedStatus: true,
+      dataSources: ['RUM', 'Page'],
       metrics: [
         {
           type: 'conversionRate',
@@ -1238,6 +1245,7 @@ const testData = {
       screenshot: '',
       samples: 7690,
       scrapedStatus: false,
+      dataSources: ['RUM', 'Page'],
     },
     guidance: {},
   },
