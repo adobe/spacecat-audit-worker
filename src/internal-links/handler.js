@@ -188,7 +188,7 @@ export async function opportunityAndSuggestionsStep(context) {
     } else {
       // no broken internal links found, update opportunity status to RESOLVED
       log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found opportunity, updating status to RESOLVED`);
-      await opportunity.setStatus(Opportunity.STATUSES.RESOLVED);
+      await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
       await opportunity.save();
     }
     return {
