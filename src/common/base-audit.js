@@ -66,6 +66,8 @@ export async function wwwUrlResolver(site, context) {
   const uri = new URI(baseURL);
   const hostname = uri.hostname();
   const subdomain = uri.subdomain();
+  log.info(`[Debug] Resolving URL for ${baseURL} with hostname ${hostname} and subdomain ${subdomain}`);
+  log.info(`[Debug] (wwwUrlResolver) context: ${JSON.stringify(context)}`);
 
   if (hasText(subdomain) && subdomain !== 'www') {
     log.info(`Resolved URL ${hostname} since ${baseURL} contains subdomain`);
