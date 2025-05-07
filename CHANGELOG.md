@@ -1,3 +1,10 @@
+## [1.80.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.1...v1.80.2) (2025-05-07)
+
+
+### Bug Fixes
+
+* force prod deployment of reduce alt-text audit PR ([#834](https://github.com/adobe/spacecat-audit-worker/issues/834)) ([25779ae](https://github.com/adobe/spacecat-audit-worker/commit/25779aed7767271b0d79a8cdf441836aab365596))
+
 ## [1.80.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.0...v1.80.1) (2025-05-07)
 
 
