@@ -197,6 +197,7 @@ export async function runAuditAndGenerateSuggestions(context) {
     site, audit, finalUrl, log, s3Client, dataAccess,
   } = context;
   // Get top pages for a site
+  log.info(`[Debug] Running audit and generating suggestions for ${finalUrl}`);
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
   const topPagesSet = new Set(topPages.map((page) => {
