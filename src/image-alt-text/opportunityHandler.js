@@ -13,11 +13,11 @@
 import { isNonEmptyArray, tracingFetch } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import GoogleClient from '@adobe/spacecat-shared-google-client';
 import suggestionsEngine from './suggestionsEngine.js';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
 import { CPC, PENALTY_PER_IMAGE, RUM_INTERVAL } from './constants.js';
 import { DATA_SOURCES } from '../common/constants.js';
+import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
 const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -169,12 +169,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     DATA_SOURCES.GSC,
   ];
 
-  let isGoogleConnected = false;
-  try {
-    isGoogleConnected = !!await GoogleClient.createFrom(context, auditUrl);
-  } catch (error) {
-    log.error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
-  }
+  const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
 
   if (!isGoogleConnected && opportunityData.dataSources) {
     opportunityData.dataSources = opportunityData.dataSources

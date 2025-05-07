@@ -10,8 +10,8 @@
  * governing permissions and limitations under the License.
  */
 import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
-import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { DATA_SOURCES } from './constants.js';
+import { checkGoogleConnection } from './opportunity-utils.js';
 /**
   * Converts audit data to an opportunity instance.
   *
@@ -44,12 +44,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
     }
   }
 
-  let isGoogleConnected = false;
-  try {
-    isGoogleConnected = !!await GoogleClient.createFrom(context, auditUrl);
-  } catch (error) {
-    log.error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
-  }
+  const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
 
   if (!isGoogleConnected && opportunityInstance.data?.dataSources) {
     opportunityInstance.data.dataSources = opportunityInstance.data.dataSources
