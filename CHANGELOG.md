@@ -1,3 +1,10 @@
+## [1.80.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.0...v1.80.1) (2025-05-07)
+
+
+### Bug Fixes
+
+* removes extra characters from body when using locale detection ([#833](https://github.com/adobe/spacecat-audit-worker/issues/833)) ([25281e0](https://github.com/adobe/spacecat-audit-worker/commit/25281e058df21c2c926c7deff3bf48f5c15b100b))
+
 # [1.80.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.11...v1.80.0) (2025-05-07)
 
 

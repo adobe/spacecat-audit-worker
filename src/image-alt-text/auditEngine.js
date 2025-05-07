@@ -102,7 +102,8 @@ const getPageLanguage = ({ document }) => {
   lang = detectLanguageFromDom({ document });
   if (lang === UNKNOWN_LANGUAGE) {
     const bodyText = document.querySelector('body').textContent;
-    lang = detectLanguageFromText(bodyText);
+    const cleanedText = bodyText.replace(/[\n\t]/g, '').replace(/ {2,}/g, ' ');
+    lang = detectLanguageFromText(cleanedText);
   }
   return lang;
 };
