@@ -81,16 +81,14 @@ describe('Image Alt Text Opportunity Handler', () => {
 
     auditData = {
       siteId: 'site-id',
-      id: 'audit-id',
-      auditResult: {
-        detectedTags: {
-          imagesWithoutAltText: [
-            { pageUrl: '/page1', src: 'image1.jpg' },
-            { pageUrl: '/page2', src: 'image2.jpg' },
-            { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
-          ],
-          presentationalImagesCount: 0,
-        },
+      auditId: 'audit-id',
+      detectedImages: {
+        imagesWithoutAltText: [
+          { pageUrl: '/page1', src: 'image1.jpg' },
+          { pageUrl: '/page2', src: 'image2.jpg' },
+          { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
+        ],
+        presentationalImagesCount: 0,
       },
     };
 
@@ -326,7 +324,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     ]);
 
     // Make sure our test data has the correct format for pageUrl
-    auditData.auditResult.detectedTags.imagesWithoutAltText = [
+    auditData.detectedImages.imagesWithoutAltText = [
       { pageUrl: '/page1', src: 'image1.jpg' },
       { pageUrl: '/page2', src: 'image2.jpg' },
     ];
@@ -365,7 +363,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     ]);
 
     // Our test data has non-www URLs
-    auditData.auditResult.detectedTags.imagesWithoutAltText = [
+    auditData.detectedImages.imagesWithoutAltText = [
       { pageUrl: '/page1', src: 'image1.jpg' },
       { pageUrl: '/page2', src: 'image2.jpg' },
     ];

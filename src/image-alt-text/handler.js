@@ -20,10 +20,10 @@ import {
 } from '../utils/s3-utils.js';
 import AuditEngine from './auditEngine.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/index.js';
 import convertToOpportunity from './opportunityHandler.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
+const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 
 const isImagePresentational = (img) => {
   const isHiddenForScreenReader = img.getAttribute('aria-hidden') === 'true';
@@ -35,21 +35,51 @@ const isImagePresentational = (img) => {
   return isHiddenForScreenReader || hasRolePresentation || isAltEmpty;
 };
 
-export async function fetchAndProcessPageObject(
+export async function processImportStep(context) {
+  const { site, finalUrl } = context;
+
+  const s3BucketPath = `scrapes/${site.getId()}/`;
+
+  return {
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: s3BucketPath,
+    type: 'top-pages',
+    siteId: site.getId(),
+  };
+}
+
+export async function prepareScrapingStep(context) {
+  const { site, log, dataAccess } = context;
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`);
+
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (topPages.length === 0) {
+    throw new Error('No top pages found for site');
+  }
+
+  return {
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'alt-text',
+  };
+}
+
+export async function fetchPageScrapeAndRunAudit(
   s3Client,
   bucketName,
-  key,
+  scrapedPageFullPathFilename,
   prefix,
   log,
 ) {
-  const object = await getObjectFromKey(s3Client, bucketName, key, log);
-  if (!hasText(object?.scrapeResult?.rawBody)) {
-    log.debug(`[${AUDIT_TYPE}]: No raw HTML content found in S3 ${key} object`);
+  const pageScrape = await getObjectFromKey(s3Client, bucketName, scrapedPageFullPathFilename, log);
+  if (!hasText(pageScrape?.scrapeResult?.rawBody)) {
+    log.debug(`[${AUDIT_TYPE}]: No raw HTML content found in S3 ${scrapedPageFullPathFilename} object`);
     return null;
   }
 
   // Parse HTML content
-  const dom = new JSDOM(object.scrapeResult.rawBody);
+  const dom = new JSDOM(pageScrape.scrapeResult.rawBody);
   const imageElements = dom.window.document.getElementsByTagName('img');
   const images = Array.from(imageElements).map((img) => ({
     isPresentational: isImagePresentational(img),
@@ -58,7 +88,7 @@ export async function fetchAndProcessPageObject(
     xpath: getXpath(img),
   })).filter((img) => img.src);
 
-  const pageUrl = key.slice(prefix.length - 1).replace('/scrape.json', '');
+  const pageUrl = scrapedPageFullPathFilename.slice(prefix.length - 1).replace('/scrape.json', '');
   return {
     [pageUrl]: {
       images,
@@ -67,63 +97,83 @@ export async function fetchAndProcessPageObject(
   };
 }
 
-export async function auditImageAltTextRunner(baseURL, context, site) {
-  const { log, s3Client } = context;
-  // Fetch site's scraped content from S3
+export async function processAltTextAuditStep(context) {
+  const {
+    log, s3Client, audit, site, finalUrl,
+  } = context;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-  const prefix = `scrapes/${site.getId()}/`;
-  const scrapedObjectKeys = await getObjectKeysUsingPrefix(
+  const siteId = site.getId();
+  const auditUrl = finalUrl;
+
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] [Audit Url: ${auditUrl}] processing scraped content`);
+
+  const s3BucketPath = `scrapes/${siteId}/`;
+  const scrapedPagesFullPathFilenames = await getObjectKeysUsingPrefix(
     s3Client,
     bucketName,
-    prefix,
+    s3BucketPath,
     log,
   );
 
-  const extractedTags = {};
+  if (scrapedPagesFullPathFilenames.length === 0) {
+    log.error(`[${AUDIT_TYPE}] [Site Id: ${siteId}] no scraped content found, cannot proceed with audit`);
+  }
+
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] found ${scrapedPagesFullPathFilenames.length} scraped pages to analyze`);
+
+  const PageToImagesWithoutAltTextMap = {};
   const pageAuditResults = await Promise.all(
-    scrapedObjectKeys.map(
-      (key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log),
+    scrapedPagesFullPathFilenames.map(
+      async (scrape) => fetchPageScrapeAndRunAudit(s3Client, bucketName, scrape, s3BucketPath, log),
     ),
   );
 
   pageAuditResults.forEach((pageAudit) => {
     if (pageAudit) {
-      Object.assign(extractedTags, pageAudit);
+      Object.assign(PageToImagesWithoutAltTextMap, pageAudit);
     }
   });
-  const extractedTagsCount = Object.entries(extractedTags).length;
-  if (extractedTagsCount === 0) {
-    log.error(
-      `[${AUDIT_TYPE}]: Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`,
+
+  const imagesWithoutAltTextCount = Object
+    .values(PageToImagesWithoutAltTextMap).reduce((acc, page) => acc + page.images.length, 0);
+  if (imagesWithoutAltTextCount === 0) {
+    log.info(
+      `[${AUDIT_TYPE}]: Found no images without alt text from the scraped content in bucket ${bucketName} with path ${s3BucketPath}`,
     );
   }
   log.info(
-    `[${AUDIT_TYPE}]: Performing image alt text audit for ${extractedTagsCount} elements`,
+    `[${AUDIT_TYPE}]: Identified ${imagesWithoutAltTextCount} images (before filtering)`,
   );
-  // Perform Image Alt Text audit
-  const auditEngine = new AuditEngine(log);
-  for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
-    auditEngine.performPageAudit(pageUrl, pageTags);
-  }
-  await auditEngine.filterImages(baseURL, tracingFetch);
-  auditEngine.finalizeAudit();
-  const detectedTags = auditEngine.getAuditedTags();
 
+  const auditEngine = new AuditEngine(log);
+  for (const [pageUrl, pageImages] of Object.entries(PageToImagesWithoutAltTextMap)) {
+    auditEngine.performPageAudit(pageUrl, pageImages);
+  }
+  await auditEngine.filterImages(auditUrl, tracingFetch);
+  auditEngine.finalizeAudit();
+  const detectedImages = auditEngine.getAuditedTags();
+  log.info(
+    `[${AUDIT_TYPE}]: Identified ${detectedImages.imagesWithoutAltText.length} images (after filtering)`,
+  );
+
+  // Process opportunity
+  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] processing opportunity`);
   const auditResult = {
-    detectedTags,
-    sourceS3Folder: `${bucketName}/${prefix}`,
-    fullAuditRef: prefix,
-    finalUrl: baseURL,
+    detectedImages,
+    siteId,
+    auditId: audit.getId(),
   };
 
+  await convertToOpportunity(auditUrl, auditResult, context);
+
   return {
-    auditResult,
-    fullAuditRef: baseURL,
+    status: 'complete',
   };
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
-  .withRunner(auditImageAltTextRunner)
-  .withPostProcessors([convertToOpportunity])
+  .withUrlResolver((site) => site.getBaseURL())
+  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('prepareScraping', prepareScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('processAltTextAudit', processAltTextAuditStep)
   .build();
