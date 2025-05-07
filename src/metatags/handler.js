@@ -286,14 +286,19 @@ export async function importTopPages(context) {
 }
 
 export async function submitForScraping(context) {
-  const { site, dataAccess, log } = context;
+  const {
+    site,
+    dataAccess,
+    log,
+    finalUrl,
+  } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   if (topPages.length === 0) {
     throw new Error('No top pages found for site');
   }
 
-  log.info(`Submitting for scraping ${topPages.length} top pages for site ${site.getId()}`);
+  log.info(`Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}`);
 
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
