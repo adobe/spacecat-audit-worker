@@ -10,5 +10,11 @@
     "steps": []
   },
   "tags": ["Traffic acquisition"],
-  "data": null
+  "data": {
+    "dataSources": [
+      "Ahrefs",
+      "GSC",
+      "Site"
+    ]
+  }
 }

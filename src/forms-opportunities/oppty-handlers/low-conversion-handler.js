@@ -13,6 +13,7 @@
 import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { filterForms, generateOpptyData, shouldExcludeForm } from '../utils.js';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
+import { DATA_SOURCES } from '../../common/constants.js';
 
 function generateDefaultGuidance(scrapedData, oppoty) {
   if (isNonEmptyArray(scrapedData?.formData)) {
@@ -128,6 +129,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         tags: ['Forms Conversion'],
         data: {
           ...opptyData,
+          dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         },
         guidance: generateDefaultGuidance(scrapedData, opptyData),
       };

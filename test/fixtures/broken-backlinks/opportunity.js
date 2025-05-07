@@ -20,6 +20,8 @@ export const brokenBacklinksOpportunity = {
   getSuggestions: sinon.stub(),
   setAuditId: sinon.stub(),
   save: sinon.stub().resolves(),
+  setData: () => {},
+  getData: () => {},
 };
 
 export const otherOpportunity = {
