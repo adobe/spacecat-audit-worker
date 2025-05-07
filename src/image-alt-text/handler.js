@@ -78,7 +78,6 @@ export async function fetchPageScrapeAndRunAudit(
     return null;
   }
 
-  // Parse HTML content
   const dom = new JSDOM(pageScrape.scrapeResult.rawBody);
   const imageElements = dom.window.document.getElementsByTagName('img');
   const images = Array.from(imageElements).map((img) => ({
