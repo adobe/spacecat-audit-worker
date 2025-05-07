@@ -142,7 +142,7 @@ export async function opportunityAndSuggestionsStep(context) {
     `[${AUDIT_TYPE}] [Site: ${site.getId()}] latestAuditData`,
     audit.getAuditResult(),
   );
-  let { brokenInternalLinks } = audit.getAuditResult();
+  const { brokenInternalLinks } = audit.getAuditResult();
   // generate suggestions
   try {
     // brokenInternalLinks = await generateSuggestionData(
