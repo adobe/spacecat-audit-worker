@@ -301,3 +301,20 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
     return true;
   });
 }
+
+/**
+ * get non search, login, unsubscribe forms
+ * @param {object} scrapedData
+ * @returns {string[]}
+ */
+export function getValidFormUrls(scrapedData) {
+  const validFormUrls = [];
+  if (isNonEmptyArray(scrapedData.formData)) {
+    for (const form of scrapedData.formData) {
+      if (!shouldExcludeForm(form) && !form.finalUrl.includes('search')) {
+        validFormUrls.push(form.finalUrl);
+      }
+    }
+  }
+  return validFormUrls;
+}

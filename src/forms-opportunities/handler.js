@@ -15,12 +15,11 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { generateOpptyData } from './utils.js';
+import { generateOpptyData, getValidFormUrls } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
-import createA11yOpportunities from './oppty-handlers/a11y-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -50,6 +49,38 @@ export async function formsAuditRunner(auditUrl, context) {
   };
 }
 
+export async function sendA11yIssuesToMystique(latestAudit, context) {
+  const {
+    log, site, sqs, env,
+  } = context;
+
+  const { formA11yData } = await getScrapedDataForSiteId(site, context);
+  if (formA11yData?.length === 0) {
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] No a11y data found`);
+    return;
+  }
+
+  // TODO: how to handle multiple form in page?
+  const a11yData = formA11yData.map((a11y) => ({
+    form: a11y.form,
+    a11yIssues: a11y.scrapeResult,
+  }));
+
+  const mystiqueMessage = {
+    type: 'opportunity:forms-a11y',
+    siteId: site.getId(),
+    auditId: latestAudit.auditId,
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      a11yData,
+    },
+  };
+
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] Sent a11y issues to mystique`);
+}
+
 export async function runAuditAndSendUrlsForScrapingStep(context) {
   const {
     site, log, finalUrl,
@@ -64,6 +95,20 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   const uniqueUrls = new Set();
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
+  }
+
+  if (uniqueUrls.size < 10) {
+    formVitals.sort((a, b) => {
+      const totalPageViewsA = Object.values(a.pageview).reduce((acc, curr) => acc + curr, 0);
+      const totalPageViewsB = Object.values(b.pageview).reduce((acc, curr) => acc + curr, 0);
+      return totalPageViewsB - totalPageViewsA;
+    });
+    for (const fv of formVitals) {
+      uniqueUrls.add(fv.form);
+      if (uniqueUrls.size >= 10) {
+        break;
+      }
+    }
   }
 
   const result = {
@@ -84,23 +129,17 @@ export async function sendA11yUrlsForScrapingStep(context) {
     log, site,
   } = context;
 
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
+  const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
-  const { formVitals } = JSON.parse(JSON.stringify(latestAudit.auditResult));
-
-  formVitals.sort((a, b) => {
-    const totalPageViewsA = Object.values(a.pageview).reduce((acc, curr) => acc + curr, 0);
-    const totalPageViewsB = Object.values(b.pageview).reduce((acc, curr) => acc + curr, 0);
-    return totalPageViewsB - totalPageViewsA;
-  });
-  const topFormVitals = formVitals.slice(0, 10);
-  const a11yUrls = topFormVitals.map((fv) => fv.url);
+  const urls = getValidFormUrls(scrapedData);
 
   const result = {
     auditResult: latestAudit.auditResult,
     fullAuditRef: latestAudit.fullAuditRef,
     processingType: 'form-a11y',
     jobId: site.getId(),
-    urls: a11yUrls.map((url) => ({ url })),
+    urls: urls.map((url) => ({ url })),
     siteId: site.getId(),
   };
 
@@ -120,7 +159,7 @@ export async function processOpportunityStep(context) {
   await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
-  await createA11yOpportunities(finalUrl, latestAudit, scrapedData, context);
+  await sendA11yIssuesToMystique(latestAudit, context);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',

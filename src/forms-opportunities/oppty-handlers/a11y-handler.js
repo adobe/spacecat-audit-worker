@@ -13,49 +13,47 @@
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 
 /**
- * @param auditUrl - The URL of the audit
- * @param auditDataObject - The audit data containing the audit result and additional details.
- * @param scrapedData - The scraped data containing the form data and a11y issues.
- * @param context - The context object containing the data access and logger objects.
+ * Create a11y opportunities for the given siteId and auditId
+ * @param {object} message - The message object form mystique
+ * @param {object} context - context object
+ * @returns {Promise<void>}
  */
 // eslint-disable-next-line max-len
-export default async function createA11yOpportunities(auditUrl, auditDataObject, scrapedData, context) {
+export default async function handler(message, context) {
   const {
     dataAccess, log,
   } = context;
   const { Opportunity } = dataAccess;
-  const { formA11yData } = scrapedData;
+  const { data, auditId, siteId } = message;
+  const { a11yData } = data;
 
-  if (formA11yData?.length === 0) {
-    log.info(`[Form Opportunity] [Site Id: ${auditDataObject.siteId}] No a11y data found`);
+  if (a11yData?.length === 0) {
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y data found`);
     return;
   }
 
-  // eslint-disable-next-line no-param-reassign
-  const auditData = JSON.parse(JSON.stringify(auditDataObject));
-  log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Syncing opportunity a11y`);
-  const filteredA11yData = formA11yData.filter((a11y) => a11y.scrapedData?.a11yIssues?.length > 0);
+  const filteredA11yData = a11yData.filter((a11y) => a11y.a11yIssues?.length > 0);
   if (filteredA11yData.length === 0) {
-    log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] No accessibility issues found`);
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] No accessibility issues found`);
     return;
   }
   let opportunities;
   try {
-    opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+    opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
   } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    throw new Error(`Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
   try {
     for (const a11yOpty of filteredA11yData) {
       const existingOppty = opportunities.find(
         (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.FORM_A11Y
-                    && oppty.getData().form === a11yOpty.finalUrl,
+                    && oppty.getData().form === a11yOpty.form,
       );
       const opportunityData = {
-        siteId: auditData.siteId,
-        auditId: auditData.auditId,
+        siteId,
+        auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
         type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
         origin: 'AUTOMATION',
@@ -65,29 +63,29 @@ export default async function createA11yOpportunities(auditUrl, auditDataObject,
           'Forms Accessibility',
         ],
         data: {
-          form: a11yOpty.finalUrl,
-          a11yIssues: a11yOpty.scrapedData.a11yIssues,
+          form: a11yOpty.form,
+          a11yIssues: a11yOpty.a11yIssues,
         },
       };
 
       if (!existingOppty) {
         // eslint-disable-next-line no-await-in-loop
         await Opportunity.create(opportunityData);
-        log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Created a11y opportunity for ${a11yOpty.finalUrl}`);
+        log.info(`[Form Opportunity] [Site Id: ${siteId}] Created a11y opportunity for ${a11yOpty.form}`);
       } else {
-        existingOppty.setAuditId(auditData.auditId);
+        existingOppty.setAuditId(auditId);
         existingOppty.setData({
           ...existingOppty.getData(),
           ...opportunityData.data,
         });
         // eslint-disable-next-line no-await-in-loop
         await existingOppty.save();
-        log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Updated a11y opportunity for ${a11yOpty.finalUrl}`);
+        log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated a11y opportunity for ${a11yOpty.form}`);
       }
     }
   } catch (e) {
-    log.error(`Creating a11y opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    throw new Error(`Failed to create a11y opportunities for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`Creating a11y opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    throw new Error(`Failed to create a11y opportunities for siteId ${siteId}: ${e.message}`);
   }
-  log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Successfully synced Opportunity for form-accessibility audit type.`);
+  log.info(`[Form Opportunity] [Site Id: ${siteId}] Successfully synced Opportunity for form-accessibility audit type.`);
 }
