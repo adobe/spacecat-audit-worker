@@ -272,7 +272,9 @@ export async function runAuditAndGenerateSuggestions(context) {
 }
 
 export async function importTopPages(context) {
-  const { site, finalUrl } = context;
+  const { site, finalUrl, log } = context;
+
+  log.info(`Importing top pages for ${finalUrl}`);
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   return {
@@ -284,12 +286,14 @@ export async function importTopPages(context) {
 }
 
 export async function submitForScraping(context) {
-  const { site, dataAccess } = context;
+  const { site, dataAccess, log } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   if (topPages.length === 0) {
     throw new Error('No top pages found for site');
   }
+
+  log.info(`Submitting for scraping ${topPages.length} top pages for site ${site.getId()}`);
 
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
