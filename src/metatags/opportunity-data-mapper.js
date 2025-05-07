@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData(props = {}) {
   return {
@@ -28,6 +29,7 @@ export function createOpportunityData(props = {}) {
     tags: ['Traffic acquisition'],
     data: {
       ...props,
+      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
     },
   };
 }
