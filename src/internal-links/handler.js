@@ -19,7 +19,7 @@ import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { generateSuggestionData } from './suggestions-generator.js';
+// import { generateSuggestionData } from './suggestions-generator.js';
 
 import {
   calculateKpiDeltasForAudit,
