@@ -1,3 +1,10 @@
+# [1.80.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.11...v1.80.0) (2025-05-07)
+
+
+### Features
+
+* Add data sources for all opportunity ([#821](https://github.com/adobe/spacecat-audit-worker/issues/821)) ([b081015](https://github.com/adobe/spacecat-audit-worker/commit/b081015ca2fdf1bc0b869ec109824fe8949d2773))
+
 ## [1.79.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.10...v1.79.11) (2025-05-06)
 
 
