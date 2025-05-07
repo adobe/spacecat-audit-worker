@@ -23,7 +23,7 @@
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
     "prepare": "husky",
     "local-build": "sam build",
-    "local-run": "sam local invoke",
+    "local-run": "sam local invoke -l output.txt",
     "local-watch": "node scripts/watch-and-copy.js"
   },
   "wsk": {
@@ -82,6 +82,7 @@
     "@aws-sdk/client-sqs": "3.799.0",
     "@aws-sdk/credential-provider-node": "3.799.0",
     "@aws-sdk/s3-request-presigner": "3.802.0",
+    "@marbec/structured-data-parser": "^0.0.1-beta.1",
     "aws-xray-sdk": "3.10.3",
     "cheerio": "1.0.0",
     "diff": "7.0.0",

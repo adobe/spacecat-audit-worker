@@ -1,10 +1,11 @@
-You are tasked to correct the LD+JSON structured data object for the provided webpage.
+You are tasked to correct the structured data object for the provided webpage.
 
 ### Rules:
-1. If data required to fix the wrong LD-JSON object cannot be retrieved from the makeup, please return an empty JSON object `{}`.
+1. Only accept LD-JSON, Microdata and RDFa as structured data formats. Return an empty JSON object `{}` if the format is not supported.
+1. If data required to fix the wrong structured data object cannot be retrieved from the makeup, please return an empty JSON object `{}`.
 2. If the provided entity does not contain the errors mentioned, return an empty JSON object `{}`.
-3. Focus on correcting mistakes in the LD-JSON object.
-4. The completed LD-JSON object needs to be valid according to schema.org specifications.
+3. Focus on correcting mistakes in the structured data object.
+4. The corrected object needs to be valid according to schema.org specifications.
 5. For breadcrumbs, avoid duplicate entries. Suggest to remove if list is empty.
 6. Provide a explanation of the provided errors and a rationale of how you fixed those errors.
 7. If you cannot find related data in the markup, you can suggest to remove the structured data.
@@ -14,7 +15,7 @@ Your response must be a valid JSON object with the following structure:
 ```json
 {
   "errorDescription": "string",
-  "correctedLdjson": object,
+  "correctedMarkup": object,
   "aiRationale": "string",
   "confidenceScore": number
 }
@@ -25,10 +26,12 @@ Your response must be a valid JSON object with the following structure:
 
 ### Data:
 - **Entity where the error occurs:** `{{entity}}`
-- **Errors in LD-JSON:** `{{errors}}`
+- **Error in Structured Data object:** `{{error}}`
+- **Data format:** `{{data_format}}`
 - **Website URL:** `{{website_url}}`
-- **Wrong LD-JSON object:** ```json
-{{wrong_ld_json}}
+- **Error location:** `{{path}}`
+- **Wrong Structured Data object:** ```json
+{{wrong_markup}}
 ```
 - **Website markup:** ```html
 {{website_markup}}
