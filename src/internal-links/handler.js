@@ -54,7 +54,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     };
 
     log.info(
-      `[${AUDIT_TYPE}]-nont-empty [Site: ${site.getId()}] Options for RUM call: `,
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Options for RUM call: `,
       JSON.stringify(options),
     );
 
@@ -138,10 +138,7 @@ export async function opportunityAndSuggestionsStep(context) {
   const {
     log, site, finalUrl, audit, dataAccess,
   } = context;
-  // log.info(
-  //   `[${AUDIT_TYPE}] [Site: ${site.getId()}] latestAuditData`,
-  //   audit.getAuditResult(),
-  // );
+
   let { brokenInternalLinks } = audit.getAuditResult();
 
   // generate suggestions
@@ -152,20 +149,9 @@ export async function opportunityAndSuggestionsStep(context) {
       context,
       site,
     );
-
-    // testing empty scenario
-    // brokenInternalLinks = [];
-    // log.info(
-    //   `[${AUDIT_TYPE}] [Site: ${site.getId()}] auditDataWithSuggestions`,
-    //   brokenInternalLinks,
-    // );
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
   }
-
-  // testing empty scenario
-  // brokenInternalLinks = [];
-  // log.info('testing non empty scenario', brokenInternalLinks);
 
   // TODO: skip opportunity creation if no internal link items are found in the audit data
   const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
