@@ -197,7 +197,7 @@ export async function runAuditAndGenerateSuggestions(context) {
     site, audit, finalUrl, log, s3Client, dataAccess,
   } = context;
   // Get top pages for a site
-  log.info(`[Debug] Running audit and generating suggestions for ${finalUrl}`);
+  log.info(`[Debug] Running audit and generating suggestions for ${finalUrl}, context: ${JSON.stringify(context)}`);
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
   const topPagesSet = new Set(topPages.map((page) => {
@@ -274,7 +274,7 @@ export async function runAuditAndGenerateSuggestions(context) {
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
 
-  log.info(`Importing top pages for ${finalUrl}`);
+  log.info(`Importing top pages for ${finalUrl}, context: ${JSON.stringify(context)}`);
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   return {
@@ -299,7 +299,7 @@ export async function submitForScraping(context) {
     throw new Error('No top pages found for site');
   }
 
-  log.info(`Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}`);
+  log.info(`Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}, context: ${JSON.stringify(context)}`);
 
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
@@ -310,7 +310,7 @@ export async function submitForScraping(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
   .build();
