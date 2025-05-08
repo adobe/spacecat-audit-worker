@@ -104,10 +104,11 @@ export class StepAudit extends BaseAudit {
 
       // For subsequent steps, load existing audit
       if (hasNext) {
+        log.info(`[Debug] Loading existing audit for ${JSON.stringify(auditContext)}`);
         stepContext.audit = await loadExistingAudit(auditContext.auditId, context);
       } else {
-        log.info(`[Debug] Running first step for ${type} audit on site ${siteId}`);
         // For first step, resolve URL
+        log.info(`[Debug] Running first step for ${type} audit on site ${siteId}`);
         stepContext.finalUrl = await this.urlResolver(site, context);
       }
 
@@ -116,6 +117,7 @@ export class StepAudit extends BaseAudit {
       let response = ok();
 
       if (!hasNext) {
+        log.info(`[Debug] Processing audit result for ${type} audit on site ${siteId}`);
         response = await this.processAuditResult(
           stepResult,
           {
@@ -129,6 +131,7 @@ export class StepAudit extends BaseAudit {
       }
 
       if (!isLastStep) {
+        log.info(`[Debug] Chaining step ${step.name} for ${type} audit on site ${siteId}`);
         const result = await this.chainStep(step, stepResult, stepContext);
         response = ok(result);
       }
