@@ -138,10 +138,10 @@ export async function opportunityAndSuggestionsStep(context) {
   const {
     log, site, finalUrl, audit, dataAccess,
   } = context;
-  log.info(
-    `[${AUDIT_TYPE}] [Site: ${site.getId()}] latestAuditData`,
-    audit.getAuditResult(),
-  );
+  // log.info(
+  //   `[${AUDIT_TYPE}] [Site: ${site.getId()}] latestAuditData`,
+  //   audit.getAuditResult(),
+  // );
   let { brokenInternalLinks } = audit.getAuditResult();
 
   // generate suggestions
@@ -155,17 +155,17 @@ export async function opportunityAndSuggestionsStep(context) {
 
     // testing empty scenario
     // brokenInternalLinks = [];
-    log.info(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] auditDataWithSuggestions`,
-      brokenInternalLinks,
-    );
+    // log.info(
+    //   `[${AUDIT_TYPE}] [Site: ${site.getId()}] auditDataWithSuggestions`,
+    //   brokenInternalLinks,
+    // );
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
   }
 
   // testing empty scenario
   // brokenInternalLinks = [];
-  log.info('testing non empty scenario', brokenInternalLinks);
+  // log.info('testing non empty scenario', brokenInternalLinks);
 
   // TODO: skip opportunity creation if no internal link items are found in the audit data
   const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
@@ -188,7 +188,7 @@ export async function opportunityAndSuggestionsStep(context) {
       log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`);
     } else {
       // no broken internal links found, update opportunity status to RESOLVED
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found opportunity, updating status to RESOLVED`);
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`);
       await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
       await opportunity.save();
     }

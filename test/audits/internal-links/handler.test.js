@@ -18,6 +18,7 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
+import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 
 import {
   internalLinksAuditRunner,
@@ -334,6 +335,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
   it('creating a new opportunity object suceeds even if suggestion generation error occurs', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
     context.site.getLatestAuditByAuditType = () => auditData;
 
     handler = await esmock('../../../src/internal-links/handler.js', {
@@ -344,10 +347,78 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
+      expectedOpportunity,
+    );
+
     expect(result.status).to.equal('complete');
 
     expect(context.log.error).to.have.been.calledOnceWith(
       `[broken-internal-links] [Site: ${site.getId()}] suggestion generation error: error`,
+    );
+  }).timeout(5000);
+
+  it('no new opportunity created if no broken internal links found', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+
+    expect(result.status).to.equal('complete');
+
+    expect(context.log.info).to.have.been.calledOnceWith(
+      `[broken-internal-links] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`,
+    );
+  }).timeout(5000);
+
+  it('Existing opportunity is updated with with RESOLVED status if broken internal links found', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([{
+      setStatus: sandbox.stub().resolves(),
+      save: sandbox.stub().resolves(),
+      getType: () => 'broken-internal-links',
+    }]);
+    console.log('Oppty', Oppty);
+    sandbox.stub(Oppty, 'STATUSES').value({ RESOLVED: 'RESOLVED', NEW: 'NEW' });
+    // sandbox.stub(Oppty, 'getType').value('broken-internal-links');
+    // sandbox.stub(Oppty, 'getId').value('oppty-id-1');
+    // sandbox.stub(Oppty, 'getSiteId').value('site-id-1');
+    // sandbox.stub(Oppty, 'getAuditId').value('audit-id-1');
+    // sandbox.stub(Oppty, 'getAuditType').value('broken-internal-links');
+    // sandbox.stub(Oppty, 'getAuditResult').value({
+    //   brokenInternalLinks: AUDIT_RESULT_DATA,
+    //   success: true,
+    // });
+    // sandbox.stub(Oppty, 'getAuditContext').value({ interval: 30 });
+
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(context.dataAccess.Opportunity.setStatus).to.have.been.calledOnceWith('RESOLVED');
+    expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
+    expect(result.status).to.equal('complete');
+
+    expect(context.log.info).to.have.been.calledOnceWith(
+      `[broken-internal-links] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`,
     );
   }).timeout(5000);
 
