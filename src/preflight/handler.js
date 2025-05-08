@@ -125,4 +125,5 @@ export const preflightAudit = async (context) => {
 export default new AuditBuilder()
   .withPersister(noopPersister)
   .addStep('scrape-pages', scrapePages, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-  .addStep('preflight-audit', preflightAudit);
+  .addStep('preflight-audit', preflightAudit)
+  .build();
