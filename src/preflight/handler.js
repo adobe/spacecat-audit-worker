@@ -23,7 +23,7 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 export function validPages(urls) {
   return (
     isNonEmptyArray(urls)
-    && urls.every((url) => isValidUrl(url))
+    && urls.every((page) => isValidUrl(page.url))
   );
 }
 
