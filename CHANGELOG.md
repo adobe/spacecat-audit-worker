@@ -1,3 +1,38 @@
+## [1.80.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.3...v1.80.4) (2025-05-08)
+
+
+### Bug Fixes
+
+* message received from SQS is not getting logged properly ([#837](https://github.com/adobe/spacecat-audit-worker/issues/837)) ([3ec227f](https://github.com/adobe/spacecat-audit-worker/commit/3ec227f92fa000664c9f19b7f89d97e7af6c77ef))
+
+## [1.80.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.2...v1.80.3) (2025-05-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.10.4 ([#835](https://github.com/adobe/spacecat-audit-worker/issues/835)) ([787d5e1](https://github.com/adobe/spacecat-audit-worker/commit/787d5e1283ed1e0051a9fac8dabfa59fd8254987))
+
+## [1.80.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.1...v1.80.2) (2025-05-07)
+
+
+### Bug Fixes
+
+* force prod deployment of reduce alt-text audit PR ([#834](https://github.com/adobe/spacecat-audit-worker/issues/834)) ([25779ae](https://github.com/adobe/spacecat-audit-worker/commit/25779aed7767271b0d79a8cdf441836aab365596))
+
+## [1.80.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.0...v1.80.1) (2025-05-07)
+
+
+### Bug Fixes
+
+* removes extra characters from body when using locale detection ([#833](https://github.com/adobe/spacecat-audit-worker/issues/833)) ([25281e0](https://github.com/adobe/spacecat-audit-worker/commit/25281e058df21c2c926c7deff3bf48f5c15b100b))
+
+# [1.80.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.11...v1.80.0) (2025-05-07)
+
+
+### Features
+
+* Add data sources for all opportunity ([#821](https://github.com/adobe/spacecat-audit-worker/issues/821)) ([b081015](https://github.com/adobe/spacecat-audit-worker/commit/b081015ca2fdf1bc0b869ec109824fe8949d2773))
+
 ## [1.79.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.79.10...v1.79.11) (2025-05-06)
 
 

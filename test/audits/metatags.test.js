@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import esmock from 'esmock';
+import GoogleClient from '@adobe/spacecat-shared-google-client';
 import {
   TITLE,
   DESCRIPTION,
@@ -1419,6 +1420,7 @@ describe('Meta Tags', () => {
     });
 
     it('should throw error if suggestions fail to create', async () => {
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
       dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       opportunity.getSiteId = () => 'site-id';
       opportunity.addSuggestions = sinon.stub().returns({ errorItems: [{ item: 1, error: 'some-error' }], createdItems: [] });

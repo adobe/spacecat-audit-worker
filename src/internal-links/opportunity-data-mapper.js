@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { DATA_SOURCES } from '../common/constants.js';
+
 /**
  * Creates an opportunity data object for the broken internal links audit.
  * @param {Object} props - The properties for the opportunity data object.
@@ -33,6 +35,9 @@ export function createOpportunityData({ kpiDeltas }) {
       'Traffic acquisition',
       'Engagement',
     ],
-    data: kpiDeltas,
+    data: {
+      ...kpiDeltas,
+      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
+    },
   };
 }
