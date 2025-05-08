@@ -1,3 +1,10 @@
+## [1.80.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.3...v1.80.4) (2025-05-08)
+
+
+### Bug Fixes
+
+* message received from SQS is not getting logged properly ([#837](https://github.com/adobe/spacecat-audit-worker/issues/837)) ([3ec227f](https://github.com/adobe/spacecat-audit-worker/commit/3ec227f92fa000664c9f19b7f89d97e7af6c77ef))
+
 ## [1.80.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.2...v1.80.3) (2025-05-07)
 
 
