@@ -55,6 +55,7 @@ export class StepAudit extends BaseAudit {
   async chainStep(step, stepResult, context) {
     const { audit, log } = context;
 
+    log.info(`[Debug] ChainStep called for step: ${JSON.stringify(step)}, stepResult: ${JSON.stringify(stepResult)}, context: ${JSON.stringify(context)}`);
     if (!hasText(step?.destination)) {
       throw new Error('Invalid step configuration: missing destination');
     }
