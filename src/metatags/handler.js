@@ -282,7 +282,6 @@ export async function importTopPages(context) {
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
-    finalUrl,
   };
 }
 
