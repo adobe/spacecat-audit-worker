@@ -449,6 +449,25 @@ export async function validateCanonicalRecursively(canonicalUrl, log, visitedUrl
   return checks;
 }
 
+export async function canonicalCheck(baseURL, url, log) {
+  const checks = [];
+
+  const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
+  checks.push(...canonicalTagChecks);
+
+  if (canonicalUrl) {
+    log.info(`Found Canonical URL: ${canonicalUrl}`);
+
+    const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
+    checks.push(...urlFormatChecks);
+
+    const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log);
+    checks.push(...urlContentCheck);
+  }
+
+  return checks;
+}
+
 /**
  * Audits the canonical URLs for a given site.
  *
@@ -481,20 +500,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
     const auditPromises = topPages.map(async (page) => {
       const { url } = page;
-      const checks = [];
-
-      const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
-      checks.push(...canonicalTagChecks);
-
-      if (canonicalUrl) {
-        log.info(`Found Canonical URL: ${canonicalUrl}`);
-
-        const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
-        checks.push(...urlFormatChecks);
-
-        const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log);
-        checks.push(...urlContentCheck);
-      }
+      const checks = await canonicalCheck(baseURL, url, log);
       return { url, checks };
     });
 

@@ -191,23 +191,15 @@ async function calculateProjectedTraffic(context, auditUrl, siteId, detectedTags
   }
 }
 
-export async function auditMetaTagsRunner(auditUrl, context, site) {
-  const { log, s3Client, dataAccess } = context;
-  // Get top pages for a site
-  const siteId = site.getId();
-  const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  const topPagesSet = new Set(topPages.map((page) => {
-    const pathname = new URL(page.url).pathname.replace(/\/$/, '');
-    return `scrapes/${site.getId()}${pathname}/scrape.json`;
-  }));
-
+export async function metatagsAutoDetect(site, pagesSet, context) {
+  const { log, s3Client } = context;
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const prefix = `scrapes/${site.getId()}/`;
   const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
   const extractedTags = {};
   const pageMetadataResults = await Promise.all(scrapedObjectKeys
-    .filter((key) => topPagesSet.has(key))
+    .filter((key) => pagesSet.has(key))
     .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)));
   pageMetadataResults.forEach((pageMetadata) => {
     if (pageMetadata) {
@@ -226,7 +218,29 @@ export async function auditMetaTagsRunner(auditUrl, context, site) {
     seoChecks.performChecks(pageUrl, pageTags);
   }
   seoChecks.finalChecks();
-  const detectedTags = seoChecks.getDetectedTags();
+  return {
+    seoChecks,
+    detectedTags: seoChecks.getDetectedTags(),
+    extractedTags,
+  };
+}
+
+export async function auditMetaTagsRunner(auditUrl, context, site) {
+  const { log, dataAccess } = context;
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const prefix = `scrapes/${site.getId()}/`;
+
+  // Get top pages for a site
+  const siteId = site.getId();
+  const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+  const topPagesSet = new Set(topPages.map((page) => {
+    const pathname = new URL(page.url).pathname.replace(/\/$/, '');
+    return `scrapes/${site.getId()}${pathname}/scrape.json`;
+  }));
+
+  const {
+    seoChecks, detectedTags, extractedTags,
+  } = await metatagsAutoDetect(site, topPagesSet, context);
 
   // Calculate projected traffic lost
   const {
