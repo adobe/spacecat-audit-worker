@@ -126,4 +126,5 @@ export default new AuditBuilder()
   .withPersister(noopPersister)
   .addStep('scrape-pages', scrapePages, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('preflight-audit', preflightAudit)
+  .withAsyncJob()
   .build();

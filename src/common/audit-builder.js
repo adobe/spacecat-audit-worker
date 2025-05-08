@@ -21,6 +21,7 @@ import {
   defaultPostProcessors,
   StepAudit,
   RunnerAudit,
+  AsyncJobRunner,
 } from './index.js';
 
 export class AuditBuilder {
@@ -31,6 +32,7 @@ export class AuditBuilder {
     this.persister = defaultPersister;
     this.messageSender = defaultMessageSender;
     this.postProcessors = defaultPostProcessors;
+    this.isAsyncJob = false;
     this.steps = {};
   }
 
@@ -65,6 +67,11 @@ export class AuditBuilder {
 
   withPostProcessors(postprocessors) {
     this.postProcessors = postprocessors;
+    return this;
+  }
+
+  withAsyncJob() {
+    this.isAsyncJob = true;
     return this;
   }
 
@@ -132,6 +139,18 @@ export class AuditBuilder {
           throw new Error(`Step ${stepName} must specify a destination as it is not the last step`);
         }
       });
+
+      if (this.isAsyncJob) {
+        return new AsyncJobRunner(
+          this.siteProvider,
+          this.orgProvider,
+          this.urlResolver,
+          this.persister,
+          this.messageSender,
+          this.postProcessors,
+          stepNames,
+        );
+      }
 
       return new StepAudit(
         this.siteProvider,
