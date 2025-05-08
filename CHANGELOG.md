@@ -1,3 +1,24 @@
+## [1.80.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.4...v1.80.5) (2025-05-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.17.2 ([#839](https://github.com/adobe/spacecat-audit-worker/issues/839)) ([c032d39](https://github.com/adobe/spacecat-audit-worker/commit/c032d39474b40d2a648a09841e3f435de9215d4f))
+
+## [1.80.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.3...v1.80.4) (2025-05-08)
+
+
+### Bug Fixes
+
+* message received from SQS is not getting logged properly ([#837](https://github.com/adobe/spacecat-audit-worker/issues/837)) ([3ec227f](https://github.com/adobe/spacecat-audit-worker/commit/3ec227f92fa000664c9f19b7f89d97e7af6c77ef))
+
+## [1.80.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.2...v1.80.3) (2025-05-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.10.4 ([#835](https://github.com/adobe/spacecat-audit-worker/issues/835)) ([787d5e1](https://github.com/adobe/spacecat-audit-worker/commit/787d5e1283ed1e0051a9fac8dabfa59fd8254987))
+
 ## [1.80.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.1...v1.80.2) (2025-05-07)
 
 
