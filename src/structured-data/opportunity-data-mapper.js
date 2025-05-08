@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { DATA_SOURCES } from '../common/constants.js';
+
 export function createOpportunityData() {
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Structured_Data_Runbook.docx?d=wf814159992be44a58b72ce1950c0c9ab&csf=1&web=1&e=5Qq6vm',
@@ -20,6 +22,8 @@ export function createOpportunityData() {
       steps: [],
     },
     tags: ['Traffic acquisition'],
-    data: null,
+    data: {
+      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.GSC, DATA_SOURCES.SITE],
+    },
   };
 }

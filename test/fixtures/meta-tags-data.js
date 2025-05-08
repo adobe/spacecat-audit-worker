@@ -9,6 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import { DATA_SOURCES } from '../../src/common/constants.js';
+
 const testData = {
   auditData: {
     type: 'meta-tags',
@@ -376,10 +378,12 @@ const testData = {
         'Publish the changes to apply the updates to your live site.',
       ],
     },
-    tags: [
-      'Traffic acquisition',
-    ],
-    data: { projectedTrafficLost: 100, projectedTrafficValue: 50 },
+    tags: ['Traffic acquisition'],
+    data: {
+      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
+      projectedTrafficLost: 100,
+      projectedTrafficValue: 50,
+    },
   },
 };
 

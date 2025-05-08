@@ -17,6 +17,7 @@ import sinonChai from 'sinon-chai';
 import createLowViewsOpportunities from '../../../src/forms-opportunities/oppty-handlers/low-views-handler.js';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 import testData from '../../fixtures/forms/high-form-views-low-conversions.js';
+import { DATA_SOURCES } from '../../../src/common/constants.js';
 
 use(sinonChai);
 describe('createLowFormViewsOpportunities handler method', () => {
@@ -93,6 +94,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         formsource: '',
         samples: 6690,
         scrapedStatus: false,
+        dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         metrics: [
           {
             type: 'formViews',
