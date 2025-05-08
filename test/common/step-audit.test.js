@@ -200,6 +200,10 @@ describe('Step-based Audit Tests', () => {
     });
 
     it('continues execution from specified step', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
       const existingAudit = {
         getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
         getAuditType: () => 'content-audit',
@@ -247,6 +251,10 @@ describe('Step-based Audit Tests', () => {
     });
 
     it('handles final step without sending messages', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
       const existingAudit = {
         getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
         getAuditType: () => 'content-audit',

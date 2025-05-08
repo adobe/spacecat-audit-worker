@@ -254,10 +254,17 @@ export async function generateOpptyData(
 }
 
 export function shouldExcludeForm(scrapedFormData) {
+  const containsOnlyNumericInputField = scrapedFormData?.formFields?.filter((field) => field.tagName === 'input').length === 1
+      && scrapedFormData?.formFields?.some((field) => field.tagName === 'input' && field.inputmode === 'numeric');
+
+  const containsNoInputField = scrapedFormData?.formFields?.filter((field) => field.tagName === 'input').length === 0;
+
   return scrapedFormData?.formType === 'search'
     || scrapedFormData?.formType === 'login'
     || scrapedFormData?.classList?.includes('unsubscribe')
-    || scrapedFormData?.fieldCount === 0;
+    || scrapedFormData?.fieldCount === 0
+    || containsOnlyNumericInputField
+    || containsNoInputField;
 }
 
 /**

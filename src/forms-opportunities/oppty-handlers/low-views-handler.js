@@ -12,6 +12,7 @@
 
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { filterForms, generateOpptyData } from '../utils.js';
+import { DATA_SOURCES } from '../../common/constants.js';
 
 /**
  * @param auditUrl - The URL of the audit
@@ -61,6 +62,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         tags: ['Forms Conversion'],
         data: {
           ...opptyData,
+          dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         },
         guidance: {
           recommendations: [

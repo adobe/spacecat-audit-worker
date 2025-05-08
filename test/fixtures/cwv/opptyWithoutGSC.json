@@ -24,7 +24,6 @@
     "dataSources": [
       "Ahrefs",
       "RUM",
-      "GSC",
       "Site"
     ]
   }
