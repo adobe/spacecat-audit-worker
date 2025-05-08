@@ -1,3 +1,10 @@
+## [1.80.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.4...v1.80.5) (2025-05-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.17.2 ([#839](https://github.com/adobe/spacecat-audit-worker/issues/839)) ([c032d39](https://github.com/adobe/spacecat-audit-worker/commit/c032d39474b40d2a648a09841e3f435de9215d4f))
+
 ## [1.80.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.3...v1.80.4) (2025-05-08)
 
 
