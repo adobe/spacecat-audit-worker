@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
+import GoogleClient from '@adobe/spacecat-shared-google-client';
 
 import {
   internalLinksAuditRunner,
@@ -247,6 +248,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       getSuggestions: sandbox.stub().resolves([]),
       setAuditId: sandbox.stub(),
       save: sandbox.stub().resolves(),
+      setData: () => {},
+      getData: () => {},
     };
 
     auditData = {
@@ -311,6 +314,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Opportunity.create.rejects(
       new Error('big error happened'),
     );
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
 
     await expect(
       handler.opportunityAndSuggestionsStep(context),
