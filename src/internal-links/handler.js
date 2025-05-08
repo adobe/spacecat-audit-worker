@@ -19,7 +19,7 @@ import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-// import { generateSuggestionData } from './suggestions-generator.js';
+import { generateSuggestionData } from './suggestions-generator.js';
 
 import {
   calculateKpiDeltasForAudit,
@@ -142,15 +142,16 @@ export async function opportunityAndSuggestionsStep(context) {
     `[${AUDIT_TYPE}] [Site: ${site.getId()}] latestAuditData`,
     audit.getAuditResult(),
   );
-  const { brokenInternalLinks } = audit.getAuditResult();
+  let { brokenInternalLinks } = audit.getAuditResult();
+
   // generate suggestions
   try {
-    // brokenInternalLinks = await generateSuggestionData(
-    //   finalUrl,
-    //   audit,
-    //   context,
-    //   site,
-    // );
+    brokenInternalLinks = await generateSuggestionData(
+      finalUrl,
+      audit,
+      context,
+      site,
+    );
 
     // testing empty scenario
     // brokenInternalLinks = [];

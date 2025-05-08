@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "nodemon",
-    "test": "",
+    "test": "c8 mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",
     "lint-fix": "eslint . --fix",
