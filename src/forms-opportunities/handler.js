@@ -15,11 +15,12 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { generateOpptyData } from './utils.js';
+import { generateOpptyData, getValidFormUrls } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
+import createA11yOpportunities from './oppty-handlers/a11y-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -49,6 +50,49 @@ export async function formsAuditRunner(auditUrl, context) {
   };
 }
 
+export async function sendA11yIssuesToMystique(latestAudit, context) {
+  const {
+    log, site,
+  } = context;
+
+  const { formA11yData } = await getScrapedDataForSiteId(site, context);
+  if (formA11yData?.length === 0) {
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] No a11y data found`);
+    return;
+  }
+
+  // Flattening the a11y issues from multiple forms in a single page
+  const a11yData = formA11yData.map((a11y) => ({
+    form: a11y.finalUrl,
+    a11yIssues: a11y.scrapeResult.flatMap((formResult) => formResult.a11yIssues),
+  }));
+
+  await createA11yOpportunities({
+    siteId: latestAudit.siteId,
+    auditId: latestAudit.auditId,
+    data: {
+      a11yData,
+    },
+  }, context);
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] a11y issues created`);
+
+  // TODO: Uncomment this when we have a way to send a11y issues to mystique
+  // const mystiqueMessage = {
+  //   type: 'opportunity:forms-a11y',
+  //   siteId: site.getId(),
+  //   auditId: latestAudit.auditId,
+  //   deliveryType: site.getDeliveryType(),
+  //   time: new Date().toISOString(),
+  //   data: {
+  //     a11yData,
+  //   },
+  // };
+
+  // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  // log.info(`[Form Opportunity] [Site Id: ${site.getId()}] Sent a11y issues to mystique`);
+}
+
 export async function runAuditAndSendUrlsForScrapingStep(context) {
   const {
     site, log, finalUrl,
@@ -65,6 +109,21 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     uniqueUrls.add(opportunity.form);
   }
 
+  if (uniqueUrls.size < 10) {
+    // Create a copy of formVitals to sort without modifying the original array
+    const sortedFormVitals = [...formVitals].sort((a, b) => {
+      const totalPageViewsA = Object.values(a.pageview).reduce((acc, curr) => acc + curr, 0);
+      const totalPageViewsB = Object.values(b.pageview).reduce((acc, curr) => acc + curr, 0);
+      return totalPageViewsB - totalPageViewsA;
+    });
+    for (const fv of sortedFormVitals) {
+      uniqueUrls.add(fv.url);
+      if (uniqueUrls.size >= 10) {
+        break;
+      }
+    }
+  }
+
   const result = {
     auditResult: formsAuditRunnerResult.auditResult,
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
@@ -75,6 +134,29 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping`);
+  return result;
+}
+
+export async function sendA11yUrlsForScrapingStep(context) {
+  const {
+    log, site,
+  } = context;
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
+  const scrapedData = await getScrapedDataForSiteId(site, context);
+  const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
+  const urls = getValidFormUrls(scrapedData);
+
+  const result = {
+    auditResult: latestAudit.auditResult,
+    fullAuditRef: latestAudit.fullAuditRef,
+    processingType: 'form-a11y',
+    jobId: site.getId(),
+    urls: urls.map((url) => ({ url })),
+    siteId: site.getId(),
+  };
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit`);
   return result;
 }
 
@@ -90,6 +172,7 @@ export async function processOpportunityStep(context) {
   await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  await sendA11yIssuesToMystique(latestAudit, context);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',
@@ -99,5 +182,6 @@ export async function processOpportunityStep(context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('runAuditAndSendUrlsForScraping', runAuditAndSendUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('sendA11yUrlsForScrapingStep', sendA11yUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processOpportunity', processOpportunityStep)
   .build();

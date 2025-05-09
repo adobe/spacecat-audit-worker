@@ -234,6 +234,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: ['https://example.com/home', 'https://example.com/about'],
       formData: [],
+      formA11yData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -265,6 +266,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [],
     });
   });
@@ -285,6 +287,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [],
     });
   });
@@ -303,6 +306,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [],
     });
   });
@@ -340,6 +344,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -407,6 +412,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       formData: [],
+      formA11yData: [],
       headerLinks:
         [
           'https://example.com/home',
@@ -468,6 +474,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -515,6 +522,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [
         {
           url: '',
@@ -596,6 +604,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formA11yData: [],
       siteData: [
         {
           description: '',
@@ -695,6 +704,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formA11yData: [],
       siteData: [
         {
           description: '',
@@ -754,6 +764,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formA11yData: [],
       siteData: [],
       formData: [null],
     });

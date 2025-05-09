@@ -19,7 +19,7 @@ import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
-import { FORM_OPPORTUNITY_TYPES } from './constants.js';
+import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
 
@@ -300,4 +300,44 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
     opportunity.scrapedStatus = urlMatches;
     return true;
   });
+}
+
+/**
+ * get non search, login, unsubscribe forms
+ * @param {object} scrapedData
+ * @returns {string[]}
+ */
+export function getValidFormUrls(scrapedData) {
+  const validFormUrls = [];
+  if (isNonEmptyArray(scrapedData.formData)) {
+    for (const form of scrapedData.formData) {
+      if (!shouldExcludeForm(form) && !form.finalUrl.includes('search')) {
+        validFormUrls.push(form.finalUrl);
+      }
+    }
+  }
+  return validFormUrls;
+}
+
+export function getSuccessCriteriaDetails(criteria) {
+  let cNumber;
+
+  if (criteria.match(/\b\d+\.\d+\.\d+\b/)) {
+    // Format: "1.2.1 Audio-only and Video-only"
+    cNumber = criteria.match(/\b\d+\.\d+\.\d+\b/)[0].replaceAll('.', '');
+  } else if (criteria.match(/^wcag\d+$/i)) {
+    // Format: "wcag121"
+    cNumber = criteria.replace(/^wcag/i, '');
+  } else {
+    throw new Error(`Invalid criteria format: ${criteria}`);
+  }
+
+  const successCriteriaDetails = successCriteriaLinks[cNumber];
+  const successCriteriaNumber = cNumber.replace(/(\d)(\d)(\d)/, '$1.$2.$3');
+
+  return {
+    name: successCriteriaDetails.name,
+    criteriaNumber: successCriteriaNumber,
+    understandingUrl: successCriteriaDetails.understandingUrl,
+  };
 }
