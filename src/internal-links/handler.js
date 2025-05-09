@@ -20,7 +20,6 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
-
 import {
   calculateKpiDeltasForAudit,
   isLinkInaccessible,
@@ -52,11 +51,6 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       interval: INTERVAL,
       granularity: 'hourly',
     };
-
-    log.info(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Options for RUM call: `,
-      JSON.stringify(options),
-    );
 
     const internal404Links = await rumAPIClient.query(
       '404-internal-links',
@@ -116,16 +110,11 @@ export async function runAuditAndImportTopPagesStep(context) {
 
 export async function prepareScrapingStep(context) {
   const {
-    site, log, dataAccess,
+    site, dataAccess,
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  log.info(
-    `[${AUDIT_TYPE}] [Site: ${site.getId()}] top pages: ${JSON.stringify(
-      topPages,
-    )}`,
-  );
   const urls = topPages.map((page) => ({ url: page.getUrl() }));
   return {
     urls,

@@ -1,3 +1,24 @@
+# [1.81.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.7...v1.81.0) (2025-05-09)
+
+
+### Features
+
+* steps implementation in broken internal links audit ([#776](https://github.com/adobe/spacecat-audit-worker/issues/776)) ([f43c876](https://github.com/adobe/spacecat-audit-worker/commit/f43c876bfa5749feb693fb8f738a573c244594d5))
+
+## [1.80.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.6...v1.80.7) (2025-05-09)
+
+
+### Bug Fixes
+
+* update thresholds for low-view oppoty ([#841](https://github.com/adobe/spacecat-audit-worker/issues/841)) ([20d5dc7](https://github.com/adobe/spacecat-audit-worker/commit/20d5dc73139f81608ad002efcb25c2deaaac076e))
+
+## [1.80.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.5...v1.80.6) (2025-05-09)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.24.0 ([#840](https://github.com/adobe/spacecat-audit-worker/issues/840)) ([d59b982](https://github.com/adobe/spacecat-audit-worker/commit/d59b982ddbb3902c8b414fa540f68703c90eca01))
+
 ## [1.80.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.4...v1.80.5) (2025-05-08)
 
 
