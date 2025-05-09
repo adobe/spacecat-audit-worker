@@ -658,6 +658,7 @@ describe('Structured Data Audit', () => {
   it('transforms the audit data into opportunities with no auto-suggestion', async () => {
     const auditData = createAuditData(baseUrl, 'Product snippets', 'Missing field "name"');
 
+    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
     context.dataAccess.Opportunity.getSuggestions.resolves([]);
@@ -686,6 +687,7 @@ describe('Structured Data Audit', () => {
   });
 
   it('transforms the audit data into opportunities with auto-suggestions', async () => {
+    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
     const suggestion = {
       errorDescription: 'Missing field "name"',
       correctedLdjson: '{"@type":"Product","name":"Example Product Name"}',
@@ -786,6 +788,7 @@ describe('Structured Data Audit', () => {
   });
 
   it('should throw an error if creating a new opportunity fails', async () => {
+    sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
     const auditData = createAuditData(baseUrl, 'Product snippets', 'Missing field "name"');
 
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);

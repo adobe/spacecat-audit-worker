@@ -12,6 +12,7 @@
 
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { filterForms, generateOpptyData } from '../utils.js';
+import { DATA_SOURCES } from '../../common/constants.js';
 
 const formPathSegments = ['contact', 'newsletter', 'sign', 'enrol', 'subscribe', 'register', 'join', 'apply', 'quote', 'buy', 'trial', 'demo', 'offer'];
 /**
@@ -74,6 +75,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         tags: ['Forms Conversion'],
         data: {
           ...opptyData,
+          dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         },
         guidance: {
           recommendations: [

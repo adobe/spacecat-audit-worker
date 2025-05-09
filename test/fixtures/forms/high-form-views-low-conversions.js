@@ -496,7 +496,7 @@ const testData = {
           formsubmit: {
             'desktop:windows': 100,
           },
-          formview: { 'mobile:ios': 3000 },
+          formview: { 'mobile:ios': 3200 },
           formengagement: {
             'mobile:ios': 300,
           },
@@ -625,7 +625,7 @@ const testData = {
           },
           formview: {
             'desktop:windows': 2000,
-            'mobile:ios': 1000,
+            'mobile:ios': 1200,
           },
           formengagement: {
             'desktop:windows': 700,
@@ -741,20 +741,20 @@ const testData = {
     ],
     data: {
       trackedFormKPIName: 'Conversion Rate',
-      trackedFormKPIValue: 0.03333333333333333,
+      trackedFormKPIValue: 0.03125,
       metrics: [
         {
           type: 'conversionRate',
           device: '*',
           value: {
-            page: 0.03333333333333333,
+            page: 0.03125,
           },
         },
         {
           type: 'bounceRate',
           device: '*',
           value: {
-            page: 0.9,
+            page: 0.90625,
           },
         },
         {
@@ -796,7 +796,7 @@ const testData = {
           type: 'bounceRate',
           device: 'mobile',
           value: {
-            page: 0.9,
+            page: 0.90625,
           },
         },
         {
@@ -818,12 +818,16 @@ const testData = {
         },
       ],
       form: 'https://www.surest.com/newsletter',
-      screenshot: '',
-      formViews: 3000,
-      pageViews: 8670,
       formsource: '',
+      formViews: 3200,
+      pageViews: 8670,
+      screenshot: '',
       samples: 8670,
       scrapedStatus: false,
+      dataSources: [
+        'RUM',
+        'Page',
+      ],
     },
     guidance: {},
   },
@@ -848,6 +852,7 @@ const testData = {
       formsource: '',
       samples: 6690,
       scrapedStatus: false,
+      dataSources: ['RUM', 'Page'],
       metrics: [
         {
           type: 'conversionRate',
@@ -947,6 +952,7 @@ const testData = {
       formsource: '',
       samples: 6690,
       scrapedStatus: false,
+      dataSources: ['RUM', 'Page'],
       metrics: [
         {
           type: 'conversionRate',
@@ -1055,6 +1061,7 @@ const testData = {
       formsource: '',
       samples: 6690,
       scrapedStatus: true,
+      dataSources: ['RUM', 'Page'],
       metrics: [
         {
           type: 'conversionRate',
@@ -1155,20 +1162,20 @@ const testData = {
     ],
     data: {
       trackedFormKPIName: 'Conversion Rate',
-      trackedFormKPIValue: 0.06666666666666667,
+      trackedFormKPIValue: 0.0625,
       metrics: [
         {
           type: 'conversionRate',
           device: '*',
           value: {
-            page: 0.06666666666666667,
+            page: 0.0625,
           },
         },
         {
           type: 'bounceRate',
           device: '*',
           value: {
-            page: 0.6666666666666667,
+            page: 0.6875,
           },
         },
         {
@@ -1203,14 +1210,14 @@ const testData = {
           type: 'conversionRate',
           device: 'mobile',
           value: {
-            page: 0.1,
+            page: 0.08333333333333333,
           },
         },
         {
           type: 'bounceRate',
           device: 'mobile',
           value: {
-            page: 0.7,
+            page: 0.75,
           },
         },
         {
@@ -1232,12 +1239,16 @@ const testData = {
         },
       ],
       form: 'https://www.surest.com/contact-us',
-      formViews: 3000,
-      pageViews: 7690,
       formsource: '',
+      formViews: 3200,
+      pageViews: 7690,
       screenshot: '',
       samples: 7690,
       scrapedStatus: false,
+      dataSources: [
+        'RUM',
+        'Page',
+      ],
     },
     guidance: {},
   },

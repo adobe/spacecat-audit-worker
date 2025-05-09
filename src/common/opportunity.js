@@ -10,7 +10,8 @@
  * governing permissions and limitations under the License.
  */
 import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
-
+import { DATA_SOURCES } from './constants.js';
+import { checkGoogleConnection } from './opportunity-utils.js';
 /**
   * Converts audit data to an opportunity instance.
   *
@@ -43,6 +44,13 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
     }
   }
 
+  const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
+
+  if (!isGoogleConnected && opportunityInstance.data?.dataSources) {
+    opportunityInstance.data.dataSources = opportunityInstance.data.dataSources
+      .filter((source) => source !== DATA_SOURCES.GSC);
+  }
+
   try {
     if (!opportunity) {
       const opportunityData = {
@@ -65,6 +73,12 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         opportunity.setData({
           ...opportunity.getData(),
           ...props, // kpiDeltas
+          dataSources: opportunityInstance.data?.dataSources,
+        });
+      } else {
+        opportunity.setData({
+          ...opportunity.getData(),
+          dataSources: opportunityInstance.data?.dataSources,
         });
       }
       await opportunity.save();

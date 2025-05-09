@@ -552,7 +552,8 @@ Each message preserves the `auditContext` to maintain the step chain. The `next`
 You can run the audit locally using AWS SAM and Docker.
 
 1. Ensure you have [Docker](https://docs.docker.com/desktop/setup/install/mac-install/), [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) and [jq](https://jqlang.org/) installed.
-2. Login to AWS using [KLAM](https://klam.corp.adobe.com/) and login with your AWS CLI.
+2. Login to AWS using [KLAM](https://klam.corp.adobe.com/) and login with your [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
+   * KLAM dev project: `SpaceCat Development (AWS3338)`
 3. To provide secrets to the audit, please run `./scripts/populate-env.sh` once. It will fetch all secrets from the AWS Secret Manager.
 4. To run the audit locally, execute the following commands:
     ```bash
