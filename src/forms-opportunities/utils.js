@@ -19,7 +19,7 @@ import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
-import { FORM_OPPORTUNITY_TYPES } from './constants.js';
+import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
 
@@ -317,4 +317,14 @@ export function getValidFormUrls(scrapedData) {
     }
   }
   return validFormUrls;
+}
+
+export function getSuccessCriteriaDetails(criteria) {
+  const successCriteriaNumber = criteria.match(/\b\d+\.\d+\.\d+\b/)[0];
+  const successCriteriaDetails = successCriteriaLinks[successCriteriaNumber.replaceAll('.', '')];
+  return {
+    name: successCriteriaDetails.name,
+    criteriaNumber: successCriteriaNumber,
+    understandingUrl: successCriteriaDetails.understandingUrl,
+  };
 }

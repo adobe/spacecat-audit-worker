@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -22,249 +22,203 @@ import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constan
 use(sinonChai);
 
 describe('a11y-handler', () => {
-  const sandbox = sinon.createSandbox();
-  const auditUrl = 'https://example.com';
-  const siteId = 'test-site-id';
-
-  let context;
-  let opportunityStub;
-  let auditDataObject;
+  let sandbox;
+  let mockContext;
 
   beforeEach(() => {
-    opportunityStub = {
-      getId: () => 'opportunity-id',
-      setAuditId: sinon.stub(),
-      getData: sinon.stub().returns({ form: 'https://example.com/form1' }),
-      setData: sinon.stub(),
-      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.FORM_A11Y),
-      save: sinon.stub().resolves(),
-    };
-
-    auditDataObject = {
-      siteId,
-      auditId: 'audit-id',
-      fullAuditRef: 'www.example.com',
-    };
-
-    context = new MockContextBuilder()
+    sandbox = sinon.createSandbox();
+    mockContext = new MockContextBuilder()
       .withSandbox(sandbox)
-      .withOverrides({
-        dataAccess: {
-          Opportunity: {
-            allBySiteIdAndStatus: sinon.stub().resolves([]),
-            create: sinon.stub().resolves(opportunityStub),
-          },
-        },
-      })
       .build();
+
+    mockContext.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
+    mockContext.dataAccess.Opportunity.create = sandbox.stub().resolves();
   });
 
   afterEach(() => {
     sandbox.restore();
   });
 
-  it('should return early if no a11y data is provided', async () => {
-    const scrapedData = {
-      formA11yData: [],
+  it('should not create opportunity if a11yData is empty', async () => {
+    // Setup
+    const message = {
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      data: {
+        a11yData: [],
+      },
     };
-    await createA11yOpportunities(auditUrl, auditDataObject, scrapedData, context);
 
-    expect(context.dataAccess.Opportunity.create).not.to.have.been.called;
-    expect(context.log.info).to.have.been.calledWith(`[Form Opportunity] [Site Id: ${siteId}] No a11y data found`);
+    // Execute
+    await createA11yOpportunities(message, mockContext);
+
+    // Verify
+    expect(mockContext.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(mockContext.log.info).to.have.been.calledWith(
+      `[Form Opportunity] [Site Id: ${message.siteId}] No a11y data found`,
+    );
   });
 
-  it('should return early if no accessibility issues are found', async () => {
-    const scrapedData = {
-      formA11yData: [
-        {
-          finalUrl: 'https://example.com/form1',
-          scrapedData: {
+  it('should not create opportunity if no a11y issues are found', async () => {
+    // Setup
+    const message = {
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      data: {
+        a11yData: [
+          {
+            form: '/test-form',
             a11yIssues: [],
           },
-        },
-      ],
+        ],
+      },
     };
 
-    await createA11yOpportunities(auditUrl, auditDataObject, scrapedData, context);
+    // Execute
+    await createA11yOpportunities(message, mockContext);
 
-    expect(context.dataAccess.Opportunity.create).not.to.have.been.called;
-    expect(context.log.info).to.have.been.calledWith(`[Form Opportunity] [Site Id: ${siteId}] No accessibility issues found`);
-  });
-
-  it('should create a new opportunity for each form with accessibility issues', async () => {
-    const scrapedData = {
-      formA11yData: [
-        {
-          finalUrl: 'https://example.com/form1',
-          scrapedData: {
-            a11yIssues: [
-              {
-                issue: 'color-contrast',
-                successCriteriaTags: ['wcag112'],
-                level: 'A',
-                recommendation: 'color contrast should be 4:1',
-                solution: ['<label></label>'],
-              },
-            ],
-          },
-        },
-        {
-          finalUrl: 'https://example.com/form2',
-          scrapedData: {
-            a11yIssues: [
-              {
-                issue: 'label',
-                successCriteriaTags: ['wcag131'],
-                level: 'A',
-                recommendation: 'Form elements must have labels',
-                solution: ['input[type="text"]'],
-              },
-            ],
-          },
-        },
-      ],
-    };
-
-    await createA11yOpportunities(auditUrl, auditDataObject, scrapedData, context);
-
-    expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith(siteId, 'NEW');
-    expect(context.dataAccess.Opportunity.create).to.have.been.calledTwice;
-
-    // Verify first opportunity creation
-    expect(context.dataAccess.Opportunity.create.firstCall.args[0]).to.deep.include({
-      siteId,
-      auditId: 'audit-id',
-      type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
-      origin: 'AUTOMATION',
-      title: 'Accessibility Issues',
-      description: 'Accessibility Issues',
-    });
-
-    expect(context.dataAccess.Opportunity.create.firstCall.args[0].data).to.deep.equal({
-      form: 'https://example.com/form1',
-      a11yIssues: [
-        {
-          issue: 'color-contrast',
-          successCriteriaTags: ['wcag112'],
-          level: 'A',
-          recommendation: 'color contrast should be 4:1',
-          solution: ['<label></label>'],
-        },
-      ],
-    });
-
-    // Verify second opportunity creation
-    expect(context.dataAccess.Opportunity.create.secondCall.args[0]).to.deep.include({
-      siteId,
-      auditId: 'audit-id',
-      type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
-    });
-
-    expect(context.dataAccess.Opportunity.create.secondCall.args[0].data).to.deep.equal({
-      form: 'https://example.com/form2',
-      a11yIssues: [
-        {
-          issue: 'label',
-          successCriteriaTags: ['wcag131'],
-          level: 'A',
-          recommendation: 'Form elements must have labels',
-          solution: ['input[type="text"]'],
-        },
-      ],
-    });
-  });
-
-  it('should update existing opportunity if one exists for the form', async () => {
-    const existingOpportunities = [opportunityStub];
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves(existingOpportunities);
-
-    const scrapedData = {
-      formA11yData: [
-        {
-          finalUrl: 'https://example.com/form1',
-          scrapedData: {
-            a11yIssues: [
-              {
-                issue: 'color-contrast',
-                successCriteriaTags: ['wcag112'],
-                level: 'A',
-                recommendation: 'color contrast should be 4:1',
-                solution: ['<label></label>'],
-              },
-            ],
-          },
-        },
-      ],
-    };
-
-    await createA11yOpportunities(auditUrl, auditDataObject, scrapedData, context);
-
-    expect(context.dataAccess.Opportunity.create).not.to.have.been.called;
-    expect(opportunityStub.setAuditId).to.have.been.calledWith('audit-id');
-    expect(opportunityStub.setData).to.have.been.called;
-    expect(opportunityStub.save).to.have.been.called;
+    // Verify
+    expect(mockContext.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(mockContext.log.info).to.have.been.calledWith(
+      `[Form Opportunity] [Site Id: ${message.siteId}] No accessibility issues found`,
+    );
   });
 
   it('should handle errors when fetching opportunities', async () => {
+    // Setup
     const error = new Error('Database error');
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(error);
+    mockContext.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().rejects(error);
 
-    const scrapedData = {
-      formA11yData: [
-        {
-          finalUrl: 'https://example.com/form1',
-          scrapedData: {
+    const message = {
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      data: {
+        a11yData: [
+          {
+            form: '/test-form',
             a11yIssues: [
               {
-                issue: 'color-contrast',
-                successCriteriaTags: ['wcag112'],
-                level: 'A',
-                recommendation: 'color contrast should be 4:1',
-                solution: ['<label></label>'],
+                successCriterias: ['1.1.1 Non-text Content'],
+                issue: 'Test issue',
+                level: 'AA',
+                recommendation: 'Test recommendation',
+                solution: ['<span>Solution</span>'],
               },
             ],
           },
-        },
-      ],
+        ],
+      },
     };
 
+    // Execute and Verify
     try {
-      await createA11yOpportunities(auditUrl, auditDataObject, scrapedData, context);
-      expect.fail('Should have thrown an error');
+      await createA11yOpportunities(message, mockContext);
+      // Should not reach here
+      expect.fail('Expected an error to be thrown');
     } catch (e) {
-      expect(e.message).to.include(`Failed to fetch opportunities for siteId ${siteId}`);
-      expect(context.log.error).to.have.been.called;
+      expect(e.message).to.include(`Failed to fetch opportunities for siteId ${message.siteId}`);
+      expect(mockContext.log.error).to.have.been.calledWith(
+        `Fetching opportunities for siteId ${message.siteId} failed with error: ${error.message}`,
+      );
     }
   });
 
-  it('should handle errors when creating opportunities', async () => {
-    const error = new Error('Creation error');
-    context.dataAccess.Opportunity.create.rejects(error);
-
-    const scrapedData = {
-      formA11yData: [
-        {
-          finalUrl: 'https://example.com/form1',
-          scrapedData: {
+  it('should create a new opportunity when none exists', async () => {
+    // Setup
+    const message = {
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      data: {
+        a11yData: [
+          {
+            form: '/test-form',
             a11yIssues: [
               {
-                code: 'color-contrast',
-                message: 'Elements must have sufficient color contrast',
-                severity: 'critical',
-                selector: '#form-field-1',
+                successCriterias: [
+                  '1.1.1 Non-text Content',
+                ],
+                issue: 'Test issue',
+                level: 'AA',
+                recommendation: 'Test recommendation',
+                solution: [
+                  '<span>Solution 1</span>',
+                  '<span>Solution 2</span>',
+                ],
               },
             ],
           },
-        },
-      ],
+        ],
+      },
     };
 
-    try {
-      await createA11yOpportunities(auditUrl, auditDataObject, scrapedData, context);
-      expect.fail('Should have thrown an error');
-    } catch (e) {
-      expect(e.message).to.include(`Failed to create a11y opportunities for siteId ${siteId}`);
-      expect(context.log.error).to.have.been.called;
-    }
+    // Execute
+    await createA11yOpportunities(message, mockContext);
+
+    // Verify
+    expect(mockContext.dataAccess.Opportunity.create).to.have.been.calledOnce;
+    const createArgs = mockContext.dataAccess.Opportunity.create.getCall(0).args[0];
+    expect(createArgs.siteId).to.equal(message.siteId);
+    expect(createArgs.auditId).to.equal(message.auditId);
+    expect(createArgs.type).to.equal(FORM_OPPORTUNITY_TYPES.FORM_A11Y);
+    expect(createArgs.origin).to.equal('AUTOMATION');
+    expect(createArgs.data.a11yData).to.have.lengthOf(1);
+    expect(createArgs.data.a11yData[0].form).to.equal('/test-form');
+    expect(createArgs.data.a11yData[0].a11yIssues).to.have.lengthOf(1);
+
+    // Check that success criteria are processed
+    const successCriteria = createArgs.data.a11yData[0].a11yIssues[0].successCriterias[0];
+    expect(successCriteria.criteriaNumber).to.equal('1.1.1');
+    expect(successCriteria.name).to.equal('Non-text Content');
+    expect(successCriteria).to.have.property('understandingUrl');
+  });
+
+  it('should update existing opportunity when one exists', async () => {
+    // Setup
+    const mockOpportunity = {
+      setAuditId: sandbox.stub(),
+      setData: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getData: sandbox.stub().returns({}),
+      getType: sandbox.stub().returns(FORM_OPPORTUNITY_TYPES.FORM_A11Y),
+    };
+
+    mockContext.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub()
+      .resolves([mockOpportunity]);
+
+    const message = {
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      data: {
+        a11yData: [
+          {
+            form: '/test-form',
+            a11yIssues: [
+              {
+                successCriterias: [
+                  '1.4.3 Contrast (Minimum)',
+                ],
+                issue: 'Contrast issue',
+                level: 'AA',
+                recommendation: 'Fix contrast',
+                solution: [
+                  '<span>Solution</span>',
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    // Execute
+    await createA11yOpportunities(message, mockContext);
+
+    // Verify
+    expect(mockOpportunity.setAuditId).to.have.been.calledWith(message.auditId);
+    expect(mockOpportunity.setData).to.have.been.calledOnce;
+    expect(mockOpportunity.save).to.have.been.calledOnce;
+    expect(mockContext.log.info).to.have.been.calledWith(
+      `[Form Opportunity] [Site Id: ${message.siteId}] Updated a11y opportunity`,
+    );
   });
 });

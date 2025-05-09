@@ -20,13 +20,14 @@ import {
   formsAuditRunner,
   processOpportunityStep,
   runAuditAndSendUrlsForScrapingStep,
+  sendA11yIssuesToMystique,
   sendA11yUrlsForScrapingStep,
 } from '../../../src/forms-opportunities/handler.js';
 import { MockContextBuilder } from '../../shared.js';
 import formVitalsData from '../../fixtures/forms/formvitalsdata.json' with { type: 'json' };
 import expectedFormVitalsData from '../../fixtures/forms/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../../fixtures/forms/expectedformsendtoscraperdata.json' with { type: 'json' };
-import expectedFormA11yScraperData from '../../fixtures/forms/expectedforma11yscraperdata.json' with { type: 'json' };
+import expectedFormA11yScraperData from '../../fixtures/forms/expectedforma11ysendtoscraperdata.json' with { type: 'json' };
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 
 use(sinonChai);
@@ -138,6 +139,7 @@ describe('send a11y urls for scraping step', () => {
       func: { package: 'spacecat-services', version: 'ci', name: 'test' },
       site: {
         getId: sinon.stub().returns(siteId),
+        getBaseURL: sinon.stub().returns('https://example.com'),
         getLatestAuditByAuditType: sinon.stub().resolves({
           auditResult: {
             formVitals: formVitalsData['form-vitals'],
@@ -149,8 +151,43 @@ describe('send a11y urls for scraping step', () => {
           siteId: 'test-site-id',
         }),
       },
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub(),
+      },
     })
     .build();
+
+  beforeEach(() => {
+    // Mock the getScrapedDataForSiteId function response
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+      ],
+      IsTruncated: false,
+    });
+
+    const mockFormResponseData = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+          scrapeResult: [
+            {
+              id: 'form1',
+              formType: 'newsletter',
+              visibleATF: true,
+              fieldCount: 3,
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.resolves(mockFormResponseData);
+  });
 
   afterEach(() => {
     nock.cleanAll();
@@ -160,6 +197,8 @@ describe('send a11y urls for scraping step', () => {
   it('send a11y urls for scraping step', async () => {
     const result = await sendA11yUrlsForScrapingStep(context);
     expect(context.site.getLatestAuditByAuditType).calledWith('forms-opportunities');
+    // Verify that the s3Client was called to get the scraped data
+    expect(context.s3Client.send).to.have.been.called;
     expect(result).to.deep.equal(expectedFormA11yScraperData);
   });
 });
@@ -292,5 +331,88 @@ describe('process opportunity step', () => {
     expect(result).to.deep.equal({
       status: 'complete',
     });
+  });
+});
+
+describe('send a11y issues to mystique', () => {
+  let context;
+  const siteId = 'test-site-id';
+
+  // eslint-disable-next-line prefer-const
+  context = new MockContextBuilder()
+    .withSandbox(sandbox)
+    .withOverrides({
+      runtime: { name: 'aws-lambda', region: 'us-east-1' },
+      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+      site: {
+        getId: sinon.stub().returns(siteId),
+        getBaseURL: sinon.stub().returns('https://example.com'),
+        getDeliveryType: sinon.stub().returns('direct'),
+      },
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.amazonaws.com/mystique-queue',
+      },
+      s3Client: {
+        send: sandbox.stub(),
+      },
+      finalUrl: 'www.example.com',
+    })
+    .build();
+
+  afterEach(() => {
+    nock.cleanAll();
+    sinon.restore();
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+    sinon.restore();
+  });
+
+  it('send a11y issues to mystique', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms-a11y/scrape.json' },
+      ],
+      IsTruncated: true,
+      NextContinuationToken: 'token',
+    });
+
+    const mockFormResponseData = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+          scrapeResult: [
+            {
+              id: 'form1',
+              classList: 'newsletter',
+              a11yIssues: [
+                {
+                  issue: 'Label is missing',
+                },
+              ],
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.resolves(mockFormResponseData);
+
+    await sendA11yIssuesToMystique({ auditId: 'audit-id' }, context);
+    expect(context.sqs.sendMessage).calledWith(
+      context.env.QUEUE_SPACECAT_TO_MYSTIQUE,
+      sinon.match({
+        type: 'opportunity:forms-a11y',
+        siteId: 'test-site-id',
+        auditId: 'audit-id',
+        deliveryType: 'direct',
+        data: {
+          a11yData: [{ form: 'https://www.business.adobe.com/newsletter', a11yIssues: [{ issue: 'Label is missing' }] }],
+        },
+      }),
+    );
   });
 });

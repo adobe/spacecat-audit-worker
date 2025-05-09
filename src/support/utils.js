@@ -304,6 +304,20 @@ export const getScrapedDataForSiteId = async (site, context) => {
     }
   }
 
+  async function fetchContentOfFiles(files) {
+    return Promise.all(
+      files.map(async (file) => {
+        const fileContent = await getObjectFromKey(
+          s3Client,
+          env.S3_SCRAPER_BUCKET_NAME,
+          file.Key,
+          log,
+        );
+        return fileContent;
+      }),
+    );
+  }
+
   await fetchFiles();
 
   if (!isNonEmptyArray(allFiles)) {
@@ -345,29 +359,9 @@ export const getScrapedDataForSiteId = async (site, context) => {
   log.info(`all files: ${JSON.stringify(allFiles)}`);
   if (allFiles) {
     const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
-    scrapedFormData = await Promise.all(
-      formFiles.map(async (file) => {
-        const fileContent = await getObjectFromKey(
-          s3Client,
-          env.S3_SCRAPER_BUCKET_NAME,
-          file.Key,
-          log,
-        );
-        return fileContent;
-      }),
-    );
+    scrapedFormData = await fetchContentOfFiles(formFiles);
     const a11yFiles = allFiles.filter((file) => file.Key.endsWith('forms-a11y/scrape.json'));
-    scrapedFormA11yData = await Promise.all(
-      a11yFiles.map(async (file) => {
-        const fileContent = await getObjectFromKey(
-          s3Client,
-          env.S3_SCRAPER_BUCKET_NAME,
-          file.Key,
-          log,
-        );
-        return fileContent;
-      }),
-    );
+    scrapedFormA11yData = await fetchContentOfFiles(a11yFiles);
   }
 
   return {

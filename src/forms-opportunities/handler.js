@@ -60,10 +60,10 @@ export async function sendA11yIssuesToMystique(latestAudit, context) {
     return;
   }
 
-  // TODO: how to handle multiple form in page?
+  // Flattening the a11y issues from multiple forms in a single page
   const a11yData = formA11yData.map((a11y) => ({
-    form: a11y.form,
-    a11yIssues: a11y.scrapeResult,
+    form: a11y.finalUrl,
+    a11yIssues: a11y.scrapeResult.flatMap((formResult) => formResult.a11yIssues),
   }));
 
   const mystiqueMessage = {
@@ -98,13 +98,14 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   }
 
   if (uniqueUrls.size < 10) {
-    formVitals.sort((a, b) => {
+    // Create a copy of formVitals to sort without modifying the original array
+    const sortedFormVitals = [...formVitals].sort((a, b) => {
       const totalPageViewsA = Object.values(a.pageview).reduce((acc, curr) => acc + curr, 0);
       const totalPageViewsB = Object.values(b.pageview).reduce((acc, curr) => acc + curr, 0);
       return totalPageViewsB - totalPageViewsA;
     });
-    for (const fv of formVitals) {
-      uniqueUrls.add(fv.form);
+    for (const fv of sortedFormVitals) {
+      uniqueUrls.add(fv.url);
       if (uniqueUrls.size >= 10) {
         break;
       }

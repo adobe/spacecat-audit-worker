@@ -11,9 +11,10 @@
  */
 
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
+import { getSuccessCriteriaDetails } from '../utils.js';
 
 /**
- * Create a11y opportunities for the given siteId and auditId
+ * Create a11y opportunity for the given siteId and auditId
  * @param {object} message - The message object form mystique
  * @param {object} context - context object
  * @returns {Promise<void>}
@@ -46,42 +47,52 @@ export default async function handler(message, context) {
   }
 
   try {
-    for (const a11yOpty of filteredA11yData) {
-      const existingOppty = opportunities.find(
-        (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.FORM_A11Y
-                    && oppty.getData().form === a11yOpty.form,
-      );
-      const opportunityData = {
-        siteId,
-        auditId,
-        runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
-        type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
-        origin: 'AUTOMATION',
-        title: 'Accessibility Issues',
-        description: 'Accessibility Issues',
-        tags: [
-          'Forms Accessibility',
-        ],
-        data: {
-          form: a11yOpty.form,
-          a11yIssues: a11yOpty.a11yIssues,
-        },
-      };
+    const existingOppty = opportunities.find(
+      (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.FORM_A11Y,
+    );
 
-      if (!existingOppty) {
-        // eslint-disable-next-line no-await-in-loop
-        await Opportunity.create(opportunityData);
-        log.info(`[Form Opportunity] [Site Id: ${siteId}] Created a11y opportunity for ${a11yOpty.form}`);
-      } else {
-        existingOppty.setAuditId(auditId);
-        existingOppty.setData({
-          ...existingOppty.getData(),
-          ...opportunityData.data,
-        });
-        // eslint-disable-next-line no-await-in-loop
-        await existingOppty.save();
-        log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated a11y opportunity for ${a11yOpty.form}`);
-      }
+    const a11yOpptyData = filteredA11yData.map((a11yOpty) => {
+      const a11yIssues = a11yOpty.a11yIssues.map((issue) => ({
+        ...issue,
+        successCriterias: issue.successCriterias.map(
+          (criteria) => getSuccessCriteriaDetails(criteria),
+        ),
+      }));
+      return {
+        form: a11yOpty.form,
+        a11yIssues,
+      };
+    });
+
+    const opportunityData = {
+      siteId,
+      auditId,
+      runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
+      type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
+      origin: 'AUTOMATION',
+      title: 'Form Accessibility Issues',
+      description: 'Form Accessibility Issues',
+      tags: [
+        'Forms Accessibility',
+      ],
+      data: {
+        a11yData: a11yOpptyData,
+      },
+    };
+
+    if (!existingOppty) {
+      // eslint-disable-next-line no-await-in-loop
+      await Opportunity.create(opportunityData);
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] Created a11y opportunity`);
+    } else {
+      existingOppty.setAuditId(auditId);
+      existingOppty.setData({
+        ...existingOppty.getData(),
+        ...opportunityData.data,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await existingOppty.save();
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated a11y opportunity`);
     }
   } catch (e) {
     log.error(`Creating a11y opportunities for siteId ${siteId} failed with error: ${e.message}`);
