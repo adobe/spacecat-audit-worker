@@ -69,6 +69,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     auditResult: formsAuditRunnerResult.auditResult,
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
     processingType: 'form',
+    allowCache: false,
     jobId: site.getId(),
     urls: Array.from(uniqueUrls).map((url) => ({ url })),
     siteId: site.getId(),
