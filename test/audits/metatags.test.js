@@ -15,9 +15,7 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import esmock from 'esmock';
-import GoogleClient from '@adobe/spacecat-shared-google-client';
 import {
   TITLE,
   DESCRIPTION,
@@ -33,14 +31,11 @@ import {
   ONE_H1_ON_A_PAGE,
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
-import testData from '../fixtures/meta-tags-data.js';
 import { removeTrailingSlash } from '../../src/metatags/opportunity-utils.js';
 import {
   importTopPages,
   submitForScraping,
   fetchAndProcessPageObject,
-  runAuditAndGenerateSuggestions,
-  opportunityAndSuggestions,
 } from '../../src/metatags/handler.js';
 
 use(sinonChai);
@@ -212,7 +207,6 @@ describe('Meta Tags', () => {
     let context;
     let site;
     let audit;
-    let genvarClientStub;
 
     beforeEach(() => {
       sinon.restore();
@@ -275,26 +269,6 @@ describe('Meta Tags', () => {
         site,
         finalUrl: 'http://example.com',
         audit,
-      };
-      genvarClientStub = {
-        generateSuggestions: sinon.stub().resolves({
-          '/about-us': {
-            h1: {
-              aiRationale: 'The H1 tag is catchy and broad...',
-              aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
-            },
-          },
-          '/add-on-and-refresh': {
-            description: {
-              aiRationale: 'The description emphasizes the brand\'s core values...',
-              aiSuggestion: 'Elevate your home with Lovesac\'s customizable add-ons...',
-            },
-            h1: {
-              aiRationale: 'The H1 tag is catchy and directly addresses the user\'s intent...',
-              aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons',
-            },
-          },
-        }),
       };
     });
 
@@ -418,7 +392,6 @@ describe('Meta Tags', () => {
 
     describe('metatagsAutoSuggest', () => {
       let metatagsAutoSuggest;
-      let context;
       let s3Client;
       let dataAccess;
       let log;
