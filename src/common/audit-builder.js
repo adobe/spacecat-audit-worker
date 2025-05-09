@@ -148,7 +148,7 @@ export class AuditBuilder {
           this.persister,
           this.messageSender,
           this.postProcessors,
-          stepNames,
+          this.steps,
         );
       }
 
