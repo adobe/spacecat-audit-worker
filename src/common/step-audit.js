@@ -55,8 +55,6 @@ export class StepAudit extends BaseAudit {
   async chainStep(step, stepResult, context) {
     const { audit, log } = context;
 
-    log.info(`[Debug] ChainStep called for step: ${JSON.stringify(step)}, stepResult: ${JSON.stringify(stepResult)}`);
-    log.info(`[Debug] (chainStep) context: ${JSON.stringify(context)}`);
     if (!hasText(step?.destination)) {
       throw new Error('Invalid step configuration: missing destination');
     }
@@ -107,7 +105,6 @@ export class StepAudit extends BaseAudit {
 
       // For subsequent steps, load existing audit
       if (hasNext) {
-        log.info(`[Debug] Loading existing audit for ${JSON.stringify(auditContext)}`);
         stepContext.audit = await loadExistingAudit(auditContext.auditId, context);
       }
 
@@ -116,7 +113,6 @@ export class StepAudit extends BaseAudit {
       let response = ok();
 
       if (!hasNext) {
-        log.info(`[Debug] Processing audit result for ${type} audit on site ${siteId}`);
         response = await this.processAuditResult(
           stepResult,
           {
@@ -130,7 +126,6 @@ export class StepAudit extends BaseAudit {
       }
 
       if (!isLastStep) {
-        log.info(`[Debug] Chaining step ${step.name} for ${type} audit on site ${siteId}`);
         const result = await this.chainStep(step, stepResult, stepContext);
         response = ok(result);
       }
