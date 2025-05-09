@@ -51,11 +51,6 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       granularity: 'hourly',
     };
 
-    log.info(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Options for RUM call: `,
-      JSON.stringify(options),
-    );
-
     const internal404Links = await rumAPIClient.query(
       '404-internal-links',
       options,
@@ -136,10 +131,6 @@ export async function opportunityAndSuggestionsStep(context) {
   const {
     log, site, finalUrl, audit,
   } = context;
-  log.info(
-    `[${AUDIT_TYPE}] [Site: ${site.getId()}] latestAuditData`,
-    audit.getAuditResult(),
-  );
   let { brokenInternalLinks } = audit.getAuditResult();
   // generate suggestions
   try {
@@ -148,10 +139,6 @@ export async function opportunityAndSuggestionsStep(context) {
       audit,
       context,
       site,
-    );
-    log.info(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] auditDataWithSuggestions`,
-      brokenInternalLinks,
     );
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
