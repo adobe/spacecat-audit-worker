@@ -41,6 +41,21 @@ export const formVitalsCollection = [
     formsource: '.myform',
   },
   {
+    url: 'https://www.surest.com/info/win-2',
+    formsubmit: {
+    },
+    formview: { 'mobile:ios': 3200 },
+    formengagement: {
+      'desktop:windows': 4000,
+      'mobile:ios': 300,
+    },
+    pageview: {
+      'desktop:windows': 4670,
+      'mobile:ios': 8000,
+    },
+    formsource: '.myform',
+  },
+  {
     url: 'https://www.surest.com/newsletter',
     formsubmit: {
     },
