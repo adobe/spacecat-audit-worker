@@ -19,43 +19,15 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
-import { calculateKpiDeltasForAudit, isLinkInaccessible } from './helpers.js';
+import {
+  calculateKpiDeltasForAudit,
+  isLinkInaccessible,
+  calculatePriority,
+} from './helpers.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
-const auditType = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-
-/**
- * Classifies links into priority categories based on views
- * High: top 25%, Medium: next 25%, Low: bottom 50%
- * @param {Array} links - Array of objects with views property
- * @returns {Array} - Links with priority classifications included
- */
-function calculatePriority(links) {
-  // Sort links by views in descending order
-  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
-
-  // Calculate indices for the 25% and 50% marks
-  const quarterIndex = Math.ceil(sortedLinks.length * 0.25);
-  const halfIndex = Math.ceil(sortedLinks.length * 0.5);
-
-  // Map through sorted links and assign priority
-  return sortedLinks.map((link, index) => {
-    let priority;
-
-    if (index < quarterIndex) {
-      priority = 'high';
-    } else if (index < halfIndex) {
-      priority = 'medium';
-    } else {
-      priority = 'low';
-    }
-
-    return {
-      ...link,
-      priority,
-    };
-  });
-}
+const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
  * Perform an audit to check which internal links for domain are broken.
@@ -67,64 +39,128 @@ function calculatePriority(links) {
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
 export async function internalLinksAuditRunner(auditUrl, context) {
-  const { log } = context;
+  const { log, site } = context;
   const finalUrl = await getRUMUrl(auditUrl);
 
-  const rumAPIClient = RUMAPIClient.createFrom(context);
+  try {
+    const rumAPIClient = RUMAPIClient.createFrom(context);
 
-  const options = {
-    domain: finalUrl,
-    interval: INTERVAL,
-    granularity: 'hourly',
-  };
-
-  log.info(`broken-internal-links audit: ${auditType}: Options for RUM call: `, JSON.stringify(options));
-
-  const internal404Links = await rumAPIClient.query('404-internal-links', options);
-  const transformedLinks = internal404Links.map((link) => ({
-    urlFrom: link.url_from,
-    urlTo: link.url_to,
-    trafficDomain: link.traffic_domain,
-  }));
-
-  let finalLinks = calculatePriority(transformedLinks);
-
-  finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
-
-  const auditResult = {
-    brokenInternalLinks: finalLinks,
-    fullAuditRef: auditUrl,
-    finalUrl,
-    auditContext: {
+    const options = {
+      domain: finalUrl,
       interval: INTERVAL,
-    },
-  };
+      granularity: 'hourly',
+    };
+
+    const internal404Links = await rumAPIClient.query(
+      '404-internal-links',
+      options,
+    );
+    const transformedLinks = internal404Links.map((link) => ({
+      urlFrom: link.url_from,
+      urlTo: link.url_to,
+      trafficDomain: link.traffic_domain,
+    }));
+
+    let finalLinks = calculatePriority(transformedLinks);
+
+    finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
+
+    const auditResult = {
+      brokenInternalLinks: finalLinks,
+      fullAuditRef: auditUrl,
+      finalUrl,
+      auditContext: {
+        interval: INTERVAL,
+      },
+    };
+
+    return {
+      auditResult,
+      fullAuditRef: auditUrl,
+    };
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`);
+    return {
+      fullAuditRef: auditUrl,
+      auditResult: {
+        finalUrl: auditUrl,
+        error: `[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`,
+        success: false,
+      },
+    };
+  }
+}
+
+export async function runAuditAndImportTopPagesStep(context) {
+  const { site, log, finalUrl } = context;
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`);
+  const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
+    finalUrl,
+    context,
+  );
 
   return {
-    auditResult,
-    fullAuditRef: auditUrl,
+    auditResult: internalLinksAuditRunnerResult.auditResult,
+    fullAuditRef: finalUrl,
+    type: 'top-pages',
+    siteId: site.getId(),
   };
 }
 
-export async function opportunityAndSuggestions(auditUrl, auditData, context) {
-  const kpiDeltas = calculateKpiDeltasForAudit(auditData);
+export async function prepareScrapingStep(context) {
+  const {
+    site, log, dataAccess,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  log.info(
+    `[${AUDIT_TYPE}] [Site: ${site.getId()}] top pages: ${JSON.stringify(
+      topPages,
+    )}`,
+  );
+  const urls = topPages.map((page) => ({ url: page.getUrl() }));
+  return {
+    urls,
+    siteId: site.getId(),
+    type: 'broken-internal-links',
+  };
+}
+
+export async function opportunityAndSuggestionsStep(context) {
+  const {
+    log, site, finalUrl, audit,
+  } = context;
+  let { brokenInternalLinks } = audit.getAuditResult();
+  // generate suggestions
+  try {
+    brokenInternalLinks = await generateSuggestionData(
+      finalUrl,
+      audit,
+      context,
+      site,
+    );
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
+  }
+
+  // TODO: skip opportunity creation if no internal link items are found in the audit data
+  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
   const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
+    finalUrl,
+    { siteId: site.getId(), id: audit.getId() },
     context,
     createOpportunityData,
-    auditType,
+    AUDIT_TYPE,
     {
       kpiDeltas,
     },
   );
-  const { log } = context;
 
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
-
   await syncSuggestions({
     opportunity,
-    newData: auditData?.auditResult?.brokenInternalLinks,
+    newData: brokenInternalLinks,
     context,
     buildKey,
     mapNewSuggestion: (entry) => ({
@@ -142,10 +178,22 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     }),
     log,
   });
+  return {
+    status: 'complete',
+  };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .withRunner(internalLinksAuditRunner)
-  .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
+  .addStep(
+    'runAuditAndImportTopPages',
+    runAuditAndImportTopPagesStep,
+    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
+  )
+  .addStep(
+    'prepareScraping',
+    prepareScrapingStep,
+    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  )
+  .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
   .build();
