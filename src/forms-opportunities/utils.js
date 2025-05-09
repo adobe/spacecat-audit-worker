@@ -320,8 +320,21 @@ export function getValidFormUrls(scrapedData) {
 }
 
 export function getSuccessCriteriaDetails(criteria) {
-  const successCriteriaNumber = criteria.match(/\b\d+\.\d+\.\d+\b/)[0];
-  const successCriteriaDetails = successCriteriaLinks[successCriteriaNumber.replaceAll('.', '')];
+  let cNumber;
+
+  if (criteria.match(/\b\d+\.\d+\.\d+\b/)) {
+    // Format: "1.2.1 Audio-only and Video-only"
+    cNumber = criteria.match(/\b\d+\.\d+\.\d+\b/)[0].replaceAll('.', '');
+  } else if (criteria.match(/^wcag\d+$/i)) {
+    // Format: "wcag121"
+    cNumber = criteria.replace(/^wcag/i, '');
+  } else {
+    throw new Error(`Invalid criteria format: ${criteria}`);
+  }
+
+  const successCriteriaDetails = successCriteriaLinks[cNumber];
+  const successCriteriaNumber = cNumber.replace(/(\d)(\d)(\d)/, '$1.$2.$3');
+
   return {
     name: successCriteriaDetails.name,
     criteriaNumber: successCriteriaNumber,

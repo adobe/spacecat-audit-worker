@@ -40,7 +40,6 @@ import siteDetection from './site-detection/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/oppty-handlers/guidance-high-form-views-low-conversions.js';
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
-import formsA11yOpportunity from './forms-opportunities/oppty-handlers/a11y-handler.js';
 
 const HANDLERS = {
   apex,
@@ -65,7 +64,6 @@ const HANDLERS = {
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
-  'opportunity:forms-a11y': formsA11yOpportunity,
   dummy: (message) => ok(message),
 };
 

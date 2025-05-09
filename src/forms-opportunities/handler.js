@@ -20,6 +20,7 @@ import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
+import createA11yOpportunities from './oppty-handlers/a11y-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -51,7 +52,7 @@ export async function formsAuditRunner(auditUrl, context) {
 
 export async function sendA11yIssuesToMystique(latestAudit, context) {
   const {
-    log, site, sqs, env,
+    log, site,
   } = context;
 
   const { formA11yData } = await getScrapedDataForSiteId(site, context);
@@ -66,19 +67,30 @@ export async function sendA11yIssuesToMystique(latestAudit, context) {
     a11yIssues: a11y.scrapeResult.flatMap((formResult) => formResult.a11yIssues),
   }));
 
-  const mystiqueMessage = {
-    type: 'opportunity:forms-a11y',
-    siteId: site.getId(),
+  await createA11yOpportunities({
+    siteId: latestAudit.siteId,
     auditId: latestAudit.auditId,
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
     data: {
       a11yData,
     },
-  };
+  }, context);
 
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] Sent a11y issues to mystique`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] a11y issues created`);
+
+  // TODO: Uncomment this when we have a way to send a11y issues to mystique
+  // const mystiqueMessage = {
+  //   type: 'opportunity:forms-a11y',
+  //   siteId: site.getId(),
+  //   auditId: latestAudit.auditId,
+  //   deliveryType: site.getDeliveryType(),
+  //   time: new Date().toISOString(),
+  //   data: {
+  //     a11yData,
+  //   },
+  // };
+
+  // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  // log.info(`[Form Opportunity] [Site Id: ${site.getId()}] Sent a11y issues to mystique`);
 }
 
 export async function runAuditAndSendUrlsForScrapingStep(context) {

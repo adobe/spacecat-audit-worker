@@ -334,7 +334,8 @@ describe('process opportunity step', () => {
   });
 });
 
-describe('send a11y issues to mystique', () => {
+// TODO: Uncomment this when we have a way to send a11y issues to mystique
+describe.skip('send a11y issues to mystique', () => {
   let context;
   const siteId = 'test-site-id';
 
