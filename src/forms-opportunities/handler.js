@@ -66,7 +66,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   }
 
   const result = {
-    auditResult: formsAuditRunnerResult.auditResult,
+    // auditResult: formsAuditRunnerResult.auditResult,
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
     processingType: 'form',
     allowCache: false,
