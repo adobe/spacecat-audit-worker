@@ -87,7 +87,7 @@ describe('createLowNavigationOpportunities handler method', () => {
       data: {
         form: 'https://www.surest.com/newsletter',
         screenshot: '',
-        trackedFormKPIName: 'Form Views',
+        trackedFormKPIName: 'Form View Rate',
         trackedFormKPIValue: 300,
         formViews: 300,
         pageViews: 8670,
@@ -97,34 +97,24 @@ describe('createLowNavigationOpportunities handler method', () => {
         dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         metrics: [
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: '*',
             value: {
-              page: 300,
+              page: 0.03460207612456748,
             },
           },
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: 'mobile',
             value: {
-              page: 300,
+              page: 0.075,
             },
           },
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: 'desktop',
             value: {
               page: 0,
-            },
-          },
-          {
-            type: 'traffic',
-            device: '*',
-            value: {
-              paid: 4670,
-              total: 8670,
-              earned: 2000,
-              owned: 2000,
             },
           },
         ],
