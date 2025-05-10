@@ -94,43 +94,45 @@ function getFormMetrics(metricObject) {
 function convertToLowViewOpptyData(metricObject) {
   const {
     formview: { total: formViews, mobile: formViewsMobile, desktop: formViewsDesktop },
-    trafficacquisition,
+    pageview: { total: pageViews, mobile: pageViewsMobile, desktop: pageViewsDesktop },
+    // trafficacquisition,
   } = metricObject;
   return {
-    trackedFormKPIName: 'Form Views',
+    trackedFormKPIName: 'Form View Rate',
     trackedFormKPIValue: formViews,
     metrics: [
       {
-        type: 'formViews',
+        type: 'formViewRate',
         device: '*',
         value: {
-          page: formViews,
+          page: formViews / pageViews,
         },
       },
       {
-        type: 'formViews',
+        type: 'formViewRate',
         device: 'mobile',
         value: {
-          page: formViewsMobile,
+          page: formViewsMobile / pageViewsMobile,
         },
       },
       {
-        type: 'formViews',
+        type: 'formViewRate',
         device: 'desktop',
         value: {
-          page: formViewsDesktop,
+          page: formViewsDesktop / pageViewsDesktop,
         },
       },
-      {
-        type: 'traffic',
-        device: '*',
-        value: {
-          total: trafficacquisition.total ? trafficacquisition.total : null,
-          paid: trafficacquisition.paid ? trafficacquisition.paid : null,
-          earned: trafficacquisition.earned ? trafficacquisition.earned : null,
-          owned: trafficacquisition.owned ? trafficacquisition.owned : null,
-        },
-      },
+      // Enable when trafficacquisition data in enabled from spacecat-shared
+      // {
+      //   type: 'traffic',
+      //   device: '*',
+      //   value: {
+      //     total: trafficacquisition.total ? trafficacquisition.total : null,
+      //     paid: trafficacquisition.paid ? trafficacquisition.paid : null,
+      //     earned: trafficacquisition.earned ? trafficacquisition.earned : null,
+      //     owned: trafficacquisition.owned ? trafficacquisition.owned : null,
+      //   },
+      // },
     ],
   };
 }
@@ -200,7 +202,7 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
   } = metricObject;
 
   const {
-    site,
+    site, log,
   } = context;
 
   /*
@@ -211,10 +213,13 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
   let opportunityData = {};
 
   if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION) {
+    log.info(`low conversion metric object : ${JSON.stringify(metricObject)}`);
     opportunityData = convertToLowConversionOpptyData(metricObject);
   } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION) {
+    log.info(`low navigation metric object : ${JSON.stringify(metricObject)}`);
     opportunityData = convertToLowNavOpptyData(metricObject);
   } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_VIEWS) {
+    log.info(`low views metric object : ${JSON.stringify(metricObject)}`);
     opportunityData = convertToLowViewOpptyData(metricObject);
   }
 

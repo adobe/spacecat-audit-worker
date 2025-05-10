@@ -87,7 +87,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
       data: {
         form: 'https://www.surest.com/high-page-low-form-view',
         screenshot: '',
-        trackedFormKPIName: 'Form Views',
+        trackedFormKPIName: 'Form View Rate',
         trackedFormKPIValue: 200,
         formViews: 200,
         pageViews: 6690,
@@ -97,34 +97,24 @@ describe('createLowFormViewsOpportunities handler method', () => {
         dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         metrics: [
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: '*',
             value: {
-              page: 200,
+              page: 0.029895366218236172,
             },
           },
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: 'mobile',
             value: {
               page: 0,
             },
           },
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: 'desktop',
             value: {
-              page: 200,
-            },
-          },
-          {
-            type: 'traffic',
-            device: '*',
-            value: {
-              paid: 2690,
-              total: 6690,
-              earned: 2000,
-              owned: 2000,
+              page: 0.0351493848857645,
             },
           },
         ],
