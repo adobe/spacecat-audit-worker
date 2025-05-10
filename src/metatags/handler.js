@@ -31,11 +31,12 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.META_TAGS;
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
+    finalUrl,
+    { siteId: auditData.siteId, id: auditData.auditId },
     context,
     createOpportunityData,
     auditType,
@@ -191,9 +192,12 @@ async function calculateProjectedTraffic(context, auditUrl, siteId, detectedTags
   }
 }
 
-export async function auditMetaTagsRunner(auditUrl, context, site) {
-  const { log, s3Client, dataAccess } = context;
+export async function runAuditAndGenerateSuggestions(context) {
+  const {
+    site, audit, finalUrl, log, s3Client, dataAccess,
+  } = context;
   // Get top pages for a site
+  log.info(`Running generating suggestions step for meta-tags audit on ${finalUrl}`);
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
   const topPagesSet = new Set(topPages.map((page) => {
@@ -234,7 +238,7 @@ export async function auditMetaTagsRunner(auditUrl, context, site) {
     projectedTrafficValue,
   } = await calculateProjectedTraffic(
     context,
-    auditUrl,
+    finalUrl,
     siteId,
     detectedTags,
     log,
@@ -252,18 +256,60 @@ export async function auditMetaTagsRunner(auditUrl, context, site) {
     detectedTags: updatedDetectedTags,
     sourceS3Folder: `${bucketName}/${prefix}`,
     fullAuditRef: '',
-    finalUrl: auditUrl,
+    finalUrl,
     ...(projectedTrafficLost && { projectedTrafficLost }),
     ...(projectedTrafficValue && { projectedTrafficValue }),
   };
-  return {
+  await opportunityAndSuggestions(finalUrl, {
+    siteId: site.getId(),
+    auditId: audit.getId(),
     auditResult,
-    fullAuditRef: auditUrl,
+  }, context);
+
+  return {
+    status: 'complete',
+  };
+}
+
+export async function importTopPages(context) {
+  const { site, finalUrl, log } = context;
+
+  log.info(`Importing top pages for ${finalUrl}, context: ${JSON.stringify(context)}`);
+
+  const s3BucketPath = `scrapes/${site.getId()}/`;
+  return {
+    type: 'top-pages',
+    siteId: site.getId(),
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: s3BucketPath,
+  };
+}
+
+export async function submitForScraping(context) {
+  const {
+    site,
+    dataAccess,
+    log,
+    finalUrl,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (topPages.length === 0) {
+    throw new Error('No top pages found for site');
+  }
+
+  log.info(`Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}, context: ${JSON.stringify(context)}`);
+
+  return {
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'meta-tags',
   };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(auditMetaTagsRunner)
-  .withPostProcessors([opportunityAndSuggestions])
+  .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
   .build();
