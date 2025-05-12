@@ -19,7 +19,6 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { load as cheerioLoad } from 'cheerio';
 
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -446,16 +445,18 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, finalUrl, log, dataAccess, audit,
   } = context;
+  const { SiteTopPage } = dataAccess;
 
   const startTime = process.hrtime();
-
   const siteId = site.getId();
 
   try {
-    const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+    let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
     if (!isNonEmptyArray(topPages)) {
       log.error(`No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
       throw new Error(`No top pages for site ID ${siteId} found.`);
+    } else {
+      topPages = topPages.map((page) => ({ url: page.getUrl() }));
     }
 
     let auditResult = await processStructuredData(finalUrl, context, topPages);
