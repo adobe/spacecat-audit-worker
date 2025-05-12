@@ -18,7 +18,7 @@ import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { load as cheerioLoad } from 'cheerio';
 
-import StructuredDataValidator from '@marbec/structured-data-parser';
+import StructuredDataValidator from '@adobe/structured-data-validator';
 import { join } from 'path';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
