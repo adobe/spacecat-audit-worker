@@ -1,3 +1,10 @@
+# [1.82.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.81.3...v1.82.0) (2025-05-12)
+
+
+### Features
+
+* Convert structured data audit to stepped audit format ([#842](https://github.com/adobe/spacecat-audit-worker/issues/842)) ([dfc065f](https://github.com/adobe/spacecat-audit-worker/commit/dfc065fd75b39170c54538c1e67d99e0b4412408))
+
 ## [1.81.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.81.2...v1.81.3) (2025-05-12)
 
 
