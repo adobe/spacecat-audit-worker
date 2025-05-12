@@ -76,7 +76,7 @@ export class StepAudit extends BaseAudit {
     const payload = destination.formatPayload(stepResult, auditContext, context);
     await sendContinuationMessage({ queueUrl, payload }, context);
 
-    log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${audit.getAuditType()}, message sent to ${step.destination}, with message ${JSON.stringify(payload)}`);
+    log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${audit.getAuditType()}, message sent to ${step.destination}`);
 
     return stepResult;
   }
