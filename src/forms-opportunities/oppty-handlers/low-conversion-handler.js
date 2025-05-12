@@ -138,7 +138,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       if (!highFormViewsLowConversionsOppty) {
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
-        log.debug('Forms Opportunity high form views low conversion created 1');
+        log.debug('Forms Opportunity high form views low conversion created');
       } else {
         highFormViewsLowConversionsOppty.setAuditId(auditData.auditId);
         highFormViewsLowConversionsOppty.setData({
