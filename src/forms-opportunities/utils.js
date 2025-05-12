@@ -209,7 +209,7 @@ function convertToLowConversionOpptyData(metricObject) {
 async function convertToOpportunityData(opportunityType, metricObject, context) {
   const {
     url, pageview: { total: pageViews }, formview: { total: formViews },
-    formsource = '',
+    formsource = '', iframeSrc,
   } = metricObject;
 
   const {
@@ -241,6 +241,10 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
     screenshot,
     samples: pageViews, // todo: get the actual number of samples
   };
+
+  if (iframeSrc) {
+    opportunityData.iframeSrc = iframeSrc;
+  }
 
   return opportunityData;
 }
