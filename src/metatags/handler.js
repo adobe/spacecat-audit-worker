@@ -197,7 +197,6 @@ export async function runAuditAndGenerateSuggestions(context) {
     site, audit, finalUrl, log, s3Client, dataAccess,
   } = context;
   // Get top pages for a site
-  log.info(`Running generating suggestions step for meta-tags audit on ${finalUrl}`);
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
   const topPagesSet = new Set(topPages.map((page) => {
@@ -272,9 +271,7 @@ export async function runAuditAndGenerateSuggestions(context) {
 }
 
 export async function importTopPages(context) {
-  const { site, finalUrl, log } = context;
-
-  log.info(`Importing top pages for ${finalUrl}, context: ${JSON.stringify(context)}`);
+  const { site, finalUrl } = context;
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   return {
@@ -289,16 +286,12 @@ export async function submitForScraping(context) {
   const {
     site,
     dataAccess,
-    log,
-    finalUrl,
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   if (topPages.length === 0) {
     throw new Error('No top pages found for site');
   }
-
-  log.info(`Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}, context: ${JSON.stringify(context)}`);
 
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),

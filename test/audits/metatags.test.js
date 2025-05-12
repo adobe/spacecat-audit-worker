@@ -841,7 +841,7 @@ describe('Meta Tags', () => {
 
       it('should successfully run audit and generate suggestions', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
