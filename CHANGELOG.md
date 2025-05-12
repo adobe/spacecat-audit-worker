@@ -1,3 +1,59 @@
+## [1.81.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.81.1...v1.81.2) (2025-05-11)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#846](https://github.com/adobe/spacecat-audit-worker/issues/846)) ([a04431c](https://github.com/adobe/spacecat-audit-worker/commit/a04431cdbce6176c350f59ab246c5046bb7bb79e))
+
+## [1.81.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.81.0...v1.81.1) (2025-05-10)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#845](https://github.com/adobe/spacecat-audit-worker/issues/845)) ([98e9219](https://github.com/adobe/spacecat-audit-worker/commit/98e92192144d3088c5a7bd94614d233df76035f1))
+
+# [1.81.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.7...v1.81.0) (2025-05-09)
+
+
+### Features
+
+* steps implementation in broken internal links audit ([#776](https://github.com/adobe/spacecat-audit-worker/issues/776)) ([f43c876](https://github.com/adobe/spacecat-audit-worker/commit/f43c876bfa5749feb693fb8f738a573c244594d5))
+
+## [1.80.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.6...v1.80.7) (2025-05-09)
+
+
+### Bug Fixes
+
+* update thresholds for low-view oppoty ([#841](https://github.com/adobe/spacecat-audit-worker/issues/841)) ([20d5dc7](https://github.com/adobe/spacecat-audit-worker/commit/20d5dc73139f81608ad002efcb25c2deaaac076e))
+
+## [1.80.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.5...v1.80.6) (2025-05-09)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.24.0 ([#840](https://github.com/adobe/spacecat-audit-worker/issues/840)) ([d59b982](https://github.com/adobe/spacecat-audit-worker/commit/d59b982ddbb3902c8b414fa540f68703c90eca01))
+
+## [1.80.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.4...v1.80.5) (2025-05-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.17.2 ([#839](https://github.com/adobe/spacecat-audit-worker/issues/839)) ([c032d39](https://github.com/adobe/spacecat-audit-worker/commit/c032d39474b40d2a648a09841e3f435de9215d4f))
+
+## [1.80.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.3...v1.80.4) (2025-05-08)
+
+
+### Bug Fixes
+
+* message received from SQS is not getting logged properly ([#837](https://github.com/adobe/spacecat-audit-worker/issues/837)) ([3ec227f](https://github.com/adobe/spacecat-audit-worker/commit/3ec227f92fa000664c9f19b7f89d97e7af6c77ef))
+
+## [1.80.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.2...v1.80.3) (2025-05-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.10.4 ([#835](https://github.com/adobe/spacecat-audit-worker/issues/835)) ([787d5e1](https://github.com/adobe/spacecat-audit-worker/commit/787d5e1283ed1e0051a9fac8dabfa59fd8254987))
+
 ## [1.80.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.1...v1.80.2) (2025-05-07)
 
 
