@@ -19,7 +19,6 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { load as cheerioLoad } from 'cheerio';
 
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -27,6 +26,7 @@ import { generatePlainHtml, getScrapeForPath } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 const auditAutoSuggestType = Audit.AUDIT_TYPES.STRUCTURED_DATA_AUTO_SUGGEST;
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -159,7 +159,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
   const opportunity = await convertToOpportunity(
     auditUrl,
-    auditData,
+    { siteId: auditData.siteId, id: auditData.id },
     context,
     createOpportunityData,
     auditType,
@@ -232,43 +232,6 @@ ${item.issues.map((issue) => `    * ${issue.issueMessage}`).join('\n')}
   });
 
   return { ...auditData };
-}
-
-export async function structuredDataHandler(baseURL, context, site) {
-  const { log, dataAccess } = context;
-  const startTime = process.hrtime();
-
-  const siteId = site.getId();
-
-  try {
-    const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-    if (!isNonEmptyArray(topPages)) {
-      log.error(`No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
-      throw new Error(`No top pages for site ID ${siteId} found.`);
-    }
-
-    const auditResult = await processStructuredData(baseURL, context, topPages);
-
-    const endTime = process.hrtime(startTime);
-    const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
-    const formattedElapsed = elapsedSeconds.toFixed(2);
-
-    log.info(`Structured data audit completed in ${formattedElapsed} seconds for ${baseURL}`);
-
-    return {
-      fullAuditRef: baseURL,
-      auditResult,
-    };
-  } catch (e) {
-    log.error(`Structured data audit failed for ${baseURL}`, e);
-    return {
-      fullAuditRef: baseURL,
-      auditResult: {
-        error: e.message,
-        success: false,
-      },
-    };
-  }
 }
 
 export async function generateSuggestionsData(auditUrl, auditData, context, site) {
@@ -441,8 +404,96 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
   return { ...auditData };
 }
 
+export async function importTopPages(context) {
+  const { site, finalUrl, log } = context;
+
+  log.info(`Importing top pages for ${finalUrl}`);
+
+  const s3BucketPath = `scrapes/${site.getId()}/`;
+  return {
+    type: 'top-pages',
+    siteId: site.getId(),
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: s3BucketPath,
+    finalUrl,
+  };
+}
+
+export async function submitForScraping(context) {
+  const {
+    site,
+    dataAccess,
+    log,
+    finalUrl,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (topPages.length === 0) {
+    throw new Error('No top pages found for site');
+  }
+
+  log.info(`Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}`);
+
+  return {
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'structured-data',
+  };
+}
+
+export async function runAuditAndGenerateSuggestions(context) {
+  const {
+    site, finalUrl, log, dataAccess, audit,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+
+  const startTime = process.hrtime();
+  const siteId = site.getId();
+
+  try {
+    let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    if (!isNonEmptyArray(topPages)) {
+      log.error(`No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
+      throw new Error(`No top pages for site ID ${siteId} found.`);
+    } else {
+      topPages = topPages.map((page) => ({ url: page.getUrl() }));
+    }
+
+    let auditResult = await processStructuredData(finalUrl, context, topPages);
+
+    // Create opportunities and suggestions
+    auditResult = await generateSuggestionsData(finalUrl, { auditResult }, context, site);
+    auditResult = await opportunityAndSuggestions(finalUrl, {
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      ...auditResult,
+    }, context);
+
+    const endTime = process.hrtime(startTime);
+    const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+    const formattedElapsed = elapsedSeconds.toFixed(2);
+
+    log.info(`Structured data audit completed in ${formattedElapsed} seconds for ${finalUrl}`);
+
+    return {
+      fullAuditRef: finalUrl,
+      auditResult,
+    };
+  } catch (e) {
+    log.error(`Structured data audit failed for ${finalUrl}`, e);
+    return {
+      fullAuditRef: finalUrl,
+      auditResult: {
+        error: e.message,
+        success: false,
+      },
+    };
+  }
+}
+
 export default new AuditBuilder()
-  .withRunner(structuredDataHandler)
   .withUrlResolver((site) => site.getBaseURL())
-  .withPostProcessors([generateSuggestionsData, opportunityAndSuggestions])
+  .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
   .build();
