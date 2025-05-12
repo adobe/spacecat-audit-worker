@@ -351,6 +351,43 @@ describe('Meta Tags', () => {
         });
       });
 
+      it('should handle empty pageUrl by converting it to root path', async () => {
+        const mockScrapeResult = {
+          finalUrl: '',
+          scrapeResult: {
+            tags: {
+              title: 'Home Page',
+              description: 'Home Description',
+              h1: ['Home H1'],
+            },
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'scrapes/site-id/scrape.json',
+          'scrapes/site-id/',
+          logStub,
+        );
+
+        expect(result).to.deep.equal({
+          '/': {
+            title: 'Home Page',
+            description: 'Home Description',
+            h1: ['Home H1'],
+            s3key: 'scrapes/site-id/scrape.json',
+          },
+        });
+      });
+
       it('should handle missing tags', async () => {
         s3ClientStub.send.resolves({
           Body: {
