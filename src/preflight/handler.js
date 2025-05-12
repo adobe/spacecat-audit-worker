@@ -40,7 +40,7 @@ export async function scrapePages(context) {
   }
   return {
     urls,
-    jobId,
+    siteId,
     type: 'preflight',
     options: {
       enableAuthentication: true,
