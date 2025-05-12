@@ -82,7 +82,7 @@ export class AsyncJobRunner extends StepAudit {
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
       const updatedStepContext = {
-        ...context, site, urls, jobId,
+        ...context, site, urls, jobId, type,
       };
 
       updatedStepContext.finalUrl = await this.urlResolver(site, context);
