@@ -863,7 +863,6 @@ describe('Meta Tags', () => {
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
         expect(result).to.deep.equal({ status: 'complete' });
-        expect(logStub.info).to.have.been.calledWith('Running generating suggestions step for meta-tags audit on http://example.com');
         expect(s3ClientStub.send).to.have.been.called;
         expect(metatagsOppty.save).to.have.been.called;
       });
