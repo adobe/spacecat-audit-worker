@@ -88,7 +88,7 @@ describe('createLowNavigationOpportunities handler method', () => {
         form: 'https://www.surest.com/newsletter',
         screenshot: '',
         trackedFormKPIName: 'Form View Rate',
-        trackedFormKPIValue: 300,
+        trackedFormKPIValue: 0.035,
         formViews: 300,
         pageViews: 8670,
         formsource: '',
@@ -100,7 +100,7 @@ describe('createLowNavigationOpportunities handler method', () => {
             type: 'formViewRate',
             device: '*',
             value: {
-              page: 0.03460207612456748,
+              page: 0.035,
             },
           },
           {
@@ -115,6 +115,20 @@ describe('createLowNavigationOpportunities handler method', () => {
             device: 'desktop',
             value: {
               page: 0,
+            },
+          },
+          {
+            device: 'desktop',
+            type: 'traffic',
+            value: {
+              page: 4670,
+            },
+          },
+          {
+            device: 'mobile',
+            type: 'traffic',
+            value: {
+              page: 4000,
             },
           },
         ],

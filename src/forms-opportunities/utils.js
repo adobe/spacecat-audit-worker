@@ -99,40 +99,43 @@ function convertToLowViewOpptyData(metricObject) {
   } = metricObject;
   return {
     trackedFormKPIName: 'Form View Rate',
-    trackedFormKPIValue: formViews,
+    trackedFormKPIValue: Number((formViews / pageViews).toFixed(3)),
     metrics: [
       {
         type: 'formViewRate',
         device: '*',
         value: {
-          page: formViews / pageViews,
+          page: Number((formViews / pageViews).toFixed(3)),
         },
       },
       {
         type: 'formViewRate',
         device: 'mobile',
         value: {
-          page: formViewsMobile / pageViewsMobile,
+          page: Number((formViewsMobile / pageViewsMobile).toFixed(3)),
         },
       },
       {
         type: 'formViewRate',
         device: 'desktop',
         value: {
-          page: formViewsDesktop / pageViewsDesktop,
+          page: Number((formViewsDesktop / pageViewsDesktop).toFixed(3)),
         },
       },
-      // Enable when trafficacquisition data in enabled from spacecat-shared
-      // {
-      //   type: 'traffic',
-      //   device: '*',
-      //   value: {
-      //     total: trafficacquisition.total ? trafficacquisition.total : null,
-      //     paid: trafficacquisition.paid ? trafficacquisition.paid : null,
-      //     earned: trafficacquisition.earned ? trafficacquisition.earned : null,
-      //     owned: trafficacquisition.owned ? trafficacquisition.owned : null,
-      //   },
-      // },
+      {
+        type: 'traffic',
+        device: 'desktop',
+        value: {
+          page: pageViewsDesktop,
+        },
+      },
+      {
+        type: 'traffic',
+        device: 'mobile',
+        value: {
+          page: pageViewsMobile,
+        },
+      },
     ],
   };
 }
@@ -202,7 +205,7 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
   } = metricObject;
 
   const {
-    site, log,
+    site,
   } = context;
 
   /*
@@ -213,13 +216,10 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
   let opportunityData = {};
 
   if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION) {
-    log.info(`low conversion metric object : ${JSON.stringify(metricObject)}`);
     opportunityData = convertToLowConversionOpptyData(metricObject);
   } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION) {
-    log.info(`low navigation metric object : ${JSON.stringify(metricObject)}`);
     opportunityData = convertToLowNavOpptyData(metricObject);
   } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_VIEWS) {
-    log.info(`low views metric object : ${JSON.stringify(metricObject)}`);
     opportunityData = convertToLowViewOpptyData(metricObject);
   }
 
