@@ -436,7 +436,7 @@ export async function submitForScraping(context) {
 
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
-    jobId: site.getId(),
+    siteId: site.getId(),
     type: 'structured-data',
   };
 }

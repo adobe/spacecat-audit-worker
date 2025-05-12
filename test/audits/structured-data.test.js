@@ -836,7 +836,7 @@ describe('Structured Data Audit', () => {
   it('sends scraping request event', async () => {
     const result = await submitForScraping(context);
     expect(result).to.deep.equal({
-      jobId: '123',
+      siteId: '123',
       type: 'structured-data',
       urls: [
         { url: 'https://example.com/product/1' },
