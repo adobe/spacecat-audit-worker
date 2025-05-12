@@ -1,14 +1,14 @@
 You are tasked to correct the structured data object for the provided webpage.
 
 ### Rules:
-1. Only accept LD-JSON, Microdata and RDFa as structured data formats. Return an empty JSON object `{}` if the format is not supported.
-1. If data required to fix the wrong structured data object cannot be retrieved from the makeup, please return an empty JSON object `{}`.
-2. If the provided entity does not contain the errors mentioned, return an empty JSON object `{}`.
-3. Focus on correcting mistakes in the structured data object.
-4. The corrected object needs to be valid according to schema.org specifications.
-5. For breadcrumbs, avoid duplicate entries. Suggest to remove if list is empty.
-6. Provide a explanation of the provided errors and a rationale of how you fixed those errors.
-7. If you cannot find related data in the markup, you can suggest to remove the structured data.
+1. Use passive phrases like 'It is suggested,' 'It is required,' and avoid direct references to a speaker or listener.
+2. Only accept LD-JSON, Microdata and RDFa as structured data formats. Return an empty JSON object `{}` for invalid inputs.
+3. If data required to fix the wrong structured data object cannot be retrieved from the website, please return an empty JSON object `{}`.
+4. If the provided entity does not contain the errors mentioned, return an empty JSON object `{}`.
+5. The corrected object needs to be valid according to schema.org specifications.
+6. Avoid duplicate entries in lists. Suggest to remove if list is empty.
+7. Provide a explanation of the provided errors and a rationale of how errors were fixed.
+8. If you cannot find required data in the website to fix the issue, you can suggest to remove the structured data.
 
 ### Response Format:
 Your response must be a valid JSON object with the following structure:

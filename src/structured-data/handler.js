@@ -292,7 +292,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
   // Initialize Firefall client
   const firefallClient = FirefallClient.createFrom(context);
   const firefallOptions = {
-    model: 'gpt-4o-mini',
+    model: 'gpt-4o',
     responseFormat: 'json_object',
   };
 
@@ -363,6 +363,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
     const parsed = cheerioLoad(scrapeResult?.scrapeResult?.rawBody);
     const plainPage = generatePlainHtml(parsed);
 
+    // TODO: Add website metadata?
     const firefallInputs = {
       entity: issue.rootType,
       error: issue.issueMessage,
@@ -406,6 +407,52 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
     }
 
     issue.suggestion = suggestion;
+
+    issue.errors = [];
+
+    let fix = '';
+    if (suggestion && suggestion.aiRationale) {
+      const {
+        errorDescription,
+        correctedMarkup,
+        aiRationale,
+        confidenceScore,
+      } = suggestion;
+
+      const score = `${parseFloat(confidenceScore) * 100}%`;
+
+      let markup = '';
+      if (issue.dataFormat === 'jsonld') {
+        markup = `\`\`\`json
+${JSON.stringify(correctedMarkup, null, 4)}
+\`\`\``;
+      } else {
+        markup = `\`\`\`html
+${correctedMarkup}
+\`\`\``;
+      }
+
+      fix = `
+## Affected pages
+${issue.pageUrls.map((url) => `* ${url}`).join('\n')}
+## Issue Explanation
+${errorDescription}
+## Corrected Structured Data
+${markup}
+
+## Rationale
+${aiRationale}
+
+_Confidence score: ${score}_`;
+    } else {
+      fix = `
+  ## Affected pages
+  ${issue.pageUrls.map((url) => `* ${url}`).join('\n')}
+  ## Issue Detected for ${issue.rootType}
+  ${issue.issueMessage}`;
+    }
+
+    issue.errors.push({ fix, id: issue.rootType.replaceAll(/["\s]/g, '').toLowerCase(), errorTitle: issue.rootType });
   }
 
   log.debug(`Used ${firefallRequests} Firefall requests in total for site ${auditUrl}`);
@@ -414,7 +461,6 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
   return { ...auditData };
 }
 
-// TODO: Ensure that this can be displayed in the UI
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
@@ -432,70 +478,26 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditType,
   );
 
-  // TODO: How to define suggestion key, probably type + issue message + pageUrl
-  const buildKey = (data) => `${data.inspectionUrl}`;
-
-  const filteredAuditResult = auditData.auditResult
-    .filter((result) => result.richResults?.detectedIssues?.length > 0);
+  const buildKey = (data) => `${data.rootType}_${data.severity}_${data.issueMessage}`;
 
   await syncSuggestions({
     opportunity,
-    newData: filteredAuditResult,
+    newData: auditData.auditResult.issues,
     buildKey,
     context,
-    mapNewSuggestion: (data) => {
-      const errors = data.richResults.detectedIssues.sort();
-      return {
-        opportunityId: opportunity.getId(),
-        type: 'CODE_CHANGE',
-        rank: errors.length,
-        data: {
-          type: 'url',
-          url: data.inspectionUrl,
-          errors: errors.map((error) => {
-            let fix = '';
-            if (error.suggestion && error.suggestion.correctedLdjson) {
-              const {
-                errorDescription,
-                correctedLdjson,
-                aiRationale,
-                confidenceScore,
-              } = error.suggestion;
-
-              const score = `${parseFloat(confidenceScore) * 100}%`;
-
-              fix = `
-## Issue Explanation
-${errorDescription}
-## Corrected Structured Data
-\`\`\`json
-${JSON.stringify(correctedLdjson, null, 4)}
-\`\`\`
-
-## Rationale
-${aiRationale}
-
-_Confidence score: ${score}_`;
-            } else {
-              // Surface errors even without suggestion
-              fix = `
-## Issues Detected for ${error.richResultType}
-${error.items.map((item) => `
-* ${item.name}
-${item.issues.map((issue) => `    * ${issue.issueMessage}`).join('\n')}
-`).join('\n')}
-`;
-            }
-
-            return {
-              id: error.richResultType.replaceAll(/["\s]/g, '').toLowerCase(),
-              errorTitle: error.richResultType,
-              fix,
-            };
-          }),
-        },
-      };
-    },
+    mapNewSuggestion: (data) => ({
+      opportunityId: opportunity.getId(),
+      type: 'CODE_CHANGE',
+      rank: data.severity === 'ERROR' ? 1 : 0,
+      data: {
+        type: 'url',
+        url: data.pageUrls[0],
+        severity: data.severity,
+        rootType: data.rootType,
+        issueMessage: data.issueMessage,
+        errors: data.errors,
+      },
+    }),
     log,
   });
 
