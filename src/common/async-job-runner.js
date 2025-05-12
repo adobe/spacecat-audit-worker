@@ -47,7 +47,7 @@ export class AsyncJobRunner extends StepAudit {
 
     const nextStepName = this.getNextStepName(step.name);
 
-    const stepContext = {
+    const auditContext = {
       next: nextStepName,
       jobId,
       auditType: type,
@@ -55,7 +55,7 @@ export class AsyncJobRunner extends StepAudit {
     };
 
     const queueUrl = destination.getQueueUrl(context);
-    const payload = destination.formatPayload(stepResult, stepContext, context);
+    const payload = destination.formatPayload(stepResult, auditContext, context);
     await sendContinuationMessage({ queueUrl, payload }, context);
 
     log.info(`Step ${step.name} completed for job ${jobId} of type ${type}, message sent to ${step.destination}`);
@@ -67,7 +67,7 @@ export class AsyncJobRunner extends StepAudit {
     const { stepNames } = this;
     const { log } = context;
     const {
-      type, siteId, urls, jobId, stepContext = {},
+      type, siteId, urls, jobId, auditContext = {},
     } = message;
 
     try {
@@ -78,7 +78,7 @@ export class AsyncJobRunner extends StepAudit {
         return ok();
       }
 
-      const stepName = stepContext.next || stepNames[0];
+      const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
       const updatedStepContext = {
@@ -97,7 +97,7 @@ export class AsyncJobRunner extends StepAudit {
 
       return response;
     } catch (e) {
-      const errorMessage = `${type} audit failed for site ${siteId} at step ${stepContext.next || 'initial'}. Reason: ${e.message}`;
+      const errorMessage = `${type} audit failed for site ${siteId} at step ${auditContext.next || 'initial'}. Reason: ${e.message}`;
       log.error(errorMessage, { error: e });
       throw new Error(errorMessage, { cause: e });
     }
