@@ -39,7 +39,7 @@ export async function scrapePages(context) {
     throw new Error(`[preflight-audit] site: ${siteId}. Invalid jobId provided for scraping`);
   }
   return {
-    urls: urls.map((url) => ({ url })),
+    urls,
     jobId,
     type: 'preflight',
     options: {

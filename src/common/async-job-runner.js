@@ -50,7 +50,7 @@ export class AsyncJobRunner extends StepAudit {
     const stepContext = {
       next: nextStepName,
       jobId,
-      type,
+      auditType: type,
       urls,
     };
 
