@@ -103,6 +103,24 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormNavOppty.save();
       }
+
+      log.info('sending message to mystique for high-page-views-low-form-nav');
+      const mystiqueMessage = {
+        type: 'guidance:high-page-views-low-form-nav',
+        siteId: auditData.siteId,
+        auditId: auditData.auditId,
+        deliveryType: site.getDeliveryType(),
+        time: new Date().toISOString(),
+        data: {
+          url: opportunityData.data.form,
+          cr: opportunityData.data.trackedFormKPIValue,
+          screenshot: opportunityData.data.screenshot,
+        },
+      };
+
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+      log.info(`forms opportunity high page views low form nav sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form nav for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
