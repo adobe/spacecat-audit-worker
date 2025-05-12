@@ -15,6 +15,7 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import {
@@ -603,6 +604,278 @@ describe('Meta Tags', () => {
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
         expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+    });
+
+    describe('runAuditAndGenerateSuggestions', () => {
+      let RUMAPIClientStub;
+      let metatagsOppty;
+
+      beforeEach(() => {
+        s3ClientStub = {
+          send: sinon.stub(),
+          getObject: sinon.stub(),
+        };
+        logStub = {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          error: sinon.stub(),
+          warn: sinon.stub(),
+        };
+        dataAccessStub = {
+          SiteTopPage: {
+            allBySiteId: sinon.stub(),
+            allBySiteIdAndSourceAndGeo: sinon.stub(),
+          },
+          Site: {
+            findById: sinon.stub(),
+          },
+          Configuration: {
+            findLatest: sinon.stub(),
+          },
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub(),
+          },
+        };
+
+        RUMAPIClientStub = {
+          createFrom: sinon.stub().returns({
+            query: sinon.stub().resolves([
+              {
+                url: 'http://example.com/blog/page1',
+                total: 100,
+                earned: 20,
+                owned: 70,
+                paid: 10,
+              },
+            ]),
+          }),
+        };
+
+        metatagsOppty = {
+          getId: () => 'opportunity-id',
+          setAuditId: sinon.stub(),
+          save: sinon.stub(),
+          getSuggestions: sinon.stub().returns([]),
+          addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
+          getType: () => 'meta-tags',
+          setData: sinon.stub(),
+          getData: sinon.stub(),
+        };
+
+        site = {
+          getIsLive: sinon.stub().returns(true),
+          getId: sinon.stub().returns('site-id'),
+          getBaseURL: sinon.stub().returns('http://example.com'),
+        };
+
+        audit = {
+          getId: sinon.stub().returns('audit-id'),
+        };
+
+        dataAccessStub.Site.findById.resolves(site);
+        dataAccessStub.Configuration.findLatest.resolves({
+          isHandlerEnabledForSite: sinon.stub().returns(true),
+        });
+
+        const topPages = [
+          { getUrl: () => 'http://example.com/blog/page1', getTopKeyword: sinon.stub().returns('page') },
+          { getUrl: () => 'http://example.com/blog/page2', getTopKeyword: sinon.stub().returns('Test') },
+          { getUrl: () => 'http://example.com/blog/page3', getTopKeyword: sinon.stub().returns('') },
+          { getUrl: () => 'http://example.com/', getTopKeyword: sinon.stub().returns('Home') },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteId.resolves(topPages);
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([metatagsOppty]);
+
+        // Setup S3 client stubs
+        const listObjectsResponse = {
+          Contents: [
+            { Key: 'scrapes/site-id/blog/page1/scrape.json' },
+            { Key: 'scrapes/site-id/blog/page2/scrape.json' },
+            { Key: 'scrapes/site-id/blog/page3/scrape.json' },
+            { Key: 'scrapes/site-id/scrape.json' },
+          ],
+        };
+
+        const page1Response = {
+          Body: {
+            transformToString: () => JSON.stringify({
+              scrapeResult: {
+                tags: {
+                  title: 'Test Page',
+                  description: '',
+                },
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        };
+
+        const page2Response = {
+          Body: {
+            transformToString: () => JSON.stringify({
+              scrapeResult: {
+                tags: {
+                  title: 'Test Page',
+                  h1: [
+                    'This is a dummy H1 that is intentionally made to be overly lengthy from SEO perspective',
+                  ],
+                },
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        };
+
+        const page3Response = {
+          Body: {
+            transformToString: () => JSON.stringify({
+            }),
+          },
+          ContentType: 'application/json',
+        };
+
+        const homePageResponse = {
+          Body: {
+            transformToString: () => JSON.stringify({
+              finalUrl: 'http://example.com/site-id/',
+              scrapeResult: {
+                tags: {
+                  title: 'Home Page',
+                  description: 'Home page description',
+                },
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        };
+
+        // Setup S3 client responses
+        s3ClientStub.send = sinon.stub();
+        s3ClientStub.send
+          .withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+          .resolves(listObjectsResponse);
+
+        s3ClientStub.send
+          .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+            Bucket: 'test-bucket',
+            Key: 'scrapes/site-id/blog/page1/scrape.json',
+          })))
+          .resolves(page1Response);
+
+        s3ClientStub.send
+          .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+            Bucket: 'test-bucket',
+            Key: 'scrapes/site-id/blog/page2/scrape.json',
+          })))
+          .resolves(page2Response);
+
+        s3ClientStub.send
+          .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+            Bucket: 'test-bucket',
+            Key: 'scrapes/site-id/blog/page3/scrape.json',
+          })))
+          .resolves(page3Response);
+
+        s3ClientStub.send
+          .withArgs(sinon.match.instanceOf(GetObjectCommand).and(sinon.match.has('input', {
+            Bucket: 'test-bucket',
+            Key: 'scrapes/site-id/scrape.json',
+          })))
+          .resolves(homePageResponse);
+
+        context = {
+          site,
+          audit,
+          finalUrl: 'http://example.com',
+          log: logStub,
+          s3Client: s3ClientStub,
+          dataAccess: dataAccessStub,
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          },
+        };
+      });
+
+      afterEach(() => {
+        sinon.restore();
+      });
+
+      it('should successfully run audit and generate suggestions', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({
+            '/blog/page1': {
+              title: {
+                aiSuggestion: 'AI Suggested Title 1',
+                aiRationale: 'AI Rationale 1',
+              },
+            },
+            '/blog/page2': {
+              title: {
+                aiSuggestion: 'AI Suggested Title 2',
+                aiRationale: 'AI Rationale 2',
+              },
+            },
+          }),
+        });
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(logStub.info).to.have.been.calledWith('Running generating suggestions step for meta-tags audit on http://example.com');
+        expect(s3ClientStub.send).to.have.been.called;
+        expect(metatagsOppty.save).to.have.been.called;
+      });
+
+      it('should handle case when no tags are extracted', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+        });
+
+        // Override all S3 responses to have null tags
+        s3ClientStub.send
+          .withArgs(sinon.match.instanceOf(GetObjectCommand))
+          .returns({
+            Body: {
+              transformToString: () => JSON.stringify({
+                scrapeResult: {
+                  tags: null,
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
+        expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
+      });
+
+      it('should handle RUM API errors gracefully', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+        });
+        // Override RUM API response to simulate error
+        RUMAPIClientStub.createFrom().query.rejects(new Error('RUM API Error'));
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(logStub.warn).to.have.been.calledWith('Error while calculating projected traffic for http://example.com : site-id', sinon.match.instanceOf(Error));
       });
     });
 
