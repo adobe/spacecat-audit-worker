@@ -28,10 +28,9 @@ export const resolveCpcValue = () => CPC_DEFAULT_VALUE;
  * @param {Object} auditData - The audit data containing results
  * @returns {Object} KPI delta calculations
  */
-export const calculateKpiDeltasForAudit = (auditData) => {
+export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
   const cpcValue = resolveCpcValue();
 
-  const brokenInternalLinks = auditData?.auditResult?.brokenInternalLinks;
   const linksMap = {};
 
   for (const link of brokenInternalLinks) {
@@ -93,4 +92,37 @@ export async function isLinkInaccessible(url, log) {
     // Any error means the URL is inaccessible
     return true;
   }
+}
+
+/**
+ * Classifies links into priority categories based on views
+ * High: top 25%, Medium: next 25%, Low: bottom 50%
+ * @param {Array} links - Array of objects with views property
+ * @returns {Array} - Links with priority classifications included
+ */
+export function calculatePriority(links) {
+  // Sort links by views in descending order
+  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
+
+  // Calculate indices for the 25% and 50% marks
+  const quarterIndex = Math.ceil(sortedLinks.length * 0.25);
+  const halfIndex = Math.ceil(sortedLinks.length * 0.5);
+
+  // Map through sorted links and assign priority
+  return sortedLinks.map((link, index) => {
+    let priority;
+
+    if (index < quarterIndex) {
+      priority = 'high';
+    } else if (index < halfIndex) {
+      priority = 'medium';
+    } else {
+      priority = 'low';
+    }
+
+    return {
+      ...link,
+      priority,
+    };
+  });
 }

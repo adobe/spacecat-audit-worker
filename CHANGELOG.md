@@ -1,3 +1,31 @@
+## [1.81.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.81.1...v1.81.2) (2025-05-11)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#846](https://github.com/adobe/spacecat-audit-worker/issues/846)) ([a04431c](https://github.com/adobe/spacecat-audit-worker/commit/a04431cdbce6176c350f59ab246c5046bb7bb79e))
+
+## [1.81.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.81.0...v1.81.1) (2025-05-10)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#845](https://github.com/adobe/spacecat-audit-worker/issues/845)) ([98e9219](https://github.com/adobe/spacecat-audit-worker/commit/98e92192144d3088c5a7bd94614d233df76035f1))
+
+# [1.81.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.7...v1.81.0) (2025-05-09)
+
+
+### Features
+
+* steps implementation in broken internal links audit ([#776](https://github.com/adobe/spacecat-audit-worker/issues/776)) ([f43c876](https://github.com/adobe/spacecat-audit-worker/commit/f43c876bfa5749feb693fb8f738a573c244594d5))
+
+## [1.80.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.6...v1.80.7) (2025-05-09)
+
+
+### Bug Fixes
+
+* update thresholds for low-view oppoty ([#841](https://github.com/adobe/spacecat-audit-worker/issues/841)) ([20d5dc7](https://github.com/adobe/spacecat-audit-worker/commit/20d5dc73139f81608ad002efcb25c2deaaac076e))
+
 ## [1.80.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.80.5...v1.80.6) (2025-05-09)
 
 
