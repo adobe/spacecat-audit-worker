@@ -155,6 +155,95 @@ describe('createLowNavigationOpportunities handler method', () => {
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });
 
+  it('should create new high page views low form navigation opportunity with iframe', async () => {
+    const expectedOpportunityData = {
+      siteId: 'site-id',
+      auditId: 'audit-id',
+      runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
+      type: FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
+      origin: 'AUTOMATION',
+      title: 'Form has low views',
+      description: 'The form has low views due to low navigations in the page containing its CTA',
+      tags: [
+        'Forms Conversion',
+      ],
+      data: {
+        form: 'https://www.iframe-example.com/test/getting-iframe-example/guide/newsletter',
+        screenshot: '',
+        trackedFormKPIName: 'Form Views',
+        trackedFormKPIValue: 300,
+        formViews: 300,
+        pageViews: 8670,
+        formsource: '',
+        iframeSrc: 'https://www.iframe-example.com/content/iframe-example/en-us/test/getting-iframe-example/guide/begin/jcr:content/contentpar/columns/0/aemform.iframe.en.html',
+        samples: 8670,
+        scrapedStatus: false,
+        dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
+        metrics: [
+          {
+            type: 'formViews',
+            device: '*',
+            value: {
+              page: 300,
+            },
+          },
+          {
+            type: 'formViews',
+            device: 'mobile',
+            value: {
+              page: 300,
+            },
+          },
+          {
+            type: 'formViews',
+            device: 'desktop',
+            value: {
+              page: 0,
+            },
+          },
+          {
+            type: 'traffic',
+            device: '*',
+            value: {
+              paid: 4670,
+              total: 8670,
+              earned: 2000,
+              owned: 2000,
+            },
+          },
+        ],
+        formNavigation: {
+          source: '#teaser-related02 .cmp-teaser__action-link',
+          url: 'https://www.suriframe-example.com/newsletter',
+        },
+      },
+      guidance: {
+        recommendations: [
+          {
+            insight: 'The CTA element in the page: https://www.suriframe-example.com/newsletter is not placed in the most optimal positions for visibility and engagement',
+            recommendation: 'Reposition the CTA to be more centrally located and ensure they are above the fold.',
+            type: 'guidance',
+            rationale: 'CTAs placed above the fold and in central positions are more likely to be seen and clicked by users, leading to higher engagement rates.',
+          },
+        ],
+      },
+    };
+
+    formsCTAOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION;
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
+
+    await createLowNavigationOpportunities(
+      auditUrl,
+      testData.opptyAuditDataWithIframe,
+      undefined,
+      context,
+    );
+
+    const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
+    expect(actualCall).to.deep.equal(expectedOpportunityData);
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+  });
+
   it('should use existing high page views low form navigation opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
 

@@ -133,6 +133,62 @@ const testData = {
       ],
     },
   },
+  opptyAuditDataWithIframe: {
+    type: 'high-page-views-low-form-nav',
+    siteId: 'site-id',
+    auditId: 'audit-id',
+    auditResult: {
+      formVitals: [
+        {
+          url: 'https://www.iframe-example.com/test/getting-iframe-example/guide/newsletter',
+          formsubmit: {
+          },
+          formview: { 'mobile:ios': 300 },
+          formengagement: {
+            'mobile:ios': 300,
+          },
+          pageview: {
+            'desktop:windows': 4670,
+            'mobile:ios': 4000,
+          },
+          trafficacquisition: {
+            paid: 4670,
+            maxTimeDelta: 3060,
+            total: 8670,
+            earned: 2000,
+            sources: [],
+            owned: 2000,
+          },
+          iframeSrc: 'https://www.iframe-example.com/content/iframe-example/en-us/test/getting-iframe-example/guide/begin/jcr:content/contentpar/columns/0/aemform.iframe.en.html',
+          forminternalnavigation: [
+            {
+              url: 'https://www.suriframe-example.com/newsletter',
+              pageview: {
+                'desktop:windows:blink': 54000,
+                'mobile:android:blink': 26000,
+                'mobile:ios:webkit': 24000,
+                'desktop:mac:webkit': 2000,
+                'desktop:chromeos:blink': 900,
+                'desktop:mac:blink': 900,
+                'desktop:linux:gecko': 200,
+                'mobile:ipados:webkit': 100,
+                'mobile:android:gecko': 100,
+                'desktop:linux:blink': 100,
+                'desktop:windows:gecko': 100,
+              },
+              CTAs: [
+                {
+                  source: '#teaser-related02 .cmp-teaser__action-link',
+                  clicks: 800,
+                },
+              ],
+              totalClicksOnPage: 7200,
+            },
+          ],
+        },
+      ],
+    },
+  },
   oppty2AuditData: {
     type: 'high-page-views-low-form-nav',
     siteId: 'site-id',
