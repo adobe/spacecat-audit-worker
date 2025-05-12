@@ -33,7 +33,7 @@ export class AsyncJobRunner extends StepAudit {
 
   async chainStep(step, stepResult, context) {
     const {
-      jobId, type, urls, log,
+      jobId, type, site, urls, log,
     } = context;
 
     if (!hasText(step?.destination)) {
@@ -49,7 +49,8 @@ export class AsyncJobRunner extends StepAudit {
 
     const stepContext = {
       next: nextStepName,
-      jobId,
+      jobId: site.getId(),
+      asyncJobId: jobId,
       auditType: type,
       urls,
     };
