@@ -11,7 +11,7 @@
  */
 
 import { isNonEmptyArray, isValidUrl, isValidUUID } from '@adobe/spacecat-shared-utils';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopPersister } from '../common/index.js';
 import { canonicalCheck } from '../canonical/handler.js';
@@ -50,8 +50,9 @@ export async function scrapePages(context) {
 
 export const preflightAudit = async (context) => {
   const {
-    site, urls, jobId, log,
+    site, urls, jobId, dataAccess, log,
   } = context;
+  const { AsyncJob: asyncJobCollection } = dataAccess;
 
   if (!validPages(urls)) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Invalid pages provided`);
@@ -59,6 +60,16 @@ export const preflightAudit = async (context) => {
 
   if (!isValidUUID(jobId)) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Invalid jobId provided`);
+  }
+
+  const asyncJob = await asyncJobCollection.findById(jobId);
+
+  if (!asyncJob) {
+    throw new Error(`[preflight-audit] site: ${site.getId()}. Job not found for jobId: ${jobId}`);
+  }
+
+  if (asyncJob.getStatus() !== AsyncJob.status.IN_PROGRESS) {
+    throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${jobId}. Status: ${asyncJob.getStatus()}`);
   }
 
   const result = {
@@ -117,6 +128,12 @@ export const preflightAudit = async (context) => {
 
   // specific for preflight
   // bad links...
+
+  asyncJob.setStatus(AsyncJob.status.COMPLETED);
+  asyncJob.setResultType(AsyncJob.ResultType.INLINE);
+  asyncJob.setResult(result);
+  asyncJob.setEndedAt(new Date().toISOString());
+  await asyncJob.save();
 
   log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit completed for jobId: ${jobId}`);
   log.info(JSON.stringify(result));
