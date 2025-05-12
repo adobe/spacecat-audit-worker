@@ -808,12 +808,16 @@ const testData = {
         },
         {
           type: 'traffic',
-          device: '*',
+          device: 'desktop',
           value: {
-            total: null,
-            paid: null,
-            earned: null,
-            owned: null,
+            page: 4670,
+          },
+        },
+        {
+          type: 'traffic',
+          device: 'mobile',
+          value: {
+            page: 4000,
           },
         },
       ],
@@ -919,12 +923,16 @@ const testData = {
         },
         {
           type: 'traffic',
-          device: '*',
+          device: 'desktop',
           value: {
-            total: null,
-            paid: null,
-            earned: null,
-            owned: null,
+            page: 5690,
+          },
+        },
+        {
+          type: 'traffic',
+          device: 'mobile',
+          value: {
+            page: 1000,
           },
         },
       ],
@@ -1019,12 +1027,16 @@ const testData = {
         },
         {
           type: 'traffic',
-          device: '*',
+          device: 'desktop',
           value: {
-            total: null,
-            paid: null,
-            earned: null,
-            owned: null,
+            page: 5690,
+          },
+        },
+        {
+          type: 'traffic',
+          device: 'mobile',
+          value: {
+            page: 1000,
           },
         },
       ],
@@ -1128,12 +1140,16 @@ const testData = {
         },
         {
           type: 'traffic',
-          device: '*',
+          device: 'desktop',
           value: {
-            total: null,
-            paid: null,
-            earned: null,
-            owned: null,
+            page: 5690,
+          },
+        },
+        {
+          type: 'traffic',
+          device: 'mobile',
+          value: {
+            page: 1000,
           },
         },
       ],
@@ -1229,12 +1245,16 @@ const testData = {
         },
         {
           type: 'traffic',
-          device: '*',
+          device: 'desktop',
           value: {
-            total: 211400,
-            paid: 192200,
-            earned: 4400,
-            owned: 14800,
+            page: 5690,
+          },
+        },
+        {
+          type: 'traffic',
+          device: 'mobile',
+          value: {
+            page: 2000,
           },
         },
       ],

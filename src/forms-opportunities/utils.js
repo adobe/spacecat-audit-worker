@@ -94,41 +94,46 @@ function getFormMetrics(metricObject) {
 function convertToLowViewOpptyData(metricObject) {
   const {
     formview: { total: formViews, mobile: formViewsMobile, desktop: formViewsDesktop },
-    trafficacquisition,
+    pageview: { total: pageViews, mobile: pageViewsMobile, desktop: pageViewsDesktop },
+    // trafficacquisition,
   } = metricObject;
   return {
-    trackedFormKPIName: 'Form Views',
-    trackedFormKPIValue: formViews,
+    trackedFormKPIName: 'Form View Rate',
+    trackedFormKPIValue: Number((formViews / pageViews).toFixed(3)),
     metrics: [
       {
-        type: 'formViews',
+        type: 'formViewRate',
         device: '*',
         value: {
-          page: formViews,
+          page: Number((formViews / pageViews).toFixed(3)),
         },
       },
       {
-        type: 'formViews',
+        type: 'formViewRate',
         device: 'mobile',
         value: {
-          page: formViewsMobile,
+          page: Number((formViewsMobile / pageViewsMobile).toFixed(3)),
         },
       },
       {
-        type: 'formViews',
+        type: 'formViewRate',
         device: 'desktop',
         value: {
-          page: formViewsDesktop,
+          page: Number((formViewsDesktop / pageViewsDesktop).toFixed(3)),
         },
       },
       {
         type: 'traffic',
-        device: '*',
+        device: 'desktop',
         value: {
-          total: trafficacquisition.total ? trafficacquisition.total : null,
-          paid: trafficacquisition.paid ? trafficacquisition.paid : null,
-          earned: trafficacquisition.earned ? trafficacquisition.earned : null,
-          owned: trafficacquisition.owned ? trafficacquisition.owned : null,
+          page: pageViewsDesktop,
+        },
+      },
+      {
+        type: 'traffic',
+        device: 'mobile',
+        value: {
+          page: pageViewsMobile,
         },
       },
     ],
@@ -145,7 +150,10 @@ function convertToLowNavOpptyData(metricObject) {
 }
 
 function convertToLowConversionOpptyData(metricObject) {
-  const { trafficacquisition } = metricObject;
+  const {
+    pageview: { mobile: pageViewsMobile, desktop: pageViewsDesktop },
+  } = metricObject;
+
   const deviceWiseMetrics = getFormMetrics(metricObject);
 
   let totalConversionRate = 0;
@@ -177,12 +185,17 @@ function convertToLowConversionOpptyData(metricObject) {
 
   metrics.push({
     type: 'traffic',
-    device: '*',
+    device: 'desktop',
     value: {
-      total: trafficacquisition.total ? trafficacquisition.total : null,
-      paid: trafficacquisition.paid ? trafficacquisition.paid : null,
-      earned: trafficacquisition.earned ? trafficacquisition.earned : null,
-      owned: trafficacquisition.owned ? trafficacquisition.owned : null,
+      page: pageViewsDesktop,
+    },
+  });
+
+  metrics.push({
+    type: 'traffic',
+    device: 'mobile',
+    value: {
+      page: pageViewsMobile,
     },
   });
 
