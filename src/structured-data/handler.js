@@ -21,7 +21,6 @@ import { load as cheerioLoad } from 'cheerio';
 import StructuredDataValidator from '@adobe/structured-data-validator';
 import { join } from 'path';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -29,13 +28,14 @@ import { generatePlainHtml, getScrapeForPath } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 const auditAutoSuggestType = Audit.AUDIT_TYPES.STRUCTURED_DATA_AUTO_SUGGEST;
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-async function getStructuredDataIssuesFromGSC(baseUrl, context, pages) {
+async function getStructuredDataIssuesFromGSC(finalUrl, context, pages) {
   const { log } = context;
 
   let google;
   try {
-    google = await GoogleClient.createFrom(context, baseUrl);
+    google = await GoogleClient.createFrom(context, finalUrl);
   } catch (error) {
     log.error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
     throw new Error(`Failed to create Google client. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
@@ -92,7 +92,7 @@ async function getStructuredDataIssuesFromGSC(baseUrl, context, pages) {
   return issues;
 }
 
-async function getStructuredDataIssuesFromScraper(baseUrl, context, pages, site) {
+async function getStructuredDataIssuesFromScraper(finalUrl, context, pages, site) {
   const { log } = context;
 
   const issues = [];
@@ -183,7 +183,7 @@ async function deduplicateIssues(context, gscIssues, scraperIssues) {
  *
  * @async
  * @function
- * @param {string} baseURL - The base URL for the audit.
+ * @param {string} finalUrl - The final URL for the audit.
  * @param {Object} context - The context object.
  * @param {Array} pages - An array of page URLs to be audited.
  *
@@ -193,15 +193,15 @@ async function deduplicateIssues(context, gscIssues, scraperIssues) {
  *
  * @throws {Error} - Throws an error if the audit process fails.
  */
-export async function processStructuredData(baseURL, context, pages, site) {
+export async function processStructuredData(finalUrl, context, pages, site) {
   const { log } = context;
 
   // TODO: Somehow deduplicate issues between GSC and validator
   // TODO: Log missing issues that appear in GSC but not in validator
 
   const [gscPagesWithIssues, scraperPagesWithIssues] = await Promise.all([
-    getStructuredDataIssuesFromGSC(baseURL, context, pages),
-    getStructuredDataIssuesFromScraper(baseURL, context, pages, site),
+    getStructuredDataIssuesFromGSC(finalUrl, context, pages),
+    getStructuredDataIssuesFromScraper(finalUrl, context, pages, site),
   ]);
 
   log.info('GSC issues', gscPagesWithIssues);
@@ -225,46 +225,6 @@ export async function processStructuredData(baseURL, context, pages, site) {
     success: true,
     issues: pagesWithIssues,
   };
-}
-
-export async function structuredDataHandler(baseURL, context, site) {
-  const { log, dataAccess } = context;
-  const startTime = process.hrtime();
-
-  try {
-    /* const topPages = [{
-      url: 'https://www.aemshop.net/structured-data/breadcrumb/invalid1',
-    }]; */
-
-    const siteId = site.getId();
-    const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-    if (!isNonEmptyArray(topPages)) {
-      log.error(`No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
-      throw new Error(`No top pages for site ID ${siteId} found.`);
-    }
-
-    const auditResult = await processStructuredData(baseURL, context, topPages, site);
-
-    const endTime = process.hrtime(startTime);
-    const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
-    const formattedElapsed = elapsedSeconds.toFixed(2);
-
-    log.info(`Structured data audit completed in ${formattedElapsed} seconds for ${baseURL}`);
-
-    return {
-      fullAuditRef: baseURL,
-      auditResult,
-    };
-  } catch (e) {
-    log.error(`Structured data audit failed for ${baseURL}`, e);
-    return {
-      fullAuditRef: baseURL,
-      auditResult: {
-        error: e.message,
-        success: false,
-      },
-    };
-  }
 }
 
 export async function generateSuggestionsData(auditUrl, auditData, context, site) {
@@ -472,7 +432,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
   const opportunity = await convertToOpportunity(
     auditUrl,
-    auditData,
+    { siteId: auditData.siteId, id: auditData.id },
     context,
     createOpportunityData,
     auditType,
@@ -504,8 +464,100 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   return { ...auditData };
 }
 
+export async function importTopPages(context) {
+  const { site, finalUrl, log } = context;
+
+  log.info(`Importing top pages for ${finalUrl}`);
+
+  const s3BucketPath = `scrapes/${site.getId()}/`;
+  return {
+    type: 'top-pages',
+    siteId: site.getId(),
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: s3BucketPath,
+    finalUrl,
+  };
+}
+
+export async function submitForScraping(context) {
+  const {
+    site,
+    dataAccess,
+    log,
+    finalUrl,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (topPages.length === 0) {
+    throw new Error('No top pages found for site');
+  }
+
+  log.info(`Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}`);
+
+  return {
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'structured-data',
+  };
+}
+
+export async function runAuditAndGenerateSuggestions(context) {
+  const {
+    site, finalUrl, log, dataAccess, audit,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+
+  const startTime = process.hrtime();
+  const siteId = site.getId();
+
+  try {
+    /* let topPages = [{
+      getUrl: () => 'https://www.aemshop.net/structured-data/breadcrumb/invalid1',
+    }]; */
+
+    let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    if (!isNonEmptyArray(topPages)) {
+      log.error(`No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
+      throw new Error(`No top pages for site ID ${siteId} found.`);
+    } else {
+      topPages = topPages.map((page) => ({ url: page.getUrl() }));
+    }
+
+    let auditResult = await processStructuredData(finalUrl, context, topPages, site);
+
+    // Create opportunities and suggestions
+    auditResult = await generateSuggestionsData(finalUrl, { auditResult }, context, site);
+    auditResult = await opportunityAndSuggestions(finalUrl, {
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      ...auditResult,
+    }, context);
+
+    const endTime = process.hrtime(startTime);
+    const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+    const formattedElapsed = elapsedSeconds.toFixed(2);
+
+    log.info(`Structured data audit completed in ${formattedElapsed} seconds for ${finalUrl}`);
+
+    return {
+      fullAuditRef: finalUrl,
+      auditResult,
+    };
+  } catch (e) {
+    log.error(`Structured data audit failed for ${finalUrl}`, e);
+    return {
+      fullAuditRef: finalUrl,
+      auditResult: {
+        error: e.message,
+        success: false,
+      },
+    };
+  }
+}
+
 export default new AuditBuilder()
-  .withRunner(structuredDataHandler)
   .withUrlResolver((site) => site.getBaseURL())
-  .withPostProcessors([generateSuggestionsData, opportunityAndSuggestions])
+  .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
   .build();
