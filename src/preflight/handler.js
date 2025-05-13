@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isValidUrl, isValidUUID } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isValidUrl } from '@adobe/spacecat-shared-utils';
 import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopPersister } from '../common/index.js';
@@ -28,16 +28,16 @@ export function validPages(urls) {
 }
 
 export async function scrapePages(context) {
-  const { site, urls, jobId } = context;
+  const { site, job } = context;
   const siteId = site.getId();
+
+  const jobMetadata = job.getMetadata();
+  const { urls } = jobMetadata.payload;
 
   if (!validPages(urls)) {
     throw new Error(`[preflight-audit] site: ${siteId}. Invalid pages provided for scraping`);
   }
 
-  if (!isValidUUID(jobId)) {
-    throw new Error(`[preflight-audit] site: ${siteId}. Invalid jobId provided for scraping`);
-  }
   return {
     urls,
     siteId,
@@ -50,26 +50,18 @@ export async function scrapePages(context) {
 
 export const preflightAudit = async (context) => {
   const {
-    site, urls, jobId, dataAccess, log,
+    site, job, log,
   } = context;
-  const { AsyncJob: asyncJobCollection } = dataAccess;
+
+  const jobMetadata = job.getMetadata();
+  const { urls } = jobMetadata.payload;
 
   if (!validPages(urls)) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Invalid pages provided`);
   }
 
-  if (!isValidUUID(jobId)) {
-    throw new Error(`[preflight-audit] site: ${site.getId()}. Invalid jobId provided`);
-  }
-
-  const asyncJob = await asyncJobCollection.findById(jobId);
-
-  if (!asyncJob) {
-    throw new Error(`[preflight-audit] site: ${site.getId()}. Job not found for jobId: ${jobId}`);
-  }
-
-  if (asyncJob.getStatus() !== AsyncJob.status.IN_PROGRESS) {
-    throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${jobId}. Status: ${asyncJob.getStatus()}`);
+  if (job.getStatus() !== AsyncJob.status.IN_PROGRESS) {
+    throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
   const result = {
@@ -129,13 +121,13 @@ export const preflightAudit = async (context) => {
   // specific for preflight
   // bad links...
 
-  asyncJob.setStatus(AsyncJob.status.COMPLETED);
-  asyncJob.setResultType(AsyncJob.ResultType.INLINE);
-  asyncJob.setResult(result);
-  asyncJob.setEndedAt(new Date().toISOString());
-  await asyncJob.save();
+  job.setStatus(AsyncJob.status.COMPLETED);
+  job.setResultType(AsyncJob.ResultType.INLINE);
+  job.setResult(result);
+  job.setEndedAt(new Date().toISOString());
+  await job.save();
 
-  log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit completed for jobId: ${jobId}`);
+  log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit completed for jobId: ${job.getId()}`);
   log.info(JSON.stringify(result));
 };
 

@@ -18,6 +18,7 @@ import {
   defaultMessageSender,
   defaultPersister,
   defaultUrlResolver,
+  defaultJobProvider,
   defaultPostProcessors,
   StepAudit,
   RunnerAudit,
@@ -33,6 +34,7 @@ export class AuditBuilder {
     this.messageSender = defaultMessageSender;
     this.postProcessors = defaultPostProcessors;
     this.isAsyncJob = false;
+    this.jobProvider = defaultJobProvider;
     this.steps = {};
   }
 
@@ -142,6 +144,7 @@ export class AuditBuilder {
 
       if (this.isAsyncJob) {
         return new AsyncJobRunner(
+          this.jobProvider,
           this.siteProvider,
           this.orgProvider,
           this.urlResolver,

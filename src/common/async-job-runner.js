@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { hasText, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { hasText, isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
@@ -20,6 +20,7 @@ const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 
 export class AsyncJobRunner extends StepAudit {
   constructor(
+    jobProvider,
     siteProvider,
     orgProvider,
     urlResolver,
@@ -29,6 +30,8 @@ export class AsyncJobRunner extends StepAudit {
     steps = {},
   ) {
     super(siteProvider, orgProvider, urlResolver, persister, messageSender, postProcessors, steps);
+
+    this.jobProvider = jobProvider;
   }
 
   async chainStep(step, stepResult, context) {
@@ -67,10 +70,23 @@ export class AsyncJobRunner extends StepAudit {
     const { stepNames } = this;
     const { log } = context;
     const {
-      type, siteId, urls, jobId, auditContext = {},
+      type, jobId, auditContext = {},
     } = message;
 
     try {
+      const job = await this.jobProvider(auditContext.jobId || jobId, context);
+
+      const jobMetadata = job.getMetadata();
+      if (!isNonEmptyObject(jobMetadata)) {
+        log.error(`Job ${jobId} metadata is not an object, skipping...`);
+        return ok();
+      }
+      const { siteId } = jobMetadata.payload;
+      if (!isValidUUID(siteId)) {
+        log.error(`Job ${jobId} has invalid siteId ${siteId}, skipping...`);
+        return ok();
+      }
+
       const site = await this.siteProvider(siteId, context);
 
       if (!(await isAuditEnabledForSite(type, site, context))) {
@@ -82,7 +98,7 @@ export class AsyncJobRunner extends StepAudit {
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
       const updatedStepContext = {
-        ...context, site, urls: auditContext.urls || urls, jobId: auditContext.jobId || jobId, type,
+        ...context, site, job, type,
       };
 
       updatedStepContext.finalUrl = await this.urlResolver(site, context);
@@ -97,7 +113,7 @@ export class AsyncJobRunner extends StepAudit {
 
       return response;
     } catch (e) {
-      const errorMessage = `${type} audit failed for site ${siteId} at step ${auditContext.next || 'initial'}. Reason: ${e.message}`;
+      const errorMessage = `${type} audit failed for job ${jobId} at step ${auditContext.next || 'initial'}. Reason: ${e.message}`;
       log.error(errorMessage, { error: e });
       throw new Error(errorMessage, { cause: e });
     }

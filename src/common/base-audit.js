@@ -100,6 +100,18 @@ export async function noopUrlResolver(site) {
   return site.getBaseURL();
 }
 
+export async function defaultJobProvider(jobId, context) {
+  const { dataAccess } = context;
+  const { AsyncJob } = dataAccess;
+
+  const job = await AsyncJob.findById(jobId);
+  if (!job) {
+    throw new Error(`Job with id ${jobId} not found`);
+  }
+
+  return job;
+}
+
 export const defaultPostProcessors = [];
 
 export class BaseAudit {
