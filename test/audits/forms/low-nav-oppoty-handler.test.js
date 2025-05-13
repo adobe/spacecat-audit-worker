@@ -174,8 +174,8 @@ describe('createLowNavigationOpportunities handler method', () => {
       data: {
         form: 'https://www.iframe-example.com/test/getting-iframe-example/guide/newsletter',
         screenshot: '',
-        trackedFormKPIName: 'Form Views',
-        trackedFormKPIValue: 300,
+        trackedFormKPIName: 'Form View Rate',
+        trackedFormKPIValue: 0.035,
         formViews: 300,
         pageViews: 8670,
         formsource: '',
@@ -185,21 +185,21 @@ describe('createLowNavigationOpportunities handler method', () => {
         dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         metrics: [
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: '*',
             value: {
-              page: 300,
+              page: 0.035,
             },
           },
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: 'mobile',
             value: {
-              page: 300,
+              page: 0.075,
             },
           },
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: 'desktop',
             value: {
               page: 0,
@@ -207,12 +207,16 @@ describe('createLowNavigationOpportunities handler method', () => {
           },
           {
             type: 'traffic',
-            device: '*',
+            device: 'desktop',
             value: {
-              paid: 4670,
-              total: 8670,
-              earned: 2000,
-              owned: 2000,
+              page: 4670,
+            },
+          },
+          {
+            type: 'traffic',
+            device: 'mobile',
+            value: {
+              page: 4000,
             },
           },
         ],
