@@ -1,3 +1,17 @@
+# [1.83.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.82.0...v1.83.0) (2025-05-13)
+
+
+### Bug Fixes
+
+* code conflicts for iframe ([#853](https://github.com/adobe/spacecat-audit-worker/issues/853)) ([0879e35](https://github.com/adobe/spacecat-audit-worker/commit/0879e353ac8fbb8b8611a62618ce2a0d4cbb0bcd))
+* passing allowCache to content scraper audit step from forms handler ([#843](https://github.com/adobe/spacecat-audit-worker/issues/843)) ([4503247](https://github.com/adobe/spacecat-audit-worker/commit/450324746bce488cddd4a915ae66bbc3b9468187))
+
+
+### Features
+
+* adding form view rate for forms oppty ([#844](https://github.com/adobe/spacecat-audit-worker/issues/844)) ([c8a4be9](https://github.com/adobe/spacecat-audit-worker/commit/c8a4be933083b3834d712581c24d3ba4965d563a))
+* forms iframeSrc ([#848](https://github.com/adobe/spacecat-audit-worker/issues/848)) ([d57dc2b](https://github.com/adobe/spacecat-audit-worker/commit/d57dc2b07c878d734fc8eee38031c4e12181be8f))
+
 # [1.82.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.81.3...v1.82.0) (2025-05-12)
 
 
