@@ -1,3 +1,10 @@
+# [1.84.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.83.1...v1.84.0) (2025-05-13)
+
+
+### Features
+
+* Add stepped audit support for meta-tags ([#829](https://github.com/adobe/spacecat-audit-worker/issues/829)) ([c1f05e7](https://github.com/adobe/spacecat-audit-worker/commit/c1f05e7ac192ec96b9bcb5c39843a161b5ecf3c6))
+
 ## [1.83.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.83.0...v1.83.1) (2025-05-13)
 
 
