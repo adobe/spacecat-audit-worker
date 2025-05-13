@@ -36,7 +36,7 @@ export class AsyncJobRunner extends StepAudit {
 
   async chainStep(step, stepResult, context) {
     const {
-      jobId, type, urls, log,
+      type, job, urls, log,
     } = context;
 
     if (!hasText(step?.destination)) {
@@ -52,7 +52,7 @@ export class AsyncJobRunner extends StepAudit {
 
     const auditContext = {
       next: nextStepName,
-      jobId,
+      jobId: job.getId(),
       auditType: type,
       urls,
     };
@@ -61,7 +61,7 @@ export class AsyncJobRunner extends StepAudit {
     const payload = destination.formatPayload(stepResult, auditContext, context);
     await sendContinuationMessage({ queueUrl, payload }, context);
 
-    log.info(`Step ${step.name} completed for job ${jobId} of type ${type}, message sent to ${step.destination}`);
+    log.info(`Step ${step.name} completed for job ${job.getId()} of type ${type}, message sent to ${step.destination}`);
 
     return stepResult;
   }
