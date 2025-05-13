@@ -10,40 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-export const criticalLevel = 'critical';
-export const seriousLevel = 'serious';
-export const impactLevels = [criticalLevel, seriousLevel];
-const violansObject = {
-  violations: {
-    total: 0,
-    [criticalLevel]: {
-      count: 0,
-      items: {},
-    },
-    [seriousLevel]: {
-      count: 0,
-      items: {},
-    },
-  },
-  traffic: 0,
-};
-
-export const levelsMappedToLetter = {
-  wcag2a: 'A',
-  wcag2aa: 'AA',
-  wcag21a: 'A',
-  wcag21aa: 'AA',
-  wcag22aa: 'AA',
-};
-
-export function getViolationsObject() {
-  return JSON.parse(JSON.stringify(violansObject));
-}
-
-export const batchSize = 5;
 export const isHeadless = false;
-
-export const complianceLevels = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
 export const dataNeededForA11yAudit = {
   siteData: {
@@ -54,66 +21,82 @@ export const dataNeededForA11yAudit = {
     {
       url: 'https://theplayers.com/',
       traffic: '3600',
+      urlId: 'theplayers-com',
     },
     {
       url: 'https://theplayers.com/plan-your-visit',
       traffic: '2800',
+      urlId: 'theplayers-com-plan-your-visit',
     },
     {
       url: 'https://theplayers.com/parking',
       traffic: '1700',
+      urlId: 'theplayers-com-parking',
     },
     {
       url: 'https://theplayers.com/chip-in',
       traffic: '1600',
+      urlId: 'theplayers-com-chip-in',
     },
     {
       url: 'https://theplayers.com/tickets',
       traffic: '1500',
+      urlId: 'theplayers-com-tickets',
     },
     {
       url: 'https://theplayers.com/chip-in/leaderboard',
       traffic: '400',
+      urlId: 'theplayers-com-chip-in-leaderboard',
     },
     {
       url: 'https://theplayers.com/military',
       traffic: '300',
+      urlId: 'theplayers-com-military',
     },
     {
       url: 'https://theplayers.com/equipment',
       traffic: '200',
+      urlId: 'theplayers-com-equipment',
     },
     {
       url: 'https://theplayers.com/hospitality',
       traffic: '200',
+      urlId: 'theplayers-com-hospitality',
     },
     {
       url: 'https://theplayers.com/birdies',
       traffic: '200',
+      urlId: 'theplayers-com-birdies',
     },
     {
       url: 'https://theplayers.com/TICKETS',
       traffic: '200',
+      urlId: 'theplayers-com-tickets',
     },
     {
       url: 'https://theplayers.com/news/2025/02/19/format-field-creator-classic-tpc-sawgrass',
       traffic: '100',
+      urlId: 'theplayers-com-format-field-creator-classic-tpc-sawgrass',
     },
     {
       url: 'https://theplayers.com/past-results',
       traffic: '100',
+      urlId: 'theplayers-com-past-results',
     },
     {
       url: 'https://theplayers.com/volunteer',
       traffic: '100',
+      urlId: 'theplayers-com-volunteer',
     },
     {
       url: 'https://theplayers.com/trophy',
       traffic: '100',
+      urlId: 'theplayers-com-trophy',
     },
     {
       url: 'https://theplayers.com/community',
       traffic: '100',
+      urlId: 'theplayers-com-community',
     },
   ],
 };
