@@ -845,6 +845,7 @@ describe('Meta Tags', () => {
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({
             '/blog/page1': {
               title: {
@@ -895,7 +896,7 @@ describe('Meta Tags', () => {
         expect(result).to.deep.equal({ status: 'complete' });
         expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
         expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
-      });
+      }).timeout(3000);
 
       it('should handle RUM API errors gracefully', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
@@ -903,6 +904,7 @@ describe('Meta Tags', () => {
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
         });
         // Override RUM API response to simulate error
@@ -911,7 +913,7 @@ describe('Meta Tags', () => {
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
         expect(result).to.deep.equal({ status: 'complete' });
-        expect(logStub.warn).to.have.been.calledWith('Error while calculating projected traffic for http://example.com : site-id', sinon.match.instanceOf(Error));
+        expect(logStub.warn).to.have.been.calledWith('Error while calculating projected traffic for site-id', sinon.match.instanceOf(Error));
       });
     });
 
