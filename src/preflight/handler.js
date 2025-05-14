@@ -138,7 +138,9 @@ export const preflightAudit = async (context) => {
     extractedTags,
   };
 
-  if (detectedTags.length > allTags.healthyTags.length) {
+  log.info('METATAGS CHECKS', JSON.stringify(allTags, null, 2));
+
+  if (Object.keys(detectedTags).length > 0) {
     const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
     for (const url of urls) {
       const { url: pageUrl } = url;
