@@ -106,7 +106,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         await highPageViewsLowFormNavOppty.save();
       }
 
-      log.info('sending message to mystique for high-page-views-low-form-nav');
+      log.info('sending message to mystique for high-page-views-low-form-nav - 1');
       const mystiqueMessage = {
         type: 'guidance:high-page-views-low-form-nav',
         siteId: auditData.siteId,
