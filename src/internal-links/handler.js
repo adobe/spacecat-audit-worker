@@ -142,9 +142,6 @@ export async function opportunityAndSuggestionsStep(context) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
   }
 
-  // for testing empty scenario
-  brokenInternalLinks = [];
-
   // TODO: skip opportunity creation if no internal link items are found in the audit data
   const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
 
