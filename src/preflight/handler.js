@@ -10,13 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isValidUrl } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isValidUrl, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
 import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopPersister } from '../common/index.js';
-import { canonicalCheck } from '../canonical/handler.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
+import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
+import { runInternalLinkChecks } from './internal-links.js';
+import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -50,7 +52,7 @@ export async function scrapePages(context) {
 
 export const preflightAudit = async (context) => {
   const {
-    site, job, log,
+    site, job, s3Client, log,
   } = context;
 
   const jobMetadata = job.getMetadata();
@@ -60,29 +62,65 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Invalid pages provided`);
   }
 
-  if (job.getStatus() !== AsyncJob.status.IN_PROGRESS) {
+  if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
   const result = {
     audits: [],
   };
-  // canonical audit
+
+  // canonical
   result.audits.push({
     name: 'canonical',
     type: 'seo',
     opportunities: [],
   });
-  for (const url of urls) {
-    // eslint-disable-next-line no-await-in-loop
-    const canonical = await canonicalCheck(site.getBaseURL(), url, log);
-    if (canonical) {
-      result.audits[0].opportunities.push({
-        url,
-        canonical,
-      });
+
+  const urlsSet = new Set(urls.map((page) => {
+    const pathname = new URL(page.url).pathname.replace(/\/$/, '');
+    return `scrapes/${site.getId()}${pathname}/scrape.json`;
+  }));
+
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const prefix = `scrapes/${site.getId()}/`;
+  const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
+  const scrapedObjects = await Promise.all(
+    scrapedObjectKeys
+      .filter((key) => urlsSet.has(key))
+      .map(async (key) => ({
+        url: key,
+        data: await getObjectFromKey(s3Client, bucketName, key, log),
+      })),
+  );
+
+  // internal-links
+  result.audits.push({
+    name: 'internal-links',
+    type: 'seo',
+    opportunities: [],
+  });
+
+  const pageAuthToken = await retrievePageAuthentication(site, context);
+
+  const brokenLinks = await runInternalLinkChecks(scrapedObjects, pageAuthToken, context);
+  if (!isNonEmptyArray(brokenLinks)) {
+    const baseUrl = site.getBaseURL();
+    const suggestionData = await generateSuggestionData(baseUrl, brokenLinks, context, site);
+    for (const url of urls) {
+      const { url: pageUrl } = url;
+      const suggestions = suggestionData[pageUrl];
+      if (suggestions) {
+        result.audits[1].opportunities.push({
+          url: pageUrl,
+          suggestions,
+        });
+      }
     }
   }
+
+  log.info('INTERNAL LINKS CHECKS', JSON.stringify(result, null, 2));
+
   // metatags
   result.audits.push({
     name: 'metatags',
@@ -92,31 +130,29 @@ export const preflightAudit = async (context) => {
 
   const {
     seoChecks, detectedTags, extractedTags,
-  } = await metatagsAutoDetect(site, urls, context);
+  } = await metatagsAutoDetect(site, urlsSet, context);
 
   const allTags = {
     detectedTags,
     healthyTags: seoChecks.getFewHealthyTags(),
     extractedTags,
   };
-  const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
-  for (const url of urls) {
-    const { url: pageUrl } = url;
-    const tags = updatedDetectedTags[pageUrl];
-    if (tags) {
-      result.audits[1].opportunities.push({
-        url: pageUrl,
-        tags,
-      });
+
+  if (detectedTags.length > allTags.healthyTags.length) {
+    const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
+    for (const url of urls) {
+      const { url: pageUrl } = url;
+      const tags = updatedDetectedTags[pageUrl];
+      if (tags) {
+        result.audits[1].opportunities.push({
+          url: pageUrl,
+          tags,
+        });
+      }
     }
   }
 
-  // internal-links
-  result.audits.push({
-    name: 'internal-links',
-    type: 'seo',
-    opportunities: [],
-  });
+  log.info('METATAGS CHECKS', JSON.stringify(result, null, 2));
 
   // specific for preflight
   // bad links...

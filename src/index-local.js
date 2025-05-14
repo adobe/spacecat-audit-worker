@@ -13,7 +13,14 @@
 import { main as universalMain } from './index.js';
 
 export const main = async () => {
-  const messageBody = { type: 'structured-data', siteId: 'cccdac43-1a22-4659-9086-b762f59b9928' };
+  const messageBody = {
+    jobId: '3239683d-f255-498f-94c4-726852838637',
+    type: 'preflight',
+    auditContext: {
+      next: 'preflight-audit',
+      auditType: 'preflight',
+    },
+  };
 
   const message = {
     Records: [
@@ -29,7 +36,7 @@ export const main = async () => {
       info: console.log,
       error: console.error,
       warn: console.warn,
-      debug: console.debug,
+      debug: () => {}, // Disable debug logging
     },
     runtime: {
       region: 'us-east-1',
