@@ -148,7 +148,7 @@
       "interval": 15
     }
   },
-  "allowCache": false,
+  "allowCache": true,
   "fullAuditRef": "www.example.com",
   "processingType": "form",
   "jobId": "test-site-id",
