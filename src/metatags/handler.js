@@ -199,10 +199,16 @@ export async function runAuditAndGenerateSuggestions(context) {
   // Get top pages for a site
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  const topPagesSet = new Set(topPages.map((page) => {
+  const includedURLs = await site.getConfig().getIncludedURLs('meta-tags');
+  const topPagesSet = new Set([...topPages.map((page) => {
     const pathname = new URL(page.url).pathname.replace(/\/$/, '');
     return `scrapes/${site.getId()}${pathname}/scrape.json`;
-  }));
+  }), ...includedURLs.map((url) => {
+    const pathname = new URL(url).pathname.replace(/\/$/, '');
+    return `scrapes/${site.getId()}${pathname}/scrape.json`;
+  })]);
+
+  log.info(`Top pages set: ${topPagesSet}`);
 
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
@@ -286,15 +292,24 @@ export async function submitForScraping(context) {
   const {
     site,
     dataAccess,
+    log,
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   if (topPages.length === 0) {
     throw new Error('No top pages found for site');
   }
+  const topPagesUrls = topPages.map((page) => page.getUrl());
+  // Combine includedURLs and topPages URLs to scrape
+  const includedURLs = await site.getConfig().getIncludedURLs('meta-tags');
+
+  log.info(`Scraping ${topPagesUrls.length} top pages and ${includedURLs.length} included URLs`);
+  log.info(`Top pages: ${topPagesUrls}`);
+  log.info(`Included URLs: ${includedURLs}`);
+  const finalUrls = [...topPagesUrls, ...includedURLs];
 
   return {
-    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'meta-tags',
   };
