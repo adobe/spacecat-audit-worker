@@ -11,7 +11,7 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -151,8 +151,8 @@ export async function opportunityAndSuggestionsStep(context) {
     const { Opportunity } = dataAccess;
     let opportunity;
     try {
-      // eslint-disable-next-line max-len
-      const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
+      const opportunities = await Opportunity
+        .allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
       opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
     } catch (e) {
       log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
@@ -165,6 +165,17 @@ export async function opportunityAndSuggestionsStep(context) {
       // no broken internal links found, update opportunity status to RESOLVED
       log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`);
       await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
+
+      // We also need to update all suggestions inside this opportunity
+      // Get all suggestions for this opportunity
+      const suggestions = await opportunity.getSuggestions();
+
+      // If there are suggestions, update their status to outdated
+      if (isNonEmptyArray(suggestions)) {
+        const { Suggestion } = dataAccess;
+        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
+      }
+
       await opportunity.save();
     }
     return {

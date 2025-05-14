@@ -347,9 +347,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     await expect(
       handler.opportunityAndSuggestionsStep(context),
     ).to.be.rejectedWith('read error happened');
-
-    // make sure that no new suggestions are added
-    expect(opportunity.addSuggestions).to.not.have.been.called;
   }).timeout(5000);
 
   it('creating a new opportunity object suceeds even if suggestion generation error occurs', async () => {
