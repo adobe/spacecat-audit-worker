@@ -143,9 +143,9 @@ function getOrganicTrafficForEndpoint(endpoint, rumDataMapMonthly, rumDataMapBiM
 }
 
 // Calculate the projected traffic lost for a site
-async function calculateProjectedTraffic(context, auditUrl, siteId, detectedTags, log) {
+async function calculateProjectedTraffic(context, site, detectedTags, log) {
   const options = {
-    domain: auditUrl,
+    domain: await wwwUrlResolver(site, context),
     interval: 30,
     granularity: 'DAILY',
   };
@@ -179,15 +179,15 @@ async function calculateProjectedTraffic(context, auditUrl, siteId, detectedTags
       });
     });
 
-    const cpcValue = await calculateCPCValue(context, siteId);
-    log.info(`Calculated cpc value: ${cpcValue} for site: ${siteId}`);
+    const cpcValue = await calculateCPCValue(context, site.getId());
+    log.info(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
     const projectedTrafficValue = projectedTrafficLost * cpcValue;
 
     // Skip updating projected traffic data if lost traffic value is insignificant
     return projectedTrafficValue > PROJECTED_VALUE_THRESHOLD
       ? { projectedTrafficLost, projectedTrafficValue } : {};
   } catch (err) {
-    log.warn(`Error while calculating projected traffic for ${auditUrl} : ${siteId}`, err);
+    log.warn(`Error while calculating projected traffic for ${site.getId()}`, err);
     return {};
   }
 }
@@ -237,8 +237,7 @@ export async function runAuditAndGenerateSuggestions(context) {
     projectedTrafficValue,
   } = await calculateProjectedTraffic(
     context,
-    finalUrl,
-    siteId,
+    site,
     detectedTags,
     log,
   );
@@ -301,7 +300,7 @@ export async function submitForScraping(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(wwwUrlResolver)
+  .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
