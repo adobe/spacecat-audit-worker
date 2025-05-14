@@ -12,6 +12,7 @@
 
 import { isNonEmptyArray, isValidUrl, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
 import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
+import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopPersister } from '../common/index.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
@@ -138,17 +139,15 @@ export const preflightAudit = async (context) => {
     extractedTags,
   };
 
-  log.info('METATAGS CHECKS', JSON.stringify(allTags, null, 2));
-
   if (Object.keys(detectedTags).length > 0) {
     const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
     for (const url of urls) {
       const { url: pageUrl } = url;
-      const tags = updatedDetectedTags[pageUrl];
+      const path = new URL(pageUrl).pathname.replace(/\/$/, '');
+      const tags = updatedDetectedTags[path];
       if (tags) {
-        result.audits[1].opportunities.push({
-          url: pageUrl,
-          tags,
+        result.audits[2].opportunities.push({
+          ...tags,
         });
       }
     }
@@ -156,17 +155,65 @@ export const preflightAudit = async (context) => {
 
   log.info('METATAGS CHECKS', JSON.stringify(result, null, 2));
 
-  // specific for preflight
-  // bad links...
+  // body size
+  result.audits.push({
+    name: 'body-size',
+    type: 'seo',
+    opportunities: [],
+  });
 
-  job.setStatus(AsyncJob.status.COMPLETED);
+  // lorem ipsum
+  result.audits.push({
+    name: 'lorem-ipsum',
+    type: 'seo',
+    opportunities: [],
+  });
+
+  scrapedObjects.forEach(({ data }) => {
+    const html = data.scrapeResult.rawBody || '';
+    let dom;
+    try {
+      dom = new JSDOM(html);
+    } catch {
+      // skip malformed HTML
+      return;
+    }
+
+    log.info('HTML:', html);
+
+    const bodyEl = dom.window.document.querySelector('body');
+    if (!bodyEl) return;
+
+    const text = bodyEl.textContent.replace(/\n/g, '').trim();
+    const { length } = text;
+
+    // only check pages that actually have some visible text
+    if (length > 0 && length <= 100) {
+      result.audits[3].opportunities.push({
+        url: data.scrapeResult.finalUrl,
+        length,
+        excerpt: text.slice(0, 100) + (length > 100 ? '…' : ''),
+        message: `Page body text is only ${length} characters; should be >100.`,
+      });
+    }
+
+    const isLoremIpsum = text.toLowerCase().includes('lorem ipsum');
+    if (isLoremIpsum) {
+      result.audits[4].opportunities.push({
+        url: data.scrapeResult.finalUrl,
+        message: 'Page body text contains "lorem ipsum".',
+      });
+    }
+  });
+
+  log.info(JSON.stringify(result));
+  job.setStatus(AsyncJob.Status.COMPLETED);
   job.setResultType(AsyncJob.ResultType.INLINE);
   job.setResult(result);
   job.setEndedAt(new Date().toISOString());
   await job.save();
 
   log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit completed for jobId: ${job.getId()}`);
-  log.info(JSON.stringify(result));
 };
 
 export default new AuditBuilder()
