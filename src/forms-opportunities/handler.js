@@ -67,7 +67,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
   const result = {
     processingType: 'form',
-    allowCache: false,
+    allowCache: true,
     jobId: site.getId(),
     urls: Array.from(uniqueUrls).map((url) => ({ url })),
     siteId: site.getId(),
