@@ -18,7 +18,7 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 import {
   internalLinksAuditRunner,
@@ -399,18 +399,30 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     );
   }).timeout(5000);
 
-  it('Existing opportunity is updated with with RESOLVED status if broken internal links found', async () => {
+  it('Existing opportunity and suggestions are updated if broken internal links found', async () => {
+    // Create mock suggestions
+    const mockSuggestions = [{}];
+
     const existingOpportunity = {
       setStatus: sandbox.spy(sandbox.stub().resolves()),
       save: sandbox.spy(sandbox.stub().resolves()),
       getType: () => 'broken-internal-links',
+      getSuggestions: sandbox.stub().resolves(mockSuggestions),
     };
 
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
 
+    // Mock Suggestion.bulkUpdateStatus
+    context.dataAccess.Suggestion = {
+      bulkUpdateStatus: sandbox.spy(sandbox.stub().resolves()),
+    };
+
+    // Mock statuses
     sandbox.stub(Oppty, 'STATUSES').value({ RESOLVED: 'RESOLVED', NEW: 'NEW' });
+    sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW' });
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
     context.site.getLatestAuditByAuditType = () => auditData;
+
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => [],
@@ -419,11 +431,22 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
+    // Verify opportunity was updated
     expect(existingOpportunity.setStatus).to.have.been.calledOnceWith('RESOLVED');
+
+    // Verify suggestions were retrieved
+    expect(existingOpportunity.getSuggestions).to.have.been.calledOnce;
+
+    // Verify suggestions statuses were updated
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+      mockSuggestions,
+      'OUTDATED',
+    );
     expect(existingOpportunity.save).to.have.been.calledOnce;
+
     expect(result.status).to.equal('complete');
 
-    expect(context.log.info).to.have.been.calledOnceWith(
+    expect(context.log.info).to.have.been.calledWith(
       `[broken-internal-links] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`,
     );
   }).timeout(5000);
