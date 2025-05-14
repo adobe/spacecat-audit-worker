@@ -130,6 +130,9 @@ export async function opportunityAndSuggestionsStep(context) {
 
   let { brokenInternalLinks } = audit.getAuditResult();
 
+  // for testing empty scenario
+  brokenInternalLinks = [];
+
   // generate suggestions
   try {
     brokenInternalLinks = await generateSuggestionData(
