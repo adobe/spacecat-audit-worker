@@ -1,3 +1,10 @@
+## [1.84.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.0...v1.84.1) (2025-05-14)
+
+
+### Bug Fixes
+
+* urlResolver for meta-tags ([#855](https://github.com/adobe/spacecat-audit-worker/issues/855)) ([2a80e25](https://github.com/adobe/spacecat-audit-worker/commit/2a80e25f745725f80c1d5b259812911af574a192))
+
 # [1.84.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.83.1...v1.84.0) (2025-05-13)
 
 
