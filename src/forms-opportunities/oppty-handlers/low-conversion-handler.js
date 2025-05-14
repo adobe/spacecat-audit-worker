@@ -88,7 +88,7 @@ function generateDefaultGuidance(scrapedData, oppoty) {
 // eslint-disable-next-line max-len
 export default async function createLowConversionOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeForms = new Set()) {
   const {
-    dataAccess, log, sqs, site, env,
+    dataAccess, log, site,
   } = context;
   const { Opportunity } = dataAccess;
 
@@ -168,7 +168,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       };
 
       // eslint-disable-next-line no-await-in-loop
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+      // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
       log.info(`forms opportunity high form views low conversions sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
     }
   } catch (e) {
