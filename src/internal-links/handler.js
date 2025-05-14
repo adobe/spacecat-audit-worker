@@ -130,9 +130,6 @@ export async function opportunityAndSuggestionsStep(context) {
 
   let { brokenInternalLinks } = audit.getAuditResult();
 
-  // for testing empty scenario
-  brokenInternalLinks = [];
-
   // generate suggestions
   try {
     brokenInternalLinks = await generateSuggestionData(
@@ -144,6 +141,9 @@ export async function opportunityAndSuggestionsStep(context) {
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
   }
+
+  // for testing empty scenario
+  brokenInternalLinks = [];
 
   // TODO: skip opportunity creation if no internal link items are found in the audit data
   const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
