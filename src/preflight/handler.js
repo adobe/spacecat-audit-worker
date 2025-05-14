@@ -45,6 +45,7 @@ export async function scrapePages(context) {
     urls,
     siteId,
     type: 'preflight',
+    allowCache: false,
     options: {
       enableAuthentication: true,
     },
