@@ -37,6 +37,7 @@ describe('Canonical URL Tests', () => {
 
   afterEach(() => {
     sinon.restore();
+    nock.cleanAll();
   });
 
   describe('getTopPagesForSiteId', () => {
@@ -620,8 +621,22 @@ describe('Canonical URL Tests', () => {
       const baseURL = 'http://example.page';
       const html = `<html lang="en"><head><link rel="canonical" href="${baseURL}"><title>test</title></head><body></body></html>`;
 
-      nock('http://example.page').get('/page1').reply(200, html);
-      nock(baseURL).get('/').reply(200, html);
+      const captured1 = {};
+      nock('http://example.page').get('/page1').reply(function (uri, requestBody) {
+        // `this` is the interceptor context
+        captured1.uri = uri;
+        captured1.requestBody = requestBody;
+        captured1.headers = this.req.headers;
+        return [200, html];
+      });
+      const captured2 = {};
+      nock(baseURL).get('/').reply(function (uri, requestBody) {
+        // `this` is the interceptor context
+        captured2.uri = uri;
+        captured2.requestBody = requestBody;
+        captured2.headers = this.req.headers;
+        return [200, html];
+      });
       const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => 'http://example.page/page1' }]);
 
       const context = {
@@ -644,6 +659,10 @@ describe('Canonical URL Tests', () => {
 
       expect(log.info).to.have.been.calledWith('Retrieving page authentication for pageUrl http://example.page');
       expect(retrievePageAuthenticationStub).to.have.been.calledOnceWith(site, context);
+      expect(captured1.headers).to.have.property('authorization');
+      expect(captured1.headers.authorization).to.equal('token token1234');
+      expect(captured2.headers).to.have.property('authorization');
+      expect(captured2.headers.authorization).to.equal('token token1234');
     });
 
     it('should silently ignore any errors from retrievePageAuthentication', async () => {
