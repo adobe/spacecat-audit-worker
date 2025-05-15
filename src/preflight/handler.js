@@ -163,7 +163,7 @@ export const preflightAudit = async (context) => {
       result.audits[3].opportunities.push({
         url: data.scrapeResult.finalUrl,
         length,
-        excerpt: text.slice(0, 100) + (length > 100 ? '…' : ''),
+        excerpt: `${text.slice(0, 100)}…`,
         message: `Page body text is only ${length} characters; should be >100.`,
       });
     }
