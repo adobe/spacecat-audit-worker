@@ -11,7 +11,8 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
@@ -109,16 +110,11 @@ export async function runAuditAndImportTopPagesStep(context) {
 
 export async function prepareScrapingStep(context) {
   const {
-    site, log, dataAccess,
+    site, dataAccess,
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  log.info(
-    `[${AUDIT_TYPE}] [Site: ${site.getId()}] top pages: ${JSON.stringify(
-      topPages,
-    )}`,
-  );
   const urls = topPages.map((page) => ({ url: page.getUrl() }));
   return {
     urls,
@@ -129,9 +125,11 @@ export async function prepareScrapingStep(context) {
 
 export async function opportunityAndSuggestionsStep(context) {
   const {
-    log, site, finalUrl, audit,
+    log, site, finalUrl, audit, dataAccess,
   } = context;
+
   let { brokenInternalLinks } = audit.getAuditResult();
+
   // generate suggestions
   try {
     brokenInternalLinks = await generateSuggestionData(
@@ -146,6 +144,45 @@ export async function opportunityAndSuggestionsStep(context) {
 
   // TODO: skip opportunity creation if no internal link items are found in the audit data
   const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
+
+  if (!isNonEmptyArray(brokenInternalLinks)) {
+    // no broken internal links found
+    // fetch opportunity
+    const { Opportunity } = dataAccess;
+    let opportunity;
+    try {
+      const opportunities = await Opportunity
+        .allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
+      opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+    } catch (e) {
+      log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
+      throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
+    }
+
+    if (!opportunity) {
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`);
+    } else {
+      // no broken internal links found, update opportunity status to RESOLVED
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`);
+      await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
+
+      // We also need to update all suggestions inside this opportunity
+      // Get all suggestions for this opportunity
+      const suggestions = await opportunity.getSuggestions();
+
+      // If there are suggestions, update their status to outdated
+      if (isNonEmptyArray(suggestions)) {
+        const { Suggestion } = dataAccess;
+        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
+      }
+
+      await opportunity.save();
+    }
+    return {
+      status: 'complete',
+    };
+  }
+
   const opportunity = await convertToOpportunity(
     finalUrl,
     { siteId: site.getId(), id: audit.getId() },
