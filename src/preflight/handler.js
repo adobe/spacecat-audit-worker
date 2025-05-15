@@ -140,9 +140,9 @@ export const preflightAudit = async (context) => {
             issue: tagData.issue,
             issueDetails: tagData.issueDetails,
             seoImpact: tagData.seoImpact,
-            seoRecommendation: tagData.seoRecommendation || '',
-            aiSuggestion: tagData.aiSuggestion || '',
-            aiRationale: tagData.aiRationale || '',
+            seoRecommendation: tagData.seoRecommendation,
+            aiSuggestion: tagData.aiSuggestion,
+            aiRationale: tagData.aiRationale,
           });
         });
       }
