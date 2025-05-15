@@ -1,3 +1,10 @@
+# [1.85.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.3...v1.85.0) (2025-05-15)
+
+
+### Features
+
+* introduce preflight audit ([#838](https://github.com/adobe/spacecat-audit-worker/issues/838)) ([441adc0](https://github.com/adobe/spacecat-audit-worker/commit/441adc0007b4c84715e1f7ca7b2c17e87c720a3c))
+
 ## [1.84.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.2...v1.84.3) (2025-05-15)
 
 
