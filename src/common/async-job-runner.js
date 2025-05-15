@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { hasText, isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
@@ -39,15 +39,7 @@ export class AsyncJobRunner extends StepAudit {
       type, job, urls, log,
     } = context;
 
-    if (!hasText(step?.destination)) {
-      throw new Error('Invalid step configuration: missing destination');
-    }
-
     const destination = AUDIT_STEP_DESTINATION_CONFIGS[step.destination];
-    if (!isNonEmptyObject(destination)) {
-      throw new Error(`Invalid destination configuration for step ${step.name}`);
-    }
-
     const nextStepName = this.getNextStepName(step.name);
 
     const auditContext = {
@@ -78,13 +70,15 @@ export class AsyncJobRunner extends StepAudit {
 
       const jobMetadata = job.getMetadata();
       if (!isNonEmptyObject(jobMetadata)) {
-        log.error(`Job ${jobId} metadata is not an object, skipping...`);
-        return ok();
+        const error = `Job ${jobId} metadata is not an object`;
+        log.error(error);
+        throw new Error(error);
       }
       const { siteId } = jobMetadata.payload;
       if (!isValidUUID(siteId)) {
-        log.error(`Job ${jobId} has invalid siteId ${siteId}, skipping...`);
-        return ok();
+        const error = `Job ${jobId} has invalid siteId ${siteId}`;
+        log.error(error);
+        throw new Error(error);
       }
 
       const site = await this.siteProvider(siteId, context);

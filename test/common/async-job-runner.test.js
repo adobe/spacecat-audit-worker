@@ -24,10 +24,10 @@ use(chaiAsPromised);
 
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 
-describe('Step-based Audit Tests', () => {
+describe('Job-based Step-Audit Tests', () => {
   const sandbox = sinon.createSandbox();
   const mockDate = '2024-03-12T15:24:51.231Z';
-  const baseURL = 'https://space.cat';
+  const baseURL = 'https://www.space.cat';
 
   let clock;
   let context;
@@ -75,5 +75,189 @@ describe('Step-based Audit Tests', () => {
       .addStep('second', () => {})
       .build();
     expect(runner.getNextStepName('first')).to.equal('second');
+  });
+
+  // Helper to create a mock job
+  function createMockJob(metadata = {}) {
+    return {
+      getId: () => metadata.jobId || 'job-123',
+      getMetadata: () => metadata,
+    };
+  }
+
+  it('skips execution when audit is disabled for site', async () => {
+    configuration.isHandlerEnabledForSite.returns(false);
+
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({}), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .build();
+
+    // Mock job provider
+    runner.jobProvider = async () => createMockJob({
+      payload: { siteId: site.getId() },
+    });
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+    };
+
+    const result = await runner.run(message, context);
+
+    expect(result.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
+  });
+
+  it('executes first step and sends continuation message', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({ foo: 'bar' }), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .addStep('second', async () => ({ baz: 'qux' }))
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    // Stub sendContinuationMessage
+    const sendMsgStub = context.sqs.sendMessage || sandbox.stub();
+    context.sqs.sendMessage = sendMsgStub;
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+    };
+
+    await runner.run(message, context);
+
+    // Should send a continuation message for the next step
+    expect(sendMsgStub).to.have.been.called;
+  });
+
+  it('continues execution from specified step', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({ foo: 'bar' }), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .addStep('second', async () => ({ baz: 'qux' }))
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    const sendMsgStub = context.sqs.sendMessage || sandbox.stub();
+    context.sqs.sendMessage = sendMsgStub;
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+      auditContext: { next: 'first' },
+    };
+
+    await runner.run(message, context);
+
+    expect(sendMsgStub).to.have.been.called;
+  });
+
+  it('handles final step without sending continuation message', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({ foo: 'bar' }), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .addStep('second', async () => ({ baz: 'qux' }))
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    const sendMsgStub = context.sqs.sendMessage || sandbox.stub();
+    context.sqs.sendMessage = sendMsgStub;
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+      auditContext: { next: 'second' },
+    };
+
+    await runner.run(message, context);
+
+    expect(sendMsgStub).not.to.have.been.called;
+  });
+
+  it('fails if job is not found', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({}), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .build();
+
+    runner.jobProvider = async () => null;
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+    };
+
+    await expect(runner.run(message, context)).to.be.rejectedWith('content-audit audit failed for job job-123 at step initial. Reason: Cannot read properties of null');
+  });
+
+  it('fails if siteId is invalid', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({}), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: 'not-a-uuid' },
+    });
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+    };
+
+    await expect(runner.run(message, context)).to.be.rejectedWith('content-audit audit failed for job job-123 at step initial. Reason:');
+  });
+
+  it('fails when step configuration is invalid', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({})) // No destination for non-final step
+      .addStep('second', async () => ({}));
+
+    try {
+      runner.build();
+    } catch (e) {
+      expect(e.message).to.equal('Step first must specify a destination as it is not the last step');
+    }
+  });
+
+  it('fails when step destination configuration is invalid', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob();
+    try {
+      runner.addStep('first', async () => ({}), 'non-existent-destination');
+    } catch (e) {
+      expect(e.message).to.equal('Invalid destination: non-existent-destination. Must be one of: content-scraper, import-worker');
+    }
+  });
+
+  it('fails when metadata is not an object', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({}), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .build();
+
+    runner.jobProvider = async () => createMockJob('not-an-object');
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+    };
+
+    await expect(runner.run(message, context)).to.be.rejectedWith('content-audit audit failed for job job-123 at step initial. Reason: Job job-123 metadata is not an object');
   });
 });
