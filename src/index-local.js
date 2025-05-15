@@ -13,7 +13,16 @@
 import { main as universalMain } from './index.js';
 
 export const main = async () => {
-  const messageBody = { type: 'structured-data', siteId: 'cccdac43-1a22-4659-9086-b762f59b9928' };
+  const messageBody = {
+    type: 'structured-data',
+    siteId: '40f377b0-2242-41d6-b215-e9ff8ace8b3d',
+    auditContext: {
+      next: 'run-audit-and-generate-suggestions',
+      auditId: '75148f30-bd3f-41ae-bb16-7b458d19d1b0',
+      type: 'structured-data',
+      fullAuditRef: 'scrapes/40f377b0-2242-41d6-b215-e9ff8ace8b3d/',
+    },
+  };
 
   const message = {
     Records: [
