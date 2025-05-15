@@ -60,6 +60,7 @@ export default async function handler(message, context) {
       }));
       return {
         form: a11yOpty.form,
+        formsource: a11yOpty.formsource,
         a11yIssues,
       };
     });
@@ -76,7 +77,7 @@ export default async function handler(message, context) {
         'Forms Accessibility',
       ],
       data: {
-        a11yData: a11yOpptyData,
+        accessibility: a11yOpptyData,
       },
     };
 

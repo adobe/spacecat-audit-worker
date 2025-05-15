@@ -141,7 +141,8 @@
                 }
               ]
             }
-          ]
+          ],
+          "formsource": "#container-1 form.newsletter"
         }
       ],
     "auditContext": {
@@ -149,11 +150,12 @@
     }
   },
   "fullAuditRef": "www.example.com",
-  "processingType": "form-a11y",
+  "processingType": "form-accessibility",
   "jobId": "test-site-id",
   "urls": [
     {
-      "url": "https://www.business.adobe.com/newsletter"
+      "url": "https://www.business.adobe.com/newsletter",
+      "formsources": ["#container-1 form.newsletter"]
     }
   ],
   "siteId": "test-site-id"

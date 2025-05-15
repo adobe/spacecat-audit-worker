@@ -15,12 +15,12 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { generateOpptyData, getValidFormUrls } from './utils.js';
+import { generateOpptyData, getUrlsDataForAccessibilityAudit } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
-import createA11yOpportunities from './oppty-handlers/a11y-handler.js';
+import createA11yOpportunities from './oppty-handlers/accessibility-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -50,22 +50,37 @@ export async function formsAuditRunner(auditUrl, context) {
   };
 }
 
-export async function sendA11yIssuesToMystique(latestAudit, context) {
+export async function sendA11yIssuesToMystique(latestAudit, scrapedData, context) {
   const {
     log, site,
   } = context;
 
-  const { formA11yData } = await getScrapedDataForSiteId(site, context);
+  const { formA11yData } = scrapedData;
   if (formA11yData?.length === 0) {
     log.info(`[Form Opportunity] [Site Id: ${site.getId()}] No a11y data found`);
     return;
   }
 
-  // Flattening the a11y issues from multiple forms in a single page
-  const a11yData = formA11yData.map((a11y) => ({
-    form: a11y.finalUrl,
-    a11yIssues: a11y.scrapeResult.flatMap((formResult) => formResult.a11yIssues),
-  }));
+  const a11yData = [];
+  for (const a11y of formA11yData) {
+    const { results } = a11y;
+    results.forEach((result) => {
+      if (result.a11yIssues.length > 0) {
+        const a11yIssues = result.a11yIssues.map((a11yIssue) => ({
+          issue: a11yIssue.issue,
+          level: a11yIssue.level,
+          successCriterias: a11yIssue.successCriterias,
+          solution: a11yIssue.htmlWithIssues,
+          recommendation: a11yIssue.recommendation,
+        }));
+        a11yData.push({
+          form: result.finalUrl,
+          formsource: result.formsource,
+          a11yIssues,
+        });
+      }
+    });
+  }
 
   await createA11yOpportunities({
     siteId: latestAudit.siteId,
@@ -124,12 +139,21 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     }
   }
 
+  const urlsData = Array.from(uniqueUrls).map((url) => {
+    const formsources = formVitals.filter((fv) => fv.url === url).map((fv) => fv.formsource)
+      .filter((source) => !!source);
+    return {
+      url,
+      ...(formsources.length > 0 && { formsources }),
+    };
+  });
+
   const result = {
     auditResult: formsAuditRunnerResult.auditResult,
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
     processingType: 'form',
     jobId: site.getId(),
-    urls: Array.from(uniqueUrls).map((url) => ({ url })),
+    urls: urlsData,
     siteId: site.getId(),
   };
 
@@ -145,14 +169,13 @@ export async function sendA11yUrlsForScrapingStep(context) {
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
-  const urls = getValidFormUrls(scrapedData);
-
+  const urlsData = getUrlsDataForAccessibilityAudit(scrapedData);
   const result = {
     auditResult: latestAudit.auditResult,
     fullAuditRef: latestAudit.fullAuditRef,
-    processingType: 'form-a11y',
+    processingType: 'form-accessibility',
     jobId: site.getId(),
-    urls: urls.map((url) => ({ url })),
+    urls: urlsData,
     siteId: site.getId(),
   };
 
@@ -172,7 +195,7 @@ export async function processOpportunityStep(context) {
   await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
-  await sendA11yIssuesToMystique(latestAudit, context);
+  await sendA11yIssuesToMystique(latestAudit, scrapedData, context);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',

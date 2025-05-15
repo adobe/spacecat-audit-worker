@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { shouldExcludeForm } from '../../../src/forms-opportunities/utils.js';
+import { getUrlsDataForAccessibilityAudit, shouldExcludeForm } from '../../../src/forms-opportunities/utils.js';
 
 describe('isSearchForm', () => {
   it('should return true for search form type', () => {
@@ -93,5 +93,52 @@ describe('isSearchForm', () => {
       formType: 'contact', classList: ['subscribe'], action: 'https://example.com/contact.html', fieldsLabels: ['Name', 'Email'],
     };
     expect(shouldExcludeForm(scrapedFormData)).to.be.false;
+  });
+});
+
+describe('getUrlsDataForAccessibilityAudit', () => {
+  it('should return urls for accessibility audit', () => {
+    const scrapedData = {
+      formData: [
+        {
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+          scrapeResult: [{ formsource: '#container-1 form.newsletter' }],
+        },
+      ],
+    };
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData);
+    expect(urlsData).to.deep.equal([
+      {
+        url: 'https://www.business.adobe.com/newsletter',
+        formsources: ['#container-1 form.newsletter'],
+      },
+    ]);
+  });
+
+  it('should return unique form sources', () => {
+    const scrapedData = {
+      formData: [
+        {
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+          scrapeResult: [
+            {
+              classList: 'cmp-mortgage-options',
+              formsource: '#container-1 form#newsletter',
+            },
+          ],
+        },
+        {
+          finalUrl: 'https://www.business.adobe.com/subscribe',
+          scrapeResult: [{ formsource: '#container-1 form#newsletter' }],
+        },
+      ],
+    };
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData);
+    expect(urlsData).to.deep.equal([
+      {
+        url: 'https://www.business.adobe.com/newsletter',
+        formsources: ['#container-1 form#newsletter'],
+      },
+    ]);
   });
 });

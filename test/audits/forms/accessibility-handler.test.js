@@ -15,7 +15,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import createA11yOpportunities from '../../../src/forms-opportunities/oppty-handlers/a11y-handler.js';
+import createA11yOpportunities from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 
@@ -161,12 +161,12 @@ describe('a11y-handler', () => {
     expect(createArgs.auditId).to.equal(message.auditId);
     expect(createArgs.type).to.equal(FORM_OPPORTUNITY_TYPES.FORM_A11Y);
     expect(createArgs.origin).to.equal('AUTOMATION');
-    expect(createArgs.data.a11yData).to.have.lengthOf(1);
-    expect(createArgs.data.a11yData[0].form).to.equal('/test-form');
-    expect(createArgs.data.a11yData[0].a11yIssues).to.have.lengthOf(1);
+    expect(createArgs.data.accessibility).to.have.lengthOf(1);
+    expect(createArgs.data.accessibility[0].form).to.equal('/test-form');
+    expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(1);
 
     // Check that success criteria are processed
-    const successCriteria = createArgs.data.a11yData[0].a11yIssues[0].successCriterias[0];
+    const successCriteria = createArgs.data.accessibility[0].a11yIssues[0].successCriterias[0];
     expect(successCriteria.criteriaNumber).to.equal('1.1.1');
     expect(successCriteria.name).to.equal('Non-text Content');
     expect(successCriteria).to.have.property('understandingUrl');

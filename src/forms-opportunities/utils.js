@@ -303,20 +303,38 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
 }
 
 /**
- * get non search, login, unsubscribe forms
- * @param {object} scrapedData
- * @returns {string[]}
+ * Get the urls and form sources for accessibility audit
+ * @param scrapedData
+ * @returns {Array} array of objects with url and formsources
  */
-export function getValidFormUrls(scrapedData) {
-  const validFormUrls = [];
+export function getUrlsDataForAccessibilityAudit(scrapedData) {
+  const urlsData = [];
+  const addedFormSources = new Set();
   if (isNonEmptyArray(scrapedData.formData)) {
     for (const form of scrapedData.formData) {
-      if (!shouldExcludeForm(form) && !form.finalUrl.includes('search')) {
-        validFormUrls.push(form.finalUrl);
+      const formsources = [];
+      if (form.finalUrl.includes('search')) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      form.scrapeResult.filter((sr) => !shouldExcludeForm(sr))
+        .forEach((sr) => {
+          if (sr.formsource && !addedFormSources.has(sr.formsource)) {
+            formsources.push(sr.formsource);
+            if (!['dialog form', 'form'].includes(sr.formsource)) {
+              addedFormSources.add(sr.formsource);
+            }
+          }
+        });
+      if (formsources.length > 0) {
+        urlsData.push({
+          url: form.finalUrl,
+          formsources,
+        });
       }
     }
   }
-  return validFormUrls;
+  return urlsData;
 }
 
 export function getSuccessCriteriaDetails(criteria) {

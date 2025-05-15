@@ -360,7 +360,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   if (allFiles) {
     const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
     scrapedFormData = await fetchContentOfFiles(formFiles);
-    const a11yFiles = allFiles.filter((file) => file.Key.endsWith('forms-a11y/scrape.json'));
+    const a11yFiles = allFiles.filter((file) => file.Key.endsWith('forms-accessibility'));
     scrapedFormA11yData = await fetchContentOfFiles(a11yFiles);
   }
 
