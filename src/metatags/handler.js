@@ -301,13 +301,13 @@ export async function submitForScraping(context) {
   }
   const topPagesUrls = topPages.map((page) => page.getUrl());
   // Combine includedURLs and topPages URLs to scrape
-  const includedURLs = await site.getConfig().getIncludedURLs('meta-tags');
+  const includedURLs = await site.getConfig().getIncludedURLs('meta-tags') || [];
 
   log.info(`Scraping ${topPagesUrls.length} top pages and ${includedURLs.length} included URLs`);
-  log.info(`Top pages: ${topPagesUrls}`);
+  log.info(`Total Top pages: ${topPagesUrls}`);
   log.info(`Included URLs: ${includedURLs}`);
-  const finalUrls = [...topPagesUrls, ...includedURLs];
-
+  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+  log.info(`Total URLs to scrape: ${finalUrls.length}`);
   return {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
