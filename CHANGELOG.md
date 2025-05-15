@@ -1,3 +1,10 @@
+## [1.84.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.1...v1.84.2) (2025-05-15)
+
+
+### Bug Fixes
+
+* handling dependencies in high organic low ctr opportunity through step based audit ([#778](https://github.com/adobe/spacecat-audit-worker/issues/778)) ([135bd71](https://github.com/adobe/spacecat-audit-worker/commit/135bd712cbf9d4c903eb2219ccd6dbfeee23ce77))
+
 ## [1.84.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.0...v1.84.1) (2025-05-14)
 
 
