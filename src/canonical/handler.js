@@ -479,22 +479,6 @@ export async function canonicalAuditRunner(baseURL, context, site) {
   const { log, dataAccess } = context;
   log.info(`Starting Canonical Audit with siteId: ${JSON.stringify(siteId)}`);
 
-  /**
-   * @type {RequestOptions}
-   */
-  const options = {};
-  if (isPreviewPage(baseURL)) {
-    try {
-      log.info(`Retrieving page authentication for pageUrl ${baseURL}`);
-      const token = await retrievePageAuthentication(site, context);
-      options.headers = {
-        Authorization: `token ${token}`,
-      };
-    } catch (error) {
-      log.error(`Error retrieving page authentication for pageUrl ${baseURL}: ${error.message}`);
-    }
-  }
-
   try {
     const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
@@ -509,6 +493,22 @@ export async function canonicalAuditRunner(baseURL, context, site) {
           explanation: CANONICAL_CHECKS.TOPPAGES.explanation,
         },
       };
+    }
+
+    /**
+     * @type {RequestOptions}
+     */
+    const options = {};
+    if (isPreviewPage(baseURL)) {
+      try {
+        log.info(`Retrieving page authentication for pageUrl ${baseURL}`);
+        const token = await retrievePageAuthentication(site, context);
+        options.headers = {
+          Authorization: `token ${token}`,
+        };
+      } catch (error) {
+        log.error(`Error retrieving page authentication for pageUrl ${baseURL}: ${error.message}`);
+      }
     }
 
     const auditPromises = topPages.map(async (page) => {

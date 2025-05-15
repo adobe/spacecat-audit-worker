@@ -618,10 +618,16 @@ describe('Canonical URL Tests', () => {
 
     it('should call retrievePageAuthentication for preview pages to get the auth token', async () => {
       const baseURL = 'http://example.page';
+      const html = `<html lang="en"><head><link rel="canonical" href="${baseURL}"><title>test</title></head><body></body></html>`;
+
+      nock('http://example.page').get('/page1').reply(200, html);
+      nock(baseURL).get('/').reply(200, html);
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => 'http://example.page/page1' }]);
+
       const context = {
         log,
         dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
         },
       };
       const site = { getId: () => 'testSiteId' };
@@ -642,10 +648,16 @@ describe('Canonical URL Tests', () => {
 
     it('should silently ignore any errors from retrievePageAuthentication', async () => {
       const baseURL = 'http://example.page';
+      const html = `<html lang="en"><head><link rel="canonical" href="${baseURL}"><title>test</title></head><body></body></html>`;
+
+      nock('http://example.page').get('/page1').reply(200, html);
+      nock(baseURL).get('/').reply(200, html);
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => 'http://example.page/page1' }]);
+
       const context = {
         log,
         dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
         },
       };
       const site = { getId: () => 'testSiteId' };
