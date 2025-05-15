@@ -17,6 +17,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import esmock from 'esmock';
 import {
   getTopPagesForSiteId, validateCanonicalTag, validateCanonicalFormat,
   validateCanonicalRecursively, canonicalAuditRunner, CANONICAL_CHECKS,
@@ -613,6 +614,55 @@ describe('Canonical URL Tests', () => {
           success: false,
         },
       });
+    });
+
+    it('should call retrievePageAuthentication for preview pages to get the auth token', async () => {
+      const baseURL = 'http://example.page';
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const retrievePageAuthenticationStub = sinon.stub().resolves('token1234');
+      const { canonicalAuditRunner: canonicalAuditRunnerInstance } = await esmock(
+        '../../src/canonical/handler.js',
+        {
+          '@adobe/spacecat-shared-utils': { retrievePageAuthentication: retrievePageAuthenticationStub },
+        },
+      );
+
+      await canonicalAuditRunnerInstance(baseURL, context, site);
+
+      expect(log.info).to.have.been.calledWith('Retrieving page authentication for pageUrl http://example.page');
+      expect(retrievePageAuthenticationStub).to.have.been.calledOnceWith(site, context);
+    });
+
+    it('should silently ignore any errors from retrievePageAuthentication', async () => {
+      const baseURL = 'http://example.page';
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const retrievePageAuthenticationStub = sinon.stub().rejects(new Error('Something went wrong'));
+      const { canonicalAuditRunner: canonicalAuditRunnerInstance } = await esmock(
+        '../../src/canonical/handler.js',
+        {
+          '@adobe/spacecat-shared-utils': { retrievePageAuthentication: retrievePageAuthenticationStub },
+        },
+      );
+
+      await canonicalAuditRunnerInstance(baseURL, context, site);
+
+      expect(log.info).to.have.been.calledWith('Retrieving page authentication for pageUrl http://example.page');
+      expect(retrievePageAuthenticationStub).to.have.been.calledOnceWith(site, context);
+      expect(log.error).to.have.been.calledWith('Error retrieving page authentication for pageUrl http://example.page: Something went wrong');
     });
   });
 });
