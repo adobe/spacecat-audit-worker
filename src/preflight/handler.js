@@ -133,7 +133,18 @@ export const preflightAudit = async (context) => {
       const path = new URL(url).pathname.replace(/\/$/, '');
       const tags = updatedDetectedTags[path];
       if (tags) {
-        result.audits[2].opportunities.push(tags);
+        Object.entries(tags).forEach(([tagName, tagData]) => {
+          result.audits[2].opportunities.push({
+            tagName,
+            tagContent: tagData.tagContent,
+            issue: tagData.issue,
+            issueDetails: tagData.issueDetails,
+            seoImpact: tagData.seoImpact,
+            seoRecommendation: tagData.seoRecommendation || '',
+            aiSuggestion: tagData.aiSuggestion || '',
+            aiRationale: tagData.aiRationale || '',
+          });
+        });
       }
     }
   }
