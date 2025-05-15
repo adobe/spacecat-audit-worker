@@ -27,14 +27,7 @@ export async function runInternalLinkChecks(scrapedObjects, pageAuthToken, conte
     scrapedObjects.map(async ({ data }) => {
       const html = data.scrapeResult.rawBody;
       const pageUrl = data.finalUrl;
-      let dom;
-      try {
-        dom = new JSDOM(html);
-      } catch (e) {
-        // Can't parse HTML, skip this page
-        log.warn(`[preflight-audit] Unable to parse HTML for ${pageUrl}: ${e.message}`);
-        return;
-      }
+      const dom = new JSDOM(html);
 
       const doc = dom.window.document;
       const anchors = Array.from(doc.querySelectorAll('a[href]'));
@@ -42,13 +35,9 @@ export async function runInternalLinkChecks(scrapedObjects, pageAuthToken, conte
       const internalSet = new Set();
 
       anchors.forEach((a) => {
-        try {
-          const abs = new URL(a.href, pageUrl).toString();
-          if (new URL(abs).origin === pageOrigin) {
-            internalSet.add(abs);
-          }
-        } catch {
-          // skip invalid hrefs
+        const abs = new URL(a.href, pageUrl).toString();
+        if (new URL(abs).origin === pageOrigin) {
+          internalSet.add(abs);
         }
       });
 
