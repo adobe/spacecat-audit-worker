@@ -18,6 +18,7 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
+import { Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 import {
   internalLinksAuditRunner,
@@ -331,11 +332,29 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
   }).timeout(5000);
 
+  it('no broken internal links found and fetching existing opportunity object fails', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(
+      new Error('read error happened'),
+    );
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+      },
+    });
+
+    await expect(
+      handler.opportunityAndSuggestionsStep(context),
+    ).to.be.rejectedWith('read error happened');
+  }).timeout(5000);
+
   it('creating a new opportunity object suceeds even if suggestion generation error occurs', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
-    context.site.getLatestAuditByAuditType = () => auditData;
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    context.site.getLatestAuditByAuditType = () => auditData;
 
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
@@ -345,10 +364,90 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
+      expectedOpportunity,
+    );
+
     expect(result.status).to.equal('complete');
 
     expect(context.log.error).to.have.been.calledOnceWith(
       `[broken-internal-links] [Site: ${site.getId()}] suggestion generation error: error`,
+    );
+  }).timeout(5000);
+
+  it('no new opportunity created if no broken internal links found', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+
+    expect(result.status).to.equal('complete');
+
+    expect(context.log.info).to.have.been.calledOnceWith(
+      `[broken-internal-links] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`,
+    );
+  }).timeout(5000);
+
+  it('Existing opportunity and suggestions are updated if broken internal links found', async () => {
+    // Create mock suggestions
+    const mockSuggestions = [{}];
+
+    const existingOpportunity = {
+      setStatus: sandbox.spy(sandbox.stub().resolves()),
+      save: sandbox.spy(sandbox.stub().resolves()),
+      getType: () => 'broken-internal-links',
+      getSuggestions: sandbox.stub().resolves(mockSuggestions),
+    };
+
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+
+    // Mock Suggestion.bulkUpdateStatus
+    context.dataAccess.Suggestion = {
+      bulkUpdateStatus: sandbox.spy(sandbox.stub().resolves()),
+    };
+
+    // Mock statuses
+    sandbox.stub(Oppty, 'STATUSES').value({ RESOLVED: 'RESOLVED', NEW: 'NEW' });
+    sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW' });
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+    context.site.getLatestAuditByAuditType = () => auditData;
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    // Verify opportunity was updated
+    expect(existingOpportunity.setStatus).to.have.been.calledOnceWith('RESOLVED');
+
+    // Verify suggestions were retrieved
+    expect(existingOpportunity.getSuggestions).to.have.been.calledOnce;
+
+    // Verify suggestions statuses were updated
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+      mockSuggestions,
+      'OUTDATED',
+    );
+    expect(existingOpportunity.save).to.have.been.calledOnce;
+
+    expect(result.status).to.equal('complete');
+
+    expect(context.log.info).to.have.been.calledWith(
+      `[broken-internal-links] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`,
     );
   }).timeout(5000);
 

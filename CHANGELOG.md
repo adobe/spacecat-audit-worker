@@ -1,3 +1,24 @@
+## [1.84.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.2...v1.84.3) (2025-05-15)
+
+
+### Bug Fixes
+
+* Sites 30031, skip creation of opportunity or update opportunity status incase of no issues found in broken internal links ([#825](https://github.com/adobe/spacecat-audit-worker/issues/825)) ([0e9f8c2](https://github.com/adobe/spacecat-audit-worker/commit/0e9f8c2ee8ce6104f409eca41564c15147df95b4))
+
+## [1.84.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.1...v1.84.2) (2025-05-15)
+
+
+### Bug Fixes
+
+* handling dependencies in high organic low ctr opportunity through step based audit ([#778](https://github.com/adobe/spacecat-audit-worker/issues/778)) ([135bd71](https://github.com/adobe/spacecat-audit-worker/commit/135bd712cbf9d4c903eb2219ccd6dbfeee23ce77))
+
+## [1.84.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.0...v1.84.1) (2025-05-14)
+
+
+### Bug Fixes
+
+* urlResolver for meta-tags ([#855](https://github.com/adobe/spacecat-audit-worker/issues/855)) ([2a80e25](https://github.com/adobe/spacecat-audit-worker/commit/2a80e25f745725f80c1d5b259812911af574a192))
+
 # [1.84.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.83.1...v1.84.0) (2025-05-13)
 
 
