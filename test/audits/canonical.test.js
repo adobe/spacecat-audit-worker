@@ -288,7 +288,7 @@ describe('Canonical URL Tests', () => {
         .get('/page2')
         .reply(200);
 
-      const result = await validateCanonicalRecursively(canonicalUrl, log, new Set());
+      const result = await validateCanonicalRecursively(canonicalUrl, log);
 
       expect(result).to.deep.include.members([
         {
@@ -440,10 +440,13 @@ describe('Canonical URL Tests', () => {
     });
 
     it('should detect and handle redirect loop correctly', async () => {
+      const options = {
+        redirect: 'manual',
+      };
       const canonicalUrl = 'http://example.com/redirect-loop';
       const visitedUrls = new Set([canonicalUrl]);
 
-      const result = await validateCanonicalRecursively(canonicalUrl, log, visitedUrls);
+      const result = await validateCanonicalRecursively(canonicalUrl, log, options, visitedUrls);
 
       expect(result).to.deep.include({
         check: 'canonical-url-no-redirect',
