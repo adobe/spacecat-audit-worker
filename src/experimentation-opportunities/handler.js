@@ -89,7 +89,7 @@ function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
  * @returns
  */
 
-export async function experimentOpportunitiesAuditRunner(auditUrl, context, site) {
+export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   const { log } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -108,17 +108,12 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context, site
       experimentationOpportunities,
     },
     fullAuditRef: auditUrl,
-    type: 'experimentation-opportunities',
-    processingType: 'default',
-    jobId: site.getId(),
-    urls: getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities).map((url) => ({ url })),
-    siteId: site.getId(),
   };
 }
 
 export async function runAuditAndScrapeStep(context) {
   const { site, finalUrl } = context;
-  const result = await experimentOpportunitiesAuditRunner(finalUrl, context, site);
+  const result = await experimentOpportunitiesAuditRunner(finalUrl, context);
 
   return {
     auditResult: result.auditResult,
