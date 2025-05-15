@@ -1,3 +1,10 @@
+## [1.84.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.2...v1.84.3) (2025-05-15)
+
+
+### Bug Fixes
+
+* Sites 30031, skip creation of opportunity or update opportunity status incase of no issues found in broken internal links ([#825](https://github.com/adobe/spacecat-audit-worker/issues/825)) ([0e9f8c2](https://github.com/adobe/spacecat-audit-worker/commit/0e9f8c2ee8ce6104f409eca41564c15147df95b4))
+
 ## [1.84.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.1...v1.84.2) (2025-05-15)
 
 
