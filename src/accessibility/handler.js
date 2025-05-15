@@ -45,7 +45,7 @@ async function scrapeAccessibilityData(context) {
 async function processAccessibilityOpportunities(context) {
   const { site, audit, log } = context;
   log.info(`[A11yAudit] Step 2: Processing scraped data for ${site.getBaseURL()} from ${audit.getFullAuditRef()}`);
-  log.info(`[A11yAudit] audit result: ${audit}`);
+  log.info(`[A11yAudit] audit result: ${JSON.stringify(audit, null, 2)}`);
 
   // TODO: Implement logic to:
   // 1. Fetch the scraped accessibility data (e.g., from S3 using audit.getFullAuditRef()).
