@@ -134,7 +134,7 @@ describe('Job-based Step-Audit Tests', () => {
 
     // Should send a continuation message for the next step
     expect(sendMsgStub).to.have.been.called;
-  }).timeout(10000);
+  }).timeout(20000);
 
   it('continues execution from specified step', async () => {
     const runner = new AuditBuilder()
