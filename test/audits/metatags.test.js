@@ -252,6 +252,9 @@ describe('Meta Tags', () => {
         getId: sinon.stub().returns('site-id'),
         getBaseURL: sinon.stub().returns('http://example.com'),
         getIsLive: sinon.stub().returns(true),
+        getConfig: sinon.stub().returns({
+          getIncludedURLs: sinon.stub().returns([]),
+        }),
       };
       audit = {
         getId: sinon.stub().returns('audit-id'),
@@ -704,6 +707,9 @@ describe('Meta Tags', () => {
           getIsLive: sinon.stub().returns(true),
           getId: sinon.stub().returns('site-id'),
           getBaseURL: sinon.stub().returns('http://example.com'),
+          getConfig: sinon.stub().returns({
+            getIncludedURLs: sinon.stub().returns([]),
+          }),
         };
 
         audit = {
