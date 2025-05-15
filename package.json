@@ -76,7 +76,7 @@
     "@adobe/spacecat-shared-http-utils": "1.10.4",
     "@adobe/spacecat-shared-rum-api-client": "2.24.0",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
-    "@adobe/spacecat-shared-utils": "https://gitpkg.vercel.app/adobe/spacecat-shared/packages/spacecat-shared-utils?auth-for-preview-URLs-for-canonical-audit",
+    "@adobe/spacecat-shared-utils": "1.38.0",
     "@aws-sdk/client-lambda": "3.799.0",
     "@aws-sdk/client-s3": "3.802.0",
     "@aws-sdk/client-sqs": "3.799.0",

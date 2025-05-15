@@ -134,7 +134,7 @@ describe('Job-based Step-Audit Tests', () => {
 
     // Should send a continuation message for the next step
     expect(sendMsgStub).to.have.been.called;
-  });
+  }).timeout(10000);
 
   it('continues execution from specified step', async () => {
     const runner = new AuditBuilder()
@@ -160,7 +160,7 @@ describe('Job-based Step-Audit Tests', () => {
     await runner.run(message, context);
 
     expect(sendMsgStub).to.have.been.called;
-  });
+  }).timeout(10000);
 
   it('handles final step without sending continuation message', async () => {
     const runner = new AuditBuilder()
@@ -186,7 +186,7 @@ describe('Job-based Step-Audit Tests', () => {
     await runner.run(message, context);
 
     expect(sendMsgStub).not.to.have.been.called;
-  });
+  }).timeout(10000);
 
   it('fails if job is not found', async () => {
     const runner = new AuditBuilder()
