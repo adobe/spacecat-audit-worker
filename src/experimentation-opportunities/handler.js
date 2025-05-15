@@ -132,10 +132,7 @@ export function organicKeywordsStep(context) {
   const {
     site, log, finalUrl, audit,
   } = context;
-  const auditData = audit.getFullAuditRef();
   const auditResult = audit.getAuditResult();
-  log.info('auditref', JSON.stringify(auditData, null, 2));
-  log.info('auditResult', JSON.stringify(auditResult, null, 2));
   const urls = getHighOrganicLowCtrOpportunityUrls(auditResult.experimentationOpportunities);
   log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
   return {
