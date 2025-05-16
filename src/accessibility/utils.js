@@ -118,6 +118,23 @@ export async function aggregateAccessibilityData(
     return { success: false, aggregatedData: null, message };
   }
 
+  // check if there are any other final-result files in the accessibility/siteId folder
+  const listObjectsCommand = new ListObjectsV2Command({
+    Bucket: bucketName,
+    Prefix: `accessibility/${siteId}/`,
+  });
+  const listObjectsResult = await s3Client.send(listObjectsCommand);
+  const otherFinalResultFiles = listObjectsResult.Contents.filter((obj) => obj.Key.startsWith(`accessibility/${siteId}/final-result-`));
+  if (otherFinalResultFiles.length > 0) {
+    log.info(`[A11yAudit] Found ${otherFinalResultFiles.length} final-result files in the accessibility/siteId folder.`);
+    const objectKeyForLastWeekFile = otherFinalResultFiles[0].Key;
+    // eslint-disable-next-line max-len
+    const lastWeekFile = await getObjectFromKey(s3Client, bucketName, objectKeyForLastWeekFile, log);
+    if (lastWeekFile) {
+      log.info(`[A11yAudit] Last week file: ${JSON.stringify(lastWeekFile.data, null, 2)}`);
+    }
+  }
+
   try {
     // Prefix for accessibility data for this site
     const prefix = `accessibility/${siteId}/`;
@@ -246,7 +263,7 @@ export async function aggregateAccessibilityData(
     log.info(`Saved aggregated accessibility data to ${outputKey}`);
 
     // Delete original files (optional, can be disabled)
-    const deletedCount = await deleteOriginalFiles(s3Client, bucketName, [latestSubfolder], log);
+    const deletedCount = await deleteOriginalFiles(s3Client, bucketName, objectKeys, log);
     log.info(`Deleted ${deletedCount} original files after aggregation`);
 
     return {
