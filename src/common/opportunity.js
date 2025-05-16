@@ -81,6 +81,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
           dataSources: opportunityInstance.data?.dataSources,
         });
       }
+      log.info(`all the method available for opportunity ${Object.getOwnPropertyNames(opportunity)}`);
       await opportunity.save();
       return opportunity;
     }
