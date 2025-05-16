@@ -71,6 +71,7 @@
       },
       {
         "url": "https://www.business.adobe.com/newsletter",
+        "formsource": "#container-1 form.newsletter",
         "formsubmit": {
 
         },
