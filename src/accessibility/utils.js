@@ -120,7 +120,7 @@ export async function aggregateAccessibilityData(
 
   try {
     // Prefix for accessibility data for this site
-    const prefix = `accessibility/${siteId}`;
+    const prefix = `accessibility/${siteId}/`;
     const delimiter = '/';
     log.info(`Fetching accessibility data for site ${siteId} from bucket ${bucketName}`);
 
