@@ -14,6 +14,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { dataNeededForA11yAudit } from './constants.js';
+import { aggregateAccessibilityData } from './utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
@@ -43,24 +44,69 @@ async function scrapeAccessibilityData(context) {
 
 // Second step: gets data from the first step and processes it to create new opportunities
 async function processAccessibilityOpportunities(context) {
-  const { site, audit, log } = context;
-  log.info(`[A11yAudit] Step 2: Processing scraped data for ${site.getBaseURL()} from ${audit.getFullAuditRef()}`);
-  log.info(`[A11yAudit] audit result: ${JSON.stringify(audit, null, 2)}`);
+  const {
+    site, log, s3Client, env,
+  } = context;
+  const siteId = site.getId();
+  log.info(`[A11yAudit] Step 2: Processing scraped data for ${site.getBaseURL()}`);
 
-  // TODO: Implement logic to:
-  // 1. Fetch the scraped accessibility data (e.g., from S3 using audit.getFullAuditRef()).
-  // 2. Analyze the data to identify accessibility issues.
-  // 3. Create opportunity objects based on the findings.
+  // Get the S3 bucket name from config or environment
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
 
-  // Placeholder for the result of processing
-  const opportunityResults = {
-    status: 'PROCESSING_COMPLETE',
-    opportunitiesFound: 0, // Replace with actual count
-    // Include details of opportunities or a summary
-  };
+  if (!bucketName) {
+    const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
+    log.error(errorMsg);
+    return {
+      status: 'PROCESSING_FAILED',
+      error: errorMsg,
+    };
+  }
 
-  // The final step's return value will be stored as the audit result.
-  return opportunityResults;
+  try {
+    // Use the accessibility aggregator to process data
+    const version = new Date().toISOString().split('T')[0];
+    const outputKey = `accessibility/${siteId}/final-result-${version}.json`;
+    const aggregationResult = await aggregateAccessibilityData(
+      s3Client,
+      bucketName,
+      siteId,
+      log,
+      outputKey,
+    );
+
+    if (!aggregationResult.success) {
+      log.warn(`[A11yAudit] No data aggregated: ${aggregationResult.message}`);
+      return {
+        status: 'NO_OPPORTUNITIES',
+        message: aggregationResult.message,
+      };
+    }
+
+    const { aggregatedData } = aggregationResult;
+
+    // Extract some key metrics for the audit result
+    const totalIssues = aggregatedData.issues.total;
+    const urlsProcessed = aggregatedData.urls.length;
+    const categoriesByCount = Object.entries(aggregatedData.issues.byCategory)
+      .sort((a, b) => b[1] - a[1])
+      .map(([category, count]) => ({ category, count }));
+
+    // Return the final result
+    return {
+      status: totalIssues > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
+      opportunitiesFound: totalIssues,
+      urlsProcessed,
+      topIssueCategories: categoriesByCount.slice(0, 5), // Top 5 issue categories
+      summary: `Found ${totalIssues} accessibility issues across ${urlsProcessed} URLs`,
+      fullReportUrl: outputKey, // Reference to the full report in S3
+    };
+  } catch (error) {
+    log.error(`[A11yAudit] Error processing accessibility data: ${error.message}`, error);
+    return {
+      status: 'PROCESSING_FAILED',
+      error: error.message,
+    };
+  }
 }
 
 export default new AuditBuilder()
