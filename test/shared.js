@@ -61,6 +61,9 @@ export class MockContextBuilder {
       Suggestion: {
         bulkUpdateStatus: this.sandbox.stub(),
       },
+      AsyncJob: {
+        findById: this.sandbox.stub(),
+      },
     };
 
     const mockSqs = {

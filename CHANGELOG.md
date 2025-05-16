@@ -1,3 +1,45 @@
+## [1.85.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.85.2...v1.85.3) (2025-05-16)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#858](https://github.com/adobe/spacecat-audit-worker/issues/858)) ([c4d74a2](https://github.com/adobe/spacecat-audit-worker/commit/c4d74a2f58a7559a8a0ecae71a81051dc4e28fab))
+
+## [1.85.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.85.1...v1.85.2) (2025-05-16)
+
+
+### Bug Fixes
+
+* lhs timeout ([#862](https://github.com/adobe/spacecat-audit-worker/issues/862)) ([87f4e66](https://github.com/adobe/spacecat-audit-worker/commit/87f4e662a9a8040a0a37bd8f54ba2fa95d8e9669))
+
+## [1.85.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.85.0...v1.85.1) (2025-05-16)
+
+
+### Bug Fixes
+
+* running audits locally ([#860](https://github.com/adobe/spacecat-audit-worker/issues/860)) ([96c286f](https://github.com/adobe/spacecat-audit-worker/commit/96c286f18aca9fcf130a0527158f51a2e78083b3))
+
+# [1.85.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.3...v1.85.0) (2025-05-15)
+
+
+### Features
+
+* introduce preflight audit ([#838](https://github.com/adobe/spacecat-audit-worker/issues/838)) ([441adc0](https://github.com/adobe/spacecat-audit-worker/commit/441adc0007b4c84715e1f7ca7b2c17e87c720a3c))
+
+## [1.84.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.2...v1.84.3) (2025-05-15)
+
+
+### Bug Fixes
+
+* Sites 30031, skip creation of opportunity or update opportunity status incase of no issues found in broken internal links ([#825](https://github.com/adobe/spacecat-audit-worker/issues/825)) ([0e9f8c2](https://github.com/adobe/spacecat-audit-worker/commit/0e9f8c2ee8ce6104f409eca41564c15147df95b4))
+
+## [1.84.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.1...v1.84.2) (2025-05-15)
+
+
+### Bug Fixes
+
+* handling dependencies in high organic low ctr opportunity through step based audit ([#778](https://github.com/adobe/spacecat-audit-worker/issues/778)) ([135bd71](https://github.com/adobe/spacecat-audit-worker/commit/135bd712cbf9d4c903eb2219ccd6dbfeee23ce77))
+
 ## [1.84.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.0...v1.84.1) (2025-05-14)
 
 

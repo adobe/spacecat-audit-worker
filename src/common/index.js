@@ -14,6 +14,7 @@
 export * from './base-audit.js';
 export { RunnerAudit } from './runner-audit.js';
 export { StepAudit } from './step-audit.js';
+export { AsyncJobRunner } from './async-job-runner.js';
 
 // Export utility functions
 export * from './audit-utils.js';
