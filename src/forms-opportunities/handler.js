@@ -75,7 +75,7 @@ export async function sendA11yIssuesToMystique(latestAudit, scrapedData, context
         }));
         a11yData.push({
           form: result.finalUrl,
-          formsource: result.formsource,
+          formSource: result.formSource,
           a11yIssues,
         });
       }
@@ -140,11 +140,11 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   }
 
   const urlsData = Array.from(uniqueUrls).map((url) => {
-    const formsources = formVitals.filter((fv) => fv.url === url).map((fv) => fv.formsource)
+    const formSources = formVitals.filter((fv) => fv.url === url).map((fv) => fv.formsource)
       .filter((source) => !!source);
     return {
       url,
-      ...(formsources.length > 0 && { formsources }),
+      ...(formSources.length > 0 && { formSources }),
     };
   });
 
@@ -169,7 +169,7 @@ export async function sendA11yUrlsForScrapingStep(context) {
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
-  const urlsData = getUrlsDataForAccessibilityAudit(scrapedData);
+  const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
   const result = {
     auditResult: latestAudit.auditResult,
     fullAuditRef: latestAudit.fullAuditRef,

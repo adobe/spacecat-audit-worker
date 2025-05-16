@@ -180,7 +180,7 @@ describe('send a11y urls for scraping step', () => {
               formType: 'newsletter',
               visibleATF: true,
               fieldCount: 3,
-              formsource: '#container-1 form.newsletter',
+              formSource: '#container-1 form.newsletter',
             },
           ],
         })),

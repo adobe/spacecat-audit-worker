@@ -97,20 +97,21 @@ describe('isSearchForm', () => {
 });
 
 describe('getUrlsDataForAccessibilityAudit', () => {
+  const context = { log: { debug: () => {} } };
   it('should return urls for accessibility audit', () => {
     const scrapedData = {
       formData: [
         {
           finalUrl: 'https://www.business.adobe.com/newsletter',
-          scrapeResult: [{ formsource: '#container-1 form.newsletter' }],
+          scrapeResult: [{ formSource: '#container-1 form.newsletter' }],
         },
       ],
     };
-    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData);
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
     expect(urlsData).to.deep.equal([
       {
         url: 'https://www.business.adobe.com/newsletter',
-        formsources: ['#container-1 form.newsletter'],
+        formSources: ['#container-1 form.newsletter'],
       },
     ]);
   });
@@ -123,21 +124,52 @@ describe('getUrlsDataForAccessibilityAudit', () => {
           scrapeResult: [
             {
               classList: 'cmp-mortgage-options',
-              formsource: '#container-1 form#newsletter',
+              formSource: '#container-1 form#newsletter',
             },
           ],
         },
         {
           finalUrl: 'https://www.business.adobe.com/subscribe',
-          scrapeResult: [{ formsource: '#container-1 form#newsletter' }],
+          scrapeResult: [{ formSource: '#container-1 form#newsletter' }],
         },
       ],
     };
-    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData);
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
     expect(urlsData).to.deep.equal([
       {
         url: 'https://www.business.adobe.com/newsletter',
-        formsources: ['#container-1 form#newsletter'],
+        formSources: ['#container-1 form#newsletter'],
+      },
+    ]);
+  });
+
+  it('should return formSource as id/classList if no element found in scraper', () => {
+    const scrapedData = {
+      formData: [{
+        finalUrl: 'https://www.business.adobe.com/a',
+        scrapeResult: [{
+          id: 'test-id',
+          classList: 'test-class',
+        }, {
+          id: '',
+          classList: 'test-class-2 test-class-3',
+        }],
+      }, {
+        finalUrl: 'https://www.business.adobe.com/b',
+        scrapeResult: [{
+          id: '',
+          classList: '',
+        }],
+      }],
+    };
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    expect(urlsData).to.deep.equal([
+      {
+        url: 'https://www.business.adobe.com/a',
+        formSources: ['form#test-id', 'form.test-class-2.test-class-3'],
+      }, {
+        url: 'https://www.business.adobe.com/b',
+        formSources: ['form'],
       },
     ]);
   });

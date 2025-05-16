@@ -164,7 +164,7 @@
     },
     {
       "url": "https://www.business.adobe.com/newsletter",
-      "formsources": ["#container-1 form.newsletter"]
+      "formSources": ["#container-1 form.newsletter"]
     },
     {
       "url": "https://business.adobe.com/jp/products/magento/magento-commerce.html"

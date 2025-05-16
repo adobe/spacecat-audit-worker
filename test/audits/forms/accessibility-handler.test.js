@@ -96,6 +96,7 @@ describe('a11y-handler', () => {
         a11yData: [
           {
             form: '/test-form',
+            formSource: '#test-form',
             a11yIssues: [
               {
                 successCriterias: ['1.1.1 Non-text Content'],
@@ -132,6 +133,7 @@ describe('a11y-handler', () => {
         a11yData: [
           {
             form: '/test-form',
+            formSource: '#test-form',
             a11yIssues: [
               {
                 successCriterias: [
@@ -163,6 +165,7 @@ describe('a11y-handler', () => {
     expect(createArgs.origin).to.equal('AUTOMATION');
     expect(createArgs.data.accessibility).to.have.lengthOf(1);
     expect(createArgs.data.accessibility[0].form).to.equal('/test-form');
+    expect(createArgs.data.accessibility[0].formSource).to.equal('#test-form');
     expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(1);
 
     // Check that success criteria are processed
@@ -192,6 +195,7 @@ describe('a11y-handler', () => {
         a11yData: [
           {
             form: '/test-form',
+            formSource: '#test-form',
             a11yIssues: [
               {
                 successCriterias: [

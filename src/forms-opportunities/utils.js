@@ -305,31 +305,61 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
 /**
  * Get the urls and form sources for accessibility audit
  * @param scrapedData
+ * @param context
  * @returns {Array} array of objects with url and formsources
  */
-export function getUrlsDataForAccessibilityAudit(scrapedData) {
+export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
+  const { log } = context;
   const urlsData = [];
   const addedFormSources = new Set();
   if (isNonEmptyArray(scrapedData.formData)) {
     for (const form of scrapedData.formData) {
-      const formsources = [];
-      if (form.finalUrl.includes('search')) {
+      const formSources = [];
+      const validForms = form.scrapeResult.filter((sr) => !shouldExcludeForm(sr));
+      if (form.finalUrl.includes('search') || validForms.length === 0) {
         // eslint-disable-next-line no-continue
         continue;
       }
-      form.scrapeResult.filter((sr) => !shouldExcludeForm(sr))
-        .forEach((sr) => {
-          if (sr.formsource && !addedFormSources.has(sr.formsource)) {
-            formsources.push(sr.formsource);
-            if (!['dialog form', 'form'].includes(sr.formsource)) {
-              addedFormSources.add(sr.formsource);
-            }
+      // 1. get formSources from scraped data if available
+      let isFormSourceAlreadyAdded = false;
+      validForms.forEach((sr) => {
+        if (!sr.formSource) {
+          return;
+        }
+        if (!addedFormSources.has(sr.formSource)) {
+          formSources.push(sr.formSource);
+          if (!['dialog form', 'form'].includes(sr.formSource)) {
+            addedFormSources.add(sr.formSource);
+          }
+        } else {
+          isFormSourceAlreadyAdded = true;
+        }
+      });
+      // eslint-disable-next-line max-len
+      // 2. If no unique formSource found in current page, then use id or classList to identify the form
+      if (formSources.length === 0) {
+        log.debug(`[Form Opportunity] No formSource found in scraped data for form: ${form.finalUrl}`);
+        validForms.forEach((sr) => {
+          if (sr.formSource) {
+            return;
+          }
+          if (sr.id) {
+            formSources.push(`form#${sr.id}`);
+          } else if (sr.classList) {
+            formSources.push(`form.${sr.classList.split(' ').join('.')}`);
           }
         });
-      if (formsources.length > 0) {
+      }
+      // 3. Fallback to "form" element. If any formSource of current page is already added
+      // in previous pages, then don't add "form" element.
+      if (!isFormSourceAlreadyAdded && formSources.length === 0) {
+        formSources.push('form');
+      }
+      log.debug(`[Form Opportunity] Form sources for page: ${form.finalUrl} are ${formSources.join(', ')}`);
+      if (formSources.length > 0) {
         urlsData.push({
           url: form.finalUrl,
-          formsources,
+          formSources,
         });
       }
     }

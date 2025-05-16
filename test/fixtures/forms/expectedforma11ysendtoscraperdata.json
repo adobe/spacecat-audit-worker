@@ -155,7 +155,7 @@
   "urls": [
     {
       "url": "https://www.business.adobe.com/newsletter",
-      "formsources": ["#container-1 form.newsletter"]
+      "formSources": ["#container-1 form.newsletter"]
     }
   ],
   "siteId": "test-site-id"

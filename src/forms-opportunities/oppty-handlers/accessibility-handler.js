@@ -60,7 +60,7 @@ export default async function handler(message, context) {
       }));
       return {
         form: a11yOpty.form,
-        formsource: a11yOpty.formsource,
+        formSource: a11yOpty.formSource,
         a11yIssues,
       };
     });
