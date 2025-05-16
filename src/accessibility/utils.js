@@ -119,19 +119,14 @@ export async function aggregateAccessibilityData(
   }
 
   // check if there are any other final-result files in the accessibility/siteId folder
-  const listObjectsCommand = new ListObjectsV2Command({
-    Bucket: bucketName,
-    Prefix: `accessibility/${siteId}/`,
-  });
-  const listObjectsResult = await s3Client.send(listObjectsCommand);
-  const otherFinalResultFiles = listObjectsResult.Contents.filter((obj) => obj.Key.startsWith(`accessibility/${siteId}/final-result-`));
-  if (otherFinalResultFiles.length > 0) {
-    log.info(`[A11yAudit] Found ${otherFinalResultFiles.length} final-result files in the accessibility/siteId folder.`);
-    const objectKeyForLastWeekFile = otherFinalResultFiles[0].Key;
+  const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '.json');
+  if (lastWeekObjectKeys.length > 0) {
+    log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder.`);
+    const objectKeyForLastWeekFile = lastWeekObjectKeys[0];
     // eslint-disable-next-line max-len
     const lastWeekFile = await getObjectFromKey(s3Client, bucketName, objectKeyForLastWeekFile, log);
     if (lastWeekFile) {
-      log.info(`[A11yAudit] Last week file: ${JSON.stringify(lastWeekFile.data, null, 2)}`);
+      log.info(`[A11yAudit] Last week file key: ${objectKeyForLastWeekFile} with content: ${JSON.stringify(lastWeekFile.data, null, 2)}`);
     }
   }
 
@@ -151,11 +146,11 @@ export async function aggregateAccessibilityData(
     }
     log.info(`Found ${subfolders.length} subfolders for site ${siteId} in bucket ${bucketName} with delimiter ${delimiter} and value ${subfolders}`);
 
-    // sort subfolders by timestamp
+    // sort subfolders by timestamp descending
     subfolders.sort((a, b) => {
       const timestampA = new Date(a.split('/').pop());
       const timestampB = new Date(b.split('/').pop());
-      return timestampB.getTime() - timestampA.getTime();
+      return timestampB.getTime() > timestampA.getTime() ? 1 : -1;
     });
 
     // get the latest subfolder
