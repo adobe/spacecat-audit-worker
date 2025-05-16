@@ -12,13 +12,33 @@
 import { DevelopmentServer } from '@adobe/helix-universal-devserver';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 import { main } from '../../src/index.js';
 
 // eslint-disable-next-line no-underscore-dangle
 global.__rootdir = resolve(fileURLToPath(import.meta.url), '..', '..', '..');
 
+// poor man's env locking. Ask dj.
+function checkEnvSafe() {
+    const x = Buffer.from(process.env.AWS_SESSION_TOKEN, 'base64')
+      .toString('utf8')
+      .match(/\d{12}/)?.[0];
+    if (!x) throw new Error('Invalid session token');
+
+    const h = crypto
+      .createHash('md5')
+      .update(['27ff293048214ddc', x, '801d2fcf9dce89b5'].join(''))
+      .digest('hex');
+
+    if (h !== Buffer.from('MTRmNjkxYmY0ZmMzYzc5NjNlYzFjZDlhZWNhZmY1NGY=', 'base64').toString()) {
+        throw new Error('RUNS ONLY ON DEV!');
+    }
+}
+
 async function run() {
+    checkEnvSafe();
+    
     process.env.HLX_DEV_SERVER_HOST = 'localhost:3000';
     process.env.HLX_DEV_SERVER_SCHEME = 'http';
     const devServer = await new DevelopmentServer(main)
