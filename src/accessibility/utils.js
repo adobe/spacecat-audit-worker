@@ -136,9 +136,11 @@ export async function aggregateAccessibilityData(
   };
 
   // check if there are any other final-result files in the accessibility/siteId folder
+  // if there are, we will use the latest one for comparison later on
+  // and delete the rest (ideally 1 should be left)
   const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
+  log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
   if (lastWeekObjectKeys.length > 0) {
-    log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
     const objectKeyForLastWeekFile = lastWeekObjectKeys[0];
     // eslint-disable-next-line max-len
     const lastWeekFile = await getObjectFromKey(s3Client, bucketName, objectKeyForLastWeekFile, log);
