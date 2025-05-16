@@ -17,6 +17,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import esmock from 'esmock';
 import {
   getTopPagesForSiteId, validateCanonicalTag, validateCanonicalFormat,
   validateCanonicalRecursively, canonicalAuditRunner, CANONICAL_CHECKS,
@@ -36,6 +37,7 @@ describe('Canonical URL Tests', () => {
 
   afterEach(() => {
     sinon.restore();
+    nock.cleanAll();
   });
 
   describe('getTopPagesForSiteId', () => {
@@ -288,7 +290,7 @@ describe('Canonical URL Tests', () => {
         .get('/page2')
         .reply(200);
 
-      const result = await validateCanonicalRecursively(canonicalUrl, log, new Set());
+      const result = await validateCanonicalRecursively(canonicalUrl, log);
 
       expect(result).to.deep.include.members([
         {
@@ -440,10 +442,13 @@ describe('Canonical URL Tests', () => {
     });
 
     it('should detect and handle redirect loop correctly', async () => {
+      const options = {
+        redirect: 'manual',
+      };
       const canonicalUrl = 'http://example.com/redirect-loop';
       const visitedUrls = new Set([canonicalUrl]);
 
-      const result = await validateCanonicalRecursively(canonicalUrl, log, visitedUrls);
+      const result = await validateCanonicalRecursively(canonicalUrl, log, options, visitedUrls);
 
       expect(result).to.deep.include({
         check: 'canonical-url-no-redirect',
@@ -610,6 +615,85 @@ describe('Canonical URL Tests', () => {
           success: false,
         },
       });
+    });
+
+    it('should call retrievePageAuthentication for preview pages to get the auth token', async () => {
+      const baseURL = 'http://example.page';
+      const html = `<html lang="en"><head><link rel="canonical" href="${baseURL}"><title>test</title></head><body></body></html>`;
+
+      const captured1 = {};
+      nock('http://example.page').get('/page1').reply(function (uri, requestBody) {
+        // `this` is the interceptor context
+        captured1.uri = uri;
+        captured1.requestBody = requestBody;
+        captured1.headers = this.req.headers;
+        return [200, html];
+      });
+      const captured2 = {};
+      nock(baseURL).get('/').reply(function (uri, requestBody) {
+        // `this` is the interceptor context
+        captured2.uri = uri;
+        captured2.requestBody = requestBody;
+        captured2.headers = this.req.headers;
+        return [200, html];
+      });
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => 'http://example.page/page1' }]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const retrievePageAuthenticationStub = sinon.stub().resolves('token1234');
+      const { canonicalAuditRunner: canonicalAuditRunnerInstance } = await esmock(
+        '../../src/canonical/handler.js',
+        {
+          '@adobe/spacecat-shared-utils': { retrievePageAuthentication: retrievePageAuthenticationStub },
+        },
+      );
+
+      await canonicalAuditRunnerInstance(baseURL, context, site);
+
+      expect(log.info).to.have.been.calledWith('Retrieving page authentication for pageUrl http://example.page');
+      expect(retrievePageAuthenticationStub).to.have.been.calledOnceWith(site, context);
+      expect(captured1.headers).to.have.property('authorization');
+      expect(captured1.headers.authorization).to.equal('token token1234');
+      expect(captured2.headers).to.have.property('authorization');
+      expect(captured2.headers.authorization).to.equal('token token1234');
+    });
+
+    it('should silently ignore any errors from retrievePageAuthentication', async () => {
+      const baseURL = 'http://example.page';
+      const html = `<html lang="en"><head><link rel="canonical" href="${baseURL}"><title>test</title></head><body></body></html>`;
+
+      nock('http://example.page').get('/page1').reply(200, html);
+      nock(baseURL).get('/').reply(200, html);
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => 'http://example.page/page1' }]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const retrievePageAuthenticationStub = sinon.stub().rejects(new Error('Something went wrong'));
+      const { canonicalAuditRunner: canonicalAuditRunnerInstance } = await esmock(
+        '../../src/canonical/handler.js',
+        {
+          '@adobe/spacecat-shared-utils': { retrievePageAuthentication: retrievePageAuthenticationStub },
+        },
+      );
+
+      await canonicalAuditRunnerInstance(baseURL, context, site);
+
+      expect(log.info).to.have.been.calledWith('Retrieving page authentication for pageUrl http://example.page');
+      expect(retrievePageAuthenticationStub).to.have.been.calledOnceWith(site, context);
+      expect(log.error).to.have.been.calledWith('Error retrieving page authentication for pageUrl http://example.page: Something went wrong');
     });
   });
 });
