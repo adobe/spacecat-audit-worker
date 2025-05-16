@@ -186,7 +186,7 @@ export async function aggregateAccessibilityData(
     results.forEach((result) => {
       if (!result) return;
 
-      log.info(`Processing file ${result}`);
+      log.info(`Processing file ${JSON.stringify(result, null, 2)}`);
 
       //   const { key, data } = result;
 
