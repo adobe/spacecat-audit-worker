@@ -85,9 +85,9 @@ async function processAccessibilityOpportunities(context) {
     const { aggregatedData } = aggregationResult;
 
     // Extract some key metrics for the audit result
-    const totalIssues = aggregatedData.issues.total;
-    const urlsProcessed = aggregatedData.urls.length;
-    const categoriesByCount = Object.entries(aggregatedData.issues.byCategory)
+    const totalIssues = aggregatedData.overall.violations.total;
+    const urlsProcessed = Object.keys(aggregatedData).length;
+    const categoriesByCount = Object.entries(aggregatedData.overall.violations)
       .sort((a, b) => b[1] - a[1])
       .map(([category, count]) => ({ category, count }));
 

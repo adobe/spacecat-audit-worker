@@ -155,15 +155,17 @@ export async function aggregateAccessibilityData(
 
     // Initialize aggregated data structure
     const aggregatedData = {
-      violations: {
-        total: 0,
-        critical: {
-          count: 0,
-          items: {},
-        },
-        serious: {
-          count: 0,
-          items: {},
+      overall: {
+        violations: {
+          total: 0,
+          critical: {
+            count: 0,
+            items: {},
+          },
+          serious: {
+            count: 0,
+            items: {},
+          },
         },
       },
     };
@@ -186,43 +188,52 @@ export async function aggregateAccessibilityData(
     results.forEach((result) => {
       if (!result) return;
 
-      log.info(`Processing file ${JSON.stringify(result, null, 2)}`);
+      const { data } = result;
+      const { violations, traffic, siteUrl } = data;
 
-      //   const { key, data } = result;
+      // Store the url specific data
+      aggregatedData[siteUrl] = {
+        violations,
+        traffic,
+      };
 
-      //   // Store the raw data
-      //   aggregatedData.raw.push(data);
-
-      //   // Process URL-specific data if available
-      //   if (data.url) {
-      //     const urlData = {
-      //       url: data.url,
-      //       urlId: data.urlId || key.split('/').pop().replace('.json', ''),
-      //       issueCount: data.issues?.length || 0,
-      //     };
-
-      //     aggregatedData.urls.push(urlData);
-
-      //     // Process issues by URL
-      //     if (data.issues?.length > 0) {
-      //       aggregatedData.issues.byUrl[data.url] = data.issues.length;
-      //       aggregatedData.issues.total += data.issues.length;
-
-    //       // Process issues by category
-    //       data.issues.forEach((issue) => {
-    //         const category = issue.category || 'uncategorized';
-    //         if (!aggregatedData.issues.byCategory[category]) {
-    //           aggregatedData.issues.byCategory[category] = 0;
-    //         }
-    //         aggregatedData.issues.byCategory[category] += 1;
-    //       });
-    //     }
-    //   }
+      // Update overall data
+      if (violations.critical && violations.critical.items && violations.critical.count) {
+        aggregatedData.overall.violations.critical.count += violations.critical.count;
+        Object.entries(violations.critical.items).forEach(([key, value]) => {
+          if (!aggregatedData.overall.violations.critical.items[key]) {
+            aggregatedData.overall.violations.critical.items[key] = {
+              count: value.count,
+              description: value.description,
+              level: value.level,
+              understandingUrl: value.understandingUrl,
+              successCriteriaNumber: value.successCriteriaNumber,
+            };
+          } else {
+            aggregatedData.overall.violations.critical.items[key].count += value.count;
+          }
+        });
+      }
+      if (violations.serious && violations.serious.items && violations.serious.count) {
+        aggregatedData.overall.violations.serious.count += violations.serious.count;
+        Object.entries(violations.serious.items).forEach(([key, value]) => {
+          if (!aggregatedData.overall.violations.serious.items[key]) {
+            aggregatedData.overall.violations.serious.items[key] = {
+              count: value.count,
+              description: value.description,
+              level: value.level,
+              understandingUrl: value.understandingUrl,
+              successCriteriaNumber: value.successCriteriaNumber,
+            };
+          } else {
+            aggregatedData.overall.violations.serious.items[key].count += value.count;
+          }
+        });
+      }
+      if (violations.total) {
+        aggregatedData.overall.violations.total += violations.total;
+      }
     });
-
-    if (true) {
-      return { success: false, aggregatedData: null, message: 'Not implemented' };
-    }
 
     // Save aggregated data to S3
     await s3Client.send(new PutObjectCommand({
@@ -235,7 +246,7 @@ export async function aggregateAccessibilityData(
     log.info(`Saved aggregated accessibility data to ${outputKey}`);
 
     // Delete original files (optional, can be disabled)
-    const deletedCount = await deleteOriginalFiles(s3Client, bucketName, objectKeys, log);
+    const deletedCount = await deleteOriginalFiles(s3Client, bucketName, latestSubfolder, log);
     log.info(`Deleted ${deletedCount} original files after aggregation`);
 
     return {
