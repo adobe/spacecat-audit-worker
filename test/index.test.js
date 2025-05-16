@@ -28,6 +28,7 @@ describe('Index Tests', () => {
   let messageBodyJson;
 
   beforeEach('setup', () => {
+    process.env.AWS_EXECUTION_ENV = 'AWS_Lambda_nodejs22.x';
     messageBodyJson = {
       type: 'dummy',
       url: 'site-id',
