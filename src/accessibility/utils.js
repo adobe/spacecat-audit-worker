@@ -118,15 +118,32 @@ export async function aggregateAccessibilityData(
     return { success: false, aggregatedData: null, message };
   }
 
+  // Initialize aggregated data structure
+  const aggregatedData = {
+    overall: {
+      violations: {
+        total: 0,
+        critical: {
+          count: 0,
+          items: {},
+        },
+        serious: {
+          count: 0,
+          items: {},
+        },
+      },
+    },
+  };
+
   // check if there are any other final-result files in the accessibility/siteId folder
-  const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '.json');
+  const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
   if (lastWeekObjectKeys.length > 0) {
-    log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder.`);
+    log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
     const objectKeyForLastWeekFile = lastWeekObjectKeys[0];
     // eslint-disable-next-line max-len
     const lastWeekFile = await getObjectFromKey(s3Client, bucketName, objectKeyForLastWeekFile, log);
     if (lastWeekFile) {
-      log.info(`[A11yAudit] Last week file key: ${objectKeyForLastWeekFile} with content: ${JSON.stringify(lastWeekFile.data, null, 2)}`);
+      log.info(`[A11yAudit] Last week file key: ${objectKeyForLastWeekFile} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
   }
 
@@ -136,7 +153,7 @@ export async function aggregateAccessibilityData(
     const delimiter = '/';
     log.info(`Fetching accessibility data for site ${siteId} from bucket ${bucketName}`);
 
-    // Get all subfolders for this site
+    // Get all subfolders for this site, best case scenario should be 1
     // eslint-disable-next-line max-len
     const subfolders = await getSubfoldersUsingPrefixAndDelimiter(s3Client, bucketName, prefix, delimiter, log);
     if (subfolders.length === 0) {
@@ -146,7 +163,7 @@ export async function aggregateAccessibilityData(
     }
     log.info(`Found ${subfolders.length} subfolders for site ${siteId} in bucket ${bucketName} with delimiter ${delimiter} and value ${subfolders}`);
 
-    // sort subfolders by timestamp descending
+    // sort subfolders by timestamp descending in case there are > 1 from various reasons
     subfolders.sort((a, b) => {
       const timestampA = new Date(a.split('/').pop());
       const timestampB = new Date(b.split('/').pop());
@@ -164,23 +181,6 @@ export async function aggregateAccessibilityData(
     }
 
     log.info(`Found ${objectKeys.length} data files for site ${siteId}`);
-
-    // Initialize aggregated data structure
-    const aggregatedData = {
-      overall: {
-        violations: {
-          total: 0,
-          critical: {
-            count: 0,
-            items: {},
-          },
-          serious: {
-            count: 0,
-            items: {},
-          },
-        },
-      },
-    };
 
     // Process files in parallel using Promise.all
     const processFilePromises = objectKeys.map(async (key) => {

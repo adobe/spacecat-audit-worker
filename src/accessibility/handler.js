@@ -65,7 +65,7 @@ async function processAccessibilityOpportunities(context) {
   try {
     // Use the accessibility aggregator to process data
     const version = new Date().toISOString().split('T')[0];
-    const outputKey = `accessibility/${siteId}/final-result-${version}.json`;
+    const outputKey = `accessibility/${siteId}/${version}-final-result.json`;
     const aggregationResult = await aggregateAccessibilityData(
       s3Client,
       bucketName,
