@@ -79,7 +79,7 @@ function PSIClient(config, log = console) {
     try {
       const apiURL = getPSIApiUrl(baseURL, strategy, serviceId);
       const xSource = `spacecat-${environment}`;
-      const response = await fetch(apiURL, { headers: { 'x-source': xSource } });
+      const response = await fetch(apiURL, { headers: { 'x-source': xSource }, timeout: 30000 });
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
