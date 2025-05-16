@@ -124,11 +124,26 @@ export async function aggregateAccessibilityData(
     const delimiter = '/';
     log.info(`Fetching accessibility data for site ${siteId} from bucket ${bucketName}`);
 
-    // Get all JSON files for this site
+    // Get all subfolders for this site
     // eslint-disable-next-line max-len
     const subfolders = await getSubfoldersUsingPrefixAndDelimiter(s3Client, bucketName, prefix, delimiter, log);
+    if (subfolders.length === 0) {
+      const message = `No accessibility data found in bucket ${bucketName} at prefix ${prefix} for site ${siteId} with delimiter ${delimiter}`;
+      log.info(message);
+      return { success: false, aggregatedData: null, message };
+    }
     log.info(`Found ${subfolders.length} subfolders for site ${siteId} in bucket ${bucketName} with delimiter ${delimiter} and value ${subfolders}`);
-    const objectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
+
+    // sort subfolders by timestamp
+    subfolders.sort((a, b) => {
+      const timestampA = new Date(a.split('/').pop());
+      const timestampB = new Date(b.split('/').pop());
+      return timestampB.getTime() - timestampA.getTime();
+    });
+
+    // get the latest subfolder
+    const latestSubfolder = subfolders[0];
+    const objectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, latestSubfolder, log, 1000, '.json');
 
     if (!objectKeys || objectKeys.length === 0) {
       const message = `No accessibility data found in bucket ${bucketName} at prefix ${prefix} for site ${siteId}`;
@@ -140,15 +155,17 @@ export async function aggregateAccessibilityData(
 
     // Initialize aggregated data structure
     const aggregatedData = {
-      siteId,
-      timestamp: new Date().toISOString(),
-      urls: [],
-      issues: {
-        byCategory: {},
-        byUrl: {},
+      violations: {
         total: 0,
+        critical: {
+          count: 0,
+          items: {},
+        },
+        serious: {
+          count: 0,
+          items: {},
+        },
       },
-      raw: [],
     };
 
     // Process files in parallel using Promise.all
@@ -169,37 +186,43 @@ export async function aggregateAccessibilityData(
     results.forEach((result) => {
       if (!result) return;
 
-      const { key, data } = result;
+      log.info(`Processing file ${result}`);
 
-      // Store the raw data
-      aggregatedData.raw.push(data);
+      //   const { key, data } = result;
 
-      // Process URL-specific data if available
-      if (data.url) {
-        const urlData = {
-          url: data.url,
-          urlId: data.urlId || key.split('/').pop().replace('.json', ''),
-          issueCount: data.issues?.length || 0,
-        };
+      //   // Store the raw data
+      //   aggregatedData.raw.push(data);
 
-        aggregatedData.urls.push(urlData);
+      //   // Process URL-specific data if available
+      //   if (data.url) {
+      //     const urlData = {
+      //       url: data.url,
+      //       urlId: data.urlId || key.split('/').pop().replace('.json', ''),
+      //       issueCount: data.issues?.length || 0,
+      //     };
 
-        // Process issues by URL
-        if (data.issues?.length > 0) {
-          aggregatedData.issues.byUrl[data.url] = data.issues.length;
-          aggregatedData.issues.total += data.issues.length;
+      //     aggregatedData.urls.push(urlData);
 
-          // Process issues by category
-          data.issues.forEach((issue) => {
-            const category = issue.category || 'uncategorized';
-            if (!aggregatedData.issues.byCategory[category]) {
-              aggregatedData.issues.byCategory[category] = 0;
-            }
-            aggregatedData.issues.byCategory[category] += 1;
-          });
-        }
-      }
+      //     // Process issues by URL
+      //     if (data.issues?.length > 0) {
+      //       aggregatedData.issues.byUrl[data.url] = data.issues.length;
+      //       aggregatedData.issues.total += data.issues.length;
+
+    //       // Process issues by category
+    //       data.issues.forEach((issue) => {
+    //         const category = issue.category || 'uncategorized';
+    //         if (!aggregatedData.issues.byCategory[category]) {
+    //           aggregatedData.issues.byCategory[category] = 0;
+    //         }
+    //         aggregatedData.issues.byCategory[category] += 1;
+    //       });
+    //     }
+    //   }
     });
+
+    if (true) {
+      return { success: false, aggregatedData: null, message: 'Not implemented' };
+    }
 
     // Save aggregated data to S3
     await s3Client.send(new PutObjectCommand({
