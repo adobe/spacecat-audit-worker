@@ -14,6 +14,7 @@ import { JSDOM } from 'jsdom';
 import { composeBaseURL, tracingFetch as fetch, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
+import { isPreviewPage } from '../utils/url-utils.js';
 
 /**
  * @import {type RequestOptions} from "@adobe/fetch"
@@ -470,11 +471,6 @@ export async function validateCanonicalRecursively(
  * @returns {Promise<Object>} An object containing the audit results.
  */
 export async function canonicalAuditRunner(baseURL, context, site) {
-  function isPreviewPage(url) {
-    const urlObj = new URL(url);
-    return urlObj.hostname.endsWith('.page');
-  }
-
   const siteId = site.getId();
   const { log, dataAccess } = context;
   log.info(`Starting Canonical Audit with siteId: ${JSON.stringify(siteId)}`);
