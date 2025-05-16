@@ -12,9 +12,9 @@
 import { DevelopmentServer } from '@adobe/helix-universal-devserver';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
-import crypto from 'crypto';
 
 import { main } from '../../src/index.js';
+import { hasText } from '@adobe/spacecat-shared-utils';
 
 // eslint-disable-next-line no-underscore-dangle
 global.__rootdir = resolve(fileURLToPath(import.meta.url), '..', '..', '..');
@@ -24,14 +24,7 @@ function checkEnvSafe() {
     const x = Buffer.from(process.env.AWS_SESSION_TOKEN, 'base64')
       .toString('utf8')
       .match(/\d{12}/)?.[0];
-    if (!x) throw new Error('Invalid session token');
-
-    const h = crypto
-      .createHash('md5')
-      .update(['27ff293048214ddc', x, '801d2fcf9dce89b5'].join(''))
-      .digest('hex');
-
-    if (h !== Buffer.from('MTRmNjkxYmY0ZmMzYzc5NjNlYzFjZDlhZWNhZmY1NGY=', 'base64').toString()) {
+    if (!hasText(x) || !x.includes('8203346262')) {
         throw new Error('RUNS ONLY ON DEV!');
     }
 }
