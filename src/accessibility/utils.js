@@ -189,7 +189,7 @@ export async function aggregateAccessibilityData(
       if (!result) return;
 
       const { data } = result;
-      const { violations, traffic, siteUrl } = data;
+      const { violations, traffic, url: siteUrl } = data;
 
       // Store the url specific data
       aggregatedData[siteUrl] = {
@@ -246,7 +246,7 @@ export async function aggregateAccessibilityData(
     log.info(`Saved aggregated accessibility data to ${outputKey}`);
 
     // Delete original files (optional, can be disabled)
-    const deletedCount = await deleteOriginalFiles(s3Client, bucketName, latestSubfolder, log);
+    const deletedCount = await deleteOriginalFiles(s3Client, bucketName, [latestSubfolder], log);
     log.info(`Deleted ${deletedCount} original files after aggregation`);
 
     return {
