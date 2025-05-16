@@ -442,8 +442,17 @@ export async function findSitemap(inputUrl) {
 
         // Only collect tracked status codes in issues
         if (existingPages.notOk && existingPages.notOk.length > 0) {
-          const trackedIssues = existingPages.notOk
-            .filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
+          // eslint-disable-next-line max-len
+          const trackedIssues = existingPages.notOk.filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
+
+          // check if the suggested URL already exists in the valid list.
+          trackedIssues.forEach((issue) => {
+            if (issue.urlsSuggested && existingPages.ok.includes(issue.urlsSuggested)) {
+              // eslint-disable-next-line no-param-reassign
+              issue.urlsSuggested = 'Remove this url';
+            }
+          });
+
           if (trackedIssues.length > 0) {
             notOkPagesFromSitemap[s] = trackedIssues;
           }
@@ -579,8 +588,11 @@ export function generateSuggestions(auditUrl, auditData, context) {
     .filter(Boolean)
     .map((issue) => ({
       ...issue,
+      // eslint-disable-next-line no-nested-ternary
       recommendedAction: issue.urlsSuggested
-        ? `use this url instead: ${issue.urlsSuggested}`
+        ? (issue.urlsSuggested === 'Remove this url'
+          ? `Remove ${issue.pageUrl} from the sitemap as the canonical URL is already present.`
+          : `Use this url instead: ${issue.urlsSuggested}`)
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 
