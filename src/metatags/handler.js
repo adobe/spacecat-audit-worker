@@ -303,15 +303,16 @@ export async function submitForScraping(context) {
   // Combine includedURLs and topPages URLs to scrape
   const includedURLs = await site.getConfig().getIncludedURLs('meta-tags') || [];
 
-  log.info(`Scraping ${topPagesUrls.length} top pages and ${includedURLs.length} included URLs`);
-  log.info(`Total Top pages: ${topPagesUrls}`);
-  log.info(`Included URLs: ${includedURLs}`);
+  log.info(`Total top-pages: ${topPagesUrls.length}, Total includedURLs: ${includedURLs.length}`);
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.info(`Total URLs to scrape: ${finalUrls.length}`);
+  log.info(`Final URLs to scrape: ${finalUrls.length}`);
+
   return {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'meta-tags',
+    batchProcess: 'true',
+    batchSize: 100,
   };
 }
 
