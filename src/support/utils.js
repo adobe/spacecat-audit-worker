@@ -38,8 +38,11 @@ export function isLoginPage(url) {
 }
 
 export async function getRUMUrl(url, context) {
-  const { log } = context;
-  log.info(`Getting RUM URL for ${url}`);
+  let log;
+  if (context) {
+    log = context.log;
+    log.info(`Getting RUM URL for ${url}`);
+  }
   const urlWithScheme = prependSchema(url);
   try {
     const resp = await fetch(urlWithScheme, {
@@ -54,7 +57,9 @@ export async function getRUMUrl(url, context) {
     */
     return finalUrl.split('/')[0];
   } catch (err) {
-    log.error(`Error getting RUM URL for ${url}: ${err}`);
+    if (context) {
+      log.error(`Error getting RUM URL for ${url}: ${err}`);
+    }
     return null;
   }
 }
