@@ -1,3 +1,10 @@
+## [1.85.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.85.1...v1.85.2) (2025-05-16)
+
+
+### Bug Fixes
+
+* lhs timeout ([#862](https://github.com/adobe/spacecat-audit-worker/issues/862)) ([87f4e66](https://github.com/adobe/spacecat-audit-worker/commit/87f4e662a9a8040a0a37bd8f54ba2fa95d8e9669))
+
 ## [1.85.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.85.0...v1.85.1) (2025-05-16)
 
 
