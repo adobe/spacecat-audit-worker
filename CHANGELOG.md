@@ -1,3 +1,10 @@
+## [1.85.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.85.0...v1.85.1) (2025-05-16)
+
+
+### Bug Fixes
+
+* running audits locally ([#860](https://github.com/adobe/spacecat-audit-worker/issues/860)) ([96c286f](https://github.com/adobe/spacecat-audit-worker/commit/96c286f18aca9fcf130a0527158f51a2e78083b3))
+
 # [1.85.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.84.3...v1.85.0) (2025-05-15)
 
 
