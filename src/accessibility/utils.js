@@ -140,14 +140,6 @@ export async function aggregateAccessibilityData(
   // and delete the rest (ideally 1 should be left)
   const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
   log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
-  if (lastWeekObjectKeys.length > 0) {
-    const objectKeyForLastWeekFile = lastWeekObjectKeys[0];
-    // eslint-disable-next-line max-len
-    const lastWeekFile = await getObjectFromKey(s3Client, bucketName, objectKeyForLastWeekFile, log);
-    if (lastWeekFile) {
-      log.info(`[A11yAudit] Last week file key: ${objectKeyForLastWeekFile} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
-    }
-  }
 
   try {
     // Prefix for accessibility data for this site
@@ -262,6 +254,24 @@ export async function aggregateAccessibilityData(
     // Delete original files (optional, can be disabled)
     const deletedCount = await deleteOriginalFiles(s3Client, bucketName, objectKeys, log);
     log.info(`Deleted ${deletedCount} original files after aggregation`);
+
+    // delete oldest final result file if there are more than 1
+    if (lastWeekObjectKeys.length > 1) {
+      lastWeekObjectKeys.sort((a, b) => {
+        const timestampA = new Date(a.split('/').pop().replace('-final-result.json', ''));
+        const timestampB = new Date(b.split('/').pop().replace('-final-result.json', ''));
+        return timestampA.getTime() > timestampB.getTime() ? 1 : -1;
+      });
+      const objectKeyToDelete = lastWeekObjectKeys[0];
+      // eslint-disable-next-line max-len
+      //   const lastWeekFile = await getObjectFromKey(s3Client, bucketName, objectKeyForLastWeekFile, log);
+      //   if (lastWeekFile) {
+      //     log.info(`[A11yAudit] Last week file key:
+      // ${objectKeyForLastWeekFile} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
+      //   }
+      await deleteOriginalFiles(s3Client, bucketName, [objectKeyToDelete], log);
+      log.info(`Deleted oldest final result file: ${objectKeyToDelete}`);
+    }
 
     return {
       success: true,
