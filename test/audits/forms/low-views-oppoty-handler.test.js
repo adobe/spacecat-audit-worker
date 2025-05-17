@@ -86,7 +86,6 @@ describe('createLowFormViewsOpportunities handler method', () => {
       ],
       data: {
         form: 'https://www.surest.com/high-page-low-form-view',
-        screenshot: '',
         trackedFormKPIName: 'Form View Rate',
         trackedFormKPIValue: 0.03,
         formViews: 200,
