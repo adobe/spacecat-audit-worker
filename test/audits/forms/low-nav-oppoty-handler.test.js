@@ -86,7 +86,6 @@ describe('createLowNavigationOpportunities handler method', () => {
       ],
       data: {
         form: 'https://www.surest.com/newsletter',
-        screenshot: '',
         trackedFormKPIName: 'Form View Rate',
         trackedFormKPIValue: 0.035,
         formViews: 300,
@@ -173,7 +172,6 @@ describe('createLowNavigationOpportunities handler method', () => {
       ],
       data: {
         form: 'https://www.iframe-example.com/test/getting-iframe-example/guide/newsletter',
-        screenshot: '',
         trackedFormKPIName: 'Form View Rate',
         trackedFormKPIValue: 0.035,
         formViews: 300,

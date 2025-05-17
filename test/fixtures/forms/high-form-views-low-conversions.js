@@ -881,7 +881,6 @@ const testData = {
       formsource: '',
       formViews: 3200,
       pageViews: 8670,
-      screenshot: '',
       samples: 8670,
       scrapedStatus: false,
       dataSources: [
@@ -904,7 +903,6 @@ const testData = {
     ],
     data: {
       form: 'https://www.surest.com/contact-us',
-      screenshot: '',
       trackedFormKPIName: 'Conversion Rate',
       trackedFormKPIValue: 0.014947683109118086,
       formViews: 6690,
@@ -1008,7 +1006,6 @@ const testData = {
     ],
     data: {
       form: 'https://www.surest.com/contact-us',
-      screenshot: '',
       trackedFormKPIName: 'Conversion Rate',
       trackedFormKPIValue: 0.014947683109118086,
       formViews: 6690,
@@ -1121,7 +1118,6 @@ const testData = {
     ],
     data: {
       form: 'https://www.surest.com/contact-us',
-      screenshot: '',
       trackedFormKPIName: 'Conversion Rate',
       trackedFormKPIValue: 0.014947683109118086,
       formViews: 6690,
@@ -1318,7 +1314,6 @@ const testData = {
       formsource: '',
       formViews: 3200,
       pageViews: 7690,
-      screenshot: '',
       samples: 7690,
       scrapedStatus: false,
       dataSources: [

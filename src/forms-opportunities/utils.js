@@ -13,41 +13,11 @@
 import {
   isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES } from './constants.js';
-
-const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
-
-function getS3PathPrefix(url, site) {
-  const urlObj = new URL(url);
-  let { pathname } = urlObj;
-  pathname = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
-  return `scrapes/${site.getId()}${pathname}/forms`;
-}
-
-async function getPresignedUrl(fileName, context, url, site) {
-  const { log, s3Client: s3ClientObj } = context;
-  const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
-  log.info(`Generating presigned URL for ${screenshotPath}`);
-
-  const command = new GetObjectCommand({
-    Bucket: process.env.S3_BUCKET_NAME,
-    Key: screenshotPath,
-  });
-
-  return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
-    // eslint-disable-next-line no-shadow
-    .then((signedUrl) => signedUrl)
-    .catch((error) => {
-      log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
-      return ''; // Ensure the function always returns something
-    });
-}
 
 function getFormMetrics(metricObject) {
   const { formview, formengagement, formsubmit } = metricObject;
@@ -206,15 +176,11 @@ function convertToLowConversionOpptyData(metricObject) {
   };
 }
 
-async function convertToOpportunityData(opportunityType, metricObject, context) {
+async function convertToOpportunityData(opportunityType, metricObject) {
   const {
     url, pageview: { total: pageViews }, formview: { total: formViews },
     formsource = '', iframeSrc,
   } = metricObject;
-
-  const {
-    site,
-  } = context;
 
   /*
   if (formViews === 0 && (formSubmit > 0 || formEngagement > 0)) {
@@ -231,14 +197,12 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
     opportunityData = convertToLowViewOpptyData(metricObject);
   }
 
-  const screenshot = await getPresignedUrl('screenshot-desktop-fullpage.png', context, url, site);
   opportunityData = {
     ...opportunityData,
     form: url,
     formsource,
     formViews,
     pageViews,
-    screenshot,
     samples: pageViews, // todo: get the actual number of samples
   };
 
