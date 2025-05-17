@@ -14,10 +14,10 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import createLowNavigationOpportunities from '../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import testData from '../../fixtures/forms/high-form-views-low-conversions.js';
-import { DATA_SOURCES } from '../../../src/common/constants.js';
+import createLowNavigationOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
+import { DATA_SOURCES } from '../../../../src/common/constants.js';
 
 use(sinonChai);
 describe('createLowNavigationOpportunities handler method', () => {
@@ -67,6 +67,10 @@ describe('createLowNavigationOpportunities handler method', () => {
       },
       site: {
         getId: sinon.stub().returns('test-site-id'),
+        getDeliveryType: sinon.stub().returns('eds'),
+      },
+      sqs: {
+        sendMessage: sinon.stub().resolves({}),
       },
     };
     auditData = testData.oppty2AuditData;
