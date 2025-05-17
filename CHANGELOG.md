@@ -1,3 +1,10 @@
+# [1.86.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.85.4...v1.86.0) (2025-05-17)
+
+
+### Features
+
+* forms low nav oppty mystique integration ([#866](https://github.com/adobe/spacecat-audit-worker/issues/866)) ([4c7ff51](https://github.com/adobe/spacecat-audit-worker/commit/4c7ff51b2f5efbfcea06501a31522c3fec90fd85))
+
 ## [1.85.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.85.3...v1.85.4) (2025-05-16)
 
 
