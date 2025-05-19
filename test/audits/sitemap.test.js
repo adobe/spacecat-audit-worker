@@ -1096,9 +1096,7 @@ describe('Sitemap Audit', () => {
           getStatus: sinon.stub().returns('NEW'),
         },
       ];
-      context.dataAccess.Opportunity.getSuggestions.resolves(
-        existingSuggestions,
-      );
+      context.dataAccess.Opportunity.getSuggestions.resolves(existingSuggestions);
       context.dataAccess.Opportunity.addSuggestions.resolves({
         createdItems: auditDataWithSuggestions.suggestions,
       });
@@ -1112,12 +1110,8 @@ describe('Sitemap Audit', () => {
         context.dataAccess.Opportunity.setAuditId,
       ).to.have.been.calledOnceWith('audit-id');
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
-      expect(
-        context.dataAccess.Suggestion.bulkUpdateStatus,
-      ).to.have.been.calledOnceWith(existingSuggestions, 'OUTDATED');
-      expect(
-        context.dataAccess.Opportunity.addSuggestions,
-      ).to.have.been.calledOnceWith(
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(existingSuggestions, 'OUTDATED');
+      expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(
         auditDataWithSuggestions.suggestions.map((suggestion) => ({
           opportunityId: opptyId,
           type: 'REDIRECT_UPDATE',
@@ -1590,8 +1584,6 @@ describe('filterValidUrls with status code tracking', () => {
     // Normal redirect should suggest the final URL
     const normalRedirect = result.notOk.find((item) => item.url.includes('normal-redirect'));
     expect(normalRedirect.statusCode).to.equal(301);
-    expect(normalRedirect.urlsSuggested).to.equal(
-      'https://example.com/valid-page',
-    );
+    expect(normalRedirect.urlsSuggested).to.equal('https://example.com/valid-page');
   });
 });
