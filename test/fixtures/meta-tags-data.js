@@ -15,7 +15,7 @@ const testData = {
   auditData: {
     type: 'meta-tags',
     siteId: 'site-id',
-    id: 'audit-id',
+    auditId: 'audit-id',
     auditResult: {
       finalUrl: 'www.test-site.com/',
       detectedTags: {

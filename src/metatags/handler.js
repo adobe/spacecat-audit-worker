@@ -31,11 +31,12 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.META_TAGS;
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
+    finalUrl,
+    { siteId: auditData.siteId, id: auditData.auditId },
     context,
     createOpportunityData,
     auditType,
@@ -142,9 +143,9 @@ function getOrganicTrafficForEndpoint(endpoint, rumDataMapMonthly, rumDataMapBiM
 }
 
 // Calculate the projected traffic lost for a site
-async function calculateProjectedTraffic(context, auditUrl, siteId, detectedTags, log) {
+async function calculateProjectedTraffic(context, site, detectedTags, log) {
   const options = {
-    domain: auditUrl,
+    domain: await wwwUrlResolver(site, context),
     interval: 30,
     granularity: 'DAILY',
   };
@@ -178,36 +179,28 @@ async function calculateProjectedTraffic(context, auditUrl, siteId, detectedTags
       });
     });
 
-    const cpcValue = await calculateCPCValue(context, siteId);
-    log.info(`Calculated cpc value: ${cpcValue} for site: ${siteId}`);
+    const cpcValue = await calculateCPCValue(context, site.getId());
+    log.info(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
     const projectedTrafficValue = projectedTrafficLost * cpcValue;
 
     // Skip updating projected traffic data if lost traffic value is insignificant
     return projectedTrafficValue > PROJECTED_VALUE_THRESHOLD
       ? { projectedTrafficLost, projectedTrafficValue } : {};
   } catch (err) {
-    log.warn(`Error while calculating projected traffic for ${auditUrl} : ${siteId}`, err);
+    log.warn(`Error while calculating projected traffic for ${site.getId()}`, err);
     return {};
   }
 }
 
-export async function auditMetaTagsRunner(auditUrl, context, site) {
-  const { log, s3Client, dataAccess } = context;
-  // Get top pages for a site
-  const siteId = site.getId();
-  const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  const topPagesSet = new Set(topPages.map((page) => {
-    const pathname = new URL(page.url).pathname.replace(/\/$/, '');
-    return `scrapes/${site.getId()}${pathname}/scrape.json`;
-  }));
-
+export async function metatagsAutoDetect(site, pagesSet, context) {
+  const { log, s3Client } = context;
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const prefix = `scrapes/${site.getId()}/`;
   const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
   const extractedTags = {};
   const pageMetadataResults = await Promise.all(scrapedObjectKeys
-    .filter((key) => topPagesSet.has(key))
+    .filter((key) => pagesSet.has(key))
     .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)));
   pageMetadataResults.forEach((pageMetadata) => {
     if (pageMetadata) {
@@ -226,7 +219,30 @@ export async function auditMetaTagsRunner(auditUrl, context, site) {
     seoChecks.performChecks(pageUrl, pageTags);
   }
   seoChecks.finalChecks();
-  const detectedTags = seoChecks.getDetectedTags();
+  return {
+    seoChecks,
+    detectedTags: seoChecks.getDetectedTags(),
+    extractedTags,
+  };
+}
+
+export async function runAuditAndGenerateSuggestions(context) {
+  const {
+    site, audit, finalUrl, log, dataAccess,
+  } = context;
+  // Get top pages for a site
+  const siteId = site.getId();
+  const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+  const topPagesSet = new Set(topPages.map((page) => {
+    const pathname = new URL(page.url).pathname.replace(/\/$/, '');
+    return `scrapes/${site.getId()}${pathname}/scrape.json`;
+  }));
+
+  const {
+    seoChecks,
+    detectedTags,
+    extractedTags,
+  } = await metatagsAutoDetect(site, topPagesSet, context);
 
   // Calculate projected traffic lost
   const {
@@ -234,8 +250,7 @@ export async function auditMetaTagsRunner(auditUrl, context, site) {
     projectedTrafficValue,
   } = await calculateProjectedTraffic(
     context,
-    auditUrl,
-    siteId,
+    site,
     detectedTags,
     log,
   );
@@ -250,20 +265,56 @@ export async function auditMetaTagsRunner(auditUrl, context, site) {
 
   const auditResult = {
     detectedTags: updatedDetectedTags,
-    sourceS3Folder: `${bucketName}/${prefix}`,
+    sourceS3Folder: `${context.env.S3_SCRAPER_BUCKET_NAME}/scrapes/${site.getId()}/`,
     fullAuditRef: '',
-    finalUrl: auditUrl,
+    finalUrl,
     ...(projectedTrafficLost && { projectedTrafficLost }),
     ...(projectedTrafficValue && { projectedTrafficValue }),
   };
-  return {
+  await opportunityAndSuggestions(finalUrl, {
+    siteId: site.getId(),
+    auditId: audit.getId(),
     auditResult,
-    fullAuditRef: auditUrl,
+  }, context);
+
+  return {
+    status: 'complete',
+  };
+}
+
+export async function importTopPages(context) {
+  const { site, finalUrl } = context;
+
+  const s3BucketPath = `scrapes/${site.getId()}/`;
+  return {
+    type: 'top-pages',
+    siteId: site.getId(),
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: s3BucketPath,
+  };
+}
+
+export async function submitForScraping(context) {
+  const {
+    site,
+    dataAccess,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (topPages.length === 0) {
+    throw new Error('No top pages found for site');
+  }
+
+  return {
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'meta-tags',
   };
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(wwwUrlResolver)
-  .withRunner(auditMetaTagsRunner)
-  .withPostProcessors([opportunityAndSuggestions])
+  .withUrlResolver((site) => site.getBaseURL())
+  .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
   .build();

@@ -38,7 +38,7 @@ export const main = async () => {
       info: console.log,
       error: console.error,
       warn: console.warn,
-      debug: console.debug,
+      debug: () => {}, // Disable debug logging
     },
     runtime: {
       region: 'us-east-1',

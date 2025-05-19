@@ -104,6 +104,8 @@ describe('Audit tests', () => {
 
   afterEach('clean', () => {
     clock.restore();
+    sandbox.restore();
+    nock.cleanAll();
   });
 
   describe('default components', () => {
@@ -445,6 +447,30 @@ describe('Audit tests', () => {
       const resolvedURL = await wwwUrlResolver({ getBaseURL: () => base }, context);
       expect(resolvedURL).to.equal('www.spacecat.com');
       expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledTwice;
+    });
+  });
+
+  describe('defaultJobProvider', () => {
+    it('throws an error when the job is not found', async () => {
+      context.dataAccess.AsyncJob.findById.withArgs('job-123').resolves(null);
+
+      // Import here to avoid circular dependency issues if any
+      const { defaultJobProvider } = await import('../../src/common/base-audit.js');
+
+      await expect(defaultJobProvider('job-123', context))
+        .to.be.rejectedWith('Job with id job-123 not found');
+    });
+
+    it('returns the job when found', async () => {
+      const mockJob = { getId: () => 'job-123' };
+      context.dataAccess.AsyncJob.findById.withArgs('job-123').resolves(mockJob);
+
+      const { defaultJobProvider } = await import('../../src/common/base-audit.js');
+
+      const result = await defaultJobProvider('job-123', context);
+      expect(result).to.equal(mockJob);
+      expect(result.getId()).to.equal('job-123');
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.calledOnceWith('job-123');
     });
   });
 });
