@@ -13,8 +13,10 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { dataNeededForA11yAudit } from './constants.js';
-import { aggregateAccessibilityData } from './utils.js';
+import { dataNeededForA11yAudit } from './utils/constants.js';
+import { aggregateAccessibilityData } from './utils/utils.js';
+import { current, lastWeek } from './utils/dev-purposes-constants.js';
+import { generateInDepthOverviewMarkdown } from './utils/generateMdReports.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
@@ -39,6 +41,7 @@ async function scrapeAccessibilityData(context) {
     jobId: site.getId(),
     processingType: AUDIT_TYPE_ACCESSIBILITY,
     // Potentially add other scraper-specific options if needed
+    concurrency: 25,
   };
 }
 
@@ -82,12 +85,35 @@ async function processAccessibilityOpportunities(context) {
       };
     }
 
-    const { aggregatedData } = aggregationResult;
+    const { finalResultFiles } = aggregationResult;
+    // const { current, lastWeek } = finalResultFiles;
+
+    const inDepthOverviewMarkdown = await generateInDepthOverviewMarkdown(current, lastWeek);
+    console.log('inDepthOverviewMarkdown', inDepthOverviewMarkdown);
+
+    // 1. generate the markdown report for in-depth overview
+    // 2. generate oppty and suggestions for the report
+    // 3. update status to ignored
+    // 4. construct url for the report
+
+    // 1. generate the markdown report for in-depth top 10
+    // 2. generate oppty and suggestions for the report
+    // 3. update status to ignored
+    // 4. construct url for the report
+
+    // 1. generate the markdown report for fixed vs new issues if any
+    // 2. generate oppty and suggestions for the report
+    // 3. update status to ignored
+    // 4. construct url for the report
+
+    // 1. generate the markdown report for base report and
+    //    add the urls from the above reports into the markdown report
+    // 2. generate oppty and suggestions for the report
 
     // Extract some key metrics for the audit result
-    const totalIssues = aggregatedData.overall.violations.total;
-    const urlsProcessed = Object.keys(aggregatedData).length;
-    const categoriesByCount = Object.entries(aggregatedData.overall.violations)
+    const totalIssues = finalResultFiles.current.overall.violations.total;
+    const urlsProcessed = Object.keys(finalResultFiles.current).length;
+    const categoriesByCount = Object.entries(finalResultFiles.current.overall.violations)
       .sort((a, b) => b[1] - a[1])
       .map(([category, count]) => ({ category, count }));
 

@@ -16,7 +16,7 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
-import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
 
 /**
  * Deletes the original JSON files after they've been processed
@@ -264,18 +264,24 @@ export async function aggregateAccessibilityData(
       });
       const objectKeyToDelete = lastWeekObjectKeys[0];
       // eslint-disable-next-line max-len
-      //   const lastWeekFile = await getObjectFromKey(s3Client, bucketName, objectKeyForLastWeekFile, log);
-      //   if (lastWeekFile) {
-      //     log.info(`[A11yAudit] Last week file key:
-      // ${objectKeyForLastWeekFile} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
-      //   }
-      await deleteOriginalFiles(s3Client, bucketName, [objectKeyToDelete], log);
-      log.info(`Deleted oldest final result file: ${objectKeyToDelete}`);
+      const deletedCountOldestFile = await deleteOriginalFiles(s3Client, bucketName, [objectKeyToDelete], log);
+      log.info(`Deleted ${deletedCountOldestFile} oldest final result file: ${objectKeyToDelete}`);
+      if (deletedCountOldestFile === 1) lastWeekObjectKeys.shift();
+    }
+
+    // get last week file and start creating the report
+    // eslint-disable-next-line max-len
+    const lastWeekFile = lastWeekObjectKeys[1] ? await getObjectFromKey(s3Client, bucketName, lastWeekObjectKeys[1], log) : null;
+    if (lastWeekFile) {
+      log.info(`[A11yAudit] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
     return {
       success: true,
-      aggregatedData,
+      finalResultFiles: {
+        current: aggregatedData,
+        lastWeek: lastWeekFile,
+      },
       message: `Successfully aggregated ${objectKeys.length} files into ${outputKey}`,
     };
   } catch (error) {
