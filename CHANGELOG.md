@@ -1,3 +1,10 @@
+## [1.87.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.2...v1.87.3) (2025-05-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#875](https://github.com/adobe/spacecat-audit-worker/issues/875)) ([bb8ac33](https://github.com/adobe/spacecat-audit-worker/commit/bb8ac33cad69ac347deaf98585c2ddfd5f72d13a))
+
 ## [1.87.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.1...v1.87.2) (2025-05-19)
 
 
