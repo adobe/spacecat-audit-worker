@@ -10,22 +10,25 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-disable no-continue, no-await-in-loop */
-import GoogleClient from '@adobe/spacecat-shared-google-client';
-import {
-  getPrompt, isNonEmptyArray, isNonEmptyObject, isObject,
-} from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { load as cheerioLoad } from 'cheerio';
-import StructuredDataValidator from '@adobe/structured-data-validator';
-import { join } from 'path';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { generatePlainHtml, getScrapeForPath } from '../support/utils.js';
-import { cleanupStructuredDataMarkup } from './lib.js';
+import { getScrapeForPath } from '../support/utils.js';
+import {
+  cleanupStructuredDataMarkup,
+  getIssuesFromGSC,
+  deduplicateIssues,
+  getIssuesFromScraper,
+  getWrongMarkup,
+  generateErrorMarkupForIssue,
+  generateFirefallSuggestion,
+} from './lib.js';
 
 const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 const auditAutoSuggestType = Audit.AUDIT_TYPES.STRUCTURED_DATA_AUTO_SUGGEST;
@@ -33,183 +36,6 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 // Cache scrape results from S3, as individual pages might be requested multiple times
 const scrapeCache = new Map();
-
-async function getStructuredDataIssuesFromGSC(finalUrl, context, pages) {
-  const { log } = context;
-
-  let google;
-  try {
-    google = await GoogleClient.createFrom(context, finalUrl);
-  } catch (error) {
-    log.warn('Failed to create Google client. Site was probably not onboarded to GSC yet. Continue without data from GSC.', error);
-    return [];
-  }
-
-  const issues = [];
-
-  // Mapping between GSC rich result types and schema.org entities
-  // List is incomplete, but we log missing types
-  const entityMapping = {
-    Breadcrumbs: 'BreadcrumbList',
-    'Product snippets': 'Product',
-    'Merchant listings': 'Product',
-    'Review snippets': 'AggregateRating',
-    Videos: 'VideoObject',
-    Recipes: 'Recipe',
-  };
-
-  await Promise.all(pages.map(async ({ url: page }) => {
-    try {
-      const { inspectionResult } = await google.urlInspect(page);
-      log.info(`Inspection result for ${page} from GSC:`, JSON.stringify(inspectionResult));
-
-      const richResults = inspectionResult?.richResultsResult;
-      if (!richResults) {
-        return;
-      }
-
-      richResults.detectedItems.forEach((type) => {
-        type.items.forEach((item) => {
-          item.issues.forEach((issue) => {
-            const rootType = entityMapping[type.richResultType];
-            if (!rootType) {
-              log.warn(`Skipping GSC issue, because cannot map GSC type "${type.richResultType}" to schema.org type.`);
-              return;
-            }
-
-            // Only add if issueMessage is not already in issues, as GSC does not provide
-            // information on where the issue is located within the structured data.
-            const existingIssue = issues.find(
-              (i) => i.issueMessage === issue.issueMessage
-              && i.pageUrl === page
-              && i.rootType === rootType
-              && i.severity === issue.severity,
-            );
-            if (existingIssue) {
-              return;
-            }
-
-            issues.push({
-              pageUrl: page,
-              rootType,
-              dataFormat: 'jsonld', // GSC does not specify where the data came from, so we assume it is LD-JSON
-              issueMessage: issue.issueMessage,
-              severity: issue.severity,
-            });
-          });
-        });
-      });
-    } catch (error) {
-      log.error(`Failed to get inspection results from GSC for URL: ${page}.`, error);
-    }
-  }));
-
-  return issues;
-}
-
-async function getStructuredDataIssuesFromScraper(finalUrl, context, pages, site) {
-  const { log } = context;
-
-  const issues = [];
-
-  await Promise.all(pages.map(async ({ url: page }) => {
-    let scrapeResult;
-    const { pathname } = new URL(page);
-    try {
-      if (!scrapeCache.has(pathname)) {
-        scrapeCache.set(pathname, getScrapeForPath(pathname, context, site));
-      }
-      scrapeResult = await scrapeCache.get(pathname);
-    } catch (e) {
-      log.error(`Could not find scrape for ${pathname}. Make sure that scrape-top-pages did run.`, e);
-      return;
-    }
-
-    const waeResult = scrapeResult?.scrapeResult?.structuredData;
-
-    // If scrape contains old format of structured data, skip
-    if (isNonEmptyArray(waeResult)) {
-      return;
-    }
-    log.info('Structured data from scrape', JSON.stringify(waeResult, null, 4));
-
-    const schemaOrgPath = join(
-      process.cwd(),
-      'src',
-      'structured-data',
-      'schemaorg-current-https.jsonld',
-    );
-
-    const validator = new StructuredDataValidator(schemaOrgPath);
-    const validatorIssues = await validator.validate(waeResult);
-    for (const issue of validatorIssues) {
-      // Only add if same issue for the same source does not exist already.
-      // This can happen e.g. if a field is missing for every item in a list.
-      const existingIssue = issues.find(
-        (i) => i.issueMessage === issue.issueMessage
-        && i.rootType === issue.rootType
-        && i.pageUrl === page
-        && i.dataFormat === issue.dataFormat
-        && i.location === issue.location
-        && i.severity === issue.severity,
-      );
-      if (existingIssue) {
-        continue;
-      }
-
-      issues.push({
-        pageUrl: page,
-        ...issue,
-      });
-    }
-  }));
-
-  return issues;
-}
-
-async function deduplicateIssues(context, gscIssues, scraperIssues) {
-  const { log } = context;
-
-  const issues = [];
-
-  // Issues from scraper take precedence if available, as they are more detailed
-  if (scraperIssues.length > 0) {
-    issues.push(...scraperIssues);
-  } else if (scraperIssues.length === 0 && gscIssues.length > 0) {
-    issues.push(...gscIssues);
-  }
-
-  // If there are additionally any gscIssues, add them to the result
-  if (scraperIssues.length > 0 && gscIssues.length > 0) {
-    // Get all types from scraper issues
-    const scraperTypes = scraperIssues.map((issue) => issue.rootType);
-
-    // Go through all gscIssues and check if they are in scraperTypes, if not add them and log them
-    for (const issue of gscIssues) {
-      if (!scraperTypes.includes(issue.rootType)) {
-        issues.push(issue);
-        log.warn(`Structured Data: GSC issue for type ${issue.rootType} was not found by structured data parser.`, JSON.stringify(issue, null, 4));
-      }
-    }
-  }
-
-  // TODO: Temporarily disable grouping issues by rootTypes in favor of grouping issues by pageUrl.
-  // Re-enable this logic together with improved grouping support in the UI.
-  /* const equalityFields = ['rootType', 'issueMessage', 'dataFormat', 'severity'];
-  const deduplicatedIssues = issues.reduce((acc, issue) => {
-    const existingIssue = acc
-      .find((i) => equalityFields.every((field) => i[field] === issue[field]));
-    if (!existingIssue) {
-      const { pageUrl, ...rest } = issue;
-      acc.push({ pageUrls: [pageUrl], ...rest });
-    } else {
-      existingIssue.pageUrls.push(issue.pageUrl);
-    }
-    return acc;
-  }, []); */
-
-  return issues;
-}
 
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
@@ -230,8 +56,8 @@ export async function processStructuredData(finalUrl, context, pages, site) {
   const { log } = context;
 
   const [gscPagesWithIssues, scraperPagesWithIssues] = await Promise.all([
-    getStructuredDataIssuesFromGSC(finalUrl, context, pages),
-    getStructuredDataIssuesFromScraper(finalUrl, context, pages, site),
+    getIssuesFromGSC(finalUrl, context, pages),
+    getIssuesFromScraper(finalUrl, context, pages, site, scrapeCache),
   ]);
 
   log.info('GSC issues', gscPagesWithIssues);
@@ -310,8 +136,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
     } else {
       let scrapeResult;
 
-      const inspectionUrl = issue.pageUrl;
-      const { pathname } = new URL(inspectionUrl);
+      const { pathname } = new URL(issue.pageUrl);
       try {
         if (!scrapeCache.has(pathname)) {
           scrapeCache.set(pathname, getScrapeForPath(pathname, context, site));
@@ -322,47 +147,10 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
         break;
       }
 
-      // Get extracted LD-JSON from scrape
-      const structuredData = scrapeResult?.scrapeResult?.structuredData;
-
-      // structuredData is either an array (old format) or an object (new format)
-      if (!isNonEmptyArray(structuredData) && !isNonEmptyObject(structuredData)) {
-        // If structured data is loaded late on the page, e.g. in delayed phase,
-        // the scraper might not pick it up. You would need to fine tune wait for
-        // check of the scraper for this site.
-        log.error(`No structured data found in scrape result for URL ${inspectionUrl}`);
-        break;
-      }
-
-      // Get wrong markup either from @source attribute or from scrape
-      let wrongMarkup;
-      if (issue.source) {
-        wrongMarkup = issue.source;
-      } else {
-        // DEPRECATED: This case is to support the old scraper format, should be removed soon
-        if (isNonEmptyArray(structuredData)) {
-          wrongMarkup = structuredData.find((data) => issue.rootType === data['@type']);
-
-          // If not found in the first level objects, try second level objects.
-          // This typically happens for reviews within the Product entity.
-          if (!wrongMarkup) {
-            const children = structuredData
-              .flatMap((parent) => Object.keys(parent).map((key) => parent[key]))
-              .filter((data) => isObject(data) && data['@type'] === issue.rootType);
-            if (children.length >= 1) {
-              [wrongMarkup] = children;
-            }
-          }
-        } else if (isNonEmptyObject(structuredData) && structuredData[issue.dataFormat]) {
-          // This case happens if structured data issue is from GSC
-          // which limited information on where the issue is located
-          wrongMarkup = structuredData[issue.dataFormat]?.[issue.rootType]?.[0];
-        }
-
-        if (!isNonEmptyObject(wrongMarkup)) {
-          log.error(`Could not find structured data for issue of type ${issue.rootType} for URL ${inspectionUrl}`);
-          continue;
-        }
+      let wrongMarkup = getWrongMarkup(context, issue, scrapeResult);
+      if (!wrongMarkup) {
+        log.error(`Could not find structured data for issue of type ${issue.rootType} for URL ${issue.pageUrl}`);
+        continue;
       }
 
       // Cleanup markup if RDFa or microdata
@@ -372,125 +160,27 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
           wrongMarkup = cleanupStructuredDataMarkup(parsed);
         }
       } catch (e) {
-        log.warn(`Could not cleanup markup for issue of type ${issue.rootType} for URL ${inspectionUrl}`, e);
+        log.warn(`Could not cleanup markup for issue of type ${issue.rootType} for URL ${issue.pageUrl}`, e);
       }
-
       log.info('Filtered structured data:', wrongMarkup);
 
-      // Use cheerio to generate a plain version of the scraped HTML
-      const parsed = cheerioLoad(scrapeResult?.scrapeResult?.rawBody);
-      const plainPage = generatePlainHtml(parsed);
-
-      const firefallInputs = {
-        entity: issue.rootType,
-        error: issue.issueMessage,
-        data_format: issue.dataFormat,
-        website_url: inspectionUrl,
-        wrong_markup: wrongMarkup,
-        website_markup: plainPage,
-      };
-      if (issue.path) {
-        firefallInputs.path = JSON.stringify(issue.path);
-      }
-      log.info('Firefall inputs', JSON.stringify(firefallInputs, null, 4));
-
       // Get suggestions from Firefall
-      let response;
       try {
-        const requestBody = await getPrompt(firefallInputs, 'structured-data-suggest', log);
-        response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
         firefallRequests += 1;
-
-        if (response.choices?.length === 0 || response.choices[0].finish_reason !== 'stop') {
-          throw new Error('Firefall did not return any suggestions');
-        }
-
-        let suggestion;
-        try {
-          suggestion = JSON.parse(response.choices[0].message.content);
-        } catch (e) {
-          throw new Error('Could not parse Firefall response for issue', e);
-        }
-
-        if (!isNonEmptyObject(suggestion)) {
-          throw new Error('Received empty suggestion from Firefall');
-        }
-
-        // Reject suggestion if confidence score is too low
-        if (suggestion?.confidenceScore < 0.6) {
-          throw new Error('Confidence score too low, skip suggestion');
-        }
-
+        const suggestion = await generateFirefallSuggestion(
+          context,
+          firefallClient,
+          firefallOptions,
+          issue,
+          wrongMarkup,
+          scrapeResult,
+        );
         issue.suggestion = suggestion;
         existingSuggestions.set(buildKey(issue), structuredClone(suggestion));
       } catch (e) {
-        log.error(`Creating suggestion for type ${issue.rootType} for URL ${inspectionUrl} failed:`, e);
+        log.error(`Creating suggestion for type ${issue.rootType} for URL ${issue.pageUrl} failed:`, e);
       }
     }
-
-    issue.errors = [];
-
-    let fix = '';
-    if (issue.suggestion && issue.suggestion.aiRationale) {
-      const {
-        errorDescription,
-        correctedMarkup,
-        aiRationale,
-        confidenceScore,
-      } = issue.suggestion;
-
-      const score = `${parseFloat(confidenceScore) * 100}%`;
-
-      let markup = '';
-      if (issue.dataFormat === 'jsonld') {
-        markup = `\`\`\`json
-${JSON.stringify(correctedMarkup, null, 4)}
-\`\`\``;
-      } else {
-        // TODO: Try to format HTML correctly
-        markup = `\`\`\`html
-${correctedMarkup}
-\`\`\``;
-      }
-
-      fix = `
-## Affected page
- * ${issue.pageUrl}
-## Issue Explanation
-${errorDescription}
-## Corrected Structured Data
-${markup}
-
-## Rationale
-${aiRationale}
-
-_Confidence score: ${score}_`;
-    } else {
-      fix = `
-## Affected page
-  * ${issue.pageUrl}
-## Issue Detected for ${issue.rootType}
-${issue.issueMessage}`;
-
-      if (issue.source) {
-        let markup;
-        if (issue.dataFormat === 'jsonld') {
-          markup = `\`\`\`json
-${JSON.stringify(issue.source, null, 4)}
-\`\`\``;
-        } else {
-          markup = `\`\`\`html
-${issue.source}
-\`\`\``;
-        }
-        fix += `
-## Problematic Structured Data
-${markup}
-`;
-      }
-    }
-
-    issue.errors.push({ fix, id: issue.rootType.replaceAll(/["\s]/g, '').toLowerCase(), errorTitle: `${issue.rootType}: ${issue.issueMessage}` });
   }
 
   log.info(`Used ${firefallRequests} Firefall requests in total for site ${auditUrl}`);
@@ -507,6 +197,16 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log.warn('Audit failed, skipping opportunity generation');
     return { ...auditData };
   }
+
+  // Convert suggestions to errors
+  for (const issue of auditData.auditResult.issues) {
+    issue.errors = [];
+    const fix = generateErrorMarkupForIssue(issue);
+    const errorTitle = `${issue.rootType}: ${issue.issueMessage}`;
+    const errorId = errorTitle.replaceAll(/["\s]/g, '').toLowerCase();
+    issue.errors.push({ fix, id: errorId, errorTitle });
+  }
+  log.debug('Converted suggestions to errors', auditData.auditResult.issues);
 
   const opportunity = await convertToOpportunity(
     auditUrl,
