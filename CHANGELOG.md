@@ -1,3 +1,10 @@
+## [1.87.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.1...v1.87.2) (2025-05-19)
+
+
+### Bug Fixes
+
+* missing audit id in messages sent to mystique ([#864](https://github.com/adobe/spacecat-audit-worker/issues/864)) ([55c39a1](https://github.com/adobe/spacecat-audit-worker/commit/55c39a1336196bc88a6d241cae83f8f18dfcb20c))
+
 ## [1.87.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.0...v1.87.1) (2025-05-19)
 
 
