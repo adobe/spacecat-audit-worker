@@ -597,13 +597,13 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   // Check if audit was successful
   if (auditData.auditResult.success === false) {
     log.info('Sitemap audit failed, skipping opportunity and suggestions creation');
-    return;
+    return { ...auditData };
   }
 
   // suggestions are in auditData.suggestions
   if (!auditData.suggestions || !auditData.suggestions.length) {
     log.info('No sitemap issues found, skipping opportunity creation');
-    return;
+    return { ...auditData };
   }
 
   const opportunity = await convertToOpportunity(
@@ -629,6 +629,8 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     }),
     log,
   });
+
+  return { ...auditData };
 }
 
 export default new AuditBuilder()
