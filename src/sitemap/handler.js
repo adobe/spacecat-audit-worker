@@ -594,6 +594,12 @@ export function generateSuggestions(auditUrl, auditData, context) {
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
+  // Check if audit was successful
+  if (auditData.auditResult.success === false) {
+    log.info('Sitemap audit failed, skipping opportunity and suggestions creation');
+    return;
+  }
+
   // suggestions are in auditData.suggestions
   if (!auditData.suggestions || !auditData.suggestions.length) {
     log.info('No sitemap issues found, skipping opportunity creation');
