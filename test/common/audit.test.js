@@ -104,6 +104,8 @@ describe('Audit tests', () => {
 
   afterEach('clean', () => {
     clock.restore();
+    sandbox.restore();
+    nock.cleanAll();
   });
 
   describe('default components', () => {
