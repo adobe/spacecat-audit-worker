@@ -96,8 +96,8 @@ export default async function handler(message, context) {
       log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated a11y opportunity`);
     }
   } catch (e) {
-    log.error(`Creating a11y opportunities for siteId ${siteId} failed with error: ${e.message}`);
-    throw new Error(`Failed to create a11y opportunities for siteId ${siteId}: ${e.message}`);
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create a11y opportunity with error: ${e.message}`);
+    throw new Error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create a11y opportunity with error: ${e.message}`);
   }
   log.info(`[Form Opportunity] [Site Id: ${siteId}] Successfully synced Opportunity for form-accessibility audit type.`);
 }

@@ -25,6 +25,33 @@ describe('a11y-handler', () => {
   let sandbox;
   let mockContext;
 
+  const a11yAuditData = {
+    siteId: 'test-site-id',
+    auditId: 'test-audit-id',
+    data: {
+      a11yData: [
+        {
+          form: '/test-form',
+          formSource: '#test-form',
+          a11yIssues: [
+            {
+              successCriterias: [
+                '1.1.1 Non-text Content',
+              ],
+              issue: 'Test issue',
+              level: 'AA',
+              recommendation: 'Test recommendation',
+              solution: [
+                '<span>Solution 1</span>',
+                '<span>Solution 2</span>',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  };
+
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     mockContext = new MockContextBuilder()
@@ -126,32 +153,7 @@ describe('a11y-handler', () => {
 
   it('should create a new opportunity when none exists', async () => {
     // Setup
-    const message = {
-      siteId: 'test-site-id',
-      auditId: 'test-audit-id',
-      data: {
-        a11yData: [
-          {
-            form: '/test-form',
-            formSource: '#test-form',
-            a11yIssues: [
-              {
-                successCriterias: [
-                  '1.1.1 Non-text Content',
-                ],
-                issue: 'Test issue',
-                level: 'AA',
-                recommendation: 'Test recommendation',
-                solution: [
-                  '<span>Solution 1</span>',
-                  '<span>Solution 2</span>',
-                ],
-              },
-            ],
-          },
-        ],
-      },
-    };
+    const message = a11yAuditData;
 
     // Execute
     await createA11yOpportunities(message, mockContext);
@@ -224,5 +226,19 @@ describe('a11y-handler', () => {
     expect(mockContext.log.info).to.have.been.calledWith(
       `[Form Opportunity] [Site Id: ${message.siteId}] Updated a11y opportunity`,
     );
+  });
+
+  it('should fail while creating a new opportunity', async () => {
+    const message = a11yAuditData;
+    mockContext.dataAccess.Opportunity.create = sandbox.stub().rejects(new Error('Network error'));
+    try {
+      await createA11yOpportunities(message, mockContext);
+      expect.fail('Expected an error to be thrown');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (e) {
+      expect(mockContext.log.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] Failed to create a11y opportunity with error: Network error',
+      );
+    }
   });
 });

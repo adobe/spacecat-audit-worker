@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { getUrlsDataForAccessibilityAudit, shouldExcludeForm } from '../../../src/forms-opportunities/utils.js';
+import { getSuccessCriteriaDetails, getUrlsDataForAccessibilityAudit, shouldExcludeForm } from '../../../src/forms-opportunities/utils.js';
 
 describe('isSearchForm', () => {
   it('should return true for search form type', () => {
@@ -105,6 +105,10 @@ describe('getUrlsDataForAccessibilityAudit', () => {
           finalUrl: 'https://www.business.adobe.com/newsletter',
           scrapeResult: [{ formSource: '#container-1 form.newsletter' }],
         },
+        {
+          finalUrl: 'https://www.business.adobe.com/search',
+          scrapeResult: [{ formSource: '#container-1 form.search' }],
+        },
       ],
     };
     const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
@@ -172,5 +176,29 @@ describe('getUrlsDataForAccessibilityAudit', () => {
         formSources: ['form'],
       },
     ]);
+  });
+});
+
+describe('getSuccessCriteriaDetails', () => {
+  it('should return success criteria details', () => {
+    const successCriteriaDetails = getSuccessCriteriaDetails('1.1.1 Non-text Content');
+    expect(successCriteriaDetails).to.deep.equal({
+      name: 'Non-text Content',
+      criteriaNumber: '1.1.1',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html',
+    });
+  });
+
+  it('should return success criteria details', () => {
+    const successCriteriaDetails = getSuccessCriteriaDetails('wcag111');
+    expect(successCriteriaDetails).to.deep.equal({
+      name: 'Non-text Content',
+      criteriaNumber: '1.1.1',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html',
+    });
+  });
+
+  it('should throw error for invalid criteria', () => {
+    expect(() => getSuccessCriteriaDetails('invalid')).to.throw('Invalid criteria format: invalid');
   });
 });

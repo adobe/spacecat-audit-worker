@@ -125,6 +125,62 @@ describe('audit and send scraping step', () => {
     });
     expect(result).to.deep.equal(expectedFormSendToScraperData);
   });
+
+  it('send alteast 10 urls for scraping step if possible', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          formsubmit: {},
+          formview: { 'desktop:windows': 7898 },
+          formengagement: { 'desktop:windows': 100 },
+          pageview: { 'desktop:windows': 7898 },
+        },
+        {
+          url: 'https://example.com/form2', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form3', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form4', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form5', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form6', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form7', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form8', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form9', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form10', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form11', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form12', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form13', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+        {
+          url: 'https://example.com/form14', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
+        },
+      ],
+    };
+    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+    expect(result.urls.length).to.equal(10);
+  });
 });
 
 describe('send a11y urls for scraping step', () => {
@@ -335,36 +391,27 @@ describe('process opportunity step', () => {
   });
 });
 
-// TODO: Uncomment this when we have a way to send a11y issues to mystique
-describe.skip('send a11y issues to mystique', () => {
+describe('send a11y issues to mystique', () => {
   let context;
   const siteId = 'test-site-id';
 
-  // eslint-disable-next-line prefer-const
-  context = new MockContextBuilder()
-    .withSandbox(sandbox)
-    .withOverrides({
-      runtime: { name: 'aws-lambda', region: 'us-east-1' },
-      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
-      site: {
-        getId: sinon.stub().returns(siteId),
-        getBaseURL: sinon.stub().returns('https://example.com'),
-        getDeliveryType: sinon.stub().returns('direct'),
-      },
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.amazonaws.com/mystique-queue',
-      },
-      s3Client: {
-        send: sandbox.stub(),
-      },
-      finalUrl: 'www.example.com',
-    })
-    .build();
+  beforeEach(() => {
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+        site: {
+          getId: sinon.stub().returns(siteId),
+        },
+        log: {
+          info: sinon.stub(),
+        },
+      })
+      .build();
 
-  afterEach(() => {
-    nock.cleanAll();
-    sinon.restore();
+    context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
+    context.dataAccess.Opportunity.create = sandbox.stub().resolves();
   });
 
   afterEach(() => {
@@ -372,49 +419,45 @@ describe.skip('send a11y issues to mystique', () => {
     sinon.restore();
   });
 
-  it('send a11y issues to mystique', async () => {
-    context.s3Client.send.onCall(0).resolves({
-      Contents: [
-        { Key: 'scrapes/site-id/forms-a11y/scrape.json' },
-      ],
-      IsTruncated: true,
-      NextContinuationToken: 'token',
-    });
-
-    const mockFormResponseData = {
-      ContentType: 'application/json',
-      Body: {
-        transformToString: sandbox.stub().resolves(JSON.stringify({
-          finalUrl: 'https://www.business.adobe.com/newsletter',
-          scrapeResult: [
-            {
-              id: 'form1',
-              classList: 'newsletter',
-              a11yIssues: [
-                {
-                  issue: 'Label is missing',
-                },
-              ],
-            },
-          ],
-        })),
-      },
+  it('should not create opportunities when no a11y data is present', async () => {
+    const latestAudit = {
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
     };
 
-    context.s3Client.send.resolves(mockFormResponseData);
+    const scrapedData = {
+      formA11yData: [],
+    };
 
-    await sendA11yIssuesToMystique({ auditId: 'audit-id' }, context);
-    expect(context.sqs.sendMessage).calledWith(
-      context.env.QUEUE_SPACECAT_TO_MYSTIQUE,
-      sinon.match({
-        type: 'opportunity:forms-a11y',
-        siteId: 'test-site-id',
-        auditId: 'audit-id',
-        deliveryType: 'direct',
-        data: {
-          a11yData: [{ form: 'https://www.business.adobe.com/newsletter', a11yIssues: [{ issue: 'Label is missing' }] }],
-        },
-      }),
-    );
+    await sendA11yIssuesToMystique(latestAudit, scrapedData, context);
+    expect(context.log.info).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] No a11y data found');
+  });
+
+  it('should create opportunities when a11y issues are present', async () => {
+    const latestAudit = {
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+    };
+
+    const scrapedData = {
+      formA11yData: [{
+        results: [{
+          finalUrl: 'https://example.com/form1',
+          formSource: '#form1',
+          a11yIssues: [{
+            issue: 'Missing alt text',
+            level: 'error',
+            successCriterias: ['1.1.1'],
+            htmlWithIssues: '<img src="test.jpg">',
+            recommendation: 'Add alt text to image',
+          }],
+        }],
+      }],
+    };
+
+    await sendA11yIssuesToMystique(latestAudit, scrapedData, context);
+
+    expect(context.dataAccess.Opportunity.create).to.have.been.called;
+    expect(context.log.info).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] a11y issues created');
   });
 });
