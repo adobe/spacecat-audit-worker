@@ -126,7 +126,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         origin: 'AUTOMATION',
         title: 'Form has low conversions',
         description: 'Form has high views but low conversions',
-        tags: ['Forms Conversion'],
+        tags: ['Form Conversion'],
         data: {
           ...opptyData,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
