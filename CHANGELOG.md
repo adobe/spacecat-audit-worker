@@ -1,3 +1,10 @@
+# [1.87.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.86.2...v1.87.0) (2025-05-19)
+
+
+### Features
+
+* add preview page authentication to canonical audit ([#859](https://github.com/adobe/spacecat-audit-worker/issues/859)) ([83ec057](https://github.com/adobe/spacecat-audit-worker/commit/83ec0570097c939116e9d6a9e4b68201e1fcd1ea))
+
 ## [1.86.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.86.1...v1.86.2) (2025-05-19)
 
 
