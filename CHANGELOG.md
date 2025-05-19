@@ -1,3 +1,11 @@
+## [1.86.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.86.1...v1.86.2) (2025-05-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#868](https://github.com/adobe/spacecat-audit-worker/issues/868)) ([1fb10b8](https://github.com/adobe/spacecat-audit-worker/commit/1fb10b872008ec0dcbaa1f9b313366e3ee23aa2a))
+* job runner and audit tests timeout ([#870](https://github.com/adobe/spacecat-audit-worker/issues/870)) ([15076c5](https://github.com/adobe/spacecat-audit-worker/commit/15076c55d8c7fcde57a9f0f2412aa83559651310))
+
 ## [1.86.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.86.0...v1.86.1) (2025-05-17)
 
 
