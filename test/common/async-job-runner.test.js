@@ -16,6 +16,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access/src/models/audit/index.js';
 import sinon from 'sinon';
+import nock from 'nock';
 import { MockContextBuilder } from '../shared.js';
 import { AuditBuilder } from '../../src/common/audit-builder.js';
 
@@ -27,7 +28,7 @@ const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 describe('Job-based Step-Audit Tests', () => {
   const sandbox = sinon.createSandbox();
   const mockDate = '2024-03-12T15:24:51.231Z';
-  const baseURL = 'https://www.space.cat';
+  const baseURL = 'https://example.com';
 
   let clock;
   let context;
@@ -35,6 +36,10 @@ describe('Job-based Step-Audit Tests', () => {
   let configuration;
 
   beforeEach(() => {
+    nock(baseURL)
+      .get('/')
+      .reply(200, 'Success');
+
     clock = sandbox.useFakeTimers({
       now: +new Date(mockDate),
       toFake: ['Date'],
@@ -66,6 +71,7 @@ describe('Job-based Step-Audit Tests', () => {
   afterEach(() => {
     clock.restore();
     sandbox.restore();
+    nock.cleanAll();
   });
 
   it('should create an async job runner', () => {

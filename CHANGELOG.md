@@ -1,3 +1,46 @@
+## [1.87.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.1...v1.87.2) (2025-05-19)
+
+
+### Bug Fixes
+
+* missing audit id in messages sent to mystique ([#864](https://github.com/adobe/spacecat-audit-worker/issues/864)) ([55c39a1](https://github.com/adobe/spacecat-audit-worker/commit/55c39a1336196bc88a6d241cae83f8f18dfcb20c))
+
+## [1.87.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.0...v1.87.1) (2025-05-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#871](https://github.com/adobe/spacecat-audit-worker/issues/871)) ([865fcf4](https://github.com/adobe/spacecat-audit-worker/commit/865fcf4f230c116e22415e98bcc8f3f936052785))
+
+# [1.87.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.86.2...v1.87.0) (2025-05-19)
+
+
+### Features
+
+* add preview page authentication to canonical audit ([#859](https://github.com/adobe/spacecat-audit-worker/issues/859)) ([83ec057](https://github.com/adobe/spacecat-audit-worker/commit/83ec0570097c939116e9d6a9e4b68201e1fcd1ea))
+
+## [1.86.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.86.1...v1.86.2) (2025-05-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#868](https://github.com/adobe/spacecat-audit-worker/issues/868)) ([1fb10b8](https://github.com/adobe/spacecat-audit-worker/commit/1fb10b872008ec0dcbaa1f9b313366e3ee23aa2a))
+* job runner and audit tests timeout ([#870](https://github.com/adobe/spacecat-audit-worker/issues/870)) ([15076c5](https://github.com/adobe/spacecat-audit-worker/commit/15076c55d8c7fcde57a9f0f2412aa83559651310))
+
+## [1.86.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.86.0...v1.86.1) (2025-05-17)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#867](https://github.com/adobe/spacecat-audit-worker/issues/867)) ([813c56d](https://github.com/adobe/spacecat-audit-worker/commit/813c56d26b53f3531b6676d35a41e35a9df9a2ef))
+
+# [1.86.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.85.4...v1.86.0) (2025-05-17)
+
+
+### Features
+
+* forms low nav oppty mystique integration ([#866](https://github.com/adobe/spacecat-audit-worker/issues/866)) ([4c7ff51](https://github.com/adobe/spacecat-audit-worker/commit/4c7ff51b2f5efbfcea06501a31522c3fec90fd85))
+
 ## [1.85.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.85.3...v1.85.4) (2025-05-16)
 
 
