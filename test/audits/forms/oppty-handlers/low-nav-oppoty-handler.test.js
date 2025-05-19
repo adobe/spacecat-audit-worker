@@ -14,9 +14,10 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import createLowNavigationOpportunities from '../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import testData from '../../fixtures/forms/high-form-views-low-conversions.js';
+import createLowNavigationOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
+import { DATA_SOURCES } from '../../../../src/common/constants.js';
 
 use(sinonChai);
 describe('createLowNavigationOpportunities handler method', () => {
@@ -66,6 +67,10 @@ describe('createLowNavigationOpportunities handler method', () => {
       },
       site: {
         getId: sinon.stub().returns('test-site-id'),
+        getDeliveryType: sinon.stub().returns('eds'),
+      },
+      sqs: {
+        sendMessage: sinon.stub().resolves({}),
       },
     };
     auditData = testData.oppty2AuditData;
@@ -86,43 +91,48 @@ describe('createLowNavigationOpportunities handler method', () => {
       data: {
         form: 'https://www.surest.com/newsletter',
         screenshot: '',
-        trackedFormKPIName: 'Form Views',
-        trackedFormKPIValue: 300,
+        trackedFormKPIName: 'Form View Rate',
+        trackedFormKPIValue: 0.035,
         formViews: 300,
         pageViews: 8670,
         formsource: '',
         samples: 8670,
         scrapedStatus: false,
+        dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         metrics: [
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: '*',
             value: {
-              page: 300,
+              page: 0.035,
             },
           },
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: 'mobile',
             value: {
-              page: 300,
+              page: 0.075,
             },
           },
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: 'desktop',
             value: {
               page: 0,
             },
           },
           {
+            device: 'desktop',
             type: 'traffic',
-            device: '*',
             value: {
-              paid: 4670,
-              total: 8670,
-              earned: 2000,
-              owned: 2000,
+              page: 4670,
+            },
+          },
+          {
+            device: 'mobile',
+            type: 'traffic',
+            value: {
+              page: 4000,
             },
           },
         ],
@@ -147,6 +157,99 @@ describe('createLowNavigationOpportunities handler method', () => {
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
 
     await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
+
+    const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
+    expect(actualCall).to.deep.equal(expectedOpportunityData);
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+  });
+
+  it('should create new high page views low form navigation opportunity with iframe', async () => {
+    const expectedOpportunityData = {
+      siteId: 'site-id',
+      auditId: 'audit-id',
+      runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
+      type: FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
+      origin: 'AUTOMATION',
+      title: 'Form has low views',
+      description: 'The form has low views due to low navigations in the page containing its CTA',
+      tags: [
+        'Forms Conversion',
+      ],
+      data: {
+        form: 'https://www.iframe-example.com/test/getting-iframe-example/guide/newsletter',
+        screenshot: '',
+        trackedFormKPIName: 'Form View Rate',
+        trackedFormKPIValue: 0.035,
+        formViews: 300,
+        pageViews: 8670,
+        formsource: '',
+        iframeSrc: 'https://www.iframe-example.com/content/iframe-example/en-us/test/getting-iframe-example/guide/begin/jcr:content/contentpar/columns/0/aemform.iframe.en.html',
+        samples: 8670,
+        scrapedStatus: false,
+        dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
+        metrics: [
+          {
+            type: 'formViewRate',
+            device: '*',
+            value: {
+              page: 0.035,
+            },
+          },
+          {
+            type: 'formViewRate',
+            device: 'mobile',
+            value: {
+              page: 0.075,
+            },
+          },
+          {
+            type: 'formViewRate',
+            device: 'desktop',
+            value: {
+              page: 0,
+            },
+          },
+          {
+            type: 'traffic',
+            device: 'desktop',
+            value: {
+              page: 4670,
+            },
+          },
+          {
+            type: 'traffic',
+            device: 'mobile',
+            value: {
+              page: 4000,
+            },
+          },
+        ],
+        formNavigation: {
+          source: '#teaser-related02 .cmp-teaser__action-link',
+          url: 'https://www.suriframe-example.com/newsletter',
+        },
+      },
+      guidance: {
+        recommendations: [
+          {
+            insight: 'The CTA element in the page: https://www.suriframe-example.com/newsletter is not placed in the most optimal positions for visibility and engagement',
+            recommendation: 'Reposition the CTA to be more centrally located and ensure they are above the fold.',
+            type: 'guidance',
+            rationale: 'CTAs placed above the fold and in central positions are more likely to be seen and clicked by users, leading to higher engagement rates.',
+          },
+        ],
+      },
+    };
+
+    formsCTAOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION;
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
+
+    await createLowNavigationOpportunities(
+      auditUrl,
+      testData.opptyAuditDataWithIframe,
+      undefined,
+      context,
+    );
 
     const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(actualCall).to.deep.equal(expectedOpportunityData);

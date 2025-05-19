@@ -33,6 +33,7 @@ import {
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
+import { DATA_SOURCES } from '../../src/common/constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -999,7 +1000,9 @@ describe('Sitemap Audit', () => {
             ],
           },
           tags: ['Traffic Acquisition'],
-          data: null,
+          data: {
+            dataSources: [DATA_SOURCES.SITE],
+          },
         },
       );
     });

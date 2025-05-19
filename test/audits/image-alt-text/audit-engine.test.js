@@ -39,8 +39,8 @@ describe('AuditEngine', () => {
 
   describe('constructor', () => {
     it('should initialize with empty imagesWithoutAltText array', () => {
-      const auditedTags = auditEngine.getAuditedTags();
-      expect(auditedTags).to.deep.equal({
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages).to.deep.equal({
         imagesWithoutAltText: [],
         presentationalImagesCount: 0,
       });
@@ -66,11 +66,11 @@ describe('AuditEngine', () => {
       };
 
       auditEngine.performPageAudit(pageUrl, pageTags);
-      const auditedTags = auditEngine.getAuditedTags();
+      const auditedImages = auditEngine.getAuditedTags();
 
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(4);
-      expect(auditedTags.presentationalImagesCount).to.equal(1);
-      expect(auditedTags.imagesWithoutAltText[0]).to.deep.equal({
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(4);
+      expect(auditedImages.presentationalImagesCount).to.equal(1);
+      expect(auditedImages.imagesWithoutAltText[0]).to.deep.equal({
         pageUrl,
         src: 'image1.jpg',
         xpath: '/html/body/img[1]',
@@ -88,9 +88,9 @@ describe('AuditEngine', () => {
       };
 
       auditEngine.performPageAudit(pageUrl, pageTags);
-      const auditedTags = auditEngine.getAuditedTags();
+      const auditedImages = auditEngine.getAuditedTags();
 
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(0);
     });
 
     it('should handle whitespace-only alt text as missing', () => {
@@ -103,9 +103,9 @@ describe('AuditEngine', () => {
       };
 
       auditEngine.performPageAudit(pageUrl, pageTags);
-      const auditedTags = auditEngine.getAuditedTags();
+      const auditedImages = auditEngine.getAuditedTags();
 
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(2);
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(2);
     });
 
     it('should handle pages with no images array', () => {
@@ -209,17 +209,17 @@ describe('AuditEngine', () => {
         images: [{ src: 'image2.jpg', alt: '' }],
       });
 
-      const auditedTags = auditEngine.getAuditedTags();
+      const auditedImages = auditEngine.getAuditedTags();
 
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(2);
-      expect(auditedTags.imagesWithoutAltText[0].pageUrl).to.equal('/page1');
-      expect(auditedTags.imagesWithoutAltText[1].pageUrl).to.equal('/page2');
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(2);
+      expect(auditedImages.imagesWithoutAltText[0].pageUrl).to.equal('/page1');
+      expect(auditedImages.imagesWithoutAltText[1].pageUrl).to.equal('/page2');
     });
 
     it('should return empty results when no pages audited', () => {
-      const auditedTags = auditEngine.getAuditedTags();
+      const auditedImages = auditEngine.getAuditedTags();
 
-      expect(auditedTags.imagesWithoutAltText).to.be.an('array').that.is.empty;
+      expect(auditedImages.imagesWithoutAltText).to.be.an('array').that.is.empty;
     });
   });
 
@@ -245,8 +245,8 @@ describe('AuditEngine', () => {
       auditEngine.performPageAudit(pageUrl, pageTags);
       await auditEngine.filterImages();
 
-      const auditedTags = auditEngine.getAuditedTags();
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(3);
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(3);
     });
 
     it('should convert and retain unique blobs for supported blob formats', async () => {
@@ -277,9 +277,9 @@ describe('AuditEngine', () => {
       auditEngine.performPageAudit(pageUrl, pageTags);
       await auditEngine.filterImages('https://example.com', tracingFetchStub);
 
-      const auditedTags = auditEngine.getAuditedTags();
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(3);
-      expect(auditedTags.imagesWithoutAltText[0].blob).to.exist;
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(3);
+      expect(auditedImages.imagesWithoutAltText[0].blob).to.exist;
     });
 
     it('should filter out duplicate blobs', async () => {
@@ -302,8 +302,8 @@ describe('AuditEngine', () => {
       auditEngine.performPageAudit(pageUrl, pageTags);
       await auditEngine.filterImages('https://example.com', tracingFetchStub);
 
-      const auditedTags = auditEngine.getAuditedTags();
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(1);
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(1);
     });
 
     it('should filter out images that are too large', async () => {
@@ -326,8 +326,8 @@ describe('AuditEngine', () => {
       auditEngine.performPageAudit(pageUrl, pageTags);
       await auditEngine.filterImages('https://example.com', tracingFetchStub);
 
-      const auditedTags = auditEngine.getAuditedTags();
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(0);
     });
 
     it('should filter out blobs that are too large', async () => {
@@ -350,8 +350,8 @@ describe('AuditEngine', () => {
       auditEngine.performPageAudit(pageUrl, pageTags);
       await auditEngine.filterImages('https://example.com', tracingFetchStub);
 
-      const auditedTags = auditEngine.getAuditedTags();
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(0);
     });
 
     it('should handle bad response from tracingFetch', async () => {
@@ -370,8 +370,8 @@ describe('AuditEngine', () => {
       auditEngine.performPageAudit(pageUrl, pageTags);
       await auditEngine.filterImages('https://example.com', tracingFetchStub);
 
-      const auditedTags = auditEngine.getAuditedTags();
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(0);
       expect(logStub.error).to.have.been.calledWithMatch(`[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Error downloading blob for image1.svg:`);
     });
 
@@ -388,8 +388,8 @@ describe('AuditEngine', () => {
       auditEngine.performPageAudit(pageUrl, pageTags);
       await auditEngine.filterImages();
 
-      const auditedTags = auditEngine.getAuditedTags();
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(0);
       expect(logStub.error).to.have.been.calledWithMatch(
         `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Error downloading blob for image1.svg:`,
       );
@@ -406,8 +406,8 @@ describe('AuditEngine', () => {
       auditEngine.performPageAudit(pageUrl, pageTags);
       await auditEngine.filterImages();
 
-      const auditedTags = auditEngine.getAuditedTags();
-      expect(auditedTags.imagesWithoutAltText).to.have.lengthOf(0);
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(0);
     });
 
     it('should handle bad input', async () => {
@@ -420,7 +420,7 @@ describe('AuditEngine', () => {
       };
 
       auditEngine.performPageAudit(pageUrl, pageTags);
-      auditEngine.auditedTags.imagesWithoutAltText = {};
+      auditEngine.auditedImages.imagesWithoutAltText = {};
       await auditEngine.filterImages();
 
       expect(logStub.error).to.have.been.calledWithMatch(
@@ -458,7 +458,7 @@ describe('AuditEngine', () => {
       });
 
       it('should detect French text', () => {
-        const text = 'Ceci est une phrase française simple.';
+        const text = 'Ceci est une phrase franÃ§aise simple.';
         const lang = detectLanguageFromText(text);
         expect(lang).to.equal('fra');
       });

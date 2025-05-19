@@ -149,12 +149,13 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   });
 
   const result = {
-    auditResult: formsAuditRunnerResult.auditResult,
-    fullAuditRef: formsAuditRunnerResult.fullAuditRef,
     processingType: 'form',
+    allowCache: false,
     jobId: site.getId(),
     urls: urlsData,
     siteId: site.getId(),
+    auditResult: formsAuditRunnerResult.auditResult,
+    fullAuditRef: formsAuditRunnerResult.fullAuditRef,
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping`);

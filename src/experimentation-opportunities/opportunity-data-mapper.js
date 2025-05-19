@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { DATA_SOURCES } from '../common/constants.js';
+
 function calculateOpptyImpact(organicTraffic, siteAverageCTR, pageCTR) {
   // assume oppty cannot go over site average CTR
   if (pageCTR > siteAverageCTR) return 0;
@@ -62,6 +64,7 @@ export function convertToOpportunityEntity(siteId, auditId, rawOppty = {}, guida
       trackedPageKPIValue,
       opportunityImpact,
       metrics,
+      dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.RUM, DATA_SOURCES.AHREFS],
     },
   };
 }

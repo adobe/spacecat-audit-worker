@@ -14,9 +14,10 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import createLowViewsOpportunities from '../../../src/forms-opportunities/oppty-handlers/low-views-handler.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import testData from '../../fixtures/forms/high-form-views-low-conversions.js';
+import createLowViewsOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
+import { DATA_SOURCES } from '../../../../src/common/constants.js';
 
 use(sinonChai);
 describe('createLowFormViewsOpportunities handler method', () => {
@@ -86,43 +87,48 @@ describe('createLowFormViewsOpportunities handler method', () => {
       data: {
         form: 'https://www.surest.com/high-page-low-form-view',
         screenshot: '',
-        trackedFormKPIName: 'Form Views',
-        trackedFormKPIValue: 200,
+        trackedFormKPIName: 'Form View Rate',
+        trackedFormKPIValue: 0.03,
         formViews: 200,
         pageViews: 6690,
         formsource: '',
         samples: 6690,
         scrapedStatus: false,
+        dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         metrics: [
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: '*',
             value: {
-              page: 200,
+              page: 0.03,
             },
           },
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: 'mobile',
             value: {
               page: 0,
             },
           },
           {
-            type: 'formViews',
+            type: 'formViewRate',
             device: 'desktop',
             value: {
-              page: 200,
+              page: 0.035,
             },
           },
           {
+            device: 'desktop',
             type: 'traffic',
-            device: '*',
             value: {
-              paid: 2690,
-              total: 6690,
-              earned: 2000,
-              owned: 2000,
+              page: 5690,
+            },
+          },
+          {
+            device: 'mobile',
+            type: 'traffic',
+            value: {
+              page: 1000,
             },
           },
         ],
