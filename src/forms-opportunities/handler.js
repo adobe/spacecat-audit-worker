@@ -63,8 +63,8 @@ export async function sendA11yIssuesToMystique(latestAudit, scrapedData, context
 
   const a11yData = [];
   for (const a11y of formA11yData) {
-    const { results } = a11y;
-    results.forEach((result) => {
+    const { a11yResult } = a11y;
+    a11yResult.forEach((result) => {
       if (result.a11yIssues.length > 0) {
         const a11yIssues = result.a11yIssues.map((a11yIssue) => ({
           issue: a11yIssue.issue,

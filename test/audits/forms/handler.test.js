@@ -441,7 +441,7 @@ describe('send a11y issues to mystique', () => {
 
     const scrapedData = {
       formA11yData: [{
-        results: [{
+        a11yResult: [{
           finalUrl: 'https://example.com/form1',
           formSource: '#form1',
           a11yIssues: [{
