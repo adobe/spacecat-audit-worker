@@ -46,13 +46,12 @@ async function scrapeAccessibilityData(context) {
 }
 
 // Second step: gets data from the first step and processes it to create new opportunities
-async function processAccessibilityOpportunities(context, auditData) {
+async function processAccessibilityOpportunities(context) {
   const {
     site, log, s3Client, env,
   } = context;
   const siteId = site.getId();
   log.info(`[A11yAudit] Step 2: Processing scraped data for ${site.getBaseURL()}`);
-  log.info('auditData', JSON.stringify(auditData, null, 2));
 
   // Get the S3 bucket name from config or environment
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -99,7 +98,10 @@ async function processAccessibilityOpportunities(context, auditData) {
     const year = new Date().getFullYear();
     const opportunityInstance = createInDepthReportOpportunity(week, year);
     // eslint-disable-next-line max-len
-    const opportunity = await createReportOpportunity(opportunityInstance, auditData, context, siteId);
+    const latestAudit = await site.getLatestAuditByAuditType('accessibility');
+    const auditData = JSON.parse(JSON.stringify(latestAudit));
+    log.info('auditData', auditData);
+    const opportunity = await createReportOpportunity(opportunityInstance, auditData, context);
     log.info('opportunity', opportunity);
     // 1. generate the markdown report for in-depth overview
     // 2. generate oppty and suggestions for the report
