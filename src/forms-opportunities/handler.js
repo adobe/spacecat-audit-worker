@@ -50,10 +50,12 @@ export async function formsAuditRunner(auditUrl, context) {
   };
 }
 
-export async function sendA11yIssuesToMystique(latestAudit, scrapedData, context) {
+export async function sendA11yIssuesToMystique(auditDataObject, scrapedData, context) {
   const {
     log, site,
   } = context;
+
+  const auditData = JSON.parse(JSON.stringify(auditDataObject));
 
   const { formA11yData } = scrapedData;
   if (formA11yData?.length === 0) {
@@ -83,8 +85,8 @@ export async function sendA11yIssuesToMystique(latestAudit, scrapedData, context
   }
 
   await createA11yOpportunities({
-    siteId: latestAudit.siteId,
-    auditId: latestAudit.auditId,
+    siteId: auditData.siteId,
+    auditId: auditData.auditId,
     data: {
       a11yData,
     },
