@@ -1,3 +1,10 @@
+## [1.87.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.3...v1.87.4) (2025-05-20)
+
+
+### Bug Fixes
+
+* update tags and title in forms oppoty ([#873](https://github.com/adobe/spacecat-audit-worker/issues/873)) ([6f3913b](https://github.com/adobe/spacecat-audit-worker/commit/6f3913bc375bb0ea16fe497e7330c9cd70a8bb32))
+
 ## [1.87.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.2...v1.87.3) (2025-05-19)
 
 
