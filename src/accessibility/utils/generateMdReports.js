@@ -10,15 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-import { current, lastWeek } from './dev-purposes-constants.js';
-import { accessibilityIssues, accessibilitySolutions, accessibilitySuggestions, accessibilityUserImpact } from './accesibility-standards.js';
+// import fs from 'fs';
+// import path from 'path';
+// import { current, lastWeek } from './dev-purposes-constants.js';
+import {
+  accessibilityIssues, accessibilitySolutions, accessibilitySuggestions, accessibilityUserImpact,
+} from './accesibility-standards.js';
 import { successCriteriaLinks } from './constants.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 /**
  * Format traffic numbers to use K for thousands and M for millions
@@ -41,17 +39,17 @@ function formatTraffic(traffic) {
  */
 function generateRoadToWCAGSection(wcagData) {
   let section = '### Road To WCAG 2.2 Level A\n\n';
-  section += `| No of criteria | Passed| Failed| Compliance Score|\n`;
-  section += `|--------|--------|--------|--------|\n`;
+  section += '| No of criteria | Passed| Failed| Compliance Score|\n';
+  section += '|--------|--------|--------|--------|\n';
   section += `| 30 | ${wcagData.passed.A} | ${wcagData.failures.A} | ${wcagData.complianceScores.A.toFixed(2)}%|\n\n`;
 
-  section += `---\n\n`;
-  section += `### Road To WCAG 2.2 Level AA\n\n`;
-  section += `| No of criteria | Passed| Failed| Compliance Score|\n`;
-  section += `|--------|--------|--------|--------|\n`;
+  section += '---\n\n';
+  section += '### Road To WCAG 2.2 Level AA\n\n';
+  section += '| No of criteria | Passed| Failed| Compliance Score|\n';
+  section += '|--------|--------|--------|--------|\n';
   section += `| 50 (30 Level A + 20 Level AA) | ${wcagData.passed.A + wcagData.passed.AA} (${wcagData.passed.A} Level A + ${wcagData.passed.AA} Level AA) | ${wcagData.failures.A + wcagData.failures.AA} (${wcagData.failures.A} Level A + ${wcagData.failures.AA} Level AA) | ${wcagData.complianceScores.AA.toFixed(2)}%|\n\n`;
 
-  section += `---\n\n`;
+  section += '---\n\n';
   return section;
 }
 
@@ -62,31 +60,27 @@ function generateRoadToWCAGSection(wcagData) {
  */
 function generateAccessibilityComplianceSection(trafficViolations) {
   let section = '### Accessibility Compliance Issues vs Traffic | **[In-Depth Report]()**\n\n';
-  section += `An overview of top 10 pages in terms of traffic with the accessibility issues overview\n\n`;
-  section += `| Page | Traffic |Total Issues  |Level A |Level AA |\n`;
-  section += `|--------|--------|--------|--------|--------|\n`;
+  section += 'An overview of top 10 pages in terms of traffic with the accessibility issues overview\n\n';
+  section += '| Page | Traffic |Total Issues  |Level A |Level AA |\n';
+  section += '|--------|--------|--------|--------|--------|\n';
 
   // Sort by traffic and take top 10
   const sortedByTraffic = [...trafficViolations]
     .sort((a, b) => (b.traffic || 0) - (a.traffic || 0))
     .slice(0, 10);
 
-  sortedByTraffic.forEach(page => {
+  sortedByTraffic.forEach((page) => {
     // Filter out 'image-alt' issues from levelA and levelAA
-    const filteredLevelA = page.levelA.filter(issue => 
-      !issue.includes('`image-alt`') && 
-      !issue.includes('`role-img-alt`') && 
-      !issue.includes('`svg-img-alt`')
-    );
-    const filteredLevelAA = page.levelAA.filter(issue => 
-      !issue.includes('`image-alt`') && 
-      !issue.includes('`role-img-alt`') && 
-      !issue.includes('`svg-img-alt`')
-    );
-    
+    const filteredLevelA = page.levelA.filter((issue) => !issue.includes('`image-alt`')
+      && !issue.includes('`role-img-alt`')
+      && !issue.includes('`svg-img-alt`'));
+    const filteredLevelAA = page.levelAA.filter((issue) => !issue.includes('`image-alt`')
+      && !issue.includes('`role-img-alt`')
+      && !issue.includes('`svg-img-alt`'));
+
     // Recalculate totalIssues after filtering
     const filteredTotalIssues = filteredLevelA.length + filteredLevelAA.length;
-    
+
     section += `| ${page.url} | ${page.traffic ? formatTraffic(page.traffic) : '-'} | ${filteredTotalIssues} | ${filteredLevelA.length > 0 ? filteredLevelA.join(', ') : '-'} | ${filteredLevelAA.length > 0 ? filteredLevelAA.join(', ') : '-'} |\n`;
   });
 
@@ -101,21 +95,21 @@ function generateAccessibilityComplianceSection(trafficViolations) {
  */
 function escapeHtmlTags(text) {
   if (!text) return '';
-  
+
   // First, temporarily replace any existing backtick-wrapped content
   const backtickContent = [];
-  text = text.replace(/`([^`]+)`/g, (match, content) => {
+  let escapedText = text.replace(/`([^`]+)`/g, (match, content) => {
     backtickContent.push(content);
     return '___BACKTICK___';
   });
 
   // Escape HTML tags
-  text = text.replace(/<([^>]+)>/g, '`<$1>`');
+  escapedText = escapedText.replace(/<([^>]+)>/g, '`<$1>`');
 
   // Restore backtick-wrapped content
-  text = text.replace(/___BACKTICK___/g, () => '`' + backtickContent.shift() + '`');
+  escapedText = escapedText.replace(/___BACKTICK___/g, () => `\`${backtickContent.shift()}\``);
 
-  return text;
+  return escapedText;
 }
 
 /**
@@ -126,7 +120,7 @@ function escapeHtmlTags(text) {
 function generateAccessibilityIssuesOverviewSection(issuesOverview) {
   // First sort by level (A first, then AA), then by count (highest first)
   const sortedIssues = [...issuesOverview.levelA, ...issuesOverview.levelAA]
-    .filter(issue => issue.rule !== 'image-alt' && issue.rule !== 'role-img-alt' && issue.rule !== 'svg-img-alt')
+    .filter((issue) => issue.rule !== 'image-alt' && issue.rule !== 'role-img-alt' && issue.rule !== 'svg-img-alt')
     .sort((a, b) => {
       if (a.level === b.level) {
         return b.count - a.count;
@@ -140,14 +134,14 @@ function generateAccessibilityIssuesOverviewSection(issuesOverview) {
   }
 
   let section = '\n### Accessibility Issues Overview\n\n';
-  section += `| Issue | WCAG Success Criterion | Count| Level |Impact| Description | WCAG Docs Link |\n`;
-  section += `|-------|-------|-------------|-------------|-------------|-------------|-------------|\n`;
+  section += '| Issue | WCAG Success Criterion | Count| Level |Impact| Description | WCAG Docs Link |\n';
+  section += '|-------|-------|-------------|-------------|-------------|-------------|-------------|\n';
 
-  sortedIssues.forEach(issue => {
+  sortedIssues.forEach((issue) => {
     // Find the issue in accessibilityIssues to get the standardized impact
     let impact = 'Serious'; // Default impact
     for (const category of ['easy', 'medium', 'hard']) {
-      const foundIssue = accessibilityIssues[category].find(i => i.issue === issue.rule);
+      const foundIssue = accessibilityIssues[category].find((i) => i.issue === issue.rule);
       if (foundIssue) {
         impact = foundIssue.impact;
         break;
@@ -170,10 +164,10 @@ function generateAccessibilityIssuesOverviewSection(issuesOverview) {
 function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview) {
   // Create lookup of issues with descriptions
   const issuesLookup = {};
-  [...issuesOverview.levelA, ...issuesOverview.levelAA].forEach(issue => {
+  [...issuesOverview.levelA, ...issuesOverview.levelAA].forEach((issue) => {
     // Skip image-alt issues
     if (issue.rule === 'image-alt' || issue.rule === 'role-img-alt' || issue.rule === 'svg-img-alt') return;
-    
+
     issuesLookup[issue.rule] = {
       description: escapeHtmlTags(issue.description),
       level: issue.level,
@@ -192,9 +186,9 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
   // Get the most common issues across top pages
   const commonIssues = {};
 
-  topPages.forEach(page => {
+  topPages.forEach((page) => {
     // Process Level A issues
-    page.levelA.forEach(issueText => {
+    page.levelA.forEach((issueText) => {
       // Extract the issue name from format like "13 x `aria-hidden-focus`"
       const match = issueText.match(/(\d+) x `([^`]+)`/);
       if (match) {
@@ -208,19 +202,19 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
           commonIssues[issueName] = {
             name: issueName,
             level: 'A',
-            pages: []
+            pages: [],
           };
         }
 
         commonIssues[issueName].pages.push({
           url: page.url,
-          count: count
+          count,
         });
       }
     });
 
     // Process Level AA issues (if any)
-    page.levelAA.forEach(issueText => {
+    page.levelAA.forEach((issueText) => {
       // Extract the issue name from format like "2 x `color-contrast`"
       const match = issueText.match(/(\d+) x `([^`]+)`/);
       if (match) {
@@ -231,13 +225,13 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
           commonIssues[issueName] = {
             name: issueName,
             level: 'AA',
-            pages: []
+            pages: [],
           };
         }
 
         commonIssues[issueName].pages.push({
           url: page.url,
-          count: count
+          count,
         });
       }
     });
@@ -262,14 +256,14 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
     });
 
   // Generate the markdown table
-  let section = `### Enhancing accessibility for the top 10 most-visited pages\n\n`;
-  section += `| Issue | WCAG Success Criterion | Level| Pages |Description| How is the user affected | Suggestion | Solution Example |\n`;
-  section += `|-------|-------|-------------|-------------|-------------|-------------|-------------|-------------|\n`;
+  let section = '### Enhancing accessibility for the top 10 most-visited pages\n\n';
+  section += '| Issue | WCAG Success Criterion | Level| Pages |Description| How is the user affected | Suggestion | Solution Example |\n';
+  section += '|-------|-------|-------------|-------------|-------------|-------------|-------------|-------------|\n';
 
   // Add all issues from top 10 pages
-  sortedIssues.forEach(issue => {
+  sortedIssues.forEach((issue) => {
     // Format pages list - using original URLs without modification
-    const pagesText = issue.pages.map(p => `${p.url} (${p.count})`).join(', ');
+    const pagesText = issue.pages.map((p) => `${p.url} (${p.count})`).join(', ');
 
     // Get issue description
     const description = issuesLookup[issue.name] ? issuesLookup[issue.name].description : '';
@@ -288,150 +282,8 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
     section += `| ${issue.name} | [${successCriteriaNumber.split('').join('.')} ${criterionName}](${criterionUrl}) | ${issue.level} | ${pagesText} | ${description} | ${userImpact} | ${suggestion} |\n`;
   });
 
-  section += '\n---\n\n';  // Add table end marker
+  section += '\n---\n\n'; // Add table end marker
   return section;
-}
-
-/**
- * Generate Quick Wins section
- * @param {Object} quickWinsData - Data from generateQuickWins function
- * @param {Array} trafficViolations - Traffic violations data
- * @returns {string} Quick Wins section markdown
- */
-function generateQuickWinsSection(quickWinsData, trafficViolations) {
-  // Create a lookup for issue occurrences on pages
-  const issuePageMap = {};
-  
-  // Process violations data
-  if (quickWinsData.allViolations) {
-    Object.entries(quickWinsData.allViolations).forEach(([url, data]) => {
-      if (url === 'overall') return; // Skip overall data
-      
-      // Process critical violations
-      Object.entries(data.violations.critical.items || {}).forEach(([issueName, issueData]) => {
-        // Skip image-alt issues
-        if (issueName === 'image-alt' || issueName === 'role-img-alt' || issueName === 'svg-img-alt') return;
-        
-        if (!issuePageMap[issueName]) {
-          issuePageMap[issueName] = [];
-        }
-        
-        // Track issue counts per page
-        const existingEntry = issuePageMap[issueName].find(entry => entry.url === url);
-        if (existingEntry) {
-          existingEntry.count += issueData.count;
-        } else {
-          issuePageMap[issueName].push({
-            url: url,
-            count: issueData.count
-          });
-        }
-      });
-
-      // Process serious violations
-      Object.entries(data.violations.serious.items || {}).forEach(([issueName, issueData]) => {
-        // Skip image-alt issues
-        if (issueName === 'image-alt' || issueName === 'role-img-alt' || issueName === 'svg-img-alt') return;
-        
-        if (!issuePageMap[issueName]) {
-          issuePageMap[issueName] = [];
-        }
-        
-        // Track issue counts per page
-        const existingEntry = issuePageMap[issueName].find(entry => entry.url === url);
-        if (existingEntry) {
-          existingEntry.count += issueData.count;
-        } else {
-          issuePageMap[issueName].push({
-            url: url,
-            count: issueData.count
-          });
-        }
-      });
-    });
-  }
-
-  // Group issues by description
-  const groupedIssues = new Map();
-  quickWinsData.topIssues.forEach(issue => {
-    if (issue.id === 'image-alt' || issue.id === 'role-img-alt' || issue.id === 'svg-img-alt') return;
-    
-    const descriptionKey = issue.description;
-    if (!groupedIssues.has(descriptionKey)) {
-      groupedIssues.set(descriptionKey, {
-        description: descriptionKey,
-        successCriteriaNumber: issue.successCriteriaNumber,
-        level: issue.level,
-        count: 0,
-        issues: []
-      });
-    }
-    
-    const group = groupedIssues.get(descriptionKey);
-    group.count += issue.count;
-    group.issues.push(issue);
-  });
-
-  // Convert to array and calculate percentages
-  const totalIssues = Array.from(groupedIssues.values()).reduce((sum, group) => sum + group.count, 0);
-  const sortedGroups = Array.from(groupedIssues.values())
-    .map(group => ({
-      ...group,
-      percentage: (group.count / totalIssues * 100).toFixed(2)
-    }))
-    .sort((a, b) => {
-      // First sort by percentage (highest first)
-      const percentageDiff = parseFloat(b.percentage) - parseFloat(a.percentage);
-      if (percentageDiff !== 0) return percentageDiff;
-      
-      // If percentages are equal, sort by level (A first, then AA)
-      return a.level === 'A' ? -1 : 1;
-    })
-    .slice(0, 3); // Take top 3 groups
-
-  // If no issues, return empty string
-  if (sortedGroups.length === 0) {
-    return { mainSection: '', pagesSection: '' };
-  }
-
-  // Calculate total percentage for the top 3 groups
-  const totalPercentage = sortedGroups.reduce((sum, group) => sum + parseFloat(group.percentage), 0).toFixed(2);
-
-  // Generate the main Quick Wins section
-  let section = `\n### Quick Wins | **[In-depth details at the bottom of the page]()**\n\n`;
-  section += `Here is a list of accessibility issues that can be resolved site-wide, having a significant impact with minimal effort, as the changes may be required in only a few places.\n\n`;
-  section += `Solving the below issues could decrease accessibility issues by ${totalPercentage}%.\n\n`;
-  section += `| Issue | WCAG Success Criterion | % of Total |Level|Impact|How To Solve|\n`;
-  section += `|--------|--------|--------|--------|--------|--------|\n`;
-
-  // Add each group to the table
-  sortedGroups.forEach(group => {
-    // Use the first issue in the group for impact and how to solve
-    const firstIssue = group.issues[0];
-    const howToSolve = escapeHtmlTags(accessibilitySolutions[firstIssue.id] || 'Review and fix according to WCAG guidelines.');
-    
-    // Find the issue in accessibilityIssues to get the standardized impact
-    let impact = 'Serious'; // Default impact
-    for (const category of ['easy', 'medium', 'hard']) {
-      const foundIssue = accessibilityIssues[category].find(i => i.issue === firstIssue.id);
-      if (foundIssue) {
-        impact = foundIssue.impact;
-        break;
-      }
-    }
-    
-    section += `| ${escapeHtmlTags(group.description)} | [${group.successCriteriaNumber.split('').join('.')} ${escapeHtmlTags(successCriteriaLinks[group.successCriteriaNumber]?.name)}](${successCriteriaLinks[group.successCriteriaNumber]?.successCriterionUrl}) | ${group.percentage}% | ${group.level} | ${impact} | ${howToSolve} |\n`;
-  });
-
-  section += '\n---\n\n';  // Add table end marker
-
-  // Generate the pages section
-  const pagesSection = generateQuickWinsPagesSection(sortedGroups.flatMap(group => group.issues), issuePageMap);
-  
-  return { 
-    mainSection: section,
-    pagesSection: pagesSection
-  };
 }
 
 /**
@@ -444,24 +296,168 @@ function generateQuickWinsPagesSection(sortedIssues, issuePageMap) {
   if (sortedIssues.length === 0) {
     return '';
   }
-  let section = `\n### Quick Wins Pages Per Issue\n\n`;
-  section += `Below is a detailed breakdown of all pages affected by each quick win issue.\n\n`;
-  section += `| Issue | Pages |\n`;
-  section += `|--------|--------|\n`;
-  
-  sortedIssues.forEach(issue => {
+  let section = '\n### Quick Wins Pages Per Issue\n\n';
+  section += 'Below is a detailed breakdown of all pages affected by each quick win issue.\n\n';
+  section += '| Issue | Pages |\n';
+  section += '|--------|--------|\n';
+
+  sortedIssues.forEach((issue) => {
     // Get page information for this issue
     const pageInfo = issuePageMap[issue.id] || [];
     // Format pages list with issue counts
-    const pagesText = pageInfo.length > 0 
-      ? pageInfo.map(p => `${p.url} (${p.count})`).join(', ')
+    const pagesText = pageInfo.length > 0
+      ? pageInfo.map((p) => `${p.url} (${p.count})`).join(', ')
       : '-';
-    
+
     section += `| ${escapeHtmlTags(issue.description)} | ${pagesText} |\n`;
   });
-  
+
   section += '\n---\n\n';
   return section;
+}
+
+/**
+ * Generate Quick Wins section
+ * @param {Object} quickWinsData - Data from generateQuickWins function
+ * @returns {string} Quick Wins section markdown
+ */
+function generateQuickWinsSection(quickWinsData) {
+  // Create a lookup for issue occurrences on pages
+  const issuePageMap = {};
+
+  // Process violations data
+  if (quickWinsData.allViolations) {
+    Object.entries(quickWinsData.allViolations).forEach(([url, data]) => {
+      if (url === 'overall') return; // Skip overall data
+
+      // Process critical violations
+      Object.entries(data.violations.critical.items || {}).forEach(([issueName, issueData]) => {
+        // Skip image-alt issues
+        if (issueName === 'image-alt' || issueName === 'role-img-alt' || issueName === 'svg-img-alt') return;
+
+        if (!issuePageMap[issueName]) {
+          issuePageMap[issueName] = [];
+        }
+
+        // Track issue counts per page
+        const existingEntry = issuePageMap[issueName].find((entry) => entry.url === url);
+        if (existingEntry) {
+          existingEntry.count += issueData.count;
+        } else {
+          issuePageMap[issueName].push({
+            url,
+            count: issueData.count,
+          });
+        }
+      });
+
+      // Process serious violations
+      Object.entries(data.violations.serious.items || {}).forEach(([issueName, issueData]) => {
+        // Skip image-alt issues
+        if (issueName === 'image-alt' || issueName === 'role-img-alt' || issueName === 'svg-img-alt') return;
+
+        if (!issuePageMap[issueName]) {
+          issuePageMap[issueName] = [];
+        }
+
+        // Track issue counts per page
+        const existingEntry = issuePageMap[issueName].find((entry) => entry.url === url);
+        if (existingEntry) {
+          existingEntry.count += issueData.count;
+        } else {
+          issuePageMap[issueName].push({
+            url,
+            count: issueData.count,
+          });
+        }
+      });
+    });
+  }
+
+  // Group issues by description
+  const groupedIssues = new Map();
+  quickWinsData.topIssues.forEach((issue) => {
+    if (issue.id === 'image-alt' || issue.id === 'role-img-alt' || issue.id === 'svg-img-alt') return;
+
+    const descriptionKey = issue.description;
+    if (!groupedIssues.has(descriptionKey)) {
+      groupedIssues.set(descriptionKey, {
+        description: descriptionKey,
+        successCriteriaNumber: issue.successCriteriaNumber,
+        level: issue.level,
+        count: 0,
+        issues: [],
+      });
+    }
+
+    const group = groupedIssues.get(descriptionKey);
+    group.count += issue.count;
+    group.issues.push(issue);
+  });
+
+  // Convert to array and calculate percentages
+  // eslint-disable-next-line max-len
+  const totalIssues = Array.from(groupedIssues.values()).reduce((sum, group) => sum + group.count, 0);
+  const sortedGroups = Array.from(groupedIssues.values())
+    .map((group) => ({
+      ...group,
+      percentage: ((group.count / totalIssues) * 100).toFixed(2),
+    }))
+    .sort((a, b) => {
+      // First sort by percentage (highest first)
+      const percentageDiff = parseFloat(b.percentage) - parseFloat(a.percentage);
+      if (percentageDiff !== 0) return percentageDiff;
+
+      // If percentages are equal, sort by level (A first, then AA)
+      return a.level === 'A' ? -1 : 1;
+    })
+    .slice(0, 3); // Take top 3 groups
+
+  // If no issues, return empty string
+  if (sortedGroups.length === 0) {
+    return { mainSection: '', pagesSection: '' };
+  }
+
+  // Calculate total percentage for the top 3 groups
+  // eslint-disable-next-line max-len
+  const totalPercentage = sortedGroups.reduce((sum, group) => sum + parseFloat(group.percentage), 0).toFixed(2);
+
+  // Generate the main Quick Wins section
+  let section = '\n### Quick Wins | **[In-depth details at the bottom of the page]()**\n\n';
+  section += 'Here is a list of accessibility issues that can be resolved site-wide, having a significant impact with minimal effort, as the changes may be required in only a few places.\n\n';
+  section += `Solving the below issues could decrease accessibility issues by ${totalPercentage}%.\n\n`;
+  section += '| Issue | WCAG Success Criterion | % of Total |Level|Impact|How To Solve|\n';
+  section += '|--------|--------|--------|--------|--------|--------|\n';
+
+  // Add each group to the table
+  sortedGroups.forEach((group) => {
+    // Use the first issue in the group for impact and how to solve
+    const firstIssue = group.issues[0];
+    const howToSolve = escapeHtmlTags(accessibilitySolutions[firstIssue.id] || 'Review and fix according to WCAG guidelines.');
+
+    // Find the issue in accessibilityIssues to get the standardized impact
+    let impact = 'Serious'; // Default impact
+    for (const category of ['easy', 'medium', 'hard']) {
+      const foundIssue = accessibilityIssues[category].find((i) => i.issue === firstIssue.id);
+      if (foundIssue) {
+        impact = foundIssue.impact;
+        break;
+      }
+    }
+
+    section += `| ${escapeHtmlTags(group.description)} | [${group.successCriteriaNumber.split('').join('.')} ${escapeHtmlTags(successCriteriaLinks[group.successCriteriaNumber]?.name)}](${successCriteriaLinks[group.successCriteriaNumber]?.successCriterionUrl}) | ${group.percentage}% | ${group.level} | ${impact} | ${howToSolve} |\n`;
+  });
+
+  section += '\n---\n\n'; // Add table end marker
+
+  // Generate the pages section
+  // eslint-disable-next-line max-len
+  const pagesSection = generateQuickWinsPagesSection(sortedGroups.flatMap((group) => group.issues), issuePageMap);
+
+  return {
+    mainSection: section,
+    pagesSection,
+  };
 }
 
 /**
@@ -475,28 +471,28 @@ function generateDiffSection(diffData) {
   let hasNewIssues = false;
 
   // Check for fixed issues
-  Object.entries(diffData.fixedIssues.critical).forEach(([page, issues]) => {
-    const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+  Object.entries(diffData.fixedIssues.critical).forEach(([, issues]) => {
+    const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
     if (filteredIssues.length > 0) {
       hasFixedIssues = true;
     }
   });
-  Object.entries(diffData.fixedIssues.serious).forEach(([page, issues]) => {
-    const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+  Object.entries(diffData.fixedIssues.serious).forEach(([, issues]) => {
+    const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
     if (filteredIssues.length > 0) {
       hasFixedIssues = true;
     }
   });
 
   // Check for new issues
-  Object.entries(diffData.newIssues.critical).forEach(([page, issues]) => {
-    const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+  Object.entries(diffData.newIssues.critical).forEach(([, issues]) => {
+    const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
     if (filteredIssues.length > 0) {
       hasNewIssues = true;
     }
   });
-  Object.entries(diffData.newIssues.serious).forEach(([page, issues]) => {
-    const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+  Object.entries(diffData.newIssues.serious).forEach(([, issues]) => {
+    const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
     if (filteredIssues.length > 0) {
       hasNewIssues = true;
     }
@@ -508,38 +504,45 @@ function generateDiffSection(diffData) {
   }
 
   if (hasFixedIssues) {
-    section += `\n### Fixed Accessibility Issues\n\n`;
-    section += `Here is a breakdown of fixed accessibility issues Week Over Week for first 100 pages traffic wise.\n\n`;
-    section += `| Page| Issues |Impact|\n`;
-    section += `|--------|--------|--------|\n`;
+    section += '\n### Fixed Accessibility Issues\n\n';
+    section += 'Here is a breakdown of fixed accessibility issues Week Over Week for first 100 pages traffic wise.\n\n';
+    section += '| Page| Issues |Impact|\n';
+    section += '|--------|--------|--------|\n';
 
     Object.entries(diffData.fixedIssues.critical).forEach(([page, issues]) => {
-      const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
-      filteredIssues.length > 0 && (section += `| ${escapeHtmlTags(page)} | ${filteredIssues.map(i => '`' + i + '`').join(', ')} | Critical |\n`);
+      const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+      if (filteredIssues.length > 0) {
+        section += `| ${escapeHtmlTags(page)} | ${filteredIssues.map((i) => `\`${i}\``).join(', ')} | Critical |\n`;
+      }
     });
     Object.entries(diffData.fixedIssues.serious).forEach(([page, issues]) => {
-      const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
-      filteredIssues.length > 0 && (section += `| ${escapeHtmlTags(page)} | ${filteredIssues.map(i => '`' + i + '`').join(', ')} | Serious |\n`);
+      const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+      if (filteredIssues.length > 0) {
+        section += `| ${escapeHtmlTags(page)} | ${filteredIssues.map((i) => `\`${i}\``).join(', ')} | Serious |\n`;
+      }
     });
-    section += `\n---\n`;
+    section += '\n---\n';
   }
 
   if (hasNewIssues) {
-    
-    section += `\n### New Accessibility Issues\n\n`;
-    section += `Here is a breakdown of new accessibility issues Week Over Week for first 100 pages traffic wise.\n\n`;
-    section += `| Page| Issues |Impact|\n`;
-    section += `|--------|--------|--------|\n`;
+    section += '\n### New Accessibility Issues\n\n';
+    section += 'Here is a breakdown of new accessibility issues Week Over Week for first 100 pages traffic wise.\n\n';
+    section += '| Page| Issues |Impact|\n';
+    section += '|--------|--------|--------|\n';
 
     Object.entries(diffData.newIssues.critical).forEach(([page, issues]) => {
-      const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
-      filteredIssues.length > 0 && (section += `| ${escapeHtmlTags(page)} | ${filteredIssues.map(i => '`' + i + '`').join(', ')} | Critical |\n`);
+      const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+      if (filteredIssues.length > 0) {
+        section += `| ${escapeHtmlTags(page)} | ${filteredIssues.map((i) => `\`${i}\``).join(', ')} | Critical |\n`;
+      }
     });
     Object.entries(diffData.newIssues.serious).forEach(([page, issues]) => {
-      const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
-      filteredIssues.length > 0 && (section += `| ${escapeHtmlTags(page)} | ${filteredIssues.map(i => '`' + i + '`').join(', ')} | Serious |\n`);
+      const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+      if (filteredIssues.length > 0) {
+        section += `| ${escapeHtmlTags(page)} | ${filteredIssues.map((i) => `\`${i}\``).join(', ')} | Serious |\n`;
+      }
     });
-    section += `\n---\n`;
+    section += '\n---\n';
   }
 
   return section;
@@ -553,14 +556,13 @@ function generateDiffSection(diffData) {
  */
 function generateWeekOverWeekSection(currentData, previousData) {
   let section = 'A Week Over Week breadown of fixed and new accessibility issues for the first 100 pages traffic wise.\n\n';
-  section += `| | Fixed | Improved | New |\n`;
-  section += `|--------|--------|--------|--------|\n`;
+  section += '| | Fixed | Improved | New |\n';
+  section += '|--------|--------|--------|--------|\n';
 
   // Helper function to filter out image-alt related issues
-  const filterImageAlt = issue => 
-    issue !== 'image-alt' && 
-    issue !== 'role-img-alt' && 
-    issue !== 'svg-img-alt';
+  const filterImageAlt = (issue) => issue !== 'image-alt'
+    && issue !== 'role-img-alt'
+    && issue !== 'svg-img-alt';
 
   // Get current and previous overall counts with null checks
   const currentCritical = currentData?.overall?.violations?.critical?.items || {};
@@ -575,11 +577,9 @@ function generateWeekOverWeekSection(currentData, previousData) {
     .join(', ') || '-';
 
   const criticalImproved = Object.entries(currentCritical)
-    .filter(([issue, data]) => 
-      previousCritical[issue] && 
-      data.count < previousCritical[issue].count && 
-      filterImageAlt(issue)
-    )
+    .filter(([issue, data]) => previousCritical[issue]
+      && data.count < previousCritical[issue].count
+      && filterImageAlt(issue))
     .map(([issue, data]) => {
       const reduction = previousCritical[issue].count - data.count;
       return `\`${issue}\` (${reduction} less)`;
@@ -598,11 +598,9 @@ function generateWeekOverWeekSection(currentData, previousData) {
     .join(', ') || '-';
 
   const seriousImproved = Object.entries(currentSerious)
-    .filter(([issue, data]) => 
-      previousSerious[issue] && 
-      data.count < previousSerious[issue].count && 
-      filterImageAlt(issue)
-    )
+    .filter(([issue, data]) => previousSerious[issue]
+      && data.count < previousSerious[issue].count
+      && filterImageAlt(issue))
     .map(([issue, data]) => {
       const reduction = previousSerious[issue].count - data.count;
       return `\`${issue}\` (${reduction} less)`;
@@ -632,16 +630,16 @@ function calculateWCAGData(currentFile) {
 
   const violationsByLevel = {
     A: 0,
-    AA: 0
+    AA: 0,
   };
 
-  Object.values(criticalItems).forEach(item => {
+  Object.values(criticalItems).forEach((item) => {
     if (item.level) {
       violationsByLevel[item.level] += 1;
     }
   });
 
-  Object.values(seriousItems).forEach(item => {
+  Object.values(seriousItems).forEach((item) => {
     if (item.level) {
       violationsByLevel[item.level] += 1;
     }
@@ -655,22 +653,22 @@ function calculateWCAGData(currentFile) {
   const levelAASuccessTotal = levelAA - violationsByLevel.AA;
 
   return {
-    passed: { 
+    passed: {
       A: levelASuccessTotal,
-      AA: levelAASuccessTotal
+      AA: levelAASuccessTotal,
     },
-    failures: { 
+    failures: {
       A: violationsByLevel.A,
-      AA: violationsByLevel.AA
+      AA: violationsByLevel.AA,
     },
-    totals: { 
+    totals: {
       A: levelATotal,
-      AA: levelAA
+      AA: levelAA,
     },
     complianceScores: {
       A: (levelASuccessTotal / levelATotal) * 100,
-      AA: ((levelASuccessTotal + levelAASuccessTotal) / levelAATotal) * 100
-    }
+      AA: ((levelASuccessTotal + levelAASuccessTotal) / levelAATotal) * 100,
+    },
   };
 }
 
@@ -680,12 +678,8 @@ function processTrafficViolations(currentFile) {
     .map(([url, data]) => ({
       url,
       traffic: data.traffic,
-      levelA: Object.entries(data.violations.critical.items).map(([issue, issueData]) => 
-        `${issueData.count} x \`${issue}\``
-      ),
-      levelAA: Object.entries(data.violations.serious.items).map(([issue, issueData]) => 
-        `${issueData.count} x \`${issue}\``
-      )
+      levelA: Object.entries(data.violations.critical.items).map(([issue, issueData]) => `${issueData.count} x \`${issue}\``),
+      levelAA: Object.entries(data.violations.serious.items).map(([issue, issueData]) => `${issueData.count} x \`${issue}\``),
     }));
 }
 
@@ -697,7 +691,7 @@ function processQuickWinsData(currentFile) {
       issueMap.set(id, {
         id,
         ...data,
-        percentage: (data.count / currentFile.overall.violations.total * 100).toFixed(2)
+        percentage: ((data.count / currentFile.overall.violations.total) * 100).toFixed(2),
       });
     }
   });
@@ -707,19 +701,20 @@ function processQuickWinsData(currentFile) {
       issueMap.set(id, {
         id,
         ...data,
-        percentage: (data.count / currentFile.overall.violations.total * 100).toFixed(2)
+        percentage: ((data.count / currentFile.overall.violations.total) * 100).toFixed(2),
       });
     }
   });
 
   const allIssues = Array.from(issueMap.values()).sort((a, b) => b.count - a.count);
   const topIssues = allIssues.slice(0, 3);
+  // eslint-disable-next-line max-len
   const totalPercentage = topIssues.reduce((sum, issue) => sum + parseFloat(issue.percentage), 0).toFixed(2);
 
   return {
     topIssues: allIssues,
     totalPercentage,
-    allViolations: currentFile
+    allViolations: currentFile,
   };
 }
 
@@ -727,12 +722,12 @@ function calculateDiffData(currentFile, lastWeekFile) {
   const diffData = {
     fixedIssues: {
       critical: {},
-      serious: {}
+      serious: {},
     },
     newIssues: {
       critical: {},
-      serious: {}
-    }
+      serious: {},
+    },
   };
 
   // Process each page in current data
@@ -740,9 +735,9 @@ function calculateDiffData(currentFile, lastWeekFile) {
     if (url === 'overall') return;
 
     // Check for new critical issues
-    Object.entries(data.violations.critical.items || {}).forEach(([issue, issueData]) => {
+    Object.entries(data.violations.critical.items || {}).forEach(([issue]) => {
       if (issue === 'image-alt' || issue === 'role-img-alt' || issue === 'svg-img-alt') return;
-      
+
       const prevData = lastWeekFile[url];
       if (!prevData || !prevData.violations.critical.items[issue]) {
         if (!diffData.newIssues.critical[url]) {
@@ -753,9 +748,9 @@ function calculateDiffData(currentFile, lastWeekFile) {
     });
 
     // Check for new serious issues
-    Object.entries(data.violations.serious.items || {}).forEach(([issue, issueData]) => {
+    Object.entries(data.violations.serious.items || {}).forEach(([issue]) => {
       if (issue === 'image-alt' || issue === 'role-img-alt' || issue === 'svg-img-alt') return;
-      
+
       const prevData = lastWeekFile[url];
       if (!prevData || !prevData.violations.serious.items[issue]) {
         if (!diffData.newIssues.serious[url]) {
@@ -771,9 +766,9 @@ function calculateDiffData(currentFile, lastWeekFile) {
     if (url === 'overall') return;
 
     // Check for fixed critical issues
-    Object.entries(data.violations.critical.items || {}).forEach(([issue, issueData]) => {
+    Object.entries(data.violations.critical.items || {}).forEach(([issue]) => {
       if (issue === 'image-alt' || issue === 'role-img-alt' || issue === 'svg-img-alt') return;
-      
+
       const currentPageData = currentFile[url];
       if (!currentPageData || !currentPageData.violations.critical.items[issue]) {
         if (!diffData.fixedIssues.critical[url]) {
@@ -784,9 +779,9 @@ function calculateDiffData(currentFile, lastWeekFile) {
     });
 
     // Check for fixed serious issues
-    Object.entries(data.violations.serious.items || {}).forEach(([issue, issueData]) => {
+    Object.entries(data.violations.serious.items || {}).forEach(([issue]) => {
       if (issue === 'image-alt' || issue === 'role-img-alt' || issue === 'svg-img-alt') return;
-      
+
       const currentPageData = currentFile[url];
       if (!currentPageData || !currentPageData.violations.serious.items[issue]) {
         if (!diffData.fixedIssues.serious[url]) {
@@ -829,6 +824,7 @@ async function generateInDepthOverviewMarkdown(currentFile, lastWeekFile) {
     const prevCritical = previousData.overall.violations.critical.count;
     const prevSerious = previousData.overall.violations.serious.count;
 
+    // eslint-disable-next-line max-len
     const criticalPercentage = prevCritical > 0 ? ((critical - prevCritical) / prevCritical) * 100 : 0;
     const seriousPercentage = prevSerious > 0 ? ((serious - prevSerious) / prevSerious) * 100 : 0;
 
@@ -840,10 +836,10 @@ async function generateInDepthOverviewMarkdown(currentFile, lastWeekFile) {
   }
 
   // Generate the report sections
-  let report = `### Accessibility Compliance Overview\n\n`;
-  report += `A breakdown of accessibility issues found as a result of audits for the **first 100 pages** traffic wise.\n\n`;
-  report += `| | Current |Week Over Week |\n`;
-  report += `|--------|--------|--------|\n`;
+  let report = '### Accessibility Compliance Overview\n\n';
+  report += 'A breakdown of accessibility issues found as a result of audits for the **first 100 pages** traffic wise.\n\n';
+  report += '| | Current |Week Over Week |\n';
+  report += '|--------|--------|--------|\n';
   report += `| **[Critical]()**| ${critical} | ${criticalChange} ${criticalEmoji}|\n`;
   report += `| **[Serious]()**| ${serious} | ${seriousChange} ${seriousEmoji}|\n\n`;
 
@@ -864,12 +860,12 @@ async function generateInDepthOverviewMarkdown(currentFile, lastWeekFile) {
   const issuesOverview = {
     levelA: Object.entries(currentData.overall.violations.critical.items).map(([rule, data]) => ({
       rule,
-      ...data
+      ...data,
     })),
     levelAA: Object.entries(currentData.overall.violations.serious.items).map(([rule, data]) => ({
       rule,
-      ...data
-    }))
+      ...data,
+    })),
   };
 
   report += generateAccessibilityIssuesOverviewSection(issuesOverview);
@@ -915,6 +911,7 @@ function generateBaseReportMarkdown(currentFile, lastWeekFile) {
     const prevCritical = lastWeekFile.overall.violations.critical.count;
     const prevSerious = lastWeekFile.overall.violations.serious.count;
 
+    // eslint-disable-next-line max-len
     const criticalPercentage = prevCritical > 0 ? ((critical - prevCritical) / prevCritical) * 100 : 0;
     const seriousPercentage = prevSerious > 0 ? ((serious - prevSerious) / prevSerious) * 100 : 0;
 
@@ -925,10 +922,10 @@ function generateBaseReportMarkdown(currentFile, lastWeekFile) {
     seriousEmoji = seriousPercentage > 0 ? '🔴' : '🟢';
   }
 
-  report += `### Accessibility Compliance Overview\n\n`;
-  report += `A breakdown of accessibility issues found as a result of audits for the **first 100 pages** traffic wise.\n\n`;
-  report += `| | Current |Week Over Week |\n`;
-  report += `|--------|--------|--------|\n`;
+  report += '### Accessibility Compliance Overview\n\n';
+  report += 'A breakdown of accessibility issues found as a result of audits for the **first 100 pages** traffic wise.\n\n';
+  report += '| | Current |Week Over Week |\n';
+  report += '|--------|--------|--------|\n';
   report += `| **[Critical]()**| ${critical} | ${criticalChange} ${criticalEmoji}|\n`;
   report += `| **[Serious]()**| ${serious} | ${seriousChange} ${seriousEmoji}|\n\n`;
 
@@ -960,12 +957,12 @@ function generateInDepthReportMarkdown(currentFile) {
   const issuesOverview = {
     levelA: Object.entries(currentFile.overall.violations.critical.items).map(([rule, data]) => ({
       rule,
-      ...data
+      ...data,
     })),
     levelAA: Object.entries(currentFile.overall.violations.serious.items).map(([rule, data]) => ({
       rule,
-      ...data
-    }))
+      ...data,
+    })),
   };
 
   report += generateAccessibilityIssuesOverviewSection(issuesOverview);
@@ -986,12 +983,12 @@ function generateEnhancedReportMarkdown(currentFile) {
   const issuesOverview = {
     levelA: Object.entries(currentFile.overall.violations.critical.items).map(([rule, data]) => ({
       rule,
-      ...data
+      ...data,
     })),
     levelAA: Object.entries(currentFile.overall.violations.serious.items).map(([rule, data]) => ({
       rule,
-      ...data
-    }))
+      ...data,
+    })),
   };
 
   // Generate Enhancing accessibility section
@@ -1023,38 +1020,46 @@ function generateFixedNewReportMarkdown(currentFile, lastWeekFile) {
   const diffData = calculateDiffData(currentFile, lastWeekFile);
 
   // Generate Fixed Accessibility Issues section
-  report += `### Fixed Accessibility Issues\n\n`;
-  report += `Here is a breakdown of fixed accessibility issues Week Over Week for first 100 pages traffic wise.\n\n`;
-  report += `| Page| Issues |Impact|\n`;
-  report += `|--------|--------|--------|\n`;
+  report += '### Fixed Accessibility Issues\n\n';
+  report += 'Here is a breakdown of fixed accessibility issues Week Over Week for first 100 pages traffic wise.\n\n';
+  report += '| Page| Issues |Impact|\n';
+  report += '|--------|--------|--------|\n';
 
   Object.entries(diffData.fixedIssues.critical).forEach(([page, issues]) => {
-    const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
-    filteredIssues.length > 0 && (report += `| ${escapeHtmlTags(page)} | ${filteredIssues.map(i => '`' + i + '`').join(', ')} | Critical |\n`);
+    const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+    if (filteredIssues.length > 0) {
+      report += `| ${escapeHtmlTags(page)} | ${filteredIssues.map((i) => `\`${i}\``).join(', ')} | Critical |\n`;
+    }
   });
   Object.entries(diffData.fixedIssues.serious).forEach(([page, issues]) => {
-    const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
-    filteredIssues.length > 0 && (report += `| ${escapeHtmlTags(page)} | ${filteredIssues.map(i => '`' + i + '`').join(', ')} | Serious |\n`);
+    const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+    if (filteredIssues.length > 0) {
+      report += `| ${escapeHtmlTags(page)} | ${filteredIssues.map((i) => `\`${i}\``).join(', ')} | Serious |\n`;
+    }
   });
 
-  report += `\n---\n\n`;
+  report += '\n---\n\n';
 
   // Generate New Accessibility Issues section
-  report += `### New Accessibility Issues\n\n`;
-  report += `Here is a breakdown of new accessibility issues Week Over Week for first 100 pages traffic wise.\n\n`;
-  report += `| Page| Issues |Impact|\n`;
-  report += `|--------|--------|--------|\n`;
+  report += '### New Accessibility Issues\n\n';
+  report += 'Here is a breakdown of new accessibility issues Week Over Week for first 100 pages traffic wise.\n\n';
+  report += '| Page| Issues |Impact|\n';
+  report += '|--------|--------|--------|\n';
 
   Object.entries(diffData.newIssues.critical).forEach(([page, issues]) => {
-    const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
-    filteredIssues.length > 0 && (report += `| ${escapeHtmlTags(page)} | ${filteredIssues.map(i => '`' + i + '`').join(', ')} | Critical |\n`);
+    const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+    if (filteredIssues.length > 0) {
+      report += `| ${escapeHtmlTags(page)} | ${filteredIssues.map((i) => `\`${i}\``).join(', ')} | Critical |\n`;
+    }
   });
   Object.entries(diffData.newIssues.serious).forEach(([page, issues]) => {
-    const filteredIssues = issues.filter(i => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
-    filteredIssues.length > 0 && (report += `| ${escapeHtmlTags(page)} | ${filteredIssues.map(i => '`' + i + '`').join(', ')} | Serious |\n`);
+    const filteredIssues = issues.filter((i) => i !== 'image-alt' && i !== 'role-img-alt' && i !== 'svg-img-alt');
+    if (filteredIssues.length > 0) {
+      report += `| ${escapeHtmlTags(page)} | ${filteredIssues.map((i) => `\`${i}\``).join(', ')} | Serious |\n`;
+    }
   });
 
-  report += `\n---\n\n`;
+  report += '\n---\n\n';
 
   return report;
 }
@@ -1065,5 +1070,5 @@ export {
   generateBaseReportMarkdown,
   generateInDepthReportMarkdown,
   generateEnhancedReportMarkdown,
-  generateFixedNewReportMarkdown
+  generateFixedNewReportMarkdown,
 };
