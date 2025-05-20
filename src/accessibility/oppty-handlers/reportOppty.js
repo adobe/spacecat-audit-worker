@@ -21,6 +21,5 @@ export function createInDepthReportOpportunity(week, year) {
       'Optimizing opportunity',
       'a11y',
     ],
-    data: {},
   };
 }

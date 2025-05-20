@@ -307,7 +307,6 @@ export async function createReportOpportunity(opportunityInstance, auditData, co
       title: opportunityInstance.title,
       description: opportunityInstance.description,
       tags: opportunityInstance.tags,
-      data: opportunityInstance.data,
     };
     const opportunity = await Opportunity.create(opportunityData);
     return opportunity;
