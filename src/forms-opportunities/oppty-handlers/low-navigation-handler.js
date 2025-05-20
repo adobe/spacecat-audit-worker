@@ -74,7 +74,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         origin: 'AUTOMATION',
         title: 'Form has low views',
         description: 'The form has low views due to low navigations in the page containing its CTA',
-        tags: ['Forms Conversion'],
+        tags: ['Form Navigation'],
         data: {
           ...opptyData,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
