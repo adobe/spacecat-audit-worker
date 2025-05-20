@@ -111,10 +111,12 @@ export async function runAuditAndImportTopPagesStep(context) {
 
 export async function prepareScrapingStep(context) {
   const {
-    site, dataAccess,
+    log, site, dataAccess,
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] topPages: ${JSON.stringify(topPages)}`);
 
   const urls = topPages.map((page) => ({ url: page.getUrl() }));
   return {
