@@ -202,6 +202,35 @@ export const preflightAudit = async (context) => {
     }
   });
 
+  result.audits.push({
+    name: 'links',
+    type: 'seo',
+    opportunities: [],
+  });
+
+  scrapedObjects.forEach(({ data }) => {
+    const html = data.scrapeResult.rawBody;
+    const dom = new JSDOM(html);
+    const badResults = [];
+
+    [...dom.window.document.querySelectorAll('a')].forEach((link) => {
+      if (link.href && link.href.startsWith('http://')) {
+        const httpLink = {
+          url: link.href,
+          issue: 'Link using HTTP instead of HTTPS',
+          seoImpact: 'High',
+          seoRecommendation: 'Update all links to use HTTPS protocol',
+        };
+        badResults.push(httpLink);
+      }
+    });
+
+    result.audits.find((audit) => audit.name === 'links').opportunities.push({
+      check: 'bad-links',
+      issue: badResults,
+    });
+  });
+
   log.info(JSON.stringify(result));
   job.setStatus(AsyncJob.Status.COMPLETED);
   job.setResultType(AsyncJob.ResultType.INLINE);
