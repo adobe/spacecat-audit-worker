@@ -65,6 +65,8 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
     finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
 
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] final broken links: ${finalLinks.length} => ${JSON.stringify(finalLinks)}`);
+
     const auditResult = {
       brokenInternalLinks: finalLinks,
       fullAuditRef: auditUrl,
