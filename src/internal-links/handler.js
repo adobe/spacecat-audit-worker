@@ -228,7 +228,7 @@ export async function opportunityAndSuggestionsStep(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver((site) => site.resolveFinalURL())
+  .withUrlResolver(wwwUrlResolver)
   .addStep(
     'runAuditAndImportTopPages',
     runAuditAndImportTopPagesStep,
