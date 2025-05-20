@@ -13,13 +13,12 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
+import { wwwUrlResolver } from '../common/index.js';
 import {
   calculateKpiDeltasForAudit,
   isLinkInaccessible,
@@ -41,7 +40,7 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  */
 export async function internalLinksAuditRunner(auditUrl, context) {
   const { log, site } = context;
-  const finalUrl = await getRUMUrl(auditUrl);
+  const finalUrl = await wwwUrlResolver(site, context);
 
   try {
     const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -221,7 +220,7 @@ export async function opportunityAndSuggestionsStep(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver(wwwUrlResolver)
   .addStep(
     'runAuditAndImportTopPages',
     runAuditAndImportTopPagesStep,
