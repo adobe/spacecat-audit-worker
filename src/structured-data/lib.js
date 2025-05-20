@@ -123,7 +123,7 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
   return issues;
 }
 
-export async function deduplicateIssues(context, gscIssues, scraperIssues) {
+export function deduplicateIssues(context, gscIssues, scraperIssues) {
   const { log } = context;
 
   const issues = [];
@@ -167,7 +167,7 @@ export async function deduplicateIssues(context, gscIssues, scraperIssues) {
   return issues;
 }
 
-export async function getIssuesFromScraper(finalUrl, context, pages, site, scrapeCache) {
+export async function getIssuesFromScraper(context, pages, site, scrapeCache) {
   const { log } = context;
 
   const issues = [];
@@ -291,23 +291,14 @@ export function generateErrorMarkupForIssue(issue) {
         '```',
       ].join('\n');
     } else {
-      try {
-        const cleanup = jsBeautify.html(correctedMarkup, {
-          indent_size: 2,
-        });
-        markup = [
-          '```html',
-          cleanup,
-          '```',
-        ].join('\n');
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      } catch (error) {
-        markup = [
-          '```html',
-          correctedMarkup,
-          '```',
-        ].join('\n');
-      }
+      const cleanup = jsBeautify.html(correctedMarkup, {
+        indent_size: 2,
+      });
+      markup = [
+        '```html',
+        cleanup,
+        '```',
+      ].join('\n');
     }
 
     return [
@@ -414,7 +405,7 @@ export async function generateFirefallSuggestion(
   const requestBody = await getPrompt(firefallInputs, 'structured-data-suggest', log);
   const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
 
-  if (response.choices?.length === 0 || response.choices[0].finish_reason !== 'stop') {
+  if (!response.choices || response.choices?.length === 0 || response.choices[0].finish_reason !== 'stop') {
     throw new Error('Firefall did not return any suggestions');
   }
 

@@ -57,14 +57,14 @@ export async function processStructuredData(finalUrl, context, pages, site) {
 
   const [gscPagesWithIssues, scraperPagesWithIssues] = await Promise.all([
     getIssuesFromGSC(finalUrl, context, pages),
-    getIssuesFromScraper(finalUrl, context, pages, site, scrapeCache),
+    getIssuesFromScraper(context, pages, site, scrapeCache),
   ]);
 
   log.info('GSC issues', gscPagesWithIssues);
   log.info('Scraper issues', scraperPagesWithIssues);
 
   // Deduplicate issues
-  const pagesWithIssues = await deduplicateIssues(
+  const pagesWithIssues = deduplicateIssues(
     context,
     gscPagesWithIssues,
     scraperPagesWithIssues,

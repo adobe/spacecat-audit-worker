@@ -24,16 +24,16 @@ import {
   runAuditAndGenerateSuggestions,
   importTopPages,
   submitForScraping,
-} from '../../src/structured-data/handler.js';
-import { MockContextBuilder } from '../shared.js';
+} from '../../../src/structured-data/handler.js';
+import { MockContextBuilder } from '../../shared.js';
 
-import gscExample1 from '../fixtures/structured-data/gsc-example1.json' with { type: 'json' };
-import gscExample2 from '../fixtures/structured-data/gsc-example2.json' with { type: 'json' };
-import gscExample3 from '../fixtures/structured-data/gsc-example3.json' with { type: 'json' };
-import gscExample4 from '../fixtures/structured-data/gsc-example4.json' with { type: 'json' };
-import gscExample5 from '../fixtures/structured-data/gsc-example5.json' with { type: 'json' };
+import gscExample1 from '../../fixtures/structured-data/gsc-example1.json' with { type: 'json' };
+import gscExample2 from '../../fixtures/structured-data/gsc-example2.json' with { type: 'json' };
+import gscExample3 from '../../fixtures/structured-data/gsc-example3.json' with { type: 'json' };
+import gscExample4 from '../../fixtures/structured-data/gsc-example4.json' with { type: 'json' };
+import gscExample5 from '../../fixtures/structured-data/gsc-example5.json' with { type: 'json' };
 
-import expectedOppty from '../fixtures/structured-data/oppty.json' with { type: 'json' };
+import expectedOppty from '../../fixtures/structured-data/oppty.json' with { type: 'json' };
 
 use(sinonChai);
 
