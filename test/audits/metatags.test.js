@@ -1097,6 +1097,19 @@ describe('Meta Tags', () => {
         }
         expect(err.message).to.equal('Invalid response received from Genvar API: 5');
       });
+
+      it('should handle forceAutoSuggest option', async () => {
+        const isHandlerEnabledForSite = sinon.stub().returns(false);
+        Configuration.findLatest.resolves({
+          isHandlerEnabledForSite,
+        });
+
+        await metatagsAutoSuggest(allTags, context, siteStub, {
+          forceAutoSuggest: true,
+        });
+        expect(isHandlerEnabledForSite).not.to.have.been.called;
+        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+      });
     });
   });
 });
