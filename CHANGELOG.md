@@ -1,3 +1,15 @@
+# [1.88.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.6...v1.88.0) (2025-05-20)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#879](https://github.com/adobe/spacecat-audit-worker/issues/879)) ([c8c502b](https://github.com/adobe/spacecat-audit-worker/commit/c8c502b42ad50ea48f461673ab985a585dd5e82d))
+
+
+### Features
+
+* introduce bad-links ([#880](https://github.com/adobe/spacecat-audit-worker/issues/880)) ([0afe2c9](https://github.com/adobe/spacecat-audit-worker/commit/0afe2c97c0b9210a1e3df8e973e85dd8443b342e))
+
 ## [1.87.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.5...v1.87.6) (2025-05-20)
 
 
