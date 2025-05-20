@@ -283,10 +283,10 @@ export const getScrapedDataForSiteId = async (site, context) => {
   let isTruncated = true;
   let continuationToken = null;
 
-  async function fetchFiles() {
+  async function fetchFiles(prefix = `scrapes/${siteId}`) {
     const listCommand = new ListObjectsV2Command({
       Bucket: env.S3_SCRAPER_BUCKET_NAME,
-      Prefix: `scrapes/${siteId}`,
+      Prefix: prefix,
       ContinuationToken: continuationToken,
     });
 
@@ -318,7 +318,11 @@ export const getScrapedDataForSiteId = async (site, context) => {
     );
   }
 
+  // fetch scrape data
   await fetchFiles();
+  // fetch a11y data
+  continuationToken = null;
+  await fetchFiles(`forms-accessibility/${siteId}`);
 
   if (!isNonEmptyArray(allFiles)) {
     return {
@@ -360,7 +364,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   if (allFiles) {
     const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
     scrapedFormData = await fetchContentOfFiles(formFiles);
-    const a11yFiles = allFiles.filter((file) => file.Key.endsWith('forms-accessibility'));
+    const a11yFiles = allFiles.filter((file) => file.Key.includes('forms-accessibility/'));
     scrapedFormA11yData = await fetchContentOfFiles(a11yFiles);
   }
 
