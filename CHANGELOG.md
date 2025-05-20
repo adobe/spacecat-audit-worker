@@ -1,3 +1,10 @@
+## [1.87.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.4...v1.87.5) (2025-05-20)
+
+
+### Bug Fixes
+
+* use base url overrides in audit url resolution ([#874](https://github.com/adobe/spacecat-audit-worker/issues/874)) ([678cc4d](https://github.com/adobe/spacecat-audit-worker/commit/678cc4d8333df6fabf0e498332ce7116afd721c6))
+
 ## [1.87.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.3...v1.87.4) (2025-05-20)
 
 
