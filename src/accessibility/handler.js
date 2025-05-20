@@ -14,9 +14,9 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { dataNeededForA11yAudit } from './utils/constants.js';
-import { aggregateAccessibilityData } from './utils/utils.js';
-import { current, lastWeek } from './utils/dev-purposes-constants.js';
-import { generateInDepthOverviewMarkdown } from './utils/generateMdReports.js';
+import { aggregateAccessibilityData, createReportOpportunity } from './utils/utils.js';
+import { generateInDepthReportMarkdown, getWeekNumber } from './utils/generateMdReports.js';
+import { createInDepthReportOpportunity } from './oppty-handlers/reportOppty.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
@@ -46,7 +46,7 @@ async function scrapeAccessibilityData(context) {
 }
 
 // Second step: gets data from the first step and processes it to create new opportunities
-async function processAccessibilityOpportunities(context) {
+async function processAccessibilityOpportunities(context, auditData) {
   const {
     site, log, s3Client, env,
   } = context;
@@ -86,11 +86,19 @@ async function processAccessibilityOpportunities(context) {
     }
 
     const { finalResultFiles } = aggregationResult;
-    // const { current, lastWeek } = finalResultFiles;
+    const { current } = finalResultFiles;
 
-    const inDepthOverviewMarkdown = generateInDepthOverviewMarkdown(current, lastWeek);
-    console.log('inDepthOverviewMarkdown', inDepthOverviewMarkdown);
+    const inDepthOverviewMarkdown = generateInDepthReportMarkdown(current);
+    log.info('inDepthOverviewMarkdown', inDepthOverviewMarkdown);
 
+    const inDepthReportOpportunity = createInDepthReportOpportunity(current);
+    log.info('inDepthReportOpportunity', inDepthReportOpportunity);
+
+    const week = getWeekNumber(new Date());
+    const year = new Date().getFullYear();
+    const opportunityInstance = createInDepthReportOpportunity(week, year);
+    const opportunity = await createReportOpportunity(opportunityInstance, auditData, context);
+    log.info('opportunity', opportunity);
     // 1. generate the markdown report for in-depth overview
     // 2. generate oppty and suggestions for the report
     // 3. update status to ignored

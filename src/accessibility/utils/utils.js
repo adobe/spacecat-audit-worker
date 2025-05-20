@@ -293,3 +293,26 @@ export async function aggregateAccessibilityData(
     };
   }
 }
+
+export async function createReportOpportunity(opportunityInstance, auditData, context) {
+  const { log, dataAccess } = context;
+  const { Opportunity } = dataAccess;
+  try {
+    const opportunityData = {
+      siteId: auditData.siteId,
+      auditId: auditData.id,
+      runbook: opportunityInstance.runbook,
+      type: opportunityInstance.type,
+      origin: opportunityInstance.origin,
+      title: opportunityInstance.title,
+      description: opportunityInstance.description,
+      tags: opportunityInstance.tags,
+      data: opportunityInstance.data,
+    };
+    const opportunity = await Opportunity.create(opportunityData);
+    return opportunity;
+  } catch (e) {
+    log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
+    throw e;
+  }
+}
