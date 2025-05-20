@@ -19,7 +19,9 @@ import sinon from 'sinon';
 import nock from 'nock';
 import AWSXray from 'aws-xray-sdk';
 import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
-import { isValidUrls, preflightAudit, scrapePages } from '../../src/preflight/handler.js';
+import {
+  isValidUrls, preflightAudit, scrapePages, AUDIT_STEP_SUGGEST, AUDIT_STEP_IDENTIFY,
+} from '../../src/preflight/handler.js';
 import { runInternalLinkChecks } from '../../src/preflight/internal-links.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -160,6 +162,7 @@ describe('Preflight Audit', () => {
         job: {
           getMetadata: () => ({
             payload: {
+              step: AUDIT_STEP_IDENTIFY,
               urls: [
                 { url: 'https://example.com' },
                 { url: 'https://another.com/page' },
@@ -189,6 +192,7 @@ describe('Preflight Audit', () => {
         job: {
           getMetadata: () => ({
             payload: {
+              step: AUDIT_STEP_IDENTIFY,
               urls: [
                 { url: 'not-a-url' },
                 { url: 'https://example.com' },
@@ -231,6 +235,7 @@ describe('Preflight Audit', () => {
       job = {
         getMetadata: () => ({
           payload: {
+            step: AUDIT_STEP_IDENTIFY,
             urls: [{ url: 'https://example.com/page1' }],
           },
         }),
@@ -267,14 +272,8 @@ describe('Preflight Audit', () => {
         isHandlerEnabledForSite: sinon.stub(),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
-    });
 
-    afterEach(() => {
-      sinon.restore();
-      sandbox.restore();
-    });
-
-    it('completes successfully on the happy path', async () => {
+      // Setup S3 client mocks
       s3Client.send.onCall(0).resolves({
         Contents: [
           { Key: 'scrapes/site-123/page1/scrape.json' },
@@ -318,7 +317,21 @@ describe('Preflight Audit', () => {
           })),
         },
       });
-      configuration.isHandlerEnabledForSite.returns(true);
+    });
+
+    afterEach(() => {
+      sinon.restore();
+      sandbox.restore();
+    });
+
+    it('completes successfully on the happy path for the suggest step', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: AUDIT_STEP_SUGGEST,
+          urls: [{ url: 'https://example.com/page1' }],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(false);
       genvarClient.generateSuggestions.resolves({
         '/page1': {
           h1: {
@@ -331,9 +344,33 @@ describe('Preflight Audit', () => {
           },
         },
       });
+
       await preflightAudit(context);
 
-      // stub retrievePageAuthentication
+      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
+      expect(genvarClient.generateSuggestions).to.have.been.called;
+
+      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(job.setResultType).to.have.been.called;
+      expect(job.setResult).to.have.been.called;
+      expect(job.setEndedAt).to.have.been.called;
+      expect(job.save).to.have.been.called;
+    });
+
+    it('completes successfully on the happy path for the identify step', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: AUDIT_STEP_IDENTIFY,
+          urls: [{ url: 'https://example.com/page1' }],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      await preflightAudit(context);
+
+      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
+      expect(genvarClient.generateSuggestions).not.to.have.been.called;
+
       expect(job.setStatus).to.have.been.calledWith('COMPLETED');
       expect(job.setResultType).to.have.been.called;
       expect(job.setResult).to.have.been.called;

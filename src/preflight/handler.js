@@ -22,6 +22,9 @@ import { runInternalLinkChecks } from './internal-links.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+export const AUDIT_STEP_IDENTIFY = 'identify';
+export const AUDIT_STEP_SUGGEST = 'suggest';
+
 export function isValidUrls(urls) {
   return (
     isNonEmptyArray(urls)
@@ -57,7 +60,14 @@ export const preflightAudit = async (context) => {
   } = context;
 
   const jobMetadata = job.getMetadata();
-  const { urls } = jobMetadata.payload;
+  /**
+   * @type {Array<{urls: Array<{url: string}>, step: AUDIT_STEP_IDENTIFY | AUDIT_STEP_SUGGEST}>}
+   */
+  const { urls, step = AUDIT_STEP_IDENTIFY } = jobMetadata.payload;
+  const normalizedStep = step.toLowerCase();
+
+  log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit started for jobId: ${job.getId()}`);
+  log.info(`[preflight-audit] site: ${site.getId()}. Step: ${normalizedStep}`);
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
@@ -127,7 +137,9 @@ export const preflightAudit = async (context) => {
       extractedTags,
     };
 
-    const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
+    const updatedDetectedTags = normalizedStep === AUDIT_STEP_SUGGEST
+      ? await metatagsAutoSuggest(allTags, context, site, { forceAutoSuggest: true })
+      : detectedTags;
 
     for (const { url } of urls) {
       const path = new URL(url).pathname.replace(/\/$/, '');
@@ -141,8 +153,10 @@ export const preflightAudit = async (context) => {
             issueDetails: tagData.issueDetails,
             seoImpact: tagData.seoImpact,
             seoRecommendation: tagData.seoRecommendation,
-            aiSuggestion: tagData.aiSuggestion,
-            aiRationale: tagData.aiRationale,
+            ...(normalizedStep === AUDIT_STEP_SUGGEST ? {
+              aiSuggestion: tagData.aiSuggestion,
+              aiRationale: tagData.aiRationale,
+            } : {}),
           });
         });
       }
