@@ -111,10 +111,6 @@ async function processAccessibilityOpportunities(context) {
       };
     }
     const { opportunity } = opportunityRes;
-    const opportunityId = opportunity.getId();
-    log.info('opportunityId', opportunityId);
-    const orgId = site.getOrgId();
-    log.info('orgId', orgId);
     const suggestionRes = await createReportOpportunitySuggestion(
       opportunity,
       inDepthOverviewMarkdown,
@@ -129,6 +125,10 @@ async function processAccessibilityOpportunities(context) {
         error: suggestionRes.message,
       };
     }
+    const opportunityId = opportunity.getId();
+    log.info('opportunityId', opportunityId);
+    const orgId = site.getOrganizationId();
+    log.info('orgId', orgId);
     // 1. generate the markdown report for in-depth overview
     // 2. generate oppty and suggestions for the report
     // 3. update status to ignored
