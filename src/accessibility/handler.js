@@ -88,7 +88,7 @@ async function processAccessibilityOpportunities(context) {
     const { finalResultFiles } = aggregationResult;
     // const { current, lastWeek } = finalResultFiles;
 
-    const inDepthOverviewMarkdown = await generateInDepthOverviewMarkdown(current, lastWeek);
+    const inDepthOverviewMarkdown = generateInDepthOverviewMarkdown(current, lastWeek);
     console.log('inDepthOverviewMarkdown', inDepthOverviewMarkdown);
 
     // 1. generate the markdown report for in-depth overview

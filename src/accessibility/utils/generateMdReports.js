@@ -805,7 +805,7 @@ function calculateDiffData(currentFile, lastWeekFile) {
  * @param {Object} lastWeekFile - Last week's data
  * @returns {string} Path to the generated report file
  */
-async function generateInDepthOverviewMarkdown(currentFile, lastWeekFile) {
+function generateInDepthOverviewMarkdown(currentFile, lastWeekFile) {
   // Process current week's data
   const currentData = currentFile;
   const previousData = lastWeekFile;
