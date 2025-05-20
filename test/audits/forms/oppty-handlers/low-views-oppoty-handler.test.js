@@ -79,10 +79,10 @@ describe('createLowFormViewsOpportunities handler method', () => {
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EeYKNa4HQkRAleWXjC5YZbMBMhveB08F1yTTUQSrP97Eow?e=cZdsnA',
       type: FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
       origin: 'AUTOMATION',
-      title: 'The form has low views',
+      title: 'Form has low views',
       description: 'The form has low views but the page containing the form has higher traffic',
       tags: [
-        'Forms Conversion',
+        'Form View',
       ],
       data: {
         form: 'https://www.surest.com/high-page-low-form-view',
@@ -136,7 +136,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
       guidance: {
         recommendations: [
           {
-            insight: 'The form in the page: https://www.surest.com/high-page-low-form-view has low discoverability and only 2.9895366218236172% visitors landing on the page are viewing the form.',
+            insight: 'The form in the page: https://www.surest.com/high-page-low-form-view has low discoverability and only 2.99% visitors landing on the page are viewing the form.',
             recommendation: 'Position the form higher up on the page so users see it without scrolling. Consider using clear and compelling CTAs, minimizing distractions, and ensuring strong visibility across devices.',
             type: 'guidance',
             rationale: 'Forms that are visible above the fold are more likely to be seen and interacted with by users.',
@@ -167,7 +167,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
       {
         recommendations: [
           {
-            insight: 'The form in the page: https://www.surest.com/existing-opportunity has low discoverability and only 2.9895366218236172% visitors landing on the page are viewing the form.',
+            insight: 'The form in the page: https://www.surest.com/existing-opportunity has low discoverability and only 2.99% visitors landing on the page are viewing the form.',
             recommendation: 'Position the form higher up on the page so users see it without scrolling. Consider using clear and compelling CTAs, minimizing distractions, and ensuring strong visibility across devices.',
             type: 'guidance',
             rationale: 'Forms that are visible above the fold are more likely to be seen and interacted with by users.',
