@@ -14,7 +14,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { dataNeededForA11yAudit } from './utils/constants.js';
-import { aggregateAccessibilityData, createReportOpportunity } from './utils/utils.js';
+import { aggregateAccessibilityData, createReportOpportunity, createReportOpportunitySuggestion } from './utils/utils.js';
 import { generateInDepthReportMarkdown, getWeekNumber } from './utils/generateMdReports.js';
 import { createInDepthReportOpportunity } from './oppty-handlers/reportOppty.js';
 
@@ -101,8 +101,34 @@ async function processAccessibilityOpportunities(context) {
     const latestAudit = await site.getLatestAuditByAuditType('accessibility');
     const auditData = JSON.parse(JSON.stringify(latestAudit));
     log.info('auditData', auditData);
-    const opportunity = await createReportOpportunity(opportunityInstance, auditData, context);
-    log.info('opportunity', opportunity);
+    const opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
+
+    if (!opportunityRes.status) {
+      log.error('Failed to create report opportunity', opportunityRes.message);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: opportunityRes.message,
+      };
+    }
+    const { opportunity } = opportunityRes;
+    const opportunityId = opportunity.getId();
+    log.info('opportunityId', opportunityId);
+    const orgId = site.getOrgId();
+    log.info('orgId', orgId);
+    const suggestionRes = await createReportOpportunitySuggestion(
+      opportunity,
+      inDepthOverviewMarkdown,
+      auditData,
+      log,
+    );
+
+    if (!suggestionRes.status) {
+      log.error('Failed to create report opportunity suggestion', suggestionRes.message);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: suggestionRes.message,
+      };
+    }
     // 1. generate the markdown report for in-depth overview
     // 2. generate oppty and suggestions for the report
     // 3. update status to ignored

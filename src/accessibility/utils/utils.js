@@ -17,6 +17,7 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
+import { createReportOpportunitySuggestionInstance } from '../oppty-handlers/reportOppty.js';
 
 /**
  * Deletes the original JSON files after they've been processed
@@ -309,9 +310,38 @@ export async function createReportOpportunity(opportunityInstance, auditData, co
       tags: opportunityInstance.tags,
     };
     const opportunity = await Opportunity.create(opportunityData);
-    return opportunity;
+    return {
+      status: true,
+      opportunity,
+    };
   } catch (e) {
     log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
-    throw e;
+    return {
+      success: false,
+      message: `Error: ${e.message}`,
+    };
+  }
+}
+
+export async function createReportOpportunitySuggestion(
+  opportunity,
+  inDepthOverviewMarkdown,
+  auditData,
+  log,
+) {
+  const suggestions = createReportOpportunitySuggestionInstance(inDepthOverviewMarkdown);
+
+  try {
+    const suggestion = await opportunity.addSuggestions(suggestions);
+    return {
+      status: true,
+      suggestion,
+    };
+  } catch (e) {
+    log.error(`Failed to create new suggestion for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
+    return {
+      success: false,
+      message: `Error: ${e.message}`,
+    };
   }
 }

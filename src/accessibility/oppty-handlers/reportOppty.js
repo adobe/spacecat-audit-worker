@@ -21,5 +21,19 @@ export function createInDepthReportOpportunity(week, year) {
       'Optimizing opportunity',
       'a11y',
     ],
+    status: 'IGNORED',
   };
+}
+
+export function createReportOpportunitySuggestionInstance(suggestionValue) {
+  return [
+    {
+      type: 'CONTENT_UPDATE',
+      rank: 1,
+      status: 'NEW',
+      data: {
+        suggestionValue,
+      },
+    },
+  ];
 }
