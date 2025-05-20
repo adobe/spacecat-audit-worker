@@ -280,7 +280,7 @@ describe('Preflight Audit', () => {
           { Key: 'scrapes/site-123/page1/scrape.json' },
         ],
       });
-      const body = `<body>${'a'.repeat(70)}lorem ipsum<a href="broken"></a></body>`;
+      const body = `<body>${'a'.repeat(70)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
       s3Client.send.onCall(1).resolves({
         ContentType: 'application/json',
         Body: {
