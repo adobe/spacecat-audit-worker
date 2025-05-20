@@ -15,11 +15,12 @@ import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from 
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/index.js';
+// import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
+import { wwwUrlResolver } from '../common/index.js';
 import {
   calculateKpiDeltasForAudit,
   isLinkInaccessible,
@@ -43,7 +44,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
   const { log, site } = context;
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] auditUrl: ${auditUrl}, context: ${JSON.stringify(context)}`);
-  const finalUrl = await getRUMUrl(auditUrl, context);
+  const finalUrl = await wwwUrlResolver(site, context);
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] finalUrl: ${finalUrl}`);
 
