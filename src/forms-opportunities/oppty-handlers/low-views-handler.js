@@ -57,9 +57,9 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EeYKNa4HQkRAleWXjC5YZbMBMhveB08F1yTTUQSrP97Eow?e=cZdsnA',
         type: FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
         origin: 'AUTOMATION',
-        title: 'The form has low views',
+        title: 'Form has low views',
         description: 'The form has low views but the page containing the form has higher traffic',
-        tags: ['Forms Conversion'],
+        tags: ['Form View'],
         data: {
           ...opptyData,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
@@ -67,7 +67,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         guidance: {
           recommendations: [
             {
-              insight: `The form in the page: ${opptyData.form} has low discoverability and only ${(opptyData.formViews / opptyData.pageViews) * 100}% visitors landing on the page are viewing the form.`,
+              insight: `The form in the page: ${opptyData.form} has low discoverability and only ${((opptyData.formViews / opptyData.pageViews) * 100).toFixed(2)}% visitors landing on the page are viewing the form.`,
               recommendation: 'Position the form higher up on the page so users see it without scrolling. Consider using clear and compelling CTAs, minimizing distractions, and ensuring strong visibility across devices.',
               type: 'guidance',
               rationale: 'Forms that are visible above the fold are more likely to be seen and interacted with by users.',
