@@ -294,12 +294,12 @@ export async function aggregateAccessibilityData(
   }
 }
 
-export async function createReportOpportunity(opportunityInstance, auditData, context) {
+export async function createReportOpportunity(opportunityInstance, auditData, context, siteId) {
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   try {
     const opportunityData = {
-      siteId: auditData.siteId,
+      siteId,
       auditId: auditData.id,
       runbook: opportunityInstance.runbook,
       type: opportunityInstance.type,

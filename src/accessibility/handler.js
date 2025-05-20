@@ -52,6 +52,7 @@ async function processAccessibilityOpportunities(context, auditData) {
   } = context;
   const siteId = site.getId();
   log.info(`[A11yAudit] Step 2: Processing scraped data for ${site.getBaseURL()}`);
+  log.info('auditData', JSON.stringify(auditData, null, 2));
 
   // Get the S3 bucket name from config or environment
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -97,7 +98,8 @@ async function processAccessibilityOpportunities(context, auditData) {
     const week = getWeekNumber(new Date());
     const year = new Date().getFullYear();
     const opportunityInstance = createInDepthReportOpportunity(week, year);
-    const opportunity = await createReportOpportunity(opportunityInstance, auditData, context);
+    // eslint-disable-next-line max-len
+    const opportunity = await createReportOpportunity(opportunityInstance, auditData, context, siteId);
     log.info('opportunity', opportunity);
     // 1. generate the markdown report for in-depth overview
     // 2. generate oppty and suggestions for the report
