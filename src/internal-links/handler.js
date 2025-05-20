@@ -13,7 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { getRUMUrl } from '../support/utils.js';
+// import { getRUMUrl } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 // import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -42,6 +42,8 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  */
 export async function internalLinksAuditRunner(auditUrl, context) {
   const { log, site } = context;
+
+  log.info('in internalLinksAuditRunner', auditUrl, context);
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] auditUrl: ${auditUrl}, context: ${JSON.stringify(context)}`);
   const finalUrl = await wwwUrlResolver(site, context);
