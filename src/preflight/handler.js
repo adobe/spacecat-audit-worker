@@ -28,7 +28,7 @@ export const AUDIT_STEP_SUGGEST = 'suggest';
 export function isValidUrls(urls) {
   return (
     isNonEmptyArray(urls)
-    && urls.every((page) => isValidUrl(page.url))
+    && urls.every((url) => isValidUrl(url))
   );
 }
 
@@ -61,7 +61,7 @@ export const preflightAudit = async (context) => {
 
   const jobMetadata = job.getMetadata();
   /**
-   * @type {Array<{urls: Array<{url: string}>, step: AUDIT_STEP_IDENTIFY | AUDIT_STEP_SUGGEST}>}
+   * @type {{urls: string[], step: AUDIT_STEP_IDENTIFY | AUDIT_STEP_SUGGEST}}
    */
   const { urls, step = AUDIT_STEP_IDENTIFY } = jobMetadata.payload;
   const normalizedStep = step.toLowerCase();
@@ -84,7 +84,7 @@ export const preflightAudit = async (context) => {
   });
 
   const storagePathSet = new Set(urls.map((url) => {
-    const pathname = new URL(url.url).pathname.replace(/\/$/, '');
+    const pathname = new URL(url).pathname.replace(/\/$/, '');
     return `scrapes/${site.getId()}${pathname}/scrape.json`;
   }));
 
@@ -110,7 +110,7 @@ export const preflightAudit = async (context) => {
 
   const { auditResult } = await runInternalLinkChecks(scrapedObjects, pageAuthToken, context);
   if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
-    for (const { url } of urls) {
+    for (const url of urls) {
       const brokenLinks = auditResult.brokenInternalLinks.filter((link) => link.pageUrl === url);
       brokenLinks.forEach((link) => {
         result.audits[1].opportunities.push({
@@ -141,7 +141,7 @@ export const preflightAudit = async (context) => {
       ? await metatagsAutoSuggest(allTags, context, site, { forceAutoSuggest: true })
       : detectedTags;
 
-    for (const { url } of urls) {
+    for (const url of urls) {
       const path = new URL(url).pathname.replace(/\/$/, '');
       const tags = updatedDetectedTags[path];
       if (tags) {

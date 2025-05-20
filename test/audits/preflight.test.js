@@ -30,9 +30,7 @@ use(chaiAsPromised);
 describe('Preflight Audit', () => {
   it('should validate pages sent for auditing', () => {
     const urls = [
-      {
-        url: 'https://main--cc--adobecom.aem.page/drafts/narcis/creativecloud',
-      },
+      'https://main--cc--adobecom.aem.page/drafts/narcis/creativecloud',
     ];
 
     const result = isValidUrls(urls);
@@ -115,10 +113,10 @@ describe('Preflight Audit', () => {
   });
 
   describe('isValidUrls', () => {
-    it('returns true for a valid array of url objects', () => {
+    it('returns true for a valid array of urls', () => {
       const urls = [
-        { url: 'https://example.com' },
-        { url: 'https://another.com/page' },
+        'https://example.com',
+        'https://another.com/page',
       ];
       expect(isValidUrls(urls)).to.be.true;
     });
@@ -127,18 +125,10 @@ describe('Preflight Audit', () => {
       expect(isValidUrls([])).to.be.false;
     });
 
-    it('returns false if not all items have a valid url', () => {
+    it('returns false if not all items are valid urls', () => {
       const urls = [
-        { url: 'https://example.com' },
-        { url: 'not-a-url' },
-      ];
-      expect(isValidUrls(urls)).to.be.false;
-    });
-
-    it('returns false if any item is missing the url property', () => {
-      const urls = [
-        { url: 'https://example.com' },
-        { notUrl: 'https://another.com' },
+        'https://example.com',
+        'not-a-url',
       ];
       expect(isValidUrls(urls)).to.be.false;
     });
@@ -148,10 +138,6 @@ describe('Preflight Audit', () => {
       expect(isValidUrls(undefined)).to.be.false;
       expect(isValidUrls('https://example.com')).to.be.false;
       expect(isValidUrls({ url: 'https://example.com' })).to.be.false;
-    });
-
-    it('returns false if array contains non-object items', () => {
-      expect(isValidUrls(['https://example.com', 'https://another.com'])).to.be.false;
     });
   });
 
@@ -164,8 +150,8 @@ describe('Preflight Audit', () => {
             payload: {
               step: AUDIT_STEP_IDENTIFY,
               urls: [
-                { url: 'https://example.com' },
-                { url: 'https://another.com/page' },
+                'https://example.com',
+                'https://another.com/page',
               ],
             },
           }),
@@ -174,8 +160,8 @@ describe('Preflight Audit', () => {
       const result = await scrapePages(context);
       expect(result).to.deep.equal({
         urls: [
-          { url: 'https://example.com' },
-          { url: 'https://another.com/page' },
+          'https://example.com',
+          'https://another.com/page',
         ],
         siteId: 'site-123',
         type: 'preflight',
@@ -194,8 +180,8 @@ describe('Preflight Audit', () => {
             payload: {
               step: AUDIT_STEP_IDENTIFY,
               urls: [
-                { url: 'not-a-url' },
-                { url: 'https://example.com' },
+                'not-a-url',
+                'https://example.com',
               ],
             },
           }),
@@ -236,7 +222,7 @@ describe('Preflight Audit', () => {
         getMetadata: () => ({
           payload: {
             step: AUDIT_STEP_IDENTIFY,
-            urls: [{ url: 'https://example.com/page1' }],
+            urls: ['https://example.com/page1'],
           },
         }),
         getStatus: sinon.stub().returns('IN_PROGRESS'),
@@ -328,7 +314,7 @@ describe('Preflight Audit', () => {
       job.getMetadata = () => ({
         payload: {
           step: AUDIT_STEP_SUGGEST,
-          urls: [{ url: 'https://example.com/page1' }],
+          urls: ['https://example.com/page1'],
         },
       });
       configuration.isHandlerEnabledForSite.returns(false);
@@ -361,7 +347,7 @@ describe('Preflight Audit', () => {
       job.getMetadata = () => ({
         payload: {
           step: AUDIT_STEP_IDENTIFY,
-          urls: [{ url: 'https://example.com/page1' }],
+          urls: ['https://example.com/page1'],
         },
       });
       configuration.isHandlerEnabledForSite.returns(false);
