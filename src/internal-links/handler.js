@@ -227,7 +227,7 @@ export async function opportunityAndSuggestionsStep(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver((site) => site.resolveFinalURL())
   .addStep(
     'runAuditAndImportTopPages',
     runAuditAndImportTopPagesStep,
