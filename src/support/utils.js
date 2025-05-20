@@ -37,31 +37,19 @@ export function isLoginPage(url) {
   return /login|log-in|signin|sign-in|auth|authentication/i.test(url);
 }
 
-export async function getRUMUrl(url, context) {
-  let log;
-  if (context) {
-    log = context.log;
-    log.info(`Getting RUM URL for ${url}`);
-  }
+export async function getRUMUrl(url) {
   const urlWithScheme = prependSchema(url);
-  try {
-    const resp = await fetch(urlWithScheme, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'curl/7.88.1', // Set the same User-Agent
-      },
-    });
-    const finalUrl = resp.url.split('://')[1];
-    /* Return just the domain part by splitting on '/' and taking first segment.
-    * This is to avoid returning the full URL with path. It will also remove any trailing /.
-    */
-    return finalUrl.split('/')[0];
-  } catch (err) {
-    if (context) {
-      log.error(`Error getting RUM URL for ${url}: ${err}`);
-    }
-    return null;
-  }
+  const resp = await fetch(urlWithScheme, {
+    method: 'GET',
+    headers: {
+      'User-Agent': 'curl/7.88.1', // Set the same User-Agent
+    },
+  });
+  const finalUrl = resp.url.split('://')[1];
+  /* Return just the domain part by splitting on '/' and taking first segment.
+   * This is to avoid returning the full URL with path. It will also remove any trailing /.
+   */
+  return finalUrl.split('/')[0];
 }
 
 /**
