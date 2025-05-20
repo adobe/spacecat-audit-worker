@@ -41,6 +41,8 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  */
 export async function internalLinksAuditRunner(auditUrl, context) {
   const { log, site } = context;
+
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] auditUrl: ${auditUrl}, context: ${JSON.stringify(context)}`);
   const finalUrl = await getRUMUrl(auditUrl, context);
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] finalUrl: ${finalUrl}`);
