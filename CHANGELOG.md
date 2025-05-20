@@ -1,3 +1,10 @@
+## [1.87.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.5...v1.87.6) (2025-05-20)
+
+
+### Bug Fixes
+
+* avoid creating oppty when audit fails to find sitemap path ([#872](https://github.com/adobe/spacecat-audit-worker/issues/872)) ([a47a3c2](https://github.com/adobe/spacecat-audit-worker/commit/a47a3c2c24fbadf96de3bd8a340810e052ce6ba4))
+
 ## [1.87.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.4...v1.87.5) (2025-05-20)
 
 
