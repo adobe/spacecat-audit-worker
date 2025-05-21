@@ -278,8 +278,27 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
     const criterionName = issuesLookup[issue.name] ? issuesLookup[issue.name].criterionName : '';
     const criterionUrl = issuesLookup[issue.name] ? issuesLookup[issue.name].criterionUrl : '';
 
+    // Get failure summary from the first URL's violation data
+    let failureSummary = '';
+    const level = issue.level === 'A' ? 'critical' : 'serious';
+    if (issue.pages && issue.pages.length > 0) {
+      const firstPage = issue.pages[0];
+      const pageData = currentData[firstPage.url];
+      if (pageData && pageData.violations) {
+        const pageViolation = pageData.violations[level]?.items?.[issue.name];
+        if (pageViolation && pageViolation.failureSummary) {
+          failureSummary = escapeHtmlTags(pageViolation.failureSummary
+            // First add bullet points to everything
+            .replace(/^(\s*)([^•\n].+)$/gm, '• $2')
+            // Then replace the introductory text and remove their bullet points
+            .replace(/•\s*Fix any of the following:\n\s*/, '\nThe following issue has been identified and must be addressed:\n')
+            .replace(/•\s*Fix all of the following:\n\s*/, '\nOne or more of the following related issues may also be present:\n'));
+        }
+      }
+    }
+
     // Add row with user impact, suggestion, and failure summary
-    section += `| ${issue.name} | [${successCriteriaNumber.split('').join('.')} ${criterionName}](${criterionUrl}) | ${issue.level} | ${pagesText} | ${description} | ${userImpact} | ${suggestion} |\n`;
+    section += `| ${issue.name} | [${successCriteriaNumber.split('').join('.')} ${criterionName}](${criterionUrl}) | ${issue.level} | ${pagesText} | ${description} | ${userImpact} | ${suggestion} | ${failureSummary} |\n`;
   });
 
   section += '\n---\n\n'; // Add table end marker
