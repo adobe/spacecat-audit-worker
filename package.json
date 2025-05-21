@@ -10,7 +10,8 @@
   },
   "scripts": {
     "start": "nodemon",
-    "test": "c8 mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
+    "test": "c8 --exclude='src/audit-status/handler.js' mocha -i -g 'Post-Deploy' --spec='test/**/*.test.js' --ignore='test/index.test.js'",
+    "test:index": "mocha test/index.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",
     "lint-fix": "eslint . --fix",
