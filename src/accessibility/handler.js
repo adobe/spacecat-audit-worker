@@ -52,6 +52,7 @@ async function processAccessibilityOpportunities(context) {
   } = context;
   const siteId = site.getId();
   log.info(`[A11yAudit] Step 2: Processing scraped data for ${site.getBaseURL()}`);
+  log.info('Environment variables:', context.env);
 
   // Get the S3 bucket name from config or environment
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -88,21 +89,21 @@ async function processAccessibilityOpportunities(context) {
     const { finalResultFiles } = aggregationResult;
     const { current } = finalResultFiles;
 
-    const inDepthOverviewMarkdown = generateInDepthReportMarkdown(current);
-    log.info('inDepthOverviewMarkdown', inDepthOverviewMarkdown);
-
-    const inDepthReportOpportunity = createInDepthReportOpportunity(current);
-    log.info('inDepthReportOpportunity', inDepthReportOpportunity);
-
+    // data needed for all reports oppties
     const week = getWeekNumber(new Date());
     const year = new Date().getFullYear();
-    const opportunityInstance = createInDepthReportOpportunity(week, year);
     // eslint-disable-next-line max-len
     const latestAudit = await site.getLatestAuditByAuditType('accessibility');
     const auditData = JSON.parse(JSON.stringify(latestAudit));
-    log.info('auditData', auditData);
-    const opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
+    // const orgId = site.getOrganizationId();
 
+    // 1.1 generate the markdown report for in-depth overview
+    const inDepthOverviewMarkdown = generateInDepthReportMarkdown(current);
+    log.info('inDepthOverviewMarkdown', inDepthOverviewMarkdown);
+
+    // 1.2 create the opportunity for the in-depth overview report
+    const opportunityInstance = createInDepthReportOpportunity(week, year);
+    const opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
     if (!opportunityRes.status) {
       log.error('Failed to create report opportunity', opportunityRes.message);
       return {
@@ -110,9 +111,14 @@ async function processAccessibilityOpportunities(context) {
         error: opportunityRes.message,
       };
     }
-    const { opportunity } = opportunityRes;
+    const { opportunity: inDepthOverviewOpportunity } = opportunityRes;
+
+    // 1.3 update status to ignored
+    const statusChangeRes = await inDepthOverviewOpportunity.setStatus('IGNORED');
+    log.info('statusChangeRes', statusChangeRes);
+    // 1.4 create the suggestions for the in-depth overview report oppty
     const suggestionRes = await createReportOpportunitySuggestion(
-      opportunity,
+      inDepthOverviewOpportunity,
       inDepthOverviewMarkdown,
       auditData,
       log,
@@ -125,14 +131,8 @@ async function processAccessibilityOpportunities(context) {
         error: suggestionRes.message,
       };
     }
-    const opportunityId = opportunity.getId();
-    log.info('opportunityId', opportunityId);
-    const orgId = site.getOrganizationId();
-    log.info('orgId', orgId);
-    // 1. generate the markdown report for in-depth overview
-    // 2. generate oppty and suggestions for the report
-    // 3. update status to ignored
-    // 4. construct url for the report
+    // 1.5 construct url for the report
+    // const inDepthOverviewOpportunityUrl = ``;
 
     // 1. generate the markdown report for in-depth top 10
     // 2. generate oppty and suggestions for the report

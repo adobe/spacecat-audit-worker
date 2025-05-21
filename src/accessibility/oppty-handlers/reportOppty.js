@@ -18,7 +18,6 @@ export function createInDepthReportOpportunity(week, year) {
     title: `Accessibility report - Desktop - Week ${week} - ${year} - in-depth`,
     description: 'This report provides an in-depth overview of various accessibility issues identified across different web pages. It categorizes issues based on their severity and impact, offering detailed descriptions and recommended fixes. The report covers critical aspects such as ARIA attributes, keyboard navigation, and screen reader compatibility to ensure a more inclusive and accessible web experience for all users.',
     tags: [
-      'Optimizing opportunity',
       'a11y',
     ],
     status: 'IGNORED',
