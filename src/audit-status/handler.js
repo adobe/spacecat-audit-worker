@@ -12,11 +12,11 @@
 
 // eslint-disable-next-line import/no-unresolved
 import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
-import { ok } from '@adobe/spacecat-shared-http-utils';
+import { AuditBuilder } from '../common/audit-builder.js';
 
 /**
  * Processes the audit status and sends notifications to Slack
- * @param {object} message - The message object received from SQS
+ * @param {object} message - The message object containing auditStatusJob
  * @param {object} context - The context object containing configurations and services
  * @returns {Promise<object>} - Returns a response object
  */
@@ -27,7 +27,7 @@ export async function processAuditStatus(message, context) {
   try {
     // Log the status processing message
     log.info(`Processing audit status for site ${siteId}`);
-    log.info(`Audit context: ${JSON.stringify(auditContext)}`);
+    log.debug('Audit context:', JSON.stringify(auditContext));
 
     // Create Slack client using the context from the audit context
     const slackClient = BaseSlackClient.createFrom(auditContext.slackContext);
@@ -63,13 +63,28 @@ export async function processAuditStatus(message, context) {
     await slackClient.sendMessage(slackMessage);
     log.info(`Sent audit status notification to Slack for site ${siteId}`);
 
-    return ok();
+    return {
+      fullAuditRef: auditContext.experienceUrl,
+      auditResult: {
+        status: 'processing',
+        siteId,
+        organizationId: auditContext.organizationId,
+        experienceUrl: auditContext.experienceUrl,
+      },
+    };
   } catch (error) {
     log.error(`Failed to process audit status for site ${siteId}: ${error.message}`, error);
-    throw error;
+    return {
+      fullAuditRef: auditContext.experienceUrl,
+      auditResult: {
+        error: error.message,
+        success: false,
+      },
+    };
   }
 }
 
-export default {
-  run: processAuditStatus,
-};
+export default new AuditBuilder()
+  .withUrlResolver((site) => site.getBaseURL())
+  .addStep('process-audit-status', processAuditStatus)
+  .build();
