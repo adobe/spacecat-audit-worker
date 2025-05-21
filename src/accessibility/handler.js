@@ -15,8 +15,8 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { dataNeededForA11yAudit } from './utils/constants.js';
 import { aggregateAccessibilityData, createReportOpportunity, createReportOpportunitySuggestion } from './utils/utils.js';
-import { generateInDepthReportMarkdown, getWeekNumber } from './utils/generateMdReports.js';
-import { createInDepthReportOpportunity } from './oppty-handlers/reportOppty.js';
+import { generateInDepthReportMarkdown, generateEnhancedReportMarkdown, getWeekNumber } from './utils/generateMdReports.js';
+import { createInDepthReportOpportunity, createEnhancedReportOpportunity } from './oppty-handlers/reportOppty.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
@@ -52,7 +52,6 @@ async function processAccessibilityOpportunities(context) {
   } = context;
   const siteId = site.getId();
   log.info(`[A11yAudit] Step 2: Processing scraped data for ${site.getBaseURL()}`);
-  log.info('Environment variables:', context.env);
 
   // Get the S3 bucket name from config or environment
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -95,11 +94,12 @@ async function processAccessibilityOpportunities(context) {
     // eslint-disable-next-line max-len
     const latestAudit = await site.getLatestAuditByAuditType('accessibility');
     const auditData = JSON.parse(JSON.stringify(latestAudit));
+    // const isProd = env.AWS_ENV === 'prod';
+    // const envAsoDomain = isProd ? 'experience' : 'experience-stage';
     // const orgId = site.getOrganizationId();
 
     // 1.1 generate the markdown report for in-depth overview
     const inDepthOverviewMarkdown = generateInDepthReportMarkdown(current);
-    log.info('inDepthOverviewMarkdown', inDepthOverviewMarkdown);
 
     // 1.2 create the opportunity for the in-depth overview report
     const opportunityInstance = createInDepthReportOpportunity(week, year);
@@ -113,10 +113,7 @@ async function processAccessibilityOpportunities(context) {
     }
     const { opportunity: inDepthOverviewOpportunity } = opportunityRes;
 
-    // 1.3 update status to ignored
-    const statusChangeRes = await inDepthOverviewOpportunity.setStatus('IGNORED');
-    log.info('statusChangeRes', statusChangeRes);
-    // 1.4 create the suggestions for the in-depth overview report oppty
+    // 1.3 create the suggestions for the in-depth overview report oppty
     const suggestionRes = await createReportOpportunitySuggestion(
       inDepthOverviewOpportunity,
       inDepthOverviewMarkdown,
@@ -131,13 +128,50 @@ async function processAccessibilityOpportunities(context) {
         error: suggestionRes.message,
       };
     }
-    // 1.5 construct url for the report
-    // const inDepthOverviewOpportunityUrl = ``;
 
-    // 1. generate the markdown report for in-depth top 10
-    // 2. generate oppty and suggestions for the report
-    // 3. update status to ignored
-    // 4. construct url for the report
+    // 1.4 update status to ignored
+    await inDepthOverviewOpportunity.setStatus('IGNORED');
+
+    // 1.5 construct url for the report
+    // const inDepthOverviewOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthOverviewOpportunity.getId()}`;
+
+    // 2.1 generate the markdown report for in-depth top 10
+    const inDepthTop10Markdown = generateEnhancedReportMarkdown(current);
+
+    // 2.2 create the opportunity for the in-depth top 10 report
+    const enhancedOpportunityInstance = createEnhancedReportOpportunity(week, year);
+    // eslint-disable-next-line max-len
+    const enhancedOpportunityRes = await createReportOpportunity(enhancedOpportunityInstance, auditData, context);
+    if (!enhancedOpportunityRes.status) {
+      log.error('Failed to create enhancedreport opportunity', enhancedOpportunityRes.message);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: enhancedOpportunityRes.message,
+      };
+    }
+    const { opportunity: inDepthTop10Opportunity } = enhancedOpportunityRes;
+
+    // 2.3 create the suggestions for the in-depth top 10 report oppty
+    const enhancedSuggestionRes = await createReportOpportunitySuggestion(
+      inDepthTop10Opportunity,
+      inDepthTop10Markdown,
+      auditData,
+      log,
+    );
+
+    if (!enhancedSuggestionRes.status) {
+      log.error('Failed to create enhanced report opportunity suggestion', enhancedSuggestionRes.message);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: enhancedSuggestionRes.message,
+      };
+    }
+
+    // 2.4 update status to ignored
+    await inDepthTop10Opportunity.setStatus('IGNORED');
+
+    // 2.5 construct url for the report
+    // const inDepthOverviewOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthTop10Opportunity.getId()}`;
 
     // 1. generate the markdown report for fixed vs new issues if any
     // 2. generate oppty and suggestions for the report

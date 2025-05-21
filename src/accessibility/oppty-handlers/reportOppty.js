@@ -24,6 +24,20 @@ export function createInDepthReportOpportunity(week, year) {
   };
 }
 
+export function createEnhancedReportOpportunity(week, year) {
+  return {
+    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
+    origin: 'AUTOMATION',
+    type: 'generic-opportunity',
+    title: `Enhancing accessibility for the top 10 most-visited pages - Desktop - ${week} - ${year}`,
+    description: 'Here are some optimization suggestions that could help solve the accessibility issues found on the top 10 most-visited pages.',
+    tags: [
+      'a11y',
+    ],
+    status: 'IGNORED',
+  };
+}
+
 export function createReportOpportunitySuggestionInstance(suggestionValue) {
   return [
     {
