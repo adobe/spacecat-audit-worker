@@ -78,6 +78,7 @@
     "@adobe/spacecat-shared-http-utils": "1.11.0",
     "@adobe/spacecat-shared-rum-api-client": "2.24.3",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
+    "@adobe/spacecat-shared-slack-client": "1.5.10",
     "@adobe/spacecat-shared-utils": "1.38.1",
     "@aws-sdk/client-lambda": "3.806.0",
     "@aws-sdk/client-s3": "3.806.0",
