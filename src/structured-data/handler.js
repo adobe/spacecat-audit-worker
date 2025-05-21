@@ -34,9 +34,6 @@ const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 const auditAutoSuggestType = Audit.AUDIT_TYPES.STRUCTURED_DATA_AUTO_SUGGEST;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-// Cache scrape results from S3, as individual pages might be requested multiple times
-const scrapeCache = new Map();
-
 /**
  * Processes an audit of a set of pages from a site using Google's URL inspection tool.
  *
@@ -52,12 +49,12 @@ const scrapeCache = new Map();
  *
  * @throws {Error} - Throws an error if the audit process fails.
  */
-export async function processStructuredData(finalUrl, context, pages, site) {
+export async function processStructuredData(finalUrl, context, pages, scrapeCache) {
   const { log } = context;
 
   const [gscPagesWithIssues, scraperPagesWithIssues] = await Promise.all([
     getIssuesFromGSC(finalUrl, context, pages),
-    getIssuesFromScraper(context, pages, site, scrapeCache),
+    getIssuesFromScraper(context, pages, scrapeCache),
   ]);
 
   log.info('GSC issues', gscPagesWithIssues);
@@ -83,8 +80,8 @@ export async function processStructuredData(finalUrl, context, pages, site) {
   };
 }
 
-export async function generateSuggestionsData(auditUrl, auditData, context, site) {
-  const { dataAccess, log } = context;
+export async function generateSuggestionsData(auditUrl, auditData, context, scrapeCache) {
+  const { dataAccess, log, site } = context;
   const { Configuration } = dataAccess;
   const {
     AUDIT_STRUCTURED_DATA_FIREFALL_REQ_LIMIT = 50,
@@ -101,7 +98,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
   // Check if auto suggest was enabled
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite(auditAutoSuggestType, site)) {
-    log.warn('Auto-suggest is disabled for site');
+    log.info('Auto-suggest is disabled for site');
     return { ...auditData };
   }
 
@@ -144,7 +141,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, site
         scrapeResult = await scrapeCache.get(pathname);
       } catch (e) {
         log.error(`Could not find scrape for ${pathname}. Make sure that scrape-top-pages did run.`, e);
-        break;
+        continue;
       }
 
       let wrongMarkup = getWrongMarkup(context, issue, scrapeResult);
@@ -297,6 +294,9 @@ export async function runAuditAndGenerateSuggestions(context) {
   const startTime = process.hrtime();
   const siteId = site.getId();
 
+  // Cache scrape results from S3, as individual pages might be requested multiple times
+  const scrapeCache = new Map();
+
   try {
     let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
     if (!isNonEmptyArray(topPages)) {
@@ -306,10 +306,10 @@ export async function runAuditAndGenerateSuggestions(context) {
       topPages = topPages.map((page) => ({ url: page.getUrl() }));
     }
 
-    let auditResult = await processStructuredData(finalUrl, context, topPages, site);
+    let auditResult = await processStructuredData(finalUrl, context, topPages, scrapeCache);
 
     // Create opportunities and suggestions
-    auditResult = await generateSuggestionsData(finalUrl, { auditResult }, context, site);
+    auditResult = await generateSuggestionsData(finalUrl, { auditResult }, context, scrapeCache);
     auditResult = await opportunityAndSuggestions(finalUrl, {
       siteId: site.getId(),
       auditId: audit.getId(),

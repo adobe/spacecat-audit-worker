@@ -268,6 +268,7 @@ describe('Structured Data Libs', () => {
   describe('getIssuesFromScraper', () => {
     let context;
     let s3ClientStub;
+
     beforeEach(() => {
       s3ClientStub = {
         send: sinon.stub(),
@@ -298,7 +299,7 @@ describe('Structured Data Libs', () => {
     it('cannot find a scrape for path', async () => {
       s3ClientStub.send.rejects(new Error('Failed to fetch S3 object'));
       const scrapeCache = new Map();
-      const result = await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], context.site, scrapeCache);
+      const result = await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], scrapeCache);
 
       expect(result).to.deep.equal([]);
       expect(context.log.error).to.be.calledWith('Could not find scrape for /product/1. Make sure that scrape-top-pages did run.');
@@ -315,7 +316,7 @@ describe('Structured Data Libs', () => {
       }));
 
       const scrapeCache = new Map();
-      const result = await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], context.site, scrapeCache);
+      const result = await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], scrapeCache);
 
       expect(result).to.deep.equal([]);
       expect(context.log.error.called).to.be.false;
@@ -332,7 +333,7 @@ describe('Structured Data Libs', () => {
         },
       });
 
-      await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], context.site, scrapeCache);
+      await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], scrapeCache);
       expect(s3ClientStub.send.called).to.be.false;
     });
 
@@ -366,7 +367,7 @@ describe('Structured Data Libs', () => {
       }));
 
       const scrapeCache = new Map();
-      const result = await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], context.site, scrapeCache);
+      const result = await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], scrapeCache);
 
       expect(result).to.have.lengthOf(1);
     });
@@ -400,7 +401,7 @@ describe('Structured Data Libs', () => {
       }));
 
       const scrapeCache = new Map();
-      const result = await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], context.site, scrapeCache);
+      const result = await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], scrapeCache);
 
       expect(result).to.have.lengthOf(1);
     });

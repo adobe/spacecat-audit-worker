@@ -167,8 +167,8 @@ export function deduplicateIssues(context, gscIssues, scraperIssues) {
   return issues;
 }
 
-export async function getIssuesFromScraper(context, pages, site, scrapeCache) {
-  const { log } = context;
+export async function getIssuesFromScraper(context, pages, scrapeCache) {
+  const { log, site } = context;
 
   const issues = [];
 
