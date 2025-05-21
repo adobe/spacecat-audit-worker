@@ -20,7 +20,7 @@ import {
   formsAuditRunner,
   processOpportunityStep,
   runAuditAndSendUrlsForScrapingStep,
-  sendA11yIssuesToMystique,
+  createAccessibilityOpportunity,
   sendA11yUrlsForScrapingStep,
 } from '../../../src/forms-opportunities/handler.js';
 import { MockContextBuilder } from '../../shared.js';
@@ -423,13 +423,15 @@ describe('send a11y issues to mystique', () => {
     const latestAudit = {
       siteId: 'test-site-id',
       auditId: 'test-audit-id',
+      getSiteId: () => 'test-site-id',
+      getAuditId: () => 'test-audit-id',
     };
 
     const scrapedData = {
       formA11yData: [],
     };
 
-    await sendA11yIssuesToMystique(latestAudit, scrapedData, context);
+    await createAccessibilityOpportunity(latestAudit, scrapedData, context);
     expect(context.log.info).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] No a11y data found');
   });
 
@@ -437,6 +439,8 @@ describe('send a11y issues to mystique', () => {
     const latestAudit = {
       siteId: 'test-site-id',
       auditId: 'test-audit-id',
+      getSiteId: () => 'test-site-id',
+      getAuditId: () => 'test-audit-id',
     };
 
     const scrapedData = {
@@ -455,7 +459,7 @@ describe('send a11y issues to mystique', () => {
       }],
     };
 
-    await sendA11yIssuesToMystique(latestAudit, scrapedData, context);
+    await createAccessibilityOpportunity(latestAudit, scrapedData, context);
 
     expect(context.dataAccess.Opportunity.create).to.have.been.called;
     expect(context.log.info).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] a11y issues created');
