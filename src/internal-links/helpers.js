@@ -11,7 +11,7 @@
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
-const LINK_TIMEOUT = 3000;
+const LINK_TIMEOUT = 5000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;
