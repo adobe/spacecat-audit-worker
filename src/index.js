@@ -42,6 +42,7 @@ import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-hand
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import auditStatus from './audit-status/handler.js';
 
 const HANDLERS = {
   apex,
@@ -68,6 +69,7 @@ const HANDLERS = {
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   preflight,
+  'audit-status': auditStatus,
   dummy: (message) => ok(message),
 };
 
