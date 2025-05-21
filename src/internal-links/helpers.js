@@ -80,6 +80,8 @@ export async function isLinkInaccessible(url, log) {
     const response = await fetch(url, { timeout: LINK_TIMEOUT });
     const { status } = response;
 
+    log.info(`broken-internal-links audit: checked URL ${url} => status: ${status}, response: ${JSON.stringify(response)}`);
+
     // Log non-404, non-200 status codes
     if (status >= 400 && status < 500 && status !== 404) {
       log.info(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
