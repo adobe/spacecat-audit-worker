@@ -369,7 +369,7 @@ describe('Structured Data Audit', () => {
       const result = await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
 
       expect(result.auditResult.issues.length).to.equal(51);
-      expect(context.log.error).to.have.been.calledWith('Aborting suggestion generation as more than 50 Firefall requests have been used.');
+      expect(context.log.error).to.have.been.calledWith('SDA: Aborting suggestion generation as more than 50 Firefall requests have been used.');
     });
 
     it('re-uses an existing suggestion', async () => {
@@ -439,7 +439,7 @@ describe('Structured Data Audit', () => {
       s3ClientStub.send.rejects(new Error('Failed to fetch S3 object'));
 
       await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(context.log.error).to.have.been.calledWith('Could not find scrape for /product/1. Make sure that scrape-top-pages did run.');
+      expect(context.log.error).to.have.been.calledWith('SDA: Could not find scrape for /product/1. Make sure that scrape-top-pages did run.');
       expect(firefallClientStub.fetchChatCompletion).to.not.have.been.called;
     });
 
@@ -465,7 +465,7 @@ describe('Structured Data Audit', () => {
       })));
 
       await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(context.log.error).to.have.been.calledWith('Could not find structured data for issue of type BreadcrumbList for URL https://example.com/product/1');
+      expect(context.log.error).to.have.been.calledWith('SDA: Could not find structured data for issue of type BreadcrumbList for URL https://example.com/product/1');
       expect(firefallClientStub.fetchChatCompletion).to.not.have.been.called;
     });
 
@@ -495,7 +495,7 @@ describe('Structured Data Audit', () => {
       })));
 
       await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(context.log.warn).to.have.been.calledWith('Could not cleanup markup for issue of type BreadcrumbList for URL https://example.com/product/1');
+      expect(context.log.warn).to.have.been.calledWith('SDA: Could not cleanup markup for issue of type BreadcrumbList for URL https://example.com/product/1');
     });
 
     it('generates a suggestion', async () => {

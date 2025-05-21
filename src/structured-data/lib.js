@@ -56,7 +56,7 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
   try {
     google = await GoogleClient.createFrom(context, finalUrl);
   } catch (error) {
-    log.warn('Failed to create Google client. Site was probably not onboarded to GSC yet. Continue without data from GSC.', error);
+    log.warn('SDA: Failed to create Google client. Site was probably not onboarded to GSC yet. Continue without data from GSC.', error);
     return [];
   }
 
@@ -76,7 +76,6 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
   await Promise.all(pages.map(async ({ url: page }) => {
     try {
       const { inspectionResult } = await google.urlInspect(page);
-      log.info(`Inspection result for ${page} from GSC:`, JSON.stringify(inspectionResult));
 
       const richResults = inspectionResult?.richResultsResult;
       if (!richResults) {
@@ -88,7 +87,7 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
           item.issues.forEach((issue) => {
             const rootType = entityMapping[type.richResultType];
             if (!rootType) {
-              log.warn(`Skipping GSC issue, because cannot map GSC type "${type.richResultType}" to schema.org type.`);
+              log.warn(`SDA: Skipping GSC issue, because cannot map GSC type "${type.richResultType}" to schema.org type.`);
               return;
             }
 
@@ -116,7 +115,7 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
         });
       });
     } catch (error) {
-      log.error(`Failed to get inspection results from GSC for URL: ${page}.`, error);
+      log.error(`SDA: Failed to get inspection results from GSC for URL: ${page}.`, error);
     }
   }));
 
@@ -144,25 +143,10 @@ export function deduplicateIssues(context, gscIssues, scraperIssues) {
     for (const issue of gscIssues) {
       if (!scraperTypes.includes(issue.rootType)) {
         issues.push(issue);
-        log.warn(`Structured Data: GSC issue for type ${issue.rootType} was not found by structured data parser.`, JSON.stringify(issue, null, 4));
+        log.warn(`SDA: GSC issue for type ${issue.rootType} was not found by structured data parser.`, JSON.stringify(issue, null, 4));
       }
     }
   }
-
-  // TODO: Temporarily disable grouping issues by rootTypes in favor of grouping issues by pageUrl.
-  // Re-enable this logic together with improved grouping support in the UI.
-  /* const equalityFields = ['rootType', 'issueMessage', 'dataFormat', 'severity'];
-  const deduplicatedIssues = issues.reduce((acc, issue) => {
-    const existingIssue = acc
-      .find((i) => equalityFields.every((field) => i[field] === issue[field]));
-    if (!existingIssue) {
-      const { pageUrl, ...rest } = issue;
-      acc.push({ pageUrls: [pageUrl], ...rest });
-    } else {
-      existingIssue.pageUrls.push(issue.pageUrl);
-    }
-    return acc;
-  }, []); */
 
   return issues;
 }
@@ -181,7 +165,7 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
       }
       scrapeResult = await scrapeCache.get(pathname);
     } catch (e) {
-      log.error(`Could not find scrape for ${pathname}. Make sure that scrape-top-pages did run.`, e);
+      log.error(`SDA: Could not find scrape for ${pathname}. Make sure that scrape-top-pages did run.`, e);
       return;
     }
 
@@ -191,7 +175,6 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
     if (isNonEmptyArray(waeResult)) {
       return;
     }
-    log.info('Structured data from scrape', JSON.stringify(waeResult, null, 4));
 
     const schemaOrgPath = join(
       process.cwd(),
@@ -237,7 +220,7 @@ export function getWrongMarkup(context, issue, scrapeResult) {
     // If structured data is loaded late on the page, e.g. in delayed phase,
     // the scraper might not pick it up. You would need to fine tune wait for
     // check of the scraper for this site.
-    log.error(`No structured data found in scrape result for URL ${issue.pageUrl}`);
+    log.error(`SDA: No structured data found in scrape result for URL ${issue.pageUrl}`);
     return null;
   }
 
@@ -400,7 +383,7 @@ export async function generateFirefallSuggestion(
   if (issue.path) {
     firefallInputs.path = JSON.stringify(issue.path);
   }
-  log.info('Firefall inputs', JSON.stringify(firefallInputs, null, 4));
+  log.debug('SDA: Firefall inputs', JSON.stringify(firefallInputs));
 
   const requestBody = await getPrompt(firefallInputs, 'structured-data-suggest', log);
   const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);

@@ -148,7 +148,7 @@ describe('Structured Data Libs', () => {
 
       const result = await getIssuesFromGSC('https://example.com', context, [{ url: 'https://example.com' }]);
       expect(result).to.deep.equal([]);
-      expect(context.log.warn).to.be.calledWith('Skipping GSC issue, because cannot map GSC type "Unsupported snippets" to schema.org type.');
+      expect(context.log.warn).to.be.calledWith('SDA: Skipping GSC issue, because cannot map GSC type "Unsupported snippets" to schema.org type.');
     });
 
     it('returns rich results issues', async () => {
@@ -209,7 +209,7 @@ describe('Structured Data Libs', () => {
 
       const result = await getIssuesFromGSC('https://example.com', context, [{ url: 'https://example.com/product/1' }]);
       expect(result).to.deep.equal([]);
-      expect(context.log.error).to.be.calledWith('Failed to get inspection results from GSC for URL: https://example.com/product/1.');
+      expect(context.log.error).to.be.calledWith('SDA: Failed to get inspection results from GSC for URL: https://example.com/product/1.');
     });
   });
 
@@ -261,7 +261,7 @@ describe('Structured Data Libs', () => {
       {
         rootType: 'Product',
       }]);
-      expect(context.log.warn).to.be.calledWith('Structured Data: GSC issue for type Product was not found by structured data parser.');
+      expect(context.log.warn).to.be.calledWith('SDA: GSC issue for type Product was not found by structured data parser.');
     });
   });
 
@@ -302,7 +302,7 @@ describe('Structured Data Libs', () => {
       const result = await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], scrapeCache);
 
       expect(result).to.deep.equal([]);
-      expect(context.log.error).to.be.calledWith('Could not find scrape for /product/1. Make sure that scrape-top-pages did run.');
+      expect(context.log.error).to.be.calledWith('SDA: Could not find scrape for /product/1. Make sure that scrape-top-pages did run.');
     });
 
     it('skips scrapes in the old format', async () => {
@@ -431,7 +431,7 @@ describe('Structured Data Libs', () => {
     it('returns null if structured data is not found in the scrape', () => {
       const result = getWrongMarkup(context, { pageUrl: 'https://www.example.com' }, { scrapeResult: {} });
       expect(result).to.be.null;
-      expect(context.log.error).to.be.calledWith('No structured data found in scrape result for URL https://www.example.com');
+      expect(context.log.error).to.be.calledWith('SDA: No structured data found in scrape result for URL https://www.example.com');
     });
 
     it('uses the source attribute if available', () => {

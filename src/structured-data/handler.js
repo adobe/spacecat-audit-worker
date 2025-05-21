@@ -57,9 +57,6 @@ export async function processStructuredData(finalUrl, context, pages, scrapeCach
     getIssuesFromScraper(context, pages, scrapeCache),
   ]);
 
-  log.info('GSC issues', gscPagesWithIssues);
-  log.info('Scraper issues', scraperPagesWithIssues);
-
   // Deduplicate issues
   const pagesWithIssues = deduplicateIssues(
     context,
@@ -67,11 +64,12 @@ export async function processStructuredData(finalUrl, context, pages, scrapeCach
     scraperPagesWithIssues,
   );
 
-  log.info('Deduplicated issues', pagesWithIssues);
+  log.info(`SDA: ${gscPagesWithIssues.length} issues from GSC, ${scraperPagesWithIssues.length} issues from scrape. ${pagesWithIssues.length} issues after deduplication`);
+  log.debug('SDA: Deduplicated issues', JSON.stringify(pagesWithIssues));
 
   // Abort early if no issues are found
   if (pagesWithIssues.length === 0) {
-    log.info('No pages with structured data issues found in GSC or in scraped data');
+    log.info('SDA: No pages with structured data issues found in GSC or in scraped data');
   }
 
   return {
@@ -87,18 +85,16 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
     AUDIT_STRUCTURED_DATA_FIREFALL_REQ_LIMIT = 50,
   } = context.env;
 
-  log.info('Generate suggestions data', auditData);
-
   // Check if audit was successful
   if (auditData.auditResult.success === false) {
-    log.warn('Audit failed, skipping suggestions data generation');
+    log.warn('SDA: Audit failed, skipping suggestions data generation');
     return { ...auditData };
   }
 
   // Check if auto suggest was enabled
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite(auditAutoSuggestType, site)) {
-    log.info('Auto-suggest is disabled for site');
+    log.info('SDA: Auto-suggest is disabled for site');
     return { ...auditData };
   }
 
@@ -119,16 +115,14 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
   for (const issue of auditData.auditResult.issues) {
     // Limit to avoid excessive Firefall requests. Can be increased if needed.
     if (firefallRequests >= parseInt(AUDIT_STRUCTURED_DATA_FIREFALL_REQ_LIMIT, 10)) {
-      log.error(`Aborting suggestion generation as more than ${AUDIT_STRUCTURED_DATA_FIREFALL_REQ_LIMIT} Firefall requests have been used.`);
+      log.error(`SDA: Aborting suggestion generation as more than ${AUDIT_STRUCTURED_DATA_FIREFALL_REQ_LIMIT} Firefall requests have been used.`);
       break;
     }
-
-    log.info(`Handle rich result issue of type ${issue.rootType} occurring on ${issue.pageUrl}`);
 
     // Check if a suggestion for the issue is already in the suggestion Map
     const existingSuggestionKey = existingSuggestions.keys().find((key) => key === buildKey(issue));
     if (existingSuggestionKey) {
-      log.info(`Re-using existing suggestion for issue of type ${issue.rootType} and URL ${issue.pageUrl}`);
+      log.info(`SDA: Re-using existing suggestion for issue of type ${issue.rootType} and URL ${issue.pageUrl}`);
       issue.suggestion = existingSuggestions.get(existingSuggestionKey);
     } else {
       let scrapeResult;
@@ -140,13 +134,13 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
         }
         scrapeResult = await scrapeCache.get(pathname);
       } catch (e) {
-        log.error(`Could not find scrape for ${pathname}. Make sure that scrape-top-pages did run.`, e);
+        log.error(`SDA: Could not find scrape for ${pathname}. Make sure that scrape-top-pages did run.`, e);
         continue;
       }
 
       let wrongMarkup = getWrongMarkup(context, issue, scrapeResult);
       if (!wrongMarkup) {
-        log.error(`Could not find structured data for issue of type ${issue.rootType} for URL ${issue.pageUrl}`);
+        log.error(`SDA: Could not find structured data for issue of type ${issue.rootType} for URL ${issue.pageUrl}`);
         continue;
       }
 
@@ -157,9 +151,8 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
           wrongMarkup = cleanupStructuredDataMarkup(parsed);
         }
       } catch (e) {
-        log.warn(`Could not cleanup markup for issue of type ${issue.rootType} for URL ${issue.pageUrl}`, e);
+        log.warn(`SDA: Could not cleanup markup for issue of type ${issue.rootType} for URL ${issue.pageUrl}`, e);
       }
-      log.info('Filtered structured data:', wrongMarkup);
 
       // Get suggestions from Firefall
       try {
@@ -175,13 +168,13 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
         issue.suggestion = suggestion;
         existingSuggestions.set(buildKey(issue), structuredClone(suggestion));
       } catch (e) {
-        log.error(`Creating suggestion for type ${issue.rootType} for URL ${issue.pageUrl} failed:`, e);
+        log.error(`SDA: Creating suggestion for type ${issue.rootType} for URL ${issue.pageUrl} failed:`, e);
       }
     }
   }
 
-  log.info(`Used ${firefallRequests} Firefall requests in total for site ${auditUrl}`);
-  log.info('Generated suggestions data', JSON.stringify(auditData));
+  log.info(`SDA: Used ${firefallRequests} Firefall requests in total for site ${auditUrl}`);
+  log.debug('SDA: Generated suggestions data', JSON.stringify(auditData));
 
   return { ...auditData };
 }
@@ -191,7 +184,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
   // Check if audit was successful
   if (auditData.auditResult.success === false) {
-    log.warn('Audit failed, skipping opportunity generation');
+    log.warn('SDA: Audit failed, skipping opportunity generation');
     return { ...auditData };
   }
 
@@ -203,7 +196,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     const errorId = errorTitle.replaceAll(/["\s]/g, '').toLowerCase();
     issue.errors.push({ fix, id: errorId, errorTitle });
   }
-  log.debug('Converted suggestions to errors', auditData.auditResult.issues);
 
   const opportunity = await convertToOpportunity(
     auditUrl,
@@ -213,7 +205,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditType,
   );
 
-  // TODO: Temporarily group issues by pageUrl as the UI does not support displaying
+  // Temporarily group issues by pageUrl as the UI does not support displaying
   // the same page multiple times or displaying issues grouped by rootType
   const issuesByPageUrl = auditData.auditResult.issues.reduce((acc, issue) => {
     const existingIssue = acc.find((i) => i.pageUrl === issue.pageUrl);
@@ -251,7 +243,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
 
-  log.info(`Importing top pages for ${finalUrl}`);
+  log.info(`SDA: Importing top pages for ${finalUrl}`);
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   return {
@@ -276,7 +268,7 @@ export async function submitForScraping(context) {
     throw new Error('No top pages found for site');
   }
 
-  log.info(`Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}`);
+  log.info(`SDA: Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}`);
 
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
@@ -300,7 +292,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   try {
     let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
     if (!isNonEmptyArray(topPages)) {
-      log.error(`No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
+      log.error(`SDA: No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
       throw new Error(`No top pages for site ID ${siteId} found.`);
     } else {
       topPages = topPages.map((page) => ({ url: page.getUrl() }));
@@ -320,14 +312,14 @@ export async function runAuditAndGenerateSuggestions(context) {
     const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
     const formattedElapsed = elapsedSeconds.toFixed(2);
 
-    log.info(`Structured data audit completed in ${formattedElapsed} seconds for ${finalUrl}`);
+    log.info(`SDA: Structured data audit completed in ${formattedElapsed} seconds for ${finalUrl}`);
 
     return {
       fullAuditRef: finalUrl,
       auditResult,
     };
   } catch (e) {
-    log.error(`Structured data audit failed for ${finalUrl}`, e);
+    log.error(`SDA: Structured data audit failed for ${finalUrl}`, e);
     return {
       fullAuditRef: finalUrl,
       auditResult: {
