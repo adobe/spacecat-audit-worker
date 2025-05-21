@@ -1,3 +1,71 @@
+## [1.88.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.88.0...v1.88.1) (2025-05-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.13.2 ([#884](https://github.com/adobe/spacecat-audit-worker/issues/884)) ([24627cd](https://github.com/adobe/spacecat-audit-worker/commit/24627cd801a0736698635ef38619ddc75fa7dbbb))
+
+# [1.88.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.6...v1.88.0) (2025-05-20)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#879](https://github.com/adobe/spacecat-audit-worker/issues/879)) ([c8c502b](https://github.com/adobe/spacecat-audit-worker/commit/c8c502b42ad50ea48f461673ab985a585dd5e82d))
+
+
+### Features
+
+* introduce bad-links ([#880](https://github.com/adobe/spacecat-audit-worker/issues/880)) ([0afe2c9](https://github.com/adobe/spacecat-audit-worker/commit/0afe2c97c0b9210a1e3df8e973e85dd8443b342e))
+
+## [1.87.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.5...v1.87.6) (2025-05-20)
+
+
+### Bug Fixes
+
+* avoid creating oppty when audit fails to find sitemap path ([#872](https://github.com/adobe/spacecat-audit-worker/issues/872)) ([a47a3c2](https://github.com/adobe/spacecat-audit-worker/commit/a47a3c2c24fbadf96de3bd8a340810e052ce6ba4))
+
+## [1.87.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.4...v1.87.5) (2025-05-20)
+
+
+### Bug Fixes
+
+* use base url overrides in audit url resolution ([#874](https://github.com/adobe/spacecat-audit-worker/issues/874)) ([678cc4d](https://github.com/adobe/spacecat-audit-worker/commit/678cc4d8333df6fabf0e498332ce7116afd721c6))
+
+## [1.87.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.3...v1.87.4) (2025-05-20)
+
+
+### Bug Fixes
+
+* update tags and title in forms oppoty ([#873](https://github.com/adobe/spacecat-audit-worker/issues/873)) ([6f3913b](https://github.com/adobe/spacecat-audit-worker/commit/6f3913bc375bb0ea16fe497e7330c9cd70a8bb32))
+
+## [1.87.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.2...v1.87.3) (2025-05-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#875](https://github.com/adobe/spacecat-audit-worker/issues/875)) ([bb8ac33](https://github.com/adobe/spacecat-audit-worker/commit/bb8ac33cad69ac347deaf98585c2ddfd5f72d13a))
+
+## [1.87.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.1...v1.87.2) (2025-05-19)
+
+
+### Bug Fixes
+
+* missing audit id in messages sent to mystique ([#864](https://github.com/adobe/spacecat-audit-worker/issues/864)) ([55c39a1](https://github.com/adobe/spacecat-audit-worker/commit/55c39a1336196bc88a6d241cae83f8f18dfcb20c))
+
+## [1.87.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.87.0...v1.87.1) (2025-05-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#871](https://github.com/adobe/spacecat-audit-worker/issues/871)) ([865fcf4](https://github.com/adobe/spacecat-audit-worker/commit/865fcf4f230c116e22415e98bcc8f3f936052785))
+
+# [1.87.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.86.2...v1.87.0) (2025-05-19)
+
+
+### Features
+
+* add preview page authentication to canonical audit ([#859](https://github.com/adobe/spacecat-audit-worker/issues/859)) ([83ec057](https://github.com/adobe/spacecat-audit-worker/commit/83ec0570097c939116e9d6a9e4b68201e1fcd1ea))
+
 ## [1.86.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.86.1...v1.86.2) (2025-05-19)
 
 

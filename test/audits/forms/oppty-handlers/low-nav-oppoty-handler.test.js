@@ -86,7 +86,7 @@ describe('createLowNavigationOpportunities handler method', () => {
       title: 'Form has low views',
       description: 'The form has low views due to low navigations in the page containing its CTA',
       tags: [
-        'Forms Conversion',
+        'Form Navigation',
       ],
       data: {
         form: 'https://www.surest.com/newsletter',
@@ -173,7 +173,7 @@ describe('createLowNavigationOpportunities handler method', () => {
       title: 'Form has low views',
       description: 'The form has low views due to low navigations in the page containing its CTA',
       tags: [
-        'Forms Conversion',
+        'Form Navigation',
       ],
       data: {
         form: 'https://www.iframe-example.com/test/getting-iframe-example/guide/newsletter',

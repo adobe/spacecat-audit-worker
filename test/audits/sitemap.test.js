@@ -839,6 +839,7 @@ describe('Sitemap Audit', () => {
   describe('opportunityAndSuggestions', () => {
     let auditDataFailure;
     let auditDataSuccess;
+    let auditDataWithSuggestions;
 
     beforeEach(() => {
       auditDataFailure = {
@@ -894,6 +895,14 @@ describe('Sitemap Audit', () => {
         ],
       };
 
+      auditDataWithSuggestions = {
+        ...JSON.parse(JSON.stringify(auditDataFailure)),
+        auditResult: {
+          ...JSON.parse(JSON.stringify(auditDataFailure.auditResult)),
+          success: true,
+        },
+      };
+
       auditDataSuccess = {
         siteId: 'site-id',
         auditId: 'audit-id',
@@ -923,6 +932,25 @@ describe('Sitemap Audit', () => {
       sandbox.restore();
     });
 
+    it('should skip opportunity creation when audit result success is false', async () => {
+      if (context.dataAccess.Opportunity.create.resetHistory) {
+        context.dataAccess.Opportunity.create.resetHistory();
+      }
+
+      await opportunityAndSuggestions(
+        'https://example.com',
+        auditDataFailure,
+        context,
+      );
+
+      expect(context.log.info).to.have.been.calledWith(
+        'Sitemap audit failed, skipping opportunity and suggestions creation',
+      );
+      // Check that the existing stubs weren't called
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;
+    });
+
     it('should handle errors when creating opportunity', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([
         context.dataAccess.Opportunity,
@@ -934,7 +962,7 @@ describe('Sitemap Audit', () => {
       await expect(
         opportunityAndSuggestions(
           'https://example.com',
-          auditDataFailure,
+          auditDataWithSuggestions,
           context,
         ),
       ).to.be.rejectedWith('Creation failed');
@@ -979,7 +1007,7 @@ describe('Sitemap Audit', () => {
 
       await opportunityAndSuggestions(
         'https://example.com',
-        auditDataFailure,
+        auditDataWithSuggestions,
         context,
       );
 
@@ -1017,11 +1045,11 @@ describe('Sitemap Audit', () => {
       context.dataAccess.Opportunity.save.resolves();
       context.dataAccess.Opportunity.getSuggestions.resolves([]);
       context.dataAccess.Opportunity.addSuggestions.resolves({
-        createdItems: auditDataFailure.suggestions,
+        createdItems: auditDataWithSuggestions.suggestions,
       });
       await opportunityAndSuggestions(
         'https://example.com',
-        auditDataFailure,
+        auditDataWithSuggestions,
         context,
       );
 
@@ -1032,7 +1060,7 @@ describe('Sitemap Audit', () => {
       expect(
         context.dataAccess.Opportunity.addSuggestions,
       ).to.have.been.calledOnceWith(
-        auditDataFailure.suggestions.map((suggestion) => ({
+        auditDataWithSuggestions.suggestions.map((suggestion) => ({
           opportunityId: opptyId,
           type: 'REDIRECT_UPDATE',
           rank: 0,
@@ -1070,11 +1098,11 @@ describe('Sitemap Audit', () => {
       ];
       context.dataAccess.Opportunity.getSuggestions.resolves(existingSuggestions);
       context.dataAccess.Opportunity.addSuggestions.resolves({
-        createdItems: auditDataFailure.suggestions,
+        createdItems: auditDataWithSuggestions.suggestions,
       });
       await opportunityAndSuggestions(
         'https://example.com',
-        auditDataFailure,
+        auditDataWithSuggestions,
         context,
       );
 
@@ -1084,7 +1112,7 @@ describe('Sitemap Audit', () => {
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(existingSuggestions, 'OUTDATED');
       expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(
-        auditDataFailure.suggestions.map((suggestion) => ({
+        auditDataWithSuggestions.suggestions.map((suggestion) => ({
           opportunityId: opptyId,
           type: 'REDIRECT_UPDATE',
           rank: 0,
@@ -1487,9 +1515,7 @@ describe('filterValidUrls with status code tracking', () => {
 
     const result = await filterValidUrls(urls);
 
-    expect(result.ok).to.deep.equal([
-      'https://example.com/ok',
-    ]);
+    expect(result.ok).to.deep.equal(['https://example.com/ok']);
 
     // Should only include tracked status codes in notOk array
     expect(result.notOk).to.deep.equal([
@@ -1545,7 +1571,10 @@ describe('filterValidUrls with status code tracking', () => {
     expect(result.notOk).to.have.length(4);
 
     // Redirects to 404 patterns should suggest homepage URL
-    const redirectsTo404 = result.notOk.filter((item) => item.url.includes('redirect-to-404') || item.url.includes('redirect-to-errors-404'));
+    const redirectsTo404 = result.notOk.filter(
+      (item) => item.url.includes('redirect-to-404')
+        || item.url.includes('redirect-to-errors-404'),
+    );
 
     redirectsTo404.forEach((item) => {
       expect(item.statusCode).to.equal(301);
