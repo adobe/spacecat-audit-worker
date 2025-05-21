@@ -41,6 +41,7 @@ import highFormViewsLowConversionsGuidance from './forms-opportunities/oppty-han
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import auditStatus from './audit-status/handler.js';
 
 const HANDLERS = {
   apex,
@@ -66,6 +67,7 @@ const HANDLERS = {
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   preflight,
+  'audit-status': auditStatus,
   dummy: (message) => ok(message),
 };
 
