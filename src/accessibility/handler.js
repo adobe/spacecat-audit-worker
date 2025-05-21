@@ -145,8 +145,10 @@ async function processAccessibilityOpportunities(context) {
     await inDepthOverviewOpportunity.save();
 
     // 1.5 construct url for the report
-    const inDepthOverviewOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthOverviewOpportunity.getId()}`;
-
+    const inDepthOverviewOpportunityId = inDepthOverviewOpportunity.getId();
+    const inDepthOverviewOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthOverviewOpportunityId}`;
+    log.info(`[A11yAudit] In-depth overview report opportunity URL: ${inDepthOverviewOpportunityUrl}`);
+    log.info(`[A11yAudit] In-depth overview report opportunity ID: ${inDepthOverviewOpportunityId}`);
     // 2.1 generate the markdown report for in-depth top 10
     const inDepthTop10Markdown = generateEnhancedReportMarkdown(current);
 
