@@ -63,7 +63,9 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
     let finalLinks = calculatePriority(transformedLinks);
 
-    finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
+    // links inaccessible?
+    log.info('>>>>> ', finalLinks.map((link) => ({ link: link.urlTo, inaccessible: isLinkInaccessible(link.urlTo, log) })));
+    finalLinks = finalLinks.filter((link) => isLinkInaccessible(link.urlTo, log));
 
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] final broken links: ${finalLinks.length} => ${JSON.stringify(finalLinks)}`);
 
