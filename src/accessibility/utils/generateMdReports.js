@@ -58,8 +58,8 @@ function generateRoadToWCAGSection(wcagData) {
  * @param {Array} trafficViolations - Traffic violations data
  * @returns {string} Accessibility Compliance Issues vs Traffic section markdown
  */
-function generateAccessibilityComplianceSection(trafficViolations) {
-  let section = '### Accessibility Compliance Issues vs Traffic | **[In-Depth Report]()**\n\n';
+function generateAccessibilityComplianceSection(trafficViolations, inDepthReportUrl) {
+  let section = `### Accessibility Compliance Issues vs Traffic | **[In-Depth Report](${inDepthReportUrl})**\n\n`;
   section += 'An overview of top 10 pages in terms of traffic with the accessibility issues overview\n\n';
   section += '| Page | Traffic |Total Issues  |Level A |Level AA |\n';
   section += '|--------|--------|--------|--------|--------|\n';
@@ -554,7 +554,7 @@ function generateDiffSection(diffData) {
  * @param {Object} previousData - Previous week's data
  * @returns {string} Week Over Week report section markdown
  */
-function generateWeekOverWeekSection(currentData, previousData) {
+function generateWeekOverWeekSection(currentData, previousData, fixedVsNewReportUrl) {
   let section = 'A Week Over Week breadown of fixed and new accessibility issues for the first 100 pages traffic wise.\n\n';
   section += '| | Fixed | Improved | New |\n';
   section += '|--------|--------|--------|--------|\n';
@@ -613,8 +613,8 @@ function generateWeekOverWeekSection(currentData, previousData) {
     .join(', ') || '-';
 
   // Add rows to the table with proper formatting
-  section += `| **[Critical]()** | ${criticalFixed} | ${criticalImproved} | ${criticalNew} |\n`;
-  section += `| **[Serious]()** | ${seriousFixed} | ${seriousImproved} | ${seriousNew} |\n`;
+  section += `| **[Critical](${fixedVsNewReportUrl})** | ${criticalFixed} | ${criticalImproved} | ${criticalNew} |\n`;
+  section += `| **[Serious](${fixedVsNewReportUrl})** | ${seriousFixed} | ${seriousImproved} | ${seriousNew} |\n`;
 
   section += '\n---\n\n';
   return section;
@@ -805,7 +805,13 @@ function calculateDiffData(currentFile, lastWeekFile) {
  * @param {Object} lastWeekFile - Last week's data
  * @returns {string} Path to the generated report file
  */
-function generateInDepthOverviewMarkdown(currentFile, lastWeekFile) {
+function generateInDepthOverviewMarkdown(currentFile, lastWeekFile, relatedReportsUrls) {
+  const {
+    inDepthReportUrl,
+    enhancedReportUrl,
+    fixedVsNewReportUrl,
+  } = relatedReportsUrls;
+
   // Process current week's data
   const currentData = currentFile;
   const previousData = lastWeekFile;
@@ -840,11 +846,11 @@ function generateInDepthOverviewMarkdown(currentFile, lastWeekFile) {
   report += 'A breakdown of accessibility issues found as a result of audits for the **first 100 pages** traffic wise.\n\n';
   report += '| | Current |Week Over Week |\n';
   report += '|--------|--------|--------|\n';
-  report += `| **[Critical]()**| ${critical} | ${criticalChange} ${criticalEmoji}|\n`;
-  report += `| **[Serious]()**| ${serious} | ${seriousChange} ${seriousEmoji}|\n\n`;
+  report += `| **[Critical](${inDepthReportUrl})**| ${critical} | ${criticalChange} ${criticalEmoji}|\n`;
+  report += `| **[Serious](${inDepthReportUrl})**| ${serious} | ${seriousChange} ${seriousEmoji}|\n\n`;
 
   // Add Week Over Week report section
-  report += generateWeekOverWeekSection(currentData, previousData);
+  report += generateWeekOverWeekSection(currentData, previousData, fixedVsNewReportUrl);
 
   // Calculate WCAG compliance data
   const wcagData = calculateWCAGData(currentData);
@@ -854,7 +860,7 @@ function generateInDepthOverviewMarkdown(currentFile, lastWeekFile) {
 
   // Add traffic violations section
   const trafficViolations = processTrafficViolations(currentData);
-  report += generateAccessibilityComplianceSection(trafficViolations);
+  report += generateAccessibilityComplianceSection(trafficViolations, inDepthReportUrl);
 
   // Add issues overview section
   const issuesOverview = {
@@ -876,7 +882,8 @@ function generateInDepthOverviewMarkdown(currentFile, lastWeekFile) {
   report += quickWinsSection.mainSection;
 
   // Add enhancing accessibility section
-  const enhancingSection = generateEnhancingAccessibilitySection(trafficViolations, issuesOverview);
+  // eslint-disable-next-line max-len
+  const enhancingSection = generateEnhancingAccessibilitySection(trafficViolations, issuesOverview, enhancedReportUrl);
   report += enhancingSection;
 
   // Add quick wins pages section after enhancing accessibility
@@ -940,7 +947,7 @@ function generateBaseReportMarkdown(currentFile, lastWeekFile) {
   report += quickWinsSection.mainSection;
 
   // Generate Accessibility Compliance Issues vs Traffic section
-  report += generateAccessibilityComplianceSection(trafficViolations);
+  report += generateAccessibilityComplianceSection(trafficViolations, '');
 
   return report;
 }

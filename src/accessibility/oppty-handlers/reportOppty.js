@@ -29,8 +29,36 @@ export function createEnhancedReportOpportunity(week, year) {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
     origin: 'AUTOMATION',
     type: 'generic-opportunity',
-    title: `Enhancing accessibility for the top 10 most-visited pages - Desktop - ${week} - ${year}`,
+    title: `Enhancing accessibility for the top 10 most-visited pages - Desktop - Week ${week} - ${year}`,
     description: 'Here are some optimization suggestions that could help solve the accessibility issues found on the top 10 most-visited pages.',
+    tags: [
+      'a11y',
+    ],
+    status: 'IGNORED',
+  };
+}
+
+export function createFixedVsNewReportOpportunity(week, year) {
+  return {
+    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
+    origin: 'AUTOMATION',
+    type: 'generic-opportunity',
+    title: `Accessibility report Fixed vs New Issues - Desktop - Week ${week} - ${year}`,
+    description: 'This report provides a comprehensive analysis of accessibility issues, highlighting both resolved and newly identified problems. It aims to track progress in improving accessibility and identify areas requiring further attention.',
+    tags: [
+      'a11y',
+    ],
+    status: 'IGNORED',
+  };
+}
+
+export function createBaseReportOpportunity(week, year) {
+  return {
+    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
+    origin: 'AUTOMATION',
+    type: 'generic-opportunity',
+    title: `Accessibility report - Desktop - Week ${week} - ${year}`,
+    description: 'A web accessibility audit is an assessment of how well your website and digital assets conform to the needs of people with disabilities and if they follow the Web Content Accessibility Guidelines (WCAG). Desktop only.',
     tags: [
       'a11y',
     ],

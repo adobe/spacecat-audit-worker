@@ -15,8 +15,19 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { dataNeededForA11yAudit } from './utils/constants.js';
 import { aggregateAccessibilityData, createReportOpportunity, createReportOpportunitySuggestion } from './utils/utils.js';
-import { generateInDepthReportMarkdown, generateEnhancedReportMarkdown, getWeekNumber } from './utils/generateMdReports.js';
-import { createInDepthReportOpportunity, createEnhancedReportOpportunity } from './oppty-handlers/reportOppty.js';
+import {
+  generateInDepthReportMarkdown,
+  generateEnhancedReportMarkdown,
+  generateFixedNewReportMarkdown,
+  generateInDepthOverviewMarkdown,
+  getWeekNumber,
+} from './utils/generateMdReports.js';
+import {
+  createInDepthReportOpportunity,
+  createEnhancedReportOpportunity,
+  createFixedVsNewReportOpportunity,
+  createBaseReportOpportunity,
+} from './oppty-handlers/reportOppty.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
@@ -86,7 +97,7 @@ async function processAccessibilityOpportunities(context) {
     }
 
     const { finalResultFiles } = aggregationResult;
-    const { current } = finalResultFiles;
+    const { current, lastWeek } = finalResultFiles;
 
     // data needed for all reports oppties
     const week = getWeekNumber(new Date());
@@ -94,9 +105,9 @@ async function processAccessibilityOpportunities(context) {
     // eslint-disable-next-line max-len
     const latestAudit = await site.getLatestAuditByAuditType('accessibility');
     const auditData = JSON.parse(JSON.stringify(latestAudit));
-    // const isProd = env.AWS_ENV === 'prod';
-    // const envAsoDomain = isProd ? 'experience' : 'experience-stage';
-    // const orgId = site.getOrganizationId();
+    const isProd = env.AWS_ENV === 'prod';
+    const envAsoDomain = isProd ? 'experience' : 'experience-stage';
+    const orgId = site.getOrganizationId();
 
     // 1.1 generate the markdown report for in-depth overview
     const inDepthOverviewMarkdown = generateInDepthReportMarkdown(current);
@@ -131,9 +142,10 @@ async function processAccessibilityOpportunities(context) {
 
     // 1.4 update status to ignored
     await inDepthOverviewOpportunity.setStatus('IGNORED');
+    await inDepthOverviewOpportunity.save();
 
     // 1.5 construct url for the report
-    // const inDepthOverviewOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthOverviewOpportunity.getId()}`;
+    const inDepthOverviewOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthOverviewOpportunity.getId()}`;
 
     // 2.1 generate the markdown report for in-depth top 10
     const inDepthTop10Markdown = generateEnhancedReportMarkdown(current);
@@ -169,18 +181,84 @@ async function processAccessibilityOpportunities(context) {
 
     // 2.4 update status to ignored
     await inDepthTop10Opportunity.setStatus('IGNORED');
-
+    await inDepthTop10Opportunity.save();
     // 2.5 construct url for the report
-    // const inDepthOverviewOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthTop10Opportunity.getId()}`;
+    const enhancedReportOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthTop10Opportunity.getId()}`;
 
-    // 1. generate the markdown report for fixed vs new issues if any
-    // 2. generate oppty and suggestions for the report
-    // 3. update status to ignored
-    // 4. construct url for the report
+    // 3.1 generate the markdown report for fixed vs new issues if any
+    const fixedVsNewMarkdown = generateFixedNewReportMarkdown(current);
 
-    // 1. generate the markdown report for base report and
+    // 3.2 create the opportunity for the fixed vs new report
+    const fixedVsNewOpportunityInstance = createFixedVsNewReportOpportunity(week, year);
+    // eslint-disable-next-line max-len
+    const fixedVsNewOpportunityRes = await createReportOpportunity(fixedVsNewOpportunityInstance, auditData, context);
+    if (!fixedVsNewOpportunityRes.status) {
+      log.error('Failed to create fixed vs new report opportunity', fixedVsNewOpportunityRes.message);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: fixedVsNewOpportunityRes.message,
+      };
+    }
+    const { opportunity: fixedVsNewOpportunity } = fixedVsNewOpportunityRes;
+
+    // 3.3 create the suggestions for the fixed vs new report oppty
+    const fixedVsNewSuggestionRes = await createReportOpportunitySuggestion(
+      fixedVsNewOpportunity,
+      fixedVsNewMarkdown,
+      auditData,
+      log,
+    );
+
+    if (!fixedVsNewSuggestionRes.status) {
+      log.error('Failed to create fixed vs new report opportunity suggestion', fixedVsNewSuggestionRes.message);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: fixedVsNewSuggestionRes.message,
+      };
+    }
+
+    // 3.4 update status to ignored
+    await fixedVsNewOpportunity.setStatus('IGNORED');
+    await fixedVsNewOpportunity.save();
+
+    // 3.5 construct url for the report
+    const fixedVsNewOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${fixedVsNewOpportunity.getId()}`;
+
+    // 4.1 generate the markdown report for base report and
     //    add the urls from the above reports into the markdown report
-    // 2. generate oppty and suggestions for the report
+    const baseReportMarkdown = generateInDepthOverviewMarkdown(current, lastWeek, {
+      enhancedReportOpportunityUrl,
+      inDepthOverviewOpportunityUrl,
+      fixedVsNewOpportunityUrl,
+    });
+    // 4.2 generate oppty and suggestions for the report
+    const baseOpportunityInstance = createBaseReportOpportunity(week, year);
+    // eslint-disable-next-line max-len
+    const baseOpportunityRes = await createReportOpportunity(baseOpportunityInstance, auditData, context);
+    if (!baseOpportunityRes.status) {
+      log.error('Failed to create base report opportunity', baseOpportunityRes.message);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: baseOpportunityRes.message,
+      };
+    }
+    const { opportunity: baseOpportunity } = baseOpportunityRes;
+
+    // 4.3 create the suggestions for the base report oppty
+    const baseSuggestionRes = await createReportOpportunitySuggestion(
+      baseOpportunity,
+      baseReportMarkdown,
+      auditData,
+      log,
+    );
+
+    if (!baseSuggestionRes.status) {
+      log.error('Failed to create base report opportunity suggestion', baseSuggestionRes.message);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: baseSuggestionRes.message,
+      };
+    }
 
     // Extract some key metrics for the audit result
     const totalIssues = finalResultFiles.current.overall.violations.total;
