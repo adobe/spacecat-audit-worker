@@ -102,5 +102,5 @@ export async function processAuditStatus(message, context) {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('process-audit-status', processAuditStatus)
+  .addStep('audit-status-processor', processAuditStatus)
   .build();
