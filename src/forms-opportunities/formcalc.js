@@ -56,7 +56,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
     totals.pageview = calculateSums(pageview, totals.pageview);
     totals.formsubmit = calculateSums(formsubmit, totals.formsubmit);
     totals.trafficacquisition = trafficacquisition;
-    totals.formsource = formsource.startsWith('dialog') ? formsource.replace('dialog ', '') : formsource;
+    totals.formsource = formsource;
     if (iframeSrc) {
       totals.iframeSrc = iframeSrc;
     }
