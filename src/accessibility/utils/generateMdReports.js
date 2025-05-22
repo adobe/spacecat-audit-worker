@@ -212,7 +212,7 @@ function generateRoadToWCAGSection(wcagData) {
 
 // eslint-disable-next-line max-len
 function generateAccessibilityComplianceIssuesVsTrafficSection(trafficViolations, enhancedReportUrl) {
-  let section = `### Accessibility Compliance Issues vs Traffic | **[Enhanced Report](${enhancedReportUrl})**\n\n`;
+  let section = `### Accessibility Compliance Issues vs Traffic | **[In-Depth Report](${enhancedReportUrl})**\n\n`;
   section += 'An overview of top 10 pages in terms of traffic with the accessibility issues overview\n\n';
   section += '| Page | Traffic |Total Issues  |Level A |Level AA |\n';
   section += '|--------|--------|--------|--------|--------|\n';
@@ -615,6 +615,8 @@ function generateWeekOverWeekSection(currentData, previousData, fixedVsNewReport
     .filter(([issue]) => !currentSerious[issue] && filterImageAlt(issue))
     .map(([issue]) => `\`${issue}\``)
     .join(', ') || '-';
+
+  if (criticalFixed === '-' && criticalImproved === '-' && criticalNew === '-' && seriousFixed === '-' && seriousImproved === '-' && seriousNew === '-') return '';
 
   sections.push(
     `| **[Critical](${fixedVsNewReportUrl})** | ${criticalFixed} | ${criticalImproved} | ${criticalNew} |\n`,
