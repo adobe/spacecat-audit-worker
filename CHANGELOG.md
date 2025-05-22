@@ -1,3 +1,10 @@
+# [1.89.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.88.2...v1.89.0) (2025-05-22)
+
+
+### Features
+
+* [Preflight] Split identify and suggest flows ([#882](https://github.com/adobe/spacecat-audit-worker/issues/882)) ([492c218](https://github.com/adobe/spacecat-audit-worker/commit/492c218d386dde1cbe556888a9bf6aa86f5b0b28))
+
 ## [1.88.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.88.1...v1.88.2) (2025-05-22)
 
 
