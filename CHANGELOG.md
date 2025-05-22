@@ -1,3 +1,10 @@
+## [1.88.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.88.1...v1.88.2) (2025-05-22)
+
+
+### Bug Fixes
+
+* removing dialog from formsource selector if exists ([#883](https://github.com/adobe/spacecat-audit-worker/issues/883)) ([2aa39d8](https://github.com/adobe/spacecat-audit-worker/commit/2aa39d8abff0a3d0bad1f45f744fdbf76461ffbd))
+
 ## [1.88.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.88.0...v1.88.1) (2025-05-21)
 
 
