@@ -101,6 +101,515 @@ export const dataNeededForA11yAudit = {
   ],
 };
 
+export const dataNeededForA11yAuditv2 = {
+  siteData: {
+    name: 'bamboo',
+    siteId: '36e4848b-d6e5-4350-a7f9-610e78325966',
+  },
+  urls: [
+    {
+      url: 'https://www.bamboohr.com/',
+      traffic: '4597700',
+      urlId: 'www-bamboohr-com',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/easier-hr-for-everyone',
+      traffic: '385100',
+      urlId: 'www-bamboohr-com-pl-pages-easier-hr-for-everyone',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/easier-make-a-difference',
+      traffic: '322500',
+      urlId: 'www-bamboohr-com-pl-pages-easier-make-a-difference',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/bamboohr-software-basics',
+      traffic: '218260',
+      urlId: 'www-bamboohr-com-pl-pages-bamboohr-software-basics',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/easier-customer-testimonials',
+      traffic: '116200',
+      urlId: 'www-bamboohr-com-pl-pages-easier-customer-testimonials',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/easier-upgrade-your-hr',
+      traffic: '112800',
+      urlId: 'www-bamboohr-com-pl-pages-easier-upgrade-your-hr',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/hr-time-tracking',
+      traffic: '112100',
+      urlId: 'www-bamboohr-com-pl-pages-hr-time-tracking',
+    },
+    {
+      url: 'https://www.bamboohr.com/signup/',
+      traffic: '108200',
+      urlId: 'www-bamboohr-com-signup',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/ebooks/the-definitive-guide-to-onboarding',
+      traffic: '92060',
+      urlId: 'www-bamboohr-com-resources-ebooks-the-definitive-guide-to-onboarding',
+    },
+    {
+      url: 'https://www.bamboohr.com/homepage-customer',
+      traffic: '85200',
+      urlId: 'www-bamboohr-com-homepage-customer',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/bamboohr-software',
+      traffic: '84600',
+      urlId: 'www-bamboohr-com-pl-pages-bamboohr-software',
+    },
+    {
+      url: 'https://www.bamboohr.com/careers/application',
+      traffic: '78700',
+      urlId: 'www-bamboohr-com-careers-application',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/bamboohr-overview',
+      traffic: '56400',
+      urlId: 'www-bamboohr-com-pl-pages-bamboohr-overview',
+    },
+    {
+      url: 'https://www.bamboohr.com/webinars/',
+      traffic: '53700',
+      urlId: 'www-bamboohr-com-webinars',
+    },
+    {
+      url: 'https://www.bamboohr.com/blog/employees-do-the-right-thing',
+      traffic: '52000',
+      urlId: 'www-bamboohr-com-blog-employees-do-the-right-thing',
+    },
+    {
+      url: 'https://www.bamboohr.com/careers/',
+      traffic: '51800',
+      urlId: 'www-bamboohr-com-careers',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/ebooks/definitive-guide-company-culture',
+      traffic: '51200',
+      urlId: 'www-bamboohr-com-resources-ebooks-definitive-guide-company-culture',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl/onboarding-checklist',
+      traffic: '45700',
+      urlId: 'www-bamboohr-com-pl-onboarding-checklist',
+    },
+    {
+      url: 'https://www.bamboohr.com/demo',
+      traffic: '44400',
+      urlId: 'www-bamboohr-com-demo',
+    },
+    {
+      url: 'https://www.bamboohr.com/unsubscribe/',
+      traffic: '44300',
+      urlId: 'www-bamboohr-com-unsubscribe',
+    },
+    {
+      url: 'https://www.bamboohr.com/pricing/',
+      traffic: '41100',
+      urlId: 'www-bamboohr-com-pricing',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/hr-software',
+      traffic: '41060',
+      urlId: 'www-bamboohr-com-pl-pages-hr-software',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/competitors/rippling',
+      traffic: '39600',
+      urlId: 'www-bamboohr-com-pl-pages-competitors-rippling',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/onboarding',
+      traffic: '35760',
+      urlId: 'www-bamboohr-com-pl-pages-onboarding',
+    },
+    {
+      url: 'https://www.bamboohr.com/blog/',
+      traffic: '34000',
+      urlId: 'www-bamboohr-com-blog',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/competitors/workday',
+      traffic: '32400',
+      urlId: 'www-bamboohr-com-pl-pages-competitors-workday',
+    },
+    {
+      url: 'https://www.bamboohr.com/o2',
+      traffic: '32160',
+      urlId: 'www-bamboohr-com-o2',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/pricing',
+      traffic: '31400',
+      urlId: 'www-bamboohr-com-pl-pages-pricing',
+    },
+    {
+      url: 'https://www.bamboohr.com/legal/terms-of-service',
+      traffic: '31100',
+      urlId: 'www-bamboohr-com-legal-terms-of-service',
+    },
+    {
+      url: 'https://www.bamboohr.com/hr-software/mobile',
+      traffic: '30700',
+      urlId: 'www-bamboohr-com-hr-software-mobile',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/hr-glossary/',
+      traffic: '28900',
+      urlId: 'www-bamboohr-com-resources-hr-glossary',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/employee-time-tracking',
+      traffic: '28100',
+      urlId: 'www-bamboohr-com-pl-pages-employee-time-tracking',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl/benefits-administration',
+      traffic: '26900',
+      urlId: 'www-bamboohr-com-pl-benefits-administration',
+    },
+    {
+      url: 'https://www.bamboohr.com/o1',
+      traffic: '26300',
+      urlId: 'www-bamboohr-com-o1',
+    },
+    {
+      url: 'https://www.bamboohr.com/legal/privacy-policy',
+      traffic: '24200',
+      urlId: 'www-bamboohr-com-legal-privacy-policy',
+    },
+    {
+      url: 'https://www.bamboohr.com/integrations/listings/netsuite',
+      traffic: '23300',
+      urlId: 'www-bamboohr-com-integrations-listings-netsuite',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/ats',
+      traffic: '22900',
+      urlId: 'www-bamboohr-com-pl-pages-ats',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/',
+      traffic: '22600',
+      urlId: 'www-bamboohr-com-resources',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/ebooks/chatgpt-prompts-hr',
+      traffic: '21900',
+      urlId: 'www-bamboohr-com-resources-ebooks-chatgpt-prompts-hr',
+    },
+    {
+      url: 'https://www.bamboohr.com/integrations/',
+      traffic: '20300',
+      urlId: 'www-bamboohr-com-integrations',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl/onboarding-checklist-a2',
+      traffic: '19660',
+      urlId: 'www-bamboohr-com-pl-onboarding-checklist-a2',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/pto-tracking',
+      traffic: '17200',
+      urlId: 'www-bamboohr-com-pl-pages-pto-tracking',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/hrm',
+      traffic: '16900',
+      urlId: 'www-bamboohr-com-pl-pages-hrm',
+    },
+    {
+      url: 'https://www.bamboohr.com/booking/live-demo-success',
+      traffic: '16900',
+      urlId: 'www-bamboohr-com-booking-live-demo-success',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/human-resources',
+      traffic: '16700',
+      urlId: 'www-bamboohr-com-pl-pages-human-resources',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/separation-letters-guide',
+      traffic: '15100',
+      urlId: 'www-bamboohr-com-pl-pages-separation-letters-guide',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/competitors/hibob',
+      traffic: '14300',
+      urlId: 'www-bamboohr-com-pl-pages-competitors-hibob',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/performance-management',
+      traffic: '13900',
+      urlId: 'www-bamboohr-com-pl-pages-performance-management',
+    },
+    {
+      url: 'https://www.bamboohr.com/unsubscribe/success',
+      traffic: '13300',
+      urlId: 'www-bamboohr-com-unsubscribe-success',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/data-at-work/employee-happiness-index/q4-2024-employee-satisfaction-survey',
+      traffic: '13100',
+      urlId: 'www-bamboohr-com-resources-data-at-work-employee-happiness-index-q4-2024-employee-satisfaction-survey',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/ebooks/the-definitive-guide-to-onboarding-k1',
+      traffic: '13100',
+      urlId: 'www-bamboohr-com-resources-ebooks-the-definitive-guide-to-onboarding-k1',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl/onboarding-checklist-a1',
+      traffic: '12640',
+      urlId: 'www-bamboohr-com-pl-onboarding-checklist-a1',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/ebooks/how-to-measure-employee-engagement',
+      traffic: '12000',
+      urlId: 'www-bamboohr-com-resources-ebooks-how-to-measure-employee-engagement',
+    },
+    {
+      url: 'https://www.bamboohr.com/integrations/request-information',
+      traffic: '11900',
+      urlId: 'www-bamboohr-com-integrations-request-information',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl/payroll-software-c',
+      traffic: '11900',
+      urlId: 'www-bamboohr-com-pl-payroll-software-c',
+    },
+    {
+      url: 'https://www.bamboohr.com/hr-software/payroll',
+      traffic: '11800',
+      urlId: 'www-bamboohr-com-hr-software-payroll',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/hr-glossary/generation-y',
+      traffic: '11800',
+      urlId: 'www-bamboohr-com-resources-hr-glossary-generation-y',
+    },
+    {
+      url: 'https://www.bamboohr.com/compare-plans/activate/core',
+      traffic: '11700',
+      urlId: 'www-bamboohr-com-compare-plans-activate-core',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/employee-vacation-tracking',
+      traffic: '11600',
+      urlId: 'www-bamboohr-com-pl-pages-employee-vacation-tracking',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/bamboohr-software-basics-b1',
+      traffic: '11500',
+      urlId: 'www-bamboohr-com-pl-pages-bamboohr-software-basics-b1',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl/payroll-checklist',
+      traffic: '11300',
+      urlId: 'www-bamboohr-com-pl-payroll-checklist',
+    },
+    {
+      url: 'https://www.bamboohr.com/product-updates/',
+      traffic: '10800',
+      urlId: 'www-bamboohr-com-product-updates',
+    },
+    {
+      url: 'https://www.bamboohr.com/blog/employee-perks-incentives-ideas',
+      traffic: '10300',
+      urlId: 'www-bamboohr-com-blog-employee-perks-incentives-ideas',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/hr-glossary/alternative-dispute-resolution-adr',
+      traffic: '10200',
+      urlId: 'www-bamboohr-com-resources-hr-glossary-alternative-dispute-resolution-adr',
+    },
+    {
+      url: 'https://www.bamboohr.com/hr-software/hr-platform',
+      traffic: '9900',
+      urlId: 'www-bamboohr-com-hr-software-hr-platform',
+    },
+    {
+      url: 'https://www.bamboohr.com/about-bamboohr/contact/',
+      traffic: '9800',
+      urlId: 'www-bamboohr-com-about-bamboohr-contact',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/employee-software',
+      traffic: '9700',
+      urlId: 'www-bamboohr-com-pl-pages-employee-software',
+    },
+    {
+      url: 'https://www.bamboohr.com/customers/',
+      traffic: '9600',
+      urlId: 'www-bamboohr-com-customers',
+    },
+    {
+      url: 'https://www.bamboohr.com/hr-software/employee-database-software',
+      traffic: '9500',
+      urlId: 'www-bamboohr-com-hr-software-employee-database-software',
+    },
+    {
+      url: 'https://www.bamboohr.com/integrations/listings/slack',
+      traffic: '9200',
+      urlId: 'www-bamboohr-com-integrations-listings-slack',
+    },
+    {
+      url: 'https://www.bamboohr.com/blog/furloughs-vs-layoffs',
+      traffic: '9200',
+      urlId: 'www-bamboohr-com-blog-furloughs-vs-layoffs',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/hr-glossary/qualifying-life-event',
+      traffic: '9200',
+      urlId: 'www-bamboohr-com-resources-hr-glossary-qualifying-life-event',
+    },
+    {
+      url: 'https://www.bamboohr.com/hr-software/applicant-tracking',
+      traffic: '9100',
+      urlId: 'www-bamboohr-com-hr-software-applicant-tracking',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/hr-toolkit',
+      traffic: '9100',
+      urlId: 'www-bamboohr-com-pl-pages-hr-toolkit',
+    },
+    {
+      url: 'https://www.bamboohr.com/hr-software/employee-self-onboarding',
+      traffic: '9000',
+      urlId: 'www-bamboohr-com-hr-software-employee-self-onboarding',
+    },
+    {
+      url: 'https://www.bamboohr.com/blog/the-best-questions-to-ask-in-performance-reviews',
+      traffic: '9000',
+      urlId: 'www-bamboohr-com-blog-the-best-questions-to-ask-in-performance-reviews',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/competitors/gusto',
+      traffic: '8400',
+      urlId: 'www-bamboohr-com-pl-pages-competitors-gusto',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/hr-glossary/generation-x',
+      traffic: '8400',
+      urlId: 'www-bamboohr-com-resources-hr-glossary-generation-x',
+    },
+    {
+      url: 'https://www.bamboohr.com/legal/',
+      traffic: '8300',
+      urlId: 'www-bamboohr-com-legal',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/competitors/isolved',
+      traffic: '8200',
+      urlId: 'www-bamboohr-com-pl-pages-competitors-isolved',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/applicant-tracking-system',
+      traffic: '8040',
+      urlId: 'www-bamboohr-com-pl-pages-applicant-tracking-system',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/hr-glossary/147c',
+      traffic: '8000',
+      urlId: 'www-bamboohr-com-resources-hr-glossary-147c',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/timesheets',
+      traffic: '8000',
+      urlId: 'www-bamboohr-com-pl-pages-timesheets',
+    },
+    {
+      url: 'https://www.bamboohr.com/blog/internal-job-interview-questions',
+      traffic: '7600',
+      urlId: 'www-bamboohr-com-blog-internal-job-interview-questions',
+    },
+    {
+      url: 'https://www.bamboohr.com/why-bamboohr/',
+      traffic: '7500',
+      urlId: 'www-bamboohr-com-why-bamboohr',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/ebooks/job-offer-letter-templates',
+      traffic: '7500',
+      urlId: 'www-bamboohr-com-resources-ebooks-job-offer-letter-templates',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/recruitment',
+      traffic: '7500',
+      urlId: 'www-bamboohr-com-pl-pages-recruitment',
+    },
+    {
+      url: 'https://www.bamboohr.com/blog/learn-management-style',
+      traffic: '7120',
+      urlId: 'www-bamboohr-com-blog-learn-management-style',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/intl-en/hr-software',
+      traffic: '7000',
+      urlId: 'www-bamboohr-com-pl-pages-intl-en-hr-software',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl/interview-scorecard-template',
+      traffic: '6800',
+      urlId: 'www-bamboohr-com-pl-interview-scorecard-template',
+    },
+    {
+      url: 'https://www.bamboohr.com/resources/guides/the-definitive-guide-to-onboarding',
+      traffic: '6700',
+      urlId: 'www-bamboohr-com-resources-guides-the-definitive-guide-to-onboarding',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/competitors/goco',
+      traffic: '6600',
+      urlId: 'www-bamboohr-com-pl-pages-competitors-goco',
+    },
+    {
+      url: 'https://www.bamboohr.com/hr-software/payroll-software',
+      traffic: '6600',
+      urlId: 'www-bamboohr-com-hr-software-payroll-software',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/employee-database',
+      traffic: '6300',
+      urlId: 'www-bamboohr-com-pl-pages-employee-database',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/human-resource-management',
+      traffic: '6300',
+      urlId: 'www-bamboohr-com-pl-pages-human-resource-management',
+    },
+    {
+      url: 'https://www.bamboohr.com/blog/tips-increasing-workplace-efficiency',
+      traffic: '6300',
+      urlId: 'www-bamboohr-com-blog-tips-increasing-workplace-efficiency',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/human-resources-software',
+      traffic: '6200',
+      urlId: 'www-bamboohr-com-pl-pages-human-resources-software',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/intl-en/onboarding',
+      traffic: '6200',
+      urlId: 'www-bamboohr-com-pl-pages-intl-en-onboarding',
+    },
+    {
+      url: 'https://www.bamboohr.com/pl-pages/employee-time-clock',
+      traffic: '6000',
+      urlId: 'www-bamboohr-com-pl-pages-employee-time-clock',
+    },
+    {
+      url: 'https://www.bamboohr.com/blog/stay-positive-at-work',
+      traffic: '6000',
+      urlId: 'www-bamboohr-com-blog-stay-positive-at-work',
+    },
+  ],
+};
+
 export const successCriteriaLinks = {
   111: {
     name: 'Non-text Content',

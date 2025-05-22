@@ -13,7 +13,7 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { dataNeededForA11yAudit } from './utils/constants.js';
+import { dataNeededForA11yAuditv2 } from './utils/constants.js';
 import { aggregateAccessibilityData, createReportOpportunity, createReportOpportunitySuggestion } from './utils/utils.js';
 import {
   generateInDepthReportMarkdown,
@@ -39,7 +39,7 @@ async function scrapeAccessibilityData(context) {
 
   // TODO: Determine what specific data/URLs the content scraper needs for accessibility.
   // For now, using finalUrl as a placeholder.
-  const urlsToScrape = dataNeededForA11yAudit.urls;
+  const urlsToScrape = dataNeededForA11yAuditv2.urls;
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
