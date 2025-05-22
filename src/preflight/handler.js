@@ -19,6 +19,7 @@ import { metatagsAutoDetect } from '../metatags/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
 import { runInternalLinkChecks } from './internal-links.js';
+import { validateCanonicalFormat, validateCanonicalRecursively, validateCanonicalTag } from '../canonical/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -44,7 +45,7 @@ export async function scrapePages(context) {
   }
 
   return {
-    urls,
+    urls: urls.map((url) => ({ url })),
     siteId,
     type: 'preflight',
     allowCache: false,
@@ -73,14 +74,56 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
-  const result = {
-    audits: [],
-  };
+  const pageAuthToken = await retrievePageAuthentication(site, context);
+  const baseURL = new URL(urls[0]).origin;
+  const authHeader = { headers: { Authorization: `token ${pageAuthToken}` } };
 
-  result.audits.push({
-    name: 'canonical',
-    type: 'seo',
-    opportunities: [],
+  const result = urls.map((url) => ({
+    pageUrl: url,
+    step: normalizedStep,
+    audits: [],
+  }));
+
+  result.forEach((item) => {
+    item.audits.push({
+      name: 'canonical',
+      type: 'seo',
+      opportunities: [],
+    });
+  });
+
+  const canonicalChecks = urls.map(async (url) => {
+    const checks = [];
+    const {
+      canonicalUrl, checks: canonicalTagChecks,
+    } = await validateCanonicalTag(url, log, authHeader);
+    checks.push(...canonicalTagChecks);
+
+    if (canonicalUrl) {
+      log.info(`Found Canonical URL: ${canonicalUrl}`);
+
+      const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
+      checks.push(...urlFormatChecks);
+
+      const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, authHeader);
+      checks.push(...urlContentCheck);
+    }
+    return { url, checks };
+  });
+
+  const canonicalResults = await Promise.all(canonicalChecks);
+
+  canonicalResults.forEach(({ url, checks }) => {
+    const auditResult = result.find((item) => item.pageUrl === url);
+    if (auditResult) {
+      checks.forEach((check) => {
+        if (!check.success) {
+          auditResult.audits.find((audit) => audit.name === 'canonical').opportunities.push({
+            ...check,
+          });
+        }
+      });
+    }
   });
 
   const storagePathSet = new Set(urls.map((url) => {
@@ -100,30 +143,41 @@ export const preflightAudit = async (context) => {
       })),
   );
 
-  result.audits.push({
-    name: 'internal-links',
-    type: 'seo',
-    opportunities: [],
+  result.forEach((item) => {
+    item.audits.push({
+      name: 'links',
+      type: 'seo',
+      opportunities: [],
+    });
   });
-
-  const pageAuthToken = await retrievePageAuthentication(site, context);
 
   const { auditResult } = await runInternalLinkChecks(scrapedObjects, pageAuthToken, context);
   if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
     for (const url of urls) {
       const brokenLinks = auditResult.brokenInternalLinks.filter((link) => link.pageUrl === url);
-      brokenLinks.forEach((link) => {
-        result.audits[1].opportunities.push({
-          ...link,
+      const linkAudits = result.find((item) => item.pageUrl === url);
+      if (linkAudits) {
+        brokenLinks.forEach((brokenLink) => {
+          linkAudits.audits.find((audit) => audit.name === 'links').opportunities.push({
+            check: 'broken-internal-links',
+            issue: {
+              url: brokenLink.href,
+              issue: `Link returning ${brokenLink.status} status code`,
+              seoImpact: 'High',
+              seoRecommendation: 'Fix or remove broken links to improve user experience',
+            },
+          });
         });
-      });
+      }
     }
   }
 
-  result.audits.push({
-    name: 'metatags',
-    type: 'seo',
-    opportunities: [],
+  result.forEach((item) => {
+    item.audits.push({
+      name: 'metatags',
+      type: 'seo',
+      opportunities: [],
+    });
   });
 
   const {
@@ -144,9 +198,10 @@ export const preflightAudit = async (context) => {
     for (const url of urls) {
       const path = new URL(url).pathname.replace(/\/$/, '');
       const tags = updatedDetectedTags[path];
-      if (tags) {
+      const tagAudits = result.find((item) => item.pageUrl === url);
+      if (tags && tagAudits) {
         Object.entries(tags).forEach(([tagName, tagData]) => {
-          result.audits[2].opportunities.push({
+          tagAudits.audits.find((audit) => audit.name === 'metatags').opportunities.push({
             tagName,
             tagContent: tagData.tagContent,
             issue: tagData.issue,
@@ -163,16 +218,28 @@ export const preflightAudit = async (context) => {
     }
   }
 
-  result.audits.push({
-    name: 'body-size',
-    type: 'seo',
-    opportunities: [],
+  result.forEach((item) => {
+    item.audits.push({
+      name: 'body-size',
+      type: 'seo',
+      opportunities: [],
+    });
   });
 
-  result.audits.push({
-    name: 'lorem-ipsum',
-    type: 'seo',
-    opportunities: [],
+  result.forEach((item) => {
+    item.audits.push({
+      name: 'lorem-ipsum',
+      type: 'seo',
+      opportunities: [],
+    });
+  });
+
+  result.forEach((item) => {
+    item.audits.push({
+      name: 'h1-count',
+      type: 'seo',
+      opportunities: [],
+    });
   });
 
   scrapedObjects.forEach(({ data }) => {
@@ -185,27 +252,46 @@ export const preflightAudit = async (context) => {
 
     // only check pages that actually have some visible text
     if (length > 0 && length <= 100) {
-      result.audits[3].opportunities.push({
-        url: data.scrapeResult.finalUrl,
-        length,
-        excerpt: `${text.slice(0, 100)}…`,
-        message: `Page body text is only ${length} characters; should be >100.`,
+      const bodySizeAudits = result.find((item) => item.pageUrl === data.finalUrl);
+      bodySizeAudits.audits.find((audit) => audit.name === 'body-size').opportunities.push({
+        check: 'content-length',
+        issue: 'Body content length is below 100 characters',
+        seoImpact: 'Moderate',
+        seoRecommendation: 'Add more meaningful content to the page',
       });
     }
 
     const isLoremIpsum = text.toLowerCase().includes('lorem ipsum');
     if (isLoremIpsum) {
-      result.audits[4].opportunities.push({
-        url: data.scrapeResult.finalUrl,
-        message: 'Page body text contains "lorem ipsum".',
+      const loremIpsumAudits = result.find((item) => item.pageUrl === data.finalUrl);
+      loremIpsumAudits.audits.find((audit) => audit.name === 'lorem-ipsum').opportunities.push({
+        check: 'lorem-ipsum',
+        issue: 'Page body text contains "lorem ipsum"',
+        seoImpact: 'High',
+        seoRecommendation: 'Remove placeholder text and replace with meaningful content',
       });
     }
-  });
 
-  result.audits.push({
-    name: 'links',
-    type: 'seo',
-    opportunities: [],
+    if (data.tags.h1.length > 1 || data.tags.h1.length === 0) {
+      const h1CountAudits = result.find((item) => item.pageUrl === data.finalUrl);
+      const h1Count = data.tags.h1.length;
+      if (h1Count > 1) {
+        h1CountAudits.audits.find((audit) => audit.name === 'h1-count').opportunities.push({
+          check: 'multiple-h1',
+          issue: `Page contains ${h1Count} H1 tags`,
+          seoImpact: 'High',
+          seoRecommendation: 'Use only one H1 tag per page for better SEO structure',
+        });
+      }
+      if (h1Count === 0) {
+        h1CountAudits.audits.find((audit) => audit.name === 'h1-count').opportunities.push({
+          check: 'missing-h1',
+          issue: 'No H1 tag found on the page',
+          seoImpact: 'High',
+          seoRecommendation: 'Add an H1 tag to the page for better SEO structure',
+        });
+      }
+    }
   });
 
   scrapedObjects.forEach(({ data }) => {
@@ -225,7 +311,8 @@ export const preflightAudit = async (context) => {
       }
     });
 
-    result.audits.find((audit) => audit.name === 'links').opportunities.push({
+    const linkAudits = result.find((item) => item.pageUrl === data.finalUrl);
+    linkAudits.audits.find((audit) => audit.name === 'links').opportunities.push({
       check: 'bad-links',
       issue: badResults,
     });
