@@ -13,7 +13,7 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { dataNeededForA11yAuditv2 } from './utils/constants.js';
+// import { dataNeededForA11yAuditv2 } from './utils/constants.js';
 import { aggregateAccessibilityData, createReportOpportunity, createReportOpportunitySuggestion } from './utils/utils.js';
 import {
   generateInDepthReportMarkdown,
@@ -28,18 +28,52 @@ import {
   createFixedVsNewReportOpportunity,
   createBaseReportOpportunity,
 } from './oppty-handlers/reportOppty.js';
+import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
 
 // First step: sends a message to the content scraper to generate accessibility audits
 async function scrapeAccessibilityData(context) {
-  const { site, log, finalUrl } = context;
+  const {
+    site, log, finalUrl, env, s3Client,
+  } = context;
+  const siteId = site.getId();
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()}`);
 
-  // TODO: Determine what specific data/URLs the content scraper needs for accessibility.
-  // For now, using finalUrl as a placeholder.
-  const urlsToScrape = dataNeededForA11yAuditv2.urls;
+  const finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
+  if (finalResultFiles.length === 0) {
+    log.error(`[A11yAudit] No final result files found for ${site.getBaseURL()}`);
+    return {
+      status: 'NO_OPPORTUNITIES',
+      message: 'No final result files found for accessibility audit',
+    };
+  }
+  const latestFinalResultFileKey = finalResultFiles[finalResultFiles.length - 1];
+  // eslint-disable-next-line max-len
+  const latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
+  if (!latestFinalResultFile) {
+    log.error(`[A11yAudit] No latest final result file found for ${site.getBaseURL()}`);
+    return {
+      status: 'NO_OPPORTUNITIES',
+      message: 'No data found in the latest final result file for accessibility audit',
+    };
+  }
+
+  delete latestFinalResultFile.overall;
+  // const urlsToScrape = dataNeededForA11yAuditv2.urls;
+  const urlsToScrape = [];
+  for (const [key, value] of Object.entries(latestFinalResultFile)) {
+    if (key.includes('https://')) {
+      urlsToScrape.push({
+        url: key,
+        urlId: key.replace('https://', ''),
+        traffic: value.traffic,
+      });
+    }
+  }
+  log.info(`[A11yAudit] URLs to scrape: ${urlsToScrape}`);
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
