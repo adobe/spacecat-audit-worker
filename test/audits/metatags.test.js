@@ -273,6 +273,9 @@ describe('Meta Tags', () => {
         site,
         finalUrl: 'http://example.com',
         audit,
+        opportunity: {
+          setUpdatedBy: sinon.stub(),
+        },
       };
     });
 
@@ -428,6 +431,7 @@ describe('Meta Tags', () => {
           getType: () => 'meta-tags',
           setData: () => {},
           getData: () => {},
+          setUpdatedBy: sinon.stub().returnsThis(),
         };
         logStub = {
           info: sinon.stub(),
@@ -698,6 +702,7 @@ describe('Meta Tags', () => {
           getType: () => 'meta-tags',
           setData: sinon.stub(),
           getData: sinon.stub(),
+          setUpdatedBy: sinon.stub().returnsThis(),
         };
 
         site = {

@@ -251,6 +251,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       save: sandbox.stub().resolves(),
       setData: () => {},
       getData: () => {},
+      setUpdatedBy: sandbox.stub().returnsThis(),
     };
 
     auditData = {
@@ -408,6 +409,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       save: sandbox.spy(sandbox.stub().resolves()),
       getType: () => 'broken-internal-links',
       getSuggestions: sandbox.stub().resolves(mockSuggestions),
+      setUpdatedBy: sandbox.stub().returnsThis(),
     };
 
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);

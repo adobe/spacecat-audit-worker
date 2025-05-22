@@ -55,6 +55,7 @@ export default async function handler(message, context) {
       ...entity.data,
     });
     opportunity.setGuidance(entity.guidance);
+    opportunity.setUpdatedBy('audit-worker');
     opportunity = await opportunity.save();
   }
 
