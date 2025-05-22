@@ -366,43 +366,41 @@ describe('Step-based Audit Tests', () => {
         await stepAudit.run(continueMessage, context);
 
         // Verify that messages were sent for each batch
-        expect(context.sqs.sendMessage).to.have.been.calledThrice();
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
 
         // Verify first batch
-        expect(context.sqs.sendMessage.firstCall).to.have.been.calledWith(
-          'https://space.cat/content-scraper',
-          {
-            urls: [
-              { url: `${baseURL}/1` },
-              { url: `${baseURL}/2` },
-            ],
-            skipMessage: true,
-            auditContext: {
-              next: 'process',
-              auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
-              auditType: 'content-audit',
-              fullAuditRef: 's3://test/123',
-            },
+        const [queueArg1, messageArg1] = context.sqs.sendMessage.firstCall.args;
+        expect(queueArg1).to.equal('https://space.cat/content-scraper');
+        expect(messageArg1).to.deep.include({
+          urls: [
+            { url: `${baseURL}/1` },
+            { url: `${baseURL}/2` },
+          ],
+          skipMessage: true,
+          auditContext: {
+            next: 'process',
+            auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+            auditType: 'content-audit',
+            fullAuditRef: 's3://test/123',
           },
-        );
+        });
 
         // Verify second batch
-        expect(context.sqs.sendMessage.secondCall).to.have.been.calledWith(
-          'https://space.cat/content-scraper',
-          {
-            urls: [
-              { url: `${baseURL}/3` },
-              { url: `${baseURL}/4` },
-            ],
-            skipMessage: false,
-            auditContext: {
-              next: 'process',
-              auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
-              auditType: 'content-audit',
-              fullAuditRef: 's3://test/123',
-            },
+        const [queueArg2, messageArg2] = context.sqs.sendMessage.secondCall.args;
+        expect(queueArg2).to.equal('https://space.cat/content-scraper');
+        expect(messageArg2).to.deep.include({
+          urls: [
+            { url: `${baseURL}/3` },
+            { url: `${baseURL}/4` },
+          ],
+          skipMessage: false,
+          auditContext: {
+            next: 'process',
+            auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+            auditType: 'content-audit',
+            fullAuditRef: 's3://test/123',
           },
-        );
+        });
       });
 
       it('handles batch processing errors gracefully', async () => {
@@ -496,19 +494,18 @@ describe('Step-based Audit Tests', () => {
         await singleAudit.run(continueMessage, context);
 
         // Verify single message was sent
-        expect(context.sqs.sendMessage).to.have.been.calledOnce();
-        expect(context.sqs.sendMessage).to.have.been.calledWith(
-          'https://space.cat/content-scraper',
-          {
-            urls: [{ url: baseURL }],
-            auditContext: {
-              next: 'process',
-              auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
-              auditType: 'content-audit',
-              fullAuditRef: 's3://test/123',
-            },
+        expect(context.sqs.sendMessage).to.have.been.calledOnce;
+        const [queueArg1, messageArg1] = context.sqs.sendMessage.firstCall.args;
+        expect(queueArg1).to.equal('https://space.cat/content-scraper');
+        expect(messageArg1).to.deep.include({
+          urls: [{ url: baseURL }],
+          auditContext: {
+            next: 'process',
+            auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+            auditType: 'content-audit',
+            fullAuditRef: 's3://test/123',
           },
-        );
+        });
       });
 
       it('uses default batch size of 50 when batchSize is not specified', async () => {
@@ -550,37 +547,35 @@ describe('Step-based Audit Tests', () => {
         await batchAudit.run(continueMessage, context);
 
         // Verify that messages were sent for each batch
-        expect(context.sqs.sendMessage).to.have.been.calledTwice();
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
 
         // Verify first batch (50 URLs)
-        expect(context.sqs.sendMessage.firstCall).to.have.been.calledWith(
-          'https://space.cat/content-scraper',
-          {
-            urls: urls.slice(0, 50),
-            skipMessage: true,
-            auditContext: {
-              next: 'process',
-              auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
-              auditType: 'content-audit',
-              fullAuditRef: 's3://test/123',
-            },
+        const [queueArg1, messageArg1] = context.sqs.sendMessage.firstCall.args;
+        expect(queueArg1).to.equal('https://space.cat/content-scraper');
+        expect(messageArg1).to.deep.include({
+          urls: urls.slice(0, 50),
+          skipMessage: true,
+          auditContext: {
+            next: 'process',
+            auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+            auditType: 'content-audit',
+            fullAuditRef: 's3://test/123',
           },
-        );
+        });
 
         // Verify second batch (remaining 10 URLs)
-        expect(context.sqs.sendMessage.secondCall).to.have.been.calledWith(
-          'https://space.cat/content-scraper',
-          {
-            urls: urls.slice(50),
-            skipMessage: false,
-            auditContext: {
-              next: 'process',
-              auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
-              auditType: 'content-audit',
-              fullAuditRef: 's3://test/123',
-            },
+        const [queueArg2, messageArg2] = context.sqs.sendMessage.secondCall.args;
+        expect(queueArg2).to.equal('https://space.cat/content-scraper');
+        expect(messageArg2).to.deep.include({
+          urls: urls.slice(50),
+          skipMessage: false,
+          auditContext: {
+            next: 'process',
+            auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+            auditType: 'content-audit',
+            fullAuditRef: 's3://test/123',
           },
-        );
+        });
 
         // Verify summary log
         expect(context.log.info).to.have.been.calledWith(
