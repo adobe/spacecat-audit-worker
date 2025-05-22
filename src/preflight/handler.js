@@ -22,9 +22,9 @@ import { runInternalLinkChecks } from './internal-links.js';
 import { validateCanonicalFormat, validateCanonicalRecursively, validateCanonicalTag } from '../canonical/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-
 export const AUDIT_STEP_IDENTIFY = 'identify';
 export const AUDIT_STEP_SUGGEST = 'suggest';
+const AUDIT_NAMES = ['canonical', 'links', 'metatags', 'body-size', 'lorem-ipsum', 'h1-count'];
 
 export function isValidUrls(urls) {
   return (
@@ -46,7 +46,7 @@ export async function scrapePages(context) {
 
   return {
     urls: urls.map((url) => ({ url })),
-    siteId,
+    siteId: site.getId(),
     type: 'preflight',
     allowCache: false,
     options: {
@@ -57,7 +57,7 @@ export async function scrapePages(context) {
 
 export const preflightAudit = async (context) => {
   const {
-    site, job, s3Client, log,
+    site, job, s3Client, log, env,
   } = context;
 
   const jobMetadata = job.getMetadata();
@@ -67,8 +67,7 @@ export const preflightAudit = async (context) => {
   const { urls, step = AUDIT_STEP_IDENTIFY } = jobMetadata.payload;
   const normalizedStep = step.toLowerCase();
 
-  log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit started for jobId: ${job.getId()}`);
-  log.info(`[preflight-audit] site: ${site.getId()}. Step: ${normalizedStep}`);
+  log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit started for jobId: ${job.getId()} and step: ${normalizedStep}`);
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
@@ -78,244 +77,131 @@ export const preflightAudit = async (context) => {
   const baseURL = new URL(urls[0]).origin;
   const authHeader = { headers: { Authorization: `token ${pageAuthToken}` } };
 
+  // Initialize results
   const result = urls.map((url) => ({
     pageUrl: url,
     step: normalizedStep,
-    audits: [],
+    audits: AUDIT_NAMES.map((name) => ({ name, type: 'seo', opportunities: [] })),
   }));
+  const resultMap = new Map(result.map((r) => [r.pageUrl, r]));
 
-  result.forEach((item) => {
-    item.audits.push({
-      name: 'canonical',
-      type: 'seo',
-      opportunities: [],
-    });
-  });
-
-  const canonicalChecks = urls.map(async (url) => {
-    const checks = [];
-    const {
-      canonicalUrl, checks: canonicalTagChecks,
-    } = await validateCanonicalTag(url, log, authHeader);
-    checks.push(...canonicalTagChecks);
-
-    if (canonicalUrl) {
-      log.info(`Found Canonical URL: ${canonicalUrl}`);
-
-      const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
-      checks.push(...urlFormatChecks);
-
-      const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, authHeader);
-      checks.push(...urlContentCheck);
-    }
-    return { url, checks };
-  });
-
-  const canonicalResults = await Promise.all(canonicalChecks);
-
+  // Canonical checks
+  const canonicalResults = await Promise.all(
+    urls.map(async (url) => {
+      const { canonicalUrl, checks: tagChecks } = await validateCanonicalTag(url, log, authHeader);
+      const allChecks = [...tagChecks];
+      if (canonicalUrl) {
+        log.info(`Found Canonical URL: ${canonicalUrl}`);
+        allChecks.push(...validateCanonicalFormat(canonicalUrl, baseURL, log));
+        allChecks.push(...(await validateCanonicalRecursively(canonicalUrl, log, authHeader)));
+      }
+      return { url, checks: allChecks.filter((c) => !c.success) };
+    }),
+  );
   canonicalResults.forEach(({ url, checks }) => {
-    const auditResult = result.find((item) => item.pageUrl === url);
-    if (auditResult) {
-      checks.forEach((check) => {
-        if (!check.success) {
-          auditResult.audits.find((audit) => audit.name === 'canonical').opportunities.push({
-            ...check,
-          });
-        }
-      });
-    }
+    const audit = resultMap.get(url).audits.find((a) => a.name === 'canonical');
+    checks.forEach((check) => audit.opportunities.push({ ...check }));
   });
 
-  const storagePathSet = new Set(urls.map((url) => {
-    const pathname = new URL(url).pathname.replace(/\/$/, '');
-    return `scrapes/${site.getId()}${pathname}/scrape.json`;
-  }));
-
-  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  // Retrieve scraped pages
   const prefix = `scrapes/${site.getId()}/`;
-  const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
+  const allKeys = await getObjectKeysUsingPrefix(s3Client, env.S3_SCRAPER_BUCKET_NAME, prefix, log);
+  const targetKeys = new Set(urls.map((u) => `scrapes/${site.getId()}${new URL(u).pathname.replace(/\/$/, '')}/scrape.json`));
   const scrapedObjects = await Promise.all(
-    scrapedObjectKeys
-      .filter((key) => storagePathSet.has(key))
-      .map(async (key) => ({
-        url: key,
-        data: await getObjectFromKey(s3Client, bucketName, key, log),
+    allKeys
+      .filter((key) => targetKeys.has(key))
+      .map(async (Key) => ({
+        Key, data: await getObjectFromKey(s3Client, env.S3_SCRAPER_BUCKET_NAME, Key, log),
       })),
   );
 
-  result.forEach((item) => {
-    item.audits.push({
-      name: 'links',
-      type: 'seo',
-      opportunities: [],
-    });
-  });
-
+  // Internal link checks
   const { auditResult } = await runInternalLinkChecks(scrapedObjects, pageAuthToken, context);
   if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
-    for (const url of urls) {
-      const brokenLinks = auditResult.brokenInternalLinks.filter((link) => link.pageUrl === url);
-      const linkAudits = result.find((item) => item.pageUrl === url);
-      if (linkAudits) {
-        brokenLinks.forEach((brokenLink) => {
-          linkAudits.audits.find((audit) => audit.name === 'links').opportunities.push({
-            check: 'broken-internal-links',
-            issue: {
-              url: brokenLink.href,
-              issue: `Link returning ${brokenLink.status} status code`,
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience',
-            },
-          });
-        });
-      }
-    }
+    auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
+      const audit = resultMap.get(pageUrl).audits.find((a) => a.name === 'links');
+      audit.opportunities.push({
+        check: 'broken-internal-links',
+        issue: {
+          url: href,
+          issue: `Status ${status}`,
+          seoImpact: 'High',
+          seoRecommendation: 'Fix or remove broken links',
+        },
+      });
+    });
   }
 
-  result.forEach((item) => {
-    item.audits.push({
-      name: 'metatags',
-      type: 'seo',
-      opportunities: [],
-    });
-  });
-
+  // Meta tags checks
   const {
-    seoChecks, detectedTags, extractedTags,
-  } = await metatagsAutoDetect(site, storagePathSet, context);
-
-  if (Object.keys(detectedTags).length > 0) {
-    const allTags = {
+    seoChecks,
+    detectedTags,
+    extractedTags,
+  } = await metatagsAutoDetect(site, targetKeys, context);
+  const tagCollection = normalizedStep === AUDIT_STEP_SUGGEST
+    ? await metatagsAutoSuggest({
       detectedTags,
       healthyTags: seoChecks.getFewHealthyTags(),
       extractedTags,
-    };
-
-    const updatedDetectedTags = normalizedStep === AUDIT_STEP_SUGGEST
-      ? await metatagsAutoSuggest(allTags, context, site, { forceAutoSuggest: true })
-      : detectedTags;
-
-    for (const url of urls) {
-      const path = new URL(url).pathname.replace(/\/$/, '');
-      const tags = updatedDetectedTags[path];
-      const tagAudits = result.find((item) => item.pageUrl === url);
-      if (tags && tagAudits) {
-        Object.entries(tags).forEach(([tagName, tagData]) => {
-          tagAudits.audits.find((audit) => audit.name === 'metatags').opportunities.push({
-            tagName,
-            tagContent: tagData.tagContent,
-            issue: tagData.issue,
-            issueDetails: tagData.issueDetails,
-            seoImpact: tagData.seoImpact,
-            seoRecommendation: tagData.seoRecommendation,
-            ...(normalizedStep === AUDIT_STEP_SUGGEST ? {
-              aiSuggestion: tagData.aiSuggestion,
-              aiRationale: tagData.aiRationale,
-            } : {}),
-          });
-        });
-      }
-    }
-  }
-
-  result.forEach((item) => {
-    item.audits.push({
-      name: 'body-size',
-      type: 'seo',
-      opportunities: [],
-    });
+    }, context, site, { forceAutoSuggest: true })
+    : detectedTags;
+  Object.entries(tagCollection).forEach(([path, tags]) => {
+    const pageUrl = `${baseURL}${path}`;
+    const audit = resultMap.get(pageUrl)?.audits.find((a) => a.name === 'metatags');
+    return tags && Object.values(tags).forEach((data) => audit.opportunities.push({ ...data }));
   });
 
-  result.forEach((item) => {
-    item.audits.push({
-      name: 'lorem-ipsum',
-      type: 'seo',
-      opportunities: [],
-    });
-  });
-
-  result.forEach((item) => {
-    item.audits.push({
-      name: 'h1-count',
-      type: 'seo',
-      opportunities: [],
-    });
-  });
-
+  // DOM-based checks: body size, lorem ipsum, h1 count, bad links
   scrapedObjects.forEach(({ data }) => {
-    const html = data.scrapeResult.rawBody;
-    const dom = new JSDOM(html);
+    const { finalUrl, scrapeResult: { rawBody } } = data;
+    const doc = new JSDOM(rawBody).window.document;
 
-    const bodyEl = dom.window.document.querySelector('body');
-    const text = bodyEl.textContent.replace(/\n/g, '').trim();
-    const { length } = text;
+    const auditsByName = Object.fromEntries(
+      resultMap.get(finalUrl).audits.map((auditEntry) => [auditEntry.name, auditEntry]),
+    );
 
-    // only check pages that actually have some visible text
-    if (length > 0 && length <= 100) {
-      const bodySizeAudits = result.find((item) => item.pageUrl === data.finalUrl);
-      bodySizeAudits.audits.find((audit) => audit.name === 'body-size').opportunities.push({
+    const textContent = doc.body.textContent.replace(/\n/g, '').trim();
+
+    if (textContent.length > 0 && textContent.length <= 100) {
+      auditsByName['body-size'].opportunities.push({
         check: 'content-length',
-        issue: 'Body content length is below 100 characters',
+        issue: 'Body < 100 chars',
         seoImpact: 'Moderate',
-        seoRecommendation: 'Add more meaningful content to the page',
+        seoRecommendation: 'Add content',
       });
     }
 
-    const isLoremIpsum = text.toLowerCase().includes('lorem ipsum');
-    if (isLoremIpsum) {
-      const loremIpsumAudits = result.find((item) => item.pageUrl === data.finalUrl);
-      loremIpsumAudits.audits.find((audit) => audit.name === 'lorem-ipsum').opportunities.push({
+    if (/lorem ipsum/i.test(textContent)) {
+      auditsByName['lorem-ipsum'].opportunities.push({
         check: 'lorem-ipsum',
-        issue: 'Page body text contains "lorem ipsum"',
+        issue: 'Contains lorem ipsum',
         seoImpact: 'High',
-        seoRecommendation: 'Remove placeholder text and replace with meaningful content',
+        seoRecommendation: 'Replace placeholder text',
       });
     }
 
-    if (data.tags.h1.length > 1 || data.tags.h1.length === 0) {
-      const h1CountAudits = result.find((item) => item.pageUrl === data.finalUrl);
-      const h1Count = data.tags.h1.length;
-      if (h1Count > 1) {
-        h1CountAudits.audits.find((audit) => audit.name === 'h1-count').opportunities.push({
-          check: 'multiple-h1',
-          issue: `Page contains ${h1Count} H1 tags`,
-          seoImpact: 'High',
-          seoRecommendation: 'Use only one H1 tag per page for better SEO structure',
-        });
-      }
-      if (h1Count === 0) {
-        h1CountAudits.audits.find((audit) => audit.name === 'h1-count').opportunities.push({
-          check: 'missing-h1',
-          issue: 'No H1 tag found on the page',
-          seoImpact: 'High',
-          seoRecommendation: 'Add an H1 tag to the page for better SEO structure',
-        });
-      }
+    const headingCount = doc.querySelectorAll('h1').length;
+    if (headingCount !== 1) {
+      auditsByName['h1-count'].opportunities.push({
+        check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
+        issue: headingCount > 1 ? `Found ${headingCount} H1 tags` : 'No H1 tag',
+        seoImpact: 'High',
+        seoRecommendation: 'Use exactly one H1 tag',
+      });
     }
-  });
 
-  scrapedObjects.forEach(({ data }) => {
-    const html = data.scrapeResult.rawBody;
-    const dom = new JSDOM(html);
-    const badResults = [];
+    const insecureLinks = Array.from(doc.querySelectorAll('a'))
+      .filter((anchor) => anchor.href.startsWith('http://'))
+      .map((anchor) => ({
+        url: anchor.href,
+        issue: 'Use HTTPS',
+        seoImpact: 'High',
+        seoRecommendation: 'Update to HTTPS',
+      }));
 
-    [...dom.window.document.querySelectorAll('a')].forEach((link) => {
-      if (link.href && link.href.startsWith('http://')) {
-        const httpLink = {
-          url: link.href,
-          issue: 'Link using HTTP instead of HTTPS',
-          seoImpact: 'High',
-          seoRecommendation: 'Update all links to use HTTPS protocol',
-        };
-        badResults.push(httpLink);
-      }
-    });
-
-    const linkAudits = result.find((item) => item.pageUrl === data.finalUrl);
-    linkAudits.audits.find((audit) => audit.name === 'links').opportunities.push({
-      check: 'bad-links',
-      issue: badResults,
-    });
+    if (insecureLinks.length > 0) {
+      auditsByName.links.opportunities.push({ check: 'bad-links', issue: insecureLinks });
+    }
   });
 
   log.info(JSON.stringify(result));
