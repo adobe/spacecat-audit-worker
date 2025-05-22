@@ -164,7 +164,9 @@ export async function aggregateAccessibilityData(
     // get the latest subfolder
     const objectKeys = [];
     getCurrentSubfolders.forEach(async (subfolder) => {
+      log.info(`[A11yAudit] Subfolder: ${subfolder}`);
       const objectKeysResult = await getObjectKeysUsingPrefix(s3Client, bucketName, subfolder, log, 1000, '.json');
+      log.info(`[A11yAudit] Object keys result: ${objectKeysResult}`);
       objectKeys.push(...objectKeysResult);
     });
 
