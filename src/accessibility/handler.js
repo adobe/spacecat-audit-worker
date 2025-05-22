@@ -108,6 +108,11 @@ async function processAccessibilityOpportunities(context) {
     const isProd = env.AWS_ENV === 'prod';
     const envAsoDomain = isProd ? 'experience' : 'experience-stage';
     const orgId = site.getOrganizationId();
+    const relatedReportsUrls = {
+      inDepthReportUrl: '',
+      enhancedReportUrl: '',
+      fixedVsNewReportUrl: '',
+    };
 
     // 1.1 generate the markdown report for in-depth overview
     const inDepthOverviewMarkdown = generateInDepthReportMarkdown(current);
@@ -146,9 +151,8 @@ async function processAccessibilityOpportunities(context) {
 
     // 1.5 construct url for the report
     const inDepthOverviewOpportunityId = inDepthOverviewOpportunity.getId();
-    const inDepthOverviewOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthOverviewOpportunityId}`;
-    log.info(`[A11yAudit] In-depth overview report opportunity URL: ${inDepthOverviewOpportunityUrl}`);
-    log.info(`[A11yAudit] In-depth overview report opportunity ID: ${inDepthOverviewOpportunityId}`);
+    relatedReportsUrls.inDepthReportUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthOverviewOpportunityId}`;
+
     // 2.1 generate the markdown report for in-depth top 10
     const inDepthTop10Markdown = generateEnhancedReportMarkdown(current);
 
@@ -185,54 +189,51 @@ async function processAccessibilityOpportunities(context) {
     await inDepthTop10Opportunity.setStatus('IGNORED');
     await inDepthTop10Opportunity.save();
     // 2.5 construct url for the report
-    const enhancedReportOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthTop10Opportunity.getId()}`;
+    relatedReportsUrls.enhancedReportUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthTop10Opportunity.getId()}`;
 
     // 3.1 generate the markdown report for fixed vs new issues if any
     const fixedVsNewMarkdown = generateFixedNewReportMarkdown(current);
-
+    if (fixedVsNewMarkdown.length > 0) {
     // 3.2 create the opportunity for the fixed vs new report
-    const fixedVsNewOpportunityInstance = createFixedVsNewReportOpportunity(week, year);
-    // eslint-disable-next-line max-len
-    const fixedVsNewOpportunityRes = await createReportOpportunity(fixedVsNewOpportunityInstance, auditData, context);
-    if (!fixedVsNewOpportunityRes.status) {
-      log.error('Failed to create fixed vs new report opportunity', fixedVsNewOpportunityRes.message);
-      return {
-        status: 'PROCESSING_FAILED',
-        error: fixedVsNewOpportunityRes.message,
-      };
+      const fixedVsNewOpportunityInstance = createFixedVsNewReportOpportunity(week, year);
+      // eslint-disable-next-line max-len
+      const fixedVsNewOpportunityRes = await createReportOpportunity(fixedVsNewOpportunityInstance, auditData, context);
+      if (!fixedVsNewOpportunityRes.status) {
+        log.error('Failed to create fixed vs new report opportunity', fixedVsNewOpportunityRes.message);
+        return {
+          status: 'PROCESSING_FAILED',
+          error: fixedVsNewOpportunityRes.message,
+        };
+      }
+      const { opportunity: fixedVsNewOpportunity } = fixedVsNewOpportunityRes;
+
+      // 3.3 create the suggestions for the fixed vs new report oppty
+      const fixedVsNewSuggestionRes = await createReportOpportunitySuggestion(
+        fixedVsNewOpportunity,
+        fixedVsNewMarkdown,
+        auditData,
+        log,
+      );
+
+      if (!fixedVsNewSuggestionRes.status) {
+        log.error('Failed to create fixed vs new report opportunity suggestion', fixedVsNewSuggestionRes.message);
+        return {
+          status: 'PROCESSING_FAILED',
+          error: fixedVsNewSuggestionRes.message,
+        };
+      }
+
+      // 3.4 update status to ignored
+      await fixedVsNewOpportunity.setStatus('IGNORED');
+      await fixedVsNewOpportunity.save();
+
+      // 3.5 construct url for the report
+      relatedReportsUrls.fixedVsNewReportUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${fixedVsNewOpportunity.getId()}`;
     }
-    const { opportunity: fixedVsNewOpportunity } = fixedVsNewOpportunityRes;
-
-    // 3.3 create the suggestions for the fixed vs new report oppty
-    const fixedVsNewSuggestionRes = await createReportOpportunitySuggestion(
-      fixedVsNewOpportunity,
-      fixedVsNewMarkdown,
-      auditData,
-      log,
-    );
-
-    if (!fixedVsNewSuggestionRes.status) {
-      log.error('Failed to create fixed vs new report opportunity suggestion', fixedVsNewSuggestionRes.message);
-      return {
-        status: 'PROCESSING_FAILED',
-        error: fixedVsNewSuggestionRes.message,
-      };
-    }
-
-    // 3.4 update status to ignored
-    await fixedVsNewOpportunity.setStatus('IGNORED');
-    await fixedVsNewOpportunity.save();
-
-    // 3.5 construct url for the report
-    const fixedVsNewOpportunityUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${fixedVsNewOpportunity.getId()}`;
 
     // 4.1 generate the markdown report for base report and
     //    add the urls from the above reports into the markdown report
-    const baseReportMarkdown = generateBaseReportMarkdown(current, lastWeek, {
-      enhancedReportOpportunityUrl,
-      inDepthOverviewOpportunityUrl,
-      fixedVsNewOpportunityUrl,
-    });
+    const baseReportMarkdown = generateBaseReportMarkdown(current, lastWeek, relatedReportsUrls);
     // 4.2 generate oppty and suggestions for the report
     const baseOpportunityInstance = createBaseReportOpportunity(week, year);
     // eslint-disable-next-line max-len

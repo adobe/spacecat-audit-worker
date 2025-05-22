@@ -211,8 +211,8 @@ function generateRoadToWCAGSection(wcagData) {
 }
 
 // eslint-disable-next-line max-len
-function generateAccessibilityComplianceIssuesVsTrafficSection(trafficViolations, inDepthReportUrl) {
-  let section = `### Accessibility Compliance Issues vs Traffic | **[In-Depth Report](${inDepthReportUrl})**\n\n`;
+function generateAccessibilityComplianceIssuesVsTrafficSection(trafficViolations, enhancedReportUrl) {
+  let section = `### Accessibility Compliance Issues vs Traffic | **[Enhanced Report](${enhancedReportUrl})**\n\n`;
   section += 'An overview of top 10 pages in terms of traffic with the accessibility issues overview\n\n';
   section += '| Page | Traffic |Total Issues  |Level A |Level AA |\n';
   section += '|--------|--------|--------|--------|--------|\n';
@@ -239,7 +239,7 @@ function generateAccessibilityComplianceIssuesVsTrafficSection(trafficViolations
 }
 
 // eslint-disable-next-line max-len
-function generateAccessibilityComplianceOverviewSection(currentFile, lastWeekFile, enhancedReportUrl) {
+function generateAccessibilityComplianceOverviewSection(currentFile, lastWeekFile, inDepthReportUrl) {
   const critical = currentFile.overall.violations.critical.count;
   const serious = currentFile.overall.violations.serious.count;
 
@@ -267,8 +267,8 @@ function generateAccessibilityComplianceOverviewSection(currentFile, lastWeekFil
   section += 'A breakdown of accessibility issues found as a result of audits for the **first 100 pages** traffic wise.\n\n';
   section += '| | Current |Week Over Week |\n';
   section += '|--------|--------|--------|\n';
-  section += `| **[Critical](${enhancedReportUrl})**| ${critical} | ${criticalChange} ${criticalEmoji}|\n`;
-  section += `| **[Serious](${enhancedReportUrl})**| ${serious} | ${seriousChange} ${seriousEmoji}|\n\n`;
+  section += `| **[Critical](${inDepthReportUrl})**| ${critical} | ${criticalChange} ${criticalEmoji}|\n`;
+  section += `| **[Serious](${inDepthReportUrl})**| ${serious} | ${seriousChange} ${seriousEmoji}|\n\n`;
 
   return section;
 }
@@ -402,7 +402,7 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
 }
 
 // Quick Wins Sections
-function generateQuickWinsOverviewSection(quickWinsData, inDepthReportUrl) {
+function generateQuickWinsOverviewSection(quickWinsData, enhancedReportUrl) {
   const groupedIssues = new Map();
   quickWinsData.topIssues.forEach((issue) => {
     if (issue.id === 'image-alt' || issue.id === 'role-img-alt' || issue.id === 'svg-img-alt') return;
@@ -445,7 +445,7 @@ function generateQuickWinsOverviewSection(quickWinsData, inDepthReportUrl) {
   const totalPercentage = sortedGroups.reduce((sum, group) => sum + parseFloat(group.percentage), 0).toFixed(2);
 
   const sections = [
-    `### Quick Wins | **[In-depth details at the bottom of the page](${inDepthReportUrl})**\n\n`,
+    `### Quick Wins | **[In-depth details at the bottom of the page](${enhancedReportUrl})**\n\n`,
     'Here is a list of accessibility issues that can be resolved site-wide, having a significant impact with minimal effort, as the changes may be required in only a few places.\n\n',
     `Solving the below issues could decrease accessibility issues by ${totalPercentage}%.\n\n`,
     '| Issue | WCAG Success Criterion | % of Total |Level|Impact|How To Solve|\n',
@@ -701,11 +701,11 @@ function generateBaseReportMarkdown(currentFile, lastWeekFile, relatedReportsUrl
   const quickWinsData = processQuickWinsData(currentFile);
 
   return [
-    generateAccessibilityComplianceOverviewSection(currentFile, lastWeekFile, enhancedReportUrl),
+    generateAccessibilityComplianceOverviewSection(currentFile, lastWeekFile, inDepthReportUrl),
     generateWeekOverWeekSection(currentFile, lastWeekFile, fixedVsNewReportUrl),
     generateRoadToWCAGSection(wcagData),
-    generateQuickWinsOverviewSection(quickWinsData, inDepthReportUrl),
-    generateAccessibilityComplianceIssuesVsTrafficSection(trafficViolations, inDepthReportUrl),
+    generateQuickWinsOverviewSection(quickWinsData, enhancedReportUrl),
+    generateAccessibilityComplianceIssuesVsTrafficSection(trafficViolations, enhancedReportUrl),
   ].join('');
 }
 

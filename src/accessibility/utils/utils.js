@@ -136,12 +136,6 @@ export async function aggregateAccessibilityData(
     },
   };
 
-  // check if there are any other final-result files in the accessibility/siteId folder
-  // if there are, we will use the latest one for comparison later on
-  // and delete the rest (ideally 1 should be left)
-  const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
-  log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
-
   try {
     // Prefix for accessibility data for this site
     const prefix = `accessibility/${siteId}/`;
@@ -256,8 +250,21 @@ export async function aggregateAccessibilityData(
     const deletedCount = await deleteOriginalFiles(s3Client, bucketName, objectKeys, log);
     log.info(`Deleted ${deletedCount} original files after aggregation`);
 
-    // delete oldest final result file if there are more than 1
-    if (lastWeekObjectKeys.length > 1) {
+    // check if there are any other final-result files in the accessibility/siteId folder
+    // if there are, we will use the latest one for comparison later on
+    // and delete the rest (ideally 2 should be left)
+    const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
+    log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
+
+    // get last week file and start creating the report
+    // eslint-disable-next-line max-len
+    const lastWeekFile = lastWeekObjectKeys.length < 2 ? null : await getObjectFromKey(s3Client, bucketName, lastWeekObjectKeys[lastWeekObjectKeys.length - 2], log);
+    if (lastWeekFile) {
+      log.info(`[A11yAudit] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
+    }
+
+    // delete oldest final result file if there are more than 2
+    if (lastWeekObjectKeys.length > 2) {
       lastWeekObjectKeys.sort((a, b) => {
         const timestampA = new Date(a.split('/').pop().replace('-final-result.json', ''));
         const timestampB = new Date(b.split('/').pop().replace('-final-result.json', ''));
@@ -267,14 +274,6 @@ export async function aggregateAccessibilityData(
       // eslint-disable-next-line max-len
       const deletedCountOldestFile = await deleteOriginalFiles(s3Client, bucketName, [objectKeyToDelete], log);
       log.info(`Deleted ${deletedCountOldestFile} oldest final result file: ${objectKeyToDelete}`);
-      if (deletedCountOldestFile === 1) lastWeekObjectKeys.shift();
-    }
-
-    // get last week file and start creating the report
-    // eslint-disable-next-line max-len
-    const lastWeekFile = lastWeekObjectKeys[1] ? await getObjectFromKey(s3Client, bucketName, lastWeekObjectKeys[1], log) : null;
-    if (lastWeekFile) {
-      log.info(`[A11yAudit] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
     return {
