@@ -151,7 +151,7 @@ function convertToLowNavOpptyData(metricObject) {
 
 function convertToLowConversionOpptyData(metricObject) {
   const {
-    pageview: { mobile: pageViewsMobile, desktop: pageViewsDesktop },
+    pageview: { mobile: pageViewsMobile, desktop: pageViewsDesktop }, trafficacquisition,
   } = metricObject;
 
   const deviceWiseMetrics = getFormMetrics(metricObject);
@@ -196,6 +196,14 @@ function convertToLowConversionOpptyData(metricObject) {
     device: 'mobile',
     value: {
       page: pageViewsMobile,
+    },
+  });
+
+  metrics.push({
+    type: 'trafficacquisition',
+    device: '*',
+    value: {
+      page: trafficacquisition,
     },
   });
 
