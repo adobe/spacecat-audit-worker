@@ -19,7 +19,7 @@ import {
   generateInDepthReportMarkdown,
   generateEnhancedReportMarkdown,
   generateFixedNewReportMarkdown,
-  generateInDepthOverviewMarkdown,
+  generateBaseReportMarkdown,
   getWeekNumber,
 } from './utils/generateMdReports.js';
 import {
@@ -228,7 +228,7 @@ async function processAccessibilityOpportunities(context) {
 
     // 4.1 generate the markdown report for base report and
     //    add the urls from the above reports into the markdown report
-    const baseReportMarkdown = generateInDepthOverviewMarkdown(current, lastWeek, {
+    const baseReportMarkdown = generateBaseReportMarkdown(current, lastWeek, {
       enhancedReportOpportunityUrl,
       inDepthOverviewOpportunityUrl,
       fixedVsNewOpportunityUrl,
