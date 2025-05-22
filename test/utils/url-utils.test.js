@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,11 +10,21 @@
  * governing permissions and limitations under the License.
  */
 
-// Export the core audit classes and default implementations
-export * from './base-audit.js';
-export { RunnerAudit } from './runner-audit.js';
-export { StepAudit } from './step-audit.js';
-export { AsyncJobRunner } from './async-job-runner.js';
+/* eslint-env mocha */
 
-// Export utility functions
-export * from './audit-utils.js';
+import { expect } from 'chai';
+import { isPreviewPage } from '../../src/utils/url-utils.js';
+
+describe('isPreviewPage', () => {
+  it('should return true for preview pages', () => {
+    const url = 'https://www.example.page/test1';
+    const result = isPreviewPage(url);
+    expect(result).to.be.true;
+  });
+
+  it('should return false for non-preview pages', () => {
+    const url = 'https://www.example.com/test1';
+    const result = isPreviewPage(url);
+    expect(result).to.be.false;
+  });
+});

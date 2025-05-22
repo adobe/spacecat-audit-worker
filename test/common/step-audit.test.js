@@ -184,6 +184,7 @@ describe('Step-based Audit Tests', () => {
         processingType: 'default',
         skipMessage: false,
         allowCache: true,
+        options: {},
         completionQueueUrl: 'https://space.cat/audit-jobs',
         auditContext: {
           next: 'process',

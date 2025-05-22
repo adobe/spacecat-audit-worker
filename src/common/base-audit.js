@@ -11,7 +11,7 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, hasText, isValidUrl } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
@@ -62,6 +62,11 @@ export async function defaultUrlResolver(site) {
 export async function wwwUrlResolver(site, context) {
   const { log } = context;
 
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  if (isValidUrl(overrideBaseURL)) {
+    return overrideBaseURL.replace(/^https?:\/\//, '');
+  }
+
   const baseURL = site.getBaseURL();
   const uri = new URI(baseURL);
   const hostname = uri.hostname();
@@ -98,6 +103,18 @@ export async function wwwUrlResolver(site, context) {
 
 export async function noopUrlResolver(site) {
   return site.getBaseURL();
+}
+
+export async function defaultJobProvider(jobId, context) {
+  const { dataAccess } = context;
+  const { AsyncJob } = dataAccess;
+
+  const job = await AsyncJob.findById(jobId);
+  if (!job) {
+    throw new Error(`Job with id ${jobId} not found`);
+  }
+
+  return job;
 }
 
 export const defaultPostProcessors = [];
