@@ -11,7 +11,9 @@
  */
 
 import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
-import { filterForms, generateOpptyData, shouldExcludeForm } from '../utils.js';
+import {
+  filterForms, flattenMetrics, generateOpptyData, shouldExcludeForm,
+} from '../utils.js';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { DATA_SOURCES } from '../../common/constants.js';
 
@@ -153,6 +155,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         log.debug('Forms Opportunity high form views low conversion updated');
       }
 
+      const flattenedMetrics = flattenMetrics(opportunityData);
       log.info('sending message to mystique');
       const mystiqueMessage = {
         type: 'guidance:high-form-views-low-conversions',
@@ -164,6 +167,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
           url: opportunityData.data.form,
           cr: opportunityData.data.trackedFormKPIValue,
           screenshot: opportunityData.data.screenshot,
+          metrics: flattenedMetrics,
         },
       };
 

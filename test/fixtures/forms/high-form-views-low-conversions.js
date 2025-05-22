@@ -493,6 +493,7 @@ const testData = {
         },
         {
           url: 'https://www.surest.com/info/win',
+          formsource: 'dialog form',
           formsubmit: {
             'desktop:windows': 100,
           },
@@ -559,6 +560,19 @@ const testData = {
           pageview: {
             'desktop:windows': 4670,
             'mobile:ios': 4000,
+          },
+          trafficacquisition: {
+            earned: 0,
+            maxTimeDelta: 33324,
+            owned: 2400,
+            paid: 0,
+            sources: [
+              {
+                type: 'owned:direct',
+                views: 2400,
+              },
+            ],
+            total: 2400,
           },
           forminternalnavigation: [
             {
@@ -807,7 +821,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: '*',
           value: {
             page: 0.90625,
@@ -828,7 +842,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: 'desktop',
           value: {
             page: 1,
@@ -849,7 +863,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: 'mobile',
           value: {
             page: 0.90625,
@@ -874,6 +888,18 @@ const testData = {
           device: 'mobile',
           value: {
             page: 4000,
+          },
+        },
+        {
+          type: 'trafficAcquisitionSource',
+          device: '*',
+          value: {
+            page: [
+              {
+                type: 'owned:direct',
+                views: 2400,
+              },
+            ],
           },
         },
       ],
@@ -922,7 +948,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: '*',
           value: {
             page: 0.8505231689088191,
@@ -943,7 +969,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: 'desktop',
           value: {
             page: 0.8769771528998243,
@@ -964,7 +990,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: 'mobile',
           value: {
             page: 0.7,
@@ -1026,7 +1052,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: '*',
           value: {
             page: 0.8505231689088191,
@@ -1047,7 +1073,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: 'desktop',
           value: {
             page: 0.8769771528998243,
@@ -1068,7 +1094,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: 'mobile',
           value: {
             page: 0.7,
@@ -1139,7 +1165,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: '*',
           value: {
             page: 0.8505231689088191,
@@ -1160,7 +1186,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: 'desktop',
           value: {
             page: 0.8769771528998243,
@@ -1181,7 +1207,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: 'mobile',
           value: {
             page: 0.7,
@@ -1244,7 +1270,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: '*',
           value: {
             page: 0.6875,
@@ -1265,7 +1291,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: 'desktop',
           value: {
             page: 0.65,
@@ -1286,7 +1312,7 @@ const testData = {
           },
         },
         {
-          type: 'bounceRate',
+          type: 'formBounceRate',
           device: 'mobile',
           value: {
             page: 0.75,

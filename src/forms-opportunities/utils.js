@@ -152,6 +152,7 @@ function convertToLowNavOpptyData(metricObject) {
 function convertToLowConversionOpptyData(metricObject) {
   const {
     pageview: { mobile: pageViewsMobile, desktop: pageViewsDesktop },
+    trafficacquisition: { sources: trafficAcquisitionSources },
   } = metricObject;
 
   const deviceWiseMetrics = getFormMetrics(metricObject);
@@ -169,7 +170,7 @@ function convertToLowConversionOpptyData(metricObject) {
     }
     const metricsConfig = [
       { type: 'conversionRate', value: conversionRate },
-      { type: 'bounceRate', value: bounceRate },
+      { type: 'formBounceRate', value: bounceRate },
       { type: 'dropoffRate', value: dropoffRate },
     ];
     metricsConfig.forEach(({ type, value }) => {
@@ -198,6 +199,16 @@ function convertToLowConversionOpptyData(metricObject) {
       page: pageViewsMobile,
     },
   });
+
+  if (Array.isArray(trafficAcquisitionSources) && trafficAcquisitionSources.length > 0) {
+    metrics.push({
+      type: 'trafficAcquisitionSource',
+      device: '*',
+      value: {
+        page: trafficAcquisitionSources,
+      },
+    });
+  }
 
   return {
     trackedFormKPIName: 'Conversion Rate',
@@ -316,5 +327,24 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
     // eslint-disable-next-line no-param-reassign
     opportunity.scrapedStatus = urlMatches;
     return true;
+  });
+}
+
+export function flattenMetrics(opportunityData) {
+  return opportunityData.data.metrics.flatMap((metric) => {
+    if (metric && metric.type === 'trafficAcquisitionSource') {
+      if (Array.isArray(metric.value?.page) && metric.value.page.length > 0) {
+        return metric.value.page.map((source) => ({
+          type: 'trafficSource',
+          sourceType: source.type,
+          views: source.views,
+        }));
+      }
+    }
+    return {
+      type: metric.type,
+      device: metric.device,
+      value: metric.value.page,
+    };
   });
 }
