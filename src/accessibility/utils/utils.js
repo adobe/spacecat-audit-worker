@@ -163,14 +163,11 @@ export async function aggregateAccessibilityData(
 
     // get the latest subfolder
     const processSubfolderPromises = getCurrentSubfolders.map(async (subfolder) => {
-      log.info(`[A11yAudit] Subfolder: ${subfolder}`);
       const objectKeysResult = await getObjectKeysUsingPrefix(s3Client, bucketName, subfolder, log, 1000, '.json');
-      log.info(`[A11yAudit] Object keys result: ${objectKeysResult}`);
       return { data: objectKeysResult };
     });
     const processSubfolderPromisesResult = await Promise.all(processSubfolderPromises);
     const objectKeys = processSubfolderPromisesResult.flatMap((result) => result.data);
-    log.info(`[A11yAudit] Object keys: ${objectKeys}`);
 
     if (!objectKeys || objectKeys.length === 0) {
       const message = `No accessibility data found in bucket ${bucketName} at prefix ${prefix} for site ${siteId}`;

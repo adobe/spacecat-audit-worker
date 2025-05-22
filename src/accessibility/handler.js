@@ -10,10 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-// import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-// import { dataNeededForA11yAuditv2 } from './utils/constants.js';
 import { aggregateAccessibilityData, createReportOpportunity, createReportOpportunitySuggestion } from './utils/utils.js';
 import {
   generateInDepthReportMarkdown,
@@ -28,69 +27,65 @@ import {
   createFixedVsNewReportOpportunity,
   createBaseReportOpportunity,
 } from './oppty-handlers/reportOppty.js';
-// import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
+import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 
-// const { AUDIT_STEP_DESTINATIONS } = Audit;
-// const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
+const { AUDIT_STEP_DESTINATIONS } = Audit;
+const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
 
 // First step: sends a message to the content scraper to generate accessibility audits
-// async function scrapeAccessibilityData(context) {
-//   const {
-//     site, log, finalUrl, env, s3Client,
-//   } = context;
-//   const siteId = site.getId();
-//   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-// eslint-disable-next-line max-len
-//   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()}`);
+async function scrapeAccessibilityData(context) {
+  const {
+    site, log, finalUrl, env, s3Client,
+  } = context;
+  const siteId = site.getId();
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()}`);
 
-// eslint-disable-next-line max-len
-//   const finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
-//   if (finalResultFiles.length === 0) {
-//     log.error(`[A11yAudit] No final result files found for ${site.getBaseURL()}`);
-//     return {
-//       status: 'NO_OPPORTUNITIES',
-//       message: 'No final result files found for accessibility audit',
-//     };
-//   }
-//   const latestFinalResultFileKey = finalResultFiles[finalResultFiles.length - 1];
-// eslint-disable-next-line max-len
-//   const latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
-//   if (!latestFinalResultFile) {
-//     log.error(`[A11yAudit] No latest final result file found for ${site.getBaseURL()}`);
-//     return {
-//       status: 'NO_OPPORTUNITIES',
-//       message: 'No data found in the latest final result file for accessibility audit',
-//     };
-//   }
+  const finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
+  if (finalResultFiles.length === 0) {
+    log.error(`[A11yAudit] No final result files found for ${site.getBaseURL()}`);
+    return {
+      status: 'NO_OPPORTUNITIES',
+      message: 'No final result files found for accessibility audit',
+    };
+  }
+  const latestFinalResultFileKey = finalResultFiles[finalResultFiles.length - 1];
+  // eslint-disable-next-line max-len
+  const latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
+  if (!latestFinalResultFile) {
+    log.error(`[A11yAudit] No latest final result file found for ${site.getBaseURL()}`);
+    return {
+      status: 'NO_OPPORTUNITIES',
+      message: 'No data found in the latest final result file for accessibility audit',
+    };
+  }
 
-//   delete latestFinalResultFile.overall;
-//   // const urlsToScrape = dataNeededForA11yAuditv2.urls;
-//   const urlsToScrape = [];
-//   for (const [key, value] of Object.entries(latestFinalResultFile)) {
-//     if (key.includes('https://')) {
-//       urlsToScrape.push({
-//         url: key,
-//         urlId: key.replace('https://', ''),
-//         traffic: value.traffic,
-//       });
-//     }
-//   }
+  delete latestFinalResultFile.overall;
+  const urlsToScrape = [];
+  for (const [key, value] of Object.entries(latestFinalResultFile)) {
+    if (key.includes('https://')) {
+      urlsToScrape.push({
+        url: key,
+        urlId: key.replace('https://', ''),
+        traffic: value.traffic,
+      });
+    }
+  }
 
-//   // The first step MUST return auditResult and fullAuditRef.
-//   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
-//   return {
-// eslint-disable-next-line max-len
-//     auditResult: { status: 'SCRAPING_REQUESTED', message: 'Content scraping for accessibility audit initiated.' },
-//     fullAuditRef: finalUrl,
-//     // Data for the CONTENT_SCRAPER
-//     urls: urlsToScrape,
-//     siteId: site.getId(),
-//     jobId: site.getId(),
-//     processingType: AUDIT_TYPE_ACCESSIBILITY,
-//     // Potentially add other scraper-specific options if needed
-//     concurrency: 25,
-//   };
-// }
+  // The first step MUST return auditResult and fullAuditRef.
+  // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
+  return {
+    auditResult: { status: 'SCRAPING_REQUESTED', message: 'Content scraping for accessibility audit initiated.' },
+    fullAuditRef: finalUrl,
+    // Data for the CONTENT_SCRAPER
+    urls: urlsToScrape,
+    siteId: site.getId(),
+    jobId: site.getId(),
+    processingType: AUDIT_TYPE_ACCESSIBILITY,
+    // Potentially add other scraper-specific options if needed
+    concurrency: 25,
+  };
+}
 
 // Second step: gets data from the first step and processes it to create new opportunities
 async function processAccessibilityOpportunities(context) {
@@ -229,7 +224,7 @@ async function processAccessibilityOpportunities(context) {
     relatedReportsUrls.enhancedReportUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthTop10Opportunity.getId()}`;
 
     // 3.1 generate the markdown report for fixed vs new issues if any
-    const fixedVsNewMarkdown = generateFixedNewReportMarkdown(current);
+    const fixedVsNewMarkdown = generateFixedNewReportMarkdown(current, lastWeek);
     if (fixedVsNewMarkdown.length > 0) {
     // 3.2 create the opportunity for the fixed vs new report
       const fixedVsNewOpportunityInstance = createFixedVsNewReportOpportunity(week, year);
@@ -303,16 +298,12 @@ async function processAccessibilityOpportunities(context) {
     // Extract some key metrics for the audit result
     const totalIssues = finalResultFiles.current.overall.violations.total;
     const urlsProcessed = Object.keys(finalResultFiles.current).length;
-    const categoriesByCount = Object.entries(finalResultFiles.current.overall.violations)
-      .sort((a, b) => b[1] - a[1])
-      .map(([category, count]) => ({ category, count }));
 
     // Return the final result
     return {
       status: totalIssues > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
       opportunitiesFound: totalIssues,
       urlsProcessed,
-      topIssueCategories: categoriesByCount.slice(0, 5), // Top 5 issue categories
       summary: `Found ${totalIssues} accessibility issues across ${urlsProcessed} URLs`,
       fullReportUrl: outputKey, // Reference to the full report in S3
     };
@@ -328,8 +319,7 @@ async function processAccessibilityOpportunities(context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver) // Keeps the existing URL resolver
   // First step: Prepare and send data to CONTENT_SCRAPER
-  // eslint-disable-next-line max-len
-  // .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   // Second step: Process the scraped data to find opportunities
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();
