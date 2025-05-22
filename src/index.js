@@ -67,7 +67,7 @@ const HANDLERS = {
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   preflight,
-  'audit-status': auditStatus,
+  'audit-status-processor': auditStatus,
   dummy: (message) => ok(message),
 };
 
