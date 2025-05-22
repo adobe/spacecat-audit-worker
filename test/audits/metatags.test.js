@@ -316,6 +316,30 @@ describe('Meta Tags', () => {
         dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
         await expect(submitForScraping(context)).to.be.rejectedWith('No top pages found for site');
       });
+
+      it('should submit top pages for scraping when getIncludedURLs returns null', async () => {
+        const topPages = [
+          { getUrl: () => 'http://example.com/page1' },
+          { getUrl: () => 'http://example.com/page2' },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+        const getConfigStub = sinon.stub().returns({
+          getIncludedURLs: sinon.stub().returns(null),
+        });
+        context.site.getConfig = getConfigStub;
+
+        const result = await submitForScraping(context);
+        expect(result).to.deep.equal({
+          urls: [
+            { url: 'http://example.com/page1' },
+            { url: 'http://example.com/page2' },
+          ],
+          siteId: 'site-id',
+          type: 'meta-tags',
+          batchProcess: 'true',
+          batchSize: 100,
+        });
+      });
     });
 
     describe('fetchAndProcessPageObject', () => {
@@ -925,6 +949,23 @@ describe('Meta Tags', () => {
 
         expect(result).to.deep.equal({ status: 'complete' });
         expect(logStub.warn).to.have.been.calledWith('Error while calculating projected traffic for site-id', sinon.match.instanceOf(Error));
+      });
+
+      it('should submit top pages for scraping when getIncludedURLs returns null', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const getConfigStub = sinon.stub().returns({
+          getIncludedURLs: sinon.stub().returns(null),
+        });
+        context.site.getConfig = getConfigStub;
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+        });
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+        expect(result).to.deep.equal({ status: 'complete' });
       });
     });
 
