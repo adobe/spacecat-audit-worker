@@ -711,6 +711,9 @@ describe('Meta Tags', () => {
           getBaseURL: sinon.stub().returns('http://example.com'),
           getConfig: sinon.stub().returns({
             getIncludedURLs: sinon.stub().returns([]),
+            getFetchConfig: sinon.stub().returns({
+              overrideBaseURL: null,
+            }),
           }),
         };
 
