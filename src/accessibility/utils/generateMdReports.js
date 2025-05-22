@@ -59,6 +59,56 @@ function getWeekNumber(date) {
   return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
 }
 
+/**
+ * Format failure summary text by replacing section headers and numbering items
+ * @param {string} failureSummary - Raw failure summary text
+ * @returns {string} Formatted failure summary
+ */
+function formatFailureSummary(failureSummary) {
+  // Split into main sections
+  const mainSections = failureSummary.split(/(?=Fix (?:any|all) of the following:)/);
+
+  let result = '';
+  let currentSection = '';
+
+  mainSections.forEach(section => {
+    if (section.startsWith('Fix any of the following:')) {
+      // If we have a previous section, add it to the result
+      if (currentSection) {
+        result += currentSection + '\n\n';
+      }
+      // Start new section
+      const lines = section.split('\n').filter(line => line.trim());
+      currentSection = lines.map((line, index) => {
+        if (index === 0) {
+          return 'One or more of the following related issues may also be present:';
+        }
+        return `${index}. ${line.trim()}`;
+      }).join('\n');
+    } else if (section.startsWith('Fix all of the following:')) {
+      // If we have a previous section, add it to the result
+      if (currentSection) {
+        result += currentSection + '\n\n';
+      }
+      // Start new section
+      const lines = section.split('\n').filter(line => line.trim());
+      currentSection = lines.map((line, index) => {
+        if (index === 0) {
+          return 'The following issue has been identified and must be addressed:';
+        }
+        return `${index}. ${line.trim()}`;
+      }).join('\n');
+    }
+  });
+  
+  // Add the last section
+  if (currentSection) {
+    result += currentSection;
+  }
+  
+  return result.trim();
+}
+
 // =============================================
 // Data Processing Functions
 // =============================================
@@ -386,11 +436,7 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
       if (pageData && pageData.violations) {
         const pageViolation = pageData.violations[level]?.items?.[issue.name];
         if (pageViolation && pageViolation.failureSummary) {
-          failureSummary = escapeHtmlTags(pageViolation.failureSummary
-            .replace(/^(\s*)([^•\n].+)$/gm, '• $2')
-            .replace(/•\s*Fix any of the following:\n\s*/, '\nThe following issue has been identified and must be addressed:\n')
-            .replace(/•\s*Fix all of the following:\n\s*/, '\nOne or more of the following related issues may also be present:\n'));
-        }
+          failureSummary = escapeHtmlTags(formatFailureSummary(pageViolation.failureSummary));
       }
     }
 
