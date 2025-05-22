@@ -26,13 +26,78 @@ use(chaiAsPromised);
 const sandbox = sinon.createSandbox();
 const auditUrl = 'www.spacecat.com';
 
+const runDataMissingType = [
+  {
+    key: 'pageType',
+    value: [
+      {
+        totalSessions: 2620,
+      },
+    ],
+  },
+];
+
+const runDataUrlMissingType = [
+  {
+    key: 'url',
+    value: [
+      {
+        totalSessions: 2620,
+        url: 'some-url',
+      },
+      {
+        totalSessions: 2620,
+      },
+    ],
+  },
+  {
+    key: 'pageType',
+    value: [
+      {
+        totalSessions: 2620,
+        type: 'new-type',
+      },
+      {
+        totalSessions: 2620,
+      },
+    ],
+  },
+];
+
+const pageTypes = {
+  'homepage | Homepage': /^\/(home\/?)?$/,
+  'homepage | Homepage (Customer Variant)': /^\/homepage(-customer)?(\/|$)/i,
+  'productpage | Product/Feature Pages': /^\/(products?|features?|services?)(\/|$)/i,
+  'other | Other Pages': /.*/,
+};
+
+function getSite() {
+  const config = Object.entries(pageTypes).map(([name, patternReg]) => (
+    {
+      name,
+      pattern: new RegExp(patternReg).toString(),
+    }
+  ));
+
+  const siteConfig = {
+    getGroupedURLs: sandbox.stub().returns(config),
+  };
+
+  return {
+    getConfig: () => siteConfig,
+  };
+}
+
 describe('Paid audit incorporates optel data as input', () => {
   const logStub = {
     info: sinon.stub(),
     debug: sinon.stub(),
     error: sinon.stub(),
   };
-  const context = {
+
+  const site = getSite();
+
+  let context = {
     runtime: { name: 'aws-lambda', region: 'us-east-1' },
     func: { package: 'spacecat-services', version: 'ci', name: 'test' },
     rumApiClient: {
@@ -50,7 +115,7 @@ describe('Paid audit incorporates optel data as input', () => {
 
   const expectedSegments = ['url', 'pageType'];
   it('Paid should submit expected rum query data', async () => {
-    const result = await paidAuditRunner(auditUrl, context);
+    const result = await paidAuditRunner(auditUrl, context, site);
     expect(result).to.deep.equal(expectedSubmitted);
     const submittedSegments = (result.auditResult.map((entry) => (entry.key)));
     submittedSegments.forEach((key) => expect(expectedSegments).to.include(key));
@@ -58,7 +123,7 @@ describe('Paid audit incorporates optel data as input', () => {
   });
 
   it('Paid should submit values ordered by total sessions', async () => {
-    const result = await paidAuditRunner(auditUrl, context);
+    const result = await paidAuditRunner(auditUrl, context, site);
     result.auditResult.forEach((segment) => {
       const values = segment.value;
       if (values.length > 1) {
@@ -68,10 +133,48 @@ describe('Paid audit incorporates optel data as input', () => {
   });
 
   it('Paid should enrich urls with pageType info', async () => {
-    const result = await paidAuditRunner(auditUrl, context);
+    const result = await paidAuditRunner(auditUrl, context, site);
     const urlSegment = result.auditResult.find((segment) => segment.key === 'url');
     urlSegment.value.forEach((valueItem) => {
       expect(valueItem).to.have.property('pageType');
     });
+  });
+
+  it('Paid should handle missing page data', async () => {
+    context = {
+      ...context,
+      rumApiClient: { query: sandbox.stub().resolves(runDataMissingType) },
+    };
+
+    const result = await paidAuditRunner(auditUrl, context, site);
+    expect(result.auditResult.length).to.eql(1);
+    expect(result.auditResult[0].value).to.not.have.property('pageType');
+  });
+
+  it('Paid should handle empty query respone', async () => {
+    context = {
+      ...context,
+      rumApiClient: { query: sandbox.stub().resolves([]) },
+    };
+
+    const result = await paidAuditRunner(auditUrl, context, site);
+    expect(result.auditResult.length).to.eql(0);
+  });
+
+  it('Paid should handle url and page type mismatch', async () => {
+    context = {
+      ...context,
+      rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
+    };
+
+    const result = await paidAuditRunner(auditUrl, context, site);
+    expect(result.auditResult.length).to.eql(2);
+
+    const missingUrl = result.auditResult
+      .find((item) => item.key === 'url')
+      .value
+      .find((valueItem) => !valueItem.url);
+
+    expect(missingUrl.pageType).to.eq('uncategorized');
   });
 });

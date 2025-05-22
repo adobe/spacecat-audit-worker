@@ -16,29 +16,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 
 const MAX_SEGMENT_SIZE = 3;
 const INTERVAL = 7; // days
-const UNCATEGORIZED_PAGE = 'uncategorized';
-
-const pageTypes = {
-  'homepage | Homepage': /^\/(home\/?)?$/,
-  'homepage | Homepage (Customer Variant)': /^\/homepage(-customer)?(\/|$)/i,
-  'productpage | Product/Feature Pages': /^\/(products?|features?|services?)(\/|$)/i,
-  'pricingpage | Pricing Pages': /^\/(pricing|plans|compare)(\/|$)/i,
-  'customers | Customer Stories/Case Studies': /^\/(customers?|case-studies)(\/|$)/i,
-  'landingpage | Signup / Demo / Booking': /^\/(signup|register|demo|booking|free-trial|get-started)(\/|$)/i,
-  'blog | Blog Post': /^\/blog\/.+/,
-  'blog | Blog Homepage': /^\/blog(\/|$)/,
-  'careers | Careers': /^\/(careers?|jobs|work-with-us)(\/|$)/i,
-  'resourcepage | Resources': /^\/(resources?|downloads|library|ebooks|whitepapers|guides|templates)(\/|$)/i,
-  'webinarpage | Webinars': /^\/(webinars?|events\/webinar)(\/|$)/i,
-  'support | Support / Help / FAQ': /^\/(support|help|faq|contact)(\/|$)/i,
-  'about | About / Company Info': /^\/(about|company|team|press)(\/|$)/i,
-  'legal | Legal / Privacy / Terms': /^\/(privacy|terms|legal|cookies)(\/|$)/i,
-  'events | Events': /^\/(events?|conferences?|summits?)(\/|$)/i,
-  'integration | Integrations': /^\/(integrations?|apps|connectors)(\/|$)/i,
-  'tutorials | Tutorials / How-To': /^\/(tutorials?|how-to|docs|documentation)(\/|$)/i,
-  'unsubscribe | Subscription Preferences': /^\/(unsubscribe|preferences)(\/|$)/i,
-  'other | Other Pages': /.*/,
-};
+const UNCATEGORIZED = 'uncategorized';
 
 const allowedSegments = ['url', 'pageType'];
 
@@ -63,18 +41,30 @@ function filterByTopSessionViews(segments) {
 }
 
 function classifyUrl(url, classifier) {
-  for (const [category, regEx] of Object.entries(classifier)) {
-    const pattern = regEx instanceof RegExp ? regEx : new RegExp(regEx);
-    if (pattern.test(url)) {
-      return category;
-    }
+  let pageType = UNCATEGORIZED;
+  const match = Object
+    .entries(classifier)
+    .find(([, regEx]) => regEx.test(url));
+  if (match) {
+    [pageType] = match;
   }
-  return UNCATEGORIZED_PAGE;
+
+  return pageType;
 }
 
-function fetchPageTypeClassifier(log, siteId) {
+function fetchPageTypeClassifier(log, siteId, site) {
   log.info(`Fetching classifier for site ${siteId}`);
-  return pageTypes;
+
+  const config = site.getConfig().getGroupedURLs('paid');
+  const pageTypes = config.map((item) => {
+    const page = item.name;
+    const pattern = (item.pattern) instanceof RegExp ? item.pattern : new RegExp(item.pattern);
+    return {
+      [page]: pattern,
+    };
+  });
+
+  return pageTypes.reduce((acc, pageType) => ({ ...acc, ...pageType }), {});
 }
 
 function removeUncategorizedPages(segment) {
@@ -89,14 +79,13 @@ function createPageTypeUrls(auditResult) {
   const urlsSegment = auditResult.find((segment) => segment.key === 'url');
   const urls = urlsSegment?.value || [];
 
-  const pageTypeUrls = urls.reduce((acc, entry) => {
+  const pageTypeUrls = urls.reduce((pageTypeDic, entry) => {
     const { pageType, url } = entry;
-    if (!pageType) return acc;
-
-    if (!acc[pageType]) acc[pageType] = [];
-    acc[pageType].push(url);
-
-    return acc;
+    if (!pageType || !url) return pageTypeDic;
+    return {
+      ...pageTypeDic,
+      [pageType]: [...(pageTypeDic[pageType] || []), url],
+    };
   }, {});
 
   return pageTypeUrls;
@@ -128,7 +117,7 @@ function enrichContainedUrls(enrichedPageTypeUrs) {
     if (segment.key === 'pageType') {
       const enrichedValue = segment.value.map((pt) => {
         const type = pt?.type;
-        const urls = type && pageUrlDict?.[type] ? pageUrlDict?.[type] : [];
+        const urls = type && pageUrlDict[type] ? pageUrlDict[type] : [];
         return {
           ...pt,
           urls,
@@ -146,10 +135,10 @@ function enrichContainedUrls(enrichedPageTypeUrs) {
   return enriched;
 }
 
-export async function paidAuditRunner(auditUrl, context) {
+export async function paidAuditRunner(auditUrl, context, site) {
   const { log } = context;
-  const rumAPIClient = RUMAPIClient.createFrom(context);
-  const classifier = fetchPageTypeClassifier(log, auditUrl) ?? null;
+  const rumAPIClient = RUMAPIClient.createFrom(context, auditUrl, site);
+  const classifier = fetchPageTypeClassifier(log, auditUrl, site);
   const options = {
     domain: auditUrl,
     interval: INTERVAL,
