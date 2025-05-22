@@ -10,606 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-export const isHeadless = false;
-
-export const dataNeededForA11yAudit = {
-  siteData: {
-    name: 'theplayers',
-    siteId: '917ca4a0-bb8e-47a8-aa6e-c4eb73defb97',
-  },
-  urls: [
-    {
-      url: 'https://theplayers.com/',
-      traffic: '3600',
-      urlId: 'theplayers-com',
-    },
-    {
-      url: 'https://theplayers.com/plan-your-visit',
-      traffic: '2800',
-      urlId: 'theplayers-com-plan-your-visit',
-    },
-    // {
-    //   url: 'https://theplayers.com/parking',
-    //   traffic: '1700',
-    //   urlId: 'theplayers-com-parking',
-    // },
-    // {
-    //   url: 'https://theplayers.com/chip-in',
-    //   traffic: '1600',
-    //   urlId: 'theplayers-com-chip-in',
-    // },
-    // {
-    //   url: 'https://theplayers.com/tickets',
-    //   traffic: '1500',
-    //   urlId: 'theplayers-com-tickets',
-    // },
-    // {
-    //   url: 'https://theplayers.com/chip-in/leaderboard',
-    //   traffic: '400',
-    //   urlId: 'theplayers-com-chip-in-leaderboard',
-    // },
-    // {
-    //   url: 'https://theplayers.com/military',
-    //   traffic: '300',
-    //   urlId: 'theplayers-com-military',
-    // },
-    // {
-    //   url: 'https://theplayers.com/equipment',
-    //   traffic: '200',
-    //   urlId: 'theplayers-com-equipment',
-    // },
-    // {
-    //   url: 'https://theplayers.com/hospitality',
-    //   traffic: '200',
-    //   urlId: 'theplayers-com-hospitality',
-    // },
-    // {
-    //   url: 'https://theplayers.com/birdies',
-    //   traffic: '200',
-    //   urlId: 'theplayers-com-birdies',
-    // },
-    // {
-    //   url: 'https://theplayers.com/TICKETS',
-    //   traffic: '200',
-    //   urlId: 'theplayers-com-tickets',
-    // },
-    // {
-    //   url: 'https://theplayers.com/news/2025/02/19/format-field-creator-classic-tpc-sawgrass',
-    //   traffic: '100',
-    //   urlId: 'theplayers-com-format-field-creator-classic-tpc-sawgrass',
-    // },
-    // {
-    //   url: 'https://theplayers.com/past-results',
-    //   traffic: '100',
-    //   urlId: 'theplayers-com-past-results',
-    // },
-    // {
-    //   url: 'https://theplayers.com/volunteer',
-    //   traffic: '100',
-    //   urlId: 'theplayers-com-volunteer',
-    // },
-    // {
-    //   url: 'https://theplayers.com/trophy',
-    //   traffic: '100',
-    //   urlId: 'theplayers-com-trophy',
-    // },
-    // {
-    //   url: 'https://theplayers.com/community',
-    //   traffic: '100',
-    //   urlId: 'theplayers-com-community',
-    // },
-  ],
-};
-
-export const dataNeededForA11yAuditv2 = {
-  siteData: {
-    name: 'bamboo',
-    siteId: '36e4848b-d6e5-4350-a7f9-610e78325966',
-  },
-  urls: [
-    {
-      url: 'https://www.bamboohr.com/',
-      traffic: '4597700',
-      urlId: 'www-bamboohr-com',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/easier-hr-for-everyone',
-      traffic: '385100',
-      urlId: 'www-bamboohr-com-pl-pages-easier-hr-for-everyone',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/easier-make-a-difference',
-      traffic: '322500',
-      urlId: 'www-bamboohr-com-pl-pages-easier-make-a-difference',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/bamboohr-software-basics',
-      traffic: '218260',
-      urlId: 'www-bamboohr-com-pl-pages-bamboohr-software-basics',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/easier-customer-testimonials',
-      traffic: '116200',
-      urlId: 'www-bamboohr-com-pl-pages-easier-customer-testimonials',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/easier-upgrade-your-hr',
-      traffic: '112800',
-      urlId: 'www-bamboohr-com-pl-pages-easier-upgrade-your-hr',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/hr-time-tracking',
-      traffic: '112100',
-      urlId: 'www-bamboohr-com-pl-pages-hr-time-tracking',
-    },
-    {
-      url: 'https://www.bamboohr.com/signup/',
-      traffic: '108200',
-      urlId: 'www-bamboohr-com-signup',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/ebooks/the-definitive-guide-to-onboarding',
-      traffic: '92060',
-      urlId: 'www-bamboohr-com-resources-ebooks-the-definitive-guide-to-onboarding',
-    },
-    {
-      url: 'https://www.bamboohr.com/homepage-customer',
-      traffic: '85200',
-      urlId: 'www-bamboohr-com-homepage-customer',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/bamboohr-software',
-      traffic: '84600',
-      urlId: 'www-bamboohr-com-pl-pages-bamboohr-software',
-    },
-    {
-      url: 'https://www.bamboohr.com/careers/application',
-      traffic: '78700',
-      urlId: 'www-bamboohr-com-careers-application',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/bamboohr-overview',
-      traffic: '56400',
-      urlId: 'www-bamboohr-com-pl-pages-bamboohr-overview',
-    },
-    {
-      url: 'https://www.bamboohr.com/webinars/',
-      traffic: '53700',
-      urlId: 'www-bamboohr-com-webinars',
-    },
-    {
-      url: 'https://www.bamboohr.com/blog/employees-do-the-right-thing',
-      traffic: '52000',
-      urlId: 'www-bamboohr-com-blog-employees-do-the-right-thing',
-    },
-    {
-      url: 'https://www.bamboohr.com/careers/',
-      traffic: '51800',
-      urlId: 'www-bamboohr-com-careers',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/ebooks/definitive-guide-company-culture',
-      traffic: '51200',
-      urlId: 'www-bamboohr-com-resources-ebooks-definitive-guide-company-culture',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl/onboarding-checklist',
-      traffic: '45700',
-      urlId: 'www-bamboohr-com-pl-onboarding-checklist',
-    },
-    {
-      url: 'https://www.bamboohr.com/demo',
-      traffic: '44400',
-      urlId: 'www-bamboohr-com-demo',
-    },
-    {
-      url: 'https://www.bamboohr.com/unsubscribe/',
-      traffic: '44300',
-      urlId: 'www-bamboohr-com-unsubscribe',
-    },
-    {
-      url: 'https://www.bamboohr.com/pricing/',
-      traffic: '41100',
-      urlId: 'www-bamboohr-com-pricing',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/hr-software',
-      traffic: '41060',
-      urlId: 'www-bamboohr-com-pl-pages-hr-software',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/competitors/rippling',
-      traffic: '39600',
-      urlId: 'www-bamboohr-com-pl-pages-competitors-rippling',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/onboarding',
-      traffic: '35760',
-      urlId: 'www-bamboohr-com-pl-pages-onboarding',
-    },
-    {
-      url: 'https://www.bamboohr.com/blog/',
-      traffic: '34000',
-      urlId: 'www-bamboohr-com-blog',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/competitors/workday',
-      traffic: '32400',
-      urlId: 'www-bamboohr-com-pl-pages-competitors-workday',
-    },
-    {
-      url: 'https://www.bamboohr.com/o2',
-      traffic: '32160',
-      urlId: 'www-bamboohr-com-o2',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/pricing',
-      traffic: '31400',
-      urlId: 'www-bamboohr-com-pl-pages-pricing',
-    },
-    {
-      url: 'https://www.bamboohr.com/legal/terms-of-service',
-      traffic: '31100',
-      urlId: 'www-bamboohr-com-legal-terms-of-service',
-    },
-    {
-      url: 'https://www.bamboohr.com/hr-software/mobile',
-      traffic: '30700',
-      urlId: 'www-bamboohr-com-hr-software-mobile',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/hr-glossary/',
-      traffic: '28900',
-      urlId: 'www-bamboohr-com-resources-hr-glossary',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/employee-time-tracking',
-      traffic: '28100',
-      urlId: 'www-bamboohr-com-pl-pages-employee-time-tracking',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl/benefits-administration',
-      traffic: '26900',
-      urlId: 'www-bamboohr-com-pl-benefits-administration',
-    },
-    {
-      url: 'https://www.bamboohr.com/o1',
-      traffic: '26300',
-      urlId: 'www-bamboohr-com-o1',
-    },
-    {
-      url: 'https://www.bamboohr.com/legal/privacy-policy',
-      traffic: '24200',
-      urlId: 'www-bamboohr-com-legal-privacy-policy',
-    },
-    {
-      url: 'https://www.bamboohr.com/integrations/listings/netsuite',
-      traffic: '23300',
-      urlId: 'www-bamboohr-com-integrations-listings-netsuite',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/ats',
-      traffic: '22900',
-      urlId: 'www-bamboohr-com-pl-pages-ats',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/',
-      traffic: '22600',
-      urlId: 'www-bamboohr-com-resources',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/ebooks/chatgpt-prompts-hr',
-      traffic: '21900',
-      urlId: 'www-bamboohr-com-resources-ebooks-chatgpt-prompts-hr',
-    },
-    {
-      url: 'https://www.bamboohr.com/integrations/',
-      traffic: '20300',
-      urlId: 'www-bamboohr-com-integrations',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl/onboarding-checklist-a2',
-      traffic: '19660',
-      urlId: 'www-bamboohr-com-pl-onboarding-checklist-a2',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/pto-tracking',
-      traffic: '17200',
-      urlId: 'www-bamboohr-com-pl-pages-pto-tracking',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/hrm',
-      traffic: '16900',
-      urlId: 'www-bamboohr-com-pl-pages-hrm',
-    },
-    {
-      url: 'https://www.bamboohr.com/booking/live-demo-success',
-      traffic: '16900',
-      urlId: 'www-bamboohr-com-booking-live-demo-success',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/human-resources',
-      traffic: '16700',
-      urlId: 'www-bamboohr-com-pl-pages-human-resources',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/separation-letters-guide',
-      traffic: '15100',
-      urlId: 'www-bamboohr-com-pl-pages-separation-letters-guide',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/competitors/hibob',
-      traffic: '14300',
-      urlId: 'www-bamboohr-com-pl-pages-competitors-hibob',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/performance-management',
-      traffic: '13900',
-      urlId: 'www-bamboohr-com-pl-pages-performance-management',
-    },
-    {
-      url: 'https://www.bamboohr.com/unsubscribe/success',
-      traffic: '13300',
-      urlId: 'www-bamboohr-com-unsubscribe-success',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/data-at-work/employee-happiness-index/q4-2024-employee-satisfaction-survey',
-      traffic: '13100',
-      urlId: 'www-bamboohr-com-resources-data-at-work-employee-happiness-index-q4-2024-employee-satisfaction-survey',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/ebooks/the-definitive-guide-to-onboarding-k1',
-      traffic: '13100',
-      urlId: 'www-bamboohr-com-resources-ebooks-the-definitive-guide-to-onboarding-k1',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl/onboarding-checklist-a1',
-      traffic: '12640',
-      urlId: 'www-bamboohr-com-pl-onboarding-checklist-a1',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/ebooks/how-to-measure-employee-engagement',
-      traffic: '12000',
-      urlId: 'www-bamboohr-com-resources-ebooks-how-to-measure-employee-engagement',
-    },
-    {
-      url: 'https://www.bamboohr.com/integrations/request-information',
-      traffic: '11900',
-      urlId: 'www-bamboohr-com-integrations-request-information',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl/payroll-software-c',
-      traffic: '11900',
-      urlId: 'www-bamboohr-com-pl-payroll-software-c',
-    },
-    {
-      url: 'https://www.bamboohr.com/hr-software/payroll',
-      traffic: '11800',
-      urlId: 'www-bamboohr-com-hr-software-payroll',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/hr-glossary/generation-y',
-      traffic: '11800',
-      urlId: 'www-bamboohr-com-resources-hr-glossary-generation-y',
-    },
-    {
-      url: 'https://www.bamboohr.com/compare-plans/activate/core',
-      traffic: '11700',
-      urlId: 'www-bamboohr-com-compare-plans-activate-core',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/employee-vacation-tracking',
-      traffic: '11600',
-      urlId: 'www-bamboohr-com-pl-pages-employee-vacation-tracking',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/bamboohr-software-basics-b1',
-      traffic: '11500',
-      urlId: 'www-bamboohr-com-pl-pages-bamboohr-software-basics-b1',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl/payroll-checklist',
-      traffic: '11300',
-      urlId: 'www-bamboohr-com-pl-payroll-checklist',
-    },
-    {
-      url: 'https://www.bamboohr.com/product-updates/',
-      traffic: '10800',
-      urlId: 'www-bamboohr-com-product-updates',
-    },
-    {
-      url: 'https://www.bamboohr.com/blog/employee-perks-incentives-ideas',
-      traffic: '10300',
-      urlId: 'www-bamboohr-com-blog-employee-perks-incentives-ideas',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/hr-glossary/alternative-dispute-resolution-adr',
-      traffic: '10200',
-      urlId: 'www-bamboohr-com-resources-hr-glossary-alternative-dispute-resolution-adr',
-    },
-    {
-      url: 'https://www.bamboohr.com/hr-software/hr-platform',
-      traffic: '9900',
-      urlId: 'www-bamboohr-com-hr-software-hr-platform',
-    },
-    {
-      url: 'https://www.bamboohr.com/about-bamboohr/contact/',
-      traffic: '9800',
-      urlId: 'www-bamboohr-com-about-bamboohr-contact',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/employee-software',
-      traffic: '9700',
-      urlId: 'www-bamboohr-com-pl-pages-employee-software',
-    },
-    {
-      url: 'https://www.bamboohr.com/customers/',
-      traffic: '9600',
-      urlId: 'www-bamboohr-com-customers',
-    },
-    {
-      url: 'https://www.bamboohr.com/hr-software/employee-database-software',
-      traffic: '9500',
-      urlId: 'www-bamboohr-com-hr-software-employee-database-software',
-    },
-    {
-      url: 'https://www.bamboohr.com/integrations/listings/slack',
-      traffic: '9200',
-      urlId: 'www-bamboohr-com-integrations-listings-slack',
-    },
-    {
-      url: 'https://www.bamboohr.com/blog/furloughs-vs-layoffs',
-      traffic: '9200',
-      urlId: 'www-bamboohr-com-blog-furloughs-vs-layoffs',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/hr-glossary/qualifying-life-event',
-      traffic: '9200',
-      urlId: 'www-bamboohr-com-resources-hr-glossary-qualifying-life-event',
-    },
-    {
-      url: 'https://www.bamboohr.com/hr-software/applicant-tracking',
-      traffic: '9100',
-      urlId: 'www-bamboohr-com-hr-software-applicant-tracking',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/hr-toolkit',
-      traffic: '9100',
-      urlId: 'www-bamboohr-com-pl-pages-hr-toolkit',
-    },
-    {
-      url: 'https://www.bamboohr.com/hr-software/employee-self-onboarding',
-      traffic: '9000',
-      urlId: 'www-bamboohr-com-hr-software-employee-self-onboarding',
-    },
-    {
-      url: 'https://www.bamboohr.com/blog/the-best-questions-to-ask-in-performance-reviews',
-      traffic: '9000',
-      urlId: 'www-bamboohr-com-blog-the-best-questions-to-ask-in-performance-reviews',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/competitors/gusto',
-      traffic: '8400',
-      urlId: 'www-bamboohr-com-pl-pages-competitors-gusto',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/hr-glossary/generation-x',
-      traffic: '8400',
-      urlId: 'www-bamboohr-com-resources-hr-glossary-generation-x',
-    },
-    {
-      url: 'https://www.bamboohr.com/legal/',
-      traffic: '8300',
-      urlId: 'www-bamboohr-com-legal',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/competitors/isolved',
-      traffic: '8200',
-      urlId: 'www-bamboohr-com-pl-pages-competitors-isolved',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/applicant-tracking-system',
-      traffic: '8040',
-      urlId: 'www-bamboohr-com-pl-pages-applicant-tracking-system',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/hr-glossary/147c',
-      traffic: '8000',
-      urlId: 'www-bamboohr-com-resources-hr-glossary-147c',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/timesheets',
-      traffic: '8000',
-      urlId: 'www-bamboohr-com-pl-pages-timesheets',
-    },
-    {
-      url: 'https://www.bamboohr.com/blog/internal-job-interview-questions',
-      traffic: '7600',
-      urlId: 'www-bamboohr-com-blog-internal-job-interview-questions',
-    },
-    {
-      url: 'https://www.bamboohr.com/why-bamboohr/',
-      traffic: '7500',
-      urlId: 'www-bamboohr-com-why-bamboohr',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/ebooks/job-offer-letter-templates',
-      traffic: '7500',
-      urlId: 'www-bamboohr-com-resources-ebooks-job-offer-letter-templates',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/recruitment',
-      traffic: '7500',
-      urlId: 'www-bamboohr-com-pl-pages-recruitment',
-    },
-    {
-      url: 'https://www.bamboohr.com/blog/learn-management-style',
-      traffic: '7120',
-      urlId: 'www-bamboohr-com-blog-learn-management-style',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/intl-en/hr-software',
-      traffic: '7000',
-      urlId: 'www-bamboohr-com-pl-pages-intl-en-hr-software',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl/interview-scorecard-template',
-      traffic: '6800',
-      urlId: 'www-bamboohr-com-pl-interview-scorecard-template',
-    },
-    {
-      url: 'https://www.bamboohr.com/resources/guides/the-definitive-guide-to-onboarding',
-      traffic: '6700',
-      urlId: 'www-bamboohr-com-resources-guides-the-definitive-guide-to-onboarding',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/competitors/goco',
-      traffic: '6600',
-      urlId: 'www-bamboohr-com-pl-pages-competitors-goco',
-    },
-    {
-      url: 'https://www.bamboohr.com/hr-software/payroll-software',
-      traffic: '6600',
-      urlId: 'www-bamboohr-com-hr-software-payroll-software',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/employee-database',
-      traffic: '6300',
-      urlId: 'www-bamboohr-com-pl-pages-employee-database',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/human-resource-management',
-      traffic: '6300',
-      urlId: 'www-bamboohr-com-pl-pages-human-resource-management',
-    },
-    {
-      url: 'https://www.bamboohr.com/blog/tips-increasing-workplace-efficiency',
-      traffic: '6300',
-      urlId: 'www-bamboohr-com-blog-tips-increasing-workplace-efficiency',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/human-resources-software',
-      traffic: '6200',
-      urlId: 'www-bamboohr-com-pl-pages-human-resources-software',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/intl-en/onboarding',
-      traffic: '6200',
-      urlId: 'www-bamboohr-com-pl-pages-intl-en-onboarding',
-    },
-    {
-      url: 'https://www.bamboohr.com/pl-pages/employee-time-clock',
-      traffic: '6000',
-      urlId: 'www-bamboohr-com-pl-pages-employee-time-clock',
-    },
-    {
-      url: 'https://www.bamboohr.com/blog/stay-positive-at-work',
-      traffic: '6000',
-      urlId: 'www-bamboohr-com-blog-stay-positive-at-work',
-    },
-  ],
-};
-
+/**
+ * Accessibility success criteria links for common WCAG issues
+ * This file contains standardized links to the WCAG success criteria
+ * used in generating reports
+ * Used for Enhancing accessibility for the top 10 most-visited pages section,
+ * specifically "How to meet" column
+ */
 export const successCriteriaLinks = {
   111: {
     name: 'Non-text Content',
@@ -1133,4 +540,172 @@ export const successCriteriaLinks = {
     howToMeetUrl: 'https://www.w3.org/WAI/WCAG22/quickref/#status-messages',
     successCriterionUrl: 'https://www.w3.org/TR/WCAG/#status-messages',
   },
+};
+
+/**
+ * Accessibility issues impact descriptions for common WCAG issues
+ * This file contains standardized descriptions of how accessibility issues affect users
+ * used in generating reports
+ * Used for Enhancing accessibility for the top 10 most-visited pages section,
+ * specifically "How is the user affected" column
+ */
+export const accessibilityIssuesImpact = {
+  // Critical impact issues (Level A, typically)
+  'aria-required-parent': 'Critical',
+  'aria-allowed-attr': 'Critical',
+  'aria-required-attr': 'Critical',
+  'button-name': 'Critical',
+  'image-alt': 'Critical',
+  'aria-required-children': 'Critical',
+  'aria-valid-attr-value': 'Critical',
+  'meta-viewport': 'Critical',
+  'select-name': 'Critical',
+
+  // Serious impact issues (Level AA, typically)
+  'aria-hidden-focus': 'Serious',
+  'nested-interactive': 'Serious',
+  dlitem: 'Serious',
+  'definition-list': 'Serious',
+  'link-name': 'Serious',
+  'aria-prohibited-attr': 'Serious',
+  'aria-input-field-name': 'Serious',
+  'role-img-alt': 'Serious',
+  'scrollable-region-focusable': 'Serious',
+  'frame-title': 'Serious',
+  list: 'Serious',
+  'frame-focusable-content': 'Serious',
+  'link-in-text-block': 'Serious',
+  'aria-command-name': 'Serious',
+  'aria-roles': 'Serious',
+  'color-contrast': 'Serious',
+  'target-size': 'Serious',
+};
+
+/**
+ * Accessibility solutions for common WCAG issues
+ * This file contains standardized solutions for accessibility issues
+ * used in generating reports
+ * Used for Quick Wins section, specifically "How to solve" column
+ */
+export const accessibilitySolutions = {
+  // Level A - Critical issues
+  'aria-required-parent': 'Add appropriate parent containers with required roles (e.g., add `role="listbox"` to parent containers of elements with `role="option"`). ',
+  'aria-allowed-attr': 'Remove ARIA attributes (i.e. aria-level="3") from elements that do not support them like `<dt>`.',
+  'aria-required-attr': 'Add required ARIA attributes to elements that use ARIA roles.',
+  'button-name': 'Add accessible names to buttons using aria-label or visible text content.',
+  'image-alt': 'Add alt text to images to provide alternative text for screen readers.',
+  'aria-required-children': 'Ensure elements with specific roles contain the required child elements.',
+  'aria-valid-attr-value': 'Ensure the value inside each attribute is spelled correctly and corresponds to a valid value.',
+
+  // Level A - Serious issues
+  'aria-hidden-focus': 'Add `tabindex="-1"` to all focusable elements inside containers with `aria-hidden="true"` or remove the aria-hidden attribute.',
+  'nested-interactive': 'Remove conflicting interactive roles from elements or restructure to avoid nesting interactive elements.',
+  dlitem: 'Ensure `<dt>` and `<dd>` elements are contained within a `<dl>` element.',
+  'definition-list': 'Ensure `<dl>` elements contain properly-ordered `<dt>` and `<dd>` groups only.',
+  'link-name': 'Add accessible names to links using aria-label or visible text content.',
+  'aria-prohibited-attr': 'Remove ARIA attributes that are not permitted on the elements.',
+  'aria-input-field-name': 'Add accessible names to ARIA input fields using aria-label or aria-labelledby.',
+  'role-img-alt': 'Add aria-label or aria-labelledby to elements with role="img".',
+  'scrollable-region-focusable': 'Ensure scrollable regions are keyboard accessible by adding tabindex="0" to the container.',
+  'link-in-text-block': 'Add a distinct style to links that appear in blocks of text to make them stand out from the text.',
+  listitem: 'Ensure all `<li>` elements are properly contained within `<ul>` or `<ol>` elements, or add `role="list"` to parent containers.',
+  'aria-command-name': 'Add accessible names to elements with command roles using aria-label or aria-labelledby attributes.',
+  'aria-roles': 'Ensure the main element is properly announced by screen readers.',
+
+  // Level AA - Serious issues
+  'color-contrast': 'Ensure text has sufficient contrast against its background (4.5:1 for normal text, 3:1 for large text).',
+  'target-size': 'Make touch targets at least 44x44 pixels for better mobile accessibility.',
+
+  // Level AA - Critical issues
+  'meta-viewport': 'Remove user-scalable=no from the viewport meta tag to allow zooming.',
+};
+
+/**
+ * Accessibility suggestions for common WCAG issues
+ * This file contains standardized suggestions for accessibility issues
+ * used in generating reports
+ * Used for Enhancing accessibility for the top 10 most-visited pages section,
+ * specifically "Suggestion" column
+ */
+export const accessibilitySuggestions = {
+  // Level A - Critical issues
+  'aria-required-parent': 'Add `role="group"` or `role="listbox"` attribute to parents of elements with `role="option"` attribute.',
+  'aria-allowed-attr': 'Remove `aria-level` attribute from the HTML elements that do not support it.',
+  'aria-required-attr': 'Add `aria-level` attribute to elements that are used as headings.',
+  'button-name': 'Add aria-label attributes to buttons that lack text content, especially carousel navigation buttons.',
+  'image-alt': 'Ensure all informative `<img>` elements have short, descriptive alternate text and all decorative `<img>` elements have empty alt attributes (e.g. `alt=""`).',
+  'aria-required-children': 'Ensure elements with aria-controls attribute has a parent with role like "group".',
+  'select-name': 'Add aria-label attribute to select tags that do not have explicit labels.',
+  label: 'Add explicit label elements connected to inputs using the for attribute.',
+  'aria-valid-attr-value': 'Correct mistakes such as `aria-hidden="rtue"` or `aria-expanded="null"`',
+
+  // Level A - Serious issues
+  'aria-hidden-focus': 'Remove `aria-hidden="true"` from elements that contain focusable elements, or ensure all focusable elements within hidden containers also have `tabindex="-1"` if the elements should genuinely be hidden from screen readers.',
+  'nested-interactive': 'Remove tabindex="-1".',
+  dlitem: 'Ensure `<dt>` and `<dd>` elements are properly contained within a `<dl>` element.',
+  'definition-list': 'Restructure the definition list to include only properly-ordered `<dt>` and `<dd>` groups.',
+  'link-name': 'Add aria-label attribute to links containing only images or icons without alt text.',
+  'aria-prohibited-attr': 'Add `role="figure"` attribute to span elements that contain images.',
+  'aria-input-field-name': 'Add `aria-label` attribute to sliders.',
+  'role-img-alt': 'Add an accessible name to elements with `role="img"` using `aria-label` or `aria-labelledby` attributes.',
+  'scrollable-region-focusable': 'Make scrollable regions keyboard accessible by adding tabindex="0" and ensuring proper focus management.',
+  'frame-title': 'Add title attributes to all iframe elements to describe their purpose.',
+  listitem: 'Ensure all `<li>` elements are properly contained within `<ul>` or `<ol>` elements, or add role="list" to parent containers.',
+  list: 'Ensure list elements only contain permitted child elements.',
+  'frame-focusable-content': 'Remove tabindex="-1" attribute from iframe elements that contain interactive content.',
+  'link-in-text-block': 'Ensure all links that appear in blocks of text have a color contrast difference of at least 3:1 with the surrounding text to ensure that users who cannot distinguish between the colors can still find the link, or give it a distinct style to make it stand out from the text.',
+  'aria-command-name': 'Ensure that each element with `role="link"`, `role="button"`, or `role="menuitem"` has either inner text that is discernible to screen reader users; Non-empty aria-label attribute; or aria-labelledby pointing to element with text which is discernible to screen reader users.',
+  'aria-roles': 'Ensure that the main element is properly announced by screen readers.',
+
+  // Level AA - Serious issues
+  'color-contrast': 'Increase the contrast between the button text and background colors. Ensure a minimum contrast ratio of 4.5:1 for normal text and 3:1 for large text (at least 18pt or 14pt bold).',
+  'target-size': 'Increase the size of the search button to at least 24x24 pixels (WCAG AA recommendation) to make it easier to tap on mobile devices',
+
+  // Level AA - Critical issues
+  'meta-viewport': 'Remove `user-scalable=no` from the viewport meta tag to allow users to zoom the page.',
+};
+
+/**
+ * Accessibility user impact descriptions for common WCAG issues
+ * This file contains standardized descriptions of how accessibility issues affect users
+ * used in generating reports
+ * Used for Enhancing accessibility for the top 10 most-visited pages section,
+ * specifically "How is the user affected" column
+ */
+export const accessibilityUserImpact = {
+  // Level A - Critical issues
+  'aria-required-parent': 'Screen reader users receive incomplete or incorrect information about content organization. When elements require specific parent roles but don\'t have them, the hierarchical relationship is broken, making navigation confusing and unpredictable.',
+  'aria-allowed-attr': 'Screen reader users receive misleading or nonsensical information when elements use ARIA attributes they don\'t support. This causes confusion when the announced content doesn\'t match the expected behavior of the element.',
+  'aria-required-attr': 'Screen reader users receive incomplete information about an element\'s purpose or state when required ARIA attributes are missing. This prevents users from understanding how to interact with elements or their current state.',
+  'button-name': 'Screen reader users cannot determine the purpose of buttons without discernible text. When encountering unnamed buttons, users must guess their function based on context, making interfaces unpredictable and potentially unusable.',
+  'image-alt': 'Screen reader users receive no information about images without alternative text. Important visual content becomes completely inaccessible, leaving users with significant information gaps.',
+  'aria-required-children': 'Screen reader users receive incomplete information about content structure when ARIA roles requiring specific children lack those children. This breaks expected relationships and makes navigation unpredictable.',
+  'aria-valid-attr-value': 'Screen readers or keyboard navigation relys on the value of the attribute to determine the purpose of the element. If the value is incorrect, the user will not be able to interact with the element and will lead to loss of content context and navigational issues.',
+
+  // Level A - Serious issues
+  'aria-hidden-focus': 'Keyboard and screen reader users experience confusing interfaces when elements hidden from screen readers (aria-hidden="true") remain focusable. Users can focus on elements they cannot perceive, creating a disconnected experience where their cursor appears to "disappear".',
+  'nested-interactive': 'Screen reader and keyboard users face accessibility barriers when interactive controls are nested within other interactive elements. This creates unpredictable behavior, incomplete announcements, and potentially unusable features that trap or skip focus.',
+  dlitem: 'Screen reader users receive incomplete or incorrect information about definition terms and their descriptions when list items are not properly contained in a definition list. This breaks the semantic connection between terms and their definitions.',
+  'definition-list': 'Screen reader users receive incomplete or incorrect information about content relationships in definition lists when they\'re improperly structured. This breaks the semantic connection between terms and their definitions.',
+  'link-name': 'Screen reader users cannot determine the destination or purpose of links without discernible text. This forces users to follow links without knowing where they lead or skip potentially important content.',
+  'aria-prohibited-attr': 'Screen reader users receive contradictory or misleading information when elements use ARIA attributes that are explicitly forbidden on those elements. This creates confusion and unpredictable behavior.',
+  'aria-input-field-name': 'Screen reader users cannot identify the purpose of input fields without accessible names. When encountering unnamed fields, users must guess their purpose, making forms difficult or impossible to complete accurately.',
+  'role-img-alt': 'Screen reader users receive no information about elements with role="img" that lack alternative text. This makes visual content completely inaccessible, similar to images without alt text.',
+  'scrollable-region-focusable': 'Keyboard users cannot access content in scrollable regions that aren\'t keyboard accessible. Content becomes completely inaccessible if it can only be reached by scrolling with a mouse.',
+  list: 'Users who navigate using keyboards or other assistive devices might struggle to move through improperly structured lists. Properly marked-up lists allow users to navigate efficiently from one list item to the next.',
+  listitem: 'Screen reader users receive incorrect or incomplete information about list structures, making content organization difficult to understand.',
+  'frame-title': 'Screen reader users cannot determine the purpose of iframes without titles, making it difficult to understand embedded content.',
+  label: 'Users who navigate using keyboards or other assistive devices might struggle to identify and interact with unlabeled form elements. Proper labels help users quickly identify and interact with the correct fields, improving their overall experience.',
+  'select-name': 'If a `<select>` element does not have a proper accessible name, users may not understand its purpose. Screen readers might announce it as "combo box" or "list box" without providing any context, making it difficult for users to know what options they are selecting from.',
+  'frame-focusable-content': 'Screen reader and keyboard users cannot access content inside frames that aren\'t properly configured for keyboard navigation. This creates barriers where users can see that content exists but cannot reach or interact with it, making portions of the page completely unusable.',
+  'link-in-text-block': 'Users with visual disabilities or cognitive impairments struggle to identify links that aren\'t visually distinct from surrounding text. When links blend in with regular text, they become invisible to many users who cannot distinguish them by color alone, causing important interactive elements to be missed.',
+  'aria-command-name': 'Screen reader users are not able to discern the purpose of elements with `role="link"`, `role="button"`, or `role="menuitem"` that do not have an accessible name.',
+  'aria-roles': 'Screen reader users receive incorrect or incomplete information about the structure of a webpage. When the main element is not properly announced, users may not understand the overall layout or navigation, making it difficult to find and interact with important content.',
+
+  // Level AA - Serious issues
+  'color-contrast': 'Users with low vision, color blindness, or those in high-glare environments struggle to read text with insufficient contrast. This causes eye strain and can make content completely unreadable for some users.',
+  'target-size': 'Users with motor impairments struggle to interact with touch targets smaller than 24px. Small buttons or links are difficult to tap accurately, causing frustration, accidental activations, and preventing successful task completion.',
+
+  // Level AA - Critical issues
+  'meta-viewport': 'Users who need to zoom webpages for better visibility cannot do so when zooming is disabled. This makes content completely inaccessible for users with low vision who rely on zoom functionality.',
 };

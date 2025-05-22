@@ -17,7 +17,20 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
-import { createReportOpportunitySuggestionInstance } from '../oppty-handlers/reportOppty.js';
+import {
+  createReportOpportunitySuggestionInstance,
+  createInDepthReportOpportunity,
+  createEnhancedReportOpportunity,
+  createFixedVsNewReportOpportunity,
+  createBaseReportOpportunity,
+} from './reportOppty.js';
+import {
+  generateInDepthReportMarkdown,
+  generateEnhancedReportMarkdown,
+  generateFixedNewReportMarkdown,
+  generateBaseReportMarkdown,
+  getWeekNumber,
+} from './generateMdReports.js';
 
 /**
  * Deletes the original JSON files after they've been processed
@@ -349,4 +362,324 @@ export async function createReportOpportunitySuggestion(
       message: `Error: ${e.message}`,
     };
   }
+}
+
+/**
+ * Gets the URLs for the audit
+ * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
+ * @param {string} bucketName - the name of the S3 bucket
+ * @param {string} siteId - the site ID to look for
+ * @param {import('@azure/logger').Logger} log - a logger instance
+ */
+export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
+  let finalResultFiles;
+  try {
+    finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
+    if (finalResultFiles.length === 0) {
+      const errorMessage = `[A11yAudit] No final result files found for ${siteId}`;
+      log.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+  } catch (error) {
+    log.error(`[A11yAudit] Error getting final result files for ${siteId}: ${error.message}`);
+    throw error;
+  }
+
+  const latestFinalResultFileKey = finalResultFiles[finalResultFiles.length - 1];
+  let latestFinalResultFile;
+  try {
+    // eslint-disable-next-line max-len
+    latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
+    if (!latestFinalResultFile) {
+      const errorMessage = `[A11yAudit] No latest final result file found for ${siteId}`;
+      log.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+  } catch (error) {
+    log.error(`[A11yAudit] Error getting latest final result file for ${siteId}: ${error.message}`);
+    throw error;
+  }
+
+  delete latestFinalResultFile.overall;
+  const urlsToScrape = [];
+  for (const [key, value] of Object.entries(latestFinalResultFile)) {
+    if (key.includes('https://')) {
+      urlsToScrape.push({
+        url: key,
+        urlId: key.replace('https://', ''),
+        traffic: value.traffic,
+      });
+    }
+  }
+
+  if (urlsToScrape.length === 0) {
+    const errorMessage = `[A11yAudit] No URLs found for ${siteId}`;
+    log.error(errorMessage);
+    throw new Error(errorMessage);
+  }
+
+  return urlsToScrape;
+}
+
+// eslint-disable-next-line max-len
+async function generateIndepthReportOpportunity(siteId, log, current, orgId, envAsoDomain, auditData, context, week, year) {
+  // 1.1 generate the markdown report for in-depth overview
+  const inDepthOverviewMarkdown = generateInDepthReportMarkdown(current);
+
+  if (!inDepthOverviewMarkdown) {
+    throw new Error('Failed to generate in-depth overview markdown');
+  }
+
+  // 1.2 create the opportunity for the in-depth overview report
+  const opportunityInstance = createInDepthReportOpportunity(week, year);
+  let opportunityRes;
+
+  try {
+    opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
+    if (!opportunityRes.status) {
+      log.error('Failed to create report opportunity', opportunityRes.message);
+      throw new Error(opportunityRes.message);
+    }
+  } catch (error) {
+    log.error('Failed to create report opportunity', error.message);
+    throw new Error(error.message);
+  }
+
+  const { opportunity: inDepthOverviewOpportunity } = opportunityRes;
+
+  try {
+    // 1.3 create the suggestions for the in-depth overview report oppty
+    const suggestionRes = await createReportOpportunitySuggestion(
+      inDepthOverviewOpportunity,
+      inDepthOverviewMarkdown,
+      auditData,
+      log,
+    );
+
+    if (!suggestionRes.status) {
+      log.error('Failed to create report opportunity suggestion', suggestionRes.message);
+      throw new Error(suggestionRes.message);
+    }
+  } catch (error) {
+    log.error('Failed to create report opportunity suggestion', error.message);
+    throw new Error(error.message);
+  }
+
+  // 1.4 update status to ignored
+  await inDepthOverviewOpportunity.setStatus('IGNORED');
+  await inDepthOverviewOpportunity.save();
+
+  // 1.5 construct url for the report
+  const inDepthOverviewOpportunityId = inDepthOverviewOpportunity.getId();
+  return `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthOverviewOpportunityId}`;
+}
+
+// eslint-disable-next-line max-len
+async function generateEnhancedReportOpportunity(siteId, log, current, orgId, envAsoDomain, auditData, context, week, year) {
+  // 2.1 generate the markdown report for in-depth top 10
+  const inDepthTop10Markdown = generateEnhancedReportMarkdown(current);
+
+  if (!inDepthTop10Markdown) {
+    throw new Error('Failed to generate in-depth top 10 markdown');
+  }
+
+  // 2.2 create the opportunity for the in-depth top 10 report
+  const enhancedOpportunityInstance = createEnhancedReportOpportunity(week, year);
+  let enhancedOpportunityRes;
+  try {
+    // eslint-disable-next-line max-len
+    enhancedOpportunityRes = await createReportOpportunity(enhancedOpportunityInstance, auditData, context);
+    if (!enhancedOpportunityRes.status) {
+      log.error('Failed to create enhancedreport opportunity', enhancedOpportunityRes.message);
+      throw new Error(enhancedOpportunityRes.message);
+    }
+  } catch (error) {
+    log.error('Failed to create enhancedreport opportunity', error.message);
+    throw new Error(error.message);
+  }
+
+  const { opportunity: inDepthTop10Opportunity } = enhancedOpportunityRes;
+
+  try {
+    // 2.3 create the suggestions for the in-depth top 10 report oppty
+    const enhancedSuggestionRes = await createReportOpportunitySuggestion(
+      inDepthTop10Opportunity,
+      inDepthTop10Markdown,
+      auditData,
+      log,
+    );
+    if (!enhancedSuggestionRes.status) {
+      log.error('Failed to create enhanced report opportunity suggestion', enhancedSuggestionRes.message);
+      throw new Error(enhancedSuggestionRes.message);
+    }
+  } catch (error) {
+    log.error('Failed to create enhanced report opportunity suggestion', error.message);
+    throw new Error(error.message);
+  }
+
+  // 2.4 update status to ignored
+  await inDepthTop10Opportunity.setStatus('IGNORED');
+  await inDepthTop10Opportunity.save();
+
+  // 2.5 construct url for the report
+  return `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthTop10Opportunity.getId()}`;
+}
+
+// eslint-disable-next-line max-len
+async function generateFixedNewReportOpportunity(siteId, log, current, orgId, envAsoDomain, auditData, context, week, year, lastWeek) {
+  // 3.1 generate the markdown report for fixed vs new issues if any
+  const fixedVsNewMarkdown = generateFixedNewReportMarkdown(current, lastWeek);
+
+  if (!fixedVsNewMarkdown) {
+    throw new Error('Failed to generate fixed vs new markdown');
+  }
+
+  // 3.2 create the opportunity for the fixed vs new report
+  const fixedVsNewOpportunityInstance = createFixedVsNewReportOpportunity(week, year);
+  let fixedVsNewOpportunityRes;
+  try {
+    // eslint-disable-next-line max-len
+    fixedVsNewOpportunityRes = await createReportOpportunity(fixedVsNewOpportunityInstance, auditData, context);
+    if (!fixedVsNewOpportunityRes.status) {
+      log.error('Failed to create fixed vs new report opportunity', fixedVsNewOpportunityRes.message);
+      throw new Error(fixedVsNewOpportunityRes.message);
+    }
+  } catch (error) {
+    log.error('Failed to create fixed vs new report opportunity', error.message);
+    throw new Error(error.message);
+  }
+  const { opportunity: fixedVsNewOpportunity } = fixedVsNewOpportunityRes;
+
+  try {
+    // 3.3 create the suggestions for the fixed vs new report oppty
+    const fixedVsNewSuggestionRes = await createReportOpportunitySuggestion(
+      fixedVsNewOpportunity,
+      fixedVsNewMarkdown,
+      auditData,
+      log,
+    );
+    if (!fixedVsNewSuggestionRes.status) {
+      log.error('Failed to create fixed vs new report opportunity suggestion', fixedVsNewSuggestionRes.message);
+      throw new Error(fixedVsNewSuggestionRes.message);
+    }
+  } catch (error) {
+    log.error('Failed to create fixed vs new report opportunity suggestion', error.message);
+    throw new Error(error.message);
+  }
+
+  // 3.4 update status to ignored
+  await fixedVsNewOpportunity.setStatus('IGNORED');
+  await fixedVsNewOpportunity.save();
+
+  // 3.5 construct url for the report
+  return `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${fixedVsNewOpportunity.getId()}`;
+}
+
+// eslint-disable-next-line max-len
+async function generateBaseReportOpportunity(log, current, auditData, context, week, year, relatedReportsUrls, lastWeek) {
+  // 4.1 generate the markdown report for base report and
+  //    add the urls from the above reports into the markdown report
+  const baseReportMarkdown = generateBaseReportMarkdown(current, lastWeek, relatedReportsUrls);
+
+  if (!baseReportMarkdown) {
+    throw new Error('Failed to generate base report markdown');
+  }
+
+  // 4.2 generate oppty and suggestions for the report
+  const baseOpportunityInstance = createBaseReportOpportunity(week, year);
+  let baseOpportunityRes;
+  try {
+    // eslint-disable-next-line max-len
+    baseOpportunityRes = await createReportOpportunity(baseOpportunityInstance, auditData, context);
+    if (!baseOpportunityRes.status) {
+      log.error('Failed to create base report opportunity', baseOpportunityRes.message);
+      throw new Error(baseOpportunityRes.message);
+    }
+  } catch (error) {
+    log.error('Failed to create base report opportunity', error.message);
+    throw new Error(error.message);
+  }
+  const { opportunity: baseOpportunity } = baseOpportunityRes;
+
+  try {
+    // 4.3 create the suggestions for the base report oppty
+    const baseSuggestionRes = await createReportOpportunitySuggestion(
+      baseOpportunity,
+      baseReportMarkdown,
+      auditData,
+      log,
+    );
+
+    if (!baseSuggestionRes.status) {
+      log.error('Failed to create base report opportunity suggestion', baseSuggestionRes.message);
+      throw new Error(baseSuggestionRes.message);
+    }
+  } catch (error) {
+    log.error('Failed to create base report opportunity suggestion', error.message);
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Generates report opportunities for a given site
+ * @param {string} siteId - the site ID to generate report opportunities for
+ * @param {import('@azure/logger').Logger} log - a logger instance
+ * @param {object} aggregationResult - the aggregation result
+ * @param {boolean} isProd - whether the environment is production
+ */
+export async function generateReportOpportunities(site, log, aggregationResult, isProd, context) {
+  const siteId = site.getId();
+  const { finalResultFiles } = aggregationResult;
+  const { current, lastWeek } = finalResultFiles;
+
+  // data needed for all reports oppties
+  const week = getWeekNumber(new Date());
+  const year = new Date().getFullYear();
+  // eslint-disable-next-line max-len
+  const latestAudit = await site.getLatestAuditByAuditType('accessibility');
+  const auditData = JSON.parse(JSON.stringify(latestAudit));
+  const envAsoDomain = isProd ? 'experience' : 'experience-stage';
+  const orgId = site.getOrganizationId();
+  const relatedReportsUrls = {
+    inDepthReportUrl: '',
+    enhancedReportUrl: '',
+    fixedVsNewReportUrl: '',
+  };
+
+  try {
+    // eslint-disable-next-line max-len
+    relatedReportsUrls.inDepthReportUrl = await generateIndepthReportOpportunity(siteId, log, current, orgId, envAsoDomain, auditData, context, week, year);
+  } catch (error) {
+    log.error('Failed to generate in-depth report opportunity', error.message);
+    throw new Error(error.message);
+  }
+
+  try {
+    // eslint-disable-next-line max-len
+    relatedReportsUrls.enhancedReportUrl = await generateEnhancedReportOpportunity(siteId, log, current, orgId, envAsoDomain, auditData, context, week, year);
+  } catch (error) {
+    log.error('Failed to generate enhanced report opportunity', error.message);
+    throw new Error(error.message);
+  }
+
+  try {
+    // eslint-disable-next-line max-len
+    relatedReportsUrls.fixedVsNewReportUrl = await generateFixedNewReportOpportunity(siteId, log, current, orgId, envAsoDomain, auditData, context, week, year, lastWeek);
+  } catch (error) {
+    log.error('Failed to generate fixed vs new report opportunity', error.message);
+    throw new Error(error.message);
+  }
+
+  try {
+    // eslint-disable-next-line max-len
+    await generateBaseReportOpportunity(log, current, auditData, context, week, year, relatedReportsUrls, lastWeek);
+  } catch (error) {
+    log.error('Failed to generate base report opportunity', error.message);
+    throw new Error(error.message);
+  }
+
+  return {
+    status: true,
+    message: 'All report opportunities created successfully',
+  };
 }

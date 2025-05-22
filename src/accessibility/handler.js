@@ -13,21 +13,7 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { aggregateAccessibilityData, createReportOpportunity, createReportOpportunitySuggestion } from './utils/utils.js';
-import {
-  generateInDepthReportMarkdown,
-  generateEnhancedReportMarkdown,
-  generateFixedNewReportMarkdown,
-  generateBaseReportMarkdown,
-  getWeekNumber,
-} from './utils/generateMdReports.js';
-import {
-  createInDepthReportOpportunity,
-  createEnhancedReportOpportunity,
-  createFixedVsNewReportOpportunity,
-  createBaseReportOpportunity,
-} from './oppty-handlers/reportOppty.js';
-import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
+import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
@@ -41,36 +27,7 @@ async function scrapeAccessibilityData(context) {
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()}`);
 
-  const finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
-  if (finalResultFiles.length === 0) {
-    log.error(`[A11yAudit] No final result files found for ${site.getBaseURL()}`);
-    return {
-      status: 'NO_OPPORTUNITIES',
-      message: 'No final result files found for accessibility audit',
-    };
-  }
-  const latestFinalResultFileKey = finalResultFiles[finalResultFiles.length - 1];
-  // eslint-disable-next-line max-len
-  const latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
-  if (!latestFinalResultFile) {
-    log.error(`[A11yAudit] No latest final result file found for ${site.getBaseURL()}`);
-    return {
-      status: 'NO_OPPORTUNITIES',
-      message: 'No data found in the latest final result file for accessibility audit',
-    };
-  }
-
-  delete latestFinalResultFile.overall;
-  const urlsToScrape = [];
-  for (const [key, value] of Object.entries(latestFinalResultFile)) {
-    if (key.includes('https://')) {
-      urlsToScrape.push({
-        url: key,
-        urlId: key.replace('https://', ''),
-        traffic: value.traffic,
-      });
-    }
-  }
+  const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
@@ -82,8 +39,6 @@ async function scrapeAccessibilityData(context) {
     siteId: site.getId(),
     jobId: site.getId(),
     processingType: AUDIT_TYPE_ACCESSIBILITY,
-    // Potentially add other scraper-specific options if needed
-    concurrency: 25,
   };
 }
 
@@ -93,11 +48,12 @@ async function processAccessibilityOpportunities(context) {
     site, log, s3Client, env,
   } = context;
   const siteId = site.getId();
-  log.info(`[A11yAudit] Step 2: Processing scraped data for ${site.getBaseURL()}`);
+  const isProd = env.AWS_ENV === 'prod';
+  const version = new Date().toISOString().split('T')[0];
+  const outputKey = `accessibility/${siteId}/${version}-final-result.json`;
 
   // Get the S3 bucket name from config or environment
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
     log.error(errorMsg);
@@ -107,11 +63,12 @@ async function processAccessibilityOpportunities(context) {
     };
   }
 
+  log.info(`[A11yAudit] Step 2: Processing scraped data for ${site.getBaseURL()}`);
+
+  // Use the accessibility aggregator to process data
+  let aggregationResult;
   try {
-    // Use the accessibility aggregator to process data
-    const version = new Date().toISOString().split('T')[0];
-    const outputKey = `accessibility/${siteId}/${version}-final-result.json`;
-    const aggregationResult = await aggregateAccessibilityData(
+    aggregationResult = await aggregateAccessibilityData(
       s3Client,
       bucketName,
       siteId,
@@ -121,192 +78,12 @@ async function processAccessibilityOpportunities(context) {
     );
 
     if (!aggregationResult.success) {
-      log.warn(`[A11yAudit] No data aggregated: ${aggregationResult.message}`);
+      log.error(`[A11yAudit] No data aggregated: ${aggregationResult.message}`);
       return {
         status: 'NO_OPPORTUNITIES',
         message: aggregationResult.message,
       };
     }
-
-    const { finalResultFiles } = aggregationResult;
-    const { current, lastWeek } = finalResultFiles;
-
-    // data needed for all reports oppties
-    const week = getWeekNumber(new Date());
-    const year = new Date().getFullYear();
-    // eslint-disable-next-line max-len
-    const latestAudit = await site.getLatestAuditByAuditType('accessibility');
-    const auditData = JSON.parse(JSON.stringify(latestAudit));
-    const isProd = env.AWS_ENV === 'prod';
-    const envAsoDomain = isProd ? 'experience' : 'experience-stage';
-    const orgId = site.getOrganizationId();
-    const relatedReportsUrls = {
-      inDepthReportUrl: '',
-      enhancedReportUrl: '',
-      fixedVsNewReportUrl: '',
-    };
-
-    // 1.1 generate the markdown report for in-depth overview
-    const inDepthOverviewMarkdown = generateInDepthReportMarkdown(current);
-
-    // 1.2 create the opportunity for the in-depth overview report
-    const opportunityInstance = createInDepthReportOpportunity(week, year);
-    const opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
-    if (!opportunityRes.status) {
-      log.error('Failed to create report opportunity', opportunityRes.message);
-      return {
-        status: 'PROCESSING_FAILED',
-        error: opportunityRes.message,
-      };
-    }
-    const { opportunity: inDepthOverviewOpportunity } = opportunityRes;
-
-    // 1.3 create the suggestions for the in-depth overview report oppty
-    const suggestionRes = await createReportOpportunitySuggestion(
-      inDepthOverviewOpportunity,
-      inDepthOverviewMarkdown,
-      auditData,
-      log,
-    );
-
-    if (!suggestionRes.status) {
-      log.error('Failed to create report opportunity suggestion', suggestionRes.message);
-      return {
-        status: 'PROCESSING_FAILED',
-        error: suggestionRes.message,
-      };
-    }
-
-    // 1.4 update status to ignored
-    await inDepthOverviewOpportunity.setStatus('IGNORED');
-    await inDepthOverviewOpportunity.save();
-
-    // 1.5 construct url for the report
-    const inDepthOverviewOpportunityId = inDepthOverviewOpportunity.getId();
-    relatedReportsUrls.inDepthReportUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthOverviewOpportunityId}`;
-
-    // 2.1 generate the markdown report for in-depth top 10
-    const inDepthTop10Markdown = generateEnhancedReportMarkdown(current);
-
-    // 2.2 create the opportunity for the in-depth top 10 report
-    const enhancedOpportunityInstance = createEnhancedReportOpportunity(week, year);
-    // eslint-disable-next-line max-len
-    const enhancedOpportunityRes = await createReportOpportunity(enhancedOpportunityInstance, auditData, context);
-    if (!enhancedOpportunityRes.status) {
-      log.error('Failed to create enhancedreport opportunity', enhancedOpportunityRes.message);
-      return {
-        status: 'PROCESSING_FAILED',
-        error: enhancedOpportunityRes.message,
-      };
-    }
-    const { opportunity: inDepthTop10Opportunity } = enhancedOpportunityRes;
-
-    // 2.3 create the suggestions for the in-depth top 10 report oppty
-    const enhancedSuggestionRes = await createReportOpportunitySuggestion(
-      inDepthTop10Opportunity,
-      inDepthTop10Markdown,
-      auditData,
-      log,
-    );
-
-    if (!enhancedSuggestionRes.status) {
-      log.error('Failed to create enhanced report opportunity suggestion', enhancedSuggestionRes.message);
-      return {
-        status: 'PROCESSING_FAILED',
-        error: enhancedSuggestionRes.message,
-      };
-    }
-
-    // 2.4 update status to ignored
-    await inDepthTop10Opportunity.setStatus('IGNORED');
-    await inDepthTop10Opportunity.save();
-    // 2.5 construct url for the report
-    relatedReportsUrls.enhancedReportUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${inDepthTop10Opportunity.getId()}`;
-
-    // 3.1 generate the markdown report for fixed vs new issues if any
-    const fixedVsNewMarkdown = generateFixedNewReportMarkdown(current, lastWeek);
-    if (fixedVsNewMarkdown.length > 0) {
-    // 3.2 create the opportunity for the fixed vs new report
-      const fixedVsNewOpportunityInstance = createFixedVsNewReportOpportunity(week, year);
-      // eslint-disable-next-line max-len
-      const fixedVsNewOpportunityRes = await createReportOpportunity(fixedVsNewOpportunityInstance, auditData, context);
-      if (!fixedVsNewOpportunityRes.status) {
-        log.error('Failed to create fixed vs new report opportunity', fixedVsNewOpportunityRes.message);
-        return {
-          status: 'PROCESSING_FAILED',
-          error: fixedVsNewOpportunityRes.message,
-        };
-      }
-      const { opportunity: fixedVsNewOpportunity } = fixedVsNewOpportunityRes;
-
-      // 3.3 create the suggestions for the fixed vs new report oppty
-      const fixedVsNewSuggestionRes = await createReportOpportunitySuggestion(
-        fixedVsNewOpportunity,
-        fixedVsNewMarkdown,
-        auditData,
-        log,
-      );
-
-      if (!fixedVsNewSuggestionRes.status) {
-        log.error('Failed to create fixed vs new report opportunity suggestion', fixedVsNewSuggestionRes.message);
-        return {
-          status: 'PROCESSING_FAILED',
-          error: fixedVsNewSuggestionRes.message,
-        };
-      }
-
-      // 3.4 update status to ignored
-      await fixedVsNewOpportunity.setStatus('IGNORED');
-      await fixedVsNewOpportunity.save();
-
-      // 3.5 construct url for the report
-      relatedReportsUrls.fixedVsNewReportUrl = `https://${envAsoDomain}.adobe.com/?organizationId=${orgId}#/@aem-sites-engineering/sites-optimizer/sites/${siteId}/opportunities/${fixedVsNewOpportunity.getId()}`;
-    }
-
-    // 4.1 generate the markdown report for base report and
-    //    add the urls from the above reports into the markdown report
-    const baseReportMarkdown = generateBaseReportMarkdown(current, lastWeek, relatedReportsUrls);
-    // 4.2 generate oppty and suggestions for the report
-    const baseOpportunityInstance = createBaseReportOpportunity(week, year);
-    // eslint-disable-next-line max-len
-    const baseOpportunityRes = await createReportOpportunity(baseOpportunityInstance, auditData, context);
-    if (!baseOpportunityRes.status) {
-      log.error('Failed to create base report opportunity', baseOpportunityRes.message);
-      return {
-        status: 'PROCESSING_FAILED',
-        error: baseOpportunityRes.message,
-      };
-    }
-    const { opportunity: baseOpportunity } = baseOpportunityRes;
-
-    // 4.3 create the suggestions for the base report oppty
-    const baseSuggestionRes = await createReportOpportunitySuggestion(
-      baseOpportunity,
-      baseReportMarkdown,
-      auditData,
-      log,
-    );
-
-    if (!baseSuggestionRes.status) {
-      log.error('Failed to create base report opportunity suggestion', baseSuggestionRes.message);
-      return {
-        status: 'PROCESSING_FAILED',
-        error: baseSuggestionRes.message,
-      };
-    }
-
-    // Extract some key metrics for the audit result
-    const totalIssues = finalResultFiles.current.overall.violations.total;
-    const urlsProcessed = Object.keys(finalResultFiles.current).length;
-
-    // Return the final result
-    return {
-      status: totalIssues > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
-      opportunitiesFound: totalIssues,
-      urlsProcessed,
-      summary: `Found ${totalIssues} accessibility issues across ${urlsProcessed} URLs`,
-      fullReportUrl: outputKey, // Reference to the full report in S3
-    };
   } catch (error) {
     log.error(`[A11yAudit] Error processing accessibility data: ${error.message}`, error);
     return {
@@ -314,6 +91,29 @@ async function processAccessibilityOpportunities(context) {
       error: error.message,
     };
   }
+
+  try {
+    await generateReportOpportunities(site, log, aggregationResult, isProd, context);
+  } catch (error) {
+    log.error(`[A11yAudit] Error generating report opportunities: ${error.message}`, error);
+    return {
+      status: 'PROCESSING_FAILED',
+      error: error.message,
+    };
+  }
+
+  // Extract some key metrics for the audit result
+  const totalIssues = aggregationResult.finalResultFiles.current.overall.violations.total;
+  const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length;
+
+  // Return the final result
+  return {
+    status: totalIssues > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
+    opportunitiesFound: totalIssues,
+    urlsProcessed,
+    summary: `Found ${totalIssues} accessibility issues across ${urlsProcessed} URLs`,
+    fullReportUrl: outputKey, // Reference to the full report in S3
+  };
 }
 
 export default new AuditBuilder()

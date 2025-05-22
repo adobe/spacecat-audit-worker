@@ -11,12 +11,12 @@
  */
 
 import {
+  successCriteriaLinks,
   accessibilityIssuesImpact,
   accessibilitySolutions,
   accessibilitySuggestions,
   accessibilityUserImpact,
-} from './accesibility-standards.js';
-import { successCriteriaLinks } from './constants.js';
+} from './constants.js';
 
 // =============================================
 // Utility Functions
