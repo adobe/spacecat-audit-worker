@@ -168,6 +168,7 @@ export async function aggregateAccessibilityData(
       objectKeys.push(...objectKeysResult);
     });
 
+    log.info(`[A11yAudit] Object keys: ${objectKeys}`);
     if (!objectKeys || objectKeys.length === 0) {
       const message = `No accessibility data found in bucket ${bucketName} at prefix ${prefix} for site ${siteId}`;
       log.info(message);

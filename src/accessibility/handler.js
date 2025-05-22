@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
+// import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 // import { dataNeededForA11yAuditv2 } from './utils/constants.js';
@@ -28,67 +28,69 @@ import {
   createFixedVsNewReportOpportunity,
   createBaseReportOpportunity,
 } from './oppty-handlers/reportOppty.js';
-import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
+// import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
-const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
+// const { AUDIT_STEP_DESTINATIONS } = Audit;
+// const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
 
 // First step: sends a message to the content scraper to generate accessibility audits
-async function scrapeAccessibilityData(context) {
-  const {
-    site, log, finalUrl, env, s3Client,
-  } = context;
-  const siteId = site.getId();
-  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-  log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()}`);
+// async function scrapeAccessibilityData(context) {
+//   const {
+//     site, log, finalUrl, env, s3Client,
+//   } = context;
+//   const siteId = site.getId();
+//   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+// eslint-disable-next-line max-len
+//   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()}`);
 
-  const finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
-  if (finalResultFiles.length === 0) {
-    log.error(`[A11yAudit] No final result files found for ${site.getBaseURL()}`);
-    return {
-      status: 'NO_OPPORTUNITIES',
-      message: 'No final result files found for accessibility audit',
-    };
-  }
-  const latestFinalResultFileKey = finalResultFiles[finalResultFiles.length - 1];
-  // eslint-disable-next-line max-len
-  const latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
-  if (!latestFinalResultFile) {
-    log.error(`[A11yAudit] No latest final result file found for ${site.getBaseURL()}`);
-    return {
-      status: 'NO_OPPORTUNITIES',
-      message: 'No data found in the latest final result file for accessibility audit',
-    };
-  }
+// eslint-disable-next-line max-len
+//   const finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
+//   if (finalResultFiles.length === 0) {
+//     log.error(`[A11yAudit] No final result files found for ${site.getBaseURL()}`);
+//     return {
+//       status: 'NO_OPPORTUNITIES',
+//       message: 'No final result files found for accessibility audit',
+//     };
+//   }
+//   const latestFinalResultFileKey = finalResultFiles[finalResultFiles.length - 1];
+// eslint-disable-next-line max-len
+//   const latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
+//   if (!latestFinalResultFile) {
+//     log.error(`[A11yAudit] No latest final result file found for ${site.getBaseURL()}`);
+//     return {
+//       status: 'NO_OPPORTUNITIES',
+//       message: 'No data found in the latest final result file for accessibility audit',
+//     };
+//   }
 
-  delete latestFinalResultFile.overall;
-  // const urlsToScrape = dataNeededForA11yAuditv2.urls;
-  const urlsToScrape = [];
-  for (const [key, value] of Object.entries(latestFinalResultFile)) {
-    if (key.includes('https://')) {
-      urlsToScrape.push({
-        url: key,
-        urlId: key.replace('https://', ''),
-        traffic: value.traffic,
-      });
-    }
-  }
-  log.info(`[A11yAudit] URLs to scrape: ${urlsToScrape}`);
+//   delete latestFinalResultFile.overall;
+//   // const urlsToScrape = dataNeededForA11yAuditv2.urls;
+//   const urlsToScrape = [];
+//   for (const [key, value] of Object.entries(latestFinalResultFile)) {
+//     if (key.includes('https://')) {
+//       urlsToScrape.push({
+//         url: key,
+//         urlId: key.replace('https://', ''),
+//         traffic: value.traffic,
+//       });
+//     }
+//   }
 
-  // The first step MUST return auditResult and fullAuditRef.
-  // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
-  return {
-    auditResult: { status: 'SCRAPING_REQUESTED', message: 'Content scraping for accessibility audit initiated.' },
-    fullAuditRef: finalUrl,
-    // Data for the CONTENT_SCRAPER
-    urls: urlsToScrape,
-    siteId: site.getId(),
-    jobId: site.getId(),
-    processingType: AUDIT_TYPE_ACCESSIBILITY,
-    // Potentially add other scraper-specific options if needed
-    concurrency: 25,
-  };
-}
+//   // The first step MUST return auditResult and fullAuditRef.
+//   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
+//   return {
+// eslint-disable-next-line max-len
+//     auditResult: { status: 'SCRAPING_REQUESTED', message: 'Content scraping for accessibility audit initiated.' },
+//     fullAuditRef: finalUrl,
+//     // Data for the CONTENT_SCRAPER
+//     urls: urlsToScrape,
+//     siteId: site.getId(),
+//     jobId: site.getId(),
+//     processingType: AUDIT_TYPE_ACCESSIBILITY,
+//     // Potentially add other scraper-specific options if needed
+//     concurrency: 25,
+//   };
+// }
 
 // Second step: gets data from the first step and processes it to create new opportunities
 async function processAccessibilityOpportunities(context) {
@@ -326,7 +328,8 @@ async function processAccessibilityOpportunities(context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver) // Keeps the existing URL resolver
   // First step: Prepare and send data to CONTENT_SCRAPER
-  .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  // eslint-disable-next-line max-len
+  // .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   // Second step: Process the scraped data to find opportunities
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();
