@@ -12,8 +12,6 @@
     "src/**/*.js"
   ],
   "exclude": [
-    "src/index-local.js",
-    "src/metatags/handler.js",
-    "src/common/step-audit.js"
+    "src/index-local.js"
   ]
 }
