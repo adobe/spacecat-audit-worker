@@ -233,10 +233,15 @@ export async function runAuditAndGenerateSuggestions(context) {
   // Get top pages for a site
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  const topPagesSet = new Set(topPages.map((page) => {
+  const includedURLs = await site.getConfig().getIncludedURLs('meta-tags');
+  const topPagesSet = new Set([...topPages.map((page) => {
     const pathname = new URL(page.url).pathname.replace(/\/$/, '');
     return `scrapes/${site.getId()}${pathname}/scrape.json`;
-  }));
+  }), ...includedURLs.map((url) => {
+    const pathname = new URL(url).pathname.replace(/\/$/, '');
+    return `scrapes/${site.getId()}${pathname}/scrape.json`;
+  })]);
+  log.info(`Top pages set: ${JSON.stringify(topPagesSet, null, 2)}`);
 
   const {
     seoChecks,
