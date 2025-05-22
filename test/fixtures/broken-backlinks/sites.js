@@ -18,6 +18,7 @@ const siteData = {
   getBaseURL: () => 'https://bar.foo.com',
   getIsLive: () => true,
   getOrganizationId: () => 'org1',
+  resolveFinalURL: () => 'https://bar.foo.com',
 };
 
 export const site = siteData;

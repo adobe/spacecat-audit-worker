@@ -14,9 +14,11 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import GoogleClient from '@adobe/spacecat-shared-google-client';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
 import suggestionsEngine from '../../../src/image-alt-text/suggestionsEngine.js';
+import { DATA_SOURCES } from '../../../src/common/constants.js';
 
 describe('Image Alt Text Opportunity Handler', () => {
   let logStub;
@@ -81,16 +83,14 @@ describe('Image Alt Text Opportunity Handler', () => {
 
     auditData = {
       siteId: 'site-id',
-      id: 'audit-id',
-      auditResult: {
-        detectedTags: {
-          imagesWithoutAltText: [
-            { pageUrl: '/page1', src: 'image1.jpg' },
-            { pageUrl: '/page2', src: 'image2.jpg' },
-            { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
-          ],
-          presentationalImagesCount: 0,
-        },
+      auditId: 'audit-id',
+      detectedImages: {
+        imagesWithoutAltText: [
+          { pageUrl: '/page1', src: 'image1.jpg' },
+          { pageUrl: '/page2', src: 'image2.jpg' },
+          { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
+        ],
+        presentationalImagesCount: 0,
       },
     };
 
@@ -104,8 +104,11 @@ describe('Image Alt Text Opportunity Handler', () => {
     sinon.restore();
   });
 
-  it('should create new opportunity when none exists', async () => {
+  it('should create new opportunity when none exists', async function createNewOpportunity() {
+    this.timeout(5000);
+
     dataAccessStub.Opportunity.create.resolves(altTextOppty);
+    sinon.stub(GoogleClient, 'createFrom').resolves(true);
 
     await convertToOpportunity(auditUrl, auditData, context);
 
@@ -131,7 +134,12 @@ describe('Image Alt Text Opportunity Handler', () => {
         ],
       },
       tags: ['seo', 'accessibility'],
-      data: sinon.match.object,
+      data: sinon.match({
+        projectedTrafficLost: sinon.match.number,
+        projectedTrafficValue: sinon.match.number,
+        presentationalImagesCount: 0,
+        dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS, DATA_SOURCES.GSC],
+      }),
     }));
     expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Opportunity created',
@@ -326,7 +334,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     ]);
 
     // Make sure our test data has the correct format for pageUrl
-    auditData.auditResult.detectedTags.imagesWithoutAltText = [
+    auditData.detectedImages.imagesWithoutAltText = [
       { pageUrl: '/page1', src: 'image1.jpg' },
       { pageUrl: '/page2', src: 'image2.jpg' },
     ];
@@ -365,7 +373,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     ]);
 
     // Our test data has non-www URLs
-    auditData.auditResult.detectedTags.imagesWithoutAltText = [
+    auditData.detectedImages.imagesWithoutAltText = [
       { pageUrl: '/page1', src: 'image1.jpg' },
       { pageUrl: '/page2', src: 'image2.jpg' },
     ];
@@ -391,6 +399,7 @@ describe('Image Alt Text Opportunity Handler', () => {
 
   it('should handle errors when fetching RUM API results', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+    sinon.stub(GoogleClient, 'createFrom').resolves(true);
 
     // Make RUM API client throw an error
     const rumError = new Error('RUM API connection failed');
@@ -408,6 +417,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
       presentationalImagesCount: 0,
+      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS, DATA_SOURCES.GSC],
     });
 
     expect(altTextOppty.save).to.have.been.called;

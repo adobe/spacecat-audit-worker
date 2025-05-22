@@ -12,6 +12,7 @@
 
 import { isNonEmptyArray, hasText } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { franc } from 'franc-min';
 
 // GPT support: https://platform.openai.com/docs/guides/vision
 const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg)(?=\?|$)/i;
@@ -23,6 +24,7 @@ const mimeTypesForBase64 = {
   ico: 'image/x-icon',
 };
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
+const UNKNOWN_LANGUAGE = 'unknown';
 
 const getMimeType = async (url) => {
   const match = url.match(SUPPORTED_BLOB_FORMATS);
@@ -70,35 +72,76 @@ export const convertImagesToBase64 = async (imageUrls, auditUrl, log, fetch) => 
   return base64Blobs;
 };
 
+function detectLanguageFromText(text) {
+  const langCode = franc(text);
+  return langCode !== 'und' ? langCode : UNKNOWN_LANGUAGE;
+}
+
+function detectLanguageFromDom({ document }) {
+  const htmlTag = document.querySelector('html');
+  if (htmlTag && htmlTag.hasAttribute('lang')) {
+    return htmlTag.getAttribute('lang');
+  }
+
+  const metaTags = document.querySelectorAll('meta[http-equiv="Content-Language"], meta[name="language"]');
+  for (const meta of metaTags) {
+    if (meta.hasAttribute('content')) {
+      return meta.getAttribute('content');
+    }
+  }
+
+  return UNKNOWN_LANGUAGE;
+}
+
+const getPageLanguage = ({ document }) => {
+  let lang = UNKNOWN_LANGUAGE;
+  if (!document) {
+    return lang;
+  }
+
+  lang = detectLanguageFromDom({ document });
+  if (lang === UNKNOWN_LANGUAGE) {
+    const bodyText = document.querySelector('body').textContent;
+    const cleanedText = bodyText.replace(/[\n\t]/g, '').replace(/ {2,}/g, ' ');
+    lang = detectLanguageFromText(cleanedText);
+  }
+  return lang;
+};
+
 export default class AuditEngine {
   constructor(log) {
     this.log = log;
-    this.auditedTags = {
+    this.auditedImages = {
       imagesWithoutAltText: new Map(),
       presentationalImagesWithoutAltText: new Map(),
     };
   }
 
-  performPageAudit(pageUrl, pageTags) {
-    if (!isNonEmptyArray(pageTags?.images)) {
+  performPageAudit(pageUrl, pageImages) {
+    if (!isNonEmptyArray(pageImages?.images)) {
       this.log.debug(`[${AUDIT_TYPE}]: No images found for page ${pageUrl}`);
       return;
     }
 
-    pageTags.images.forEach((image) => {
+    const pageLanguage = getPageLanguage({ document: pageImages.dom?.window?.document });
+
+    this.log.debug(`[${AUDIT_TYPE}]: Language: ${pageLanguage}, Page: ${pageUrl}`);
+
+    pageImages.images.forEach((image) => {
       if (!hasText(image.alt?.trim())) {
         if (image.isPresentational) {
-          this.auditedTags.presentationalImagesWithoutAltText.set(image.src, {
+          this.auditedImages.presentationalImagesWithoutAltText.set(image.src, {
             pageUrl,
             src: image.src,
             xpath: image.xpath,
           });
         }
 
-        this.auditedTags.imagesWithoutAltText.set(image.src, {
+        this.auditedImages.imagesWithoutAltText.set(image.src, {
           pageUrl,
           src: image.src,
           xpath: image.xpath,
+          language: pageLanguage,
         });
       }
     });
@@ -106,7 +149,7 @@ export default class AuditEngine {
 
   async filterImages(baseURL, fetch) {
     try {
-      const imageUrls = Array.from(this.auditedTags.imagesWithoutAltText.keys());
+      const imageUrls = Array.from(this.auditedImages.imagesWithoutAltText.keys());
       const supportedBlobUrls = imageUrls.filter((url) => SUPPORTED_BLOB_FORMATS.test(url));
       const supportedImageUrls = imageUrls.filter((url) => SUPPORTED_FORMATS.test(url));
       const base64Blobs = await convertImagesToBase64(
@@ -119,7 +162,7 @@ export default class AuditEngine {
 
       // Add supported images directly to the map
       supportedImageUrls.forEach((url) => {
-        const originalData = this.auditedTags.imagesWithoutAltText.get(url);
+        const originalData = this.auditedImages.imagesWithoutAltText.get(url);
         filteredImages.set(url, originalData);
       });
       this.log.info(`[${AUDIT_TYPE}]: Supported images:`, Array.from(filteredImages.values()));
@@ -128,7 +171,7 @@ export default class AuditEngine {
       const uniqueBlobsMap = new Map();
       base64Blobs.forEach(({ url, blob }) => {
         if (!uniqueBlobsMap.has(blob)) {
-          const originalData = this.auditedTags.imagesWithoutAltText.get(url);
+          const originalData = this.auditedImages.imagesWithoutAltText.get(url);
           uniqueBlobsMap.set(blob, { ...originalData, blob });
         }
       });
@@ -149,7 +192,7 @@ export default class AuditEngine {
         filteredImages.set(originalData.src, { ...originalData, blob: !!originalData.blob });
       });
 
-      this.auditedTags.imagesWithoutAltText = filteredImages;
+      this.auditedImages.imagesWithoutAltText = filteredImages;
     } catch (error) {
       this.log.error(`[${AUDIT_TYPE}]: Error processing images for base64 conversion:`, error);
     }
@@ -158,19 +201,21 @@ export default class AuditEngine {
   finalizeAudit() {
     // Log summary
     this.log.info(
-      `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedTags.imagesWithoutAltText.values()).length} images without alt text`,
+      `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedImages.imagesWithoutAltText.values()).length} images without alt text`,
     );
     this.log.info(
-      `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedTags.presentationalImagesWithoutAltText.values()).length} presentational images`,
+      `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedImages.presentationalImagesWithoutAltText.values()).length} presentational images`,
     );
   }
 
   getAuditedTags() {
     return {
-      imagesWithoutAltText: Array.from(this.auditedTags.imagesWithoutAltText.values()),
+      imagesWithoutAltText: Array.from(this.auditedImages.imagesWithoutAltText.values()),
       presentationalImagesCount: Array.from(
-        this.auditedTags.presentationalImagesWithoutAltText.values(),
+        this.auditedImages.presentationalImagesWithoutAltText.values(),
       ).length,
     };
   }
 }
+
+export { getPageLanguage, detectLanguageFromText };

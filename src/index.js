@@ -38,9 +38,11 @@ import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
 import siteDetection from './site-detection/handler.js';
-import highFormViewsLowConversionsGuidance from './forms-opportunities/oppty-handlers/guidance-high-form-views-low-conversions.js';
+import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
+import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
+import preflight from './preflight/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -66,6 +68,8 @@ const HANDLERS = {
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
+  'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
+  preflight,
   dummy: (message) => ok(message),
 };
 
@@ -86,7 +90,7 @@ async function run(message, context) {
   const { type, siteId } = message;
 
   log.info(`Received ${type} audit request for: ${siteId}`);
-  log.info(`Message ${message}`);
+  log.info(`Message ${JSON.stringify(message)}`);
 
   const handler = HANDLERS[type];
   if (!handler) {

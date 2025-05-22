@@ -64,6 +64,7 @@ describe('Step-based Audit Tests', () => {
     context.env = {
       CONTENT_SCRAPER_QUEUE_URL: 'https://space.cat/content-scraper',
       IMPORT_WORKER_QUEUE_URL: 'https://space.cat/import-worker',
+      AUDIT_JOBS_QUEUE_URL: 'https://space.cat/audit-jobs',
     };
   });
 
@@ -181,6 +182,10 @@ describe('Step-based Audit Tests', () => {
         urls: [{ url: baseURL }],
         jobId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
         processingType: 'default',
+        skipMessage: false,
+        allowCache: true,
+        options: {},
+        completionQueueUrl: 'https://space.cat/audit-jobs',
         auditContext: {
           next: 'process',
           auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
@@ -196,6 +201,10 @@ describe('Step-based Audit Tests', () => {
     });
 
     it('continues execution from specified step', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
       const existingAudit = {
         getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
         getAuditType: () => 'content-audit',
@@ -227,6 +236,7 @@ describe('Step-based Audit Tests', () => {
       const expectedPayload = {
         type: 'content-import',
         siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        allowCache: true,
         auditContext: {
           next: 'analyze',
           auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
@@ -242,6 +252,10 @@ describe('Step-based Audit Tests', () => {
     });
 
     it('handles final step without sending messages', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
       const existingAudit = {
         getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
         getAuditType: () => 'content-audit',

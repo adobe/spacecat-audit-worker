@@ -16,13 +16,14 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import sinonChai from 'sinon-chai';
-import handler from '../../src/forms-opportunities/oppty-handlers/guidance-high-form-views-low-conversions.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import handler from '../../../../src/forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 
 use(sinonChai);
 
 const sandbox = sinon.createSandbox();
 
-describe('Guidance High Form Views Low Conversions Handler', () => {
+describe('Guidance High Page Views Low Form Navigation Handler', () => {
   let logStub;
   let dataAccessStub;
   let context;
@@ -38,9 +39,6 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
         allBySiteId: sinon.stub().resolves([]),
         create: sinon.stub(),
       },
-      Suggestion: {
-        create: sinon.stub(),
-      },
     };
     context = {
       log: logStub,
@@ -52,7 +50,6 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       data: {
         url: 'https://example.com',
         guidance: 'Some guidance',
-        suggestions: ['Suggestion 1', 'Suggestion 2'],
       },
     };
   });
@@ -64,12 +61,10 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
   it('should update an existing opportunity', async () => {
     const existingOpportunity = {
       getData: sinon.stub().returns({ form: 'https://example.com' }),
-      getType: sinon.stub().returns('high-page-views-low-conversion'),
+      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION),
       setAuditId: sinon.stub(),
       setGuidance: sinon.stub(),
       save: sinon.stub().resolvesThis(),
-      getId: sinon.stub().resolves('testId'),
-      getSuggestions: sinon.stub().resolves([]),
     };
     dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
 
@@ -84,7 +79,6 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
     dataAccessStub.Opportunity.allBySiteId.resolves([]);
     const newOpportunity = {
       getId: sinon.stub().returns('new-opportunity-id'),
-      getSuggestions: sinon.stub().resolves([]),
     };
     dataAccessStub.Opportunity.create.resolves(newOpportunity);
 
@@ -103,7 +97,6 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
 
     try {
       await handler(message, context);
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
       expect(error.message).to.deep.equal('fetch error');
     }

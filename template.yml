@@ -29,7 +29,7 @@ Resources:
           IMS_CLIENT_CODE: !Ref IMS_CLIENT_CODE
           IMS_CLIENT_SECRET: !Ref IMS_CLIENT_SECRET
           DYNAMO_TABLE_NAME_DATA: !Ref DYNAMO_TABLE_NAME_DATA
-      Role: arn:aws:iam::282898975672:role/spacecat-role-services
+      Role: arn:aws:iam::682033462621:role/spacecat-role-lambda-generic
       Events:
         ApiEvent:
           Type: Api
