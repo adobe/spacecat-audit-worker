@@ -154,7 +154,7 @@ export async function aggregateAccessibilityData(
     log.info(`Found ${subfolders.length} subfolders for site ${siteId} in bucket ${bucketName} with delimiter ${delimiter} and value ${subfolders}`);
 
     // sort subfolders by timestamp descending in case there are > 1 from various reasons
-    const getCurrentSubfolders = subfolders.filter((timestamp) => new Date(parseInt(timestamp.split('/').pop(), 10)).toISOString().split('T')[0] === version);
+    const getCurrentSubfolders = subfolders.filter((timestamp) => new Date(parseInt(timestamp.split('/').filter((item) => item !== '').pop(), 10)).toISOString().split('T')[0] === version);
     if (getCurrentSubfolders.length === 0) {
       const message = `No accessibility data found for today's date in bucket ${bucketName} at prefix ${prefix} for site ${siteId} with delimiter ${delimiter}`;
       log.info(message);
