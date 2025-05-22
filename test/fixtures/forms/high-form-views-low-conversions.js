@@ -798,6 +798,80 @@ const testData = {
       ],
     },
   },
+  mystiqueMessage: {
+    type: 'guidance:high-form-views-low-conversions',
+    siteId: 'site-id',
+    auditId: 'audit-id',
+    deliveryType: 'eds',
+    time: '2025-05-22T18:03:45.766Z',
+    data: {
+      url: 'https://www.surest.com/newsletter',
+      cr: 0.03125,
+      screenshot: '',
+      metrics: [
+        {
+          type: 'conversionRate',
+          device: '*',
+          value: 0.03125,
+        },
+        {
+          type: 'formBounceRate',
+          device: '*',
+          value: 0.90625,
+        },
+        {
+          type: 'dropoffRate',
+          device: '*',
+          value: 0.6666666666666667,
+        },
+        {
+          type: 'conversionRate',
+          device: 'desktop',
+          value: 0,
+        },
+        {
+          type: 'formBounceRate',
+          device: 'desktop',
+          value: 1,
+        },
+        {
+          type: 'dropoffRate',
+          device: 'desktop',
+          value: null,
+        },
+        {
+          type: 'conversionRate',
+          device: 'mobile',
+          value: 0,
+        },
+        {
+          type: 'formBounceRate',
+          device: 'mobile',
+          value: 0.90625,
+        },
+        {
+          type: 'dropoffRate',
+          device: 'mobile',
+          value: 1,
+        },
+        {
+          type: 'traffic',
+          device: 'desktop',
+          value: 4670,
+        },
+        {
+          type: 'traffic',
+          device: 'mobile',
+          value: 4000,
+        },
+        {
+          type: 'trafficSource',
+          sourceType: 'owned:direct',
+          views: 2400,
+        },
+      ],
+    },
+  },
   opportunityData: {
     siteId: 'site-id',
     auditId: 'audit-id',

@@ -64,6 +64,7 @@ describe('createLowConversionOpportunities handler method', () => {
       dataAccess: dataAccessStub,
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique',
       },
       site: {
         getId: sinon.stub().returns('test-site-id'),
@@ -84,6 +85,10 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     // with empty guidance due to no scraping
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    // asserting spacecat to mystique message
+    const [queueArg, messageArg] = context.sqs.sendMessage.getCall(4).args;
+    expect(queueArg).to.equal('spacecat-to-mystique');
+    expect(messageArg.data).to.deep.equal(testData.mystiqueMessage.data);
   });
 
   it('should create new forms opportunity with scraped data available', async () => {
