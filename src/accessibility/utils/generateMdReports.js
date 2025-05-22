@@ -71,41 +71,41 @@ function formatFailureSummary(failureSummary) {
   let result = '';
   let currentSection = '';
 
-  mainSections.forEach(section => {
+  mainSections.forEach((section) => {
     if (section.startsWith('Fix any of the following:')) {
       // If we have a previous section, add it to the result
       if (currentSection) {
-        result += currentSection + '\n\n';
+        result += `${currentSection}\n\n`;
       }
       // Start new section
-      const lines = section.split('\n').filter(line => line.trim());
+      const lines = section.split('\n').filter((line) => line.trim());
       currentSection = lines.map((line, index) => {
         if (index === 0) {
           return 'One or more of the following related issues may also be present:';
         }
-        return `${index}. ${line.trim()}`;
+        return `${index + 1}. ${line.trim()}`;
       }).join('\n');
     } else if (section.startsWith('Fix all of the following:')) {
       // If we have a previous section, add it to the result
       if (currentSection) {
-        result += currentSection + '\n\n';
+        result += `${currentSection}\n\n`;
       }
       // Start new section
-      const lines = section.split('\n').filter(line => line.trim());
+      const lines = section.split('\n').filter((line) => line.trim());
       currentSection = lines.map((line, index) => {
         if (index === 0) {
           return 'The following issue has been identified and must be addressed:';
         }
-        return `${index}. ${line.trim()}`;
+        return `${index + 1}. ${line.trim()}`;
       }).join('\n');
     }
   });
-  
+
   // Add the last section
   if (currentSection) {
     result += currentSection;
   }
-  
+
   return result.trim();
 }
 
@@ -437,6 +437,7 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
         const pageViolation = pageData.violations[level]?.items?.[issue.name];
         if (pageViolation && pageViolation.failureSummary) {
           failureSummary = escapeHtmlTags(formatFailureSummary(pageViolation.failureSummary));
+        }
       }
     }
 
