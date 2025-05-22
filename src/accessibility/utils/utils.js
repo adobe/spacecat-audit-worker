@@ -166,9 +166,10 @@ export async function aggregateAccessibilityData(
       log.info(`[A11yAudit] Subfolder: ${subfolder}`);
       const objectKeysResult = await getObjectKeysUsingPrefix(s3Client, bucketName, subfolder, log, 1000, '.json');
       log.info(`[A11yAudit] Object keys result: ${objectKeysResult}`);
-      return objectKeysResult;
+      return { data: objectKeysResult };
     });
-    const objectKeys = await Promise.all(processSubfolderPromises);
+    const processSubfolderPromisesResult = await Promise.all(processSubfolderPromises);
+    const objectKeys = processSubfolderPromisesResult.flatMap((result) => result.data);
     log.info(`[A11yAudit] Object keys: ${objectKeys}`);
 
     if (!objectKeys || objectKeys.length === 0) {
