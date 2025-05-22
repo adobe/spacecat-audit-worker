@@ -117,7 +117,8 @@ function enrichContainedUrls(enrichedPageTypeUrs) {
     if (segment.key === 'pageType') {
       const enrichedValue = segment.value.map((pt) => {
         const type = pt?.type;
-        const urls = type && pageUrlDict[type] ? pageUrlDict[type] : [];
+        let urls = type ? pageUrlDict[type] : [];
+        urls = urls ?? [];
         return {
           ...pt,
           urls,

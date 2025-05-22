@@ -60,6 +60,10 @@ const runDataUrlMissingType = [
       {
         totalSessions: 2620,
       },
+      {
+        totalSessions: 2620,
+        pageType: 'uncategorized',
+      },
     ],
   },
 ];
@@ -71,11 +75,11 @@ const pageTypes = {
   'other | Other Pages': /.*/,
 };
 
-function getSite() {
+function getSite(isString = true) {
   const config = Object.entries(pageTypes).map(([name, patternReg]) => (
     {
       name,
-      pattern: new RegExp(patternReg).toString(),
+      pattern: isString ? new RegExp(patternReg).toString() : patternReg,
     }
   ));
 
@@ -95,7 +99,7 @@ describe('Paid audit incorporates optel data as input', () => {
     error: sinon.stub(),
   };
 
-  const site = getSite();
+  let site = getSite();
 
   let context = {
     runtime: { name: 'aws-lambda', region: 'us-east-1' },
@@ -175,6 +179,31 @@ describe('Paid audit incorporates optel data as input', () => {
       .value
       .find((valueItem) => !valueItem.url);
 
+    const pageSegemnt = result.auditResult
+      .find((item) => item.key === 'pageType')
+      .value;
+    pageSegemnt.forEach((item) => {
+      expect(item.urls).to.eqls([]);
+    });
     expect(missingUrl.pageType).to.eq('uncategorized');
+  });
+
+  it('Paid should handle regex settings', async () => {
+    context = {
+      ...context,
+      rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
+    };
+
+    site = getSite(false);
+
+    const result = await paidAuditRunner(auditUrl, context, site);
+    expect(result.auditResult.length).to.eql(2);
+
+    const missingUrl = result.auditResult
+      .find((item) => item.key === 'url')
+      .value
+      .find((valueItem) => !valueItem.url);
+
+    expect(missingUrl.pageType).to.eq('other | Other Pages');
   });
 });
