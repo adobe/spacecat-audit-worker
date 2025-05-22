@@ -308,7 +308,7 @@ export async function submitForScraping(context) {
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  if (!topPages || topPages.length === 0) {
+  if (topPages.length === 0) {
     throw new Error('No top pages found for site');
   }
   const topPagesUrls = topPages.map((page) => page.getUrl());
