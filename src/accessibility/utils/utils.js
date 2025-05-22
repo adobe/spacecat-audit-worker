@@ -112,6 +112,7 @@ export async function aggregateAccessibilityData(
   siteId,
   log,
   outputKey,
+  version,
 ) {
   if (!s3Client || !bucketName || !siteId) {
     const message = 'Missing required parameters for aggregateAccessibilityData';
@@ -153,15 +154,19 @@ export async function aggregateAccessibilityData(
     log.info(`Found ${subfolders.length} subfolders for site ${siteId} in bucket ${bucketName} with delimiter ${delimiter} and value ${subfolders}`);
 
     // sort subfolders by timestamp descending in case there are > 1 from various reasons
-    subfolders.sort((a, b) => {
-      const timestampA = new Date(a.split('/').pop());
-      const timestampB = new Date(b.split('/').pop());
-      return timestampB.getTime() > timestampA.getTime() ? 1 : -1;
-    });
+    const getCurrentSubfolders = subfolders.filter((timestamp) => new Date(parseInt(timestamp.split('/').pop(), 10)).toISOString().split('T')[0] === version);
+    if (getCurrentSubfolders.length === 0) {
+      const message = `No accessibility data found for today's date in bucket ${bucketName} at prefix ${prefix} for site ${siteId} with delimiter ${delimiter}`;
+      log.info(message);
+      return { success: false, aggregatedData: null, message };
+    }
 
     // get the latest subfolder
-    const latestSubfolder = subfolders[0];
-    const objectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, latestSubfolder, log, 1000, '.json');
+    const objectKeys = [];
+    getCurrentSubfolders.forEach(async (subfolder) => {
+      const objectKeysResult = await getObjectKeysUsingPrefix(s3Client, bucketName, subfolder, log, 1000, '.json');
+      objectKeys.push(...objectKeysResult);
+    });
 
     if (!objectKeys || objectKeys.length === 0) {
       const message = `No accessibility data found in bucket ${bucketName} at prefix ${prefix} for site ${siteId}`;

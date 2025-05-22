@@ -86,6 +86,7 @@ async function processAccessibilityOpportunities(context) {
       siteId,
       log,
       outputKey,
+      version,
     );
 
     if (!aggregationResult.success) {
