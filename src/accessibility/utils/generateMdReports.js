@@ -11,7 +11,10 @@
  */
 
 import {
-  accessibilityIssues, accessibilitySolutions, accessibilitySuggestions, accessibilityUserImpact,
+  accessibilityIssuesImpact,
+  accessibilitySolutions,
+  accessibilitySuggestions,
+  accessibilityUserImpact,
 } from './accesibility-standards.js';
 import { successCriteriaLinks } from './constants.js';
 
@@ -75,32 +78,35 @@ function formatFailureSummary(failureSummary) {
     if (section.startsWith('Fix any of the following:')) {
       // If we have a previous section, add it to the result
       if (currentSection) {
-        result += `${currentSection}\n\n`;
+        result += `${currentSection}\n`;
       }
       // Start new section
       const lines = section.split('\n').filter((line) => line.trim());
+      let counter = 0; // Start from 0 since we'll pre-increment
       currentSection = lines.map((line, index) => {
         if (index === 0) {
           return 'One or more of the following related issues may also be present:';
         }
-        return `${index + 1}. ${line.trim()}`;
+        counter += 1;
+        return `${counter}. ${line.trim()}`;
       }).join('\n');
     } else if (section.startsWith('Fix all of the following:')) {
       // If we have a previous section, add it to the result
       if (currentSection) {
-        result += `${currentSection}\n\n`;
+        result += `${currentSection}\n`;
       }
       // Start new section
       const lines = section.split('\n').filter((line) => line.trim());
+      let counter = 0; // Start from 0 since we'll pre-increment
       currentSection = lines.map((line, index) => {
         if (index === 0) {
           return 'The following issue has been identified and must be addressed:';
         }
-        return `${index + 1}. ${line.trim()}`;
+        counter += 1;
+        return `${counter}. ${line.trim()}`;
       }).join('\n');
     }
   });
-
   // Add the last section
   if (currentSection) {
     result += currentSection;
@@ -108,7 +114,6 @@ function formatFailureSummary(failureSummary) {
 
   return result.trim();
 }
-
 // =============================================
 // Data Processing Functions
 // =============================================
@@ -341,14 +346,7 @@ function generateAccessibilityIssuesOverviewSection(issuesOverview) {
   section += '|-------|-------|-------------|-------------|-------------|-------------|-------------|\n';
 
   sortedIssues.forEach((issue) => {
-    let impact = 'Serious';
-    for (const category of ['easy', 'medium', 'hard']) {
-      const foundIssue = accessibilityIssues[category].find((i) => i.issue === issue.rule);
-      if (foundIssue) {
-        impact = foundIssue.impact;
-        break;
-      }
-    }
+    const impact = accessibilityIssuesImpact[issue.rule] || '';
 
     section += `| ${issue.rule} | [${issue.successCriteriaNumber.split('').join('.')} ${escapeHtmlTags(successCriteriaLinks[issue.successCriteriaNumber]?.name)}](${successCriteriaLinks[issue.successCriteriaNumber]?.successCriterionUrl}) |${issue.count} | ${issue.level} | ${impact} | ${escapeHtmlTags(issue.description)} | ${issue.understandingUrl} |\n`;
   });
@@ -436,7 +434,9 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
       if (pageData && pageData.violations) {
         const pageViolation = pageData.violations[level]?.items?.[issue.name];
         if (pageViolation && pageViolation.failureSummary) {
-          failureSummary = escapeHtmlTags(formatFailureSummary(pageViolation.failureSummary));
+          failureSummary = escapeHtmlTags(formatFailureSummary(pageViolation.failureSummary))
+            .replace(/\n/g, '<br>')
+            .replace(/\|/g, '&#124;');
         }
       }
     }
@@ -503,14 +503,7 @@ function generateQuickWinsOverviewSection(quickWinsData, enhancedReportUrl) {
     const firstIssue = group.issues[0];
     const howToSolve = escapeHtmlTags(accessibilitySolutions[firstIssue.id] || 'Review and fix according to WCAG guidelines.');
 
-    let impact = 'Serious';
-    for (const category of ['easy', 'medium', 'hard']) {
-      const foundIssue = accessibilityIssues[category].find((i) => i.issue === firstIssue.id);
-      if (foundIssue) {
-        impact = foundIssue.impact;
-        break;
-      }
-    }
+    const impact = accessibilityIssuesImpact[firstIssue.id] || '';
 
     // eslint-disable-next-line max-len
     sections.push(`| ${escapeHtmlTags(group.description)} | [${group.successCriteriaNumber.split('').join('.')} ${escapeHtmlTags(successCriteriaLinks[group.successCriteriaNumber]?.name)}](${successCriteriaLinks[group.successCriteriaNumber]?.successCriterionUrl}) | ${group.percentage}% | ${group.level} | ${impact} | ${howToSolve} |\n`);
