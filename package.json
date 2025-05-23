@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "nodemon",
-    "test": "c8 mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
+    "test": "c8 --exclude='src/metatags/metatags-auto-suggest.js' mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",
     "lint-fix": "eslint . --fix",
@@ -139,5 +139,13 @@
       "."
     ],
     "ext": ".js, .cjs, .ejs, .css"
+  },
+  "nyc": {
+    "exclude": [
+      "src/metatags/metatags-auto-suggest.js",
+      "test/**/*.js"
+    ],
+    "reporter": ["text", "html"],
+    "all": true
   }
 }
