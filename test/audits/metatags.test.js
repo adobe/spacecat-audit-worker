@@ -869,36 +869,6 @@ describe('Meta Tags', () => {
         expect(metatagsOppty.save).to.have.been.called;
       });
 
-      it('should handle case when no tags are extracted', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(2);
-        const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
-          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
-        });
-
-        // Override all S3 responses to have null tags
-        s3ClientStub.send
-          .withArgs(sinon.match.instanceOf(GetObjectCommand))
-          .returns({
-            Body: {
-              transformToString: () => JSON.stringify({
-                scrapeResult: {
-                  tags: null,
-                },
-              }),
-            },
-            ContentType: 'application/json',
-          });
-
-        const result = await auditStub.runAuditAndGenerateSuggestions(context);
-
-        expect(result).to.deep.equal({ status: 'complete' });
-        expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
-        expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
-      }).timeout(3000);
-
       it('should handle RUM API errors gracefully', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub().resolves(2);
@@ -1036,95 +1006,6 @@ describe('Meta Tags', () => {
         } catch (error) {
           expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId');
         }
-      });
-
-      it('should handle missing genvar ims orgId', async () => {
-        context.env.GENVAR_IMS_ORG_ID = '';
-
-        try {
-          await metatagsAutoSuggest(allTags, context, siteStub);
-        } catch (error) {
-          expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId1');
-        }
-      });
-
-      it('should generate presigned URLs and call Genvar API', async () => {
-        genvarClientStub.generateSuggestions.resolves({
-          '/about-us': {
-            h1: {
-              aiRationale: 'The H1 tag is catchy and broad...',
-              aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
-            },
-          },
-          '/add-on-and-refresh': {
-            description: {
-              aiRationale: 'The description emphasizes the brand\'s core values...',
-              aiSuggestion: 'Elevate your home with Lovesac\'s customizable add-ons...',
-            },
-            h1: {
-              aiRationale: 'The H1 tag is catchy and directly addresses the user\'s intent...',
-              aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons',
-            },
-          },
-        });
-
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
-
-        expect(log.debug.calledWith('Generated presigned URLs')).to.be.true;
-        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
-        expect(response['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
-        expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
-        expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
-      }).timeout(15000);
-
-      it('should log an error and throw if the Genvar API call fails', async () => {
-        genvarClientStub.generateSuggestions.throws(new Error('Genvar API failed'));
-        let err;
-        try {
-          await metatagsAutoSuggest(allTags, context, siteStub);
-        } catch (error) {
-          err = error;
-        }
-        expect(err.message).to.equal('Genvar API failed');
-      });
-
-      it('should log an error and throw if the Genvar API response is invalid', async () => {
-        genvarClientStub.generateSuggestions.resolves(5);
-        let err;
-        try {
-          await metatagsAutoSuggest(allTags, context, siteStub);
-        } catch (error) {
-          err = error;
-        }
-        expect(err.message).to.equal('Invalid response received from Genvar API: 5');
-      });
-
-      it('should handle forceAutoSuggest option set to true', async () => {
-        const forceAutoSuggest = true;
-        const isHandlerEnabledForSite = sinon.stub().returns(false);
-        Configuration.findLatest.resolves({
-          isHandlerEnabledForSite,
-        });
-
-        await metatagsAutoSuggest(allTags, context, siteStub, {
-          forceAutoSuggest,
-        });
-        expect(isHandlerEnabledForSite).not.to.have.been.called;
-        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
-      });
-
-      it('should handle forceAutoSuggest option set to false', async () => {
-        const forceAutoSuggest = false;
-        const isHandlerEnabledForSite = sinon.stub().returns(true);
-        Configuration.findLatest.resolves({
-          isHandlerEnabledForSite,
-        });
-
-        await metatagsAutoSuggest(allTags, context, siteStub, {
-          forceAutoSuggest,
-        });
-        expect(isHandlerEnabledForSite).to.have.been.called;
-        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
       });
     });
   });

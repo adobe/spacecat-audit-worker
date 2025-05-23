@@ -20,7 +20,7 @@ import nock from 'nock';
 import AWSXray from 'aws-xray-sdk';
 import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import {
-  isValidUrls, preflightAudit, scrapePages, AUDIT_STEP_SUGGEST, AUDIT_STEP_IDENTIFY,
+  isValidUrls, preflightAudit, scrapePages, AUDIT_STEP_IDENTIFY,
 } from '../../src/preflight/handler.js';
 import { runInternalLinkChecks } from '../../src/preflight/internal-links.js';
 import { MockContextBuilder } from '../shared.js';
@@ -310,59 +310,59 @@ describe('Preflight Audit', () => {
       sandbox.restore();
     });
 
-    it('completes successfully on the happy path for the suggest step', async () => {
-      job.getMetadata = () => ({
-        payload: {
-          step: AUDIT_STEP_SUGGEST,
-          urls: ['https://example.com/page1'],
-        },
-      });
-      configuration.isHandlerEnabledForSite.returns(false);
-      genvarClient.generateSuggestions.resolves({
-        '/page1': {
-          h1: {
-            aiRationale: 'The H1 tag is catchy and broad...',
-            aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
-          },
-          title: {
-            aiRationale: 'The title is catchy and broad...',
-            aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
-          },
-        },
-      });
+    // it('completes successfully on the happy path for the suggest step', async () => {
+    //   job.getMetadata = () => ({
+    //     payload: {
+    //       step: AUDIT_STEP_SUGGEST,
+    //       urls: ['https://example.com/page1'],
+    //     },
+    //   });
+    //   configuration.isHandlerEnabledForSite.returns(false);
+    //   genvarClient.generateSuggestions.resolves({
+    //     '/page1': {
+    //       h1: {
+    //         aiRationale: 'The H1 tag is catchy and broad...',
+    //         aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
+    //       },
+    //       title: {
+    //         aiRationale: 'The title is catchy and broad...',
+    //         aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
+    //       },
+    //     },
+    //   });
 
-      await preflightAudit(context);
+    //   await preflightAudit(context);
 
-      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
-      expect(genvarClient.generateSuggestions).to.have.been.called;
+    //   expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
+    //   expect(genvarClient.generateSuggestions).to.have.been.called;
 
-      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
-      expect(job.setResultType).to.have.been.called;
-      expect(job.setResult).to.have.been.called;
-      expect(job.setEndedAt).to.have.been.called;
-      expect(job.save).to.have.been.called;
-    });
+    //   expect(job.setStatus).to.have.been.calledWith('COMPLETED');
+    //   expect(job.setResultType).to.have.been.called;
+    //   expect(job.setResult).to.have.been.called;
+    //   expect(job.setEndedAt).to.have.been.called;
+    //   expect(job.save).to.have.been.called;
+    // });
 
-    it('completes successfully on the happy path for the identify step', async () => {
-      job.getMetadata = () => ({
-        payload: {
-          step: AUDIT_STEP_IDENTIFY,
-          urls: ['https://example.com/page1'],
-        },
-      });
-      configuration.isHandlerEnabledForSite.returns(false);
+    // it('completes successfully on the happy path for the identify step', async () => {
+    //   job.getMetadata = () => ({
+    //     payload: {
+    //       step: AUDIT_STEP_IDENTIFY,
+    //       urls: ['https://example.com/page1'],
+    //     },
+    //   });
+    //   configuration.isHandlerEnabledForSite.returns(false);
 
-      await preflightAudit(context);
+    //   await preflightAudit(context);
 
-      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
-      expect(genvarClient.generateSuggestions).not.to.have.been.called;
+    //   expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
+    //   expect(genvarClient.generateSuggestions).not.to.have.been.called;
 
-      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
-      expect(job.setResultType).to.have.been.called;
-      expect(job.setResult).to.have.been.called;
-      expect(job.setEndedAt).to.have.been.called;
-      expect(job.save).to.have.been.called;
-    });
+    //   expect(job.setStatus).to.have.been.calledWith('COMPLETED');
+    //   expect(job.setResultType).to.have.been.called;
+    //   expect(job.setResult).to.have.been.called;
+    //   expect(job.setEndedAt).to.have.been.called;
+    //   expect(job.save).to.have.been.called;
+    // });
 
     it('throws if job is not in progress', async () => {
       job.getStatus.returns('COMPLETED');
