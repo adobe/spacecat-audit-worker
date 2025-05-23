@@ -17,6 +17,7 @@ import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunitie
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = 'accessibility'; // Defined audit type
+// const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
 // First step: sends a message to the content scraper to generate accessibility audits
 async function scrapeAccessibilityData(context) {
