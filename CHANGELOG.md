@@ -1,3 +1,24 @@
+# [1.90.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.89.1...v1.90.0) (2025-05-23)
+
+
+### Features
+
+* adding support for form a11y opportunity ([#831](https://github.com/adobe/spacecat-audit-worker/issues/831)) ([f6e5b0d](https://github.com/adobe/spacecat-audit-worker/commit/f6e5b0da5d25295196201c79207c7ca13b12210c))
+
+## [1.89.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.89.0...v1.89.1) (2025-05-22)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#892](https://github.com/adobe/spacecat-audit-worker/issues/892)) ([8ea6f3e](https://github.com/adobe/spacecat-audit-worker/commit/8ea6f3e5b40de648fc9fbf0f3e1654f691749e05))
+
+# [1.89.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.88.2...v1.89.0) (2025-05-22)
+
+
+### Features
+
+* [Preflight] Split identify and suggest flows ([#882](https://github.com/adobe/spacecat-audit-worker/issues/882)) ([492c218](https://github.com/adobe/spacecat-audit-worker/commit/492c218d386dde1cbe556888a9bf6aa86f5b0b28))
+
 ## [1.88.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.88.1...v1.88.2) (2025-05-22)
 
 

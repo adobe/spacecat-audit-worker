@@ -335,7 +335,8 @@
             }
           ]
         }
-      ]
+      ],
+      "formsource": "#container-1 form.newsletter"
     }
   ]
 }
