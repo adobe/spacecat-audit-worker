@@ -13,7 +13,9 @@
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { GenvarClient } from '@adobe/spacecat-shared-gpt-client';
-import { isObject } from '@adobe/spacecat-shared-utils';
+import { hasText, isObject } from '@adobe/spacecat-shared-utils';
+import BrandClient from '@adobe/spacecat-shared-brand-client';
+import { Organization } from '@adobe/spacecat-shared-data-access';
 
 const EXPIRY_IN_SECONDS = 25 * 60;
 
@@ -39,6 +41,28 @@ async function getPresignedUrl(s3Client, log, scrapedData) {
     log.error(`Error generating presigned URL for ${scrapedData.s3key}:`, error);
     return '';
   }
+}
+
+/**
+ * Gets IMS config from the environment.
+ * @returns {object} imsConfig - The IMS config.
+ */
+function getImsConfig(env, log) {
+  const {
+    BRAND_IMS_HOST: host,
+    BRAND_IMS_CLIENT_ID: clientId,
+    BRAND_IMS_CLIENT_CODE: clientCode,
+    BRAND_IMS_CLIENT_SECRET: clientSecret,
+  } = env;
+  if (!hasText(host) || !hasText(clientId) || !hasText(clientCode) || !hasText(clientSecret)) {
+    log.error('IMS Config not found in the environment');
+  }
+  return {
+    host,
+    clientId,
+    clientCode,
+    clientSecret,
+  };
 }
 
 export default async function metatagsAutoSuggest(allTags, context, site, options = {
@@ -73,6 +97,20 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
   };
   let responseWithSuggestions;
   try {
+    const imsConfig = getImsConfig(context.env, log);
+    log.info(`IMS Config: ${JSON.stringify(imsConfig)}`);
+    const brandId = site.getConfig()?.getBrandConfig()?.brandId;
+    log.info(`Brand ID mapping for site: ${site.getId()} is ${brandId}`);
+    if (hasText(brandId)) {
+      const organizationId = site.getOrganizationId();
+      const organization = await Organization.findById(organizationId);
+      const imsOrgId = organization?.getImsOrgId();
+      log.info(`IMS Org ID for site: ${site.getId()} is ${imsOrgId}`);
+      const brandClient = BrandClient.createFrom(context);
+      const brandGuidelines = await brandClient.getBrandGuidelines(brandId, imsOrgId, imsConfig);
+      log.info(`Found brand guidelines for site: ${site.getId()}`);
+      log.info(`Brand Guidelines: ${JSON.stringify(brandGuidelines)}`);
+    }
     const genvarClient = GenvarClient.createFrom(context);
     responseWithSuggestions = await genvarClient.generateSuggestions(
       JSON.stringify(requestBody),
