@@ -24,6 +24,7 @@ import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
 import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
+import paid from './paid/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import internalLinks from './internal-links/handler.js';
@@ -50,6 +51,7 @@ const HANDLERS = {
   'lhs-desktop': lhsDesktop,
   404: notfound,
   sitemap,
+  paid,
   canonical,
   'broken-backlinks': backlinks,
   'broken-internal-links': internalLinks,
