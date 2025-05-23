@@ -55,6 +55,9 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       '404-internal-links',
       options,
     );
+
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] internal404Links: ${JSON.stringify(internal404Links)}`);
+
     const transformedLinks = internal404Links.map((link) => ({
       urlFrom: link.url_from,
       urlTo: link.url_to,
