@@ -55,16 +55,22 @@ function classifyUrl(url, classifier) {
 function fetchPageTypeClassifier(log, siteId, site) {
   log.info(`Fetching classifier for site ${siteId}`);
 
-  const config = site.getConfig().getGroupedURLs('paid');
-  const pageTypes = config.map((item) => {
+  const config = site.getConfig()?.getGroupedURLs('paid');
+  const pageTypes = config?.map((item) => {
     const page = item.name;
-    const pattern = (item.pattern) instanceof RegExp ? item.pattern : new RegExp(item.pattern);
+    let pattern;
+    if ((item.pattern) instanceof RegExp) {
+      pattern = item.pattern;
+    } else {
+      const deserialized = JSON.parse(item.pattern);
+      pattern = new RegExp(deserialized.pattern, deserialized.flags);
+    }
     return {
       [page]: pattern,
     };
   });
 
-  return pageTypes.reduce((acc, pageType) => ({ ...acc, ...pageType }), {});
+  return pageTypes?.reduce((acc, pageType) => ({ ...acc, ...pageType }), {});
 }
 
 function removeUncategorizedPages(segment) {
@@ -153,6 +159,8 @@ export async function paidAuditRunner(auditUrl, context, site) {
   if (isNonEmptyObject(classifier)) {
     const enrichedWithPageType = enrichPageTypes(resultSubset, classifier);
     resultSubset = enrichContainedUrls(enrichedWithPageType);
+  } else {
+    log.warn(`Page type configuration is missing for site ${auditUrl}. Proceeding with auit without page and url enrichment`);
   }
 
   log.info(`Filtering ${resultSubset?.length} segments by top totalSessions`);

@@ -76,12 +76,23 @@ const pageTypes = {
 };
 
 function getSite(isString = true) {
-  const config = Object.entries(pageTypes).map(([name, patternReg]) => (
-    {
-      name,
-      pattern: isString ? new RegExp(patternReg).toString() : patternReg,
+  const config = Object.entries(pageTypes).map(([name, patternReg]) => {
+    let patternInput;
+    if (isString) {
+      patternInput = patternReg;
+    } else {
+      const safeRegex = {
+        pattern: patternReg.source,
+        flags: patternReg.flags,
+      };
+      patternInput = safeRegex;
     }
-  ));
+    return (
+      {
+        name,
+        pattern: isString ? patternInput : JSON.stringify(patternInput),
+      });
+  });
 
   const siteConfig = {
     getGroupedURLs: sandbox.stub().returns(config),
@@ -97,6 +108,7 @@ describe('Paid audit incorporates optel data as input', () => {
     info: sinon.stub(),
     debug: sinon.stub(),
     error: sinon.stub(),
+    warn: sinon.stub(),
   };
 
   let site = getSite();
@@ -185,7 +197,7 @@ describe('Paid audit incorporates optel data as input', () => {
     pageSegemnt.forEach((item) => {
       expect(item.urls).to.eqls([]);
     });
-    expect(missingUrl.pageType).to.eq('uncategorized');
+    expect(missingUrl.pageType).to.eq('other | Other Pages');
   });
 
   it('Paid should handle regex settings', async () => {
@@ -205,5 +217,23 @@ describe('Paid audit incorporates optel data as input', () => {
       .find((valueItem) => !valueItem.url);
 
     expect(missingUrl.pageType).to.eq('other | Other Pages');
+  });
+
+  it('Paid should handle missing config', async () => {
+    context = {
+      ...context,
+      rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
+    };
+
+    const siteConfig = {
+      getGroupedURLs: sandbox.stub().returns(null),
+    };
+
+    const siteWithMissingConfig = {
+      getConfig: () => siteConfig,
+    };
+
+    const result = await paidAuditRunner(auditUrl, context, siteWithMissingConfig);
+    expect(result.auditResult.length).to.eql(2);
   });
 });
