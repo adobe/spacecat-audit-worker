@@ -81,7 +81,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
           dataSources: opportunityInstance.data?.dataSources,
         });
       }
-      opportunity.setUpdatedBy('audit-worker');
+      opportunity.setUpdatedBy('system');
       await opportunity.save();
       return opportunity;
     }

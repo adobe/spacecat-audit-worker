@@ -175,7 +175,7 @@ export async function opportunityAndSuggestionsStep(context) {
         const { Suggestion } = dataAccess;
         await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
       }
-      opportunity.setUpdatedBy('audit-worker');
+      opportunity.setUpdatedBy('system');
       await opportunity.save();
     }
     return {
