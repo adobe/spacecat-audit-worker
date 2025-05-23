@@ -87,8 +87,8 @@ async function run(message, context) {
   const { log } = context;
   const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}`);
-  log.info(`Message ${JSON.stringify(message)}`);
+  log.info(`Received message with type: ${type} for site: ${siteId}`);
+  log.info(`Full message: ${JSON.stringify(message)}`);
 
   const handler = HANDLERS[type];
   if (!handler) {
@@ -96,6 +96,8 @@ async function run(message, context) {
     log.error(msg);
     return notFound();
   }
+
+  log.info(`Found handler for type: ${type}`);
 
   const startTime = process.hrtime();
 

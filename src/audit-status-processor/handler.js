@@ -56,8 +56,36 @@ function createAuditStatusMessage(siteId, organizationId, experienceUrl, status)
  */
 export async function processAuditStatus(message, context) {
   const { log } = context;
+
+  // Add initial message logging
+  log.info('Received message in processAuditStatus:', JSON.stringify(message));
+
+  if (!message) {
+    log.error('Message is undefined or null');
+    return {
+      error: 'Message is undefined or null',
+      success: false,
+    };
+  }
+
+  if (!message.auditStatusJob) {
+    log.error('Message missing auditStatusJob:', JSON.stringify(message));
+    return {
+      error: 'Message missing auditStatusJob',
+      success: false,
+    };
+  }
+
   const { auditStatusJob } = message;
   const { siteId, auditContext } = auditStatusJob;
+
+  if (!siteId || !auditContext) {
+    log.error('Missing required fields in auditStatusJob:', JSON.stringify(auditStatusJob));
+    return {
+      error: 'Missing required fields in auditStatusJob',
+      success: false,
+    };
+  }
 
   try {
     // Log the status processing message
