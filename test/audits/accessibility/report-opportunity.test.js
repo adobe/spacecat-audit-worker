@@ -20,7 +20,7 @@ import {
   createFixedVsNewReportOpportunity,
   createBaseReportOpportunity,
   createReportOpportunitySuggestionInstance,
-} from '../../../src/accessibility/utils/reportOppty.js';
+} from '../../../src/accessibility/utils/report-oppty.js';
 
 describe('Accessibility Report Opportunity Utils', () => {
   describe('createInDepthReportOpportunity', () => {

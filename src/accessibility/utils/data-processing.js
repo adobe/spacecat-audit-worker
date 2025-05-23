@@ -23,14 +23,14 @@ import {
   createEnhancedReportOpportunity,
   createFixedVsNewReportOpportunity,
   createBaseReportOpportunity,
-} from './reportOppty.js';
+} from './report-oppty.js';
 import {
   generateInDepthReportMarkdown,
   generateEnhancedReportMarkdown,
   generateFixedNewReportMarkdown,
   generateBaseReportMarkdown,
   getWeekNumber,
-} from './generateMdReports.js';
+} from './generate-md-reports.js';
 
 /**
  * Deletes the original JSON files after they've been processed

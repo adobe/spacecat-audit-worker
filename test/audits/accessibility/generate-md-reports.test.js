@@ -20,7 +20,7 @@ import {
   generateEnhancedReportMarkdown,
   generateFixedNewReportMarkdown,
   getWeekNumber,
-} from '../../../src/accessibility/utils/generateMdReports.js';
+} from '../../../src/accessibility/utils/generate-md-reports.js';
 
 describe('Generate MD Reports Utils', () => {
   // Test data fixtures

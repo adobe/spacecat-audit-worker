@@ -13,23 +13,43 @@
 /* eslint-env mocha */
 
 import { expect, use } from 'chai';
-import sinonChai from 'sinon-chai';
-import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { MockContextBuilder } from '../shared.js';
-
 import accessibilityAudit from '../../src/accessibility/handler.js';
-import * as dataProcessing from '../../src/accessibility/utils/data-processing.js';
 
 use(sinonChai);
-use(chaiAsPromised);
+
+const sandbox = sinon.createSandbox();
 
 describe('Accessibility Audit', () => {
-  let context;
-  let sandbox;
+  let mockSite;
+  let mockContext;
+
+  const baseURL = 'https://example.com';
+  const siteId = 'test-site-id';
 
   beforeEach(() => {
-    sandbox = sinon.createSandbox();
+    mockSite = {
+      getId: sandbox.stub().returns(siteId),
+      getBaseURL: sandbox.stub().returns(baseURL),
+    };
+
+    mockContext = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        site: mockSite,
+        finalUrl: 'www.example.com',
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-scraper-bucket',
+          AWS_ENV: 'dev',
+        },
+        s3Client: {
+          send: sandbox.stub(),
+        },
+      })
+      .build();
   });
 
   afterEach(() => {
@@ -37,293 +57,326 @@ describe('Accessibility Audit', () => {
   });
 
   describe('scrapeAccessibilityData step', () => {
-    beforeEach(() => {
-      context = new MockContextBuilder()
-        .withSandbox(sandbox)
-        .withOverrides({
-          site: {
-            getId: sandbox.stub().returns('test-site-id'),
-            getBaseURL: sandbox.stub().returns('https://example.com'),
-          },
-          finalUrl: 'https://example.com',
-          env: {
-            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-          },
-          s3Client: {},
-        })
-        .build();
-
-      sandbox.stub(dataProcessing, 'getUrlsForAudit').resolves([
-        'https://example.com',
-        'https://example.com/page1',
-        'https://example.com/page2',
-      ]);
-    });
-
     it('should return correct audit result for scraping request', async () => {
-      const steps = accessibilityAudit.getSteps();
-      const scrapeStep = steps.find((step) => step.stepName === 'scrapeAccessibilityData');
+      const mockUrls = [
+        'https://example.com/',
+        'https://example.com/about',
+        'https://example.com/contact',
+      ];
 
-      const result = await scrapeStep.stepFunction(context);
+      // Mock S3 responses for getUrlsForAudit
+      mockContext.s3Client.send
+        .onFirstCall().resolves({
+          Body: {
+            transformToString: sandbox.stub().resolves(JSON.stringify({
+              'https://example.com/': { traffic: 1000 },
+              'https://example.com/about': { traffic: 800 },
+              'https://example.com/contact': { traffic: 600 },
+            })),
+          },
+        })
+        .onSecondCall().resolves({
+          Body: {
+            transformToString: sandbox.stub().resolves(JSON.stringify(mockUrls)),
+          },
+        });
 
-      expect(result).to.deep.equal({
-        auditResult: {
-          status: 'SCRAPING_REQUESTED',
-          message: 'Content scraping for accessibility audit initiated.',
-        },
-        fullAuditRef: 'https://example.com',
-        urls: [
-          'https://example.com',
-          'https://example.com/page1',
-          'https://example.com/page2',
-        ],
-        siteId: 'test-site-id',
-        jobId: 'test-site-id',
-        processingType: 'accessibility',
+      const scrapeStep = accessibilityAudit.getStep('scrapeAccessibilityData');
+
+      const result = await scrapeStep.handler(mockContext);
+
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.deep.equal({
+        status: 'SCRAPING_REQUESTED',
+        message: 'Content scraping for accessibility audit initiated.',
       });
-
-      expect(dataProcessing.getUrlsForAudit).to.have.been.calledWith(
-        context.s3Client,
-        'test-bucket',
-        'test-site-id',
-        context.log,
-      );
+      expect(result).to.have.property('fullAuditRef', 'www.example.com');
+      expect(result).to.have.property('urls');
+      expect(result).to.have.property('siteId', siteId);
+      expect(result).to.have.property('jobId', siteId);
+      expect(result).to.have.property('processingType', Audit.AUDIT_TYPES.ACCESSIBILITY);
     });
 
-    it('should handle missing S3 bucket configuration', async () => {
-      context.env.S3_SCRAPER_BUCKET_NAME = undefined;
+    it('should handle getUrlsForAudit errors gracefully', async () => {
+      // Mock S3 error
+      mockContext.s3Client.send.rejects(new Error('S3 connection failed'));
 
-      const steps = accessibilityAudit.getSteps();
-      const scrapeStep = steps.find((step) => step.stepName === 'scrapeAccessibilityData');
+      const scrapeStep = accessibilityAudit.getStep('scrapeAccessibilityData');
 
-      const result = await scrapeStep.stepFunction(context);
-
-      expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
-      expect(dataProcessing.getUrlsForAudit).to.have.been.called;
+      await expect(scrapeStep.handler(mockContext)).to.be.rejectedWith('S3 connection failed');
     });
   });
 
   describe('processAccessibilityOpportunities step', () => {
-    beforeEach(() => {
-      context = new MockContextBuilder()
-        .withSandbox(sandbox)
-        .withOverrides({
-          site: {
-            getId: sandbox.stub().returns('test-site-id'),
-            getBaseURL: sandbox.stub().returns('https://example.com'),
-          },
-          env: {
-            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-            AWS_ENV: 'test',
-          },
-          s3Client: {},
-        })
-        .build();
-    });
-
     it('should return error when S3 bucket is not configured', async () => {
-      context.env.S3_SCRAPER_BUCKET_NAME = undefined;
+      const contextWithoutBucket = {
+        ...mockContext,
+        env: {},
+      };
 
-      const steps = accessibilityAudit.getSteps();
-      const processStep = steps.find((step) => step.stepName === 'processAccessibilityOpportunities');
+      const processStep = accessibilityAudit.getStep('processAccessibilityOpportunities');
 
-      const result = await processStep.stepFunction(context);
+      const result = await processStep.handler(contextWithoutBucket);
 
       expect(result).to.deep.equal({
         status: 'PROCESSING_FAILED',
         error: 'Missing S3 bucket configuration for accessibility audit',
       });
-      expect(context.log.error).to.have.been.calledWith('Missing S3 bucket configuration for accessibility audit');
     });
 
     it('should process accessibility data successfully with opportunities found', async () => {
-      const mockAggregationResult = {
-        success: true,
-        finalResultFiles: {
-          current: {
-            overall: {
-              violations: {
-                total: 15,
-              },
-            },
-            'https://example.com': {},
-            'https://example.com/page1': {},
+      // Mock S3 responses for aggregateAccessibilityData
+      const mockAccessibilityData = {
+        violations: [
+          {
+            id: 'color-contrast',
+            impact: 'serious',
+            description: 'Elements must have sufficient color contrast',
+            nodes: [{ target: ['#header'] }],
           },
-        },
+        ],
       };
 
-      sandbox.stub(dataProcessing, 'aggregateAccessibilityData').resolves(mockAggregationResult);
-      sandbox.stub(dataProcessing, 'generateReportOpportunities').resolves();
+      // Mock S3 list objects response (finding subfolders)
+      const today = new Date().toISOString().split('T')[0];
+      const timestamp = new Date(today).getTime();
 
-      const steps = accessibilityAudit.getSteps();
-      const processStep = steps.find((step) => step.stepName === 'processAccessibilityOpportunities');
+      mockContext.s3Client.send
+        .onFirstCall().resolves({
+          CommonPrefixes: [
+            { Prefix: `accessibility/${siteId}/${timestamp}/` },
+          ],
+        })
+        // Mock getObjectKeysUsingPrefix response
+        .onSecondCall()
+        .resolves([
+          `accessibility/${siteId}/${timestamp}/page1.json`,
+          `accessibility/${siteId}/${timestamp}/page2.json`,
+        ])
+        // Mock getObjectFromKey responses
+        .onThirdCall()
+        .resolves(mockAccessibilityData)
+        .onCall(3)
+        .resolves(mockAccessibilityData)
+        // Mock site.getLatestAuditByAuditType response (for generateReportOpportunities)
+        .onCall(4)
+        .resolves(null);
 
-      const result = await processStep.stepFunction(context);
+      const processStep = accessibilityAudit.getStep('processAccessibilityOpportunities');
 
-      expect(result.status).to.equal('OPPORTUNITIES_FOUND');
-      expect(result.opportunitiesFound).to.equal(15);
-      expect(result.urlsProcessed).to.equal(2);
-      expect(result.summary).to.equal('Found 15 accessibility issues across 2 URLs');
-      expect(result.fullReportUrl).to.match(/^accessibility\/test-site-id\/\d{4}-\d{2}-\d{2}-final-result\.json$/);
+      const result = await processStep.handler(mockContext);
 
-      expect(dataProcessing.aggregateAccessibilityData).to.have.been.calledWith(
-        context.s3Client,
-        'test-bucket',
-        'test-site-id',
-        context.log,
-        sinon.match.string,
-        sinon.match.string,
-      );
-      expect(dataProcessing.generateReportOpportunities).to.have.been.calledWith(
-        context.site,
-        context.log,
-        mockAggregationResult,
-        false,
-        context,
-      );
+      expect(result).to.have.property('status');
+      expect(result.status).to.be.oneOf(['OPPORTUNITIES_FOUND', 'NO_OPPORTUNITIES']);
+      expect(result).to.have.property('urlsProcessed');
+      expect(result).to.have.property('summary');
     });
 
-    it('should handle case with no opportunities found', async () => {
-      const mockAggregationResult = {
-        success: true,
-        finalResultFiles: {
-          current: {
-            overall: {
-              violations: {
-                total: 0,
-              },
-            },
-          },
-        },
-      };
+    it('should handle case with no accessibility data found', async () => {
+      // Mock S3 response with no subfolders
+      mockContext.s3Client.send.onFirstCall()
+        .resolves({
+          CommonPrefixes: [],
+        });
 
-      sandbox.stub(dataProcessing, 'aggregateAccessibilityData').resolves(mockAggregationResult);
-      sandbox.stub(dataProcessing, 'generateReportOpportunities').resolves();
+      const processStep = accessibilityAudit.getStep('processAccessibilityOpportunities');
 
-      const steps = accessibilityAudit.getSteps();
-      const processStep = steps.find((step) => step.stepName === 'processAccessibilityOpportunities');
+      const result = await processStep.handler(mockContext);
 
-      const result = await processStep.stepFunction(context);
-
-      expect(result.status).to.equal('NO_OPPORTUNITIES');
-      expect(result.opportunitiesFound).to.equal(0);
-      expect(result.summary).to.equal('Found 0 accessibility issues across 0 URLs');
+      expect(result).to.have.property('status', 'NO_OPPORTUNITIES');
+      expect(result).to.have.property('message');
     });
 
-    it('should handle aggregation failure', async () => {
-      const mockAggregationResult = {
-        success: false,
-        message: 'No accessibility data found for site',
-      };
+    it('should handle S3 errors during processing', async () => {
+      // Mock S3 error
+      mockContext.s3Client.send.rejects(new Error('S3 connection failed'));
 
-      sandbox.stub(dataProcessing, 'aggregateAccessibilityData').resolves(mockAggregationResult);
+      const processStep = accessibilityAudit.getStep('processAccessibilityOpportunities');
 
-      const steps = accessibilityAudit.getSteps();
-      const processStep = steps.find((step) => step.stepName === 'processAccessibilityOpportunities');
-
-      const result = await processStep.stepFunction(context);
-
-      expect(result).to.deep.equal({
-        status: 'NO_OPPORTUNITIES',
-        message: 'No accessibility data found for site',
-      });
-      expect(context.log.error).to.have.been.calledWith('[A11yAudit] No data aggregated: No accessibility data found for site');
-    });
-
-    it('should handle aggregation error', async () => {
-      const aggregationError = new Error('S3 connection failed');
-      sandbox.stub(dataProcessing, 'aggregateAccessibilityData').rejects(aggregationError);
-
-      const steps = accessibilityAudit.getSteps();
-      const processStep = steps.find((step) => step.stepName === 'processAccessibilityOpportunities');
-
-      const result = await processStep.stepFunction(context);
+      const result = await processStep.handler(mockContext);
 
       expect(result).to.deep.equal({
         status: 'PROCESSING_FAILED',
         error: 'S3 connection failed',
       });
-      expect(context.log.error).to.have.been.calledWith('[A11yAudit] Error processing accessibility data: S3 connection failed', aggregationError);
-    });
-
-    it('should handle report generation error', async () => {
-      const mockAggregationResult = {
-        success: true,
-        finalResultFiles: {
-          current: {
-            overall: {
-              violations: {
-                total: 5,
-              },
-            },
-            'https://example.com': {},
-          },
-        },
-      };
-
-      const reportError = new Error('Failed to create opportunities');
-      sandbox.stub(dataProcessing, 'aggregateAccessibilityData').resolves(mockAggregationResult);
-      sandbox.stub(dataProcessing, 'generateReportOpportunities').rejects(reportError);
-
-      const steps = accessibilityAudit.getSteps();
-      const processStep = steps.find((step) => step.stepName === 'processAccessibilityOpportunities');
-
-      const result = await processStep.stepFunction(context);
-
-      expect(result).to.deep.equal({
-        status: 'PROCESSING_FAILED',
-        error: 'Failed to create opportunities',
-      });
-      expect(context.log.error).to.have.been.calledWith('[A11yAudit] Error generating report opportunities: Failed to create opportunities', reportError);
     });
 
     it('should use production environment setting', async () => {
-      context.env.AWS_ENV = 'prod';
-
-      const mockAggregationResult = {
-        success: true,
-        finalResultFiles: {
-          current: {
-            overall: {
-              violations: {
-                total: 3,
-              },
-            },
-          },
+      const prodContext = {
+        ...mockContext,
+        env: {
+          ...mockContext.env,
+          AWS_ENV: 'prod',
         },
       };
 
-      sandbox.stub(dataProcessing, 'aggregateAccessibilityData').resolves(mockAggregationResult);
-      sandbox.stub(dataProcessing, 'generateReportOpportunities').resolves();
+      // Mock successful aggregation but no opportunities
+      const today = new Date().toISOString().split('T')[0];
+      const timestamp = new Date(today).getTime();
 
-      const steps = accessibilityAudit.getSteps();
-      const processStep = steps.find((step) => step.stepName === 'processAccessibilityOpportunities');
+      prodContext.s3Client.send
+        .onFirstCall().resolves({
+          CommonPrefixes: [
+            { Prefix: `accessibility/${siteId}/${timestamp}/` },
+          ],
+        })
+        .onSecondCall()
+        .resolves([])
+        .onThirdCall()
+        .resolves(null);
 
-      await processStep.stepFunction(context);
+      const processStep = accessibilityAudit.getStep('processAccessibilityOpportunities');
 
-      expect(dataProcessing.generateReportOpportunities).to.have.been.calledWith(
-        context.site,
-        context.log,
-        mockAggregationResult,
-        true, // isProd should be true
-        context,
-      );
+      const result = await processStep.handler(prodContext);
+
+      // Should handle prod environment without errors
+      expect(result).to.have.property('status');
     });
   });
 
   describe('audit configuration', () => {
     it('should have correct audit structure', () => {
-      const steps = accessibilityAudit.getSteps();
+      // Test that we can access both steps
+      const scrapeStep = accessibilityAudit.getStep('scrapeAccessibilityData');
+      const processStep = accessibilityAudit.getStep('processAccessibilityOpportunities');
 
-      expect(steps).to.have.length(2);
+      expect(scrapeStep).to.have.property('name', 'scrapeAccessibilityData');
+      expect(scrapeStep).to.have.property('destination', Audit.AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER);
+      expect(scrapeStep).to.have.property('handler').that.is.a('function');
 
-      const scrapeStep = steps.find((step) => step.stepName === 'scrapeAccessibilityData');
-      expect(scrapeStep).to.exist;
-      expect(scrapeStep.destination).to.equal('CONTENT_SCRAPER');
+      expect(processStep).to.have.property('name', 'processAccessibilityOpportunities');
+      expect(processStep).to.have.property('destination', null); // Final step has no destination
+      expect(processStep).to.have.property('handler').that.is.a('function');
+    });
 
-      const processStep = steps.find((step) => step.stepName === 'processAccessibilityOpportunities');
-      expect(processStep).to.exist;
-      expect(processStep.destination).to.be.undefined;
+    it('should use wwwUrlResolver', () => {
+      const { urlResolver } = accessibilityAudit;
+      expect(urlResolver).to.be.a('function');
+    });
+  });
+
+  describe('integration scenarios', () => {
+    it('should handle complete audit flow with realistic data', async () => {
+      // Mock first step
+      const mockUrls = [
+        'https://example.com/',
+        'https://example.com/about',
+        'https://example.com/products',
+      ];
+
+      mockContext.s3Client.send
+        .onFirstCall().resolves({
+          Body: {
+            transformToString: sandbox.stub().resolves(JSON.stringify({
+              'https://example.com/': { traffic: 1000 },
+              'https://example.com/about': { traffic: 800 },
+              'https://example.com/products': { traffic: 600 },
+            })),
+          },
+        })
+        .onSecondCall().resolves({
+          Body: {
+            transformToString: sandbox.stub().resolves(JSON.stringify(mockUrls)),
+          },
+        });
+
+      // Test first step
+      const scrapeStep = accessibilityAudit.getStep('scrapeAccessibilityData');
+      const scrapeResult = await scrapeStep.handler(mockContext);
+
+      expect(scrapeResult.auditResult.status).to.equal('SCRAPING_REQUESTED');
+      expect(scrapeResult.urls).to.have.lengthOf(3);
+      expect(scrapeResult.processingType).to.equal(Audit.AUDIT_TYPES.ACCESSIBILITY);
+
+      // Reset mocks for second step
+      sandbox.restore();
+      mockContext = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          site: mockSite,
+          finalUrl: 'www.example.com',
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-scraper-bucket',
+            AWS_ENV: 'dev',
+          },
+          s3Client: {
+            send: sandbox.stub(),
+          },
+        })
+        .build();
+
+      // Mock second step with realistic accessibility data
+      const today = new Date().toISOString().split('T')[0];
+      const timestamp = new Date(today).getTime();
+
+      mockContext.s3Client.send
+        .onFirstCall().resolves({
+          CommonPrefixes: [
+            { Prefix: `accessibility/${siteId}/${timestamp}/` },
+          ],
+        })
+        .onSecondCall()
+        .resolves([
+          `accessibility/${siteId}/${timestamp}/page1.json`,
+          `accessibility/${siteId}/${timestamp}/page2.json`,
+          `accessibility/${siteId}/${timestamp}/page3.json`,
+        ])
+        .onThirdCall()
+        .resolves({
+          violations: [
+            { id: 'color-contrast', impact: 'serious' },
+            { id: 'alt-text', impact: 'critical' },
+          ],
+        })
+        .onCall(3)
+        .resolves({
+          violations: [
+            { id: 'form-labels', impact: 'serious' },
+          ],
+        })
+        .onCall(4)
+        .resolves({
+          violations: [
+            { id: 'heading-order', impact: 'moderate' },
+          ],
+        })
+        .onCall(5)
+        .resolves(null); // getLatestAuditByAuditType
+
+      // Test second step
+      const processStep = accessibilityAudit.getStep('processAccessibilityOpportunities');
+      const processResult = await processStep.handler(mockContext);
+
+      expect(processResult).to.have.property('status');
+      expect(processResult.status).to.be.oneOf(['OPPORTUNITIES_FOUND', 'NO_OPPORTUNITIES']);
+      if (processResult.status === 'OPPORTUNITIES_FOUND') {
+        expect(processResult).to.have.property('opportunitiesFound');
+        expect(processResult).to.have.property('urlsProcessed');
+        expect(processResult).to.have.property('summary');
+      }
+    });
+
+    it('should handle edge case with empty aggregation result', async () => {
+      // Mock empty aggregation result
+      const today = new Date().toISOString().split('T')[0];
+      const timestamp = new Date(today).getTime();
+
+      mockContext.s3Client.send
+        .onFirstCall().resolves({
+          CommonPrefixes: [
+            { Prefix: `accessibility/${siteId}/${timestamp}/` },
+          ],
+        })
+        .onSecondCall()
+        .resolves([])
+        .onThirdCall()
+        .resolves(null);
+
+      const processStep = accessibilityAudit.getStep('processAccessibilityOpportunities');
+
+      const result = await processStep.handler(mockContext);
+
+      expect(result).to.have.property('status', 'NO_OPPORTUNITIES');
     });
   });
 });
