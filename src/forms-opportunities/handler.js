@@ -84,7 +84,7 @@ export async function createAccessibilityOpportunity(auditData, scrapedData, con
 
   await createA11yOpportunity({
     siteId: auditData.getSiteId(),
-    auditId: auditData.getSiteId(),
+    auditId: auditData.getAuditId(),
     data: {
       a11yData,
     },
