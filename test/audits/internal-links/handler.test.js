@@ -485,6 +485,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       getData: () => suggestion.data,
       setData: sinon.stub(),
       getStatus: sinon.stub().returns('NEW'),
+      setUpdatedBy: sinon.stub().returnsThis(),
     }));
     opportunity.getSuggestions.resolves(existingSuggestions);
 

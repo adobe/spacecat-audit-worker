@@ -573,6 +573,7 @@ describe('Meta Tags', () => {
           remove: sinon.stub(),
           setData: sinon.stub(),
           save: sinon.stub(),
+          setUpdatedBy: sinon.stub().returnsThis(),
         };
 
         opportunity.getSuggestions.returns([existingSuggestion]);

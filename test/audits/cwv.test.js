@@ -190,6 +190,7 @@ describe('CWVRunner Tests', () => {
         getData: () => (suggestion.data),
         setData: sinon.stub(),
         getStatus: sinon.stub().returns('NEW'),
+        setUpdatedBy: sinon.stub().returnsThis(),
       }));
       oppty.getSuggestions.resolves(existingSuggestions);
 
