@@ -203,6 +203,12 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     });
 
     context.s3Client.send.onCall(1).resolves({
+      Contents: [],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+
+    context.s3Client.send.onCall(2).resolves({
       Contents: [
         { Key: 'scrapes/site-id/screenshot.png' },
       ],
@@ -234,6 +240,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: ['https://example.com/home', 'https://example.com/about'],
       formData: [],
+      formA11yData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -254,7 +261,8 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
       .to
       .have
       .been
-      .callCount(4); // 1. get list of files, 2. get meta tags, 3. non json file, 4. header links
+      // eslint-disable-next-line max-len
+      .callCount(5); // 1. get list of files, 2. get list of a11y files, 3. get meta tags, 4. non json file, 5. header links
   });
 
   it('returns empty arrays when no files are found', async () => {
@@ -265,6 +273,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [],
     });
   });
@@ -285,6 +294,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [],
     });
   });
@@ -298,11 +308,18 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
       NextContinuationToken: null,
     });
 
+    context.s3Client.send.onCall(1).resolves({
+      Contents: [],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
     const result = await getScrapedDataForSiteId(site, context);
 
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [],
     });
   });
@@ -340,6 +357,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -359,6 +377,12 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
         { Key: 'scrapes/site-id/root/page/scrape.json' },
         { Key: 'scrapes/site-id/invalid.json' },
       ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    context.s3Client.send.onCall(1).resolves({
+      Contents: [],
       IsTruncated: false,
       NextContinuationToken: null,
     });
@@ -407,6 +431,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       formData: [],
+      formA11yData: [],
       headerLinks:
         [
           'https://example.com/home',
@@ -468,6 +493,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [
         {
           url: 'https://example.com/page1',
@@ -515,6 +541,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
     expect(result).to.deep.equal({
       headerLinks: [],
       formData: [],
+      formA11yData: [],
       siteData: [
         {
           url: '',
@@ -596,6 +623,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formA11yData: [],
       siteData: [
         {
           description: '',
@@ -695,6 +723,7 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formA11yData: [],
       siteData: [
         {
           description: '',
@@ -754,8 +783,69 @@ describe('getScrapedDataForSiteId (with utility functions)', () => {
 
     expect(result).to.deep.equal({
       headerLinks: [],
+      formA11yData: [],
       siteData: [],
       formData: [null],
+    });
+  });
+
+  it('handles a11y data extraction', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'forms-accessibility/site-id/firstbank_contact.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: null,
+    });
+
+    const mockFileResponse = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          a11yResult: [{
+            formSource: '#container-1555391e6f form#guideContainerForm',
+            a11yIssues: [{
+              level: 'A',
+              issue: 'Elements must only use supported ARIA attributes',
+              htmlWithIssues: ['<div class="g-recaptcha">'],
+              successCriterias: ['wcag412'],
+              recommendation: 'Fix all of the following',
+            }],
+          }],
+          finalUrl: 'https://www.1firstbank.com/pr/es/personal/prestamo-hipotecario/Hipotecas-Leads-Promo.html',
+          auditTime: 3852,
+          scrapedAt: 1747734212453,
+          userAgent: 'Mozilla/5.0',
+        })),
+      },
+    };
+
+    context.s3Client.send.resolves(mockFileResponse);
+
+    const result = await getScrapedDataForSiteId(site, context);
+
+    expect(result).to.deep.equal({
+      headerLinks: [],
+      formData: [],
+      siteData: [],
+      formA11yData: [
+        {
+          a11yResult: [{
+            formSource: '#container-1555391e6f form#guideContainerForm',
+            a11yIssues: [{
+              level: 'A',
+              issue: 'Elements must only use supported ARIA attributes',
+              htmlWithIssues: ['<div class="g-recaptcha">'],
+              successCriterias: ['wcag412'],
+              recommendation: 'Fix all of the following',
+            }],
+          }],
+          finalUrl: 'https://www.1firstbank.com/pr/es/personal/prestamo-hipotecario/Hipotecas-Leads-Promo.html',
+          auditTime: 3852,
+          scrapedAt: 1747734212453,
+          userAgent: 'Mozilla/5.0',
+        },
+      ],
     });
   });
 });
