@@ -194,6 +194,6 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.callCount(3);
     expect(excludeUrls.has('https://www.surest.com/contact-us.mycontact')).to.be.true;
     expect(excludeUrls.has('https://www.surest.com/info/win-2')).to.be.true;
-    expect(excludeUrls.has('https://www.surest.com/info/win')).to.be.true;
+    expect(excludeUrls.has('https://www.surest.com/info/win')).to.be.false;
   });
 });

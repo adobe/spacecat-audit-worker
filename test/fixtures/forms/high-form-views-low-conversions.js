@@ -493,6 +493,7 @@ const testData = {
         },
         {
           url: 'https://www.surest.com/info/win',
+          formsource: 'dialog form',
           formsubmit: {
             'desktop:windows': 100,
           },
@@ -876,6 +877,13 @@ const testData = {
             page: 4000,
           },
         },
+        {
+          type: 'trafficacquisition',
+          device: '*',
+          value: {
+            page: {},
+          },
+        },
       ],
       form: 'https://www.surest.com/newsletter',
       formsource: '',
@@ -991,6 +999,13 @@ const testData = {
             page: 1000,
           },
         },
+        {
+          type: 'trafficacquisition',
+          device: '*',
+          value: {
+            page: {},
+          },
+        },
       ],
     },
     guidance: {},
@@ -1093,6 +1108,13 @@ const testData = {
           device: 'mobile',
           value: {
             page: 1000,
+          },
+        },
+        {
+          type: 'trafficacquisition',
+          device: '*',
+          value: {
+            page: {},
           },
         },
       ],
@@ -1208,6 +1230,13 @@ const testData = {
             page: 1000,
           },
         },
+        {
+          type: 'trafficacquisition',
+          device: '*',
+          value: {
+            page: {},
+          },
+        },
       ],
     },
     guidance: {
@@ -1311,6 +1340,20 @@ const testData = {
           device: 'mobile',
           value: {
             page: 2000,
+          },
+        },
+        {
+          type: 'trafficacquisition',
+          device: '*',
+          value: {
+            page: {
+              paid: 192200,
+              maxTimeDelta: 3060,
+              total: 211400,
+              earned: 4400,
+              sources: [],
+              owned: 14800,
+            },
           },
         },
       ],
