@@ -58,6 +58,8 @@ export async function CWVRunner(auditUrl, context, site) {
   log.info('Brand ID:', brandId);
   log.info('IMS Config:', JSON.stringify(imsConfig, null, 2));
   log.info('IMS Org ID:', imsOrgId);
+  const brandGuidelines = await brandClient.getBrandGuidelines(brandId, imsOrgId, imsConfig);
+  log.info('Brand Guidelines:', JSON.stringify(brandGuidelines, null, 2));
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const options = {
