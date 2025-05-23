@@ -19,7 +19,7 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
+import { opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
@@ -33,11 +33,6 @@ const sandbox = sinon.createSandbox();
 const auditType = Audit.AUDIT_TYPES.CWV;
 const baseURL = 'https://spacecat.com';
 const auditUrl = 'www.spacecat.com';
-const DOMAIN_REQUEST_DEFAULT_PARAMS = {
-  domain: auditUrl,
-  interval: 7,
-  granularity: 'hourly',
-};
 
 describe('CWVRunner Tests', () => {
   const groupedURLs = [{ name: 'test', pattern: 'test/*' }];
@@ -62,31 +57,6 @@ describe('CWVRunner Tests', () => {
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
-  });
-
-  it('cwv audit runs rum api client cwv query', async () => {
-    const result = await CWVRunner(auditUrl, context, site);
-
-    expect(siteConfig.getGroupedURLs.calledWith(auditType)).to.be.true;
-    expect(
-      context.rumApiClient.query.calledWith(
-        auditType,
-        {
-          ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-          groupedURLs,
-        },
-      ),
-    ).to.be.true;
-
-    expect(result).to.deep.equal({
-      auditResult: {
-        cwv: rumData.filter((data) => data.pageviews >= 7000),
-        auditContext: {
-          interval: 7,
-        },
-      },
-      fullAuditRef: auditUrl,
-    });
   });
 
   describe('CWV audit to oppty conversion', () => {

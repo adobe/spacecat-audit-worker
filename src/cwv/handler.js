@@ -11,6 +11,7 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import BrandClient from '@adobe/spacecat-shared-brand-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
@@ -24,6 +25,10 @@ const INTERVAL = 7; // days
 const auditType = Audit.AUDIT_TYPES.CWV;
 
 export async function CWVRunner(auditUrl, context, site) {
+  const { log } = context;
+  const brandClient = BrandClient.createFrom(context);
+  log.info('BrandClient created:', brandClient ? 'not empty' : 'empty');
+  log.info('Site object:', JSON.stringify(site, null, 2));
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const options = {

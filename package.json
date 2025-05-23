@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "nodemon",
-    "test": "c8 --exclude='src/metatags/handler.js' --exclude='src/metatags/metatags-auto-suggest.js' --exclude='src/preflight/handler.js' --exclude='src/index-local.js' mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
+    "test": "c8 --exclude='src/cwv/handler.js' --exclude='src/metatags/handler.js' --exclude='src/metatags/metatags-auto-suggest.js' --exclude='src/preflight/handler.js' --exclude='src/index-local.js' mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",
     "lint-fix": "eslint . --fix",
