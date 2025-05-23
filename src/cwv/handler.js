@@ -44,14 +44,20 @@ function getImsConfig(env, log) {
 }
 
 export async function CWVRunner(auditUrl, context, site) {
-  const { env, log } = context;
+  const { env, log, dataAccess } = context;
+  const { Organization } = dataAccess;
   const brandClient = BrandClient.createFrom(context);
   const brandId = site.getConfig()?.getBrandConfig()?.brandId;
   const imsConfig = getImsConfig(env, log);
+  const orgId = site.getOrganizationId();
+  const org = await Organization.findById(orgId);
+  const imsOrgId = org?.getImsOrgId();
   log.info('BrandClient created:', brandClient ? 'not empty' : 'empty');
   log.info('Site object:', JSON.stringify(site, null, 2));
+  log.info('Org object:', JSON.stringify(org, null, 2));
   log.info('Brand ID:', brandId);
   log.info('IMS Config:', JSON.stringify(imsConfig, null, 2));
+  log.info('IMS Org ID:', imsOrgId);
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const options = {
