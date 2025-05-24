@@ -9,11 +9,12 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { GenvarClient } from '@adobe/spacecat-shared-gpt-client';
-import { isObject } from '@adobe/spacecat-shared-utils';
+import { hasText, isObject } from '@adobe/spacecat-shared-utils';
+import BrandClient from '@adobe/spacecat-shared-brand-client';
+import { Organization } from '@adobe/spacecat-shared-data-access';
 
 const EXPIRY_IN_SECONDS = 25 * 60;
 
@@ -41,28 +42,75 @@ async function getPresignedUrl(s3Client, log, scrapedData) {
   }
 }
 
+/**
+ * Gets IMS config from the environment.
+ * @returns {object} imsConfig - The IMS config.
+ */
+function getImsConfig(env, log) {
+  const {
+    BRAND_IMS_HOST: host,
+    BRAND_IMS_CLIENT_ID: clientId,
+    BRAND_IMS_CLIENT_CODE: clientCode,
+    BRAND_IMS_CLIENT_SECRET: clientSecret,
+  } = env;
+  if (!hasText(host) || !hasText(clientId) || !hasText(clientCode) || !hasText(clientSecret)) {
+    log.error('IMS Config not found in the environment');
+  }
+  return {
+    host,
+    clientId,
+    clientCode,
+    clientSecret,
+  };
+}
+
 export default async function metatagsAutoSuggest(allTags, context, site, options = {
   forceAutoSuggest: false,
 }) {
   const { s3Client, dataAccess, log } = context;
   const {
-    detectedTags,
-    extractedTags,
-    healthyTags,
-  } = allTags;
+    detectedTags = {},
+    extractedTags = {},
+    healthyTags = {},
+  } = allTags || {};
   const { forceAutoSuggest = false } = options;
   const { Configuration } = dataAccess;
+
+  // Check if handler is enabled for site
   const configuration = await Configuration.findLatest();
-  if (!forceAutoSuggest && !configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
+  if (!configuration || (!forceAutoSuggest && !configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site))) {
     log.info('Metatags auto-suggest is disabled for site');
     return detectedTags;
   }
+
+  // Validate required environment variables
+  if (!context.env.GENVAR_HOST || !context.env.GENVAR_IMS_ORG_ID) {
+    throw new Error('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId');
+  }
+
   log.debug('Generating suggestions for Meta-tags using Genvar.');
   const tagsData = {};
-  for (const endpoint of Object.keys(detectedTags)) {
-    // eslint-disable-next-line no-await-in-loop
-    tagsData[endpoint] = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
-  }
+  const endpoints = Object.keys(detectedTags);
+  const presignedUrls = await Promise.all(
+    endpoints.map(async (endpoint) => {
+      const extractedTag = extractedTags[endpoint];
+      if (extractedTag?.s3key) {
+        try {
+          return { endpoint, url: await getPresignedUrl(s3Client, log, extractedTag) };
+        } catch (error) {
+          log.error(`Error generating presigned URL for ${extractedTag.s3key}:`, error);
+          return { endpoint, url: '' };
+        }
+      }
+      return { endpoint, url: '' };
+    }),
+  );
+
+  // Map results back to tagsData
+  presignedUrls.forEach(({ endpoint, url }) => {
+    tagsData[endpoint] = url;
+  });
+
   log.debug('Generated presigned URLs');
   const requestBody = {
     healthyTags,
@@ -71,33 +119,73 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
       baseUrl: site.getBaseURL(),
     },
   };
+
   let responseWithSuggestions;
   try {
+    const imsConfig = getImsConfig(context.env, log);
+    log.info(`IMS Config: ${JSON.stringify(imsConfig)}`);
+
+    // Get brand guidelines if available
+    const siteConfig = site.getConfig();
+    if (siteConfig) {
+      const brandConfig = siteConfig.getBrandConfig();
+      if (brandConfig?.brandId) {
+        const { brandId } = brandConfig;
+        log.info(`Brand ID mapping for site: ${site.getId()} is ${brandId}`);
+        const organizationId = site.getOrganizationId();
+        if (organizationId) {
+          const organization = await Organization.findById(organizationId);
+          if (organization) {
+            const imsOrgId = organization.getImsOrgId();
+            if (imsOrgId) {
+              log.info(`IMS Org ID for site: ${site.getId()} is ${imsOrgId}`);
+              const brandClient = BrandClient.createFrom(context);
+              const brandGuidelines = await brandClient.getBrandGuidelines(
+                brandId,
+                imsOrgId,
+                imsConfig,
+              );
+              if (brandGuidelines) {
+                log.info(`Found brand guidelines for site: ${site.getId()}`);
+                log.info(`Brand Guidelines: ${JSON.stringify(brandGuidelines)}`);
+              }
+            }
+          }
+        }
+      }
+    }
+
     const genvarClient = GenvarClient.createFrom(context);
+    const apiEndpoint = context.env.GENVAR_METATAGS_API_ENDPOINT
+      || '/api/v1/web/aem-genai-variations-appbuilder/metatags';
     responseWithSuggestions = await genvarClient.generateSuggestions(
       JSON.stringify(requestBody),
-      context.env.GENVAR_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/metatags',
+      apiEndpoint,
     );
+
     if (!isObject(responseWithSuggestions)) {
-      throw new Error(`Invalid response received from Genvar API: ${JSON.stringify(responseWithSuggestions)}`);
+      throw new Error(
+        `Invalid response received from Genvar API: ${JSON.stringify(responseWithSuggestions)}`,
+      );
     }
   } catch (err) {
     log.error('Error while generating AI suggestions using Genvar', err);
     throw err;
   }
-  const updatedDetectedTags = {
-    ...detectedTags,
-  };
+
+  const updatedDetectedTags = { ...detectedTags };
   for (const [endpoint, tags] of Object.entries(responseWithSuggestions)) {
-    for (const tagName of ['title', 'description', 'h1']) {
-      const tagIssueData = tags[tagName];
-      if (updatedDetectedTags[endpoint][tagName]
-        && tagIssueData?.aiSuggestion && tagIssueData.aiRationale) {
-        updatedDetectedTags[endpoint][tagName].aiSuggestion = tagIssueData.aiSuggestion;
-        updatedDetectedTags[endpoint][tagName].aiRationale = tagIssueData.aiRationale;
+    if (updatedDetectedTags[endpoint]) {
+      for (const tagName of ['title', 'description', 'h1']) {
+        const { aiSuggestion, aiRationale } = tags[tagName] || {};
+        if (updatedDetectedTags[endpoint][tagName] && aiSuggestion && aiRationale) {
+          updatedDetectedTags[endpoint][tagName].aiSuggestion = aiSuggestion;
+          updatedDetectedTags[endpoint][tagName].aiRationale = aiRationale;
+        }
       }
     }
   }
+
   log.info('Generated AI suggestions for Meta-tags using Genvar.');
   return updatedDetectedTags;
 }

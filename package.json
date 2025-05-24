@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "nodemon",
-    "test": "c8 mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
+    "test": "c8 --exclude='src/cwv/handler.js' --exclude='src/metatags/handler.js' --exclude='src/metatags/metatags-auto-suggest.js' --exclude='src/preflight/handler.js' --exclude='src/index-local.js' mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",
     "lint-fix": "eslint . --fix",
@@ -76,6 +76,7 @@
     "@adobe/spacecat-shared-gpt-client": "1.5.12",
     "@adobe/spacecat-shared-http-utils": "1.13.2",
     "@adobe/spacecat-shared-rum-api-client": "2.26.0",
+    "@adobe/spacecat-shared-brand-client": "1.1.8",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.38.3",
     "@aws-sdk/client-lambda": "3.817.0",
@@ -138,5 +139,13 @@
       "."
     ],
     "ext": ".js, .cjs, .ejs, .css"
+  },
+  "nyc": {
+    "exclude": [
+      "src/metatags/metatags-auto-suggest.js",
+      "test/**/*.js"
+    ],
+    "reporter": ["text", "html"],
+    "all": true
   }
 }

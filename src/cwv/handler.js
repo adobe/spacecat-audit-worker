@@ -11,7 +11,9 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import BrandClient from '@adobe/spacecat-shared-brand-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { hasText } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -23,7 +25,41 @@ const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
 const auditType = Audit.AUDIT_TYPES.CWV;
 
+function getImsConfig(env, log) {
+  const {
+    BRAND_IMS_HOST: host,
+    BRAND_IMS_CLIENT_ID: clientId,
+    BRAND_IMS_CLIENT_CODE: clientCode,
+    BRAND_IMS_CLIENT_SECRET: clientSecret,
+  } = env;
+  if (!hasText(host) || !hasText(clientId) || !hasText(clientCode) || !hasText(clientSecret)) {
+    log.error('IMS Config not found in the environment');
+  }
+  return {
+    host,
+    clientId,
+    clientCode,
+    clientSecret,
+  };
+}
+
 export async function CWVRunner(auditUrl, context, site) {
+  const { env, log, dataAccess } = context;
+  const { Organization } = dataAccess;
+  const brandClient = BrandClient.createFrom(context);
+  const brandId = site.getConfig()?.getBrandConfig()?.brandId;
+  const imsConfig = getImsConfig(env, log);
+  const orgId = site.getOrganizationId();
+  const org = await Organization.findById(orgId);
+  const imsOrgId = org?.getImsOrgId();
+  log.info('BrandClient created:', brandClient ? 'not empty' : 'empty');
+  log.info('Site object:', JSON.stringify(site, null, 2));
+  log.info('Org object:', JSON.stringify(org, null, 2));
+  log.info('Brand ID:', brandId);
+  log.info('IMS Config:', JSON.stringify(imsConfig, null, 2));
+  log.info('IMS Org ID:', imsOrgId);
+  const brandGuidelines = await brandClient.getBrandGuidelines(brandId, imsOrgId, imsConfig);
+  log.info('Brand Guidelines:', JSON.stringify(brandGuidelines, null, 2));
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const options = {
