@@ -334,7 +334,7 @@ export async function submitForScraping(context) {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'meta-tags',
-    batchProcess: 'true',
+    batchProcess: 'false',
     batchSize: 100,
   };
 }
