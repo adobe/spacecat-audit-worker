@@ -92,6 +92,7 @@ export default async function handler(message, context) {
         ...opportunityData.data,
       });
       // eslint-disable-next-line no-await-in-loop
+      existingOppty.setUpdatedBy('system');
       await existingOppty.save();
       log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated a11y opportunity`);
     }

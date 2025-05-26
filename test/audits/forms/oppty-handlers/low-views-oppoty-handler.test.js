@@ -47,6 +47,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         pageViews: 5000,
         samples: 5000,
       }),
+      setUpdatedBy: sinon.stub(),
     };
     logStub = {
       info: sinon.stub(),
@@ -162,6 +163,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
   it('should use existing high page views low form view opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+    expect(highPageViewsLowFormViewsOptty.setUpdatedBy).to.be.calledWith('system');
     expect(highPageViewsLowFormViewsOptty.save).to.be.calledOnce;
     expect(highPageViewsLowFormViewsOptty.setGuidance).to.be.calledWith(
       {

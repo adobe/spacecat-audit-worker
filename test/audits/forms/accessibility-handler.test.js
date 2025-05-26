@@ -60,6 +60,7 @@ describe('a11y-handler', () => {
 
     mockContext.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
     mockContext.dataAccess.Opportunity.create = sandbox.stub().resolves();
+    mockContext.dataAccess.Opportunity.setUpdatedBy = sandbox.stub();
   });
 
   afterEach(() => {
@@ -185,6 +186,7 @@ describe('a11y-handler', () => {
       save: sandbox.stub().resolves(),
       getData: sandbox.stub().returns({}),
       getType: sandbox.stub().returns(FORM_OPPORTUNITY_TYPES.FORM_A11Y),
+      setUpdatedBy: sandbox.stub(),
     };
 
     mockContext.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub()
@@ -222,6 +224,7 @@ describe('a11y-handler', () => {
     // Verify
     expect(mockOpportunity.setAuditId).to.have.been.calledWith(message.auditId);
     expect(mockOpportunity.setData).to.have.been.calledOnce;
+    expect(mockOpportunity.setUpdatedBy).to.have.been.calledWith('system');
     expect(mockOpportunity.save).to.have.been.calledOnce;
     expect(mockContext.log.info).to.have.been.calledWith(
       `[Form Opportunity] [Site Id: ${message.siteId}] Updated a11y opportunity`,

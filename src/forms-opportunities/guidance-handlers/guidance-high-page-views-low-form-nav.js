@@ -31,6 +31,7 @@ export default async function handler(message, context) {
     // Wrap the guidance data under the recommendation key
     const wrappedGuidance = { recommendations: guidance };
     opportunity.setGuidance(wrappedGuidance);
+    opportunity.setUpdatedBy('system');
     await opportunity.save();
     log.info(`high-page-views-low-form-nav guidance updated oppty : ${JSON.stringify(opportunity, null, 2)}`);
   }
