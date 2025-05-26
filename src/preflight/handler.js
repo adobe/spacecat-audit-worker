@@ -60,7 +60,12 @@ export async function scrapePages(context) {
   }
 
   return {
-    urls: urls.map((url) => ({ url })),
+    urls: urls.map((url) => {
+      const urlObj = new URL(url);
+      return {
+        url: `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`,
+      };
+    }),
     siteId: site.getId(),
     type: 'preflight',
     allowCache: false,
@@ -82,6 +87,13 @@ export const preflightAudit = async (context) => {
    */
   const { urls, step = AUDIT_STEP_IDENTIFY } = jobMetadata.payload;
   const normalizedStep = step.toLowerCase();
+  const normalizedUrls = urls.map((url) => {
+    if (!isValidUrl(url)) {
+      throw new Error(`[preflight-audit] site: ${site.getId()}. Invalid URL provided: ${url}`);
+    }
+    const urlObj = new URL(url);
+    return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`;
+  });
 
   log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit started for jobId: ${job.getId()} and step: ${normalizedStep}`);
 
@@ -91,11 +103,11 @@ export const preflightAudit = async (context) => {
 
   try {
     const pageAuthToken = await retrievePageAuthentication(site, context);
-    const baseURL = new URL(urls[0]).origin;
+    const baseURL = new URL(normalizedUrls[0]).origin;
     const authHeader = { headers: { Authorization: `token ${pageAuthToken}` } };
 
     // Initialize results
-    const result = urls.map((url) => ({
+    const result = normalizedUrls.map((url) => ({
       pageUrl: url,
       step: normalizedStep,
       audits: AUDITS.seo.map((auditName) => ({ name: auditName, type: 'seo', opportunities: [] })),
@@ -104,7 +116,7 @@ export const preflightAudit = async (context) => {
 
     // Canonical checks
     const canonicalResults = await Promise.all(
-      urls.map(async (url) => {
+      normalizedUrls.map(async (url) => {
         const {
           canonicalUrl,
           checks: tagChecks,
@@ -119,7 +131,7 @@ export const preflightAudit = async (context) => {
       }),
     );
     canonicalResults.forEach(({ url, checks }) => {
-      const audit = resultMap.get(url).audits.find((a) => a.name === 'canonical');
+      const audit = resultMap.get(url).audits.find((a) => a.name === AUDIT_CANONICAL);
       checks.forEach((check) => audit.opportunities.push({
         check: check.check,
         issue: check.explanation,
@@ -131,7 +143,7 @@ export const preflightAudit = async (context) => {
     // Retrieve scraped pages
     const prefix = `scrapes/${site.getId()}/`;
     const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
-    const targetKeys = new Set(urls.map((u) => `scrapes/${site.getId()}${new URL(u).pathname.replace(/\/$/, '')}/scrape.json`));
+    const targetKeys = new Set(normalizedUrls.map((u) => `scrapes/${site.getId()}${new URL(u).pathname.replace(/\/$/, '')}/scrape.json`));
     const scrapedObjects = await Promise.all(
       allKeys
         .filter((key) => targetKeys.has(key))
@@ -144,7 +156,7 @@ export const preflightAudit = async (context) => {
     const { auditResult } = await runInternalLinkChecks(scrapedObjects, pageAuthToken, context);
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
-        const audit = resultMap.get(pageUrl).audits.find((a) => a.name === 'links');
+        const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
         audit.opportunities.push({
           check: 'broken-internal-links',
           issue: {
@@ -172,7 +184,7 @@ export const preflightAudit = async (context) => {
       : detectedTags;
     Object.entries(tagCollection).forEach(([path, tags]) => {
       const pageUrl = `${baseURL}${path}`;
-      const audit = resultMap.get(pageUrl)?.audits.find((a) => a.name === 'metatags');
+      const audit = resultMap.get(pageUrl)?.audits.find((a) => a.name === AUDIT_METATAGS);
       return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
         ...data,
         tagName: Object.keys(tags)[tag],
@@ -191,7 +203,7 @@ export const preflightAudit = async (context) => {
       const textContent = doc.body.textContent.replace(/\n/g, '').trim();
 
       if (textContent.length > 0 && textContent.length <= 100) {
-        auditsByName['body-size'].opportunities.push({
+        auditsByName[AUDIT_BODY_SIZE].opportunities.push({
           check: 'content-length',
           issue: 'Body content length is below 100 characters',
           seoImpact: 'Moderate',
@@ -200,7 +212,7 @@ export const preflightAudit = async (context) => {
       }
 
       if (/lorem ipsum/i.test(textContent)) {
-        auditsByName['lorem-ipsum'].opportunities.push({
+        auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
           check: 'placeholder-text',
           issue: 'Found Lorem ipsum placeholder text in the page content',
           seoImpact: 'High',
@@ -210,7 +222,7 @@ export const preflightAudit = async (context) => {
 
       const headingCount = doc.querySelectorAll('h1').length;
       if (headingCount !== 1) {
-        auditsByName['h1-count'].opportunities.push({
+        auditsByName[AUDIT_H1_COUNT].opportunities.push({
           check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
           issue: headingCount > 1 ? `Found ${headingCount} H1 tags` : 'No H1 tag found on the page',
           seoImpact: 'High',
@@ -228,7 +240,7 @@ export const preflightAudit = async (context) => {
         }));
 
       if (insecureLinks.length > 0) {
-        auditsByName.links.opportunities.push({ check: 'bad-links', issue: insecureLinks });
+        auditsByName[AUDIT_LINKS].opportunities.push({ check: 'bad-links', issue: insecureLinks });
       }
     });
 
