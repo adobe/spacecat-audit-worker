@@ -155,7 +155,7 @@ describe('Step-based Audit Tests', () => {
       expect(context.log.warn).to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
     });
 
-    it.skip('executes first step and creates audit record', async () => {
+    it('executes first step and creates audit record', async () => {
       nock('https://space.cat')
         .get('/')
         .reply(200, 'Success');

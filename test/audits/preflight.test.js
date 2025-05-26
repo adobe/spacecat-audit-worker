@@ -274,7 +274,7 @@ describe('Preflight Audit', () => {
       sandbox.restore();
     });
 
-    it.skip('completes successfully on the happy path', async () => {
+    it('completes successfully on the happy path', async () => {
       s3Client.send.onCall(0).resolves({
         Contents: [
           { Key: 'scrapes/site-123/page1/scrape.json' },
