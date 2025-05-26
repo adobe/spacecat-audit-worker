@@ -184,6 +184,7 @@ const testData = {
         url: 'www.test-site.com/page10',
         rank: 5,
       }),
+      setUpdatedBy: () => {},
     },
     {
       opportunityId: 'opportunity-id',
@@ -213,6 +214,7 @@ const testData = {
         url: 'www.test-site.com/page1',
         rank: 9,
       }),
+      setUpdatedBy: () => {},
     },
     {
       opportunityId: 'opportunity-id',
@@ -246,6 +248,7 @@ const testData = {
         aiRationale: 'This is why AI generated it',
         toOverride: 'user entered data',
       }),
+      setUpdatedBy: () => {},
     },
     {
       opportunityId: 'opportunity-id',
@@ -275,6 +278,7 @@ const testData = {
         url: 'www.test-site.com/page2',
         rank: 11,
       }),
+      setUpdatedBy: () => {},
     },
   ],
   expectedSyncedSuggestion: [

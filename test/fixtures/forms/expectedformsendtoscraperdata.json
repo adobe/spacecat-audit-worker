@@ -141,7 +141,8 @@
               }
             ]
           }
-        ]
+        ],
+        "formsource": "#container-1 form.newsletter"
       }
     ],
     "auditContext": {
@@ -163,7 +164,11 @@
       "url": "https://business.adobe.com/jp/resources/guides/leading-generative-ai-deployment-for-marketing.html"
     },
     {
-      "url": "https://www.business.adobe.com/newsletter"
+      "url": "https://www.business.adobe.com/newsletter",
+      "formSources": ["#container-1 form.newsletter"]
+    },
+    {
+      "url": "https://business.adobe.com/jp/products/magento/magento-commerce.html"
     }
   ],
   "siteId": "test-site-id"

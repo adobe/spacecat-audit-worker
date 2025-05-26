@@ -1,3 +1,38 @@
+## [1.90.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.90.3...v1.90.4) (2025-05-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.21.0 ([#899](https://github.com/adobe/spacecat-audit-worker/issues/899)) ([1edd85b](https://github.com/adobe/spacecat-audit-worker/commit/1edd85b708739468bc59cd12df6013bb0da02eb8))
+
+## [1.90.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.90.2...v1.90.3) (2025-05-24)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#898](https://github.com/adobe/spacecat-audit-worker/issues/898)) ([cc15d0d](https://github.com/adobe/spacecat-audit-worker/commit/cc15d0dc035e59a1c8065628ec56c57fd40a1dee))
+
+## [1.90.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.90.1...v1.90.2) (2025-05-24)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#897](https://github.com/adobe/spacecat-audit-worker/issues/897)) ([9e04148](https://github.com/adobe/spacecat-audit-worker/commit/9e04148d6205cbe940308849407a8b5981953d56))
+
+## [1.90.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.90.0...v1.90.1) (2025-05-23)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.20.0 ([#896](https://github.com/adobe/spacecat-audit-worker/issues/896)) ([9f27f10](https://github.com/adobe/spacecat-audit-worker/commit/9f27f10df62f5be94bc6ca7e0bbd43d56cff2cfd))
+
+# [1.90.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.89.1...v1.90.0) (2025-05-23)
+
+
+### Features
+
+* adding support for form a11y opportunity ([#831](https://github.com/adobe/spacecat-audit-worker/issues/831)) ([f6e5b0d](https://github.com/adobe/spacecat-audit-worker/commit/f6e5b0da5d25295196201c79207c7ca13b12210c))
+
 ## [1.89.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.89.0...v1.89.1) (2025-05-22)
 
 

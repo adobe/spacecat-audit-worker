@@ -102,6 +102,8 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
           ...opportunityData.data,
         });
         highPageViewsLowFormNavOppty.setGuidance(opportunityData.guidance);
+
+        highPageViewsLowFormNavOppty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormNavOppty.save();
       }
