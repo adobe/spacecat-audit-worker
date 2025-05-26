@@ -24,6 +24,8 @@ import {
 } from '../../src/preflight/handler.js';
 import { runInternalLinkChecks } from '../../src/preflight/internal-links.js';
 import { MockContextBuilder } from '../shared.js';
+import suggestionData from '../fixtures/preflight/preflight-suggest.json' with { type: 'json' };
+import identifyData from '../fixtures/preflight/preflight-identify.json' with { type: 'json' };
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -349,7 +351,7 @@ describe('Preflight Audit', () => {
 
       expect(job.setStatus).to.have.been.calledWith('COMPLETED');
       expect(job.setResultType).to.have.been.called;
-      expect(job.setResult).to.have.been.called;
+      expect(job.setResult).to.have.been.calledWith(suggestionData);
       expect(job.setEndedAt).to.have.been.called;
       expect(job.save).to.have.been.called;
     });
@@ -384,7 +386,7 @@ describe('Preflight Audit', () => {
 
       expect(job.setStatus).to.have.been.calledWith('COMPLETED');
       expect(job.setResultType).to.have.been.called;
-      expect(job.setResult).to.have.been.called;
+      expect(job.setResult).to.have.been.calledWith(identifyData);
       expect(job.setEndedAt).to.have.been.called;
       expect(job.save).to.have.been.called;
     });

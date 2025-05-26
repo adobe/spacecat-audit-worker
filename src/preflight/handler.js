@@ -120,7 +120,12 @@ export const preflightAudit = async (context) => {
     );
     canonicalResults.forEach(({ url, checks }) => {
       const audit = resultMap.get(url).audits.find((a) => a.name === 'canonical');
-      checks.forEach((check) => audit.opportunities.push({ ...check }));
+      checks.forEach((check) => audit.opportunities.push({
+        check: check.check,
+        issue: check.explanation,
+        seoImpact: check.seoImpact || 'Moderate',
+        seoRecommendation: check.explanation,
+      }));
     });
 
     // Retrieve scraped pages
@@ -146,7 +151,7 @@ export const preflightAudit = async (context) => {
             url: href,
             issue: `Status ${status}`,
             seoImpact: 'High',
-            seoRecommendation: 'Fix or remove broken links',
+            seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
           },
         });
       });
@@ -168,7 +173,10 @@ export const preflightAudit = async (context) => {
     Object.entries(tagCollection).forEach(([path, tags]) => {
       const pageUrl = `${baseURL}${path}`;
       const audit = resultMap.get(pageUrl)?.audits.find((a) => a.name === 'metatags');
-      return tags && Object.values(tags).forEach((data) => audit.opportunities.push({ ...data }));
+      return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
+        ...data,
+        tagName: Object.keys(tags)[tag],
+      }));
     });
 
     // DOM-based checks: body size, lorem ipsum, h1 count, bad links
@@ -185,18 +193,18 @@ export const preflightAudit = async (context) => {
       if (textContent.length > 0 && textContent.length <= 100) {
         auditsByName['body-size'].opportunities.push({
           check: 'content-length',
-          issue: 'Body < 100 chars',
+          issue: 'Body content length is below 100 characters',
           seoImpact: 'Moderate',
-          seoRecommendation: 'Add content',
+          seoRecommendation: 'Add more meaningful content to the page',
         });
       }
 
       if (/lorem ipsum/i.test(textContent)) {
         auditsByName['lorem-ipsum'].opportunities.push({
-          check: 'lorem-ipsum',
-          issue: 'Contains lorem ipsum',
+          check: 'placeholder-text',
+          issue: 'Found Lorem ipsum placeholder text in the page content',
           seoImpact: 'High',
-          seoRecommendation: 'Replace placeholder text',
+          seoRecommendation: 'Replace placeholder text with meaningful content',
         });
       }
 
@@ -204,9 +212,9 @@ export const preflightAudit = async (context) => {
       if (headingCount !== 1) {
         auditsByName['h1-count'].opportunities.push({
           check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
-          issue: headingCount > 1 ? `Found ${headingCount} H1 tags` : 'No H1 tag',
+          issue: headingCount > 1 ? `Found ${headingCount} H1 tags` : 'No H1 tag found on the page',
           seoImpact: 'High',
-          seoRecommendation: 'Use exactly one H1 tag',
+          seoRecommendation: 'Use exactly one H1 tag per page for better SEO structure',
         });
       }
 
@@ -214,9 +222,9 @@ export const preflightAudit = async (context) => {
         .filter((anchor) => anchor.href.startsWith('http://'))
         .map((anchor) => ({
           url: anchor.href,
-          issue: 'Use HTTPS',
+          issue: 'Link using HTTP instead of HTTPS',
           seoImpact: 'High',
-          seoRecommendation: 'Update to HTTPS',
+          seoRecommendation: 'Update all links to use HTTPS protocol',
         }));
 
       if (insecureLinks.length > 0) {
