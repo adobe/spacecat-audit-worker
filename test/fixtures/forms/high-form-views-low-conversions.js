@@ -793,7 +793,7 @@ const testData = {
     title: 'Form has low conversions',
     description: 'Form has high views but low conversions',
     tags: [
-      'Forms Conversion',
+      'Form Conversion',
     ],
     data: {
       trackedFormKPIName: 'Conversion Rate',
@@ -900,7 +900,7 @@ const testData = {
     title: 'Form has low conversions',
     description: 'Form has high views but low conversions',
     tags: [
-      'Forms Conversion',
+      'Form Conversion',
     ],
     data: {
       form: 'https://www.surest.com/contact-us',
@@ -1004,7 +1004,7 @@ const testData = {
     title: 'Form has low conversions',
     description: 'Form has high views but low conversions',
     tags: [
-      'Forms Conversion',
+      'Form Conversion',
     ],
     data: {
       form: 'https://www.surest.com/contact-us',
@@ -1117,7 +1117,7 @@ const testData = {
     title: 'Form has low conversions',
     description: 'Form has high views but low conversions',
     tags: [
-      'Forms Conversion',
+      'Form Conversion',
     ],
     data: {
       form: 'https://www.surest.com/contact-us',
@@ -1230,7 +1230,7 @@ const testData = {
     title: 'Form has low conversions',
     description: 'Form has high views but low conversions',
     tags: [
-      'Forms Conversion',
+      'Form Conversion',
     ],
     data: {
       trackedFormKPIName: 'Conversion Rate',

@@ -11,9 +11,14 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { composeBaseURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { composeBaseURL, tracingFetch as fetch, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
+import { isPreviewPage } from '../utils/url-utils.js';
+
+/**
+ * @import {type RequestOptions} from "@adobe/fetch"
+*/
 
 export const CANONICAL_CHECKS = Object.freeze({
   CANONICAL_TAG_EXISTS: {
@@ -126,9 +131,10 @@ export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
  *
  * @param {string} url - The URL to validate the canonical tag for.
  * @param {Object} log - The logging object to log information.
+ * @param {RequestOptions} options - The options object to pass to the fetch function.
  * @returns {Promise<Object>} An object containing the canonical URL and an array of checks.
  */
-export async function validateCanonicalTag(url, log) {
+export async function validateCanonicalTag(url, log, options = {}) {
   // in case of undefined or null URL in the 200 top pages list
   if (!url) {
     const errorMessage = 'URL is undefined or null';
@@ -145,7 +151,7 @@ export async function validateCanonicalTag(url, log) {
 
   try {
     log.info(`Fetching URL: ${url}`);
-    const response = await fetch(url);
+    const response = await fetch(url, options);
     const html = await response.text();
     const dom = new JSDOM(html);
     const { document } = dom.window;
@@ -376,10 +382,16 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
  *
  * @param {string} canonicalUrl - The canonical URL to validate.
  * @param {Object} log - The logging object to log information.
+ * @param {RequestOptions} options - The options object to pass to the fetch function.
  * @param {Set<string>} [visitedUrls=new Set()] - A set of visited URLs to detect redirect loops.
  * @returns {Promise<Object>} An object with the check result and any error if the check failed.
  */
-export async function validateCanonicalRecursively(canonicalUrl, log, visitedUrls = new Set()) {
+export async function validateCanonicalRecursively(
+  canonicalUrl,
+  log,
+  options = {},
+  visitedUrls = new Set(),
+) {
   const checks = [];
 
   // Check for redirect loops
@@ -397,7 +409,7 @@ export async function validateCanonicalRecursively(canonicalUrl, log, visitedUrl
   visitedUrls.add(canonicalUrl);
 
   try {
-    const response = await fetch(canonicalUrl, { redirect: 'manual' });
+    const response = await fetch(canonicalUrl, { ...options, redirect: 'manual' });
     if (response.ok) {
       log.info(`Canonical URL is accessible: ${canonicalUrl}, statusCode: ${response.status}`);
       checks.push({
@@ -479,11 +491,29 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       };
     }
 
+    /**
+     * @type {RequestOptions}
+     */
+    const options = {};
+    if (isPreviewPage(baseURL)) {
+      try {
+        log.info(`Retrieving page authentication for pageUrl ${baseURL}`);
+        const token = await retrievePageAuthentication(site, context);
+        options.headers = {
+          Authorization: `token ${token}`,
+        };
+      } catch (error) {
+        log.error(`Error retrieving page authentication for pageUrl ${baseURL}: ${error.message}`);
+      }
+    }
+
     const auditPromises = topPages.map(async (page) => {
       const { url } = page;
       const checks = [];
 
-      const { canonicalUrl, checks: canonicalTagChecks } = await validateCanonicalTag(url, log);
+      const {
+        canonicalUrl, checks: canonicalTagChecks,
+      } = await validateCanonicalTag(url, log, options);
       checks.push(...canonicalTagChecks);
 
       if (canonicalUrl) {
@@ -492,7 +522,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
         const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
         checks.push(...urlFormatChecks);
 
-        const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log);
+        const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);
         checks.push(...urlContentCheck);
       }
       return { url, checks };

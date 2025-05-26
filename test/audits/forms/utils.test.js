@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { shouldExcludeForm } from '../../../src/forms-opportunities/utils.js';
+import { getSuccessCriteriaDetails, getUrlsDataForAccessibilityAudit, shouldExcludeForm } from '../../../src/forms-opportunities/utils.js';
 
 describe('isSearchForm', () => {
   it('should return true for search form type', () => {
@@ -93,5 +93,112 @@ describe('isSearchForm', () => {
       formType: 'contact', classList: ['subscribe'], action: 'https://example.com/contact.html', fieldsLabels: ['Name', 'Email'],
     };
     expect(shouldExcludeForm(scrapedFormData)).to.be.false;
+  });
+});
+
+describe('getUrlsDataForAccessibilityAudit', () => {
+  const context = { log: { debug: () => {} } };
+  it('should return urls for accessibility audit', () => {
+    const scrapedData = {
+      formData: [
+        {
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+          scrapeResult: [{ formSource: '#container-1 form.newsletter' }],
+        },
+        {
+          finalUrl: 'https://www.business.adobe.com/search',
+          scrapeResult: [{ formSource: '#container-1 form.search' }],
+        },
+      ],
+    };
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    expect(urlsData).to.deep.equal([
+      {
+        url: 'https://www.business.adobe.com/newsletter',
+        formSources: ['#container-1 form.newsletter'],
+      },
+    ]);
+  });
+
+  it('should return unique form sources', () => {
+    const scrapedData = {
+      formData: [
+        {
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+          scrapeResult: [
+            {
+              classList: 'cmp-mortgage-options',
+              formSource: '#container-1 form#newsletter',
+            },
+          ],
+        },
+        {
+          finalUrl: 'https://www.business.adobe.com/subscribe',
+          scrapeResult: [{ formSource: '#container-1 form#newsletter' }],
+        },
+      ],
+    };
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    expect(urlsData).to.deep.equal([
+      {
+        url: 'https://www.business.adobe.com/newsletter',
+        formSources: ['#container-1 form#newsletter'],
+      },
+    ]);
+  });
+
+  it('should return formSource as id/classList if no element found in scraper', () => {
+    const scrapedData = {
+      formData: [{
+        finalUrl: 'https://www.business.adobe.com/a',
+        scrapeResult: [{
+          id: 'test-id',
+          classList: 'test-class',
+        }, {
+          id: '',
+          classList: 'test-class-2 test-class-3',
+        }],
+      }, {
+        finalUrl: 'https://www.business.adobe.com/b',
+        scrapeResult: [{
+          id: '',
+          classList: '',
+        }],
+      }],
+    };
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    expect(urlsData).to.deep.equal([
+      {
+        url: 'https://www.business.adobe.com/a',
+        formSources: ['form#test-id', 'form.test-class-2.test-class-3'],
+      }, {
+        url: 'https://www.business.adobe.com/b',
+        formSources: ['form'],
+      },
+    ]);
+  });
+});
+
+describe('getSuccessCriteriaDetails', () => {
+  it('should return success criteria details', () => {
+    const successCriteriaDetails = getSuccessCriteriaDetails('1.1.1 Non-text Content');
+    expect(successCriteriaDetails).to.deep.equal({
+      name: 'Non-text Content',
+      criteriaNumber: '1.1.1',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html',
+    });
+  });
+
+  it('should return success criteria details', () => {
+    const successCriteriaDetails = getSuccessCriteriaDetails('wcag111');
+    expect(successCriteriaDetails).to.deep.equal({
+      name: 'Non-text Content',
+      criteriaNumber: '1.1.1',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html',
+    });
+  });
+
+  it('should throw error for invalid criteria', () => {
+    expect(() => getSuccessCriteriaDetails('invalid')).to.throw('Invalid criteria format: invalid');
   });
 });

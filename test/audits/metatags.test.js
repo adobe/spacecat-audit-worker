@@ -710,6 +710,7 @@ describe('Meta Tags', () => {
           getIsLive: sinon.stub().returns(true),
           getId: sinon.stub().returns('site-id'),
           getBaseURL: sinon.stub().returns('http://example.com'),
+          getConfig: sinon.stub(),
         };
 
         audit = {
@@ -1102,6 +1103,34 @@ describe('Meta Tags', () => {
           err = error;
         }
         expect(err.message).to.equal('Invalid response received from Genvar API: 5');
+      });
+
+      it('should handle forceAutoSuggest option set to true', async () => {
+        const forceAutoSuggest = true;
+        const isHandlerEnabledForSite = sinon.stub().returns(false);
+        Configuration.findLatest.resolves({
+          isHandlerEnabledForSite,
+        });
+
+        await metatagsAutoSuggest(allTags, context, siteStub, {
+          forceAutoSuggest,
+        });
+        expect(isHandlerEnabledForSite).not.to.have.been.called;
+        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+      });
+
+      it('should handle forceAutoSuggest option set to false', async () => {
+        const forceAutoSuggest = false;
+        const isHandlerEnabledForSite = sinon.stub().returns(true);
+        Configuration.findLatest.resolves({
+          isHandlerEnabledForSite,
+        });
+
+        await metatagsAutoSuggest(allTags, context, siteStub, {
+          forceAutoSuggest,
+        });
+        expect(isHandlerEnabledForSite).to.have.been.called;
+        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
       });
     });
   });

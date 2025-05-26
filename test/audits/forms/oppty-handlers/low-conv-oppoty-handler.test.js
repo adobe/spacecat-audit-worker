@@ -14,10 +14,10 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import testData from '../../fixtures/forms/high-form-views-low-conversions.js';
-import createLowConversionOpportunities from '../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import formScrapeData from '../../fixtures/forms/formscrapedata.js';
+import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
+import createLowConversionOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import formScrapeData from '../../../fixtures/forms/formscrapedata.js';
 
 use(sinonChai);
 describe('createLowConversionOpportunities handler method', () => {

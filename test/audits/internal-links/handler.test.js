@@ -97,6 +97,7 @@ const site = {
       success: true,
     },
   }),
+  getConfig: sinon.stub(),
 };
 
 describe('Broken internal links audit ', () => {
