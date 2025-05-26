@@ -73,48 +73,10 @@ export class StepAudit extends BaseAudit {
     };
 
     const queueUrl = destination.getQueueUrl(context);
+    const payload = destination.formatPayload(stepResult, auditContext, context);
+    await sendContinuationMessage({ queueUrl, payload }, context);
 
-    if (stepResult.batchProcess === 'true' && stepResult.urls && stepResult.urls.length > 0) {
-      const batchSize = stepResult.batchSize || 50;
-      const urlBatches = [];
-
-      // Split URLs into batches
-      for (let i = 0; i < stepResult.urls.length; i += batchSize) {
-        urlBatches.push(stepResult.urls.slice(i, i + batchSize));
-      }
-
-      // Process batches with progress tracking and error handling
-      const results = await Promise.allSettled(
-        urlBatches.map(async (urlBatch, index) => {
-          try {
-            const batchResult = {
-              ...stepResult,
-              urls: urlBatch,
-            };
-            const payload = destination.formatPayload(batchResult, auditContext, context);
-            // Set skipMessage to true for all batches except the last one
-            payload.skipMessage = index < urlBatches.length - 1;
-            await sendContinuationMessage({ queueUrl, payload }, context);
-
-            log.debug(`Processed batch ${index + 1}/${urlBatches.length} for step ${step.name}`);
-            return { success: true, batchIndex: index + 1 };
-          } catch (error) {
-            log.error(`Failed to process batch ${index + 1}/${urlBatches.length} for step ${step.name}`, { error });
-            return { success: false, batchIndex: index + 1, error };
-          }
-        }),
-      );
-
-      // Log summary of batch processing
-      const successfulBatches = results.filter((r) => r.status === 'fulfilled' && r.value.success).length;
-      const failedBatches = urlBatches.length - successfulBatches;
-
-      log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${audit.getAuditType()}, ${stepResult.urls.length} URLs processed in ${urlBatches.length} batches (${successfulBatches} successful, ${failedBatches} failed) to ${step.destination}`);
-    } else {
-      const payload = destination.formatPayload(stepResult, auditContext, context);
-      await sendContinuationMessage({ queueUrl, payload }, context);
-      log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${audit.getAuditType()}, message sent to ${step.destination}`);
-    }
+    log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${audit.getAuditType()}, message sent to ${step.destination}`);
 
     return stepResult;
   }
