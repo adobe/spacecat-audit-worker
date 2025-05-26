@@ -179,5 +179,4 @@ export async function paidAuditRunner(auditUrl, context, site) {
 export default new AuditBuilder()
   .withRunner(paidAuditRunner)
   .withUrlResolver(wwwUrlResolver)
-  .withAsyncJob()
   .build();
