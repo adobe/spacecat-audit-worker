@@ -104,6 +104,7 @@ class SeoChecks {
         recommendation = getLengthSuggestion(tagName);
       }
       if (issue) {
+        this.log.info(`Issue detected for ${urlPath} - ${issue}`);
         this.detectedTags[urlPath] ??= {};
         this.detectedTags[urlPath][tagName] ??= {};
         Object.assign(this.detectedTags[urlPath][tagName], {
@@ -114,6 +115,7 @@ class SeoChecks {
           ...(tagContent && { tagContent }),
         });
       } else {
+        this.log.info(`Healthy tag detected for ${urlPath} - ${tagContent}`);
         this.healthyTags[tagName].push(tagContent);
       }
     };
@@ -193,9 +195,20 @@ class SeoChecks {
     if (!hasText(urlPath) || !isObject(pageTags)) {
       return;
     }
+
+    // Track issues before checks
+    const initialIssuesCount = Object.keys(this.detectedTags).length;
+
+    // Check for missing tags
     this.checkForMissingTags(urlPath, pageTags);
+    const afterMissingTagsCount = Object.keys(this.detectedTags).length;
+
+    // Check for tag lengths
     this.checkForTagsLength(urlPath, pageTags);
-    // store tag data in all tags object to be used in later checks like uniqueness
+    const afterLengthChecksCount = Object.keys(this.detectedTags).length;
+    this.log.info(`Initial issues count: ${initialIssuesCount}, after missing tags: ${afterMissingTagsCount}, after length checks: ${afterLengthChecksCount}`);
+
+    // Add to allTags for uniqueness check
     this.addToAllTags(urlPath, TITLE, pageTags[TITLE]);
     this.addToAllTags(urlPath, DESCRIPTION, pageTags[DESCRIPTION]);
     pageTags[H1].forEach((tagContent) => this.addToAllTags(urlPath, H1, tagContent));
@@ -222,7 +235,16 @@ class SeoChecks {
   }
 
   finalChecks() {
+    // Track issues before uniqueness check
+    const beforeUniquenessCount = Object.keys(this.detectedTags).length;
+
+    // Check for uniqueness
     this.checkForUniqueness();
+
+    const afterUniquenessCount = Object.keys(this.detectedTags).length;
+    if (afterUniquenessCount > beforeUniquenessCount) {
+      this.log.debug(`Uniqueness check added ${afterUniquenessCount - beforeUniquenessCount} issues`);
+    }
   }
 }
 
