@@ -47,6 +47,7 @@ describe('createLowConversionOpportunities handler method', () => {
         pageViews: 5000,
         samples: 5000,
       }),
+      setUpdatedBy: sinon.stub(),
     };
     logStub = {
       info: sinon.stub(),
@@ -146,6 +147,7 @@ describe('createLowConversionOpportunities handler method', () => {
       undefined,
       context,
     );
+    expect(formsOppty.setUpdatedBy).to.be.calledWith('system');
     expect(formsOppty.save).to.be.callCount(1);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });

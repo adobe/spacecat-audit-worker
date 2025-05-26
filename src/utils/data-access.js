@@ -141,6 +141,7 @@ export async function syncSuggestions({
           log.warn('Resolved suggestion found in audit. Possible regression.');
           existing.setStatus(SuggestionDataAccess.STATUSES.NEW);
         }
+        existing.setUpdatedBy('system');
         return existing.save();
       }),
   );

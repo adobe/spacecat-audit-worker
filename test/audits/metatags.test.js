@@ -273,6 +273,9 @@ describe('Meta Tags', () => {
         site,
         finalUrl: 'http://example.com',
         audit,
+        opportunity: {
+          setUpdatedBy: sinon.stub(),
+        },
       };
     });
 
@@ -428,6 +431,7 @@ describe('Meta Tags', () => {
           getType: () => 'meta-tags',
           setData: () => {},
           getData: () => {},
+          setUpdatedBy: sinon.stub().returnsThis(),
         };
         logStub = {
           info: sinon.stub(),
@@ -569,6 +573,7 @@ describe('Meta Tags', () => {
           remove: sinon.stub(),
           setData: sinon.stub(),
           save: sinon.stub(),
+          setUpdatedBy: sinon.stub().returnsThis(),
         };
 
         opportunity.getSuggestions.returns([existingSuggestion]);
@@ -698,6 +703,7 @@ describe('Meta Tags', () => {
           getType: () => 'meta-tags',
           setData: sinon.stub(),
           getData: sinon.stub(),
+          setUpdatedBy: sinon.stub().returnsThis(),
         };
 
         site = {
@@ -1097,6 +1103,34 @@ describe('Meta Tags', () => {
           err = error;
         }
         expect(err.message).to.equal('Invalid response received from Genvar API: 5');
+      });
+
+      it('should handle forceAutoSuggest option set to true', async () => {
+        const forceAutoSuggest = true;
+        const isHandlerEnabledForSite = sinon.stub().returns(false);
+        Configuration.findLatest.resolves({
+          isHandlerEnabledForSite,
+        });
+
+        await metatagsAutoSuggest(allTags, context, siteStub, {
+          forceAutoSuggest,
+        });
+        expect(isHandlerEnabledForSite).not.to.have.been.called;
+        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+      });
+
+      it('should handle forceAutoSuggest option set to false', async () => {
+        const forceAutoSuggest = false;
+        const isHandlerEnabledForSite = sinon.stub().returns(true);
+        Configuration.findLatest.resolves({
+          isHandlerEnabledForSite,
+        });
+
+        await metatagsAutoSuggest(allTags, context, siteStub, {
+          forceAutoSuggest,
+        });
+        expect(isHandlerEnabledForSite).to.have.been.called;
+        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
       });
     });
   });
