@@ -231,6 +231,7 @@ describe('Preflight Audit', () => {
         setResultType: sinon.stub(),
         setResult: sinon.stub(),
         setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
         save: sinon.stub().resolves(),
       };
       firefallClient = {
@@ -391,6 +392,21 @@ describe('Preflight Audit', () => {
     it('throws if job is not in progress', async () => {
       job.getStatus.returns('COMPLETED');
       await expect(preflightAudit(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
+    });
+
+    it('sets status to FAILED if an error occurs', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: AUDIT_STEP_IDENTIFY,
+          urls: ['https://example.com/page1'],
+        },
+      });
+      s3Client.send.onCall(0).rejects(new Error('S3 error'));
+
+      await expect(preflightAudit(context)).to.be.rejectedWith('S3 error');
+
+      expect(job.setStatus).to.have.been.calledWith('FAILED');
+      expect(job.save).to.have.been.called;
     });
   });
 });
