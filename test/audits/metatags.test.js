@@ -307,7 +307,7 @@ describe('Meta Tags', () => {
           ],
           siteId: 'site-id',
           type: 'meta-tags',
-          batchProcess: 'true',
+          batchProcess: 'false',
           batchSize: 100,
         });
       });
@@ -336,7 +336,7 @@ describe('Meta Tags', () => {
           ],
           siteId: 'site-id',
           type: 'meta-tags',
-          batchProcess: 'true',
+          batchProcess: 'false',
           batchSize: 100,
         });
       });
