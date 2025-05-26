@@ -148,6 +148,8 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         if (!isNonEmptyObject(highFormViewsLowConversionsOppty.guidance)) {
           highFormViewsLowConversionsOppty.setGuidance(opportunityData.guidance);
         }
+
+        highFormViewsLowConversionsOppty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop
         await highFormViewsLowConversionsOppty.save();
         log.debug('Forms Opportunity high form views low conversion updated');
