@@ -24,6 +24,8 @@ import {
 } from '../../src/preflight/handler.js';
 import { runInternalLinkChecks } from '../../src/preflight/internal-links.js';
 import { MockContextBuilder } from '../shared.js';
+import suggestionData from '../fixtures/preflight/preflight-suggest.json' with { type: 'json' };
+import identifyData from '../fixtures/preflight/preflight-identify.json' with { type: 'json' };
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -160,8 +162,8 @@ describe('Preflight Audit', () => {
       const result = await scrapePages(context);
       expect(result).to.deep.equal({
         urls: [
-          'https://example.com',
-          'https://another.com/page',
+          { url: 'https://example.com' },
+          { url: 'https://another.com/page' },
         ],
         siteId: 'site-123',
         type: 'preflight',
@@ -231,6 +233,7 @@ describe('Preflight Audit', () => {
         setResultType: sinon.stub(),
         setResult: sinon.stub(),
         setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
         save: sinon.stub().resolves(),
       };
       firefallClient = {
@@ -265,17 +268,19 @@ describe('Preflight Audit', () => {
           { Key: 'scrapes/site-123/page1/scrape.json' },
         ],
       });
-      const body = `<body>${'a'.repeat(70)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
+      const head = '<head><link rel="canonical" href="https://example.com/page1"/></head>';
+      const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a><h1>First H1</h1><h1>Second H1</h1></body>`;
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
       s3Client.send.onCall(1).resolves({
         ContentType: 'application/json',
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify({
-            scrapeResult: { rawBody: body },
+            scrapeResult: { rawBody: html },
             finalUrl: 'https://example.com/page1',
             tags: {
               title: 'Page 1 Title',
               description: 'Page 1 Description',
-              h1: ['Page 1 H1'],
+              h1: ['First H1', 'First H1'],
             },
           })),
         },
@@ -296,13 +301,21 @@ describe('Preflight Audit', () => {
               tags: {
                 title: 'Page 1 Title',
                 description: 'Page 1 Description',
-                h1: ['Page 1 H1'],
+                h1: ['Page 1 H1', 'Page 1 H1'],
               },
             },
             finalUrl: 'https://example.com/page1',
           })),
         },
       });
+
+      nock('https://example.com')
+        .get('/page1')
+        .reply(200, html, { 'Content-Type': 'text/html' });
+
+      nock('https://example.com')
+        .head('/broken')
+        .reply(404);
     });
 
     afterEach(() => {
@@ -338,12 +351,26 @@ describe('Preflight Audit', () => {
 
       expect(job.setStatus).to.have.been.calledWith('COMPLETED');
       expect(job.setResultType).to.have.been.called;
-      expect(job.setResult).to.have.been.called;
+      expect(job.setResult).to.have.been.calledWith(suggestionData);
       expect(job.setEndedAt).to.have.been.called;
       expect(job.save).to.have.been.called;
     });
 
     it('completes successfully on the happy path for the identify step', async () => {
+      s3Client.send.onCall(1).resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: { rawBody: '' },
+            finalUrl: 'https://example.com/page1',
+            tags: {
+              title: 'Page 1 Title',
+              description: 'Page 1 Description',
+              h1: [],
+            },
+          })),
+        },
+      });
       job.getMetadata = () => ({
         payload: {
           step: AUDIT_STEP_IDENTIFY,
@@ -359,7 +386,7 @@ describe('Preflight Audit', () => {
 
       expect(job.setStatus).to.have.been.calledWith('COMPLETED');
       expect(job.setResultType).to.have.been.called;
-      expect(job.setResult).to.have.been.called;
+      expect(job.setResult).to.have.been.calledWith(identifyData);
       expect(job.setEndedAt).to.have.been.called;
       expect(job.save).to.have.been.called;
     });
@@ -367,6 +394,21 @@ describe('Preflight Audit', () => {
     it('throws if job is not in progress', async () => {
       job.getStatus.returns('COMPLETED');
       await expect(preflightAudit(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
+    });
+
+    it('sets status to FAILED if an error occurs', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: AUDIT_STEP_IDENTIFY,
+          urls: ['https://example.com/page1'],
+        },
+      });
+      s3Client.send.onCall(0).rejects(new Error('S3 error'));
+
+      await expect(preflightAudit(context)).to.be.rejectedWith('S3 error');
+
+      expect(job.setStatus).to.have.been.calledWith('FAILED');
+      expect(job.save).to.have.been.called;
     });
   });
 });
