@@ -1,3 +1,10 @@
+## [1.90.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.90.4...v1.90.5) (2025-05-26)
+
+
+### Bug Fixes
+
+* preflight response according to API spec ([#890](https://github.com/adobe/spacecat-audit-worker/issues/890)) ([0d5a622](https://github.com/adobe/spacecat-audit-worker/commit/0d5a622508fcf813fde7fdf55468c50b25fae23a))
+
 ## [1.90.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.90.3...v1.90.4) (2025-05-26)
 
 
