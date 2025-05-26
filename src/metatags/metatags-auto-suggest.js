@@ -64,6 +64,7 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
     tagsData[endpoint] = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
   }
   log.debug('Generated presigned URLs');
+  log.info(`Preparing to send ${Object.keys(tagsData).length} pages with issues to Genvar`);
   const requestBody = {
     healthyTags,
     detectedTags: tagsData,

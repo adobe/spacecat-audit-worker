@@ -220,9 +220,11 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
     seoChecks.performChecks(pageUrl, pageTags);
   }
   seoChecks.finalChecks();
+  const detectedTags = seoChecks.getDetectedTags();
+  log.info(`Found ${Object.keys(detectedTags).length} pages with issues out of ${extractedTagsCount} total pages`);
   return {
     seoChecks,
-    detectedTags: seoChecks.getDetectedTags(),
+    detectedTags,
     extractedTags,
   };
 }
