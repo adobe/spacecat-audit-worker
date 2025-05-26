@@ -396,6 +396,17 @@ describe('Preflight Audit', () => {
       await expect(preflightAudit(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
     });
 
+    it('throws if the provided urls are invalid', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: AUDIT_STEP_IDENTIFY,
+          urls: ['not-a-url'],
+        },
+      });
+
+      await expect(preflightAudit(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Invalid URL provided: not-a-url');
+    });
+
     it('sets status to FAILED if an error occurs', async () => {
       job.getMetadata = () => ({
         payload: {
