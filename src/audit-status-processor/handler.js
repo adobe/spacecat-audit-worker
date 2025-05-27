@@ -81,15 +81,26 @@ export async function run(message, context) {
 
   const {
     siteId,
-    auditContext,
+    auditContext: auditContextStr,
   } = message;
 
-  log.info('Raw auditContext:', {
-    value: auditContext,
-    type: typeof auditContext,
-    isObject: typeof auditContext === 'object',
-    keys: auditContext ? Object.keys(auditContext) : [],
-  });
+  // Parse the auditContext JSON string
+  let auditContext;
+  try {
+    auditContext = JSON.parse(auditContextStr);
+    log.info('Parsed auditContext:', {
+      auditContext,
+      type: typeof auditContext,
+      keys: Object.keys(auditContext),
+    });
+  } catch (error) {
+    log.error('Failed to parse auditContext:', {
+      error: error.message,
+      auditContextStr,
+      type: typeof auditContextStr,
+    });
+    throw new Error(`Invalid auditContext format: ${error.message}`);
+  }
 
   // Validate auditContext structure
   if (!auditContext || typeof auditContext !== 'object') {
@@ -123,7 +134,7 @@ export async function run(message, context) {
 
   log.info('Slack context:', {
     slackContextKeys: Object.keys(slackContext),
-    slackContextValues: slackContext, // Don't stringify objects in logs
+    slackContextValues: slackContext,
   });
 
   log.info('Processing audit status for site:', {
