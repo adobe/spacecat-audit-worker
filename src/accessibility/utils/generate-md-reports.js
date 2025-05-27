@@ -708,8 +708,7 @@ function generateNewIssuesSection(diffData) {
 
 /**
  * Generate Base Report in markdown format
- * @param {Object} currentFile - Current week's data
- * @param {Object} lastWeekFile - Last week's data
+ * @param {Object} mdData - contains the current, lastWeek, and relatedReportsUrls
  * @returns {string} Base report markdown
  */
 function generateBaseReportMarkdown(mdData) {
@@ -735,7 +734,7 @@ function generateBaseReportMarkdown(mdData) {
 
 /**
  * Generate In-Depth Report in markdown format
- * @param {Object} current - Current week's data
+ * @param {Object} mdData - contains the current, lastWeek, and relatedReportsUrls
  * @returns {string} In-depth report markdown
  */
 function generateInDepthReportMarkdown(mdData) {
@@ -751,7 +750,7 @@ function generateInDepthReportMarkdown(mdData) {
 
 /**
  * Generate Enhanced Report in markdown format
- * @param {Object} current - Current week's data
+ * @param {Object} mdData - contains the current, lastWeek, and relatedReportsUrls
  * @returns {string} Enhanced report markdown
  */
 function generateEnhancedReportMarkdown(mdData) {
@@ -773,8 +772,7 @@ function generateEnhancedReportMarkdown(mdData) {
 
 /**
  * Generate Fixed-New Report in markdown format
- * @param {Object} current - Current week's data
- * @param {Object} lastWeek - Last week's data
+ * @param {Object} mdData - contains the current, lastWeek, and relatedReportsUrls
  * @returns {string} Fixed-New report markdown
  */
 function generateFixedNewReportMarkdown(mdData) {
