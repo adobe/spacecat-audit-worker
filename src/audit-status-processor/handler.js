@@ -51,87 +51,62 @@ function createAuditStatusMessage(siteId, organizationId, experienceUrl, status)
 
 /**
  * Runs the audit status processor
- * @param {string} auditUrl - The audit URL
- * @param {object} context - The context object.
- * @param {object} site - The site object
+ * @param {object} message - The message object
+ * @param {object} context - The context object
  * @returns {Promise<object>} The audit result
  */
-export async function auditStatusRunner(auditUrl, context, site) {
+export async function run(message, context) {
   const { log } = context;
-  const siteId = site.getId();
+  const {
+    siteId, siteUrl, organizationId,
+  } = message;
 
-  log.info('auditStatusRunner called with:', { auditUrl, siteId, auditType });
-  log.info('Context keys:', Object.keys(context));
-  log.info('Message keys:', Object.keys(context.message || {}));
+  log.info('Processing audit status for site:', { siteId, siteUrl, auditType });
 
   try {
-    // Log the status processing message
-    log.info(`Processing audit status for site ${siteId} with audit type ${auditType}`);
-
-    // Get the audit context from the message
-    const { auditStatusJob } = context;
-    log.info('Audit status job:', JSON.stringify(auditStatusJob, null, 2));
-
     // Create and send the status message
     const { text, blocks } = createAuditStatusMessage(
       siteId,
-      context.organizationId,
-      context.siteUrl,
+      organizationId,
+      siteUrl,
       'Processing',
     );
 
     await sendSlackMessage(
       context,
-      context.slackContext,
+      message.slackContext,
       text,
       blocks,
     );
 
     return {
-      fullAuditRef: context.siteUrl,
+      siteId,
       auditResult: {
         status: 'processing',
         siteId,
-        organizationId: context.organizationId,
-        experienceUrl: context.siteUrl,
+        organizationId,
+        experienceUrl: siteUrl,
         success: true,
       },
+      fullAuditRef: siteUrl,
     };
   } catch (error) {
-    log.error('Error in auditStatusRunner:', error);
+    log.error('Error in audit status processor:', error);
     return {
-      fullAuditRef: auditUrl,
+      siteId,
       auditResult: {
         status: 'error',
         siteId,
         error: `Audit status processing failed for ${siteId}: ${error.message}`,
         success: false,
       },
+      fullAuditRef: siteUrl,
     };
   }
 }
 
-/**
- * Runs the audit and processes the status
- * @param {object} context - The context object.
- * @returns {Promise<object>} The audit result
- */
-export async function runAuditStatus(context) {
-  const { log } = context;
-  log.info('runAuditStatus called with context keys:', Object.keys(context));
-
-  const { site, siteUrl } = context;
-  const result = await auditStatusRunner(siteUrl, context, site);
-
-  log.info('runAuditStatus completed with result:', result);
-  return {
-    siteId: site.getId(),
-    auditResult: result.auditResult,
-    fullAuditRef: result.fullAuditRef,
-  };
-}
-
+// Export the built handler for use with AuditBuilder
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('run-audit-status', runAuditStatus, AUDIT_STEP_DESTINATIONS.AUDIT_WORKER)
+  .addStep('run-audit-status', run, AUDIT_STEP_DESTINATIONS.AUDIT_WORKER)
   .build();

@@ -98,11 +98,24 @@ async function run(message, context) {
   }
 
   log.info(`Found handler for type: ${type}`);
+  log.info('Handler object:', {
+    hasRun: typeof handler.run === 'function',
+    hasExecute: typeof handler.execute === 'function',
+    handlerKeys: Object.keys(handler),
+    handlerType: typeof handler,
+  });
 
   const startTime = process.hrtime();
 
   try {
-    const result = await (typeof handler.run === 'function' ? handler.run(message, context) : handler(message, context));
+    let result;
+    if (typeof handler.execute === 'function') {
+      result = await handler.execute(message, context);
+    } else if (typeof handler.run === 'function') {
+      result = await handler.run(message, context);
+    } else {
+      result = await handler(message, context);
+    }
 
     log.info(`${type} audit for ${siteId} completed in ${getElapsedSeconds(startTime)} seconds`);
 
