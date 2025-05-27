@@ -39,7 +39,11 @@ export async function scrapeAccessibilityData(context) {
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
   return {
-    auditResult: { status: 'SCRAPING_REQUESTED', message: 'Content scraping for accessibility audit initiated.', scrapedUrls: urlsToScrape },
+    auditResult: {
+      status: 'SCRAPING_REQUESTED',
+      message: 'Content scraping for accessibility audit initiated.',
+      scrapedUrls: urlsToScrape,
+    },
     fullAuditRef: finalUrl,
     // Data for the CONTENT_SCRAPER
     urls: urlsToScrape,
