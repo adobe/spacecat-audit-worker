@@ -26,6 +26,14 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
   const { log, env } = context;
   const { channelId, threadTs } = slackContext;
 
+  // Log environment variables (safely)
+  log.info('Slack environment check:', {
+    hasToken: !!env.SLACK_BOT_TOKEN,
+    hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
+    tokenPrefix: `${env.SLACK_BOT_TOKEN?.substring(0, 10)}...`,
+    signingSecretPrefix: `${env.SLACK_SIGNING_SECRET?.substring(0, 5)}...`,
+  });
+
   log.info('Preparing to send Slack message:', {
     channelId,
     threadTs,
@@ -45,13 +53,19 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
       },
     });
 
-    log.info('Created Slack client with config:', {
+    // Verify client creation
+    if (!slackClient) {
+      throw new Error('Failed to create Slack client');
+    }
+
+    log.info('Created Slack client:', {
       channelId: slackClient.channelId,
       threadTs: slackClient.threadTs,
       hasToken: !!env.SLACK_BOT_TOKEN,
       hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
       tokenLength: env.SLACK_BOT_TOKEN?.length,
       signingSecretLength: env.SLACK_SIGNING_SECRET?.length,
+      clientMethods: Object.keys(slackClient),
     });
 
     // Construct the message
@@ -67,21 +81,40 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
       slackMessage.thread_ts = threadTs;
     }
 
+    // Verify message format
+    if (!slackMessage.channel) {
+      throw new Error('Missing channel in Slack message');
+    }
+    if (!slackMessage.text && (!slackMessage.blocks || !slackMessage.blocks.length)) {
+      throw new Error('Slack message must have either text or blocks');
+    }
+
     log.info('Sending Slack message:', {
       message: JSON.stringify(slackMessage, null, 2),
       messageLength: JSON.stringify(slackMessage).length,
       blocksLength: JSON.stringify(blocks).length,
       textLength: text.length,
+      channel: slackMessage.channel,
+      hasThread: !!slackMessage.thread_ts,
     });
 
     // Send the message
     const result = await slackClient.sendMessage(slackMessage);
+
+    // Verify result
+    if (!result) {
+      throw new Error('No result from Slack API call');
+    }
+
     log.info('Slack message sent successfully:', {
       result: JSON.stringify(result, null, 2),
       channel: channelId,
       thread: threadTs || 'new thread',
       messageId: result?.ts,
+      ok: result?.ok,
+      error: result?.error,
     });
+
     return result;
   } catch (error) {
     // Log the raw error first
@@ -90,6 +123,8 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
       errorMessage: error.message,
       errorStack: error.stack,
       errorType: error.name,
+      errorCode: error.code,
+      errorData: error.data,
     });
 
     // Try to safely stringify the message for logging
@@ -115,6 +150,7 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
       error: error.message,
       stack: error.stack,
       errorType: error.name,
+      errorCode: error.code,
       channelId,
       threadTs,
       hasToken: !!env.SLACK_BOT_TOKEN,
