@@ -80,31 +80,23 @@ export async function run(message, context) {
 
   const {
     siteId,
-    auditContext: auditContextStr,
+    auditContext,
   } = message;
 
   log.info('Raw auditContext:', {
-    value: auditContextStr,
-    type: typeof auditContextStr,
-    length: auditContextStr?.length,
+    value: auditContext,
+    type: typeof auditContext,
+    isObject: typeof auditContext === 'object',
+    keys: auditContext ? Object.keys(auditContext) : [],
   });
 
-  // Parse the auditContext JSON string
-  let auditContext;
-  try {
-    // Try parsing once since we know it's a JSON string
-    auditContext = JSON.parse(auditContextStr);
-    log.info('Successfully parsed auditContext:', auditContext);
-  } catch (error) {
-    log.error('Failed to parse auditContext:', {
-      error: error.message,
-      errorType: error.name,
-      stack: error.stack,
-      auditContextStr,
-      auditContextType: typeof auditContextStr,
-      auditContextLength: auditContextStr?.length,
+  // Validate auditContext structure
+  if (!auditContext || typeof auditContext !== 'object') {
+    log.error('Invalid auditContext:', {
+      auditContext,
+      type: typeof auditContext,
     });
-    throw new Error(`Invalid auditContext format: ${error.message}`);
+    throw new Error('Invalid auditContext: must be an object');
   }
 
   const {

@@ -30,8 +30,8 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
     channelId,
     threadTs,
     text,
-    blocks: JSON.stringify(blocks),
-    options: JSON.stringify(options),
+    blocks: JSON.stringify(blocks, null, 2),
+    options: JSON.stringify(options, null, 2),
   });
 
   try {
@@ -50,6 +50,8 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
       threadTs: slackClient.threadTs,
       hasToken: !!env.SLACK_BOT_TOKEN,
       hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
+      tokenLength: env.SLACK_BOT_TOKEN?.length,
+      signingSecretLength: env.SLACK_SIGNING_SECRET?.length,
     });
 
     // Construct the message
@@ -67,25 +69,61 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
 
     log.info('Sending Slack message:', {
       message: JSON.stringify(slackMessage, null, 2),
+      messageLength: JSON.stringify(slackMessage).length,
+      blocksLength: JSON.stringify(blocks).length,
+      textLength: text.length,
     });
 
     // Send the message
     const result = await slackClient.sendMessage(slackMessage);
     log.info('Slack message sent successfully:', {
-      result: JSON.stringify(result),
+      result: JSON.stringify(result, null, 2),
       channel: channelId,
       thread: threadTs || 'new thread',
+      messageId: result?.ts,
     });
     return result;
   } catch (error) {
+    // Log the raw error first
+    log.error('Raw Slack error:', {
+      error,
+      errorMessage: error.message,
+      errorStack: error.stack,
+      errorType: error.name,
+    });
+
+    // Try to safely stringify the message for logging
+    let messageStr;
+    try {
+      messageStr = JSON.stringify({
+        channel: channelId,
+        text,
+        blocks,
+        ...options,
+        thread_ts: threadTs,
+      }, null, 2);
+    } catch (stringifyError) {
+      messageStr = 'Failed to stringify message';
+      log.error('Failed to stringify message for logging:', {
+        stringifyError: stringifyError.message,
+        stringifyErrorType: stringifyError.name,
+      });
+    }
+
+    // Log the error with safe message string
     log.error('Failed to send Slack message:', {
       error: error.message,
       stack: error.stack,
+      errorType: error.name,
       channelId,
       threadTs,
       hasToken: !!env.SLACK_BOT_TOKEN,
       hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
+      tokenLength: env.SLACK_BOT_TOKEN?.length,
+      signingSecretLength: env.SLACK_SIGNING_SECRET?.length,
+      message: messageStr,
     });
+
     throw error;
   }
 }
