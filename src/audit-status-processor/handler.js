@@ -81,61 +81,31 @@ export async function run(message, context) {
 
   const {
     siteId,
-    auditContext: auditContextStr,
+    auditContext,
+    type,
   } = message;
-
-  // Parse the auditContext JSON string
-  let auditContext;
-  try {
-    auditContext = JSON.parse(auditContextStr);
-    log.info('Parsed auditContext:', {
-      auditContext,
-      type: typeof auditContext,
-      keys: Object.keys(auditContext),
-    });
-  } catch (error) {
-    log.error('Failed to parse auditContext:', {
-      error: error.message,
-      auditContextStr,
-      type: typeof auditContextStr,
-    });
-    throw new Error(`Invalid auditContext format: ${error.message}`);
-  }
-
-  // Validate auditContext structure
-  if (!auditContext || typeof auditContext !== 'object') {
-    log.error('Invalid auditContext:', {
-      auditContext,
-      type: typeof auditContext,
-    });
-    throw new Error('Invalid auditContext: must be an object');
-  }
 
   const {
     experienceUrl: siteUrl,
-    slackContext,
     organizationId,
+    slackContext,
   } = auditContext;
 
-  if (!siteUrl) {
-    log.error('Missing siteUrl in auditContext:', auditContext);
-    throw new Error('Missing required siteUrl in auditContext');
-  }
+  const {
+    threadTs,
+    channelId,
+  } = slackContext;
 
-  if (!slackContext) {
-    log.error('Missing slackContext in auditContext:', auditContext);
-    throw new Error('Missing required slackContext in auditContext');
-  }
+  log.info('message: siteId', siteId, 'auditContext', auditContext, 'type', type, 'siteUrl', siteUrl, 'organizationId', organizationId, 'slackContext', slackContext, 'threadTs', threadTs, 'channelId', channelId);
 
-  if (!slackContext.channelId) {
+  if (!channelId) {
     log.error('Missing channelId in slackContext:', slackContext);
     throw new Error('Missing required channelId in slackContext');
   }
-
-  log.info('Slack context:', {
-    slackContextKeys: Object.keys(slackContext),
-    slackContextValues: slackContext,
-  });
+  if (!threadTs) {
+    log.error('Missing threadTs in slackContext:', slackContext);
+    throw new Error('Missing required threadTs in slackContext');
+  }
 
   log.info('Processing audit status for site:', {
     siteId,
