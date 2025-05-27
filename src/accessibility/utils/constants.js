@@ -709,3 +709,14 @@ export const accessibilityUserImpact = {
   // Level AA - Critical issues
   'meta-viewport': 'Users who need to zoom webpages for better visibility cannot do so when zooming is disabled. This makes content completely inaccessible for users with low vision who rely on zoom functionality.',
 };
+
+export const accessibilityOpportunitiesIDs = [
+  // Assistive technology is incompatible on site
+  'aria-hidden-focus',
+  'aria-allowed-attr',
+  'aria-required-attr',
+  'aria-prohibited-attr',
+  'aria-roles',
+  'aria-valid-attr-value',
+  'aria-required-parent',
+];
