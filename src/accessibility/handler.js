@@ -13,7 +13,7 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
-import { createIndividualOpportunities } from './utils/generate-individual-opportunities.js';
+import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
@@ -115,7 +115,7 @@ export async function processAccessibilityOpportunities(context) {
   }
 
   try {
-    await createIndividualOpportunities(aggregationResult.finalResultFiles.current, context);
+    await createAccessibilityIndividualOpportunities(aggregationResult.finalResultFiles.current, context);
   } catch (error) {
     log.error(`[A11yAudit] Error creating individual opportunities: ${error.message}`, error);
     return {

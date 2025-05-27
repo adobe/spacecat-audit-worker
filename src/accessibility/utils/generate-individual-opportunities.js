@@ -1,6 +1,7 @@
-import { createAccessibilityAssistiveOpportunity } from './utils/report-oppty.js';
-import { syncSuggestions } from '../utils/data-access.js';
-import { successCriteriaLinks, accessibilityOpportunitiesIDs } from './utils/constants.js';
+import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
+import { syncSuggestions } from '../../utils/data-access.js';
+import { successCriteriaLinks, accessibilityOpportunitiesIDs } from './constants.js';
+import { getAuditData } from './data-processing.js';
 
 /**
  * Helper function to format WCAG rule from wcag412 format to "4.1.2 Name, Role, Value" format
@@ -68,11 +69,11 @@ function formatWcagRule(wcagRule) {
   }
   
   /**
-   * Generates accessibility opportunities data grouped by URL
-   * @param {Object} context - Context containing testData
+   * Groups accessibility issues by URL for individual opportunity creation
+   * @param {Object} accessibilityData - The accessibility data to process
    * @returns {Object} Object with data array containing URLs and their issues
    */
-  export function aggregateData(accessibilityData) {
+  export function aggregateAccessibilityIssues(accessibilityData) {
     if (!accessibilityData) {
       return { data: [] };
     }
@@ -81,9 +82,7 @@ function formatWcagRule(wcagRule) {
   
     // Process each page (skip 'overall' summary)
     for (const [url, pageData] of Object.entries(accessibilityData)) {
-      if (url === 'overall') {
-        // Skip overall summary
-      } else {
+      if (url !== 'overall') {
         const pageIssues = {
           type: 'url',
           url,
@@ -118,67 +117,74 @@ function formatWcagRule(wcagRule) {
     }
   
     return { data };
+  }
+
+export async function createIndividualOpportunity(opportunityInstance, auditData, context) {
+  const { log, dataAccess } = context;
+  const { Opportunity } = dataAccess;
+  try {
+    const opportunityData = {
+      siteId: auditData.siteId,
+      auditId: auditData.auditId,
+      runbook: opportunityInstance.runbook,
+      type: opportunityInstance.type,
+      origin: opportunityInstance.origin,
+      title: opportunityInstance.title,
+      description: opportunityInstance.description,
+      tags: opportunityInstance.tags,
+      status: opportunityInstance.status,
+      data: opportunityInstance.data,
+    };
+    const opportunity = await Opportunity.create(opportunityData);
+    return { opportunity };
+  } catch (e) {
+    log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
+    throw new Error(e.message);
+  }
 }
 
-export async function createAssistiveOpportunity(opportunityInstance, auditData, context) {
-    const { log, dataAccess } = context;
-    const { Opportunity } = dataAccess;
-    try {
-      const opportunityData = {
-        siteId: auditData.siteId,
-        auditId: auditData.auditId,
-        runbook: opportunityInstance.runbook,
-        type: opportunityInstance.type,
-        origin: opportunityInstance.origin,
-        title: opportunityInstance.title,
-        description: opportunityInstance.description,
-        tags: opportunityInstance.tags,
-      };
-      const opportunity = await Opportunity.create(opportunityData);
-      return {
-        status: true,
-        opportunity,
-      };
-    } catch (e) {
-      log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
-      return {
-        success: false,
-        message: `Error: ${e.message}`,
-      };
-    }
-}
+export async function createIndividualOpportunitySuggestions(
+  opportunity,
+  aggregatedData,
+  context,
+  log,
+) {
+  const buildKey = (data) => data.url;
   
-export async function createAssistiveOpportunitySuggestion(
-    opportunity,
-    auditData,
-    log,
-    ) {
-    const suggestions = createAssistiveOpportunity();
-
-    try {
-        const suggestion = await opportunity.addSuggestions(suggestions);
-        return {
-        status: true,
-        suggestion,
-        };
-    } catch (e) {
-        log.error(`Failed to create new suggestion for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
-        return {
-        success: false,
-        message: `Error: ${e.message}`,
-        };
-    }
+  try {
+    await syncSuggestions({
+      opportunity,
+      newData: aggregatedData.data,
+      context,
+      buildKey,
+      mapNewSuggestion: (urlData) => ({
+        opportunityId: opportunity.getId(),
+        type: 'CONTENT_UPDATE',
+        rank: urlData.issues.reduce((total, issue) => total + issue.occurrences, 0), // Rank by total occurrences
+        data: {
+          url: urlData.url,
+          type: "url",
+          issues: urlData.issues,
+        },
+      }),
+      log,
+    });
+    return { success: true };
+  } catch (e) {
+    log.error(`Failed to create suggestions for opportunity ${opportunity.getId()}: ${e.message}`);
+    throw new Error(e.message);
+  }
 }
 
-export async function createIndividualOpportunities(accessibilityData, context) {
+export async function createAccessibilityIndividualOpportunities(accessibilityData, context) {
     const {
-      site, log, dataAccess,
+      site, log,
     } = context;
   
     log.info(`[A11yAudit] Step 2: Creating accessibility opportunities with data for ${site.getBaseURL()}`);
   
     // Get individual opportunities data
-    const aggregatedData = aggregateData(accessibilityData);
+    const aggregatedData = aggregateAccessibilityIssues(accessibilityData);
   
     if (!aggregatedData || !aggregatedData.data || aggregatedData.data.length === 0) {
       log.info(`[A11yAudit] No individual accessibility opportunities found for ${site.getBaseURL()}`);
@@ -189,46 +195,30 @@ export async function createIndividualOpportunities(accessibilityData, context) 
       };
     }
 
-  
     try {
-      // Create the accessibility assistive opportunity
-      const { Opportunity } = dataAccess;
+      // Get the same audit data that report opportunities use
+      const auditData = await getAuditData(site, 'accessibility');
+      
+      // 1. Create the accessibility assistive opportunity
       const opportunityInstance = createAccessibilityAssistiveOpportunity();
+      let opportunityRes;
       
-      const opportunityData = {
-        siteId: site.getId(),
-        runbook: opportunityInstance.runbook,
-        type: opportunityInstance.type,
-        origin: opportunityInstance.origin,
-        title: opportunityInstance.title,
-        description: opportunityInstance.description,
-        tags: opportunityInstance.tags,
-        status: opportunityInstance.status,
-        data: opportunityInstance.data,
-      };
+      try {
+        opportunityRes = await createIndividualOpportunity(opportunityInstance, auditData, context);
+      } catch (error) {
+        log.error(`Failed to create individual accessibility opportunity: ${error.message}`);
+        throw new Error(error.message);
+      }
       
-      const opportunity = await Opportunity.create(opportunityData);
-  
-      // Create suggestions from aggregated data - each suggestion represents a URL with all its issues
-      const buildKey = (data) => data.url;
+      const { opportunity } = opportunityRes;
       
-      await syncSuggestions({
-        opportunity,
-        newData: aggregatedData.data,
-        context,
-        buildKey,
-        mapNewSuggestion: (urlData) => ({
-          opportunityId: opportunity.getId(),
-          type: 'CONTENT_UPDATE',
-          rank: urlData.issues.reduce((total, issue) => total + issue.occurrences, 0), // Rank by total occurrences
-          data: {
-            url: urlData.url,
-            type: "url",
-            issues: urlData.issues,
-          },
-        }),
-        log,
-      });
+      // 2. Create the suggestions for the opportunity
+      try {
+        await createIndividualOpportunitySuggestions(opportunity, aggregatedData, context, log);
+      } catch (error) {
+        log.error(`Failed to create individual accessibility opportunity suggestions: ${error.message}`);
+        throw new Error(error.message);
+      }
   
       const totalIssues = aggregatedData.data.reduce((total, page) => total + page.issues.reduce((pageTotal, issue) => pageTotal + issue.occurrences, 0), 0);
       const totalSuggestions = aggregatedData.data.length;
@@ -250,7 +240,6 @@ export async function createIndividualOpportunities(accessibilityData, context) 
       return {
         status: 'OPPORTUNITIES_FAILED',
         error: error.message,
-        data: [],
       };
     }
   }
