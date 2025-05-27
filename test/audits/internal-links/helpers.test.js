@@ -149,7 +149,7 @@ describe('isLinkInaccessible', () => {
   });
 
   it('should return true for timeout errors', async function call() {
-    this.timeout(7000);
+    this.timeout(5000);
 
     nock('https://example.com')
       .get('/timeout')
@@ -159,7 +159,7 @@ describe('isLinkInaccessible', () => {
     const result = await isLinkInaccessible('https://example.com/timeout', mockLog);
     expect(result).to.be.true;
     expect(mockLog.info.calledWith(
-      'broken-internal-links audit: Error checking https://example.com/timeout: Request timed out after 5000ms',
+      'broken-internal-links audit: Error checking https://example.com/timeout: Request timed out after 3000ms',
     )).to.be.true;
   });
 });

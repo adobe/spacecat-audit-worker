@@ -64,8 +64,6 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       })),
     );
 
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] mappedLinks: ${JSON.stringify(accessibilityResults)}`);
-
     // 5. Filter only inaccessible links and transform for further processing
     const inaccessibleLinks = accessibilityResults
       .filter((result) => result.inaccessible)
@@ -126,7 +124,7 @@ export async function prepareScrapingStep(context) {
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] topPages: ${JSON.stringify(topPages)}`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages`);
 
   const urls = topPages.map((page) => ({ url: page.getUrl() }));
   return {
