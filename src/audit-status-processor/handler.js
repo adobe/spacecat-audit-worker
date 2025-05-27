@@ -10,11 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-// import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
-// const auditType = Audit.AUDIT_TYPES.AUDIT_STATUS;
+const auditType = Audit.AUDIT_TYPES.AUDIT_STATUS_PROCESSOR;
 
 /**
  * Creates a standard audit status message for Slack
@@ -49,86 +49,81 @@ function createAuditStatusMessage(siteId, organizationId, experienceUrl, status)
 }
 
 /**
- * Processes the audit status and sends notifications to Slack
- * @param {object} message - The SQS message containing auditStatusJob
- * @param {object} context - The context object containing configurations and services
- * @returns {Promise<object>} - Returns a response object
+ * Runs the audit status processor
+ * @param {string} auditUrl - The audit URL
+ * @param {object} context - The context object.
+ * @param {object} site - The site object
+ * @returns {Promise<object>} The audit result
  */
-export async function processAuditStatus(message, context) {
+export async function auditStatusRunner(auditUrl, context, site) {
   const { log } = context;
-
-  // Add initial message logging
-  log.info('Received message in processAuditStatus:', JSON.stringify(message));
-
-  if (!message) {
-    log.error('Message is undefined or null');
-    return {
-      error: 'Message is undefined or null',
-      success: false,
-    };
-  }
-
-  if (!message.auditStatusJob) {
-    log.error('Message missing auditStatusJob:', JSON.stringify(message));
-    return {
-      error: 'Message missing auditStatusJob',
-      success: false,
-    };
-  }
-
-  const { auditStatusJob } = message;
-  const { siteId, auditContext } = auditStatusJob;
-
-  if (!siteId || !auditContext) {
-    log.error('Missing required fields in auditStatusJob:', JSON.stringify(auditStatusJob));
-    return {
-      error: 'Missing required fields in auditStatusJob',
-      success: false,
-    };
-  }
+  const siteId = site.getId();
 
   try {
     // Log the status processing message
-    log.info(`Processing audit status for site ${siteId}`);
-    log.debug('Audit status job:', JSON.stringify(auditStatusJob));
+    log.info(`Processing audit status for site ${siteId} with audit type ${auditType}`);
+
+    // Get the audit context from the message
+    const { auditStatusJob } = context;
+
+    log.info(`Audit status job: ${auditStatusJob}`);
 
     // Create and send the status message
     const { text, blocks } = createAuditStatusMessage(
       siteId,
-      auditContext.organizationId,
-      auditContext.experienceUrl,
+      context.organizationId,
+      context.siteUrl,
       'Processing',
     );
 
     await sendSlackMessage(
       context,
-      auditContext.slackContext,
+      context.slackContext,
       text,
       blocks,
     );
 
     return {
-      fullAuditRef: auditContext.experienceUrl,
+      fullAuditRef: context.siteUrl,
       auditResult: {
         status: 'processing',
         siteId,
-        organizationId: auditContext.organizationId,
-        experienceUrl: auditContext.experienceUrl,
+        organizationId: context.organizationId,
+        experienceUrl: context.siteUrl,
+        success: true,
       },
     };
   } catch (error) {
     log.error(`Failed to process audit status for site ${siteId}: ${error.message}`, error);
     return {
-      fullAuditRef: auditContext.experienceUrl,
+      fullAuditRef: auditUrl,
       auditResult: {
-        error: error.message,
+        status: 'error',
+        siteId,
+        error: `Audit status processing failed for ${siteId}: ${error.message}`,
         success: false,
       },
     };
   }
 }
 
+/**
+ * Runs the audit and processes the status
+ * @param {object} context - The context object.
+ * @returns {Promise<object>} The audit result
+ */
+export async function runAuditStatus(context) {
+  const { site, siteUrl } = context;
+  const result = await auditStatusRunner(siteUrl, context, site);
+
+  return {
+    siteId: site.getId(),
+    auditResult: result.auditResult,
+    fullAuditRef: result.fullAuditRef,
+  };
+}
+
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('audit-status-processor', processAuditStatus)
+  .addStep('run-audit-status', runAuditStatus)
   .build();
