@@ -15,6 +15,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+const AUDIT_TYPE = 'audit-status-processor'; // Use exact audit type name
 
 /**
  * Creates a standard audit status message for Slack
@@ -129,7 +130,7 @@ export async function run(message, context) {
     siteId,
     siteUrl,
     organizationId,
-    auditType: Audit.AUDIT_TYPES.AUDIT_STATUS_PROCESSOR,
+    auditType: AUDIT_TYPE, // Use exact audit type name
   });
 
   try {
