@@ -23,7 +23,7 @@ import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
  * @returns {Promise<void>}
  */
 export async function sendSlackMessage(context, slackContext, text, blocks, options = {}) {
-  const { log } = context;
+  const { log, env } = context;
   const { channelId, threadTs } = slackContext;
 
   log.info('Preparing to send Slack message:', {
@@ -35,15 +35,21 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
   });
 
   try {
-    // Create Slack client using the provided context
+    // Create Slack client using the provided context and environment
     const slackClient = BaseSlackClient.createFrom({
       channelId,
       threadTs,
+      env: {
+        SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
+        SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
+      },
     });
 
     log.info('Created Slack client with config:', {
       channelId: slackClient.channelId,
       threadTs: slackClient.threadTs,
+      hasToken: !!env.SLACK_BOT_TOKEN,
+      hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
     });
 
     // Construct the message
@@ -77,6 +83,8 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
       stack: error.stack,
       channelId,
       threadTs,
+      hasToken: !!env.SLACK_BOT_TOKEN,
+      hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
     });
     throw error;
   }

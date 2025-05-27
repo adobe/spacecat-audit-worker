@@ -76,14 +76,29 @@ export async function run(message, context) {
     auditContext: auditContextStr,
   } = message;
 
-  // Parse the auditContext JSON string
+  // Parse the auditContext JSON string, handling potential double encoding
   let auditContext;
   try {
-    auditContext = JSON.parse(auditContextStr);
+    // First try parsing as is
+    try {
+      auditContext = JSON.parse(auditContextStr);
+    } catch (e) {
+      log.info('Failed to parse auditContext:', {
+        error: e.message,
+        auditContextStr,
+        auditContextType: typeof auditContextStr,
+      });
+      // If that fails, try parsing again in case it's double encoded
+      auditContext = JSON.parse(JSON.parse(auditContextStr));
+    }
     log.info('Parsed auditContext:', auditContext);
   } catch (error) {
-    log.error('Failed to parse auditContext:', error);
-    throw new Error('Invalid auditContext format');
+    log.error('Failed to parse auditContext:', {
+      error: error.message,
+      auditContextStr,
+      auditContextType: typeof auditContextStr,
+    });
+    throw new Error(`Invalid auditContext format: ${error.message}`);
   }
 
   const {
