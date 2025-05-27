@@ -55,7 +55,13 @@ function createAuditStatusMessage(siteId, organizationId, experienceUrl, status)
  * @returns {Promise<object>} The audit result
  */
 export async function run(message, context) {
-  const { log } = context;
+  const { log, env } = context;
+
+  // Check for required Slack environment variables
+  if (!env.SLACK_BOT_TOKEN) {
+    log.error('Missing required SLACK_BOT_TOKEN environment variable');
+    throw new Error('Missing required SLACK_BOT_TOKEN environment variable');
+  }
 
   log.info('Handler received message:', {
     messageKeys: Object.keys(message),

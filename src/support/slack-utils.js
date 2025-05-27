@@ -26,11 +26,24 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
   const { log } = context;
   const { channelId, threadTs } = slackContext;
 
+  log.info('Preparing to send Slack message:', {
+    channelId,
+    threadTs,
+    text,
+    blocks: JSON.stringify(blocks),
+    options: JSON.stringify(options),
+  });
+
   try {
     // Create Slack client using the provided context
     const slackClient = BaseSlackClient.createFrom({
       channelId,
       threadTs,
+    });
+
+    log.info('Created Slack client with config:', {
+      channelId: slackClient.channelId,
+      threadTs: slackClient.threadTs,
     });
 
     // Construct the message
@@ -46,11 +59,25 @@ export async function sendSlackMessage(context, slackContext, text, blocks, opti
       slackMessage.thread_ts = threadTs;
     }
 
+    log.info('Sending Slack message:', {
+      message: JSON.stringify(slackMessage, null, 2),
+    });
+
     // Send the message
-    await slackClient.sendMessage(slackMessage);
-    log.info(`Sent Slack message in channel ${channelId}${threadTs ? ` (thread: ${threadTs})` : ''}`);
+    const result = await slackClient.sendMessage(slackMessage);
+    log.info('Slack message sent successfully:', {
+      result: JSON.stringify(result),
+      channel: channelId,
+      thread: threadTs || 'new thread',
+    });
+    return result;
   } catch (error) {
-    log.error(`Failed to send Slack message: ${error.message}`, error);
+    log.error('Failed to send Slack message:', {
+      error: error.message,
+      stack: error.stack,
+      channelId,
+      threadTs,
+    });
     throw error;
   }
 }
