@@ -1,3 +1,10 @@
+# [1.91.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.90.7...v1.91.0) (2025-05-27)
+
+
+### Features
+
+* filter forms with only single button ([#903](https://github.com/adobe/spacecat-audit-worker/issues/903)) ([6f370c1](https://github.com/adobe/spacecat-audit-worker/commit/6f370c1e94d1605e31124d4774bdf0b28d7a98a6))
+
 ## [1.90.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.90.6...v1.90.7) (2025-05-27)
 
 
