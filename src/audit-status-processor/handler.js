@@ -59,14 +59,17 @@ export async function auditStatusRunner(auditUrl, context, site) {
   const { log } = context;
   const siteId = site.getId();
 
+  log.info('auditStatusRunner called with:', { auditUrl, siteId, auditType });
+  log.info('Context keys:', Object.keys(context));
+  log.info('Message keys:', Object.keys(context.message || {}));
+
   try {
     // Log the status processing message
     log.info(`Processing audit status for site ${siteId} with audit type ${auditType}`);
 
     // Get the audit context from the message
     const { auditStatusJob } = context;
-
-    log.info(`Audit status job: ${auditStatusJob}`);
+    log.info('Audit status job:', JSON.stringify(auditStatusJob, null, 2));
 
     // Create and send the status message
     const { text, blocks } = createAuditStatusMessage(
@@ -94,7 +97,7 @@ export async function auditStatusRunner(auditUrl, context, site) {
       },
     };
   } catch (error) {
-    log.error(`Failed to process audit status for site ${siteId}: ${error.message}`, error);
+    log.error('Error in auditStatusRunner:', error);
     return {
       fullAuditRef: auditUrl,
       auditResult: {
@@ -113,9 +116,13 @@ export async function auditStatusRunner(auditUrl, context, site) {
  * @returns {Promise<object>} The audit result
  */
 export async function runAuditStatus(context) {
+  const { log } = context;
+  log.info('runAuditStatus called with context keys:', Object.keys(context));
+
   const { site, siteUrl } = context;
   const result = await auditStatusRunner(siteUrl, context, site);
 
+  log.info('runAuditStatus completed with result:', result);
   return {
     siteId: site.getId(),
     auditResult: result.auditResult,
