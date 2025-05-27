@@ -276,12 +276,15 @@ export function shouldExcludeForm(scrapedFormData) {
 
   const containsNoInputField = scrapedFormData?.formFields?.filter((field) => field.tagName === 'input').length === 0;
 
+  const doesNotHaveButton = scrapedFormData?.formFields?.filter((field) => field.tagName === 'button').length === 0;
+
   return scrapedFormData?.formType === 'search'
     || scrapedFormData?.formType === 'login'
     || scrapedFormData?.classList?.includes('unsubscribe')
     || scrapedFormData?.fieldCount === 0
     || containsOnlyNumericInputField
-    || containsNoInputField;
+    || containsNoInputField
+    || doesNotHaveButton;
 }
 
 /**
