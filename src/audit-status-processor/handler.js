@@ -15,7 +15,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const auditType = Audit.AUDIT_TYPES.AUDIT_STATUS_PROCESSOR;
 
 /**
  * Creates a standard audit status message for Slack
@@ -57,11 +56,35 @@ function createAuditStatusMessage(siteId, organizationId, experienceUrl, status)
  */
 export async function run(message, context) {
   const { log } = context;
+
+  log.info('Handler received message:', {
+    messageKeys: Object.keys(message),
+    messageValues: Object.entries(message).reduce((acc, [key, value]) => {
+      acc[key] = typeof value === 'object' ? JSON.stringify(value) : value;
+      return acc;
+    }, {}),
+  });
+
   const {
-    siteId, siteUrl, organizationId,
+    siteId,
+    organizationId,
+    auditStatusJob,
   } = message;
 
-  log.info('Processing audit status for site:', { siteId, siteUrl, auditType });
+  // Get the site URL from the audit status job
+  const siteUrl = auditStatusJob?.siteUrl || message.siteUrl;
+
+  if (!siteUrl) {
+    log.error('Missing siteUrl in message:', message);
+    throw new Error('Missing required siteUrl in message');
+  }
+
+  log.info('Processing audit status for site:', {
+    siteId,
+    siteUrl,
+    organizationId,
+    auditType: Audit.AUDIT_TYPES.AUDIT_STATUS_PROCESSOR,
+  });
 
   try {
     // Create and send the status message

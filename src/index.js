@@ -88,7 +88,13 @@ async function run(message, context) {
   const { type, siteId } = message;
 
   log.info(`Received message with type: ${type} for site: ${siteId}`);
-  log.info(`Full message: ${JSON.stringify(message)}`);
+  log.info('Message structure:', {
+    messageKeys: Object.keys(message),
+    messageValues: Object.entries(message).reduce((acc, [key, value]) => {
+      acc[key] = typeof value === 'object' ? JSON.stringify(value) : value;
+      return acc;
+    }, {}),
+  });
 
   const handler = HANDLERS[type];
   if (!handler) {
