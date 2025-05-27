@@ -51,12 +51,7 @@ describe('Meta Tags', () => {
     let logStub;
 
     beforeEach(() => {
-      logStub = {
-        info: sinon.stub(),
-        debug: sinon.stub(),
-        error: sinon.stub(),
-        warn: sinon.stub(),
-      };
+      logStub = sinon.stub();
       seoChecks = new SeoChecks(logStub);
     });
 
