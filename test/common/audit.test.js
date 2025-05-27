@@ -390,9 +390,27 @@ describe('Audit tests', () => {
   });
 
   describe('wwwUrlResolver', () => {
+    it('wwwUrlResolver fet', async () => {
+      const base = 'http://blog.spacecat.com';
+      const resolvedURL = await wwwUrlResolver({
+        getBaseURL: () => base,
+        getConfig: () => ({
+          getFetchConfig() {
+            return {
+              overrideBaseURL: 'https://override.spacecat.com',
+            };
+          },
+
+        }),
+      }, context);
+      expect(resolvedURL).to.equal('override.spacecat.com');
+      expect(context.rumApiClient.retrieveDomainkey).to.not.have.been.called;
+    });
     it('wwwUrlResolver returns subdomain version', async () => {
       const base = 'http://blog.spacecat.com';
-      const resolvedURL = await wwwUrlResolver({ getBaseURL: () => base }, context);
+      const resolvedURL = await wwwUrlResolver({
+        getBaseURL: () => base, getConfig: () => {},
+      }, context);
       expect(resolvedURL).to.equal('blog.spacecat.com');
       expect(context.rumApiClient.retrieveDomainkey).to.not.have.been.called;
     });
@@ -400,7 +418,9 @@ describe('Audit tests', () => {
     it('wwwUrlResolver resolves to www using rum api client', async () => {
       const base = 'http://spacecat.com';
       context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves();
-      const resolvedURL = await wwwUrlResolver({ getBaseURL: () => base }, context);
+      const resolvedURL = await wwwUrlResolver({
+        getBaseURL: () => base, getConfig: () => {},
+      }, context);
       expect(resolvedURL).to.equal('www.spacecat.com');
       expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledOnce;
     });
@@ -408,7 +428,9 @@ describe('Audit tests', () => {
     it('wwwUrlResolver resolves to www for baseURLs with path using rum api client', async () => {
       const base = 'http://spacecat.com/us/en';
       context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves();
-      const resolvedURL = await wwwUrlResolver({ getBaseURL: () => base }, context);
+      const resolvedURL = await wwwUrlResolver({
+        getBaseURL: () => base, getConfig: () => {},
+      }, context);
       expect(resolvedURL).to.equal('www.spacecat.com');
       expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledOnce;
     });
@@ -417,7 +439,9 @@ describe('Audit tests', () => {
       const base = 'http://spacecat.com';
       context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').rejects();
       context.rumApiClient.retrieveDomainkey.withArgs('spacecat.com').resolves();
-      const resolvedURL = await wwwUrlResolver({ getBaseURL: () => base }, context);
+      const resolvedURL = await wwwUrlResolver({
+        getBaseURL: () => base, getConfig: () => {},
+      }, context);
       expect(resolvedURL).to.equal('spacecat.com');
       expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledTwice;
     });
@@ -426,7 +450,9 @@ describe('Audit tests', () => {
       const base = 'http://spacecat.com/us/en';
       context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').rejects();
       context.rumApiClient.retrieveDomainkey.withArgs('spacecat.com').resolves();
-      const resolvedURL = await wwwUrlResolver({ getBaseURL: () => base }, context);
+      const resolvedURL = await wwwUrlResolver({
+        getBaseURL: () => base, getConfig: () => {},
+      }, context);
       expect(resolvedURL).to.equal('spacecat.com');
       expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledTwice;
     });
@@ -435,7 +461,9 @@ describe('Audit tests', () => {
       const base = 'http://spacecat.com';
       context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').rejects();
       context.rumApiClient.retrieveDomainkey.withArgs('spacecat.com').rejects();
-      const resolvedURL = await wwwUrlResolver({ getBaseURL: () => base }, context);
+      const resolvedURL = await wwwUrlResolver({
+        getBaseURL: () => base, getConfig: () => {},
+      }, context);
       expect(resolvedURL).to.equal('www.spacecat.com');
       expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledTwice;
     });
@@ -444,7 +472,9 @@ describe('Audit tests', () => {
       const base = 'http://www.spacecat.com';
       context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').rejects();
       context.rumApiClient.retrieveDomainkey.withArgs('spacecat.com').rejects();
-      const resolvedURL = await wwwUrlResolver({ getBaseURL: () => base }, context);
+      const resolvedURL = await wwwUrlResolver({
+        getBaseURL: () => base, getConfig: () => {},
+      }, context);
       expect(resolvedURL).to.equal('www.spacecat.com');
       expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledTwice;
     });
