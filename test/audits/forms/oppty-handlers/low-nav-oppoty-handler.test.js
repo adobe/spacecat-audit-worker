@@ -38,6 +38,7 @@ describe('createLowNavigationOpportunities handler method', () => {
       getType: () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
       setData: sinon.stub(),
       setGuidance: sinon.stub(),
+      setUpdatedBy: sinon.stub(),
       getData: sinon.stub().returns({
         form: 'https://www.surest.com/newsletter',
         screenshot: '',
@@ -260,7 +261,7 @@ describe('createLowNavigationOpportunities handler method', () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
 
     await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
-
+    expect(formsCTAOppty.setUpdatedBy).to.be.calledWith('system');
     expect(formsCTAOppty.save).to.be.calledOnce;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });

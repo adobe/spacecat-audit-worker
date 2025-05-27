@@ -87,6 +87,8 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
           ...opportunityData.data,
         });
         highPageViewsLowFormViewsOptty.setGuidance(opportunityData.guidance);
+
+        highPageViewsLowFormViewsOptty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormViewsOptty.save();
       }
