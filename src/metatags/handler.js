@@ -198,7 +198,6 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const prefix = `scrapes/${site.getId()}/`;
   const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
-  log.info(`Found ${scrapedObjectKeys.length} scraped object keys for site ${site.getId()}`);
   const extractedTags = {};
   const pageMetadataResults = await Promise.all(scrapedObjectKeys
     .filter((key) => pagesSet.has(key))
@@ -254,7 +253,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
   const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
 
-  log.info(`Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process: ${totalPagesSet.size}`);
+  log.info(`Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`);
 
   const {
     seoChecks,
@@ -328,9 +327,8 @@ export async function submitForScraping(context) {
   // Combine includedURLs and topPages URLs to scrape
   const includedURLs = await site.getConfig().getIncludedURLs('meta-tags') || [];
 
-  log.info(`Total top-pages: ${topPagesUrls.length}, Total includedURLs: ${includedURLs.length}`);
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.info(`Final URLs to scrape: ${finalUrls.length}`);
+  log.info(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
   return {
     urls: finalUrls.map((url) => ({ url })),
