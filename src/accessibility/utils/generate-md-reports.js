@@ -713,20 +713,20 @@ function generateNewIssuesSection(diffData) {
  * @returns {string} Base report markdown
  */
 function generateBaseReportMarkdown(mdData) {
-  const { currentFile, lastWeekFile, relatedReportsUrls } = mdData;
+  const { current, lastWeek, relatedReportsUrls } = mdData;
   const {
     inDepthReportUrl,
     enhancedReportUrl,
     fixedVsNewReportUrl,
   } = relatedReportsUrls;
 
-  const wcagData = calculateWCAGData(currentFile);
-  const trafficViolations = processTrafficViolations(currentFile);
-  const quickWinsData = processQuickWinsData(currentFile);
+  const wcagData = calculateWCAGData(current);
+  const trafficViolations = processTrafficViolations(current);
+  const quickWinsData = processQuickWinsData(current);
 
   return [
-    generateAccessibilityComplianceOverviewSection(currentFile, lastWeekFile, inDepthReportUrl),
-    generateWeekOverWeekSection(currentFile, lastWeekFile, fixedVsNewReportUrl),
+    generateAccessibilityComplianceOverviewSection(current, lastWeek, inDepthReportUrl),
+    generateWeekOverWeekSection(current, lastWeek, fixedVsNewReportUrl),
     generateRoadToWCAGSection(wcagData),
     generateQuickWinsOverviewSection(quickWinsData, enhancedReportUrl),
     generateAccessibilityComplianceIssuesVsTrafficSection(trafficViolations, enhancedReportUrl),
@@ -735,53 +735,53 @@ function generateBaseReportMarkdown(mdData) {
 
 /**
  * Generate In-Depth Report in markdown format
- * @param {Object} currentFile - Current week's data
+ * @param {Object} current - Current week's data
  * @returns {string} In-depth report markdown
  */
 function generateInDepthReportMarkdown(mdData) {
-  const { currentFile } = mdData;
+  const { current } = mdData;
   const issuesOverview = {
     // eslint-disable-next-line max-len
-    levelA: Object.entries(currentFile.overall.violations.critical.items).map(([rule, data]) => ({ rule, ...data })),
+    levelA: Object.entries(current.overall.violations.critical.items).map(([rule, data]) => ({ rule, ...data })),
     // eslint-disable-next-line max-len
-    levelAA: Object.entries(currentFile.overall.violations.serious.items).map(([rule, data]) => ({ rule, ...data })),
+    levelAA: Object.entries(current.overall.violations.serious.items).map(([rule, data]) => ({ rule, ...data })),
   };
   return generateAccessibilityIssuesOverviewSection(issuesOverview);
 }
 
 /**
  * Generate Enhanced Report in markdown format
- * @param {Object} currentFile - Current week's data
+ * @param {Object} current - Current week's data
  * @returns {string} Enhanced report markdown
  */
 function generateEnhancedReportMarkdown(mdData) {
-  const { currentFile } = mdData;
-  const trafficViolations = processTrafficViolations(currentFile);
+  const { current } = mdData;
+  const trafficViolations = processTrafficViolations(current);
   const issuesOverview = {
     // eslint-disable-next-line max-len
-    levelA: Object.entries(currentFile.overall.violations.critical.items).map(([rule, data]) => ({ rule, ...data })),
+    levelA: Object.entries(current.overall.violations.critical.items).map(([rule, data]) => ({ rule, ...data })),
     // eslint-disable-next-line max-len
-    levelAA: Object.entries(currentFile.overall.violations.serious.items).map(([rule, data]) => ({ rule, ...data })),
+    levelAA: Object.entries(current.overall.violations.serious.items).map(([rule, data]) => ({ rule, ...data })),
   };
-  const quickWinsData = processQuickWinsData(currentFile);
+  const quickWinsData = processQuickWinsData(current);
 
   return [
-    generateEnhancingAccessibilitySection(trafficViolations, issuesOverview, currentFile),
+    generateEnhancingAccessibilitySection(trafficViolations, issuesOverview, current),
     generateQuickWinsPagesSection(quickWinsData, ''),
   ].join('');
 }
 
 /**
  * Generate Fixed-New Report in markdown format
- * @param {Object} currentFile - Current week's data
- * @param {Object} lastWeekFile - Last week's data
+ * @param {Object} current - Current week's data
+ * @param {Object} lastWeek - Last week's data
  * @returns {string} Fixed-New report markdown
  */
 function generateFixedNewReportMarkdown(mdData) {
-  const { currentFile, lastWeekFile } = mdData;
-  if (!lastWeekFile?.overall?.violations) return '';
+  const { current, lastWeek } = mdData;
+  if (!lastWeek?.overall?.violations) return '';
 
-  const diffData = calculateDiffData(currentFile, lastWeekFile);
+  const diffData = calculateDiffData(current, lastWeek);
   const sections = [];
 
   // Fixed Issues Section
