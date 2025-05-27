@@ -63,10 +63,17 @@ export async function run(message, context) {
     throw new Error('Missing required SLACK_BOT_TOKEN environment variable');
   }
 
+  if (!env.SLACK_SIGNING_SECRET) {
+    log.error('Missing required SLACK_SIGNING_SECRET environment variable');
+    throw new Error('Missing required SLACK_SIGNING_SECRET environment variable');
+  }
+
+  // Log raw message without stringifying strings
   log.info('Handler received message:', {
     messageKeys: Object.keys(message),
     messageValues: Object.entries(message).reduce((acc, [key, value]) => {
-      acc[key] = typeof value === 'object' ? JSON.stringify(value) : value;
+      // Don't stringify if it's already a string
+      acc[key] = typeof value === 'string' ? value : JSON.stringify(value);
       return acc;
     }, {}),
   });
@@ -76,27 +83,26 @@ export async function run(message, context) {
     auditContext: auditContextStr,
   } = message;
 
-  // Parse the auditContext JSON string, handling potential double encoding
+  log.info('Raw auditContext:', {
+    value: auditContextStr,
+    type: typeof auditContextStr,
+    length: auditContextStr?.length,
+  });
+
+  // Parse the auditContext JSON string
   let auditContext;
   try {
-    // First try parsing as is
-    try {
-      auditContext = JSON.parse(auditContextStr);
-    } catch (e) {
-      log.info('Failed to parse auditContext:', {
-        error: e.message,
-        auditContextStr,
-        auditContextType: typeof auditContextStr,
-      });
-      // If that fails, try parsing again in case it's double encoded
-      auditContext = JSON.parse(JSON.parse(auditContextStr));
-    }
-    log.info('Parsed auditContext:', auditContext);
+    // Try parsing once since we know it's a JSON string
+    auditContext = JSON.parse(auditContextStr);
+    log.info('Successfully parsed auditContext:', auditContext);
   } catch (error) {
     log.error('Failed to parse auditContext:', {
       error: error.message,
+      errorType: error.name,
+      stack: error.stack,
       auditContextStr,
       auditContextType: typeof auditContextStr,
+      auditContextLength: auditContextStr?.length,
     });
     throw new Error(`Invalid auditContext format: ${error.message}`);
   }
@@ -117,12 +123,14 @@ export async function run(message, context) {
     throw new Error('Missing required slackContext in auditContext');
   }
 
+  if (!slackContext.channelId) {
+    log.error('Missing channelId in slackContext:', slackContext);
+    throw new Error('Missing required channelId in slackContext');
+  }
+
   log.info('Slack context:', {
     slackContextKeys: Object.keys(slackContext),
-    slackContextValues: Object.entries(slackContext).reduce((acc, [key, value]) => {
-      acc[key] = typeof value === 'object' ? JSON.stringify(value) : value;
-      return acc;
-    }, {}),
+    slackContextValues: slackContext, // Don't stringify objects in logs
   });
 
   log.info('Processing audit status for site:', {
@@ -145,16 +153,22 @@ export async function run(message, context) {
       text,
       blocks: JSON.stringify(blocks),
       slackContext: JSON.stringify(slackContext),
+      hasToken: !!env.SLACK_BOT_TOKEN,
+      hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
     });
 
     const slackResult = await sendSlackMessage(
       context,
       slackContext,
       text,
-      blocks,
+      blocks, // Make sure blocks are passed
     );
 
-    log.info('Slack message sent:', slackResult);
+    log.info('Slack message sent:', {
+      result: JSON.stringify(slackResult),
+      channel: slackContext.channelId,
+      thread: slackContext.threadTs || 'new thread',
+    });
 
     return {
       siteId,
@@ -168,7 +182,11 @@ export async function run(message, context) {
       fullAuditRef: siteUrl,
     };
   } catch (error) {
-    log.error('Error in audit status processor:', error);
+    log.error('Error in audit status processor:', {
+      error: error.message,
+      stack: error.stack,
+      errorType: error.name,
+    });
     // Try to send error message to Slack
     try {
       const { text, blocks } = createAuditStatusMessage(
@@ -181,10 +199,14 @@ export async function run(message, context) {
         context,
         slackContext,
         text,
-        blocks,
+        blocks, // Make sure blocks are passed
       );
     } catch (slackError) {
-      log.error('Failed to send error message to Slack:', slackError);
+      log.error('Failed to send error message to Slack:', {
+        error: slackError.message,
+        stack: slackError.stack,
+        errorType: slackError.name,
+      });
     }
 
     return {
