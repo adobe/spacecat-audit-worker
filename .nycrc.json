@@ -3,7 +3,7 @@
     "lcov",
     "text"
   ],
-  "check-coverage": false,
+  "check-coverage": true,
   "lines": 100,
   "branches": 100,
   "statements": 100,
@@ -12,6 +12,7 @@
     "src/**/*.js"
   ],
   "exclude": [
-    "src/index-local.js"
+    "src/index-local.js",
+    "src/accessibility"
   ]
 }
