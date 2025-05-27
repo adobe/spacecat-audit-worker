@@ -14,6 +14,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const auditType = Audit.AUDIT_TYPES.AUDIT_STATUS_PROCESSOR;
 
 /**
@@ -132,5 +133,5 @@ export async function runAuditStatus(context) {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('run-audit-status', runAuditStatus)
+  .addStep('run-audit-status', runAuditStatus, AUDIT_STEP_DESTINATIONS.AUDIT_WORKER)
   .build();
