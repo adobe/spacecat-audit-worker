@@ -555,7 +555,9 @@ export async function generateReportOpportunity(
   const reportMarkdown = genMdFn(mdData);
 
   if (!reportMarkdown) {
-    throw new Error(`Failed to generate markdown for ${reportName}`);
+    // If the markdown is empty, we don't want to create an opportunity
+    // and we don't want to throw an error
+    return '';
   }
 
   // 1.2 create the opportunity for the report
