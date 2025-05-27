@@ -67,22 +67,33 @@ export async function run(message, context) {
 
   const {
     siteId,
-    organizationId,
-    auditStatusJob,
-    slackContext,
+    auditContext: auditContextStr,
   } = message;
 
-  // Get the site URL from the audit status job
-  const siteUrl = auditStatusJob?.siteUrl || message.siteUrl;
+  // Parse the auditContext JSON string
+  let auditContext;
+  try {
+    auditContext = JSON.parse(auditContextStr);
+    log.info('Parsed auditContext:', auditContext);
+  } catch (error) {
+    log.error('Failed to parse auditContext:', error);
+    throw new Error('Invalid auditContext format');
+  }
+
+  const {
+    experienceUrl: siteUrl,
+    slackContext,
+    organizationId,
+  } = auditContext;
 
   if (!siteUrl) {
-    log.error('Missing siteUrl in message:', message);
-    throw new Error('Missing required siteUrl in message');
+    log.error('Missing siteUrl in auditContext:', auditContext);
+    throw new Error('Missing required siteUrl in auditContext');
   }
 
   if (!slackContext) {
-    log.error('Missing slackContext in message:', message);
-    throw new Error('Missing required slackContext in message');
+    log.error('Missing slackContext in auditContext:', auditContext);
+    throw new Error('Missing required slackContext in auditContext');
   }
 
   log.info('Slack context:', {
