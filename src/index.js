@@ -41,7 +41,7 @@ import highFormViewsLowConversionsGuidance from './forms-opportunities/oppty-han
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
-import auditStatus from './audit-status-processor/handler.js';
+import { run as auditStatus } from './audit-status-processor/handler.js';
 
 const HANDLERS = {
   apex,
@@ -98,11 +98,13 @@ async function run(message, context) {
   }
 
   log.info(`Found handler for type: ${type}`);
-  log.info('Handler object:', {
+  log.info('Handler details:', {
+    handler,
     hasRun: typeof handler.run === 'function',
     hasExecute: typeof handler.execute === 'function',
     handlerKeys: Object.keys(handler),
     handlerType: typeof handler,
+    handlerString: handler.toString(),
   });
 
   const startTime = process.hrtime();
@@ -110,10 +112,13 @@ async function run(message, context) {
   try {
     let result;
     if (typeof handler.execute === 'function') {
+      log.info('Using handler.execute');
       result = await handler.execute(message, context);
     } else if (typeof handler.run === 'function') {
+      log.info('Using handler.run');
       result = await handler.run(message, context);
     } else {
+      log.info('Using handler directly');
       result = await handler(message, context);
     }
 
