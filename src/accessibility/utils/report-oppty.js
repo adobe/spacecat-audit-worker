@@ -69,7 +69,7 @@ export function createBaseReportOpportunity(week, year) {
 export function createReportOpportunitySuggestionInstance(suggestionValue) {
   return [
     {
-      type: 'CONTENT_UPDATE',
+      type: 'CODE_CHANGE',
       rank: 1,
       status: 'NEW',
       data: {

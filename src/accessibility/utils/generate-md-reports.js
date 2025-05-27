@@ -18,21 +18,6 @@ import {
   accessibilityUserImpact,
 } from './constants.js';
 
-// =============================================
-// Utility Functions
-// =============================================
-
-/**
- * Format traffic numbers to use K for thousands and M for millions
- * @param {number} traffic - Traffic number
- * @returns {string} Formatted traffic value
- */
-function formatTraffic(traffic) {
-  if (traffic >= 1000000) return `${(traffic / 1000000).toFixed(1)}M`;
-  if (traffic >= 1000) return `${(traffic / 1000).toFixed(1)}K`;
-  return traffic.toString();
-}
-
 /**
  * Escape HTML tags in text, but preserve existing backtick-wrapped content
  * @param {string} text - Text that might contain HTML tags
@@ -47,19 +32,6 @@ function escapeHtmlTags(text) {
   });
   escapedText = escapedText.replace(/<([^>]+)>/g, '`<$1>`');
   return escapedText.replace(/___BACKTICK___/g, () => `\`${backtickContent.shift()}\``);
-}
-
-/**
- * Get the ISO week number for a date
- * @param {Date} date - Date to get week number for
- * @returns {number} Week number
- */
-function getWeekNumber(date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
 }
 
 /**
@@ -263,6 +235,15 @@ function generateRoadToWCAGSection(wcagData) {
 
   section += '---\n\n';
   return section;
+}
+
+/**
+ * Format traffic numbers to use K for thousands and M for millions
+ * @param {number} traffic - Traffic number
+ * @returns {string} Formatted traffic value
+ */
+function formatTraffic(traffic) {
+  return Intl.NumberFormat('en', { notation: 'compact' }).format(traffic);
 }
 
 // eslint-disable-next-line max-len
@@ -731,7 +712,8 @@ function generateNewIssuesSection(diffData) {
  * @param {Object} lastWeekFile - Last week's data
  * @returns {string} Base report markdown
  */
-function generateBaseReportMarkdown(currentFile, lastWeekFile, relatedReportsUrls) {
+function generateBaseReportMarkdown(mdData) {
+  const { currentFile, lastWeekFile, relatedReportsUrls } = mdData;
   const {
     inDepthReportUrl,
     enhancedReportUrl,
@@ -756,7 +738,8 @@ function generateBaseReportMarkdown(currentFile, lastWeekFile, relatedReportsUrl
  * @param {Object} currentFile - Current week's data
  * @returns {string} In-depth report markdown
  */
-function generateInDepthReportMarkdown(currentFile) {
+function generateInDepthReportMarkdown(mdData) {
+  const { currentFile } = mdData;
   const issuesOverview = {
     // eslint-disable-next-line max-len
     levelA: Object.entries(currentFile.overall.violations.critical.items).map(([rule, data]) => ({ rule, ...data })),
@@ -771,7 +754,8 @@ function generateInDepthReportMarkdown(currentFile) {
  * @param {Object} currentFile - Current week's data
  * @returns {string} Enhanced report markdown
  */
-function generateEnhancedReportMarkdown(currentFile) {
+function generateEnhancedReportMarkdown(mdData) {
+  const { currentFile } = mdData;
   const trafficViolations = processTrafficViolations(currentFile);
   const issuesOverview = {
     // eslint-disable-next-line max-len
@@ -793,7 +777,8 @@ function generateEnhancedReportMarkdown(currentFile) {
  * @param {Object} lastWeekFile - Last week's data
  * @returns {string} Fixed-New report markdown
  */
-function generateFixedNewReportMarkdown(currentFile, lastWeekFile) {
+function generateFixedNewReportMarkdown(mdData) {
+  const { currentFile, lastWeekFile } = mdData;
   if (!lastWeekFile?.overall?.violations) return '';
 
   const diffData = calculateDiffData(currentFile, lastWeekFile);
@@ -820,5 +805,4 @@ export {
   generateInDepthReportMarkdown,
   generateEnhancedReportMarkdown,
   generateFixedNewReportMarkdown,
-  getWeekNumber,
 };

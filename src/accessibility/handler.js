@@ -12,43 +12,49 @@
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { wwwUrlResolver } from '../common/index.js';
 import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
 // First step: sends a message to the content scraper to generate accessibility audits
-async function scrapeAccessibilityData(context) {
+export async function scrapeAccessibilityData(context) {
   const {
     site, log, finalUrl, env, s3Client,
   } = context;
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-  log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()}`);
+  if (!bucketName) {
+    const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
+    log.error(errorMsg);
+    return {
+      status: 'PROCESSING_FAILED',
+      error: errorMsg,
+    };
+  }
+  log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
   const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
   return {
-    auditResult: { status: 'SCRAPING_REQUESTED', message: 'Content scraping for accessibility audit initiated.' },
+    auditResult: { status: 'SCRAPING_REQUESTED', message: 'Content scraping for accessibility audit initiated.', scrapedUrls: urlsToScrape },
     fullAuditRef: finalUrl,
     // Data for the CONTENT_SCRAPER
     urls: urlsToScrape,
-    siteId: site.getId(),
-    jobId: site.getId(),
+    siteId,
+    jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
   };
 }
 
 // Second step: gets data from the first step and processes it to create new opportunities
-async function processAccessibilityOpportunities(context) {
+export async function processAccessibilityOpportunities(context) {
   const {
     site, log, s3Client, env,
   } = context;
   const siteId = site.getId();
-  const isProd = env.AWS_ENV === 'prod';
   const version = new Date().toISOString().split('T')[0];
   const outputKey = `accessibility/${siteId}/${version}-final-result.json`;
 
@@ -93,7 +99,12 @@ async function processAccessibilityOpportunities(context) {
   }
 
   try {
-    await generateReportOpportunities(site, log, aggregationResult, isProd, context);
+    await generateReportOpportunities(
+      site,
+      aggregationResult,
+      context,
+      AUDIT_TYPE_ACCESSIBILITY,
+    );
   } catch (error) {
     log.error(`[A11yAudit] Error generating report opportunities: ${error.message}`, error);
     return {
@@ -104,7 +115,8 @@ async function processAccessibilityOpportunities(context) {
 
   // Extract some key metrics for the audit result
   const totalIssues = aggregationResult.finalResultFiles.current.overall.violations.total;
-  const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length;
+  // -1 for the overall key
+  const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
 
   // Return the final result
   return {
@@ -117,7 +129,6 @@ async function processAccessibilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(wwwUrlResolver) // Keeps the existing URL resolver
   // First step: Prepare and send data to CONTENT_SCRAPER
   .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   // Second step: Process the scraped data to find opportunities
