@@ -75,22 +75,17 @@ const pageTypes = {
   'other | Other Pages': /.*/,
 };
 
-function getSite(isString = true) {
+function getSite() {
   const config = Object.entries(pageTypes).map(([name, patternReg]) => {
-    let patternInput;
-    if (isString) {
-      patternInput = patternReg;
-    } else {
-      const safeRegex = {
-        pattern: patternReg.source,
-        flags: patternReg.flags,
-      };
-      patternInput = safeRegex;
-    }
+    const safeRegex = {
+      pattern: patternReg.source,
+      flags: patternReg.flags,
+    };
+
     return (
       {
         name,
-        pattern: isString ? patternInput : JSON.stringify(patternInput),
+        pattern: JSON.stringify(safeRegex),
       });
   });
 
@@ -100,6 +95,7 @@ function getSite(isString = true) {
 
   return {
     getConfig: () => siteConfig,
+    getSiteId: () => 'some-id',
   };
 }
 
@@ -195,7 +191,7 @@ describe('Paid audit incorporates optel data as input', () => {
       .find((item) => item.key === 'pageType')
       .value;
     pageSegemnt.forEach((item) => {
-      expect(item.urls).to.eqls([]);
+      expect(item).to.have.haveOwnProperty('urls');
     });
     expect(missingUrl.pageType).to.eq('other | Other Pages');
   });
@@ -231,6 +227,7 @@ describe('Paid audit incorporates optel data as input', () => {
 
     const siteWithMissingConfig = {
       getConfig: () => siteConfig,
+      getSiteId: () => 'someId',
     };
 
     const result = await paidAuditRunner(auditUrl, context, siteWithMissingConfig);

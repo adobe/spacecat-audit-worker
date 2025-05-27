@@ -15,30 +15,37 @@ import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 
 const MAX_SEGMENT_SIZE = 3;
-const INTERVAL = 7; // days
+const INTERVAL_DAYS = 7;
 const UNCATEGORIZED = 'uncategorized';
 
-const allowedSegments = ['url', 'pageType'];
+const ALLOWED_SEGMENTS = ['url', 'pageType'];
+const SITE_CLASSIFIER = {};
+let log;
 
-function filterByAllowedSegments(segments, allowed) {
-  return segments.filter((segment) => allowed.includes(segment.key));
-}
+const isAllowedSegment = (segment) => ALLOWED_SEGMENTS.includes(segment.key);
+const filterByTopSessionViews = (segment) => {
+  const { key, value } = segment;
 
-function filterByTopSessionViews(segments) {
-  const result = segments
-    .map((segment) => {
-      const sortedByTotalSession = segment
-        .value.sort((a, b) => b.totalSessions - a.totalSessions);
-      const top10Sessions = (sortedByTotalSession?.length > MAX_SEGMENT_SIZE)
-        ? sortedByTotalSession.slice(0, MAX_SEGMENT_SIZE)
-        : sortedByTotalSession;
-      return {
-        key: segment.key,
-        value: top10Sessions,
-      };
-    });
-  return result;
-}
+  if (value.length <= MAX_SEGMENT_SIZE) {
+    return segment;
+  }
+
+  const topSessions = [...value]
+    .sort((a, b) => b.totalSessions - a.totalSessions)
+    .slice(0, MAX_SEGMENT_SIZE);
+
+  return { key, value: topSessions };
+};
+
+const removeUncategorizedPages = (segment) => {
+  const categorized = segment.value.filter((valueItem) => valueItem.type !== 'uncategorized');
+  return {
+    key: segment.key,
+    value: categorized,
+  };
+};
+
+const hasValues = (segment) => segment.value?.length > 0;
 
 function classifyUrl(url, classifier) {
   let pageType = UNCATEGORIZED;
@@ -52,88 +59,71 @@ function classifyUrl(url, classifier) {
   return pageType;
 }
 
-function fetchPageTypeClassifier(log, siteId, site) {
+function fetchPageTypeClassifier(site) {
+  const siteId = site.getSiteId();
   log.info(`Fetching classifier for site ${siteId}`);
 
-  const config = site.getConfig()?.getGroupedURLs('paid');
-  const pageTypes = config?.map((item) => {
-    const page = item.name;
-    let pattern;
-    if ((item.pattern) instanceof RegExp) {
-      pattern = item.pattern;
-    } else {
-      const deserialized = JSON.parse(item.pattern);
-      pattern = new RegExp(deserialized.pattern, deserialized.flags);
+  let classifier = SITE_CLASSIFIER[siteId];
+  if (!classifier) {
+    const config = site.getConfig()?.getGroupedURLs('paid');
+    const pageTypes = config?.map((item) => {
+      const page = item.name;
+      const patternObj = JSON.parse(item.pattern);
+      const pattern = new RegExp(patternObj.pattern, patternObj.flags);
+      return {
+        [page]: pattern,
+      };
+    });
+
+    classifier = pageTypes?.reduce((acc, pageType) => ({ ...acc, ...pageType }), {});
+
+    if (classifier) {
+      SITE_CLASSIFIER[siteId] = classifier;
     }
-    return {
-      [page]: pattern,
-    };
-  });
-
-  return pageTypes?.reduce((acc, pageType) => ({ ...acc, ...pageType }), {});
-}
-
-function removeUncategorizedPages(segment) {
-  const categorized = segment.value.filter((valueItem) => valueItem.type !== 'uncategorized');
-  return {
-    key: segment.key,
-    value: categorized,
-  };
-}
-
-function createPageTypeUrls(auditResult) {
-  const urlsSegment = auditResult.find((segment) => segment.key === 'url');
-  const urls = urlsSegment?.value || [];
-
-  const pageTypeUrls = urls.reduce((pageTypeDic, entry) => {
-    const { pageType, url } = entry;
-    if (!pageType || !url) return pageTypeDic;
-    return {
-      ...pageTypeDic,
-      [pageType]: [...(pageTypeDic[pageType] || []), url],
-    };
-  }, {});
-
-  return pageTypeUrls;
+  }
+  return classifier;
 }
 
 function enrichPageTypes(auditResult, classifier) {
-  const enriched = auditResult?.map((segment) => {
+  const typeUrlsMap = {};
+
+  let enriched = auditResult.map((segment) => {
     if (segment.key === 'url') {
-      const enrichedValues = segment.value.map((vEntry) => ({
-        ...vEntry,
-        pageType: classifyUrl(vEntry?.url, classifier),
-      }));
+      const enrichedWithPageTypes = segment.value.map((vEntry) => {
+        const { url } = vEntry;
+        const pageType = classifyUrl(url, classifier);
+        const urls = typeUrlsMap[pageType] ?? [];
+        urls.push(url);
+        typeUrlsMap[pageType] = urls;
+        return {
+          ...vEntry,
+          pageType,
+        };
+      });
 
       return {
         key: segment.key,
-        value: enrichedValues,
+        value: enrichedWithPageTypes,
       };
     }
+
     return segment;
   });
 
-  return enriched;
-}
-
-function enrichContainedUrls(enrichedPageTypeUrs) {
-  const pageUrlDict = createPageTypeUrls(enrichedPageTypeUrs);
-
-  const enriched = enrichedPageTypeUrs?.map((segment) => {
+  enriched = enriched.map((segment) => {
     if (segment.key === 'pageType') {
-      const enrichedValue = segment.value.map((pt) => {
-        const type = pt?.type;
-        let urls = type ? pageUrlDict[type] : [];
-        urls = urls ?? [];
+      const enrichedWithUrls = segment.value.map((vEntry) => {
+        const { type } = vEntry;
+        const urls = typeUrlsMap[type] ?? [];
         return {
-          ...pt,
+          ...vEntry,
           urls,
         };
       });
 
       return {
         key: segment.key,
-        value: enrichedValue,
+        value: enrichedWithUrls,
       };
     }
     return segment;
@@ -142,31 +132,43 @@ function enrichContainedUrls(enrichedPageTypeUrs) {
   return enriched;
 }
 
+function tryEnrich(segments, classifier, auditUrl) {
+  if (isNonEmptyObject(classifier)) {
+    return enrichPageTypes(segments, classifier);
+  }
+  log.warn(`Page type configuration is missing for site ${auditUrl}. Proceeding with auit without page and url enrichment`);
+
+  return segments;
+}
+
 export async function paidAuditRunner(auditUrl, context, site) {
-  const { log } = context;
+  if (typeof log === 'undefined') {
+    log = context.log;
+  }
+
   const rumAPIClient = RUMAPIClient.createFrom(context, auditUrl, site);
-  const classifier = fetchPageTypeClassifier(log, auditUrl, site);
+  const classifier = fetchPageTypeClassifier(site);
+
+  const hasClassifier = isNonEmptyObject(classifier);
   const options = {
     domain: auditUrl,
-    interval: INTERVAL,
+    interval: INTERVAL_DAYS,
     granularity: 'hourly',
     pageTypes: classifier,
   };
 
-  log.info(`Querying paid Optel metrics for site ${auditUrl} with hasPageClassifier: ${isNonEmptyObject(classifier)}`);
+  log.info(`Querying paid Optel metrics for site ${auditUrl} with hasPageClassifier: ${hasClassifier}`);
   const allSegments = await rumAPIClient.query('trafficMetrics', options);
-  let resultSubset = filterByAllowedSegments(allSegments, allowedSegments);
-  if (isNonEmptyObject(classifier)) {
-    const enrichedWithPageType = enrichPageTypes(resultSubset, classifier);
-    resultSubset = enrichContainedUrls(enrichedWithPageType);
-  } else {
-    log.warn(`Page type configuration is missing for site ${auditUrl}. Proceeding with auit without page and url enrichment`);
-  }
+  const segmentsFiltered = allSegments
+    .filter(isAllowedSegment);
 
-  log.info(`Filtering ${resultSubset?.length} segments by top totalSessions`);
-  const top = filterByTopSessionViews(resultSubset);
-  const topNoUncategorized = top.map((segment) => removeUncategorizedPages(segment));
-  const auditResult = topNoUncategorized.filter((segment) => segment.value?.length > 0);
+  const enrichedResult = tryEnrich(segmentsFiltered, classifier, auditUrl);
+
+  log.info(`Filtering ${enrichedResult?.length} segments by top totalSessions`);
+  const auditResult = enrichedResult
+    .map(filterByTopSessionViews)
+    .map(removeUncategorizedPages)
+    .filter(hasValues);
 
   log.info(`Traffic metric runner has completed  for domain: ${auditUrl} and found segment Count: ${auditResult?.length}`);
 
