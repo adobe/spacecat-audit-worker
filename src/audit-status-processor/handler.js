@@ -69,6 +69,7 @@ export async function run(message, context) {
     siteId,
     organizationId,
     auditStatusJob,
+    slackContext,
   } = message;
 
   // Get the site URL from the audit status job
@@ -78,6 +79,19 @@ export async function run(message, context) {
     log.error('Missing siteUrl in message:', message);
     throw new Error('Missing required siteUrl in message');
   }
+
+  if (!slackContext) {
+    log.error('Missing slackContext in message:', message);
+    throw new Error('Missing required slackContext in message');
+  }
+
+  log.info('Slack context:', {
+    slackContextKeys: Object.keys(slackContext),
+    slackContextValues: Object.entries(slackContext).reduce((acc, [key, value]) => {
+      acc[key] = typeof value === 'object' ? JSON.stringify(value) : value;
+      return acc;
+    }, {}),
+  });
 
   log.info('Processing audit status for site:', {
     siteId,
@@ -95,12 +109,20 @@ export async function run(message, context) {
       'Processing',
     );
 
-    await sendSlackMessage(
+    log.info('Sending Slack message:', {
+      text,
+      blocks: JSON.stringify(blocks),
+      slackContext: JSON.stringify(slackContext),
+    });
+
+    const slackResult = await sendSlackMessage(
       context,
-      message.slackContext,
+      slackContext,
       text,
       blocks,
     );
+
+    log.info('Slack message sent:', slackResult);
 
     return {
       siteId,
@@ -115,6 +137,24 @@ export async function run(message, context) {
     };
   } catch (error) {
     log.error('Error in audit status processor:', error);
+    // Try to send error message to Slack
+    try {
+      const { text, blocks } = createAuditStatusMessage(
+        siteId,
+        organizationId,
+        siteUrl,
+        `Error: ${error.message}`,
+      );
+      await sendSlackMessage(
+        context,
+        slackContext,
+        text,
+        blocks,
+      );
+    } catch (slackError) {
+      log.error('Failed to send error message to Slack:', slackError);
+    }
+
     return {
       siteId,
       auditResult: {
