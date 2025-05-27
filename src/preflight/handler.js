@@ -19,7 +19,7 @@ import { metatagsAutoDetect } from '../metatags/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
 import { runInternalLinkChecks } from './internal-links.js';
-import { validateCanonicalFormat, validateCanonicalRecursively, validateCanonicalTag } from '../canonical/handler.js';
+import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const AUDIT_STEP_IDENTIFY = 'identify';
@@ -120,12 +120,11 @@ export const preflightAudit = async (context) => {
         const {
           canonicalUrl,
           checks: tagChecks,
-        } = await validateCanonicalTag(url, log, authHeader);
+        } = await validateCanonicalTag(url, log, authHeader, true);
         const allChecks = [...tagChecks];
         if (canonicalUrl) {
           log.info(`Found Canonical URL: ${canonicalUrl}`);
-          allChecks.push(...validateCanonicalFormat(canonicalUrl, baseURL, log));
-          allChecks.push(...(await validateCanonicalRecursively(canonicalUrl, log, authHeader)));
+          allChecks.push(...validateCanonicalFormat(canonicalUrl, baseURL, log, true));
         }
         return { url, checks: allChecks.filter((c) => !c.success) };
       }),
