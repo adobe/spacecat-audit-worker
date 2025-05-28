@@ -22,7 +22,11 @@
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
+import {
+  aggregateAccessibilityData,
+  getUrlsForAudit,
+  // generateReportOpportunities
+} from './utils/data-processing.js';
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -147,21 +151,21 @@ export async function processAccessibilityOpportunities(context) {
   }
 
   // Step 2b: Generate report-level opportunities (site-wide accessibility summary)
-  try {
-    await generateReportOpportunities(
-      site,
-      aggregationResult,
-      context,
-      AUDIT_TYPE_ACCESSIBILITY,
-    );
-    log.debug('[A11yAudit] Report opportunities created successfully');
-  } catch (error) {
-    log.error(`[A11yAudit] Error generating report opportunities: ${error.message}`, error);
-    return {
-      status: 'PROCESSING_FAILED',
-      error: error.message,
-    };
-  }
+  // try {
+  //   await generateReportOpportunities(
+  //     site,
+  //     aggregationResult,
+  //     context,
+  //     AUDIT_TYPE_ACCESSIBILITY,
+  //   );
+  //   log.debug('[A11yAudit] Report opportunities created successfully');
+  // } catch (error) {
+  //   log.error(`[A11yAudit] Error generating report opportunities: ${error.message}`, error);
+  //   return {
+  //     status: 'PROCESSING_FAILED',
+  //     error: error.message,
+  //   };
+  // }
 
   // Step 2c: Create individual opportunities (URL-specific accessibility issues)
   try {
