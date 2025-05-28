@@ -24,33 +24,22 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.DISABLE_IMPORT_AUDIT_PROCESSOR;
  * @returns {Promise<object>} The result
  */
 export async function runDisableImportAuditProcessor(message, context) {
-  const { log, env } = context;
-
-  log.info(`Running ${AUDIT_TYPE}`);
-
+  const {
+    log, env, site, dataAccess,
+  } = context;
+  const { Configuration } = dataAccess;
   const { siteId, auditContext } = message;
   const {
     organizationId, importTypes = [], auditTypes = [], slackContext,
   } = auditContext;
-  const { threadTs, channelId } = slackContext;
 
   log.info('Processing disable request:', {
+    auditType: AUDIT_TYPE,
     siteId,
     organizationId,
     importTypes,
     auditTypes,
-    threadTs,
-    channelId,
   });
-
-  if (!channelId) {
-    log.error('Missing channelId in slackContext:', slackContext);
-    throw new Error('Missing required channelId in slackContext');
-  }
-  if (!threadTs) {
-    log.error('Missing threadTs in slackContext:', slackContext);
-    throw new Error('Missing required threadTs in slackContext');
-  }
 
   try {
     // Create Slack client
@@ -59,10 +48,6 @@ export async function runDisableImportAuditProcessor(message, context) {
       slackContext.threadTs,
       env,
     );
-
-    // Get site and configuration
-    const { site, dataAccess } = context;
-    const { Configuration } = dataAccess;
 
     // Disable imports
     const siteConfig = site.getConfig();

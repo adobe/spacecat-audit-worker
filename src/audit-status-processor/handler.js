@@ -40,6 +40,7 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
     siteUrl,
     organizationId,
     auditType: AUDIT_TYPE,
+    auditTypes,
   });
 
   try {
@@ -53,15 +54,16 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
     // Check latest audit status for each audit type in parallel
     const auditStatusPromises = auditTypes.map(async (auditType) => {
       const latestAudit = await Audit.findLatestBySiteIdAndAuditType(siteId, auditType);
+      log.info(`Latest audit for site ${siteId} and audit type ${auditType}: ${JSON.stringify(latestAudit)}`);
       if (latestAudit) {
         const auditResult = latestAudit.getAuditResult();
         if (auditResult.success) {
-          log.info(`Latest ${auditType} audit for site ${siteId} was successful`);
-          const slackMessage = `:check_mark: Latest ${auditType} audit for site ${siteId} was successful`;
+          log.info(`Latest audit for site ${siteId} was successful for audit type ${auditType}`);
+          const slackMessage = `:check_mark: Latest audit for site ${siteId} was successful for audit type ${auditType}`;
           return sendSlackMessage(slackClient, slackContext, slackMessage);
         } else {
-          log.warn(`Latest ${auditType} audit for site ${siteId} failed: ${auditResult.error || 'Unknown error'}`);
-          const slackMessage = `:x: Latest ${auditType} audit for site ${siteId} failed: ${auditResult.error || 'Unknown error'}`;
+          log.warn(`Latest audit for site ${siteId} failed for audit type ${auditType}: ${auditResult.error || 'Unknown error'}`);
+          const slackMessage = `:x: Latest audit for site ${siteId} failed for audit type ${auditType}: ${auditResult.error || 'Unknown error'}`;
           return sendSlackMessage(slackClient, slackContext, slackMessage);
         }
       } else {
