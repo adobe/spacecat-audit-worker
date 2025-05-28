@@ -101,8 +101,7 @@ export async function run(auditStatusMessage, context) {
         SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
         SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
       },
-      target: 'internal',
-    });
+    }, 'internal');
 
     // Create and send the status message
     const slackMessage = createAuditStatusMessage(
