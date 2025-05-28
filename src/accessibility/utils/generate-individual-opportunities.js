@@ -266,7 +266,7 @@ export async function createIndividualOpportunitySuggestions(
  */
 export async function createAccessibilityIndividualOpportunities(accessibilityData, context) {
   const {
-    site, log,
+    site, log, dataAccess,
   } = context;
 
   log.info(`[A11yIndividual] Creating accessibility opportunities for ${site.getBaseURL()}`);
@@ -290,13 +290,12 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     log.debug(`[A11yIndividual] Using auditId: ${auditData.auditId}`);
 
     // Step 2a: Check for existing assistive opportunities and delete if found
-    const { dataAccess } = context;
     const { Opportunity } = dataAccess;
     const opportunityInstance = createAccessibilityAssistiveOpportunity();
 
-    const existingOpportunities = await Opportunity.allBySiteIdAndType(
-      auditData.siteId,
-      opportunityInstance.type,
+    const allOpportunities = await Opportunity.allBySiteId(auditData.siteId);
+    const existingOpportunities = allOpportunities.filter(
+      (opportunity) => opportunity.getType() === opportunityInstance.type,
     );
 
     if (existingOpportunities.length > 0) {
