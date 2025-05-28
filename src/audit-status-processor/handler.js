@@ -95,8 +95,8 @@ export async function run(auditStatusMessage, context) {
   try {
     // Create Slack client
     const slackClient = BaseSlackClient.createFrom({
-      channelId,
-      threadTs,
+      channelId: slackContext.channelId,
+      threadTs: slackContext.threadTs,
       env: {
         SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
         SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
