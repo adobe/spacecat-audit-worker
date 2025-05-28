@@ -30,20 +30,20 @@ function prepareDemoUrl(experienceUrl, organizationId, siteId) {
  */
 export async function runAuditStatusProcessor(auditStatusMessage, context) {
   const { log, env } = context;
+  log.info('Running audit status processor');
   const { siteId, auditContext } = auditStatusMessage;
   const {
     experienceUrl: siteUrl, organizationId, auditTypes, slackContext,
   } = auditContext;
-
-  log.info('Processing audit status for site:', {
-    siteId,
-    siteUrl,
-    organizationId,
-    auditType: AUDIT_TYPE,
-    auditTypes,
-  });
-
   try {
+    log.info('Processing audit status for site:', {
+      siteId,
+      siteUrl,
+      organizationId,
+      auditType: AUDIT_TYPE,
+      auditTypes,
+    });
+
     // Create Slack client
     const slackClient = await createSlackClientForInternal(
       slackContext.channelId,
@@ -76,7 +76,7 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
 
     // prepare demo url
     const demoUrl = prepareDemoUrl(siteUrl, organizationId, siteId);
-    log.info(`Demo url: ${demoUrl}`);
+    log.info(`Demo url is ready ${demoUrl}`);
     await sendSlackMessage(slackClient, slackContext, `:tada: Demo url: ${demoUrl}`);
 
     return {

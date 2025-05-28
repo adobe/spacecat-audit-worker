@@ -27,21 +27,22 @@ export async function runDisableImportAuditProcessor(message, context) {
   const {
     log, env, site, dataAccess,
   } = context;
-  const { Configuration } = dataAccess;
   const { siteId, auditContext } = message;
-  const {
-    organizationId, importTypes = [], auditTypes = [], slackContext,
-  } = auditContext;
-
-  log.info('Processing disable request:', {
-    auditType: AUDIT_TYPE,
-    siteId,
-    organizationId,
-    importTypes,
-    auditTypes,
-  });
-
+  log.info('Running disable import and audit processor');
   try {
+    const { Configuration } = dataAccess;
+    const {
+      organizationId, importTypes = [], auditTypes = [], slackContext,
+    } = auditContext;
+
+    log.info('Processing disable request:', {
+      auditType: AUDIT_TYPE,
+      siteId,
+      organizationId,
+      importTypes,
+      auditTypes,
+    });
+
     // Create Slack client
     const slackClient = await createSlackClientForInternal(
       slackContext.channelId,
