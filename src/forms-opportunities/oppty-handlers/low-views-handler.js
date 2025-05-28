@@ -111,7 +111,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
 
         // eslint-disable-next-line no-await-in-loop
         await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-        log.info(`forms opportunity high page views low form nav sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
+        log.info(`forms opportunity high page views low form views sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
       }
     }
   } catch (e) {
