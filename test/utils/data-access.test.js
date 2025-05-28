@@ -218,12 +218,14 @@ describe('data-access', () => {
         setData: sinon.stub(),
         save: sinon.stub(),
         getStatus: sinon.stub().returns('NEW'),
+        setUpdatedBy: sinon.stub().returnsThis(),
       }, {
         id: '2',
         data: suggestionsData[1],
         getData: sinon.stub().returns(suggestionsData[1]),
         remove: sinon.stub(),
         getStatus: sinon.stub().returns('NEW'),
+        setUpdatedBy: sinon.stub().returnsThis(),
       }];
       const newData = [{ key: '1', title: 'new title' }];
 
@@ -258,6 +260,7 @@ describe('data-access', () => {
         save: sinon.stub(),
         getStatus: sinon.stub().returns('OUTDATED'),
         setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
       }];
       const newData = [{ key: '1', title: 'new title' }];
 

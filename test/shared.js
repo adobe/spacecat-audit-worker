@@ -57,6 +57,7 @@ export class MockContextBuilder {
         save: this.sandbox.stub(),
         setData: this.sandbox.stub(),
         getData: this.sandbox.stub(),
+        setUpdatedBy: this.sandbox.stub(),
       },
       Suggestion: {
         bulkUpdateStatus: this.sandbox.stub(),

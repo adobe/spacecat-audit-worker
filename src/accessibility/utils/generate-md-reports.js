@@ -18,6 +18,35 @@ import {
   accessibilityUserImpact,
 } from './constants.js';
 
+// =============================================
+// Helper Functions
+// =============================================
+
+// Helper function to check if an issue is image-alt related
+function isImageAltIssue(issueId) {
+  return issueId === 'image-alt' || issueId === 'role-img-alt' || issueId === 'svg-img-alt';
+}
+
+// Helper function to filter out image-alt related issues
+function filterImageAltIssues(issues) {
+  return issues.filter((issue) => !isImageAltIssue(issue.rule));
+}
+
+// Helper function to filter image-alt issues from string arrays (for issue text)
+function filterImageAltFromStrings(issueStrings) {
+  return issueStrings.filter((issue) => !issue.includes('`image-alt`')
+    && !issue.includes('`role-img-alt`')
+    && !issue.includes('`svg-img-alt`'));
+}
+
+// Helper function to sort issues by level (A first) then by count (descending)
+function sortIssuesByLevelAndCount(a, b) {
+  if (a.level === b.level) {
+    return b.count - a.count;
+  }
+  return a.level === 'A' ? -1 : 1;
+}
+
 /**
  * Escape HTML tags in text, but preserve existing backtick-wrapped content
  * @param {string} text - Text that might contain HTML tags
@@ -86,6 +115,7 @@ function formatFailureSummary(failureSummary) {
 
   return result.trim();
 }
+
 // =============================================
 // Data Processing Functions
 // =============================================
@@ -150,14 +180,14 @@ function processQuickWinsData(currentFile) {
   const totalViolations = currentFile.overall.violations.total;
 
   Object.entries(currentFile.overall.violations.critical.items).forEach(([id, data]) => {
-    if (id !== 'image-alt' && id !== 'role-img-alt' && id !== 'svg-img-alt') {
+    if (!isImageAltIssue(id)) {
       // eslint-disable-next-line max-len
       issueMap.set(id, { id, ...data, percentage: ((data.count / totalViolations) * 100).toFixed(2) });
     }
   });
 
   Object.entries(currentFile.overall.violations.serious.items).forEach(([id, data]) => {
-    if (id !== 'image-alt' && id !== 'role-img-alt' && id !== 'svg-img-alt' && !issueMap.has(id)) {
+    if (!isImageAltIssue(id) && !issueMap.has(id)) {
       // eslint-disable-next-line max-len
       issueMap.set(id, { id, ...data, percentage: ((data.count / totalViolations) * 100).toFixed(2) });
     }
@@ -189,7 +219,7 @@ function calculateDiffData(currentFile, lastWeekFile) {
 
     ['critical', 'serious'].forEach((level) => {
       Object.entries(data.violations[level].items || {}).forEach(([issue]) => {
-        if (issue === 'image-alt' || issue === 'role-img-alt' || issue === 'svg-img-alt') return;
+        if (isImageAltIssue(issue)) return;
         if (!prevData || !prevData.violations[level].items[issue]) {
           if (!diffData.newIssues[level][url]) diffData.newIssues[level][url] = [];
           diffData.newIssues[level][url].push(issue);
@@ -204,7 +234,7 @@ function calculateDiffData(currentFile, lastWeekFile) {
 
     ['critical', 'serious'].forEach((level) => {
       Object.entries(data.violations[level].items || {}).forEach(([issue]) => {
-        if (issue === 'image-alt' || issue === 'role-img-alt' || issue === 'svg-img-alt') return;
+        if (isImageAltIssue(issue)) return;
         if (!currentPageData || !currentPageData.violations[level].items[issue]) {
           if (!diffData.fixedIssues[level][url]) diffData.fixedIssues[level][url] = [];
           diffData.fixedIssues[level][url].push(issue);
@@ -258,12 +288,8 @@ function generateAccessibilityComplianceIssuesVsTrafficSection(trafficViolations
     .slice(0, 10);
 
   sortedByTraffic.forEach((page) => {
-    const filteredLevelA = page.levelA.filter((issue) => !issue.includes('`image-alt`')
-      && !issue.includes('`role-img-alt`')
-      && !issue.includes('`svg-img-alt`'));
-    const filteredLevelAA = page.levelAA.filter((issue) => !issue.includes('`image-alt`')
-      && !issue.includes('`role-img-alt`')
-      && !issue.includes('`svg-img-alt`'));
+    const filteredLevelA = filterImageAltFromStrings(page.levelA);
+    const filteredLevelAA = filterImageAltFromStrings(page.levelAA);
 
     const filteredTotalIssues = filteredLevelA.length + filteredLevelAA.length;
 
@@ -311,14 +337,9 @@ function generateAccessibilityComplianceOverviewSection(currentFile, lastWeekFil
 
 // Issues Overview Sections
 function generateAccessibilityIssuesOverviewSection(issuesOverview) {
-  const sortedIssues = [...issuesOverview.levelA, ...issuesOverview.levelAA]
-    .filter((issue) => issue.rule !== 'image-alt' && issue.rule !== 'role-img-alt' && issue.rule !== 'svg-img-alt')
-    .sort((a, b) => {
-      if (a.level === b.level) {
-        return b.count - a.count;
-      }
-      return a.level === 'A' ? -1 : 1;
-    });
+  const allIssues = [...issuesOverview.levelA, ...issuesOverview.levelAA];
+  const filteredIssues = filterImageAltIssues(allIssues);
+  const sortedIssues = filteredIssues.sort(sortIssuesByLevelAndCount);
 
   if (sortedIssues.length === 0) return '';
 
@@ -339,7 +360,7 @@ function generateAccessibilityIssuesOverviewSection(issuesOverview) {
 function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview, currentData) {
   const issuesLookup = {};
   [...issuesOverview.levelA, ...issuesOverview.levelAA].forEach((issue) => {
-    if (issue.rule === 'image-alt' || issue.rule === 'role-img-alt' || issue.rule === 'svg-img-alt') return;
+    if (isImageAltIssue(issue.rule)) return;
 
     issuesLookup[issue.rule] = {
       description: escapeHtmlTags(issue.description),
@@ -365,7 +386,7 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
           const count = parseInt(match[1], 10);
           const issueName = match[2];
 
-          if (issueName === 'image-alt' || issueName === 'role-img-alt' || issueName === 'svg-img-alt') return;
+          if (isImageAltIssue(issueName)) return;
 
           if (!commonIssues[issueName]) {
             commonIssues[issueName] = {
@@ -433,7 +454,7 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
 function generateQuickWinsOverviewSection(quickWinsData, enhancedReportUrl) {
   const groupedIssues = new Map();
   quickWinsData.topIssues.forEach((issue) => {
-    if (issue.id === 'image-alt' || issue.id === 'role-img-alt' || issue.id === 'svg-img-alt') return;
+    if (isImageAltIssue(issue.id)) return;
 
     const descriptionKey = issue.description;
     if (!groupedIssues.has(descriptionKey)) {
@@ -503,7 +524,7 @@ function generateQuickWinsPagesSection(quickWinsData) {
 
       ['critical', 'serious'].forEach((level) => {
         Object.entries(data.violations[level].items || {}).forEach(([issueName, issueData]) => {
-          if (issueName === 'image-alt' || issueName === 'role-img-alt' || issueName === 'svg-img-alt') return;
+          if (isImageAltIssue(issueName)) return;
 
           if (!issuePageMap[issueName]) {
             issuePageMap[issueName] = [];
@@ -525,7 +546,7 @@ function generateQuickWinsPagesSection(quickWinsData) {
 
   const groupedIssues = new Map();
   quickWinsData.topIssues.forEach((issue) => {
-    if (issue.id === 'image-alt' || issue.id === 'role-img-alt' || issue.id === 'svg-img-alt') return;
+    if (isImageAltIssue(issue.id)) return;
 
     const descriptionKey = issue.description;
     if (!groupedIssues.has(descriptionKey)) {
@@ -582,10 +603,6 @@ function generateWeekOverWeekSection(currentData, previousData, fixedVsNewReport
     '|--------|--------|--------|--------|\n',
   ];
 
-  const filterImageAlt = (issue) => issue !== 'image-alt'
-    && issue !== 'role-img-alt'
-    && issue !== 'svg-img-alt';
-
   const currentCritical = currentData?.overall?.violations?.critical?.items || {};
   const currentSerious = currentData?.overall?.violations?.serious?.items || {};
   const previousCritical = previousData?.overall?.violations?.critical?.items || {};
@@ -593,7 +610,7 @@ function generateWeekOverWeekSection(currentData, previousData, fixedVsNewReport
 
   // eslint-disable-next-line max-len
   const criticalNew = Object.entries(currentCritical)
-    .filter(([issue]) => !previousCritical[issue] && filterImageAlt(issue))
+    .filter(([issue]) => !previousCritical[issue] && !isImageAltIssue(issue))
     .map(([issue]) => `\`${issue}\``)
     .join(', ') || '-';
 
@@ -601,7 +618,7 @@ function generateWeekOverWeekSection(currentData, previousData, fixedVsNewReport
   const criticalImproved = Object.entries(currentCritical)
     .filter(([issue, data]) => previousCritical[issue]
       && data.count < previousCritical[issue].count
-      && filterImageAlt(issue))
+      && !isImageAltIssue(issue))
     .map(([issue, data]) => {
       const reduction = previousCritical[issue].count - data.count;
       return `\`${issue}\` (${reduction} less)`;
@@ -610,13 +627,13 @@ function generateWeekOverWeekSection(currentData, previousData, fixedVsNewReport
 
   // eslint-disable-next-line max-len
   const criticalFixed = Object.entries(previousCritical)
-    .filter(([issue]) => !currentCritical[issue] && filterImageAlt(issue))
+    .filter(([issue]) => !currentCritical[issue] && !isImageAltIssue(issue))
     .map(([issue]) => `\`${issue}\``)
     .join(', ') || '-';
 
   // eslint-disable-next-line max-len
   const seriousNew = Object.entries(currentSerious)
-    .filter(([issue]) => !previousSerious[issue] && filterImageAlt(issue))
+    .filter(([issue]) => !previousSerious[issue] && !isImageAltIssue(issue))
     .map(([issue]) => `\`${issue}\``)
     .join(', ') || '-';
 
@@ -624,7 +641,7 @@ function generateWeekOverWeekSection(currentData, previousData, fixedVsNewReport
   const seriousImproved = Object.entries(currentSerious)
     .filter(([issue, data]) => previousSerious[issue]
       && data.count < previousSerious[issue].count
-      && filterImageAlt(issue))
+      && !isImageAltIssue(issue))
     .map(([issue, data]) => {
       const reduction = previousSerious[issue].count - data.count;
       return `\`${issue}\` (${reduction} less)`;
@@ -633,7 +650,7 @@ function generateWeekOverWeekSection(currentData, previousData, fixedVsNewReport
 
   // eslint-disable-next-line max-len
   const seriousFixed = Object.entries(previousSerious)
-    .filter(([issue]) => !currentSerious[issue] && filterImageAlt(issue))
+    .filter(([issue]) => !currentSerious[issue] && !isImageAltIssue(issue))
     .map(([issue]) => `\`${issue}\``)
     .join(', ') || '-';
 
@@ -663,7 +680,7 @@ function generateFixedIssuesSection(diffData) {
 
   ['critical', 'serious'].forEach((level) => {
     Object.entries(diffData.fixedIssues[level]).forEach(([page, issues]) => {
-      const filteredIssues = issues.filter((i) => !['image-alt', 'role-img-alt', 'svg-img-alt'].includes(i));
+      const filteredIssues = issues.filter((i) => !isImageAltIssue(i));
       if (filteredIssues.length > 0) {
         // eslint-disable-next-line max-len
         sections.push(`| ${escapeHtmlTags(page)} | ${filteredIssues.map((i) => `\`${i}\``).join(', ')} | ${level.charAt(0).toUpperCase() + level.slice(1)} |\n`);
@@ -690,7 +707,7 @@ function generateNewIssuesSection(diffData) {
 
   ['critical', 'serious'].forEach((level) => {
     Object.entries(diffData.newIssues[level]).forEach(([page, issues]) => {
-      const filteredIssues = issues.filter((i) => !['image-alt', 'role-img-alt', 'svg-img-alt'].includes(i));
+      const filteredIssues = issues.filter((i) => !isImageAltIssue(i));
       if (filteredIssues.length > 0) {
         // eslint-disable-next-line max-len
         sections.push(`| ${escapeHtmlTags(page)} | ${filteredIssues.map((i) => `\`${i}\``).join(', ')} | ${level.charAt(0).toUpperCase() + level.slice(1)} |\n`);
@@ -708,8 +725,7 @@ function generateNewIssuesSection(diffData) {
 
 /**
  * Generate Base Report in markdown format
- * @param {Object} currentFile - Current week's data
- * @param {Object} lastWeekFile - Last week's data
+ * @param {Object} mdData - contains the current, lastWeek, and relatedReportsUrls
  * @returns {string} Base report markdown
  */
 function generateBaseReportMarkdown(mdData) {
@@ -735,7 +751,7 @@ function generateBaseReportMarkdown(mdData) {
 
 /**
  * Generate In-Depth Report in markdown format
- * @param {Object} current - Current week's data
+ * @param {Object} mdData - contains the current, lastWeek, and relatedReportsUrls
  * @returns {string} In-depth report markdown
  */
 function generateInDepthReportMarkdown(mdData) {
@@ -751,7 +767,7 @@ function generateInDepthReportMarkdown(mdData) {
 
 /**
  * Generate Enhanced Report in markdown format
- * @param {Object} current - Current week's data
+ * @param {Object} mdData - contains the current, lastWeek, and relatedReportsUrls
  * @returns {string} Enhanced report markdown
  */
 function generateEnhancedReportMarkdown(mdData) {
@@ -773,8 +789,7 @@ function generateEnhancedReportMarkdown(mdData) {
 
 /**
  * Generate Fixed-New Report in markdown format
- * @param {Object} current - Current week's data
- * @param {Object} lastWeek - Last week's data
+ * @param {Object} mdData - contains the current, lastWeek, and relatedReportsUrls
  * @returns {string} Fixed-New report markdown
  */
 function generateFixedNewReportMarkdown(mdData) {
@@ -805,4 +820,25 @@ export {
   generateInDepthReportMarkdown,
   generateEnhancedReportMarkdown,
   generateFixedNewReportMarkdown,
+  escapeHtmlTags,
+  formatFailureSummary,
+  calculateWCAGData,
+  processTrafficViolations,
+  processQuickWinsData,
+  calculateDiffData,
+  generateRoadToWCAGSection,
+  formatTraffic,
+  generateAccessibilityComplianceIssuesVsTrafficSection,
+  generateAccessibilityComplianceOverviewSection,
+  generateAccessibilityIssuesOverviewSection,
+  generateEnhancingAccessibilitySection,
+  generateQuickWinsOverviewSection,
+  generateQuickWinsPagesSection,
+  generateWeekOverWeekSection,
+  generateFixedIssuesSection,
+  generateNewIssuesSection,
+  filterImageAltIssues,
+  sortIssuesByLevelAndCount,
+  isImageAltIssue,
+  filterImageAltFromStrings,
 };

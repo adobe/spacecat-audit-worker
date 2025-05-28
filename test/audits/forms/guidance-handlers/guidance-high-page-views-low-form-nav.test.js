@@ -65,6 +65,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
       setAuditId: sinon.stub(),
       setGuidance: sinon.stub(),
       save: sinon.stub().resolvesThis(),
+      setUpdatedBy: sinon.stub(),
     };
     dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
 
@@ -72,6 +73,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
 
     expect(existingOpportunity.setAuditId).to.be.calledWith('audit-id');
     expect(existingOpportunity.setGuidance).to.be.calledWith({ recommendations: 'Some guidance' });
+    expect(existingOpportunity.setUpdatedBy).to.be.calledWith('system');
     expect(existingOpportunity.save).to.be.calledOnce;
   });
 

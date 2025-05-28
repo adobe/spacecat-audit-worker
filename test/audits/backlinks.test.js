@@ -36,9 +36,6 @@ import {
 } from '../fixtures/broken-backlinks/sites.js';
 import { ahrefsMock, mockFixedBacklinks } from '../fixtures/broken-backlinks/ahrefs.js';
 import {
-  brokenBacklinksOpportunity,
-} from '../fixtures/broken-backlinks/opportunity.js';
-import {
   brokenBacklinksSuggestions,
 } from '../fixtures/broken-backlinks/suggestion.js';
 import { organicTraffic } from '../fixtures/broken-backlinks/organic-traffic.js';
@@ -63,6 +60,7 @@ describe('Backlinks Tests', function () {
     getId: () => 'site-id',
     getBaseURL: () => 'https://example.com',
   };
+  let brokenBacklinksOpportunity;
 
   const sandbox = sinon.createSandbox();
 
@@ -110,6 +108,18 @@ describe('Backlinks Tests', function () {
       .get('/times-out')
       .delay(3010)
       .reply(200);
+
+    brokenBacklinksOpportunity = {
+      getId: () => 'opportunity-id',
+      setAuditId: sinon.stub(),
+      save: sinon.stub(),
+      getSuggestions: sinon.stub().returns([]),
+      addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
+      getType: () => 'broken-backlinks',
+      setData: () => {},
+      getData: () => {},
+      setUpdatedBy: sinon.stub().returnsThis(),
+    };
   });
   afterEach(() => {
     nock.cleanAll();

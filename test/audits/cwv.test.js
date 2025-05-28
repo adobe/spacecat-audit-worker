@@ -125,6 +125,7 @@ describe('CWVRunner Tests', () => {
         getData: sandbox.stub().returns(opptyData),
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub().returnsThis(),
       };
 
       auditData = {
@@ -189,6 +190,7 @@ describe('CWVRunner Tests', () => {
         getData: () => (suggestion.data),
         setData: sinon.stub(),
         getStatus: sinon.stub().returns('NEW'),
+        setUpdatedBy: sinon.stub().returnsThis(),
       }));
       oppty.getSuggestions.resolves(existingSuggestions);
 

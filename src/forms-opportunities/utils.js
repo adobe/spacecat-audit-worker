@@ -19,7 +19,7 @@ import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
-import { FORM_OPPORTUNITY_TYPES } from './constants.js';
+import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
 
@@ -276,12 +276,15 @@ export function shouldExcludeForm(scrapedFormData) {
 
   const containsNoInputField = scrapedFormData?.formFields?.filter((field) => field.tagName === 'input').length === 0;
 
+  const doesNotHaveButton = scrapedFormData?.formFields?.filter((field) => field.tagName === 'button').length === 0;
+
   return scrapedFormData?.formType === 'search'
     || scrapedFormData?.formType === 'login'
     || scrapedFormData?.classList?.includes('unsubscribe')
     || scrapedFormData?.fieldCount === 0
     || containsOnlyNumericInputField
-    || containsNoInputField;
+    || containsNoInputField
+    || doesNotHaveButton;
 }
 
 /**
@@ -317,4 +320,92 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
     opportunity.scrapedStatus = urlMatches;
     return true;
   });
+}
+
+/**
+ * Get the urls and form sources for accessibility audit
+ * @param scrapedData
+ * @param context
+ * @returns {Array} array of objects with url and formsources
+ */
+export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
+  const { log } = context;
+  const urlsData = [];
+  const addedFormSources = new Set();
+  if (isNonEmptyArray(scrapedData.formData)) {
+    for (const form of scrapedData.formData) {
+      const formSources = [];
+      const validForms = form.scrapeResult.filter((sr) => !shouldExcludeForm(sr));
+      if (form.finalUrl.includes('search') || validForms.length === 0) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // 1. get formSources from scraped data if available
+      let isFormSourceAlreadyAdded = false;
+      validForms.forEach((sr) => {
+        if (!sr.formSource) {
+          return;
+        }
+        if (!addedFormSources.has(sr.formSource)) {
+          formSources.push(sr.formSource);
+          if (!['dialog form', 'form'].includes(sr.formSource)) {
+            addedFormSources.add(sr.formSource);
+          }
+        } else {
+          isFormSourceAlreadyAdded = true;
+        }
+      });
+      // eslint-disable-next-line max-len
+      // 2. If no unique formSource found in current page, then use id or classList to identify the form
+      if (formSources.length === 0) {
+        log.debug(`[Form Opportunity] No formSource found in scraped data for form: ${form.finalUrl}`);
+        validForms.forEach((sr) => {
+          if (sr.formSource) {
+            return;
+          }
+          if (sr.id) {
+            formSources.push(`form#${sr.id}`);
+          } else if (sr.classList) {
+            formSources.push(`form.${sr.classList.split(' ').join('.')}`);
+          }
+        });
+      }
+      // 3. Fallback to "form" element. If any formSource of current page is already added
+      // in previous pages, then don't add "form" element.
+      if (!isFormSourceAlreadyAdded && formSources.length === 0) {
+        formSources.push('form');
+      }
+      log.debug(`[Form Opportunity] Form sources for page: ${form.finalUrl} are ${formSources.join(', ')}`);
+      if (formSources.length > 0) {
+        urlsData.push({
+          url: form.finalUrl,
+          formSources,
+        });
+      }
+    }
+  }
+  return urlsData;
+}
+
+export function getSuccessCriteriaDetails(criteria) {
+  let cNumber;
+
+  if (criteria.match(/\b\d+\.\d+\.\d+\b/)) {
+    // Format: "1.2.1 Audio-only and Video-only"
+    cNumber = criteria.match(/\b\d+\.\d+\.\d+\b/)[0].replaceAll('.', '');
+  } else if (criteria.match(/^wcag\d+$/i)) {
+    // Format: "wcag121"
+    cNumber = criteria.replace(/^wcag/i, '');
+  } else {
+    throw new Error(`Invalid criteria format: ${criteria}`);
+  }
+
+  const successCriteriaDetails = successCriteriaLinks[cNumber];
+  const successCriteriaNumber = cNumber.replace(/(\d)(\d)(\d)/, '$1.$2.$3');
+
+  return {
+    name: successCriteriaDetails.name,
+    criteriaNumber: successCriteriaNumber,
+    understandingUrl: successCriteriaDetails.understandingUrl,
+  };
 }
