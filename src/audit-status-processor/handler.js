@@ -62,9 +62,11 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
     log.info('Audit status processor completed');
     await sendSlackMessage(slackClient, slackContext, 'Audit status processor completed');
     // prepare demo url
+    await sendSlackMessage(slackClient, slackContext, 'Preparing demo url');
     const demoUrl = prepareDemoUrl(siteUrl, organizationId, siteId);
+    const slackMessage = `:tada: Demo url: ${demoUrl}`;
     log.info(`Demo url is ready ${demoUrl}`);
-    await sendSlackMessage(slackClient, slackContext, `:tada: Demo url: ${demoUrl}`);
+    await sendSlackMessage(slackClient, slackContext, slackMessage);
 
     return {
       siteId,
