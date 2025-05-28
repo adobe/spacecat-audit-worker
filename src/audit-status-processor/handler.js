@@ -59,29 +59,8 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
     const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
     const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
 
-    // Check latest audit status for each audit type in parallel
-    const auditStatusPromises = auditTypes.map(async (auditType) => {
-      const latestAudit = await Audit.findLatestBySiteIdAndAuditType(siteId, auditType);
-      log.info(`Latest audit for site ${siteId} and audit type ${auditType}: ${JSON.stringify(latestAudit)}`);
-      if (latestAudit) {
-        const auditResult = latestAudit.getAuditResult();
-        if (auditResult.success) {
-          log.info(`Latest audit for site ${siteId} was successful for audit type ${auditType}`);
-          const slackMessage = `:check_mark: Latest audit for site ${siteId} was successful for audit type ${auditType}`;
-          return sendSlackMessage(slackClient, slackContext, slackMessage);
-        } else {
-          log.warn(`Latest audit for site ${siteId} failed for audit type ${auditType}: ${auditResult.error || 'Unknown error'}`);
-          const slackMessage = `:x: Latest audit for site ${siteId} failed for audit type ${auditType}: ${auditResult.error || 'Unknown error'}`;
-          return sendSlackMessage(slackClient, slackContext, slackMessage);
-        }
-      } else {
-        log.info(`No previous ${auditType} audit found for site ${siteId}`);
-        return null;
-      }
-    });
-
-    await Promise.all(auditStatusPromises);
-
+    log.info('Audit status processor completed');
+    await sendSlackMessage(slackClient, slackContext, 'Audit status processor completed');
     // prepare demo url
     const demoUrl = prepareDemoUrl(siteUrl, organizationId, siteId);
     log.info(`Demo url is ready ${demoUrl}`);
