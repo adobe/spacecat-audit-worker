@@ -246,7 +246,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   // Get top pages for a site
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  const includedURLs = await site.getConfig().getIncludedURLs('meta-tags') || [];
+  const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
 
   // Transform URLs into scrape.json paths and combine them into a Set
   const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, siteId));
