@@ -41,8 +41,8 @@ import highFormViewsLowConversionsGuidance from './forms-opportunities/oppty-han
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
-import auditStatusProcessor from './audit-status-processor/handler.js';
-import disableImportAuditProcessor from './disable-import-audit-processor/handler.js';
+import { runAuditStatusProcessor as auditStatusProcessor } from './audit-status-processor/handler.js';
+import { runDisableImportAuditProcessor as disableImportAuditProcessor } from './disable-import-audit-processor/handler.js';
 
 const HANDLERS = {
   apex,
