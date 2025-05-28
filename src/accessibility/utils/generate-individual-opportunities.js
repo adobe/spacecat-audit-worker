@@ -230,7 +230,7 @@ export async function createIndividualOpportunitySuggestions(
       // Map each URL's data to a suggestion format
       mapNewSuggestion: (urlData) => ({
         opportunityId: opportunity.getId(),
-        type: 'CONTENT_UPDATE', // Indicates this requires content updates
+        type: 'CODE_CHANGE', // Indicates this requires content updates
         // Rank by total occurrences across all issues for this URL
         rank: urlData.issues.reduce((total, issue) => total + issue.occurrences, 0),
         data: {
@@ -289,26 +289,54 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     const auditData = await getAuditData(site, 'accessibility');
     log.debug(`[A11yIndividual] Using auditId: ${auditData.auditId}`);
 
-    // Step 2: Create the accessibility assistive opportunity
+    // Step 2a: Check for existing assistive opportunities and delete if found
+    const { dataAccess } = context;
+    const { Opportunity } = dataAccess;
     const opportunityInstance = createAccessibilityAssistiveOpportunity();
-    let opportunityRes;
 
-    try {
-      opportunityRes = await createIndividualOpportunity(opportunityInstance, auditData, context);
-    } catch (error) {
-      log.error(`Failed to create individual accessibility opportunity: ${error.message}`);
-      throw new Error(error.message);
+    const existingOpportunities = await Opportunity.allBySiteIdAndType(
+      auditData.siteId,
+      opportunityInstance.type,
+    );
+
+    if (existingOpportunities.length > 0) {
+      log.info(`[A11yIndividual] Found ${existingOpportunities.length} existing assistive opportunities - deleting them`);
+      try {
+        await Promise.all(existingOpportunities.map(async (opportunity) => {
+          await opportunity.remove();
+          log.debug(`[A11yIndividual] Deleted assistive opportunity ID: ${opportunity.getId()}`);
+        }));
+        log.info('[A11yIndividual] Successfully deleted all existing assistive opportunities');
+      } catch (error) {
+        log.error(`[A11yIndividual] Error deleting existing assistive opportunities: ${error.message}`);
+        throw new Error(`Failed to delete existing opportunities: ${error.message}`);
+      }
+    // } else {
+    // eslint-disable-next-line max-len
+    //   log.info('[A11yIndividual] No existing assistive opportunities found - proceeding with creation');
     }
 
-    const { opportunity } = opportunityRes;
+    //   // Step 2b: Create the new accessibility assistive opportunity
+    //   let opportunityRes;
 
-    // Step 3: Create the suggestions for the opportunity (one per URL with issues)
-    try {
-      await createIndividualOpportunitySuggestions(opportunity, aggregatedData, context, log);
-    } catch (error) {
-      log.error(`Failed to create individual accessibility opportunity suggestions: ${error.message}`);
-      throw new Error(error.message);
-    }
+    //   try {
+    // eslint-disable-next-line max-len
+    //     opportunityRes = await createIndividualOpportunity(opportunityInstance, auditData, context);
+    //   } catch (error) {
+    //     log.error(`Failed to create individual accessibility opportunity: ${error.message}`);
+    //     throw new Error(error.message);
+    //   }
+
+    //   const { opportunity } = opportunityRes;
+
+    //   // Step 3: Create the suggestions for the opportunity (one per URL with issues)
+    //   try {
+    //     await createIndividualOpportunitySuggestions(opportunity, aggregatedData, context, log);
+    //   } catch (error) {
+    // eslint-disable-next-line max-len
+    //     log.error(`Failed to create individual accessibility opportunity suggestions: ${error.message}`);
+    //     throw new Error(error.message);
+    //   }
 
     // Calculate metrics for reporting
     const totalIssues = aggregatedData.data.reduce((total, page) => (
@@ -316,7 +344,8 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     ), 0);
     const totalSuggestions = aggregatedData.data.length;
 
-    log.info(`[A11yIndividual] Created 1 opportunity with ${totalSuggestions} suggestions (${totalIssues} total issues)`);
+    // eslint-disable-next-line max-len
+    // log.info(`[A11yIndividual] Created 1 opportunity with ${totalSuggestions} suggestions (${totalIssues} total issues)`);
 
     return {
       status: 'OPPORTUNITIES_CREATED',
