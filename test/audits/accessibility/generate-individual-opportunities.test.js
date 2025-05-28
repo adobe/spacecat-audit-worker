@@ -1,0 +1,1628 @@
+/*
+ * Copyright 2025 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+/* eslint-env mocha */
+
+import * as chai from 'chai';
+import sinon from 'sinon';
+import chaiAsPromised from 'chai-as-promised';
+import sinonChai from 'sinon-chai';
+import esmock from 'esmock';
+import {
+  formatWcagRule,
+  formatIssue,
+  createIndividualOpportunity,
+  deleteExistingAssistiveOpportunities,
+  calculateAccessibilityMetrics,
+} from '../../../src/accessibility/utils/generate-individual-opportunities.js';
+import * as constants from '../../../src/accessibility/utils/constants.js';
+
+const { expect } = chai;
+
+// Configure Chai
+chai.use(chaiAsPromised);
+chai.use(sinonChai);
+
+describe('formatWcagRule', () => {
+  let sandbox;
+  let originalSuccessCriteriaLinks;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    // Deep clone to preserve original values and structure
+    originalSuccessCriteriaLinks = JSON.parse(JSON.stringify(constants.successCriteriaLinks));
+  });
+
+  afterEach(() => {
+    // Restore the original values by replacing the properties
+    Object.keys(constants.successCriteriaLinks).forEach((key) => {
+      delete constants.successCriteriaLinks[key];
+    });
+    Object.assign(constants.successCriteriaLinks, originalSuccessCriteriaLinks);
+    sandbox.restore();
+  });
+
+  it('should correctly format a WCAG rule with a known name', () => {
+    // Ensure the specific keys used in the test are present in our live object
+    constants.successCriteriaLinks['412'] = { name: 'Name, Role, Value' };
+    expect(formatWcagRule('wcag412')).to.equal('4.1.2 Name, Role, Value');
+  });
+
+  it('should correctly format a WCAG rule with multiple digits and a known name', () => {
+    constants.successCriteriaLinks['111'] = { name: 'Non-text Content' };
+    expect(formatWcagRule('wcag111')).to.equal('1.1.1 Non-text Content');
+  });
+
+  it('should correctly format a WCAG rule without a known name', () => {
+    // Ensure '123' is not in the mocked links or remove it if it is for this test
+    delete constants.successCriteriaLinks['123'];
+    expect(formatWcagRule('wcag123')).to.equal('1.2.3');
+  });
+
+  it('should return the input if it does not start with "wcag"', () => {
+    expect(formatWcagRule('invalidRule')).to.equal('invalidRule');
+  });
+
+  it('should return the input if it is "wcag" with no number part', () => {
+    expect(formatWcagRule('wcag')).to.equal('wcag');
+  });
+
+  it('should return the input if the number part is not purely numeric', () => {
+    expect(formatWcagRule('wcag1a2')).to.equal('wcag1a2');
+  });
+
+  it('should return the input for null', () => {
+    expect(formatWcagRule(null)).to.be.null;
+  });
+
+  it('should return the input for undefined', () => {
+    expect(formatWcagRule(undefined)).to.be.undefined;
+  });
+
+  it('should handle single digit wcag rule correctly if name exists', () => {
+    constants.successCriteriaLinks['1'] = { name: 'Single Digit Rule' };
+    expect(formatWcagRule('wcag1')).to.equal('1 Single Digit Rule');
+  });
+
+  it('should handle single digit wcag rule correctly if name does not exist', () => {
+    delete constants.successCriteriaLinks['2'];
+    expect(formatWcagRule('wcag2')).to.equal('2');
+  });
+
+  it('should handle wcag rule with no corresponding entry in successCriteriaLinks', () => {
+    delete constants.successCriteriaLinks['999'];
+    expect(formatWcagRule('wcag999')).to.equal('9.9.9');
+  });
+
+  it('should not be affected by other properties on successCriteriaLinks items', () => {
+    constants.successCriteriaLinks['789'] = { name: 'Test Name', otherProp: 'test' };
+    expect(formatWcagRule('wcag789')).to.equal('7.8.9 Test Name');
+  });
+
+  it('should handle empty successCriteriaLinks gracefully', () => {
+    // Clear all properties from the live object for this test
+    Object.keys(constants.successCriteriaLinks).forEach((key) => {
+      delete constants.successCriteriaLinks[key];
+    });
+    expect(formatWcagRule('wcag111')).to.equal('1.1.1');
+  });
+});
+
+describe('formatIssue', () => {
+  let sandbox;
+  let originalSuccessCriteriaLinks;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    originalSuccessCriteriaLinks = JSON.parse(JSON.stringify(constants.successCriteriaLinks));
+    // Add some test WCAG rules
+    constants.successCriteriaLinks['412'] = { name: 'Name, Role, Value' };
+    constants.successCriteriaLinks['111'] = { name: 'Non-text Content' };
+  });
+
+  afterEach(() => {
+    Object.keys(constants.successCriteriaLinks).forEach((key) => {
+      delete constants.successCriteriaLinks[key];
+    });
+    Object.assign(constants.successCriteriaLinks, originalSuccessCriteriaLinks);
+    sandbox.restore();
+  });
+
+  it('should format critical severity issues with High priority', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      level: 'AA',
+      count: 5,
+      htmlWithIssues: ['<div>test</div>'],
+      failureSummary: 'Test summary',
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'color-contrast',
+      description: 'Test description',
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: 'AA',
+      severity: 'critical',
+      priority: 'High',
+      occurrences: 5,
+      htmlWithIssues: ['<div>test</div>'],
+      failureSummary: 'Test summary',
+    });
+  });
+
+  it('should format serious severity issues with Medium priority', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+    }, 'serious');
+
+    expect(result.priority).to.equal('Medium');
+    expect(result.severity).to.equal('serious');
+  });
+
+  it('should format other severity issues with Low priority', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+    }, 'moderate');
+
+    expect(result.priority).to.equal('Low');
+    expect(result.severity).to.equal('moderate');
+  });
+
+  it('should handle missing successCriteriaTags', () => {
+    const result = formatIssue('color-contrast', {
+      description: 'Test description',
+    }, 'critical');
+
+    expect(result.wcagRule).to.equal('');
+  });
+
+  it('should handle empty successCriteriaTags array', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: [],
+      description: 'Test description',
+    }, 'critical');
+
+    expect(result.wcagRule).to.equal('');
+  });
+
+  it('should handle missing description', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: ['wcag412'],
+    }, 'critical');
+
+    expect(result.description).to.equal('');
+  });
+
+  it('should handle missing level', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+    }, 'critical');
+
+    expect(result.wcagLevel).to.equal('');
+  });
+
+  it('should handle missing count', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+    }, 'critical');
+
+    expect(result.occurrences).to.equal(0);
+  });
+
+  it('should handle missing htmlWithIssues', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+    }, 'critical');
+
+    expect(result.htmlWithIssues).to.deep.equal([]);
+  });
+
+  it('should handle missing failureSummary', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+    }, 'critical');
+
+    expect(result.failureSummary).to.equal('');
+  });
+
+  it('should handle unknown WCAG rules', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: ['wcag999'],
+      description: 'Test description',
+    }, 'critical');
+
+    expect(result.wcagRule).to.equal('9.9.9');
+  });
+
+  it('should handle multiple WCAG rules (using first one)', () => {
+    const result = formatIssue('color-contrast', {
+      successCriteriaTags: ['wcag412', 'wcag111'],
+      description: 'Test description',
+    }, 'critical');
+
+    expect(result.wcagRule).to.equal('4.1.2 Name, Role, Value');
+  });
+});
+
+describe('aggregateAccessibilityIssues', () => {
+  let sandbox;
+  let aggregateAccessibilityIssues;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+
+    // Mock the module with esmock
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/utils/constants.js': {
+        successCriteriaLinks: {
+          412: { name: 'Name, Role, Value' },
+          111: { name: 'Non-text Content' },
+        },
+        accessibilityOpportunitiesIDs: ['color-contrast', 'image-alt'],
+      },
+    });
+
+    aggregateAccessibilityIssues = module.aggregateAccessibilityIssues;
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should return empty data array for null input', () => {
+    const result = aggregateAccessibilityIssues(null);
+    expect(result).to.deep.equal({ data: [] });
+  });
+
+  it('should return empty data array for undefined input', () => {
+    const result = aggregateAccessibilityIssues(undefined);
+    expect(result).to.deep.equal({ data: [] });
+  });
+
+  it('should skip overall summary data', () => {
+    const input = {
+      overall: {
+        violations: {
+          critical: { items: {} },
+          serious: { items: {} },
+        },
+      },
+    };
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.be.empty;
+  });
+
+  it('should process critical violations correctly', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test description',
+                successCriteriaTags: ['wcag412'],
+                level: 'AA',
+                count: 5,
+                htmlWithIssues: ['<div>test</div>'],
+                failureSummary: 'Test summary',
+              },
+            },
+          },
+          serious: { items: {} },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.have.lengthOf(1);
+    expect(result.data[0]).to.deep.include({
+      type: 'url',
+      url: 'https://example.com',
+    });
+    expect(result.data[0].issues).to.have.lengthOf(1);
+    expect(result.data[0].issues[0]).to.deep.include({
+      type: 'color-contrast',
+      description: 'Test description',
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: 'AA',
+      severity: 'critical',
+      priority: 'High',
+      occurrences: 5,
+    });
+  });
+
+  it('should process serious violations correctly', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: { items: {} },
+          serious: {
+            items: {
+              'image-alt': {
+                description: 'Test description',
+                successCriteriaTags: ['wcag111'],
+                level: 'AA',
+                count: 3,
+                htmlWithIssues: ['<img src="test.jpg">'],
+                failureSummary: 'Test summary',
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.have.lengthOf(1);
+    expect(result.data[0].issues).to.have.lengthOf(1);
+    expect(result.data[0].issues[0]).to.deep.include({
+      type: 'image-alt',
+      severity: 'serious',
+      priority: 'Medium',
+    });
+  });
+
+  it('should process both critical and serious violations', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Critical issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+          serious: {
+            items: {
+              'image-alt': {
+                description: 'Serious issue',
+                successCriteriaTags: ['wcag111'],
+                count: 3,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data[0].issues).to.have.lengthOf(2);
+    expect(result.data[0].issues[0].severity).to.equal('critical');
+    expect(result.data[0].issues[1].severity).to.equal('serious');
+  });
+
+  it('should only include tracked opportunity types', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'untracked-type': {
+                description: 'Untracked issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.be.empty;
+  });
+
+  it('should handle multiple URLs', () => {
+    const input = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Page 1 issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+          serious: { items: {} },
+        },
+      },
+      'https://example.com/page2': {
+        violations: {
+          critical: { items: {} },
+          serious: {
+            items: {
+              'image-alt': {
+                description: 'Page 2 issue',
+                successCriteriaTags: ['wcag111'],
+                count: 3,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.have.lengthOf(2);
+    expect(result.data[0].url).to.equal('https://example.com/page1');
+    expect(result.data[1].url).to.equal('https://example.com/page2');
+  });
+
+  it('should skip URLs with no issues', () => {
+    const input = {
+      'https://example.com/page1': {
+        violations: {
+          critical: { items: {} },
+          serious: { items: {} },
+        },
+      },
+      'https://example.com/page2': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Page 2 issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+          serious: { items: {} },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.have.lengthOf(1);
+    expect(result.data[0].url).to.equal('https://example.com/page2');
+  });
+
+  it('should handle missing violations object', () => {
+    const input = {
+      'https://example.com': {},
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.be.empty;
+  });
+
+  it('should handle missing items object', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {},
+          serious: {},
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.be.empty;
+  });
+});
+
+describe('createIndividualOpportunity', () => {
+  let sandbox;
+  let mockOpportunity;
+  let mockContext;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    mockOpportunity = {
+      getId: sandbox.stub().returns('test-id'),
+    };
+    mockContext = {
+      log: {
+        debug: sandbox.stub(),
+        error: sandbox.stub(),
+      },
+      dataAccess: {
+        Opportunity: {
+          create: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should create an opportunity with correct data', async () => {
+    const opportunityInstance = {
+      runbook: 'test-runbook',
+      type: 'test-type',
+      origin: 'test-origin',
+      title: 'test-title',
+      description: 'test-description',
+      tags: ['test-tag'],
+      status: 'test-status',
+      data: { test: 'data' },
+    };
+    const auditData = {
+      siteId: 'test-site',
+      auditId: 'test-audit',
+    };
+
+    const result = await createIndividualOpportunity(opportunityInstance, auditData, mockContext);
+
+    expect(result.opportunity).to.equal(mockOpportunity);
+    expect(mockContext.dataAccess.Opportunity.create).to.have.been.calledWith({
+      siteId: 'test-site',
+      auditId: 'test-audit',
+      runbook: 'test-runbook',
+      type: 'test-type',
+      origin: 'test-origin',
+      title: 'test-title',
+      description: 'test-description',
+      tags: ['test-tag'],
+      status: 'test-status',
+      data: { test: 'data' },
+    });
+  });
+
+  it('should handle errors during opportunity creation', async () => {
+    const error = new Error('Test error');
+    mockContext.dataAccess.Opportunity.create.rejects(error);
+
+    const opportunityInstance = {
+      runbook: 'test-runbook',
+      type: 'test-type',
+    };
+    const auditData = {
+      siteId: 'test-site',
+      auditId: 'test-audit',
+    };
+
+    await expect(createIndividualOpportunity(opportunityInstance, auditData, mockContext))
+      .to.be.rejectedWith('Test error');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      'Failed to create new opportunity for siteId test-site and auditId test-audit: Test error',
+    );
+  });
+});
+
+describe('createIndividualOpportunitySuggestions', () => {
+  let sandbox;
+  let mockOpportunity;
+  let mockContext;
+  let mockSyncSuggestions;
+  let createIndividualOpportunitySuggestions;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    mockOpportunity = {
+      getId: sandbox.stub().returns('test-id'),
+      getSuggestions: sandbox.stub().resolves([]),
+      addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+    };
+    mockContext = {
+      log: {
+        debug: sandbox.stub(),
+        error: sandbox.stub(),
+      },
+      dataAccess: {
+        Opportunity: {
+          create: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+    };
+
+    // Fix: Create a proper sinon stub for syncSuggestions
+    mockSyncSuggestions = sandbox.stub().resolves();
+    // Fix: Mock the module with the correct path and get the function
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/utils/data-access.js': {
+        syncSuggestions: mockSyncSuggestions,
+      },
+    });
+    createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should create suggestions for each URL with issues', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 5,
+            },
+          ],
+        },
+        {
+          url: 'https://example.com/page2',
+          type: 'url',
+          issues: [
+            {
+              type: 'image-alt',
+              occurrences: 3,
+            },
+          ],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockContext.log,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const callArgs = mockSyncSuggestions.firstCall.args[0];
+    expect(callArgs.opportunity).to.equal(mockOpportunity);
+    expect(callArgs.newData).to.deep.equal(aggregatedData.data);
+    expect(callArgs.context).to.equal(mockContext);
+    expect(callArgs.buildKey).to.be.a('function');
+    expect(callArgs.mapNewSuggestion).to.be.a('function');
+    expect(callArgs.log).to.equal(mockContext.log);
+  });
+
+  it('should handle errors during suggestion creation', async () => {
+    const error = new Error('Test error');
+    mockSyncSuggestions.rejects(error);
+
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [],
+        },
+      ],
+    };
+
+    await expect(createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockContext.log,
+    )).to.be.rejectedWith('Test error');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      'Failed to create suggestions for opportunity test-id: Test error',
+    );
+  });
+
+  it('should call mapNewSuggestion function correctly', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 5,
+            },
+            {
+              type: 'image-alt',
+              occurrences: 3,
+            },
+          ],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockContext.log,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the mapNewSuggestion function
+    const result = mapNewSuggestion(aggregatedData.data[0]);
+
+    expect(result).to.deep.equal({
+      opportunityId: 'test-id',
+      type: 'CODE_CHANGE',
+      rank: 8, // 5 + 3 occurrences
+      data: {
+        url: 'https://example.com/page1',
+        type: 'url',
+        issues: [
+          {
+            type: 'color-contrast',
+            occurrences: 5,
+          },
+          {
+            type: 'image-alt',
+            occurrences: 3,
+          },
+        ],
+      },
+    });
+  });
+
+  it('should call buildKey function correctly', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockContext.log,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function
+    const result = buildKey(aggregatedData.data[0]);
+
+    expect(result).to.equal('https://example.com/page1');
+  });
+});
+
+describe('deleteExistingAssistiveOpportunities', () => {
+  let sandbox;
+  let mockDataAccess;
+  let mockLog;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+    mockDataAccess = {
+      Opportunity: {
+        allBySiteId: sandbox.stub().resolves([]),
+      },
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should delete existing opportunities of specified type', async () => {
+    const mockOpportunity = {
+      getId: sandbox.stub().returns('test-id'),
+      remove: sandbox.stub().resolves(),
+      getType: sandbox.stub().returns('test-type'),
+    };
+    mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+    const result = await deleteExistingAssistiveOpportunities(
+      mockDataAccess,
+      'test-site',
+      'test-type',
+      mockLog,
+    );
+
+    expect(result).to.equal(1);
+    expect(mockOpportunity.remove).to.have.been.calledOnce;
+    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Found 1 existing assistive opportunities - deleting');
+  });
+
+  it('should handle no existing opportunities', async () => {
+    mockDataAccess.Opportunity.allBySiteId.resolves([]);
+
+    const result = await deleteExistingAssistiveOpportunities(
+      mockDataAccess,
+      'test-site',
+      'test-type',
+      mockLog,
+    );
+
+    expect(result).to.equal(0);
+    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] No existing assistive opportunities found - proceeding with creation');
+  });
+
+  it('should handle errors during deletion', async () => {
+    const mockOpportunity = {
+      getId: sandbox.stub().returns('test-id'),
+      remove: sandbox.stub().rejects(new Error('Test error')),
+      getType: sandbox.stub().returns('test-type'),
+    };
+    mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+    const errorMessage = 'Failed to delete existing opportunities: Test error';
+    await expect(deleteExistingAssistiveOpportunities(
+      mockDataAccess,
+      'test-site',
+      'test-type',
+      mockLog,
+    )).to.be.rejectedWith(errorMessage);
+  });
+});
+
+describe('calculateAccessibilityMetrics', () => {
+  it('should calculate correct metrics from aggregated data', () => {
+    const aggregatedData = {
+      data: [
+        {
+          issues: [
+            { occurrences: 5 },
+            { occurrences: 3 },
+          ],
+        },
+        {
+          issues: [
+            { occurrences: 2 },
+          ],
+        },
+      ],
+    };
+
+    const result = calculateAccessibilityMetrics(aggregatedData);
+
+    expect(result).to.deep.equal({
+      totalIssues: 10,
+      totalSuggestions: 2,
+      pagesWithIssues: 2,
+    });
+  });
+
+  it('should handle empty data', () => {
+    const aggregatedData = {
+      data: [],
+    };
+
+    const result = calculateAccessibilityMetrics(aggregatedData);
+
+    expect(result).to.deep.equal({
+      totalIssues: 0,
+      totalSuggestions: 0,
+      pagesWithIssues: 0,
+    });
+  });
+});
+
+describe('createAccessibilityIndividualOpportunities', () => {
+  let sandbox;
+  let mockContext;
+  let mockSite;
+  let mockOpportunity;
+  let mockGetAuditData;
+  let mockCreateAssistiveOppty;
+  let mockSyncSuggestions;
+  let createAccessibilityIndividualOpportunities;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    mockSite = {
+      getBaseURL: sandbox.stub().returns('https://example.com'),
+    };
+    mockOpportunity = {
+      getId: sandbox.stub().returns('test-id'),
+    };
+    mockContext = {
+      site: mockSite,
+      log: {
+        info: sandbox.stub(),
+        debug: sandbox.stub(),
+        error: sandbox.stub(),
+      },
+      dataAccess: {
+        Opportunity: {
+          create: sandbox.stub().resolves(mockOpportunity),
+          allBySiteId: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    // Fix: Create proper sinon stubs for all mocks
+    mockGetAuditData = sandbox.stub().resolves({
+      siteId: 'test-site',
+      auditId: 'test-audit',
+    });
+
+    mockCreateAssistiveOppty = sandbox.stub().returns({
+      type: 'test-type',
+      runbook: 'test-runbook',
+    });
+
+    mockSyncSuggestions = sandbox.stub().resolves();
+
+    // Fix: Mock all dependencies before importing the module under test
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/utils/constants.js': {
+        accessibilityOpportunitiesIDs: ['color-contrast', 'image-alt'],
+        successCriteriaLinks: {
+          412: { name: 'Name, Role, Value' },
+          111: { name: 'Non-text Content' },
+        },
+      },
+      '../../../src/accessibility/utils/data-processing.js': {
+        getAuditData: mockGetAuditData,
+      },
+      '../../../src/accessibility/utils/report-oppty.js': {
+        createAccessibilityAssistiveOpportunity: mockCreateAssistiveOppty,
+      },
+      '../../../src/utils/data-access.js': {
+        syncSuggestions: mockSyncSuggestions,
+      },
+    });
+
+    createAccessibilityIndividualOpportunities = module.createAccessibilityIndividualOpportunities;
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should create opportunities and suggestions for accessibility issues', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_CREATED');
+    expect(result.opportunitiesCount).to.equal(1);
+    expect(result.suggestionsCount).to.equal(1);
+    expect(result.totalIssues).to.equal(5);
+    expect(result.pagesWithIssues).to.equal(1);
+    expect(mockGetAuditData).to.have.been.calledWith(mockSite, 'accessibility');
+    expect(mockCreateAssistiveOppty).to.have.been.calledOnce;
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+  });
+
+  it('should handle no accessibility issues', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: { items: {} },
+          serious: { items: {} },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.message).to.equal('No accessibility issues found in tracked categories');
+    expect(result.data).to.deep.equal([]);
+    expect(mockGetAuditData).to.not.have.been.called;
+    expect(mockCreateAssistiveOppty).to.not.have.been.called;
+    expect(mockSyncSuggestions).to.not.have.been.called;
+  });
+
+  it('should handle errors during opportunity creation', async () => {
+    const error = new Error('Test error');
+    mockContext.dataAccess.Opportunity.create.rejects(error);
+
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
+    expect(result.error).to.equal('Test error');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      'Failed to create new opportunity for siteId test-site and auditId test-audit: Test error',
+    );
+  });
+
+  it('should handle errors during suggestion creation', async () => {
+    const error = new Error('Test error');
+    mockSyncSuggestions.rejects(error);
+
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
+    expect(result.error).to.equal('Test error');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      'Failed to create suggestions for opportunity test-id: Test error',
+    );
+  });
+
+  it('should handle errors during audit data retrieval', async () => {
+    const error = new Error('Test error');
+    mockGetAuditData.rejects(error);
+
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
+    expect(result.error).to.equal('Test error');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      '[A11yIndividual] Error creating accessibility opportunities: Test error',
+      error,
+    );
+  });
+
+  it('should handle multiple pages with issues', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue 1',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+      'https://example.com/page2': {
+        violations: {
+          serious: {
+            items: {
+              'image-alt': {
+                description: 'Test issue 2',
+                successCriteriaTags: ['wcag111'],
+                count: 3,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_CREATED');
+    expect(result.opportunitiesCount).to.equal(1);
+    expect(result.suggestionsCount).to.equal(2);
+    expect(result.totalIssues).to.equal(8);
+    expect(result.pagesWithIssues).to.equal(2);
+  });
+
+  it('should handle untracked opportunity types', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'untracked-type': {
+                description: 'Untracked issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.message).to.equal('No accessibility issues found in tracked categories');
+    expect(result.data).to.deep.equal([]);
+  });
+
+  it('should handle empty accessibility data', async () => {
+    const result = await createAccessibilityIndividualOpportunities(
+      {},
+      mockContext,
+    );
+
+    expect(result.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.message).to.equal('No accessibility issues found in tracked categories');
+    expect(result.data).to.deep.equal([]);
+  });
+
+  it('should handle null accessibility data', async () => {
+    const result = await createAccessibilityIndividualOpportunities(
+      null,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.message).to.equal('No accessibility issues found in tracked categories');
+    expect(result.data).to.deep.equal([]);
+  });
+
+  it('should handle missing violations in accessibility data', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {},
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.message).to.equal('No accessibility issues found in tracked categories');
+    expect(result.data).to.deep.equal([]);
+  });
+
+  it('should handle missing items in violations', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {},
+          serious: {},
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.message).to.equal('No accessibility issues found in tracked categories');
+    expect(result.data).to.deep.equal([]);
+  });
+
+  it('should handle errors during opportunity deletion', async () => {
+    const error = new Error('Test error');
+    mockContext.dataAccess.Opportunity.allBySiteId.rejects(error);
+
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
+    expect(result.error).to.equal('Test error');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      '[A11yIndividual] Error creating accessibility opportunities: Test error',
+      error,
+    );
+  });
+
+  it('should handle errors during opportunity removal', async () => {
+    const mockExistingOpportunity = {
+      getId: sandbox.stub().returns('existing-id'),
+      remove: sandbox.stub().rejects(new Error('Test error')),
+      getType: sandbox.stub().returns('test-type'),
+    };
+    mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
+
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
+    expect(result.error).to.equal('Failed to delete existing opportunities: Test error');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      '[A11yIndividual] Error deleting existing assistive opportunities: Test error',
+    );
+  });
+
+  it('should handle errors during opportunity creation with existing opportunities', async () => {
+    const mockExistingOpportunity = {
+      getId: sandbox.stub().returns('existing-id'),
+      remove: sandbox.stub().resolves(),
+      getType: sandbox.stub().returns('test-type'),
+    };
+    mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
+    const error = new Error('Test error');
+    mockContext.dataAccess.Opportunity.create.rejects(error);
+
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
+    expect(result.error).to.equal('Test error');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      'Failed to create new opportunity for siteId test-site and auditId test-audit: Test error',
+    );
+  });
+
+  it('should handle errors during suggestion creation with existing opportunities', async () => {
+    const mockExistingOpportunity = {
+      getId: sandbox.stub().returns('existing-id'),
+      remove: sandbox.stub().resolves(),
+      getType: sandbox.stub().returns('test-type'),
+    };
+    mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
+    const error = new Error('Test error');
+    mockSyncSuggestions.rejects(error);
+
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
+    expect(result.error).to.equal('Test error');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      'Failed to create suggestions for opportunity test-id: Test error',
+    );
+  });
+
+  it('should handle errors during audit data retrieval with existing opportunities', async () => {
+    const mockExistingOpportunity = {
+      getId: sandbox.stub().returns('existing-id'),
+      remove: sandbox.stub().resolves(),
+      getType: sandbox.stub().returns('test-type'),
+    };
+    mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
+    const error = new Error('Test error');
+    mockGetAuditData.rejects(error);
+
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
+    expect(result.error).to.equal('Test error');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      '[A11yIndividual] Error creating accessibility opportunities: Test error',
+      error,
+    );
+  });
+
+  it('should handle multiple issues of same type on same page', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue 1',
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+          serious: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue 2',
+                successCriteriaTags: ['wcag412'],
+                count: 3,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_CREATED');
+    expect(result.opportunitiesCount).to.equal(1);
+    expect(result.suggestionsCount).to.equal(1);
+    expect(result.totalIssues).to.equal(8);
+    expect(result.pagesWithIssues).to.equal(1);
+  });
+
+  it('should handle issues with missing successCriteriaTags', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_CREATED');
+    expect(result.opportunitiesCount).to.equal(1);
+    expect(result.suggestionsCount).to.equal(1);
+    expect(result.totalIssues).to.equal(5);
+    expect(result.pagesWithIssues).to.equal(1);
+  });
+
+  it('should handle issues with empty successCriteriaTags', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: [],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_CREATED');
+    expect(result.opportunitiesCount).to.equal(1);
+    expect(result.suggestionsCount).to.equal(1);
+    expect(result.totalIssues).to.equal(5);
+    expect(result.pagesWithIssues).to.equal(1);
+  });
+
+  it('should handle issues with invalid successCriteriaTags', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['invalid-tag'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_CREATED');
+    expect(result.opportunitiesCount).to.equal(1);
+    expect(result.suggestionsCount).to.equal(1);
+    expect(result.totalIssues).to.equal(5);
+    expect(result.pagesWithIssues).to.equal(1);
+  });
+
+  it('should handle issues with missing count', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_CREATED');
+    expect(result.opportunitiesCount).to.equal(1);
+    expect(result.suggestionsCount).to.equal(1);
+    expect(result.totalIssues).to.equal(0);
+    expect(result.pagesWithIssues).to.equal(1);
+  });
+
+  it('should handle issues with missing description', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'color-contrast': {
+                successCriteriaTags: ['wcag412'],
+                count: 5,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_CREATED');
+    expect(result.opportunitiesCount).to.equal(1);
+    expect(result.suggestionsCount).to.equal(1);
+    expect(result.totalIssues).to.equal(5);
+    expect(result.pagesWithIssues).to.equal(1);
+  });
+});

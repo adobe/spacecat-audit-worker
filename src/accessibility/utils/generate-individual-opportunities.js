@@ -27,7 +27,7 @@ import { getAuditData } from './data-processing.js';
  * @param {string} wcagRule - The WCAG rule in internal format (e.g., "wcag412")
  * @returns {string} Formatted WCAG rule (e.g., "4.1.2 Name, Role, Value")
  */
-function formatWcagRule(wcagRule) {
+export function formatWcagRule(wcagRule) {
   if (!wcagRule || !wcagRule.startsWith('wcag')) {
     return wcagRule; // Return as-is if not in expected format
   }
@@ -69,7 +69,7 @@ function formatWcagRule(wcagRule) {
  * @param {string} severity - Issue severity level ("critical", "serious", etc.)
  * @returns {Object} Formatted issue object with all required fields
  */
-function formatIssue(type, issueData, severity) {
+export function formatIssue(type, issueData, severity) {
   // Extract WCAG rule from successCriteriaTags (e.g., "wcag412")
   const rawWcagRule = issueData.successCriteriaTags?.[0] || '';
 
@@ -120,7 +120,7 @@ export function aggregateAccessibilityIssues(accessibilityData) {
 
   // Process each page (skip 'overall' summary which contains site-wide data)
   for (const [url, pageData] of Object.entries(accessibilityData)) {
-    if (url !== 'overall') {
+    if (url !== 'overall' && pageData.violations) {
       const pageIssues = {
         type: 'url', // Indicates this is a URL-based suggestion
         url,
@@ -249,6 +249,69 @@ export async function createIndividualOpportunitySuggestions(
 }
 
 /**
+ * Deletes existing assistive opportunities for a site
+ *
+ * @param {Object} dataAccess - Data access object containing Opportunity model
+ * @param {string} siteId - Site identifier
+ * @param {string} opportunityType - Type of opportunity to delete
+ * @param {Object} log - Logger instance
+ * @returns {Promise<number>} Number of deleted opportunities
+ */
+export async function deleteExistingAssistiveOpportunities(
+  dataAccess,
+  siteId,
+  opportunityType,
+  log,
+) {
+  const { Opportunity } = dataAccess;
+
+  const allOpportunities = await Opportunity.allBySiteId(siteId);
+  const existingOpportunities = allOpportunities.filter(
+    (opportunity) => opportunity.getType() === opportunityType,
+  );
+
+  if (existingOpportunities.length > 0) {
+    const count = existingOpportunities.length;
+    log.info(`[A11yIndividual] Found ${count} existing assistive opportunities - deleting`);
+    try {
+      await Promise.all(existingOpportunities.map(async (opportunity) => {
+        await opportunity.remove();
+        log.debug(`[A11yIndividual] Deleted assistive opportunity ID: ${opportunity.getId()}`);
+      }));
+      log.info('[A11yIndividual] Successfully deleted all existing assistive opportunities');
+      return existingOpportunities.length;
+    } catch (error) {
+      log.error(`[A11yIndividual] Error deleting existing assistive opportunities: ${error.message}`);
+      throw new Error(`Failed to delete existing opportunities: ${error.message}`);
+    }
+  } else {
+    log.info('[A11yIndividual] No existing assistive opportunities found - proceeding with creation');
+    return 0;
+  }
+}
+
+/**
+ * Calculates metrics from aggregated accessibility data
+ *
+ * @param {Object} aggregatedData - Aggregated accessibility data
+ * @returns {Object} Calculated metrics
+ */
+export function calculateAccessibilityMetrics(aggregatedData) {
+  const totalIssues = aggregatedData.data.reduce((total, page) => (
+    total + page.issues.reduce((pageTotal, issue) => pageTotal + issue.occurrences, 0)
+  ), 0);
+
+  const totalSuggestions = aggregatedData.data.length;
+  const pagesWithIssues = aggregatedData.data.length;
+
+  return {
+    totalIssues,
+    totalSuggestions,
+    pagesWithIssues,
+  };
+}
+
+/**
  * Main function to create accessibility individual opportunities
  *
  * This is the main entry point that orchestrates the creation of individual
@@ -289,34 +352,17 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     const auditData = await getAuditData(site, 'accessibility');
     log.debug(`[A11yIndividual] Using auditId: ${auditData.auditId}`);
 
-    // Step 2a: Check for existing assistive opportunities and delete if found
-    const { Opportunity } = dataAccess;
+    // Step 2a: Delete existing assistive opportunities
     const opportunityInstance = createAccessibilityAssistiveOpportunity();
-
-    const allOpportunities = await Opportunity.allBySiteId(auditData.siteId);
-    const existingOpportunities = allOpportunities.filter(
-      (opportunity) => opportunity.getType() === opportunityInstance.type,
+    await deleteExistingAssistiveOpportunities(
+      dataAccess,
+      auditData.siteId,
+      opportunityInstance.type,
+      log,
     );
-
-    if (existingOpportunities.length > 0) {
-      log.info(`[A11yIndividual] Found ${existingOpportunities.length} existing assistive opportunities - deleting them`);
-      try {
-        await Promise.all(existingOpportunities.map(async (opportunity) => {
-          await opportunity.remove();
-          log.debug(`[A11yIndividual] Deleted assistive opportunity ID: ${opportunity.getId()}`);
-        }));
-        log.info('[A11yIndividual] Successfully deleted all existing assistive opportunities');
-      } catch (error) {
-        log.error(`[A11yIndividual] Error deleting existing assistive opportunities: ${error.message}`);
-        throw new Error(`Failed to delete existing opportunities: ${error.message}`);
-      }
-    } else {
-      log.info('[A11yIndividual] No existing assistive opportunities found - proceeding with creation');
-    }
 
     // Step 2b: Create the new accessibility assistive opportunity
     let opportunityRes;
-
     try {
       opportunityRes = await createIndividualOpportunity(opportunityInstance, auditData, context);
     } catch (error) {
@@ -335,20 +381,17 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     }
 
     // Calculate metrics for reporting
-    const totalIssues = aggregatedData.data.reduce((total, page) => (
-      total + page.issues.reduce((pageTotal, issue) => pageTotal + issue.occurrences, 0)
-    ), 0);
-    const totalSuggestions = aggregatedData.data.length;
+    const metrics = calculateAccessibilityMetrics(aggregatedData);
 
-    log.info(`[A11yIndividual] Created 1 opportunity with ${totalSuggestions} suggestions (${totalIssues} total issues)`);
+    log.info(`[A11yIndividual] Created 1 opportunity with ${metrics.totalSuggestions} suggestions (${metrics.totalIssues} total issues)`);
 
     return {
       status: 'OPPORTUNITIES_CREATED',
       opportunitiesCount: 1, // One opportunity containing multiple suggestions
-      suggestionsCount: totalSuggestions, // One suggestion per URL with issues
-      totalIssues,
-      pagesWithIssues: aggregatedData.data.length,
-      summary: `Created accessibility opportunity with ${totalSuggestions} URL suggestions across ${aggregatedData.data.length} pages`,
+      suggestionsCount: metrics.totalSuggestions, // One suggestion per URL with issues
+      totalIssues: metrics.totalIssues,
+      pagesWithIssues: metrics.pagesWithIssues,
+      summary: `Created accessibility opportunity with ${metrics.totalSuggestions} URL suggestions across ${metrics.pagesWithIssues} pages`,
       // Include the aggregated data for potential UI consumption
       ...aggregatedData,
     };
