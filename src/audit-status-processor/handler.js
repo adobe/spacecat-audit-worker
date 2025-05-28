@@ -11,7 +11,7 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
+import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
@@ -94,15 +94,17 @@ export async function run(auditStatusMessage, context) {
 
   try {
     // Create Slack client
-    const slackClient = BaseSlackClient.createFrom({
+    const slackClientContext = {
       channelId: slackContext.channelId,
       threadTs: slackContext.threadTs,
       env: {
         SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
         SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
-        SLACK_TOKEN_ADOBE_INTERNAL: env.SLACK_TOKEN_ADOBE_INTERNAL,
+        SLACK_TOKEN_WORKSPACE_INTERNAL: env.SLACK_TOKEN_WORKSPACE_INTERNAL,
       },
-    }, 'internal');
+    };
+    const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
+    const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
 
     // Create and send the status message
     const slackMessage = createAuditStatusMessage(
