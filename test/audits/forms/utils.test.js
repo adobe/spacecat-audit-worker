@@ -94,6 +94,42 @@ describe('isSearchForm', () => {
     };
     expect(shouldExcludeForm(scrapedFormData)).to.be.false;
   });
+
+  it('should return true if form does not have any buttons', () => {
+    const scrapedFormData = {
+      id: '',
+      name: 'abbv-send-email',
+      formType: null,
+      classList: 'abbv-send-email-form',
+      visibleATF: true,
+      fieldCount: 2,
+      visibleFieldCount: 0,
+      formFields: [{
+        label: 'johndoe@email.com', classList: 'abbv-toEmail', tagName: 'input', type: 'text', inputmode: '',
+      }, {
+        label: 'g-recaptcha-response', classList: 'g-recaptcha-response', tagName: 'textarea', type: '', inputmode: '',
+      }],
+      visibleInViewPortFieldCount: 0,
+    };
+    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
+  });
+
+  it('should return true if form has a single button only', () => {
+    const scrapedFormData = {
+      id: '',
+      name: 'abbv-send-email',
+      formType: null,
+      classList: 'abbv-send-email-form',
+      visibleATF: true,
+      fieldCount: 1,
+      visibleFieldCount: 0,
+      formFields: [{
+        label: 'johndoe@email.com', classList: 'abbv-toEmail', tagName: 'button', type: 'text', inputmode: '',
+      }],
+      visibleInViewPortFieldCount: 0,
+    };
+    expect(shouldExcludeForm(scrapedFormData)).to.be.true;
+  });
 });
 
 describe('getUrlsDataForAccessibilityAudit', () => {
