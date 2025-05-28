@@ -12,14 +12,13 @@
 
 /* eslint-env mocha */
 
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
-import esmock from 'esmock';
+import sinonChai from 'sinon-chai';
 import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
-  PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import {
   deleteOriginalFiles,
@@ -29,13 +28,12 @@ import {
   cleanupS3Files,
   createReportOpportunity,
   generateReportOpportunities,
-  processFilesWithRetry,
-  aggregateAccessibilityData,
   createReportOpportunitySuggestion,
-  getUrlsForAudit,
   generateReportOpportunity,
   getEnvAsoDomain,
 } from '../../../src/accessibility/utils/data-processing.js';
+
+use(sinonChai);
 
 describe('data-processing utility functions', () => {
   let mockS3Client;
@@ -1283,1082 +1281,6 @@ describe('data-processing utility functions', () => {
     });
   });
 
-  describe('processFilesWithRetry', () => {
-    it('should process files successfully with default getObjectFromKey', async () => {
-      const objectKeys = ['file1.json', 'file2.json'];
-      const mockData = { key: 'value' };
-      const mockGetObjectFromKey = sandbox.stub().resolves(mockData);
-
-      const result = await processFilesWithRetry(
-        mockS3Client,
-        'test-bucket',
-        objectKeys,
-        mockLog,
-        1,
-        mockGetObjectFromKey,
-      );
-
-      expect(result.results).to.have.lengthOf(2);
-      expect(result.results[0].key).to.equal('file1.json');
-      expect(result.results[0].data).to.deep.equal(mockData);
-      expect(result.results[1].key).to.equal('file2.json');
-      expect(result.results[1].data).to.deep.equal(mockData);
-      expect(mockLog.info.calledWith('File processing completed: 2 successful, 0 failed out of 2 total files')).to.be.true;
-    });
-
-    it('should retry processing files on failure', async () => {
-      const objectKeys = ['file1.json'];
-      const error = new Error('Temporary error');
-      const mockData = { key: 'value' };
-      const mockGetObjectFromKey = sandbox.stub()
-        .onFirstCall()
-        .rejects(error)
-        .onSecondCall()
-        .resolves(mockData);
-
-      const result = await processFilesWithRetry(
-        mockS3Client,
-        'test-bucket',
-        objectKeys,
-        mockLog,
-        2,
-        mockGetObjectFromKey,
-      );
-
-      expect(result.results).to.have.lengthOf(1);
-      expect(result.results[0].data).to.deep.equal(mockData);
-      expect(mockGetObjectFromKey.calledTwice).to.be.true;
-      expect(mockLog.warn.calledWith('Retrying file file1.json (attempt 1/2): Temporary error')).to.be.true;
-      expect(mockLog.info.calledWith('File processing completed: 1 successful, 0 failed out of 1 total files')).to.be.true;
-    });
-
-    it('should log error after max retries exceeded', async () => {
-      const objectKeys = ['file1.json'];
-      const error = new Error('Persistent error');
-      const mockGetObjectFromKey = sandbox.stub()
-        .rejects(error);
-
-      const result = await processFilesWithRetry(
-        mockS3Client,
-        'test-bucket',
-        objectKeys,
-        mockLog,
-        2,
-        mockGetObjectFromKey,
-      );
-
-      expect(result.results).to.have.lengthOf(0);
-      expect(mockGetObjectFromKey.callCount).to.equal(3); // Initial + 2 retries
-      expect(mockLog.error.calledWith('Failed to process file file1.json after 2 retries: Persistent error')).to.be.true;
-      expect(mockLog.warn.calledWith('1 out of 1 files failed to process, continuing with 0 successful files')).to.be.true;
-    });
-
-    it('should handle null data from getObjectFromKey', async () => {
-      const objectKeys = ['file1.json'];
-      const mockGetObjectFromKey = sandbox.stub().resolves(null);
-
-      const result = await processFilesWithRetry(
-        mockS3Client,
-        'test-bucket',
-        objectKeys,
-        mockLog,
-        1,
-        mockGetObjectFromKey,
-      );
-
-      expect(result.results).to.have.lengthOf(0);
-      expect(mockLog.warn.calledWith('Failed to get data from file1.json, skipping')).to.be.true;
-      expect(mockLog.warn.calledWith('1 out of 1 files failed to process, continuing with 0 successful files')).to.be.true;
-    });
-
-    it('should handle multiple files with mixed results', async () => {
-      const objectKeys = ['file1.json', 'file2.json', 'file3.json'];
-      const mockData1 = { key: 'value1' };
-      const mockData3 = { key: 'value3' };
-      const mockGetObjectFromKey = sandbox.stub()
-        .onFirstCall()
-        .resolves(mockData1)
-        .onSecondCall()
-        .rejects(new Error('File2 error'))
-        .onThirdCall()
-        .resolves(mockData3);
-
-      const result = await processFilesWithRetry(
-        mockS3Client,
-        'test-bucket',
-        objectKeys,
-        mockLog,
-        1,
-        mockGetObjectFromKey,
-      );
-
-      expect(result.results).to.have.lengthOf(2);
-      expect(result.results[0].key).to.equal('file1.json');
-      expect(result.results[0].data).to.deep.equal(mockData1);
-      expect(result.results[1].key).to.equal('file3.json');
-      expect(result.results[1].data).to.deep.equal(mockData3);
-      expect(mockLog.error.calledWith('Error processing file file2.json: File2 error')).to.be.true;
-      expect(mockLog.warn.calledWith('1 out of 3 files failed to process, continuing with 2 successful files')).to.be.true;
-    });
-
-    it('should use default maxRetries value', async () => {
-      const objectKeys = ['file1.json'];
-      const error = new Error('Error');
-      const mockGetObjectFromKey = sandbox.stub().rejects(error);
-
-      await processFilesWithRetry(
-        mockS3Client,
-        'test-bucket',
-        objectKeys,
-        mockLog,
-        undefined, // Use default maxRetries
-        mockGetObjectFromKey,
-      );
-
-      expect(mockGetObjectFromKey.calledTwice).to.be.true; // Initial + 1 retry (default)
-      expect(mockLog.error.calledWith('Failed to process file file1.json after 1 retries: Error')).to.be.true;
-    });
-
-    it('should handle empty objectKeys array', async () => {
-      const objectKeys = [];
-      const mockGetObjectFromKey = sandbox.stub();
-
-      const result = await processFilesWithRetry(
-        mockS3Client,
-        'test-bucket',
-        objectKeys,
-        mockLog,
-        1,
-        mockGetObjectFromKey,
-      );
-
-      expect(result.results).to.have.lengthOf(0);
-      expect(mockGetObjectFromKey.called).to.be.false;
-      expect(mockLog.info.calledWith('File processing completed: 0 successful, 0 failed out of 0 total files')).to.be.true;
-    });
-
-    it('should process files in parallel', async () => {
-      const objectKeys = ['file1.json', 'file2.json'];
-      const callOrder = [];
-      const mockGetObjectFromKey = sandbox.stub().callsFake(async (s3Client, bucketName, key) => {
-        callOrder.push(`start-${key}`);
-        // Simulate async delay
-        await new Promise((resolve) => {
-          setTimeout(resolve, 10);
-        });
-        callOrder.push(`end-${key}`);
-        return { key: `data-${key}` };
-      });
-
-      const result = await processFilesWithRetry(
-        mockS3Client,
-        'test-bucket',
-        objectKeys,
-        mockLog,
-        1,
-        mockGetObjectFromKey,
-      );
-
-      expect(result.results).to.have.lengthOf(2);
-      // Both files should start processing before either finishes (parallel execution)
-      expect(callOrder.indexOf('start-file1.json')).to.be.lessThan(callOrder.indexOf('end-file1.json'));
-      expect(callOrder.indexOf('start-file2.json')).to.be.lessThan(callOrder.indexOf('end-file2.json'));
-      expect(callOrder.indexOf('start-file2.json')).to.be.lessThan(callOrder.indexOf('end-file1.json'));
-    });
-  });
-
-  describe('aggregateAccessibilityData', () => {
-    it('should return error when s3Client is missing', async () => {
-      const result = await aggregateAccessibilityData(
-        null,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        '2024-01-01',
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal('Missing required parameters for aggregateAccessibilityData');
-      expect(mockLog.error.calledWith('Missing required parameters for aggregateAccessibilityData')).to.be.true;
-    });
-
-    it('should return error when bucketName is missing', async () => {
-      const result = await aggregateAccessibilityData(
-        mockS3Client,
-        null,
-        'test-site',
-        mockLog,
-        'output-key',
-        '2024-01-01',
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal('Missing required parameters for aggregateAccessibilityData');
-    });
-
-    it('should return error when siteId is missing', async () => {
-      const result = await aggregateAccessibilityData(
-        mockS3Client,
-        'test-bucket',
-        null,
-        mockLog,
-        'output-key',
-        '2024-01-01',
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal('Missing required parameters for aggregateAccessibilityData');
-    });
-
-    it('should use default maxRetries value of 2', async () => {
-      // This test will fail when it tries to call getObjectKeysFromSubfolders
-      // but we can verify the parameter validation works
-      const dataProcessing = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/accessibility/utils/data-processing.js': {
-          getObjectKeysFromSubfolders: sandbox.stub().rejects(new Error('S3 error')),
-        },
-      });
-      try {
-        await dataProcessing.aggregateAccessibilityData(
-          mockS3Client,
-          'test-bucket',
-          'test-site',
-          mockLog,
-          'output-key',
-          '2024-01-01',
-          2,
-        );
-      } catch (error) {
-        // Expected to fail due to missing dependencies, but parameter validation passed
-        expect(error).to.exist;
-      }
-    });
-
-    it('should initialize aggregated data structure correctly', async () => {
-      // Test that the function initializes the correct data structure
-      // This will fail when calling dependencies, but we can check the initialization logic
-      const dataProcessing = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/accessibility/utils/data-processing.js': {
-          getObjectKeysFromSubfolders: sandbox.stub().rejects(new Error('S3 error')),
-        },
-      });
-      try {
-        await dataProcessing.aggregateAccessibilityData(
-          mockS3Client,
-          'test-bucket',
-          'test-site',
-          mockLog,
-          'output-key',
-          '2024-01-01',
-          2,
-        );
-      } catch (error) {
-        // Expected to fail, but the initialization logic was executed
-        expect(error).to.exist;
-      }
-    });
-
-    it('should return error when getObjectKeysFromSubfolders fails', async () => {
-      // esmock for getObjectKeysFromSubfolders isn't hit in this specific test case.
-      // Rely on mockS3Client to cause failure in real getObjectKeysFromSubfolders.
-      // aggregateAccessibilityData should catch the thrown error.
-      mockS3Client.send.rejects(new Error('Cannot read properties of undefined (reading \'CommonPrefixes\')')); // Simulate S3 error
-
-      const result = await aggregateAccessibilityData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        '2024-01-01',
-        2,
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.aggregatedData).to.be.null;
-      // Expect the message that aggregateAccessibilityData constructs when it catches an error
-      expect(result.message).to.equal('Error: Cannot read properties of undefined (reading \'CommonPrefixes\')');
-    });
-
-    it('should return error when no files could be processed', async () => {
-      const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-
-      // For real getObjectKeysFromSubfolders to succeed:
-      // 1. S3 ListObjectsV2Command for getSubfoldersUsingPrefixAndDelimiter
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
-
-      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/utils/s3-utils.js': {
-          // 2. Mock getObjectKeysUsingPrefix (from s3-utils)
-          getObjectKeysUsingPrefix: sandbox.stub().resolves(['file1.json', 'file2.json']),
-          // Mock getObjectFromKey (from s3-utils) to make processFilesWithRetry return empty
-          getObjectFromKey: sandbox.stub().resolves(null),
-        },
-      });
-
-      const result = await aggregateData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        targetDate, // version
-        2,
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal('No files could be processed successfully for site test-site');
-      expect(mockLog.error.calledWith('No files could be processed successfully for site test-site')).to.be.true;
-    });
-
-    it('should successfully aggregate data with single file', async () => {
-      const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-      const mockFileData = {
-        url: 'https://example.com/page1',
-        violations: {
-          total: 5,
-          critical: { count: 3, items: { issue1: { count: 3 } } },
-          serious: { count: 2, items: { issue2: { count: 2 } } },
-        },
-        traffic: 100,
-      };
-
-      // For real getObjectKeysFromSubfolders to succeed:
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
-
-      // For S3 PutObject to save aggregated data
-      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
-      // For cleanupS3Files (deleteOriginalFiles)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectsCommand)).resolves({});
-
-      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: sandbox.stub()
-            // For getObjectKeysFromSubfolders's internal call
-            .onFirstCall().resolves(['file1.json'])
-            // For aggregateAccessibilityData's direct call (last week files)
-            .onSecondCall()
-            .resolves([`accessibility/test-site/${targetDate}-final-result.json`]),
-          getObjectFromKey: sandbox.stub()
-            // For processFilesWithRetry's internal call
-            .onFirstCall().resolves(mockFileData)
-            // For aggregateAccessibilityData's direct call (last week file content)
-            .onSecondCall()
-            .resolves(null), // No last week file content for this test
-        },
-      });
-
-      const result = await aggregateData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        targetDate,
-        2,
-      );
-
-      expect(result.success).to.be.true;
-      expect(result.finalResultFiles.current).to.have.property('overall');
-      expect(result.finalResultFiles.current).to.have.property('https://example.com/page1');
-      expect(result.finalResultFiles.current['https://example.com/page1'].violations.total).to.equal(5);
-      expect(result.finalResultFiles.current['https://example.com/page1'].traffic).to.equal(100);
-      expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
-      expect(mockLog.info.calledWith('Saved aggregated accessibility data to output-key')).to.be.true;
-    });
-
-    it('should handle multiple files and aggregate violations correctly', async () => {
-      const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-      const mockFile1Data = {
-        url: 'https://example.com/page1',
-        violations: {
-          total: 5,
-          critical: { count: 3, items: {} },
-          serious: { count: 2, items: {} },
-        },
-        traffic: 100,
-      };
-      const mockFile2Data = {
-        url: 'https://example.com/page2',
-        violations: {
-          total: 3,
-          critical: { count: 1, items: {} },
-          serious: { count: 2, items: {} },
-        },
-        traffic: 50,
-      };
-      const lastWeekFileKeys = [
-        // Oldest file key
-        `accessibility/test-site/${new Date(new Date(targetDate).setDate(new Date(targetDate).getDate() - 14)).toISOString().split('T')[0]}-final-result.json`,
-        // Key for last week's data (aggData loads index length-2)
-        `accessibility/test-site/${new Date(new Date(targetDate).setDate(new Date(targetDate).getDate() - 7)).toISOString().split('T')[0]}-final-result.json`,
-        // Newest file key (current)
-        `accessibility/test-site/${targetDate}-final-result.json`,
-      ];
-      const lastWeekContent = { overall: { violations: { total: 10 } } };
-
-      // S3 ListObjectsV2 mock (for getSubfoldersUsingPrefixAndDelimiter)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
-      // S3 PutObject mock (saving aggregated data)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
-      // S3 DeleteObjects/DeleteObject mocks (for cleanupS3Files)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectsCommand)).resolves({});
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
-
-      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: sandbox.stub()
-            // For getObjectKeysFromSubfolders
-            .onFirstCall().resolves(['file1.json', 'file2.json'])
-            // For aggregateAccessibilityData (finding last week files)
-            .onSecondCall()
-            .resolves(lastWeekFileKeys),
-          getObjectFromKey: sandbox.stub()
-            // For processFilesWithRetry on file1.json
-            .onFirstCall().resolves(mockFile1Data)
-            // For processFilesWithRetry on file2.json
-            .onSecondCall()
-            .resolves(mockFile2Data)
-            // For aggregateAccessibilityData (loading content of lastWeekFileKeys[1])
-            .onThirdCall()
-            .resolves(lastWeekContent),
-        },
-      });
-
-      const result = await aggregateData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        targetDate,
-        2,
-      );
-
-      expect(result.success).to.be.true;
-      expect(result.finalResultFiles.current).to.have.property('https://example.com/page1');
-      expect(result.finalResultFiles.current).to.have.property('https://example.com/page2');
-      expect(result.finalResultFiles.current.overall.violations.total).to.equal(8); // 5 + 3
-      expect(result.finalResultFiles.lastWeek).to.deep.equal(lastWeekContent);
-    });
-
-    it('should handle violations without total property', async () => {
-      const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-      const mockFileDataWithoutTotal = {
-        url: 'https://example.com/page1',
-        violations: {
-          // No total property here
-          critical: { count: 3, items: {} },
-          serious: { count: 2, items: {} },
-        },
-        traffic: 100,
-      };
-
-      // S3 ListObjectsV2 mock (for getSubfoldersUsingPrefixAndDelimiter)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
-      // S3 PutObject mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
-      // S3 DeleteObject mock (for cleanupS3Files)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
-
-      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: sandbox.stub()
-            // For getObjectKeysFromSubfolders
-            .onFirstCall().resolves(['file1.json'])
-            // For aggregateAccessibilityData (last week files)
-            .onSecondCall()
-            .resolves([`accessibility/test-site/${targetDate}-final-result.json`]),
-          getObjectFromKey: sandbox.stub()
-            // For processFilesWithRetry
-            .onFirstCall().resolves(mockFileDataWithoutTotal)
-            // For aggregateAccessibilityData (last week file content)
-            .onSecondCall()
-            .resolves(null), // No last week content
-        },
-      });
-
-      const result = await aggregateData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        targetDate,
-        2,
-      );
-
-      expect(result.success).to.be.true;
-      // Overall total should be 0 because the per-file 'total' was missing
-      // and aggregateAccessibilityData only adds to overall if file.violations.total exists.
-      expect(result.finalResultFiles.current.overall.violations.total).to.equal(0);
-      // Check that critical and serious were still aggregated correctly
-      expect(result.finalResultFiles.current.overall.violations.critical.count).to.equal(3);
-      expect(result.finalResultFiles.current.overall.violations.serious.count).to.equal(2);
-    });
-
-    it('should handle S3 save errors', async () => {
-      const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-      const mockFileData = [{ // Needs to be an array for processFilesWithRetry stub
-        key: 'file1.json',
-        data: {
-          url: 'https://example.com/page1',
-          violations: { total: 5 },
-          traffic: 100,
-        },
-      }];
-
-      // S3 ListObjectsV2 mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
-      // S3 PutObject mock - THIS ONE FAILS
-      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).rejects(new Error('S3 save failed'));
-
-      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: sandbox.stub().resolves(['file1.json']), // For getObjectKeysFromSubfolders
-          getObjectFromKey: sandbox.stub().resolves(mockFileData[0].data),
-        },
-      });
-
-      const result = await aggregateData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        targetDate,
-        2,
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal('Error: S3 save failed');
-      // The main catch block in aggregateAccessibilityData logs a generic error
-      expect(mockLog.error.calledWith('Error aggregating accessibility data for site test-site')).to.be.true;
-    });
-
-    it('should handle lastWeekFile logging correctly', async () => {
-      const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-      const mockFileData = { // Data for the current processing
-        url: 'https://example.com/page1',
-        violations: { total: 5 },
-        traffic: 100,
-      };
-      const lastWeekFileKey1 = `accessibility/test-site/${new Date(new Date(targetDate).setDate(new Date(targetDate).getDate() - 14)).toISOString().split('T')[0]}-final-result.json`;
-      const lastWeekFileKey2 = `accessibility/test-site/${new Date(new Date(targetDate).setDate(new Date(targetDate).getDate() - 7)).toISOString().split('T')[0]}-final-result.json`;
-      const mockLastWeekObjectKeys = [lastWeekFileKey1, lastWeekFileKey2];
-      const mockLastWeekContent = { overall: { violations: { total: 8 } } };
-
-      // S3 ListObjectsV2 mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
-      // S3 PutObject mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
-      // S3 DeleteObject/DeleteObjects mock (for cleanupS3Files)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectsCommand)).resolves({});
-
-      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: sandbox.stub()
-            .onFirstCall().resolves(['file1.json']) // For getObjectKeysFromSubfolders
-            .onSecondCall()
-            .resolves(mockLastWeekObjectKeys), // For finding last week files
-          getObjectFromKey: sandbox.stub()
-            .onFirstCall().resolves(mockFileData) // For processFilesWithRetry
-            // For loading last week file content (loads index length - 2 = lastWeekFileKey1)
-            .onSecondCall()
-            .resolves(mockLastWeekContent),
-        },
-      });
-
-      const result = await aggregateData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        targetDate,
-        2,
-      );
-
-      expect(result.success).to.be.true;
-
-      // const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey1}`;
-      // The log message in the code actually uses lastWeekObjectKeys[1] for the key part.
-      const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey2}`;
-      const logCall = mockLog.info.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
-      expect(logCall).to.not.be.undefined;
-      // If more precise matching is needed, verify the full content:
-      const logContentString = JSON.stringify(mockLastWeekContent, null, 2);
-      expect(logCall.args[0]).to.include(logContentString);
-    });
-
-    it('should call all required functions in correct order', async () => {
-      const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-      const mockFileData = { url: 'https://example.com/page1', violations: { total: 5 }, traffic: 100 };
-      const dt = new Date(targetDate);
-      const prevDate = new Date(dt.setDate(dt.getDate() - 7));
-      const lastWeekFileKey = `accessibility/test-site/${prevDate.toISOString().split('T')[0]}-final-result.json`;
-
-      // S3 Mocks
-      // For getSubfolders (via getObjectKeysFromSubfolders)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({ CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] });
-      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({}); // For save
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
-
-      // Create stubs for s3-utils functions BEFORE esmock call
-      const getObjectKeysUsingPrefixStub = sandbox.stub()
-        .onFirstCall().resolves(['file1.json']) // For getObjectKeysFromSubfolders
-        .onSecondCall()
-        .resolves([lastWeekFileKey]); // For aggData direct call
-      const getObjectFromKeyStub = sandbox.stub()
-        .onFirstCall().resolves(mockFileData) // For processFilesWithRetry
-        .onSecondCall()
-        .resolves(null); // For aggData direct call (last week content)
-
-      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: getObjectKeysUsingPrefixStub,
-          getObjectFromKey: getObjectFromKeyStub,
-        },
-      });
-
-      const result = await aggregateData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        targetDate,
-        2,
-      );
-
-      // Check if the main aggregation succeeded
-      expect(result.success, 'aggregateData should succeed').to.be.true;
-
-      // Assertions for s3-utils.js functions (on the stubs themselves)
-      expect(getObjectKeysUsingPrefixStub.calledTwice).to.be.true;
-      expect(getObjectFromKeyStub.calledOnce).to.be.true;
-
-      // Assertions for S3 commands
-      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(ListObjectsV2Command))).to.be.true;
-      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(PutObjectCommand))).to.be.true;
-
-      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(DeleteObjectCommand)))
-        .to.be.true;
-    });
-
-    it('should return error and specific message when getObjectKeysFromSubfolders returns success false', async () => {
-      // eslint-disable-next-line max-len
-      const expectedMessage = 'No accessibility data found in bucket test-bucket at prefix accessibility/test-site/ for site test-site with delimiter /';
-
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({ CommonPrefixes: [] }); // No subfolders found
-
-      const result = await aggregateAccessibilityData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        '2024-01-01', // version
-        2, // maxRetries
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal(expectedMessage);
-      expect(mockS3Client.send
-        .calledOnceWith(sinon.match.instanceOf(ListObjectsV2Command))).to.be.true;
-    });
-  });
-
-  describe('getUrlsForAudit', () => {
-    it('should successfully return URLs when final result files exist', async () => {
-      const siteId = 'test-site';
-      const mockFinalResultFiles = [
-        'accessibility/test-site/2024-01-01-final-result.json',
-        'accessibility/test-site/2024-01-08-final-result.json',
-      ];
-      const mockLatestFile = {
-        overall: { violations: { total: 5 } },
-        'https://example.com/page1': {
-          violations: { total: 3 },
-          traffic: '1000',
-        },
-        'https://example.com/page2': {
-          violations: { total: 2 },
-          traffic: '500',
-        },
-      };
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().resolves(mockFinalResultFiles),
-        getObjectFromKeyFn: sandbox.stub().resolves(mockLatestFile),
-      };
-
-      const result = await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-
-      expect(result).to.have.lengthOf(2);
-      expect(result[0]).to.deep.equal({
-        url: 'https://example.com/page1',
-        urlId: 'example.com/page1',
-        traffic: '1000',
-      });
-      expect(result[1]).to.deep.equal({
-        url: 'https://example.com/page2',
-        urlId: 'example.com/page2',
-        traffic: '500',
-      });
-
-      expect(mockDependencies.getObjectKeysUsingPrefixFn.calledWith(
-        mockS3Client,
-        'test-bucket',
-        'accessibility/test-site/',
-        mockLog,
-        10,
-        '-final-result.json',
-      )).to.be.true;
-      expect(mockDependencies.getObjectFromKeyFn.calledWith(
-        mockS3Client,
-        'test-bucket',
-        'accessibility/test-site/2024-01-08-final-result.json',
-        mockLog,
-      )).to.be.true;
-    });
-
-    it('should throw error when no final result files found', async () => {
-      const siteId = 'test-site';
-      const mockFinalResultFiles = [];
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().resolves(mockFinalResultFiles),
-        getObjectFromKeyFn: sandbox.stub(),
-      };
-
-      try {
-        await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.equal('[A11yAudit] No final result files found for test-site');
-        expect(mockLog.error.calledWith('[A11yAudit] No final result files found for test-site')).to.be.true;
-        expect(mockDependencies.getObjectFromKeyFn.called).to.be.false;
-      }
-    });
-
-    it('should handle error when getting final result files fails', async () => {
-      const siteId = 'test-site';
-      const originalError = new Error('S3 access denied');
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().rejects(originalError),
-        getObjectFromKeyFn: sandbox.stub(),
-      };
-
-      try {
-        await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error).to.equal(originalError);
-        expect(mockLog.error.calledWith('[A11yAudit] Error getting final result files for test-site: S3 access denied')).to.be.true;
-        expect(mockDependencies.getObjectFromKeyFn.called).to.be.false;
-      }
-    });
-
-    it('should throw error when latest final result file is null', async () => {
-      const siteId = 'test-site';
-      const mockFinalResultFiles = ['accessibility/test-site/2024-01-01-final-result.json'];
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().resolves(mockFinalResultFiles),
-        getObjectFromKeyFn: sandbox.stub().resolves(null),
-      };
-
-      try {
-        await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.equal('[A11yAudit] No latest final result file found for test-site');
-        expect(mockLog.error.calledWith('[A11yAudit] No latest final result file found for test-site')).to.be.true;
-      }
-    });
-
-    it('should handle error when getting latest final result file fails', async () => {
-      const siteId = 'test-site';
-      const mockFinalResultFiles = ['accessibility/test-site/2024-01-01-final-result.json'];
-      const originalError = new Error('File read error');
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().resolves(mockFinalResultFiles),
-        getObjectFromKeyFn: sandbox.stub().rejects(originalError),
-      };
-
-      try {
-        await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error).to.equal(originalError);
-        expect(mockLog.error.calledWith('[A11yAudit] Error getting latest final result file for test-site: File read error')).to.be.true;
-      }
-    });
-
-    it('should throw error when no URLs found in final result file', async () => {
-      const siteId = 'test-site';
-      const mockFinalResultFiles = ['accessibility/test-site/2024-01-01-final-result.json'];
-      const mockLatestFile = {
-        overall: { violations: { total: 5 } },
-        'non-url-key': { violations: { total: 1 } },
-        'another-key': { violations: { total: 2 } },
-      };
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().resolves(mockFinalResultFiles),
-        getObjectFromKeyFn: sandbox.stub().resolves(mockLatestFile),
-      };
-
-      try {
-        await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.equal('[A11yAudit] No URLs found for test-site');
-        expect(mockLog.error.calledWith('[A11yAudit] No URLs found for test-site')).to.be.true;
-      }
-    });
-
-    it('should correctly select the latest final result file', async () => {
-      const siteId = 'test-site';
-      const mockFinalResultFiles = [
-        'accessibility/test-site/2024-01-01-final-result.json',
-        'accessibility/test-site/2024-01-08-final-result.json',
-        'accessibility/test-site/2024-01-15-final-result.json',
-      ];
-      const mockLatestFile = {
-        'https://example.com/page1': {
-          violations: { total: 1 },
-          traffic: '100',
-        },
-      };
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().resolves(mockFinalResultFiles),
-        getObjectFromKeyFn: sandbox.stub().resolves(mockLatestFile),
-      };
-
-      await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-
-      // Should call getObjectFromKey with the last (latest) file
-      expect(mockDependencies.getObjectFromKeyFn.calledWith(
-        mockS3Client,
-        'test-bucket',
-        'accessibility/test-site/2024-01-15-final-result.json',
-        mockLog,
-      )).to.be.true;
-    });
-
-    it('should filter out non-URL keys and remove overall property', async () => {
-      const siteId = 'test-site';
-      const mockFinalResultFiles = ['accessibility/test-site/2024-01-01-final-result.json'];
-      const mockLatestFile = {
-        overall: { violations: { total: 10 } },
-        'https://example.com/page1': {
-          violations: { total: 3 },
-          traffic: '1000',
-        },
-        'non-url-key': {
-          violations: { total: 2 },
-          traffic: '500',
-        },
-        'https://example.com/page2': {
-          violations: { total: 1 },
-          traffic: '200',
-        },
-        'another-non-url': {
-          violations: { total: 4 },
-          traffic: '800',
-        },
-      };
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().resolves(mockFinalResultFiles),
-        getObjectFromKeyFn: sandbox.stub().resolves(mockLatestFile),
-      };
-
-      const result = await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-
-      expect(result).to.have.lengthOf(2);
-      expect(result[0]).to.deep.equal({
-        url: 'https://example.com/page1',
-        urlId: 'example.com/page1',
-        traffic: '1000',
-      });
-      expect(result[1]).to.deep.equal({
-        url: 'https://example.com/page2',
-        urlId: 'example.com/page2',
-        traffic: '200',
-      });
-    });
-
-    it('should correctly transform URLs to urlIds by removing https://', async () => {
-      const siteId = 'test-site';
-      const mockFinalResultFiles = ['accessibility/test-site/2024-01-01-final-result.json'];
-      const mockLatestFile = {
-        'https://subdomain.example.com/path/to/page': {
-          violations: { total: 1 },
-          traffic: '500',
-        },
-        'https://another-site.org/complex/path?query=value': {
-          violations: { total: 2 },
-          traffic: '300',
-        },
-      };
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().resolves(mockFinalResultFiles),
-        getObjectFromKeyFn: sandbox.stub().resolves(mockLatestFile),
-      };
-
-      const result = await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-
-      expect(result).to.have.lengthOf(2);
-      expect(result[0]).to.deep.equal({
-        url: 'https://subdomain.example.com/path/to/page',
-        urlId: 'subdomain.example.com/path/to/page',
-        traffic: '500',
-      });
-      expect(result[1]).to.deep.equal({
-        url: 'https://another-site.org/complex/path?query=value',
-        urlId: 'another-site.org/complex/path?query=value',
-        traffic: '300',
-      });
-    });
-
-    it('should use default dependencies when none provided', async () => {
-      const siteId = 'test-site';
-      // This test verifies that the function can be called without dependencies parameter
-      // and will use the default imported functions. Since we can't easily test the actual
-      // imported functions without mocking them globally, we'll test that the function
-      // accepts the call without the dependencies parameter.
-
-      // We'll create a minimal test that would fail if the default parameter handling is broken
-      try {
-        // This will likely fail due to missing S3 setup, but it should not fail due to
-        // missing dependencies parameter
-        await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog);
-      } catch (error) {
-        // We expect this to fail, but not due to missing dependencies
-        // The error should be related to the actual function execution, not parameter handling
-        expect(error.message).to.not.include('undefined');
-        expect(error.message).to.not.include('is not a function');
-      }
-    });
-
-    it('should handle empty final result file after removing overall property', async () => {
-      const siteId = 'test-site';
-      const mockFinalResultFiles = ['accessibility/test-site/2024-01-01-final-result.json'];
-      const mockLatestFile = {
-        overall: { violations: { total: 5 } },
-        // No other properties
-      };
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().resolves(mockFinalResultFiles),
-        getObjectFromKeyFn: sandbox.stub().resolves(mockLatestFile),
-      };
-
-      try {
-        await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.equal('[A11yAudit] No URLs found for test-site');
-        expect(mockLog.error.calledWith('[A11yAudit] No URLs found for test-site')).to.be.true;
-      }
-    });
-
-    it('should handle mixed URL formats correctly', async () => {
-      const siteId = 'test-site';
-      const mockFinalResultFiles = ['accessibility/test-site/2024-01-01-final-result.json'];
-      const mockLatestFile = {
-        'https://example.com': {
-          violations: { total: 1 },
-          traffic: '1000',
-        },
-        'https://example.com/': {
-          violations: { total: 2 },
-          traffic: '800',
-        },
-        'https://example.com/page': {
-          violations: { total: 3 },
-          traffic: '600',
-        },
-        'http://insecure.com': {
-          violations: { total: 4 },
-          traffic: '400',
-        },
-        'ftp://files.com': {
-          violations: { total: 5 },
-          traffic: '200',
-        },
-      };
-
-      const mockDependencies = {
-        getObjectKeysUsingPrefixFn: sandbox.stub().resolves(mockFinalResultFiles),
-        getObjectFromKeyFn: sandbox.stub().resolves(mockLatestFile),
-      };
-
-      const result = await getUrlsForAudit(mockS3Client, 'test-bucket', siteId, mockLog, mockDependencies);
-
-      // Should only include keys that contain 'https://'
-      expect(result).to.have.lengthOf(3);
-      expect(result[0]).to.deep.equal({
-        url: 'https://example.com',
-        urlId: 'example.com',
-        traffic: '1000',
-      });
-      expect(result[1]).to.deep.equal({
-        url: 'https://example.com/',
-        urlId: 'example.com/',
-        traffic: '800',
-      });
-      expect(result[2]).to.deep.equal({
-        url: 'https://example.com/page',
-        urlId: 'example.com/page',
-        traffic: '600',
-      });
-    });
-  });
-
   describe('generateReportOpportunity', () => {
     let mockReportData;
     let mockGenMdFn;
@@ -3303,7 +2225,7 @@ describe('data-processing utility functions', () => {
         // The error should be related to the actual function execution, not parameter handling
         expect(error.message).to.not.include('undefined');
         // Allow "is not a function" errors that are NOT related to the default dependencies
-        // but exclude the specific errors we were getting about missing methods
+        // but exclude the specific error we were getting about missing methods
         if (error.message.includes('is not a function')) {
           expect(error.message).to.not.include('site.getLatestAuditByAuditType is not a function');
           expect(error.message).to.not.include('Opportunity.create is not a function');
@@ -3419,6 +2341,1294 @@ describe('data-processing utility functions', () => {
       const env = { AWS_ENV: 'stage', OTHER_VAR: 'some-value' };
       const result = getEnvAsoDomain(env);
       expect(result).to.equal('experience-stage');
+    });
+  });
+
+  describe('processFilesWithRetry', () => {
+    let mockGetObjectFromKey;
+    let processFilesWithRetryMocked;
+
+    beforeEach(async () => {
+      // Create mock for getObjectFromKey
+      mockGetObjectFromKey = sandbox.stub();
+
+      // Mock the module using esmock
+      const esmock = (await import('esmock')).default;
+      const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: mockGetObjectFromKey,
+        },
+      });
+
+      processFilesWithRetryMocked = dataProcessingModule.processFilesWithRetry;
+    });
+
+    describe('successful processing', () => {
+      it('should process all files successfully', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['file1.json', 'file2.json', 'file3.json'];
+        const mockData1 = { url: 'https://example.com/page1', violations: { total: 5 } };
+        const mockData2 = { url: 'https://example.com/page2', violations: { total: 3 } };
+        const mockData3 = { url: 'https://example.com/page3', violations: { total: 7 } };
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'file1.json', mockLog)
+          .resolves(mockData1);
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'file2.json', mockLog)
+          .resolves(mockData2);
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'file3.json', mockLog)
+          .resolves(mockData3);
+
+        // Act
+        const result = await processFilesWithRetryMocked(s3Client, bucketName, objectKeys, mockLog);
+
+        // Assert
+        expect(result.results).to.have.length(3);
+        expect(result.results[0]).to.deep.equal({ key: 'file1.json', data: mockData1 });
+        expect(result.results[1]).to.deep.equal({ key: 'file2.json', data: mockData2 });
+        expect(result.results[2]).to.deep.equal({ key: 'file3.json', data: mockData3 });
+
+        expect(mockLog.info).to.have.been.calledWith(
+          'File processing completed: 3 successful, 0 failed out of 3 total files',
+        );
+      });
+
+      it('should handle empty object keys array', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = [];
+
+        // Act
+        const result = await processFilesWithRetryMocked(s3Client, bucketName, objectKeys, mockLog);
+
+        // Assert
+        expect(result.results).to.have.length(0);
+        expect(mockLog.info).to.have.been.calledWith(
+          'File processing completed: 0 successful, 0 failed out of 0 total files',
+        );
+        expect(mockGetObjectFromKey).to.not.have.been.called;
+      });
+
+      it('should process single file successfully', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['single-file.json'];
+        const mockData = { url: 'https://example.com/single', violations: { total: 2 } };
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'single-file.json', mockLog)
+          .resolves(mockData);
+
+        // Act
+        const result = await processFilesWithRetryMocked(s3Client, bucketName, objectKeys, mockLog);
+
+        // Assert
+        expect(result.results).to.have.length(1);
+        expect(result.results[0]).to.deep.equal({ key: 'single-file.json', data: mockData });
+        expect(mockLog.info).to.have.been.calledWith(
+          'File processing completed: 1 successful, 0 failed out of 1 total files',
+        );
+      });
+    });
+
+    describe('error handling and retries', () => {
+      it('should retry failed files up to maxRetries and succeed on retry', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['retry-file.json'];
+        const maxRetries = 2;
+        const mockData = { url: 'https://example.com/retry', violations: { total: 1 } };
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'retry-file.json', mockLog)
+          .onFirstCall()
+          .rejects(new Error('Temporary S3 error'))
+          .onSecondCall()
+          .resolves(mockData);
+
+        // Act
+        const result = await processFilesWithRetryMocked(
+          s3Client,
+          bucketName,
+          objectKeys,
+          mockLog,
+          maxRetries,
+        );
+
+        // Assert
+        expect(result.results).to.have.length(1);
+        expect(result.results[0]).to.deep.equal({ key: 'retry-file.json', data: mockData });
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          'Retrying file retry-file.json (attempt 1/2): Temporary S3 error',
+        );
+        expect(mockLog.info).to.have.been.calledWith(
+          'File processing completed: 1 successful, 0 failed out of 1 total files',
+        );
+      });
+
+      it('should fail after exhausting all retries', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['failing-file.json'];
+        const maxRetries = 1;
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'failing-file.json', mockLog)
+          .rejects(new Error('Persistent S3 error'));
+
+        // Act
+        const result = await processFilesWithRetryMocked(
+          s3Client,
+          bucketName,
+          objectKeys,
+          mockLog,
+          maxRetries,
+        );
+
+        // Assert
+        expect(result.results).to.have.length(0);
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          'Retrying file failing-file.json (attempt 1/1): Persistent S3 error',
+        );
+        expect(mockLog.error).to.have.been.calledWith(
+          'Failed to process file failing-file.json after 1 retries: Persistent S3 error',
+        );
+        expect(mockLog.warn).to.have.been.calledWith(
+          '1 out of 1 files failed to process, continuing with 0 successful files',
+        );
+        expect(mockLog.info).to.have.been.calledWith(
+          'File processing completed: 0 successful, 1 failed out of 1 total files',
+        );
+      });
+
+      it('should handle mixed success and failure scenarios', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['success-file.json', 'fail-file.json', 'retry-success-file.json'];
+        const maxRetries = 1;
+        const successData = { url: 'https://example.com/success', violations: { total: 3 } };
+        const retrySuccessData = { url: 'https://example.com/retry-success', violations: { total: 2 } };
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'success-file.json', mockLog)
+          .resolves(successData);
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'fail-file.json', mockLog)
+          .rejects(new Error('Permanent failure'));
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'retry-success-file.json', mockLog)
+          .onFirstCall()
+          .rejects(new Error('Temporary failure'))
+          .onSecondCall()
+          .resolves(retrySuccessData);
+
+        // Act
+        const result = await processFilesWithRetryMocked(
+          s3Client,
+          bucketName,
+          objectKeys,
+          mockLog,
+          maxRetries,
+        );
+
+        // Assert
+        expect(result.results).to.have.length(2);
+        expect(result.results).to.deep.include({ key: 'success-file.json', data: successData });
+        expect(result.results).to.deep.include({ key: 'retry-success-file.json', data: retrySuccessData });
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          'Retrying file retry-success-file.json (attempt 1/1): Temporary failure',
+        );
+        expect(mockLog.error).to.have.been.calledWith(
+          'Failed to process file fail-file.json after 1 retries: Permanent failure',
+        );
+        expect(mockLog.warn).to.have.been.calledWith(
+          '1 out of 3 files failed to process, continuing with 2 successful files',
+        );
+        expect(mockLog.info).to.have.been.calledWith(
+          'File processing completed: 2 successful, 1 failed out of 3 total files',
+        );
+      });
+
+      it('should use default maxRetries value of 1 when not specified', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['default-retry-file.json'];
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'default-retry-file.json', mockLog)
+          .rejects(new Error('Error for default retry test'));
+
+        // Act
+        const result = await processFilesWithRetryMocked(s3Client, bucketName, objectKeys, mockLog);
+
+        // Assert
+        expect(result.results).to.have.length(0);
+        expect(mockLog.warn).to.have.been.calledWith(
+          'Retrying file default-retry-file.json (attempt 1/1): Error for default retry test',
+        );
+        expect(mockLog.error).to.have.been.calledWith(
+          'Failed to process file default-retry-file.json after 1 retries: Error for default retry test',
+        );
+      });
+    });
+
+    describe('null data handling', () => {
+      it('should handle null data from getObjectFromKey', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['null-data-file.json', 'valid-file.json'];
+        const validData = { url: 'https://example.com/valid', violations: { total: 1 } };
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'null-data-file.json', mockLog)
+          .resolves(null);
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'valid-file.json', mockLog)
+          .resolves(validData);
+
+        // Act
+        const result = await processFilesWithRetryMocked(s3Client, bucketName, objectKeys, mockLog);
+
+        // Assert
+        expect(result.results).to.have.length(1);
+        expect(result.results[0]).to.deep.equal({ key: 'valid-file.json', data: validData });
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          'Failed to get data from null-data-file.json, skipping',
+        );
+        expect(mockLog.warn).to.have.been.calledWith(
+          '1 out of 2 files failed to process, continuing with 1 successful files',
+        );
+        expect(mockLog.info).to.have.been.calledWith(
+          'File processing completed: 1 successful, 1 failed out of 2 total files',
+        );
+      });
+
+      it('should handle all files returning null data', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['null-file1.json', 'null-file2.json'];
+
+        mockGetObjectFromKey.resolves(null);
+
+        // Act
+        const result = await processFilesWithRetryMocked(s3Client, bucketName, objectKeys, mockLog);
+
+        // Assert
+        expect(result.results).to.have.length(0);
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          'Failed to get data from null-file1.json, skipping',
+        );
+        expect(mockLog.warn).to.have.been.calledWith(
+          'Failed to get data from null-file2.json, skipping',
+        );
+        expect(mockLog.warn).to.have.been.calledWith(
+          '2 out of 2 files failed to process, continuing with 0 successful files',
+        );
+        expect(mockLog.info).to.have.been.calledWith(
+          'File processing completed: 0 successful, 2 failed out of 2 total files',
+        );
+      });
+    });
+
+    describe('parallel processing', () => {
+      it('should process files in parallel using Promise.allSettled', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['file1.json', 'file2.json', 'file3.json'];
+        const mockData1 = { url: 'https://example.com/1', violations: { total: 1 } };
+        const mockData2 = { url: 'https://example.com/2', violations: { total: 2 } };
+        const mockData3 = { url: 'https://example.com/3', violations: { total: 3 } };
+
+        // Add delays to simulate async processing
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'file1.json', mockLog)
+          .callsFake(() => new Promise((resolve) => {
+            setTimeout(() => resolve(mockData1), 100);
+          }));
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'file2.json', mockLog)
+          .callsFake(() => new Promise((resolve) => {
+            setTimeout(() => resolve(mockData2), 50);
+          }));
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'file3.json', mockLog)
+          .callsFake(() => new Promise((resolve) => {
+            setTimeout(() => resolve(mockData3), 75);
+          }));
+
+        const startTime = Date.now();
+
+        // Act
+        const result = await processFilesWithRetryMocked(s3Client, bucketName, objectKeys, mockLog);
+
+        const endTime = Date.now();
+        const executionTime = endTime - startTime;
+
+        // Assert
+        expect(result.results).to.have.length(3);
+        // Should complete in roughly 100ms (the longest delay) rather than 225ms (sum of delays)
+        expect(executionTime).to.be.lessThan(200);
+
+        expect(mockGetObjectFromKey).to.have.been.calledThrice;
+      });
+
+      it('should handle parallel processing with some failures', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['success1.json', 'fail.json', 'success2.json'];
+        const successData1 = { url: 'https://example.com/success1', violations: { total: 1 } };
+        const successData2 = { url: 'https://example.com/success2', violations: { total: 2 } };
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'success1.json', mockLog)
+          .resolves(successData1);
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'fail.json', mockLog)
+          .rejects(new Error('Processing error'));
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'success2.json', mockLog)
+          .resolves(successData2);
+
+        // Act
+        const result = await processFilesWithRetryMocked(s3Client, bucketName, objectKeys, mockLog);
+
+        // Assert
+        expect(result.results).to.have.length(2);
+        expect(result.results).to.deep.include({ key: 'success1.json', data: successData1 });
+        expect(result.results).to.deep.include({ key: 'success2.json', data: successData2 });
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          '1 out of 3 files failed to process, continuing with 2 successful files',
+        );
+        expect(mockLog.info).to.have.been.calledWith(
+          'File processing completed: 2 successful, 1 failed out of 3 total files',
+        );
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should handle maxRetries of 0', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['no-retry-file.json'];
+        const maxRetries = 0;
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'no-retry-file.json', mockLog)
+          .rejects(new Error('No retry error'));
+
+        // Act
+        const result = await processFilesWithRetryMocked(
+          s3Client,
+          bucketName,
+          objectKeys,
+          mockLog,
+          maxRetries,
+        );
+
+        // Assert
+        expect(result.results).to.have.length(0);
+
+        // Should not retry when maxRetries is 0
+        expect(mockLog.warn).to.not.have.been.calledWith(
+          sinon.match(/Retrying file/),
+        );
+        expect(mockLog.error).to.have.been.calledWith(
+          'Failed to process file no-retry-file.json after 0 retries: No retry error',
+        );
+      });
+
+      it('should handle very large maxRetries value', async () => {
+        // Arrange
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['large-retry-file.json'];
+        const maxRetries = 100;
+        const mockData = { url: 'https://example.com/large-retry', violations: { total: 1 } };
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'large-retry-file.json', mockLog)
+          .onCall(0)
+          .rejects(new Error('First failure'))
+          .onCall(1)
+          .rejects(new Error('Second failure'))
+          .onCall(2)
+          .resolves(mockData);
+
+        // Act
+        const result = await processFilesWithRetryMocked(
+          s3Client,
+          bucketName,
+          objectKeys,
+          mockLog,
+          maxRetries,
+        );
+
+        // Assert
+        expect(result.results).to.have.length(1);
+        expect(result.results[0]).to.deep.equal({ key: 'large-retry-file.json', data: mockData });
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          'Retrying file large-retry-file.json (attempt 1/100): First failure',
+        );
+        expect(mockLog.warn).to.have.been.calledWith(
+          'Retrying file large-retry-file.json (attempt 2/100): Second failure',
+        );
+      });
+    });
+  });
+
+  describe('getEnvAsoDomain', () => {
+    it('should return "experience" when AWS_ENV is "prod"', () => {
+      const env = { AWS_ENV: 'prod' };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience');
+    });
+
+    it('should return "experience-stage" when AWS_ENV is not "prod"', () => {
+      const env = { AWS_ENV: 'stage' };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience-stage');
+    });
+
+    it('should return "experience-stage" when AWS_ENV is "dev"', () => {
+      const env = { AWS_ENV: 'dev' };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience-stage');
+    });
+
+    it('should return "experience-stage" when AWS_ENV is "test"', () => {
+      const env = { AWS_ENV: 'test' };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience-stage');
+    });
+
+    it('should return "experience-stage" when AWS_ENV is undefined', () => {
+      const env = { AWS_ENV: undefined };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience-stage');
+    });
+
+    it('should return "experience-stage" when AWS_ENV is null', () => {
+      const env = { AWS_ENV: null };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience-stage');
+    });
+
+    it('should return "experience-stage" when AWS_ENV is empty string', () => {
+      const env = { AWS_ENV: '' };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience-stage');
+    });
+
+    it('should return "experience-stage" when env object is empty', () => {
+      const env = {};
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience-stage');
+    });
+
+    it('should handle case sensitivity - "PROD" should not equal "prod"', () => {
+      const env = { AWS_ENV: 'PROD' };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience-stage');
+    });
+
+    it('should handle whitespace - " prod " should not equal "prod"', () => {
+      const env = { AWS_ENV: ' prod ' };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience-stage');
+    });
+
+    it('should handle production environment correctly', () => {
+      const env = { AWS_ENV: 'prod', OTHER_VAR: 'some-value' };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience');
+    });
+
+    it('should handle staging environment correctly', () => {
+      const env = { AWS_ENV: 'stage', OTHER_VAR: 'some-value' };
+      const result = getEnvAsoDomain(env);
+      expect(result).to.equal('experience-stage');
+    });
+  });
+
+  describe('getUrlsForAudit', () => {
+    let mockGetObjectKeysUsingPrefix;
+    let mockGetObjectFromKey;
+    let getUrlsForAuditMocked;
+    let mockS3ClientForAudit;
+    let mockLogForAudit;
+
+    beforeEach(async () => {
+      // Create mocks for the s3-utils functions
+      mockGetObjectKeysUsingPrefix = sandbox.stub();
+      mockGetObjectFromKey = sandbox.stub();
+
+      // Mock the module using esmock
+      const esmock = (await import('esmock')).default;
+      const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: mockGetObjectKeysUsingPrefix,
+          getObjectFromKey: mockGetObjectFromKey,
+        },
+      });
+
+      getUrlsForAuditMocked = dataProcessingModule.getUrlsForAudit;
+
+      mockS3ClientForAudit = { mock: 'client' };
+      mockLogForAudit = {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+        warn: sandbox.stub(),
+      };
+    });
+
+    describe('successful scenarios', () => {
+      it('should successfully return URLs for audit when final result files exist', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'test-site-123';
+        const finalResultFiles = [
+          'accessibility/test-site-123/2024-01-01-final-result.json',
+          'accessibility/test-site-123/2024-01-08-final-result.json',
+          'accessibility/test-site-123/2024-01-15-final-result.json',
+        ];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 10 },
+          },
+          'https://example.com/page1': {
+            violations: { total: 5 },
+            traffic: '1000',
+          },
+          'https://example.com/page2': {
+            violations: { total: 3 },
+            traffic: '500',
+          },
+          'https://subdomain.example.com/page3': {
+            violations: { total: 2 },
+            traffic: '750',
+          },
+        };
+
+        mockGetObjectKeysUsingPrefix
+          .withArgs(
+            mockS3ClientForAudit,
+            bucketName,
+            'accessibility/test-site-123/',
+            mockLogForAudit,
+            10,
+            '-final-result.json',
+          )
+          .resolves(finalResultFiles);
+        mockGetObjectFromKey
+          .withArgs(
+            mockS3ClientForAudit,
+            bucketName,
+            'accessibility/test-site-123/2024-01-15-final-result.json',
+            mockLogForAudit,
+          )
+          .resolves(latestFinalResultFile);
+
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.have.length(3);
+        expect(result).to.deep.include({
+          url: 'https://example.com/page1',
+          urlId: 'example.com/page1',
+          traffic: '1000',
+        });
+        expect(result).to.deep.include({
+          url: 'https://example.com/page2',
+          urlId: 'example.com/page2',
+          traffic: '500',
+        });
+        expect(result).to.deep.include({
+          url: 'https://subdomain.example.com/page3',
+          urlId: 'subdomain.example.com/page3',
+          traffic: '750',
+        });
+
+        expect(mockGetObjectKeysUsingPrefix.calledOnce).to.be.true;
+        expect(mockGetObjectFromKey.calledOnce).to.be.true;
+      });
+
+      it('should handle single URL in final result file', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'single-url-site';
+        const finalResultFiles = ['accessibility/single-url-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 2 },
+          },
+          'https://single.example.com': {
+            violations: { total: 2 },
+            traffic: '2000',
+          },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.have.length(1);
+        expect(result[0]).to.deep.equal({
+          url: 'https://single.example.com',
+          urlId: 'single.example.com',
+          traffic: '2000',
+        });
+      });
+
+      it('should handle URLs with complex paths and query parameters', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'complex-urls-site';
+        const finalResultFiles = ['accessibility/complex-urls-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 5 },
+          },
+          'https://example.com/path/to/page?param=value': {
+            violations: { total: 2 },
+            traffic: '800',
+          },
+          'https://api.example.com/v1/endpoint': {
+            violations: { total: 3 },
+            traffic: '1200',
+          },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.have.length(2);
+        expect(result).to.deep.include({
+          url: 'https://example.com/path/to/page?param=value',
+          urlId: 'example.com/path/to/page?param=value',
+          traffic: '800',
+        });
+        expect(result).to.deep.include({
+          url: 'https://api.example.com/v1/endpoint',
+          urlId: 'api.example.com/v1/endpoint',
+          traffic: '1200',
+        });
+      });
+
+      it('should exclude overall data and only include HTTPS URLs', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'mixed-data-site';
+        const finalResultFiles = ['accessibility/mixed-data-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 10 },
+          },
+          'https://secure.example.com': {
+            violations: { total: 3 },
+            traffic: '900',
+          },
+          'http://insecure.example.com': {
+            violations: { total: 2 },
+            traffic: '400',
+          },
+          'ftp://files.example.com': {
+            violations: { total: 1 },
+            traffic: '100',
+          },
+          metadata: {
+            scanDate: '2024-01-15',
+            totalPages: 3,
+          },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.have.length(1);
+        expect(result[0]).to.deep.equal({
+          url: 'https://secure.example.com',
+          urlId: 'secure.example.com',
+          traffic: '900',
+        });
+      });
+
+      it('should use the latest final result file when multiple exist', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'multiple-files-site';
+        const finalResultFiles = [
+          'accessibility/multiple-files-site/2024-01-01-final-result.json',
+          'accessibility/multiple-files-site/2024-01-08-final-result.json',
+          'accessibility/multiple-files-site/2024-01-15-final-result.json',
+          'accessibility/multiple-files-site/2024-01-22-final-result.json',
+        ];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 1 },
+          },
+          'https://latest.example.com': {
+            violations: { total: 1 },
+            traffic: '1500',
+          },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey
+          .withArgs(
+            mockS3ClientForAudit,
+            bucketName,
+            'accessibility/multiple-files-site/2024-01-22-final-result.json',
+            mockLogForAudit,
+          )
+          .resolves(latestFinalResultFile);
+
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.have.length(1);
+        expect(result[0]).to.deep.equal({
+          url: 'https://latest.example.com',
+          urlId: 'latest.example.com',
+          traffic: '1500',
+        });
+
+        // Verify it used the latest file
+        expect(mockGetObjectFromKey.calledWith(
+          mockS3ClientForAudit,
+          bucketName,
+          'accessibility/multiple-files-site/2024-01-22-final-result.json',
+          mockLogForAudit,
+        )).to.be.true;
+      });
+    });
+
+    describe('error scenarios', () => {
+      it('should throw error when no final result files found', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'no-files-site';
+
+        mockGetObjectKeysUsingPrefix
+          .withArgs(
+            mockS3ClientForAudit,
+            bucketName,
+            'accessibility/no-files-site/',
+            mockLogForAudit,
+            10,
+            '-final-result.json',
+          )
+          .resolves([]);
+
+        // Act & Assert
+        try {
+          await getUrlsForAuditMocked(
+            mockS3ClientForAudit,
+            bucketName,
+            siteId,
+            mockLogForAudit,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.equal('[A11yAudit] No final result files found for no-files-site');
+          expect(mockLogForAudit.error.calledWith(
+            '[A11yAudit] No final result files found for no-files-site',
+          )).to.be.true;
+        }
+      });
+
+      it('should throw error when getObjectKeysUsingPrefix fails', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'error-site';
+        const s3Error = new Error('S3 access denied');
+
+        mockGetObjectKeysUsingPrefix
+          .withArgs(
+            mockS3ClientForAudit,
+            bucketName,
+            'accessibility/error-site/',
+            mockLogForAudit,
+            10,
+            '-final-result.json',
+          )
+          .rejects(s3Error);
+
+        // Act & Assert
+        try {
+          await getUrlsForAuditMocked(
+            mockS3ClientForAudit,
+            bucketName,
+            siteId,
+            mockLogForAudit,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.equal('S3 access denied');
+          expect(mockLogForAudit.error.calledWith(
+            '[A11yAudit] Error getting final result files for error-site: S3 access denied',
+          )).to.be.true;
+        }
+      });
+
+      it('should throw error when latest final result file is null', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'null-file-site';
+        const finalResultFiles = ['accessibility/null-file-site/2024-01-15-final-result.json'];
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey
+          .withArgs(
+            mockS3ClientForAudit,
+            bucketName,
+            'accessibility/null-file-site/2024-01-15-final-result.json',
+            mockLogForAudit,
+          )
+          .resolves(null);
+
+        // Act & Assert
+        try {
+          await getUrlsForAuditMocked(
+            mockS3ClientForAudit,
+            bucketName,
+            siteId,
+            mockLogForAudit,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.equal('[A11yAudit] No latest final result file found for null-file-site');
+          expect(mockLogForAudit.error.calledWith(
+            '[A11yAudit] No latest final result file found for null-file-site',
+          )).to.be.true;
+        }
+      });
+
+      it('should throw error when getObjectFromKey fails', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'get-object-error-site';
+        const finalResultFiles = ['accessibility/get-object-error-site/2024-01-15-final-result.json'];
+        const getObjectError = new Error('Failed to get object from S3');
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey
+          .withArgs(
+            mockS3ClientForAudit,
+            bucketName,
+            'accessibility/get-object-error-site/2024-01-15-final-result.json',
+            mockLogForAudit,
+          )
+          .rejects(getObjectError);
+
+        // Act & Assert
+        try {
+          await getUrlsForAuditMocked(
+            mockS3ClientForAudit,
+            bucketName,
+            siteId,
+            mockLogForAudit,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.equal('Failed to get object from S3');
+          expect(mockLogForAudit.error.calledWith(
+            '[A11yAudit] Error getting latest final result file for get-object-error-site: Failed to get object from S3',
+          )).to.be.true;
+        }
+      });
+
+      it('should throw error when no HTTPS URLs found in final result file', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'no-urls-site';
+        const finalResultFiles = ['accessibility/no-urls-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 0 },
+          },
+          metadata: {
+            scanDate: '2024-01-15',
+            totalPages: 0,
+          },
+          'http://insecure.example.com': {
+            violations: { total: 1 },
+            traffic: '100',
+          },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act & Assert
+        try {
+          await getUrlsForAuditMocked(
+            mockS3ClientForAudit,
+            bucketName,
+            siteId,
+            mockLogForAudit,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.equal('[A11yAudit] No URLs found for no-urls-site');
+          expect(mockLogForAudit.error.calledWith(
+            '[A11yAudit] No URLs found for no-urls-site',
+          )).to.be.true;
+        }
+      });
+
+      it('should throw error when final result file contains only overall data', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'only-overall-site';
+        const finalResultFiles = ['accessibility/only-overall-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 5 },
+          },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act & Assert
+        try {
+          await getUrlsForAuditMocked(
+            mockS3ClientForAudit,
+            bucketName,
+            siteId,
+            mockLogForAudit,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.equal('[A11yAudit] No URLs found for only-overall-site');
+          expect(mockLogForAudit.error.calledWith(
+            '[A11yAudit] No URLs found for only-overall-site',
+          )).to.be.true;
+        }
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should handle empty final result file', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'empty-file-site';
+        const finalResultFiles = ['accessibility/empty-file-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {};
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act & Assert
+        try {
+          await getUrlsForAuditMocked(
+            mockS3ClientForAudit,
+            bucketName,
+            siteId,
+            mockLogForAudit,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.equal('[A11yAudit] No URLs found for empty-file-site');
+        }
+      });
+
+      it('should handle final result file with undefined traffic values', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'undefined-traffic-site';
+        const finalResultFiles = ['accessibility/undefined-traffic-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 2 },
+          },
+          'https://example.com/page1': {
+            violations: { total: 1 },
+            traffic: undefined,
+          },
+          'https://example.com/page2': {
+            violations: { total: 1 },
+            // traffic property missing
+          },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.have.length(2);
+        expect(result[0].traffic).to.be.undefined;
+        expect(result[1].traffic).to.be.undefined;
+      });
+
+      it('should handle URLs with special characters', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'special-chars-site';
+        const finalResultFiles = ['accessibility/special-chars-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 3 },
+          },
+          'https://example.com/path with spaces': {
+            violations: { total: 1 },
+            traffic: '100',
+          },
+          'https://example.com/path-with-dashes_and_underscores': {
+            violations: { total: 1 },
+            traffic: '200',
+          },
+          'https://example.com/path?query=value&other=123': {
+            violations: { total: 1 },
+            traffic: '300',
+          },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.have.length(3);
+        expect(result).to.deep.include({
+          url: 'https://example.com/path with spaces',
+          urlId: 'example.com/path with spaces',
+          traffic: '100',
+        });
+        expect(result).to.deep.include({
+          url: 'https://example.com/path-with-dashes_and_underscores',
+          urlId: 'example.com/path-with-dashes_and_underscores',
+          traffic: '200',
+        });
+        expect(result).to.deep.include({
+          url: 'https://example.com/path?query=value&other=123',
+          urlId: 'example.com/path?query=value&other=123',
+          traffic: '300',
+        });
+      });
+
+      it('should handle very large number of URLs', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'large-site';
+        const finalResultFiles = ['accessibility/large-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 100 },
+          },
+        };
+
+        // Generate 50 URLs
+        for (let i = 1; i <= 50; i += 1) {
+          latestFinalResultFile[`https://example.com/page${i}`] = {
+            violations: { total: 2 },
+            traffic: `${i * 100}`,
+          };
+        }
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.have.length(50);
+        expect(result[0]).to.deep.equal({
+          url: 'https://example.com/page1',
+          urlId: 'example.com/page1',
+          traffic: '100',
+        });
+        expect(result[49]).to.deep.equal({
+          url: 'https://example.com/page50',
+          urlId: 'example.com/page50',
+          traffic: '5000',
+        });
+      });
+
+      it('should correctly remove https:// prefix from urlId', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'url-id-test-site';
+        const finalResultFiles = ['accessibility/url-id-test-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {
+          overall: {
+            violations: { total: 1 },
+          },
+          'https://www.example.com/very/long/path/to/page.html': {
+            violations: { total: 1 },
+            traffic: '500',
+          },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.have.length(1);
+        expect(result[0]).to.deep.equal({
+          url: 'https://www.example.com/very/long/path/to/page.html',
+          urlId: 'www.example.com/very/long/path/to/page.html',
+          traffic: '500',
+        });
+      });
+    });
+
+    describe('function call verification', () => {
+      it('should call getObjectKeysUsingPrefix with correct parameters', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'param-test-site';
+        const finalResultFiles = ['accessibility/param-test-site/2024-01-15-final-result.json'];
+        const latestFinalResultFile = {
+          overall: { violations: { total: 1 } },
+          'https://example.com': { violations: { total: 1 }, traffic: '100' },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act
+        await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(mockGetObjectKeysUsingPrefix.calledOnce).to.be.true;
+        expect(mockGetObjectKeysUsingPrefix.calledWith(
+          mockS3ClientForAudit,
+          bucketName,
+          'accessibility/param-test-site/',
+          mockLogForAudit,
+          10,
+          '-final-result.json',
+        )).to.be.true;
+      });
+
+      it('should call getObjectFromKey with correct parameters', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'param-test-site-2';
+        const finalResultFiles = [
+          'accessibility/param-test-site-2/2024-01-01-final-result.json',
+          'accessibility/param-test-site-2/2024-01-15-final-result.json',
+        ];
+        const latestFinalResultFile = {
+          overall: { violations: { total: 1 } },
+          'https://example.com': { violations: { total: 1 }, traffic: '100' },
+        };
+
+        mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
+        mockGetObjectFromKey.resolves(latestFinalResultFile);
+
+        // Act
+        await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(mockGetObjectFromKey.calledOnce).to.be.true;
+        expect(mockGetObjectFromKey.calledWith(
+          mockS3ClientForAudit,
+          bucketName,
+          'accessibility/param-test-site-2/2024-01-15-final-result.json',
+          mockLogForAudit,
+        )).to.be.true;
+      });
     });
   });
 });
