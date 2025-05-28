@@ -354,7 +354,6 @@ export async function aggregateAccessibilityData(
       objectKeys,
       log,
       maxRetries,
-      getObjectFromKey,
     );
 
     // Check if we have any successful results to process
