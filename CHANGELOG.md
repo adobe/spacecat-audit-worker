@@ -1,3 +1,17 @@
+# [1.93.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.92.0...v1.93.0) (2025-05-28)
+
+
+### Features
+
+* forms low views oppoty mystique integration ([#906](https://github.com/adobe/spacecat-audit-worker/issues/906)) ([d794ec3](https://github.com/adobe/spacecat-audit-worker/commit/d794ec3c5210dac481364c7c94bfc7753885a774))
+
+# [1.92.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.91.1...v1.92.0) (2025-05-28)
+
+
+### Features
+
+* audit paid initial version ([#886](https://github.com/adobe/spacecat-audit-worker/issues/886)) ([30b7985](https://github.com/adobe/spacecat-audit-worker/commit/30b7985e8ad98fe3ff93716baa0b818a4bc1e6d8))
+
 ## [1.91.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.91.0...v1.91.1) (2025-05-27)
 
 
