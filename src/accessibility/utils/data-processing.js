@@ -231,17 +231,10 @@ export async function cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekO
  * @param {number} maxRetries - maximum number of retries for failed promises (default: 1)
  * @returns {Promise<{results: Array, failedCount: number}>} - processing results
  */
-export async function processFilesWithRetry(
-  s3Client,
-  bucketName,
-  objectKeys,
-  log,
-  maxRetries = 1,
-  getObjectFromKeyFn = getObjectFromKey,
-) {
+export async function processFilesWithRetry(s3Client, bucketName, objectKeys, log, maxRetries = 1) {
   const processFile = async (key) => {
     try {
-      const data = await getObjectFromKeyFn(s3Client, bucketName, key, log);
+      const data = await getObjectFromKey(s3Client, bucketName, key, log);
 
       if (!data) {
         log.warn(`Failed to get data from ${key}, skipping`);
@@ -305,8 +298,7 @@ export async function processFilesWithRetry(
  * @param {import('@azure/logger').Logger} log - a logger instance
  * @param {string} outputKey - the key for the aggregated output file
  * @param {string} version - the version/date to filter by
- * @param {number} maxRetries - maximum number of retries for failed promises (default: 2)
- * @param {object} dependencies - optional dependencies for testing
+ * @param {number} maxRetries - maximum number of retries for failed promises (default: 1)
  * @returns {Promise<{success: boolean, aggregatedData: object, message: string}>} - result
  */
 export async function aggregateAccessibilityData(
@@ -316,19 +308,8 @@ export async function aggregateAccessibilityData(
   log,
   outputKey,
   version,
-  maxRetries = 2,
-  dependencies = {},
+  maxRetries = 1,
 ) {
-  // Default dependencies
-  const {
-    getObjectKeysFromSubfoldersFn = getObjectKeysFromSubfolders,
-    processFilesWithRetryFn = processFilesWithRetry,
-    updateViolationDataFn = updateViolationData,
-    getObjectKeysUsingPrefixFn = getObjectKeysUsingPrefix,
-    getObjectFromKeyFn = getObjectFromKey,
-    cleanupS3FilesFn = cleanupS3Files,
-  } = dependencies;
-
   if (!s3Client || !bucketName || !siteId) {
     const message = 'Missing required parameters for aggregateAccessibilityData';
     log.error(message);
@@ -354,7 +335,7 @@ export async function aggregateAccessibilityData(
 
   try {
     // Get object keys from subfolders
-    const objectKeysResult = await getObjectKeysFromSubfoldersFn(
+    const objectKeysResult = await getObjectKeysFromSubfolders(
       s3Client,
       bucketName,
       siteId,
@@ -367,13 +348,12 @@ export async function aggregateAccessibilityData(
     const { objectKeys } = objectKeysResult;
 
     // Process files with retry logic
-    const { results } = await processFilesWithRetryFn(
+    const { results } = await processFilesWithRetry(
       s3Client,
       bucketName,
       objectKeys,
       log,
       maxRetries,
-      getObjectFromKeyFn,
     );
 
     // Check if we have any successful results to process
@@ -395,8 +375,8 @@ export async function aggregateAccessibilityData(
       };
 
       // Update overall data
-      aggregatedData = updateViolationDataFn(aggregatedData, violations, 'critical');
-      aggregatedData = updateViolationDataFn(aggregatedData, violations, 'serious');
+      aggregatedData = updateViolationData(aggregatedData, violations, 'critical');
+      aggregatedData = updateViolationData(aggregatedData, violations, 'serious');
       if (violations.total) {
         aggregatedData.overall.violations.total += violations.total;
       }
@@ -414,13 +394,13 @@ export async function aggregateAccessibilityData(
 
     // check if there are any other final-result files in the accessibility/siteId folder
     // if there are, we will use the latest one for comparison later on
-    const lastWeekObjectKeys = await getObjectKeysUsingPrefixFn(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
+    const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
     log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
 
     // get last week file and start creating the report
     const lastWeekFile = lastWeekObjectKeys.length < 2
       ? null
-      : await getObjectFromKeyFn(
+      : await getObjectFromKey(
         s3Client,
         bucketName,
         lastWeekObjectKeys[lastWeekObjectKeys.length - 2],
@@ -430,7 +410,7 @@ export async function aggregateAccessibilityData(
       log.info(`[A11yAudit] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
-    await cleanupS3FilesFn(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
+    await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
 
     return {
       success: true,
@@ -495,18 +475,11 @@ export async function createReportOpportunitySuggestion(
  * @param {string} bucketName - the name of the S3 bucket
  * @param {string} siteId - the site ID to look for
  * @param {import('@azure/logger').Logger} log - a logger instance
- * @param {object} dependencies - optional dependencies for testing
  */
-export async function getUrlsForAudit(s3Client, bucketName, siteId, log, dependencies = {}) {
-  // Default dependencies
-  const {
-    getObjectKeysUsingPrefixFn = getObjectKeysUsingPrefix,
-    getObjectFromKeyFn = getObjectFromKey,
-  } = dependencies;
-
+export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
   let finalResultFiles;
   try {
-    finalResultFiles = await getObjectKeysUsingPrefixFn(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
+    finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
     if (finalResultFiles.length === 0) {
       const errorMessage = `[A11yAudit] No final result files found for ${siteId}`;
       log.error(errorMessage);
@@ -521,7 +494,7 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log, depende
   let latestFinalResultFile;
   try {
     // eslint-disable-next-line max-len
-    latestFinalResultFile = await getObjectFromKeyFn(s3Client, bucketName, latestFinalResultFileKey, log);
+    latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
     if (!latestFinalResultFile) {
       const errorMessage = `[A11yAudit] No latest final result file found for ${siteId}`;
       log.error(errorMessage);
