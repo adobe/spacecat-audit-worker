@@ -11,11 +11,12 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const AUDIT_TYPE = 'audit-status-processor'; // Use exact audit type name
+const AUDIT_TYPE = 'audit-status-processor';
 
 /**
  * Creates a standard audit status message for Slack
@@ -23,39 +24,19 @@ const AUDIT_TYPE = 'audit-status-processor'; // Use exact audit type name
  * @param {string} organizationId - The organization ID
  * @param {string} experienceUrl - The experience URL
  * @param {string} status - The status to display
- * @returns {object} The message text and blocks
+ * @returns {string} The message text
  */
 function createAuditStatusMessage(siteId, organizationId, experienceUrl, status) {
-  const text = `Audit Status Update for site ${siteId}`;
-  const blocks = [
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*Audit Status Update*\nSite ID: ${siteId}\nOrganization ID: ${organizationId}\nStatus: ${status}`,
-      },
-    },
-    {
-      type: 'context',
-      elements: [
-        {
-          type: 'mrkdwn',
-          text: `Experience URL: ${experienceUrl}`,
-        },
-      ],
-    },
-  ];
-
-  return { text, blocks };
+  return `*Audit Status Update*\nSite ID: ${siteId}\nOrganization ID: ${organizationId}\nStatus: ${status}\nExperience URL: ${experienceUrl}`;
 }
 
 /**
  * Runs the audit status processor
- * @param {object} message - The message object
+ * @param {object} auditStatusMessage - The auditStatusMessage object
  * @param {object} context - The context object
  * @returns {Promise<object>} The audit result
  */
-export async function run(message, context) {
+export async function run(auditStatusMessage, context) {
   const { log, env } = context;
 
   // Check for required Slack environment variables
@@ -69,21 +50,11 @@ export async function run(message, context) {
     throw new Error('Missing required SLACK_SIGNING_SECRET environment variable');
   }
 
-  // Log raw message without stringifying strings
-  log.info('Handler received message:', {
-    messageKeys: Object.keys(message),
-    messageValues: Object.entries(message).reduce((acc, [key, value]) => {
-      // Don't stringify if it's already a string
-      acc[key] = typeof value === 'string' ? value : JSON.stringify(value);
-      return acc;
-    }, {}),
-  });
-
   const {
     siteId,
     auditContext,
     type,
-  } = message;
+  } = auditStatusMessage;
 
   const {
     experienceUrl: siteUrl,
@@ -96,7 +67,14 @@ export async function run(message, context) {
     channelId,
   } = slackContext;
 
-  log.info('message: siteId', siteId, 'auditContext', auditContext, 'type', type, 'siteUrl', siteUrl, 'organizationId', organizationId, 'slackContext', slackContext, 'threadTs', threadTs, 'channelId', channelId);
+  log.info('auditStatusMessage:', {
+    siteId,
+    type,
+    siteUrl,
+    organizationId,
+    threadTs,
+    channelId,
+  });
 
   if (!channelId) {
     log.error('Missing channelId in slackContext:', slackContext);
@@ -111,12 +89,22 @@ export async function run(message, context) {
     siteId,
     siteUrl,
     organizationId,
-    auditType: AUDIT_TYPE, // Use exact audit type name
+    auditType: AUDIT_TYPE,
   });
 
   try {
+    // Create Slack client
+    const slackClient = BaseSlackClient.createFrom({
+      channelId,
+      threadTs,
+      env: {
+        SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
+        SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
+      },
+    });
+
     // Create and send the status message
-    const { text, blocks } = createAuditStatusMessage(
+    const slackMessage = createAuditStatusMessage(
       siteId,
       organizationId,
       siteUrl,
@@ -124,25 +112,12 @@ export async function run(message, context) {
     );
 
     log.info('Sending Slack message:', {
-      text,
-      blocks: JSON.stringify(blocks),
-      slackContext: JSON.stringify(slackContext),
-      hasToken: !!env.SLACK_BOT_TOKEN,
-      hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
+      slackMessage,
+      channelId,
+      threadTs,
     });
 
-    const slackResult = await sendSlackMessage(
-      context,
-      slackContext,
-      text,
-      blocks, // Make sure blocks are passed
-    );
-
-    log.info('Slack message sent:', {
-      result: JSON.stringify(slackResult),
-      channel: slackContext.channelId,
-      thread: slackContext.threadTs || 'new thread',
-    });
+    await sendSlackMessage(slackClient, slackContext, slackMessage);
 
     return {
       siteId,
@@ -161,27 +136,6 @@ export async function run(message, context) {
       stack: error.stack,
       errorType: error.name,
     });
-    // Try to send error message to Slack
-    try {
-      const { text, blocks } = createAuditStatusMessage(
-        siteId,
-        organizationId,
-        siteUrl,
-        `Error: ${error.message}`,
-      );
-      await sendSlackMessage(
-        context,
-        slackContext,
-        text,
-        blocks, // Make sure blocks are passed
-      );
-    } catch (slackError) {
-      log.error('Failed to send error message to Slack:', {
-        error: slackError.message,
-        stack: slackError.stack,
-        errorType: slackError.name,
-      });
-    }
 
     return {
       siteId,

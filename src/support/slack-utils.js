@@ -11,155 +11,26 @@
  */
 
 // eslint-disable-next-line import/no-unresolved
-import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
+import { isObject, hasText } from '@adobe/spacecat-shared-utils';
 
 /**
- * Sends a message to Slack using the provided context and message details
- * @param {object} context - The context object containing configurations and services
+ * Sends a message to Slack using the provided client and context
+ * @param {object} slackClient - The Slack client instance
  * @param {object} slackContext - The Slack context containing channelId and threadTs
- * @param {string} text - The main text of the message
- * @param {Array} blocks - The message blocks to display
- * @param {object} options - Additional options for the message (e.g., thread_ts)
+ * @param {string} message - The message text to send
  * @returns {Promise<void>}
  */
-export async function sendSlackMessage(context, slackContext, text, blocks, options = {}) {
-  const { log, env } = context;
-  const { channelId, threadTs } = slackContext;
-
-  // Log environment variables (safely)
-  log.info('Slack environment check:', {
-    hasToken: !!env.SLACK_BOT_TOKEN,
-    hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
-    tokenPrefix: `${env.SLACK_BOT_TOKEN?.substring(0, 10)}...`,
-    signingSecretPrefix: `${env.SLACK_SIGNING_SECRET?.substring(0, 5)}...`,
-  });
-
-  log.info('Preparing to send Slack message:', {
-    channelId,
-    threadTs,
-    text,
-    blocks: JSON.stringify(blocks, null, 2),
-    options: JSON.stringify(options, null, 2),
-  });
-
-  try {
-    // Create Slack client using the provided context and environment
-    const slackClient = BaseSlackClient.createFrom({
-      channelId,
-      threadTs,
-      env: {
-        SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
-        SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
-      },
-    });
-
-    // Verify client creation
-    if (!slackClient) {
-      throw new Error('Failed to create Slack client');
-    }
-
-    log.info('Created Slack client:', {
-      channelId: slackClient.channelId,
-      threadTs: slackClient.threadTs,
-      hasToken: !!env.SLACK_BOT_TOKEN,
-      hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
-      tokenLength: env.SLACK_BOT_TOKEN?.length,
-      signingSecretLength: env.SLACK_SIGNING_SECRET?.length,
-      clientMethods: Object.keys(slackClient),
-    });
-
-    // Construct the message
-    const slackMessage = {
+export async function sendSlackMessage(slackClient, slackContext, message) {
+  if (!isObject(slackClient) || !isObject(slackContext) || !hasText(message)) {
+    return;
+  }
+  const { threadTs, channelId } = slackContext;
+  if (hasText(threadTs) && hasText(channelId)) {
+    await slackClient.postMessage({
       channel: channelId,
-      text,
-      blocks,
-      ...options,
-    };
-
-    // If we have a thread timestamp, use it to reply in the thread
-    if (threadTs) {
-      slackMessage.thread_ts = threadTs;
-    }
-
-    // Verify message format
-    if (!slackMessage.channel) {
-      throw new Error('Missing channel in Slack message');
-    }
-    if (!slackMessage.text && (!slackMessage.blocks || !slackMessage.blocks.length)) {
-      throw new Error('Slack message must have either text or blocks');
-    }
-
-    log.info('Sending Slack message:', {
-      message: JSON.stringify(slackMessage, null, 2),
-      messageLength: JSON.stringify(slackMessage).length,
-      blocksLength: JSON.stringify(blocks).length,
-      textLength: text.length,
-      channel: slackMessage.channel,
-      hasThread: !!slackMessage.thread_ts,
+      thread_ts: threadTs,
+      text: message,
+      unfurl_links: false,
     });
-
-    // Send the message
-    const result = await slackClient.sendMessage(slackMessage);
-
-    // Verify result
-    if (!result) {
-      throw new Error('No result from Slack API call');
-    }
-
-    log.info('Slack message sent successfully:', {
-      result: JSON.stringify(result, null, 2),
-      channel: channelId,
-      thread: threadTs || 'new thread',
-      messageId: result?.ts,
-      ok: result?.ok,
-      error: result?.error,
-    });
-
-    return result;
-  } catch (error) {
-    // Log the raw error first
-    log.error('Raw Slack error:', {
-      error,
-      errorMessage: error.message,
-      errorStack: error.stack,
-      errorType: error.name,
-      errorCode: error.code,
-      errorData: error.data,
-    });
-
-    // Try to safely stringify the message for logging
-    let messageStr;
-    try {
-      messageStr = JSON.stringify({
-        channel: channelId,
-        text,
-        blocks,
-        ...options,
-        thread_ts: threadTs,
-      }, null, 2);
-    } catch (stringifyError) {
-      messageStr = 'Failed to stringify message';
-      log.error('Failed to stringify message for logging:', {
-        stringifyError: stringifyError.message,
-        stringifyErrorType: stringifyError.name,
-      });
-    }
-
-    // Log the error with safe message string
-    log.error('Failed to send Slack message:', {
-      error: error.message,
-      stack: error.stack,
-      errorType: error.name,
-      errorCode: error.code,
-      channelId,
-      threadTs,
-      hasToken: !!env.SLACK_BOT_TOKEN,
-      hasSigningSecret: !!env.SLACK_SIGNING_SECRET,
-      tokenLength: env.SLACK_BOT_TOKEN?.length,
-      signingSecretLength: env.SLACK_SIGNING_SECRET?.length,
-      message: messageStr,
-    });
-
-    throw error;
   }
 }
