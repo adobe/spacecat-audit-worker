@@ -100,6 +100,7 @@ export async function run(auditStatusMessage, context) {
       env: {
         SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
         SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
+        SLACK_TOKEN_ADOBE_INTERNAL: env.SLACK_TOKEN_ADOBE_INTERNAL,
       },
     }, 'internal');
 
