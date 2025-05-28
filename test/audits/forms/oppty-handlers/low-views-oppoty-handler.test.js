@@ -78,6 +78,36 @@ describe('createLowFormViewsOpportunities handler method', () => {
     auditData = testData.lowFormviewsAuditData;
   });
 
+  it('should send message to mystique', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
+    await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+    const expectedMessage = {
+      type: 'guidance:high-page-views-low-form-views',
+      siteId: 'site-id',
+      auditId: 'audit-id',
+      deliveryType: 'eds',
+      url: 'https://www.surest.com/existing-opportunity',
+      data: {
+        form_source: '',
+        cta_text: '',
+        cta_source: '',
+      },
+    };
+    expect(context.sqs.sendMessage).to.be.calledWith(
+      'test-queue',
+      sinon.match((actual) => (
+        actual.type === expectedMessage.type
+        && actual.siteId === expectedMessage.siteId
+        && actual.auditId === expectedMessage.auditId
+        && actual.deliveryType === expectedMessage.deliveryType
+        && actual.url === expectedMessage.url
+        && actual.data.form_source === expectedMessage.data.form_source
+        && actual.data.cta_text === expectedMessage.data.cta_text
+        && actual.data.cta_source === expectedMessage.data.cta_source
+      ), 'matches expected message excluding timestamp'),
+    );
+  });
+
   it('should create new high page views low form views opportunity', async () => {
     const expectedOpportunityData = {
       siteId: 'site-id',
@@ -217,36 +247,5 @@ describe('createLowFormViewsOpportunities handler method', () => {
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
-  });
-
-  it('should send message to mystique', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
-    await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
-
-    const expectedMessage = {
-      type: 'guidance:high-page-views-low-form-views',
-      siteId: 'site-id',
-      auditId: 'audit-id',
-      deliveryType: 'eds',
-      url: 'https://www.surest.com/existing-opportunity',
-      data: {
-        form_source: '',
-        cta_text: '',
-        cta_source: '',
-      },
-    };
-    expect(context.sqs.sendMessage).to.be.calledWith(
-      'test-queue',
-      sinon.match((actual) => (
-        actual.type === expectedMessage.type
-        && actual.siteId === expectedMessage.siteId
-        && actual.auditId === expectedMessage.auditId
-        && actual.deliveryType === expectedMessage.deliveryType
-        && actual.url === expectedMessage.url
-        && actual.data.form_source === expectedMessage.data.form_source
-        && actual.data.cta_text === expectedMessage.data.cta_text
-        && actual.data.cta_source === expectedMessage.data.cta_source
-      ), 'matches expected message excluding timestamp'),
-    );
   });
 });
