@@ -1,3 +1,10 @@
+# [1.94.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.93.1...v1.94.0) (2025-05-28)
+
+
+### Features
+
+* added includedURLs from Site config for meta-tags audit ([#856](https://github.com/adobe/spacecat-audit-worker/issues/856)) ([c8ce904](https://github.com/adobe/spacecat-audit-worker/commit/c8ce90434619758f17ca4a208216693dcaaa092e))
+
 ## [1.93.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.93.0...v1.93.1) (2025-05-28)
 
 
