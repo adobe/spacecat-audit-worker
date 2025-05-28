@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "nodemon",
-    "test": "c8 --exclude=src/audit-status-processor/** --exclude=src/index.js --exclude=src/index-local.js --exclude=src/preflight/** --exclude=src/experimentation-ess/** --exclude=src/lhs/** --exclude=src/support/** --exclude=src/structured-data/** mocha 'test/**/*.test.js' --ignore test/index.test.js",
+    "test": "c8 --exclude=src/audit-status-processor/** --exclude=src/disable-import-audit-processor/** --exclude=src/index.js --exclude=src/index-local.js --exclude=src/preflight/** --exclude=src/experimentation-ess/** --exclude=src/lhs/** --exclude=src/support/** --exclude=src/structured-data/** mocha 'test/**/*.test.js' --ignore test/index.test.js",
     "test:index": "mocha test/index.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",

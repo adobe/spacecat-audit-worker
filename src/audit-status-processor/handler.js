@@ -11,23 +11,15 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { sendSlackMessage } from '../support/slack-utils.js';
+import { sendSlackMessage, createSlackClientForInternal } from '../support/slack-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const AUDIT_TYPE = 'audit-status-processor';
+const AUDIT_TYPE = Audit.AUDIT_TYPES.AUDIT_STATUS_PROCESSOR;
 
-/**
- * Creates a standard audit status message for Slack
- * @param {string} siteId - The site ID
- * @param {string} organizationId - The organization ID
- * @param {string} experienceUrl - The experience URL
- * @param {string} status - The status to display
- * @returns {string} The message text
- */
-function createAuditStatusMessage(siteId, organizationId, experienceUrl, status) {
-  return `Audits ${status} for ${siteId} in ${organizationId} at ${experienceUrl}`;
+/** Prepare demo url for the site */
+function prepareDemoUrl(experienceUrl, organizationId, siteId) {
+  return `${experienceUrl}?organizationId=${organizationId}#/@aemrefdemoshared/sites-optimizer/sites/${siteId}/home`;
 }
 
 /**
@@ -36,54 +28,12 @@ function createAuditStatusMessage(siteId, organizationId, experienceUrl, status)
  * @param {object} context - The context object
  * @returns {Promise<object>} The audit result
  */
-export async function run(auditStatusMessage, context) {
+export async function runAuditStatusProcessor(auditStatusMessage, context) {
   const { log, env } = context;
-
-  // Check for required Slack environment variables
-  if (!env.SLACK_BOT_TOKEN) {
-    log.error('Missing required SLACK_BOT_TOKEN environment variable');
-    throw new Error('Missing required SLACK_BOT_TOKEN environment variable');
-  }
-
-  if (!env.SLACK_SIGNING_SECRET) {
-    log.error('Missing required SLACK_SIGNING_SECRET environment variable');
-    throw new Error('Missing required SLACK_SIGNING_SECRET environment variable');
-  }
-
+  const { siteId, auditContext } = auditStatusMessage;
   const {
-    siteId,
-    auditContext,
-    type,
-  } = auditStatusMessage;
-
-  const {
-    experienceUrl: siteUrl,
-    organizationId,
-    slackContext,
+    experienceUrl: siteUrl, organizationId, auditTypes, slackContext,
   } = auditContext;
-
-  const {
-    threadTs,
-    channelId,
-  } = slackContext;
-
-  log.info('auditStatusMessage:', {
-    siteId,
-    type,
-    siteUrl,
-    organizationId,
-    threadTs,
-    channelId,
-  });
-
-  if (!channelId) {
-    log.error('Missing channelId in slackContext:', slackContext);
-    throw new Error('Missing required channelId in slackContext');
-  }
-  if (!threadTs) {
-    log.error('Missing threadTs in slackContext:', slackContext);
-    throw new Error('Missing required threadTs in slackContext');
-  }
 
   log.info('Processing audit status for site:', {
     siteId,
@@ -94,34 +44,38 @@ export async function run(auditStatusMessage, context) {
 
   try {
     // Create Slack client
-    const slackClientContext = {
-      channelId: slackContext.channelId,
-      threadTs: slackContext.threadTs,
-      env: {
-        SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
-        SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
-        SLACK_TOKEN_WORKSPACE_INTERNAL: env.SLACK_TOKEN_WORKSPACE_INTERNAL,
-        SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: env.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
-      },
-    };
-    const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
-    const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
-
-    // Create and send the status message
-    const slackMessage = createAuditStatusMessage(
-      siteId,
-      organizationId,
-      siteUrl,
-      'Completed',
+    const slackClient = await createSlackClientForInternal(
+      slackContext.channelId,
+      slackContext.threadTs,
+      env,
     );
 
-    log.info('Sending Slack message:', {
-      slackMessage,
-      channelId,
-      threadTs,
+    // Check latest audit status for each audit type in parallel
+    const auditStatusPromises = auditTypes.map(async (auditType) => {
+      const latestAudit = await Audit.findLatestBySiteIdAndAuditType(siteId, auditType);
+      if (latestAudit) {
+        const auditResult = latestAudit.getAuditResult();
+        if (auditResult.success) {
+          log.info(`Latest ${auditType} audit for site ${siteId} was successful`);
+          const slackMessage = `:check_mark: Latest ${auditType} audit for site ${siteId} was successful`;
+          return sendSlackMessage(slackClient, slackContext, slackMessage);
+        } else {
+          log.warn(`Latest ${auditType} audit for site ${siteId} failed: ${auditResult.error || 'Unknown error'}`);
+          const slackMessage = `:x: Latest ${auditType} audit for site ${siteId} failed: ${auditResult.error || 'Unknown error'}`;
+          return sendSlackMessage(slackClient, slackContext, slackMessage);
+        }
+      } else {
+        log.info(`No previous ${auditType} audit found for site ${siteId}`);
+        return null;
+      }
     });
 
-    await sendSlackMessage(slackClient, slackContext, slackMessage);
+    await Promise.all(auditStatusPromises);
+
+    // prepare demo url
+    const demoUrl = prepareDemoUrl(siteUrl, organizationId, siteId);
+    log.info(`Demo url: ${demoUrl}`);
+    await sendSlackMessage(slackClient, slackContext, `:tada: Demo url: ${demoUrl}`);
 
     return {
       siteId,
@@ -157,5 +111,5 @@ export async function run(auditStatusMessage, context) {
 // Export the built handler for use with AuditBuilder
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('run-audit-status', run, AUDIT_STEP_DESTINATIONS.AUDIT_WORKER)
+  .addStep('run-audit-status', runAuditStatusProcessor, AUDIT_STEP_DESTINATIONS.AUDIT_WORKER)
   .build();

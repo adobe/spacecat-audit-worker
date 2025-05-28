@@ -12,6 +12,7 @@
 
 // eslint-disable-next-line import/no-unresolved
 import { isObject, hasText } from '@adobe/spacecat-shared-utils';
+import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
 
 /**
  * Sends a message to Slack using the provided client and context
@@ -33,4 +34,20 @@ export async function sendSlackMessage(slackClient, slackContext, message) {
       unfurl_links: false,
     });
   }
+}
+
+export async function createSlackClientForInternal(channelId, threadTs, env) {
+  const slackClientContext = {
+    channelId,
+    threadTs,
+    env: {
+      SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
+      SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
+      SLACK_TOKEN_WORKSPACE_INTERNAL: env.SLACK_TOKEN_WORKSPACE_INTERNAL,
+      SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: env.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
+    },
+  };
+  const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
+  const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
+  return slackClient;
 }
