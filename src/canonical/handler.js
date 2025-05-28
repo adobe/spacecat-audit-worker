@@ -132,9 +132,10 @@ export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
  * @param {string} url - The URL to validate the canonical tag for.
  * @param {Object} log - The logging object to log information.
  * @param {RequestOptions} options - The options object to pass to the fetch function.
+ * @param {boolean} isPreview - Whether the URL is for a preview page.
  * @returns {Promise<Object>} An object containing the canonical URL and an array of checks.
  */
-export async function validateCanonicalTag(url, log, options = {}) {
+export async function validateCanonicalTag(url, log, options = {}, isPreview = false) {
   // in case of undefined or null URL in the 200 top pages list
   if (!url) {
     const errorMessage = 'URL is undefined or null';
@@ -209,7 +210,9 @@ export async function validateCanonicalTag(url, log, options = {}) {
               check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
               success: true,
             });
-            if (canonicalUrl === url) {
+            const canonicalPath = new URL(canonicalUrl).pathname;
+            const urlPath = new URL(url).pathname;
+            if ((isPreview && canonicalPath === urlPath) || canonicalUrl === url) {
               checks.push({
                 check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
                 success: true,
@@ -272,9 +275,10 @@ export async function validateCanonicalTag(url, log, options = {}) {
  * @param {string} canonicalUrl - The canonical URL to validate.
  * @param {string} baseUrl - The base URL to compare against.
  * @param log
+ * @param {boolean} isPreview - Whether the URL is for a preview page.
  * @returns {Array<Object>} Array of check results.
  */
-export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
+export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = false) {
   const checks = [];
   let base;
 
@@ -359,18 +363,20 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log) {
     }
 
     // Check if the canonical URL has the same domain as the base URL
-    if (composeBaseURL(url.hostname) !== composeBaseURL(base.hostname)) {
-      checks.push({
-        check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
-        success: false,
-        explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.explanation,
-      });
-      log.info(`Canonical URL ${canonicalUrl} does not have the same domain as base URL ${baseUrl}`);
-    } else {
-      checks.push({
-        check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
-        success: true,
-      });
+    if (!isPreview) {
+      if (composeBaseURL(url.hostname) !== composeBaseURL(base.hostname)) {
+        checks.push({
+          check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
+          success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.explanation,
+        });
+        log.info(`Canonical URL ${canonicalUrl} does not have the same domain as base URL ${baseUrl}`);
+      } else {
+        checks.push({
+          check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
+          success: true,
+        });
+      }
     }
   }
 
