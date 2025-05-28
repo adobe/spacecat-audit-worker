@@ -11,8 +11,9 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { sendSlackMessage, createSlackClientForInternal } from '../support/slack-utils.js';
+import { sendSlackMessage } from '../support/slack-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE = Audit.AUDIT_TYPES.DISABLE_IMPORT_AUDIT_PROCESSOR;
@@ -44,11 +45,18 @@ export async function runDisableImportAuditProcessor(message, context) {
     });
 
     // Create Slack client
-    const slackClient = await createSlackClientForInternal(
-      slackContext.channelId,
-      slackContext.threadTs,
-      env,
-    );
+    const slackClientContext = {
+      channelId: slackContext.channelId,
+      threadTs: slackContext.threadTs,
+      env: {
+        SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
+        SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
+        SLACK_TOKEN_WORKSPACE_INTERNAL: env.SLACK_TOKEN_WORKSPACE_INTERNAL,
+        SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: env.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
+      },
+    };
+    const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
+    const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
 
     // Disable imports
     const siteConfig = site.getConfig();
