@@ -1,3 +1,10 @@
+## [1.93.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.93.0...v1.93.1) (2025-05-28)
+
+
+### Bug Fixes
+
+* preflight canonical identify ([#904](https://github.com/adobe/spacecat-audit-worker/issues/904)) ([a44780d](https://github.com/adobe/spacecat-audit-worker/commit/a44780d25ebc5fde472f469efe9a66dcae0d8a9c))
+
 # [1.93.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.92.0...v1.93.0) (2025-05-28)
 
 
