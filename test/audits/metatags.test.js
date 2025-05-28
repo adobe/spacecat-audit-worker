@@ -252,6 +252,9 @@ describe('Meta Tags', () => {
         getId: sinon.stub().returns('site-id'),
         getBaseURL: sinon.stub().returns('http://example.com'),
         getIsLive: sinon.stub().returns(true),
+        getConfig: sinon.stub().returns({
+          getIncludedURLs: sinon.stub().returns([]),
+        }),
       };
       audit = {
         getId: sinon.stub().returns('audit-id'),
@@ -313,6 +316,28 @@ describe('Meta Tags', () => {
       it('should throw error if no top pages found', async () => {
         dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
         await expect(submitForScraping(context)).to.be.rejectedWith('No top pages found for site');
+      });
+
+      it('should submit top pages for scraping when getIncludedURLs returns null', async () => {
+        const topPages = [
+          { getUrl: () => 'http://example.com/page1' },
+          { getUrl: () => 'http://example.com/page2' },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+        const getConfigStub = sinon.stub().returns({
+          getIncludedURLs: sinon.stub().returns(null),
+        });
+        context.site.getConfig = getConfigStub;
+
+        const result = await submitForScraping(context);
+        expect(result).to.deep.equal({
+          urls: [
+            { url: 'http://example.com/page1' },
+            { url: 'http://example.com/page2' },
+          ],
+          siteId: 'site-id',
+          type: 'meta-tags',
+        });
       });
     });
 
@@ -710,7 +735,12 @@ describe('Meta Tags', () => {
           getIsLive: sinon.stub().returns(true),
           getId: sinon.stub().returns('site-id'),
           getBaseURL: sinon.stub().returns('http://example.com'),
-          getConfig: sinon.stub(),
+          getConfig: sinon.stub().returns({
+            getIncludedURLs: sinon.stub().returns([]),
+            getFetchConfig: sinon.stub().returns({
+              overrideBaseURL: null,
+            }),
+          }),
         };
 
         audit = {
@@ -921,6 +951,23 @@ describe('Meta Tags', () => {
 
         expect(result).to.deep.equal({ status: 'complete' });
         expect(logStub.warn).to.have.been.calledWith('Error while calculating projected traffic for site-id', sinon.match.instanceOf(Error));
+      });
+
+      it('should submit top pages for scraping when getIncludedURLs returns null', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const getConfigStub = sinon.stub().returns({
+          getIncludedURLs: sinon.stub().returns(null),
+        });
+        context.site.getConfig = getConfigStub;
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+        });
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+        expect(result).to.deep.equal({ status: 'complete' });
       });
     });
 

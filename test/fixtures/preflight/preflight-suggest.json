@@ -1,6 +1,6 @@
 [
   {
-    "pageUrl": "https://example.com/page1",
+    "pageUrl": "https://main--example--page.aem.page/page1",
     "step": "suggest",
     "audits": [
       {
@@ -8,10 +8,10 @@
         "type": "seo",
         "opportunities": [
           {
-            "check": "canonical-url-fetch-error",
-            "issue": "There was an error fetching the canonical URL, which prevents validation of the canonical tag.",
+            "check": "canonical-self-referenced",
+            "issue": "The canonical URL should point to itself to indicate that it is the preferred version of the content.",
             "seoImpact": "Moderate",
-            "seoRecommendation": "There was an error fetching the canonical URL, which prevents validation of the canonical tag."
+            "seoRecommendation": "The canonical URL should point to itself to indicate that it is the preferred version of the content."
           }
         ]
       },
@@ -22,7 +22,7 @@
           {
             "check": "broken-internal-links",
             "issue": {
-              "url": "https://example.com/broken",
+              "url": "https://main--example--page.aem.page/broken",
               "issue": "Status 404",
               "seoImpact": "High",
               "seoRecommendation": "Fix or remove broken links to improve user experience and SEO"
