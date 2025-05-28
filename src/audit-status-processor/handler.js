@@ -27,7 +27,7 @@ const AUDIT_TYPE = 'audit-status-processor';
  * @returns {string} The message text
  */
 function createAuditStatusMessage(siteId, organizationId, experienceUrl, status) {
-  return `*Audit Status Update*\nSite ID: ${siteId}\nOrganization ID: ${organizationId}\nStatus: ${status}\nExperience URL: ${experienceUrl}`;
+  return `Audits ${status} for ${siteId} in ${organizationId} at ${experienceUrl}`;
 }
 
 /**
@@ -101,6 +101,7 @@ export async function run(auditStatusMessage, context) {
         SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
         SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
       },
+      target: 'internal',
     });
 
     // Create and send the status message
@@ -108,7 +109,7 @@ export async function run(auditStatusMessage, context) {
       siteId,
       organizationId,
       siteUrl,
-      'Processing',
+      'Completed',
     );
 
     log.info('Sending Slack message:', {
@@ -122,7 +123,7 @@ export async function run(auditStatusMessage, context) {
     return {
       siteId,
       auditResult: {
-        status: 'processing',
+        status: 'Completed',
         siteId,
         organizationId,
         experienceUrl: siteUrl,
