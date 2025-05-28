@@ -40,6 +40,7 @@ import structuredData from './structured-data/handler.js';
 import siteDetection from './site-detection/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
+import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
@@ -69,6 +70,7 @@ const HANDLERS = {
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
+  'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   preflight,
   dummy: (message) => ok(message),
 };
