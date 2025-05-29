@@ -410,7 +410,7 @@ const testData = {
           },
           pageview: {
             'desktop:windows': 5690,
-            'mobile:ios': 1000,
+            'mobile:ios': 0,
           },
           trafficacquisition: {
             paid: 2690,

@@ -91,6 +91,13 @@ function getFormMetrics(metricObject) {
   });
 }
 
+function calculateRate(numerator, denominator) {
+  if (denominator === 0 || Number.isNaN(numerator) || Number.isNaN(denominator)) {
+    return null; // Return null if the calculation is invalid
+  }
+  return Number((numerator / denominator).toFixed(3));
+}
+
 function convertToLowViewOpptyData(metricObject) {
   const {
     formview: { total: formViews, mobile: formViewsMobile, desktop: formViewsDesktop },
@@ -99,27 +106,27 @@ function convertToLowViewOpptyData(metricObject) {
   } = metricObject;
   return {
     trackedFormKPIName: 'Form View Rate',
-    trackedFormKPIValue: Number((formViews / pageViews).toFixed(3)),
+    trackedFormKPIValue: calculateRate(formViews, pageViews),
     metrics: [
       {
         type: 'formViewRate',
         device: '*',
         value: {
-          page: Number((formViews / pageViews).toFixed(3)),
+          page: calculateRate(formViews, pageViews),
         },
       },
       {
         type: 'formViewRate',
         device: 'mobile',
         value: {
-          page: Number((formViewsMobile / pageViewsMobile).toFixed(3)),
+          page: calculateRate(formViewsMobile, pageViewsMobile),
         },
       },
       {
         type: 'formViewRate',
         device: 'desktop',
         value: {
-          page: Number((formViewsDesktop / pageViewsDesktop).toFixed(3)),
+          page: calculateRate(formViewsDesktop, pageViewsDesktop),
         },
       },
       {
