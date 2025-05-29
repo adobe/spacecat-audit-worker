@@ -1,3 +1,10 @@
+## [1.96.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.96.0...v1.96.1) (2025-05-29)
+
+
+### Bug Fixes
+
+* update tags in low view forms oppoty and fix NaN ([#913](https://github.com/adobe/spacecat-audit-worker/issues/913)) ([657ffdf](https://github.com/adobe/spacecat-audit-worker/commit/657ffdf0bb26870444bedd9857d960eb7b9b1f24))
+
 # [1.96.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.95.0...v1.96.0) (2025-05-29)
 
 
