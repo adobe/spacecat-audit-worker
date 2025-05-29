@@ -10,17 +10,21 @@
  * governing permissions and limitations under the License.
  */
 
+/* eslint-disable */
+
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+// import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
+// from '@adobe/spacecat-shared-data-access';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+// import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { syncSuggestions } from '../utils/data-access.js';
-import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
-import { generateSuggestionData } from './suggestions-generator.js';
+// import { syncSuggestions } from '../utils/data-access.js';
+// import { convertToOpportunity } from '../common/opportunity.js';
+// import { createOpportunityData } from './opportunity-data-mapper.js';
+// import { generateSuggestionData } from './suggestions-generator.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
-  calculateKpiDeltasForAudit,
+  // calculateKpiDeltasForAudit,
   isLinkInaccessible,
   calculatePriority,
 } from './helpers.js';
@@ -28,6 +32,8 @@ import {
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
+const chunkSize = 40;
+export const AUDIT_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/640168421876/spacecat-audit-jobs';
 
 /**
  * Perform an audit to check which internal links for domain are broken.
@@ -38,8 +44,96 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  * and environment variables.
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
-export async function internalLinksAuditRunner(auditUrl, context) {
-  const { log, site } = context;
+// export async function internalLinksAuditRunner(auditUrl, context) {
+//   const { log, site } = context;
+//   const finalUrl = await wwwUrlResolver(site, context);
+
+//   try {
+//     const rumAPIClient = RUMAPIClient.createFrom(context);
+
+//     const options = {
+//       domain: finalUrl,
+//       interval: INTERVAL,
+//       granularity: 'hourly',
+//     };
+
+//     const internal404Links = await rumAPIClient.query(
+//       '404-internal-links',
+//       options,
+//     );
+//     const transformedLinks = internal404Links.map((link) => ({
+//       urlFrom: link.url_from,
+//       urlTo: link.url_to,
+//       trafficDomain: link.traffic_domain,
+//     }));
+
+//     let finalLinks = calculatePriority(transformedLinks);
+
+//     finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
+
+//     const auditResult = {
+//       brokenInternalLinks: finalLinks,
+//       fullAuditRef: auditUrl,
+//       finalUrl,
+//       auditContext: {
+//         interval: INTERVAL,
+//       },
+//     };
+
+//     return {
+//       auditResult,
+//       fullAuditRef: auditUrl,
+//     };
+//   } catch (error) {
+//     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`);
+//     return {
+//       fullAuditRef: auditUrl,
+//       auditResult: {
+//         finalUrl: auditUrl,
+//         error: `[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`,
+//         success: false,
+//       },
+//     };
+//   }
+// }
+
+// export async function runAuditAndImportTopPagesStep(context) {
+//   const { site, log, finalUrl } = context;
+//   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`);
+//   const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
+//     finalUrl,
+//     context,
+//   );
+
+//   return {
+//     auditResult: internalLinksAuditRunnerResult.auditResult,
+//     fullAuditRef: finalUrl,
+//     type: 'top-pages',
+//     siteId: site.getId(),
+//   };
+// }
+
+// export async function prepareScrapingStep(context) {
+//   const {
+//     site, dataAccess,
+//   } = context;
+//   const { SiteTopPage } = dataAccess;
+//   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+//   const urls = topPages.map((page) => ({ url: page.getUrl() }));
+//   return {
+//     urls,
+//     siteId: site.getId(),
+//     type: 'broken-internal-links',
+//   };
+// }
+
+export async function opportunityAndSuggestionsStep(context) {
+  const {
+    log, site, audit, dataAccess, sqs, env,
+  } = context;
+  // audit from above
+
   const finalUrl = await wwwUrlResolver(site, context);
 
   try {
@@ -73,11 +167,6 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         interval: INTERVAL,
       },
     };
-
-    return {
-      auditResult,
-      fullAuditRef: auditUrl,
-    };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`);
     return {
@@ -89,131 +178,126 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       },
     };
   }
-}
+// audit end
 
-export async function runAuditAndImportTopPagesStep(context) {
-  const { site, log, finalUrl } = context;
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`);
-  const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
-    finalUrl,
-    context,
-  );
+  // const auditResult = audit.getAuditResult();
+  log.info('auditResult in broken internal links opportunityAndSuggestionsStep: ', JSON.stringify(auditResult, null, 2));
 
-  return {
-    auditResult: internalLinksAuditRunnerResult.auditResult,
-    fullAuditRef: finalUrl,
-    type: 'top-pages',
-    siteId: site.getId(),
-  };
-}
+  const { brokenInternalLinks } = auditResult;
 
-export async function prepareScrapingStep(context) {
-  const {
-    site, dataAccess,
-  } = context;
-  const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-
-  const urls = topPages.map((page) => ({ url: page.getUrl() }));
-  return {
-    urls,
-    siteId: site.getId(),
-    type: 'broken-internal-links',
-  };
-}
-
-export async function opportunityAndSuggestionsStep(context) {
-  const {
-    log, site, finalUrl, audit, dataAccess,
-  } = context;
-
-  let { brokenInternalLinks } = audit.getAuditResult();
-
-  // generate suggestions
-  try {
-    brokenInternalLinks = await generateSuggestionData(
-      finalUrl,
-      audit,
-      context,
-      site,
-    );
-  } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
+  // Chunk the brokenInternalLinks array into pieces of 40 URLs each 
+  // for further processing or batching.
+  const brokenInternalLinksChunks = [];
+  for (let i = 0; i < brokenInternalLinks.length; i += chunkSize) {
+    brokenInternalLinksChunks.push(brokenInternalLinks.slice(i, i + chunkSize));
   }
+  // Now brokenInternalLinksChunks is an array of arrays, each containing up to 40 items.
 
-  // TODO: skip opportunity creation if no internal link items are found in the audit data
-  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
-
-  if (!isNonEmptyArray(brokenInternalLinks)) {
-    // no broken internal links found
-    // fetch opportunity
-    const { Opportunity } = dataAccess;
-    let opportunity;
-    try {
-      const opportunities = await Opportunity
-        .allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
-      opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-    } catch (e) {
-      log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
-      throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
-    }
-
-    if (!opportunity) {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`);
-    } else {
-      // no broken internal links found, update opportunity status to RESOLVED
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`);
-      await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
-
-      // We also need to update all suggestions inside this opportunity
-      // Get all suggestions for this opportunity
-      const suggestions = await opportunity.getSuggestions();
-
-      // If there are suggestions, update their status to outdated
-      if (isNonEmptyArray(suggestions)) {
-        const { Suggestion } = dataAccess;
-        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
-      }
-
-      await opportunity.save();
-    }
-    return {
-      status: 'complete',
-    };
-  }
-
-  const opportunity = await convertToOpportunity(
-    finalUrl,
-    { siteId: site.getId(), id: audit.getId() },
-    context,
-    createOpportunityData,
-    AUDIT_TYPE,
-    {
-      kpiDeltas,
+  const messages = brokenInternalLinksChunks.map((brokenInternalLinksChunk) => ({
+    type: 'suggestions:internal-links',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      brokenInternalLinks: brokenInternalLinksChunk,
+      size: brokenInternalLinksChunk.length,
     },
-  );
+  }));
 
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
-  await syncSuggestions({
-    opportunity,
-    newData: brokenInternalLinks,
-    context,
-    buildKey,
-    mapNewSuggestion: (entry) => ({
-      opportunityId: opportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
-        trafficDomain: entry.trafficDomain,
-      },
-    }),
-    log,
-  });
+  for (const message of messages) {
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(AUDIT_QUEUE_URL, message);
+    log.info(`Message sent to audit queue: ${JSON.stringify(message)}`);
+  }
+
+
+  // // generate suggestions
+  // try {
+  //   brokenInternalLinks = await generateSuggestionData(
+  //     finalUrl,
+  //     audit,
+  //     context,
+  //     site,
+  //   );
+  // } catch (error) {
+  //   log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]
+  // suggestion generation error: ${error.message}`);
+  // }
+
+  // // TODO: skip opportunity creation if no internal link items are found in the audit data
+  // const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
+
+  // if (!isNonEmptyArray(brokenInternalLinks)) {
+  //   // no broken internal links found
+  //   // fetch opportunity
+  //   const { Opportunity } = dataAccess;
+  //   let opportunity;
+  //   try {
+  //     const opportunities = await Opportunity
+  //       .allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
+  //     opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+  //   } catch (e) {
+  //     log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
+  //     throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
+  //   }
+
+  //   if (!opportunity) {
+  //     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`);
+  //   } else {
+  //     // no broken internal links found, update opportunity status to RESOLVED
+  //     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`);
+  //     await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
+
+  //     // We also need to update all suggestions inside this opportunity
+  //     // Get all suggestions for this opportunity
+  //     const suggestions = await opportunity.getSuggestions();
+
+  //     // If there are suggestions, update their status to outdated
+  //     if (isNonEmptyArray(suggestions)) {
+  //       const { Suggestion } = dataAccess;
+  //       await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
+  //     }
+
+  //     await opportunity.save();
+  //   }
+  //   return {
+  //     status: 'complete',
+  //   };
+  // }
+
+  // const opportunity = await convertToOpportunity(
+  //   finalUrl,
+  //   { siteId: site.getId(), id: audit.getId() },
+  //   context,
+  //   createOpportunityData,
+  //   AUDIT_TYPE,
+  //   {
+  //     kpiDeltas,
+  //   },
+  // );
+
+  // const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  // await syncSuggestions({
+  //   opportunity,
+  //   newData: brokenInternalLinks,
+  //   context,
+  //   buildKey,
+  //   mapNewSuggestion: (entry) => ({
+  //     opportunityId: opportunity.getId(),
+  //     type: 'CONTENT_UPDATE',
+  //     rank: entry.trafficDomain,
+  //     data: {
+  //       title: entry.title,
+  //       urlFrom: entry.urlFrom,
+  //       urlTo: entry.urlTo,
+  //       urlsSuggested: entry.urlsSuggested || [],
+  //       aiRationale: entry.aiRationale || '',
+  //       trafficDomain: entry.trafficDomain,
+  //     },
+  //   }),
+  //   log,
+  // });
   return {
     status: 'complete',
   };
@@ -221,15 +305,15 @@ export async function opportunityAndSuggestionsStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep(
-    'runAuditAndImportTopPages',
-    runAuditAndImportTopPagesStep,
-    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
-  )
-  .addStep(
-    'prepareScraping',
-    prepareScrapingStep,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
-  )
+  // .addStep(
+  //   'runAuditAndImportTopPages',
+  //   runAuditAndImportTopPagesStep,
+  //   AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
+  // )
+  // .addStep(
+  //   'prepareScraping',
+  //   prepareScrapingStep,
+  //   AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  // )
   .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
   .build();

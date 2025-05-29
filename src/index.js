@@ -42,6 +42,7 @@ import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-hand
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import { suggestionsInternalLinksHandler } from './internal-links/suggestions-internal-links-handler.js';
 
 const HANDLERS = {
   apex,
@@ -63,7 +64,8 @@ const HANDLERS = {
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
-  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
+  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance, // ref
+  'suggestions:internal-links': suggestionsInternalLinksHandler,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
