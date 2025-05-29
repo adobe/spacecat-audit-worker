@@ -11,7 +11,6 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
@@ -45,30 +44,14 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
       auditTypes,
     });
 
-    // Create Slack client
-    const slackClientContext = {
-      channelId: slackContext.channelId,
-      threadTs: slackContext.threadTs,
-      env: {
-        SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
-        SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
-        SLACK_TOKEN_WORKSPACE_INTERNAL: env.SLACK_TOKEN_WORKSPACE_INTERNAL,
-        SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: env.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
-      },
-    };
-    const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
-    let slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
-
     log.info('Audit status processor completed');
-    await sendSlackMessage(slackClient, slackContext, 'Audit status processor completed');
+    await sendSlackMessage(env, log, slackContext, 'Audit status processor completed');
     // prepare demo url
-    slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
-    await sendSlackMessage(slackClient, slackContext, 'Preparing demo url');
+    await sendSlackMessage(env, log, slackContext, 'Preparing demo url');
     const demoUrl = prepareDemoUrl(siteUrl, organizationId, siteId);
-    const slackMessage = `:tada: Demo url: ${demoUrl}`;
     log.info(`Demo url is ready ${demoUrl}`);
-    slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
-    await sendSlackMessage(slackClient, slackContext, slackMessage);
+    const slackMessage = `:tada: Demo url: ${demoUrl}`;
+    await sendSlackMessage(env, log, slackContext, slackMessage);
 
     return {
       siteId,

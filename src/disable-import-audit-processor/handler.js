@@ -11,7 +11,6 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
@@ -44,21 +43,8 @@ export async function runDisableImportAuditProcessor(message, context) {
       auditTypes,
     });
 
-    // Create Slack client
-    const slackClientContext = {
-      channelId: slackContext.channelId,
-      threadTs: slackContext.threadTs,
-      env: {
-        SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
-        SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
-        SLACK_TOKEN_WORKSPACE_INTERNAL: env.SLACK_TOKEN_WORKSPACE_INTERNAL,
-        SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: env.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
-      },
-    };
-    const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
-    const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
-
     // Disable imports
+    await sendSlackMessage(env, log, slackContext, 'Disabling imports');
     const siteConfig = site.getConfig();
     for (const importType of importTypes) {
       siteConfig.disableImport(importType);
@@ -66,6 +52,7 @@ export async function runDisableImportAuditProcessor(message, context) {
     await site.save();
 
     // Disable audits
+    await sendSlackMessage(env, log, slackContext, 'Disabling audits');
     const configuration = await Configuration.findLatest();
     for (const auditType of auditTypes) {
       configuration.disableHandlerForSite(auditType, site);
@@ -74,7 +61,7 @@ export async function runDisableImportAuditProcessor(message, context) {
 
     log.info(`Disabled imports ${importTypes} and audits ${auditTypes} for site ${siteId} is complete`);
     const slackMessage = `:check_mark: Disabled imports ${importTypes} and audits ${auditTypes} for site ${siteId} is complete`;
-    await sendSlackMessage(slackClient, slackContext, slackMessage);
+    await sendSlackMessage(env, log, slackContext, slackMessage);
 
     return {
       siteId,

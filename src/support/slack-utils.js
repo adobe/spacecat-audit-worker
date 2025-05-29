@@ -11,9 +11,8 @@
  */
 
 // eslint-disable-next-line import/no-unresolved
-import { isObject, hasText } from '@adobe/spacecat-shared-utils';
+import { hasText } from '@adobe/spacecat-shared-utils';
 import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
-
 /**
  * Sends a message to Slack using the provided client and context
  * @param {object} slackClient - The Slack client instance
@@ -21,33 +20,33 @@ import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-cli
  * @param {string} message - The message text to send
  * @returns {Promise<void>}
  */
-export async function sendSlackMessage(slackClient, slackContext, message) {
-  if (!isObject(slackClient) || !isObject(slackContext) || !hasText(message)) {
-    return;
-  }
-  const { threadTs, channelId } = slackContext;
-  if (hasText(threadTs) && hasText(channelId)) {
-    await slackClient.postMessage({
-      channel: channelId,
-      thread_ts: threadTs,
-      text: message,
-      unfurl_links: false,
+export async function sendSlackMessage(env, log, slackContext, message) {
+  try {
+    const slackClientContext = {
+      channelId: slackContext.channelId,
+      threadTs: slackContext.threadTs,
+      env: {
+        SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
+        SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
+        SLACK_TOKEN_WORKSPACE_INTERNAL: env.SLACK_TOKEN_WORKSPACE_INTERNAL,
+        SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: env.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
+      },
+    };
+    const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
+    const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
+    if (hasText(slackContext.threadTs) && hasText(slackContext.channelId)) {
+      await slackClient.postMessage({
+        channel: slackContext.channelId,
+        thread_ts: slackContext.threadTs,
+        text: message,
+        unfurl_links: false,
+      });
+    }
+  } catch (error) {
+    log.error('Error sending Slack message:', {
+      error: error.message,
+      stack: error.stack,
+      errorType: error.name,
     });
   }
-}
-
-export async function createSlackClientForInternal(channelId, threadTs, env) {
-  const slackClientContext = {
-    channelId,
-    threadTs,
-    env: {
-      SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
-      SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
-      SLACK_TOKEN_WORKSPACE_INTERNAL: env.SLACK_TOKEN_WORKSPACE_INTERNAL,
-      SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: env.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
-    },
-  };
-  const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
-  const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
-  return slackClient;
 }
