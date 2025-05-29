@@ -101,7 +101,6 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
           auditId: auditData.auditId,
           deliveryType: site.getDeliveryType(),
           time: new Date().toISOString(),
-          url: opportunityData.data.form,
           data: {
             url: opportunityData.data.form,
             form_source: opportunityData.data.formsource,

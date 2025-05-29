@@ -100,7 +100,6 @@ describe('createLowFormViewsOpportunities handler method', () => {
         && actual.siteId === expectedMessage.siteId
         && actual.auditId === expectedMessage.auditId
         && actual.deliveryType === expectedMessage.deliveryType
-        && actual.url === expectedMessage.url
         && actual.data.form_source === expectedMessage.data.form_source
         && actual.data.cta_text === expectedMessage.data.cta_text
         && actual.data.cta_source === expectedMessage.data.cta_source
