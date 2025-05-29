@@ -103,6 +103,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
           time: new Date().toISOString(),
           url: opportunityData.data.form,
           data: {
+            url: opportunityData.data.form,
             form_source: opportunityData.data.formsource,
             cta_text: '', // This will be available after merging the changes for scraping form CTA text
             cta_source: '', // This will be available after merging the changes for scraping form CTA text
