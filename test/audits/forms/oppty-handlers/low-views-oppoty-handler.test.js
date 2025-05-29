@@ -124,11 +124,11 @@ describe('createLowFormViewsOpportunities handler method', () => {
         form: 'https://www.surest.com/high-page-low-form-view',
         screenshot: '',
         trackedFormKPIName: 'Form View Rate',
-        trackedFormKPIValue: 0.03,
+        trackedFormKPIValue: 0.035,
         formViews: 200,
-        pageViews: 6690,
+        pageViews: 5690,
         formsource: '',
-        samples: 6690,
+        samples: 5690,
         scrapedStatus: false,
         dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         metrics: [
@@ -136,7 +136,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
             type: 'formViewRate',
             device: '*',
             value: {
-              page: 0.03,
+              page: 0.035,
             },
           },
           {
@@ -164,7 +164,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
             device: 'mobile',
             type: 'traffic',
             value: {
-              page: 1000,
+              page: 0,
             },
           },
         ],
@@ -172,7 +172,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
       guidance: {
         recommendations: [
           {
-            insight: 'The form in the page: https://www.surest.com/high-page-low-form-view has low discoverability and only 2.99% visitors landing on the page are viewing the form.',
+            insight: 'The form in the page: https://www.surest.com/high-page-low-form-view has low discoverability and only 3.51% visitors landing on the page are viewing the form.',
             recommendation: 'Position the form higher up on the page so users see it without scrolling. Consider using clear and compelling CTAs, minimizing distractions, and ensuring strong visibility across devices.',
             type: 'guidance',
             rationale: 'Forms that are visible above the fold are more likely to be seen and interacted with by users.',

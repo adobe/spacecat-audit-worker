@@ -49,6 +49,10 @@ async function getPresignedUrl(fileName, context, url, site) {
     });
 }
 
+function calculateRate(numerator, denominator) {
+  return denominator === 0 ? 0 : Number((numerator / denominator).toFixed(3));
+}
+
 function getFormMetrics(metricObject) {
   const { formview, formengagement, formsubmit } = metricObject;
 
@@ -59,11 +63,11 @@ function getFormMetrics(metricObject) {
     let dropoffRate = null;
 
     if (_formViews > 0) {
-      conversionRate = _formSubmit / _formViews;
-      bounceRate = 1 - (_formEngagement / _formViews);
+      conversionRate = calculateRate(_formSubmit, _formViews);
+      bounceRate = 1 - calculateRate(_formEngagement, _formViews);
     }
     if (_formEngagement > 0) {
-      dropoffRate = 1 - (_formSubmit / _formEngagement);
+      dropoffRate = 1 - calculateRate(_formSubmit, _formEngagement);
     }
 
     return {
@@ -99,27 +103,27 @@ function convertToLowViewOpptyData(metricObject) {
   } = metricObject;
   return {
     trackedFormKPIName: 'Form View Rate',
-    trackedFormKPIValue: Number((formViews / pageViews).toFixed(3)),
+    trackedFormKPIValue: calculateRate(formViews, pageViews),
     metrics: [
       {
         type: 'formViewRate',
         device: '*',
         value: {
-          page: Number((formViews / pageViews).toFixed(3)),
+          page: calculateRate(formViews, pageViews),
         },
       },
       {
         type: 'formViewRate',
         device: 'mobile',
         value: {
-          page: Number((formViewsMobile / pageViewsMobile).toFixed(3)),
+          page: calculateRate(formViewsMobile, pageViewsMobile),
         },
       },
       {
         type: 'formViewRate',
         device: 'desktop',
         value: {
-          page: Number((formViewsDesktop / pageViewsDesktop).toFixed(3)),
+          page: calculateRate(formViewsDesktop, pageViewsDesktop),
         },
       },
       {
