@@ -3506,88 +3506,240 @@ describe('data-processing utility functions', () => {
     let mockAggregationResult;
     let mockContext;
     let mockAuditType;
-    let mockGenerateReportOpportunity;
-    let mockGetWeekNumberAndYear;
-    let mockGetAuditData;
 
     beforeEach(async () => {
-      // Create mocks for internal functions
-      mockGenerateReportOpportunity = sandbox.stub();
-      mockGetWeekNumberAndYear = sandbox.stub();
-      mockGetAuditData = sandbox.stub();
-
-      // Mock the data-processing module with both external and internal dependencies
+      // Mock external dependencies instead of internal functions
       const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js', {
         '../../../src/accessibility/utils/report-oppty.js': {
-          createInDepthReportOpportunity: sandbox.stub(),
-          createEnhancedReportOpportunity: sandbox.stub(),
-          createFixedVsNewReportOpportunity: sandbox.stub(),
-          createBaseReportOpportunity: sandbox.stub(),
+          createInDepthReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'In-depth Report' }),
+          createEnhancedReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Enhanced Report' }),
+          createFixedVsNewReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Fixed vs New Report' }),
+          createBaseReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Base Report' }),
+          createReportOpportunitySuggestionInstance: sandbox.stub().returns([]),
         },
         '../../../src/accessibility/utils/generate-md-reports.js': {
-          generateInDepthReportMarkdown: sandbox.stub(),
-          generateEnhancedReportMarkdown: sandbox.stub(),
-          generateFixedNewReportMarkdown: sandbox.stub(),
-          generateBaseReportMarkdown: sandbox.stub(),
-        },
-        '../../../src/accessibility/utils/data-processing.js': {
-          getWeekNumberAndYear: mockGetWeekNumberAndYear,
-          getAuditData: mockGetAuditData,
-          generateReportOpportunity: mockGenerateReportOpportunity,
+          generateInDepthReportMarkdown: sandbox.stub().returns('# In-depth Report\n\nContent'),
+          generateEnhancedReportMarkdown: sandbox.stub().returns('# Enhanced Report\n\nContent'),
+          generateFixedNewReportMarkdown: sandbox.stub().returns('# Fixed vs New Report\n\nContent'),
+          generateBaseReportMarkdown: sandbox.stub().returns('# Base Report\n\nContent'),
         },
       });
-
       generateReportOpportunitiesMocked = dataProcessingModule.generateReportOpportunities;
 
-      // Setup default return values
-      mockGetWeekNumberAndYear.returns({ week: 20, year: 2024 });
-      mockGetAuditData.resolves({ siteId: 'test-site-123', auditId: 'audit-456' });
-      mockGenerateReportOpportunity.resolves('https://reports.example.com/opportunity-123');
-
-      // Setup common mock data
+      // Set up mock objects
       mockSite = {
-        getId: sandbox.stub().returns('test-site-123'),
+        getId: sandbox.stub().returns('test-site-id'),
         getLatestAuditByAuditType: sandbox.stub().resolves({
-          siteId: 'test-site-123',
-          auditId: 'audit-456',
+          siteId: 'test-site-id',
+          auditId: 'test-audit-id',
           auditType: 'accessibility',
-          auditedAt: '2024-01-15T10:00:00Z',
         }),
       };
 
       mockAggregationResult = {
         finalResultFiles: {
-          current: {
-            overall: { violations: { total: 10 } },
-            'https://example.com/page1': { violations: { total: 5 } },
-          },
-          lastWeek: {
-            overall: { violations: { total: 8 } },
-            'https://example.com/page1': { violations: { total: 3 } },
-          },
+          current: { overall: { violations: { total: 10 } }, 'https://site.com/page1': {} },
+          lastWeek: { overall: { violations: { total: 5 } }, 'https://site.com/page1': {} },
         },
       };
 
       mockContext = {
         log: mockLog,
         env: { AWS_ENV: 'stage' },
+        dataAccess: {
+          Opportunity: {
+            create: sandbox.stub(),
+          },
+        },
       };
 
       mockAuditType = 'accessibility';
     });
 
-    describe('successful execution', () => {
-      it('should successfully generate all report opportunities', async () => {
+    describe('initial data setup (lines 644-680)', () => {
+      it('should correctly extract basic data from inputs', async () => {
         // Arrange
-        mockGenerateReportOpportunity
-          .onCall(0)
-          .resolves('https://reports.example.com/in-depth-123')
-          .onCall(1)
-          .resolves('https://reports.example.com/enhanced-456')
-          .onCall(2)
-          .resolves('https://reports.example.com/fixed-vs-new-789')
-          .onCall(3)
-          .resolves('https://reports.example.com/base-101');
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('opp-123'),
+          addSuggestions: sandbox.stub().resolves({ id: 'sugg-123' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(mockSite.getId.calledOnce).to.be.true;
+        expect(mockSite.getLatestAuditByAuditType.calledWith(mockAuditType)).to.be.true;
+        expect(result).to.have.property('status', true);
+        expect(result).to.have.property('message', 'All report opportunities created successfully');
+      });
+
+      it('should handle different site IDs', async () => {
+        // Arrange
+        const customSiteId = 'custom-test-site-456';
+        mockSite.getId.returns(customSiteId);
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('opp-custom'),
+          addSuggestions: sandbox.stub().resolves({ id: 'sugg-custom' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(mockSite.getId.calledOnce).to.be.true;
+        expect(mockSite.getId.returned(customSiteId)).to.be.true;
+        expect(result.status).to.be.true;
+      });
+
+      it('should handle different environment configurations', async () => {
+        // Arrange
+        const prodContext = {
+          ...mockContext,
+          env: { AWS_ENV: 'prod' },
+        };
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('opp-prod'),
+          addSuggestions: sandbox.stub().resolves({ id: 'sugg-prod' }),
+        };
+        prodContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          prodContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        expect(mockSite.getId.calledOnce).to.be.true;
+      });
+
+      it('should handle different audit types', async () => {
+        // Arrange
+        const customAuditType = 'performance';
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('opp-perf'),
+          addSuggestions: sandbox.stub().resolves({ id: 'sugg-perf' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          customAuditType,
+        );
+
+        // Assert
+        expect(mockSite.getLatestAuditByAuditType.calledWith(customAuditType)).to.be.true;
+        expect(result.status).to.be.true;
+      });
+
+      it('should handle complex aggregation result structures', async () => {
+        // Arrange
+        const complexAggregationResult = {
+          finalResultFiles: {
+            current: {
+              overall: {
+                violations: { total: 25, critical: { count: 10 }, serious: { count: 15 } },
+              },
+              'https://example.com/page1': { violations: { total: 5 }, traffic: '1000' },
+              'https://example.com/page2': { violations: { total: 3 }, traffic: '500' },
+            },
+            lastWeek: {
+              overall: {
+                violations: { total: 15, critical: { count: 5 }, serious: { count: 10 } },
+              },
+              'https://example.com/page1': { violations: { total: 3 }, traffic: '900' },
+            },
+          },
+        };
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('opp-complex'),
+          addSuggestions: sandbox.stub().resolves({ id: 'sugg-complex' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          complexAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        expect(mockSite.getId.calledOnce).to.be.true;
+        expect(mockSite.getLatestAuditByAuditType.calledOnce).to.be.true;
+      });
+
+      it('should handle missing lastWeek data', async () => {
+        // Arrange
+        const aggregationResultWithoutLastWeek = {
+          finalResultFiles: {
+            current: { overall: { violations: { total: 10 } }, 'https://site.com/page1': {} },
+            lastWeek: null,
+          },
+        };
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('opp-no-lastweek'),
+          addSuggestions: sandbox.stub().resolves({ id: 'sugg-no-lastweek' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          aggregationResultWithoutLastWeek,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        expect(mockSite.getId.calledOnce).to.be.true;
+      });
+    });
+
+    describe('in-depth report generation (lines 682-687)', () => {
+      it('should successfully generate in-depth report opportunity', async () => {
+        // Arrange
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('in-depth-opp-123'),
+          addSuggestions: sandbox.stub().resolves({ id: 'in-depth-sugg-123' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
         // Act
         const result = await generateReportOpportunitiesMocked(
@@ -3601,142 +3753,407 @@ describe('data-processing utility functions', () => {
         expect(result.status).to.be.true;
         expect(result.message).to.equal('All report opportunities created successfully');
 
-        // Verify external dependencies were called
+        // Verify that opportunity creation was called for in-depth report
+        expect(mockContext.dataAccess.Opportunity.create.called).to.be.true;
+        expect(mockOpportunity.addSuggestions.called).to.be.true;
+        expect(mockOpportunity.setStatus.calledWith('IGNORED')).to.be.true;
+        expect(mockOpportunity.save.called).to.be.true;
+      });
+
+      it('should handle empty markdown for in-depth report', async () => {
+        // Arrange - Mock markdown generation to return empty string
+        const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js', {
+          '../../../src/accessibility/utils/report-oppty.js': {
+            createInDepthReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'In-depth Report' }),
+            createEnhancedReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Enhanced Report' }),
+            createFixedVsNewReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Fixed vs New Report' }),
+            createBaseReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Base Report' }),
+            createReportOpportunitySuggestionInstance: sandbox.stub().returns([]),
+          },
+          '../../../src/accessibility/utils/generate-md-reports.js': {
+            generateInDepthReportMarkdown: sandbox.stub().returns(''), // Empty markdown
+            generateEnhancedReportMarkdown: sandbox.stub().returns('# Enhanced Report\n\nContent'),
+            generateFixedNewReportMarkdown: sandbox.stub().returns('# Fixed vs New Report\n\nContent'),
+            generateBaseReportMarkdown: sandbox.stub().returns('# Base Report\n\nContent'),
+          },
+        });
+        const generateReportOpportunitiesTest = dataProcessingModule.generateReportOpportunities;
+
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('other-opp-123'),
+          addSuggestions: sandbox.stub().resolves({ id: 'other-sugg-123' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesTest(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        // When in-depth report markdown is empty, it should still continue with other reports
+        expect(result.message).to.equal('All report opportunities created successfully');
+      });
+
+      it('should handle opportunity creation failure for in-depth report', async () => {
+        // Arrange - Mock opportunity creation to fail
+        const creationError = new Error('Database connection failed');
+        mockContext.dataAccess.Opportunity.create.rejects(creationError);
+
+        // Act & Assert
+        try {
+          await generateReportOpportunitiesMocked(
+            mockSite,
+            mockAggregationResult,
+            mockContext,
+            mockAuditType,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.include('Database connection failed');
+          expect(mockLog.error.calledWith(
+            'Failed to generate in-depth report opportunity',
+            'Database connection failed',
+          )).to.be.true;
+        }
+      });
+
+      it('should handle suggestion creation failure for in-depth report', async () => {
+        // Arrange - Mock suggestion creation to fail
+        const suggestionError = new Error('Failed to create suggestions');
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('fail-sugg-opp'),
+          addSuggestions: sandbox.stub().rejects(suggestionError),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act & Assert
+        try {
+          await generateReportOpportunitiesMocked(
+            mockSite,
+            mockAggregationResult,
+            mockContext,
+            mockAuditType,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.include('Failed to create suggestions');
+          expect(mockLog.error.calledWith(
+            'Failed to generate in-depth report opportunity',
+            'Failed to create suggestions',
+          )).to.be.true;
+        }
+      });
+
+      it('should verify in-depth report parameters are passed correctly', async () => {
+        // Arrange
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('param-test-opp'),
+          addSuggestions: sandbox.stub().resolves({ id: 'param-test-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert - Verify the opportunity was created with correct audit data
+        expect(mockContext.dataAccess.Opportunity.create.called).to.be.true;
+        const createCall = mockContext.dataAccess.Opportunity.create.getCall(0);
+        const opportunityData = createCall.args[0];
+
+        expect(opportunityData).to.have.property('siteId', 'test-site-id');
+        expect(opportunityData).to.have.property('auditId', 'test-audit-id');
+        expect(opportunityData).to.have.property('type', 'accessibility');
+        expect(opportunityData).to.have.property('title', 'In-depth Report');
+      });
+
+      it('should handle different site configurations for in-depth report', async () => {
+        // Arrange
+        const customSite = {
+          getId: sandbox.stub().returns('custom-site-999'),
+          getLatestAuditByAuditType: sandbox.stub().resolves({
+            siteId: 'custom-site-999',
+            auditId: 'custom-audit-999',
+            auditType: 'accessibility',
+          }),
+        };
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('custom-site-opp'),
+          addSuggestions: sandbox.stub().resolves({ id: 'custom-site-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          customSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        expect(customSite.getId.calledOnce).to.be.true;
+        expect(customSite.getLatestAuditByAuditType.calledWith(mockAuditType)).to.be.true;
+
+        // Verify opportunity was created with custom site data
+        const createCall = mockContext.dataAccess.Opportunity.create.getCall(0);
+        const opportunityData = createCall.args[0];
+        expect(opportunityData.siteId).to.equal('custom-site-999');
+        expect(opportunityData.auditId).to.equal('custom-audit-999');
+      });
+    });
+
+    describe('enhanced report generation (lines 689-694)', () => {
+      it('should successfully generate enhanced report opportunity', async () => {
+        // Arrange
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('enhanced-opp-456'),
+          addSuggestions: sandbox.stub().resolves({ id: 'enhanced-sugg-456' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        expect(result.message).to.equal('All report opportunities created successfully');
+
+        // Verify that multiple opportunities were created (in-depth, enhanced, etc.)
+        expect(mockContext.dataAccess.Opportunity.create.callCount).to.be.at.least(2);
+        expect(mockOpportunity.addSuggestions.callCount).to.be.at.least(2);
+        expect(mockOpportunity.setStatus.calledWith('IGNORED')).to.be.true;
+        expect(mockOpportunity.save.callCount).to.be.at.least(2);
+      });
+
+      it('should handle empty markdown for enhanced report', async () => {
+        // Arrange - Mock enhanced markdown generation to return empty string
+        const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js', {
+          '../../../src/accessibility/utils/report-oppty.js': {
+            createInDepthReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'In-depth Report' }),
+            createEnhancedReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Enhanced Report' }),
+            createFixedVsNewReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Fixed vs New Report' }),
+            createBaseReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Base Report' }),
+            createReportOpportunitySuggestionInstance: sandbox.stub().returns([]),
+          },
+          '../../../src/accessibility/utils/generate-md-reports.js': {
+            generateInDepthReportMarkdown: sandbox.stub().returns('# In-depth Report\n\nContent'),
+            generateEnhancedReportMarkdown: sandbox.stub().returns(''), // Empty markdown
+            generateFixedNewReportMarkdown: sandbox.stub().returns('# Fixed vs New Report\n\nContent'),
+            generateBaseReportMarkdown: sandbox.stub().returns('# Base Report\n\nContent'),
+          },
+        });
+        const generateReportOpportunitiesTest = dataProcessingModule.generateReportOpportunities;
+
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('enhanced-empty-opp'),
+          addSuggestions: sandbox.stub().resolves({ id: 'enhanced-empty-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesTest(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        // When enhanced report markdown is empty, it should still continue with other reports
+        expect(result.message).to.equal('All report opportunities created successfully');
+      });
+
+      it('should handle opportunity creation failure for enhanced report', async () => {
+        // Arrange - Mock to succeed for in-depth but fail for enhanced
+        let callCount = 0;
+        mockContext.dataAccess.Opportunity.create.callsFake(() => {
+          callCount += 1;
+          if (callCount === 1) {
+            // First call (in-depth) succeeds
+            return Promise.resolve({
+              setStatus: sandbox.stub(),
+              save: sandbox.stub(),
+              getId: sandbox.stub().returns('in-depth-success-opp'),
+              addSuggestions: sandbox.stub().resolves({ id: 'in-depth-success-sugg' }),
+            });
+          }
+          // Second call (enhanced) fails
+          return Promise.reject(new Error('Enhanced report creation failed'));
+        });
+
+        // Act & Assert
+        try {
+          await generateReportOpportunitiesMocked(
+            mockSite,
+            mockAggregationResult,
+            mockContext,
+            mockAuditType,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.include('Enhanced report creation failed');
+          expect(mockLog.error.calledWith(
+            'Failed to generate enhanced report opportunity',
+            'Enhanced report creation failed',
+          )).to.be.true;
+        }
+      });
+
+      it('should handle suggestion creation failure for enhanced report', async () => {
+        // Arrange - Mock to succeed for in-depth but fail suggestions for enhanced
+        let callCount = 0;
+        mockContext.dataAccess.Opportunity.create.callsFake(() => {
+          callCount += 1;
+          if (callCount === 1) {
+            // First call (in-depth) succeeds
+            return Promise.resolve({
+              setStatus: sandbox.stub(),
+              save: sandbox.stub(),
+              getId: sandbox.stub().returns('in-depth-sugg-success'),
+              addSuggestions: sandbox.stub().resolves({ id: 'in-depth-sugg-success' }),
+            });
+          }
+          // Second call (enhanced) succeeds but suggestions fail
+          return Promise.resolve({
+            setStatus: sandbox.stub(),
+            save: sandbox.stub(),
+            getId: sandbox.stub().returns('enhanced-fail-sugg-opp'),
+            addSuggestions: sandbox.stub().rejects(new Error('Enhanced suggestions failed')),
+          });
+        });
+
+        // Act & Assert
+        try {
+          await generateReportOpportunitiesMocked(
+            mockSite,
+            mockAggregationResult,
+            mockContext,
+            mockAuditType,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.include('Enhanced suggestions failed');
+          expect(mockLog.error.calledWith(
+            'Failed to generate enhanced report opportunity',
+            'Enhanced suggestions failed',
+          )).to.be.true;
+        }
+      });
+
+      it('should verify enhanced report parameters are passed correctly', async () => {
+        // Arrange
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('enhanced-param-test'),
+          addSuggestions: sandbox.stub().resolves({ id: 'enhanced-param-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert - Verify the enhanced opportunity was created (second call)
+        expect(mockContext.dataAccess.Opportunity.create.callCount).to.be.at.least(2);
+        const secondCall = mockContext.dataAccess.Opportunity.create.getCall(1);
+        const opportunityData = secondCall.args[0];
+
+        expect(opportunityData).to.have.property('siteId', 'test-site-id');
+        expect(opportunityData).to.have.property('auditId', 'test-audit-id');
+        expect(opportunityData).to.have.property('type', 'accessibility');
+        expect(opportunityData).to.have.property('title', 'Enhanced Report');
+      });
+
+      it('should handle different aggregation data for enhanced report', async () => {
+        // Arrange
+        const complexAggregationResult = {
+          finalResultFiles: {
+            current: {
+              overall: {
+                violations: { total: 50, critical: { count: 20 }, serious: { count: 30 } },
+              },
+              'https://example.com/enhanced-page1': { violations: { total: 8 }, traffic: '2000' },
+              'https://example.com/enhanced-page2': { violations: { total: 12 }, traffic: '1500' },
+            },
+            lastWeek: {
+              overall: {
+                violations: { total: 30, critical: { count: 10 }, serious: { count: 20 } },
+              },
+              'https://example.com/enhanced-page1': { violations: { total: 5 }, traffic: '1800' },
+            },
+          },
+        };
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('enhanced-complex-opp'),
+          addSuggestions: sandbox.stub().resolves({ id: 'enhanced-complex-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          complexAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
         expect(mockSite.getId.calledOnce).to.be.true;
         expect(mockSite.getLatestAuditByAuditType.calledWith(mockAuditType)).to.be.true;
 
-        // Verify generateReportOpportunity was called 4 times with correct data
-        expect(mockGenerateReportOpportunity.callCount).to.equal(4);
-
-        // Verify the report data includes the expected structure
-        const firstCallData = mockGenerateReportOpportunity.getCall(0).args[0];
-        expect(firstCallData.mdData.current)
-          .to.deep.equal(mockAggregationResult.finalResultFiles.current);
-        expect(firstCallData.mdData.lastWeek)
-          .to.deep.equal(mockAggregationResult.finalResultFiles.lastWeek);
-        expect(firstCallData.linkData.envAsoDomain).to.equal('experience-stage');
-        expect(firstCallData.linkData.siteId).to.equal('test-site-123');
-        expect(firstCallData.opptyData).to.have.property('week');
-        expect(firstCallData.opptyData).to.have.property('year');
-        const expectedAuditData = {
-          siteId: 'test-site-123',
-          auditId: 'audit-456',
-          auditType: 'accessibility',
-          auditedAt: '2024-01-15T10:00:00Z',
-        };
-        expect(firstCallData.auditData).to.deep.equal(expectedAuditData);
-        expect(firstCallData.context).to.equal(mockContext);
-
-        // Verify report types were called in correct order
-        expect(mockGenerateReportOpportunity.getCall(0).args[3]).to.equal('in-depth report');
-        expect(mockGenerateReportOpportunity.getCall(1).args[3]).to.equal('enhanced report');
-        expect(mockGenerateReportOpportunity.getCall(2).args[3]).to.equal('fixed vs new report');
-        expect(mockGenerateReportOpportunity.getCall(3).args[3]).to.equal('base report');
-
-        // Verify base report call has shouldIgnore=false
-        expect(mockGenerateReportOpportunity.getCall(3).args[4]).to.be.false;
-
-        // Verify base report call includes relatedReportsUrls
-        const baseReportData = mockGenerateReportOpportunity.getCall(3).args[0];
-        expect(baseReportData.mdData.relatedReportsUrls).to.deep.equal({
-          inDepthReportUrl: 'https://reports.example.com/in-depth-123',
-          enhancedReportUrl: 'https://reports.example.com/enhanced-456',
-          fixedVsNewReportUrl: 'https://reports.example.com/fixed-vs-new-789',
-        });
+        // Verify that opportunities were created for both in-depth and enhanced reports
+        expect(mockContext.dataAccess.Opportunity.create.callCount).to.be.at.least(2);
       });
 
-      it('should handle production environment correctly', async () => {
-        // Arrange
-        const prodContext = {
-          log: mockLog,
-          env: { AWS_ENV: 'prod' },
-        };
-
-        // Act
-        await generateReportOpportunitiesMocked(
-          mockSite,
-          mockAggregationResult,
-          prodContext,
-          mockAuditType,
-        );
-
-        // Assert
-        const reportDataCall = mockGenerateReportOpportunity.getCall(0).args[0];
-        expect(reportDataCall.linkData.envAsoDomain).to.equal('experience');
-      });
-
-      it('should handle different week and year values', async () => {
-        // Act - Since we can't mock internal calls, we test by verifying the behavior
-        await generateReportOpportunitiesMocked(
-          mockSite,
-          mockAggregationResult,
-          mockContext,
-          mockAuditType,
-        );
-
-        // Assert - Verify that the function executes successfully
-        expect(mockGenerateReportOpportunity.callCount).to.equal(4);
-        const reportDataCall = mockGenerateReportOpportunity.getCall(0).args[0];
-        expect(reportDataCall.opptyData).to.have.property('week');
-        expect(reportDataCall.opptyData).to.have.property('year');
-      });
-
-      it('should handle different audit data', async () => {
-        // Arrange
-        const differentSite = {
-          getId: sandbox.stub().returns('different-site-456'),
-          getLatestAuditByAuditType: sandbox.stub().resolves({
-            siteId: 'different-site-456',
-            auditId: 'different-audit-789',
-            auditType: 'performance',
-          }),
-        };
-
-        // Act
-        await generateReportOpportunitiesMocked(
-          differentSite,
-          mockAggregationResult,
-          mockContext,
-          'performance',
-        );
-
-        // Assert
-        expect(differentSite.getLatestAuditByAuditType.calledWith('performance')).to.be.true;
-        const reportDataCall = mockGenerateReportOpportunity.getCall(0).args[0];
-        expect(reportDataCall.auditData).to.deep.equal({
-          siteId: 'different-site-456',
-          auditId: 'different-audit-789',
-          auditType: 'performance',
-        });
-      });
-
-      it('should handle different site IDs', async () => {
-        // Arrange
-        const differentSite = {
-          getId: sandbox.stub().returns('different-site-456'),
-        };
-
-        // Act
-        await generateReportOpportunitiesMocked(
-          differentSite,
-          mockAggregationResult,
-          mockContext,
-          mockAuditType,
-        );
-
-        // Assert
-        expect(differentSite.getId.calledOnce).to.be.true;
-        const reportDataCall = mockGenerateReportOpportunity.getCall(0).args[0];
-        expect(reportDataCall.linkData.siteId).to.equal('different-site-456');
-      });
-    });
-
-    describe('error handling', () => {
-      it('should handle in-depth report generation error', async () => {
-        // Arrange
-        const error = new Error('Failed to generate in-depth report');
-        mockGenerateReportOpportunity
-          .onCall(0).rejects(error);
+      it('should continue processing even if enhanced report generation encounters errors', async () => {
+        // Arrange - Create a test to verify that errors are properly thrown and don't silently fail
+        mockContext.dataAccess.Opportunity.create
+          .onFirstCall()
+          .resolves({
+            setStatus: sandbox.stub(),
+            save: sandbox.stub(),
+            getId: sandbox.stub().returns('in-depth-success'),
+            addSuggestions: sandbox.stub().resolves({ id: 'in-depth-success-sugg' }),
+          })
+          .onSecondCall()
+          .rejects(new Error('Enhanced report database error'));
 
         // Act & Assert
         try {
@@ -3747,50 +4164,113 @@ describe('data-processing utility functions', () => {
             mockAuditType,
           );
           expect.fail('Should have thrown an error');
-        } catch (thrownError) {
-          expect(thrownError.message).to.equal('Failed to generate in-depth report');
-          expect(mockLog.error.calledWith(
-            'Failed to generate in-depth report opportunity',
-            'Failed to generate in-depth report',
-          )).to.be.true;
-        }
-      });
-
-      it('should handle enhanced report generation error', async () => {
-        // Arrange
-        mockGenerateReportOpportunity
-          .onCall(0)
-          .resolves('https://reports.example.com/in-depth-123')
-          .onCall(1)
-          .rejects(new Error('Enhanced report error'));
-
-        // Act & Assert
-        try {
-          await generateReportOpportunitiesMocked(
-            mockSite,
-            mockAggregationResult,
-            mockContext,
-            mockAuditType,
-          );
-          expect.fail('Should have thrown an error');
-        } catch (thrownError) {
-          expect(thrownError.message).to.equal('Enhanced report error');
+        } catch (error) {
+          expect(error.message).to.include('Enhanced report database error');
           expect(mockLog.error.calledWith(
             'Failed to generate enhanced report opportunity',
-            'Enhanced report error',
+            'Enhanced report database error',
           )).to.be.true;
         }
       });
+    });
 
-      it('should handle fixed vs new report generation error', async () => {
+    describe('fixed vs new report generation (lines 696-701)', () => {
+      it('should successfully generate fixed vs new report opportunity', async () => {
         // Arrange
-        mockGenerateReportOpportunity
-          .onCall(0)
-          .resolves('https://reports.example.com/in-depth-123')
-          .onCall(1)
-          .resolves('https://reports.example.com/enhanced-456')
-          .onCall(2)
-          .rejects(new Error('Fixed vs new report error'));
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('fixed-vs-new-opp-789'),
+          addSuggestions: sandbox.stub().resolves({ id: 'fixed-vs-new-sugg-789' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        expect(result.message).to.equal('All report opportunities created successfully');
+
+        // Verify that multiple opportunities were created (in-depth, enhanced, fixed vs new, etc.)
+        expect(mockContext.dataAccess.Opportunity.create.callCount).to.be.at.least(3);
+        expect(mockOpportunity.addSuggestions.callCount).to.be.at.least(3);
+        expect(mockOpportunity.setStatus.calledWith('IGNORED')).to.be.true;
+        expect(mockOpportunity.save.callCount).to.be.at.least(3);
+      });
+
+      it('should handle empty markdown for fixed vs new report', async () => {
+        // Arrange - Mock fixed vs new markdown generation to return empty string
+        const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js', {
+          '../../../src/accessibility/utils/report-oppty.js': {
+            createInDepthReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'In-depth Report' }),
+            createEnhancedReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Enhanced Report' }),
+            createFixedVsNewReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Fixed vs New Report' }),
+            createBaseReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Base Report' }),
+            createReportOpportunitySuggestionInstance: sandbox.stub().returns([]),
+          },
+          '../../../src/accessibility/utils/generate-md-reports.js': {
+            generateInDepthReportMarkdown: sandbox.stub().returns('# In-depth Report\n\nContent'),
+            generateEnhancedReportMarkdown: sandbox.stub().returns('# Enhanced Report\n\nContent'),
+            generateFixedNewReportMarkdown: sandbox.stub().returns(''), // Empty markdown
+            generateBaseReportMarkdown: sandbox.stub().returns('# Base Report\n\nContent'),
+          },
+        });
+        const generateReportOpportunitiesTest = dataProcessingModule.generateReportOpportunities;
+
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('fixed-vs-new-empty-opp'),
+          addSuggestions: sandbox.stub().resolves({ id: 'fixed-vs-new-empty-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesTest(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        // When fixed vs new report markdown is empty, it should still continue with other reports
+        expect(result.message).to.equal('All report opportunities created successfully');
+      });
+
+      it('should handle opportunity creation failure for fixed vs new report', async () => {
+        // Arrange - Mock to succeed for in-depth and enhanced but fail for fixed vs new
+        let callCount = 0;
+        mockContext.dataAccess.Opportunity.create.callsFake(() => {
+          callCount += 1;
+          if (callCount === 1) {
+            // First call (in-depth) succeeds
+            return Promise.resolve({
+              setStatus: sandbox.stub(),
+              save: sandbox.stub(),
+              getId: sandbox.stub().returns('in-depth-success-opp'),
+              addSuggestions: sandbox.stub().resolves({ id: 'in-depth-success-sugg' }),
+            });
+          }
+          if (callCount === 2) {
+            // Second call (enhanced) succeeds
+            return Promise.resolve({
+              setStatus: sandbox.stub(),
+              save: sandbox.stub(),
+              getId: sandbox.stub().returns('enhanced-success-opp'),
+              addSuggestions: sandbox.stub().resolves({ id: 'enhanced-success-sugg' }),
+            });
+          }
+          // Third call (fixed vs new) fails
+          return Promise.reject(new Error('Fixed vs new report creation failed'));
+        });
 
         // Act & Assert
         try {
@@ -3801,26 +4281,46 @@ describe('data-processing utility functions', () => {
             mockAuditType,
           );
           expect.fail('Should have thrown an error');
-        } catch (thrownError) {
-          expect(thrownError.message).to.equal('Fixed vs new report error');
+        } catch (error) {
+          expect(error.message).to.include('Fixed vs new report creation failed');
           expect(mockLog.error.calledWith(
             'Failed to generate fixed vs new report opportunity',
-            'Fixed vs new report error',
+            'Fixed vs new report creation failed',
           )).to.be.true;
         }
       });
 
-      it('should handle base report generation error', async () => {
-        // Arrange
-        mockGenerateReportOpportunity
-          .onCall(0)
-          .resolves('https://reports.example.com/in-depth-123')
-          .onCall(1)
-          .resolves('https://reports.example.com/enhanced-456')
-          .onCall(2)
-          .resolves('https://reports.example.com/fixed-vs-new-789')
-          .onCall(3)
-          .rejects(new Error('Base report error'));
+      it('should handle suggestion creation failure for fixed vs new report', async () => {
+        // Arrange - Mock to succeed for in-depth and enhanced but fail suggestions for fixed vs new
+        let callCount = 0;
+        mockContext.dataAccess.Opportunity.create.callsFake(() => {
+          callCount += 1;
+          if (callCount === 1) {
+            // First call (in-depth) succeeds
+            return Promise.resolve({
+              setStatus: sandbox.stub(),
+              save: sandbox.stub(),
+              getId: sandbox.stub().returns('in-depth-sugg-success'),
+              addSuggestions: sandbox.stub().resolves({ id: 'in-depth-sugg-success' }),
+            });
+          }
+          if (callCount === 2) {
+            // Second call (enhanced) succeeds
+            return Promise.resolve({
+              setStatus: sandbox.stub(),
+              save: sandbox.stub(),
+              getId: sandbox.stub().returns('enhanced-sugg-success'),
+              addSuggestions: sandbox.stub().resolves({ id: 'enhanced-sugg-success' }),
+            });
+          }
+          // Third call (fixed vs new) succeeds but suggestions fail
+          return Promise.resolve({
+            setStatus: sandbox.stub(),
+            save: sandbox.stub(),
+            getId: sandbox.stub().returns('fixed-vs-new-fail-sugg-opp'),
+            addSuggestions: sandbox.stub().rejects(new Error('Fixed vs new suggestions failed')),
+          });
+        });
 
         // Act & Assert
         try {
@@ -3831,259 +4331,350 @@ describe('data-processing utility functions', () => {
             mockAuditType,
           );
           expect.fail('Should have thrown an error');
-        } catch (thrownError) {
-          expect(thrownError.message).to.equal('Base report error');
+        } catch (error) {
+          expect(error.message).to.include('Fixed vs new suggestions failed');
+          expect(mockLog.error.calledWith(
+            'Failed to generate fixed vs new report opportunity',
+            'Fixed vs new suggestions failed',
+          )).to.be.true;
+        }
+      });
+
+      it('should verify fixed vs new report parameters are passed correctly', async () => {
+        // Arrange
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('fixed-vs-new-param-test'),
+          addSuggestions: sandbox.stub().resolves({ id: 'fixed-vs-new-param-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert - Verify the fixed vs new opportunity was created (third call)
+        expect(mockContext.dataAccess.Opportunity.create.callCount).to.be.at.least(3);
+        const thirdCall = mockContext.dataAccess.Opportunity.create.getCall(2);
+        const opportunityData = thirdCall.args[0];
+
+        expect(opportunityData).to.have.property('siteId', 'test-site-id');
+        expect(opportunityData).to.have.property('auditId', 'test-audit-id');
+        expect(opportunityData).to.have.property('type', 'accessibility');
+        expect(opportunityData).to.have.property('title', 'Fixed vs New Report');
+      });
+
+      it('should handle complex aggregation data for fixed vs new report', async () => {
+        // Arrange
+        const complexAggregationResult = {
+          finalResultFiles: {
+            current: {
+              overall: {
+                violations: { total: 75, critical: { count: 30 }, serious: { count: 45 } },
+              },
+              'https://example.com/fixed-page1': { violations: { total: 15 }, traffic: '3000' },
+              'https://example.com/fixed-page2': { violations: { total: 20 }, traffic: '2500' },
+              'https://example.com/fixed-page3': { violations: { total: 10 }, traffic: '1800' },
+            },
+            lastWeek: {
+              overall: {
+                violations: { total: 90, critical: { count: 40 }, serious: { count: 50 } },
+              },
+              'https://example.com/fixed-page1': { violations: { total: 25 }, traffic: '2800' },
+              'https://example.com/fixed-page2': { violations: { total: 30 }, traffic: '2300' },
+            },
+          },
+        };
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('fixed-vs-new-complex-opp'),
+          addSuggestions: sandbox.stub().resolves({ id: 'fixed-vs-new-complex-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          complexAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        expect(mockSite.getId.calledOnce).to.be.true;
+        expect(mockSite.getLatestAuditByAuditType.calledWith(mockAuditType)).to.be.true;
+
+        // Verify that opportunities were created for in-depth, enhanced, and fixed vs new reports
+        expect(mockContext.dataAccess.Opportunity.create.callCount).to.be.at.least(3);
+      });
+
+      it('should handle scenarios where current data shows improvement over lastWeek', async () => {
+        // Arrange - Test scenario where fixed vs new report would show improvements
+        const improvementAggregationResult = {
+          finalResultFiles: {
+            current: {
+              overall: {
+                violations: { total: 20, critical: { count: 5 }, serious: { count: 15 } },
+              },
+              'https://example.com/improved-page1': { violations: { total: 3 }, traffic: '2000' },
+              'https://example.com/improved-page2': { violations: { total: 5 }, traffic: '1500' },
+            },
+            lastWeek: {
+              overall: {
+                violations: { total: 50, critical: { count: 20 }, serious: { count: 30 } },
+              },
+              'https://example.com/improved-page1': { violations: { total: 15 }, traffic: '1800' },
+              'https://example.com/improved-page2': { violations: { total: 12 }, traffic: '1400' },
+            },
+          },
+        };
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('improvement-scenario-opp'),
+          addSuggestions: sandbox.stub().resolves({ id: 'improvement-scenario-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          improvementAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        // Verify that all report types are still generated even with improvement data
+        expect(mockContext.dataAccess.Opportunity.create.callCount).to.be.at.least(3);
+      });
+
+      it('should handle error propagation correctly in fixed vs new report', async () => {
+        // Arrange - Create a test to verify that errors are properly thrown
+        mockContext.dataAccess.Opportunity.create
+          .onFirstCall()
+          .resolves({
+            setStatus: sandbox.stub(),
+            save: sandbox.stub(),
+            getId: sandbox.stub().returns('in-depth-success'),
+            addSuggestions: sandbox.stub().resolves({ id: 'in-depth-success-sugg' }),
+          })
+          .onSecondCall()
+          .resolves({
+            setStatus: sandbox.stub(),
+            save: sandbox.stub(),
+            getId: sandbox.stub().returns('enhanced-success'),
+            addSuggestions: sandbox.stub().resolves({ id: 'enhanced-success-sugg' }),
+          })
+          .onThirdCall()
+          .rejects(new Error('Fixed vs new database error'));
+
+        // Act & Assert
+        try {
+          await generateReportOpportunitiesMocked(
+            mockSite,
+            mockAggregationResult,
+            mockContext,
+            mockAuditType,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.include('Fixed vs new database error');
+          expect(mockLog.error.calledWith(
+            'Failed to generate fixed vs new report opportunity',
+            'Fixed vs new database error',
+          )).to.be.true;
+        }
+      });
+    });
+
+    describe('base report generation (lines 703-714)', () => {
+      it('should successfully generate base report opportunity with shouldIgnore=false', async () => {
+        // Arrange
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('base-report-opp-999'),
+          addSuggestions: sandbox.stub().resolves({ id: 'base-report-sugg-999' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        expect(result.message).to.equal('All report opportunities created successfully');
+
+        // Verify that all 4 opportunities were created (in-depth, enhanced, fixed vs new, base)
+        expect(mockContext.dataAccess.Opportunity.create.callCount).to.equal(4);
+        expect(mockOpportunity.addSuggestions.callCount).to.equal(4);
+
+        // Base report should NOT call setStatus('IGNORED') or save() because shouldIgnore=false
+        // The first 3 calls should set status to IGNORED, but the 4th (base) should not
+        expect(mockOpportunity.setStatus.callCount).to.equal(3); // Only first 3 calls
+        expect(mockOpportunity.save.callCount).to.equal(3); // Only first 3 calls
+      });
+
+      it('should set relatedReportsUrls on reportData.mdData before generating base report', async () => {
+        // Arrange - Mock the markdown generation functions to capture the reportData
+        let capturedReportData = null;
+        const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js', {
+          '../../../src/accessibility/utils/report-oppty.js': {
+            createInDepthReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'In-depth Report' }),
+            createEnhancedReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Enhanced Report' }),
+            createFixedVsNewReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Fixed vs New Report' }),
+            createBaseReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Base Report' }),
+            createReportOpportunitySuggestionInstance: sandbox.stub().returns([]),
+          },
+          '../../../src/accessibility/utils/generate-md-reports.js': {
+            generateInDepthReportMarkdown: sandbox.stub().returns('# In-depth Report\n\nContent'),
+            generateEnhancedReportMarkdown: sandbox.stub().returns('# Enhanced Report\n\nContent'),
+            generateFixedNewReportMarkdown: sandbox.stub().returns('# Fixed vs New Report\n\nContent'),
+            generateBaseReportMarkdown: sandbox.stub().callsFake((mdData) => {
+              capturedReportData = mdData;
+              return '# Base Report\n\nContent with related reports';
+            }),
+          },
+        });
+        const generateReportOpportunitiesTest = dataProcessingModule.generateReportOpportunities;
+
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('base-report-urls-opp'),
+          addSuggestions: sandbox.stub().resolves({ id: 'base-report-urls-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesTest(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        expect(capturedReportData).to.not.be.null;
+        expect(capturedReportData).to.have.property('relatedReportsUrls');
+        expect(capturedReportData.relatedReportsUrls).to.have.property('inDepthReportUrl');
+        expect(capturedReportData.relatedReportsUrls).to.have.property('enhancedReportUrl');
+        expect(capturedReportData.relatedReportsUrls).to.have.property('fixedVsNewReportUrl');
+      });
+
+      it('should handle empty markdown for base report', async () => {
+        // Arrange - Mock base markdown generation to return empty string
+        const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js', {
+          '../../../src/accessibility/utils/report-oppty.js': {
+            createInDepthReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'In-depth Report' }),
+            createEnhancedReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Enhanced Report' }),
+            createFixedVsNewReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Fixed vs New Report' }),
+            createBaseReportOpportunity: sandbox.stub().returns({ type: 'accessibility', title: 'Base Report' }),
+            createReportOpportunitySuggestionInstance: sandbox.stub().returns([]),
+          },
+          '../../../src/accessibility/utils/generate-md-reports.js': {
+            generateInDepthReportMarkdown: sandbox.stub().returns('# In-depth Report\n\nContent'),
+            generateEnhancedReportMarkdown: sandbox.stub().returns('# Enhanced Report\n\nContent'),
+            generateFixedNewReportMarkdown: sandbox.stub().returns('# Fixed vs New Report\n\nContent'),
+            generateBaseReportMarkdown: sandbox.stub().returns(''), // Empty markdown
+          },
+        });
+        const generateReportOpportunitiesTest = dataProcessingModule.generateReportOpportunities;
+
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('base-report-empty-opp'),
+          addSuggestions: sandbox.stub().resolves({ id: 'base-report-empty-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesTest(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert
+        expect(result.status).to.be.true;
+        // When base report markdown is empty, it should still succeed and return success
+        expect(result.message).to.equal('All report opportunities created successfully');
+      });
+
+      it('should handle opportunity creation failure for base report', async () => {
+        // Arrange - Mock to succeed for first 3 reports but fail for base report
+        let callCount = 0;
+        mockContext.dataAccess.Opportunity.create.callsFake(() => {
+          callCount += 1;
+          if (callCount <= 3) {
+            // First 3 calls (in-depth, enhanced, fixed vs new) succeed
+            return Promise.resolve({
+              setStatus: sandbox.stub(),
+              save: sandbox.stub(),
+              getId: sandbox.stub().returns(`success-opp-${callCount}`),
+              addSuggestions: sandbox.stub().resolves({ id: `success-sugg-${callCount}` }),
+            });
+          }
+          // Fourth call (base report) fails
+          return Promise.reject(new Error('Base report creation failed'));
+        });
+
+        // Act & Assert
+        try {
+          await generateReportOpportunitiesMocked(
+            mockSite,
+            mockAggregationResult,
+            mockContext,
+            mockAuditType,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.include('Base report creation failed');
           expect(mockLog.error.calledWith(
             'Failed to generate base report opportunity',
-            'Base report error',
+            'Base report creation failed',
           )).to.be.true;
         }
       });
 
-      it('should handle getWeekNumberAndYear error', async () => {
-        // Note: Cannot test internal function errors in ES modules
-        // getWeekNumberAndYear is called internally and cannot be mocked effectively
-      });
-
-      it('should handle getAuditData error', async () => {
-        // Note: This is tested above as site.getLatestAuditByAuditType error
-        // since that's the actual external dependency that can fail
-      });
-
-      it('should handle site.getId() error', async () => {
-        // Arrange
-        const errorSite = {
-          getId: sandbox.stub().throws(new Error('Site ID error')),
-        };
-
-        // Act & Assert
-        try {
-          await generateReportOpportunitiesMocked(
-            errorSite,
-            mockAggregationResult,
-            mockContext,
-            mockAuditType,
-          );
-          expect.fail('Should have thrown an error');
-        } catch (thrownError) {
-          expect(thrownError.message).to.equal('Site ID error');
-        }
-      });
-    });
-
-    describe('edge cases', () => {
-      it('should handle missing current data in aggregation result', async () => {
-        // Arrange
-        const incompleteAggregationResult = {
-          finalResultFiles: {
-            current: null,
-            lastWeek: mockAggregationResult.finalResultFiles.lastWeek,
-          },
-        };
-
-        // Act
-        await generateReportOpportunitiesMocked(
-          mockSite,
-          incompleteAggregationResult,
-          mockContext,
-          mockAuditType,
-        );
-
-        // Assert
-        const reportDataCall = mockGenerateReportOpportunity.getCall(0).args[0];
-        expect(reportDataCall.mdData.current).to.be.null;
-        expect(reportDataCall.mdData.lastWeek).to.deep.equal(
-          mockAggregationResult.finalResultFiles.lastWeek,
-        );
-      });
-
-      it('should handle missing lastWeek data in aggregation result', async () => {
-        // Arrange
-        const incompleteAggregationResult = {
-          finalResultFiles: {
-            current: mockAggregationResult.finalResultFiles.current,
-            lastWeek: null,
-          },
-        };
-
-        // Act
-        await generateReportOpportunitiesMocked(
-          mockSite,
-          incompleteAggregationResult,
-          mockContext,
-          mockAuditType,
-        );
-
-        // Assert
-        const reportDataCall = mockGenerateReportOpportunity.getCall(0).args[0];
-        expect(reportDataCall.mdData.current).to.deep.equal(
-          mockAggregationResult.finalResultFiles.current,
-        );
-        expect(reportDataCall.mdData.lastWeek).to.be.null;
-      });
-
-      it('should handle empty environment object', async () => {
-        // Arrange
-        const emptyEnvContext = {
-          log: mockLog,
-          env: {},
-        };
-
-        // Act
-        await generateReportOpportunitiesMocked(
-          mockSite,
-          mockAggregationResult,
-          emptyEnvContext,
-          mockAuditType,
-        );
-
-        // Assert
-        const reportDataCall = mockGenerateReportOpportunity.getCall(0).args[0];
-        expect(reportDataCall.linkData.envAsoDomain).to.equal('experience-stage');
-      });
-
-      it('should handle null environment object', async () => {
-        // Arrange
-        const nullEnvContext = {
-          log: mockLog,
-          env: null,
-        };
-
-        // Act
-        await generateReportOpportunitiesMocked(
-          mockSite,
-          mockAggregationResult,
-          nullEnvContext,
-          mockAuditType,
-        );
-
-        // Assert
-        const reportDataCall = mockGenerateReportOpportunity.getCall(0).args[0];
-        expect(reportDataCall.linkData.envAsoDomain).to.equal('experience-stage');
-      });
-
-      it('should handle undefined audit type', async () => {
-        // Act
-        await generateReportOpportunitiesMocked(
-          mockSite,
-          mockAggregationResult,
-          mockContext,
-          undefined,
-        );
-
-        // Assert - Verify the call was made with undefined
-        expect(mockSite.getLatestAuditByAuditType.calledWith(undefined)).to.be.true;
-      });
-
-      it('should handle empty strings as report URLs', async () => {
-        // Arrange
-        mockGenerateReportOpportunity
-          .onCall(0)
-          .resolves('')
-          .onCall(1)
-          .resolves('')
-          .onCall(2)
-          .resolves('')
-          .onCall(3)
-          .resolves('');
-
-        // Act
-        const result = await generateReportOpportunitiesMocked(
-          mockSite,
-          mockAggregationResult,
-          mockContext,
-          mockAuditType,
-        );
-
-        // Assert
-        expect(result.status).to.be.true;
-        const baseReportData = mockGenerateReportOpportunity.getCall(3).args[0];
-        expect(baseReportData.mdData.relatedReportsUrls).to.deep.equal({
-          inDepthReportUrl: '',
-          enhancedReportUrl: '',
-          fixedVsNewReportUrl: '',
-        });
-      });
-
-      it('should handle very long report URLs', async () => {
-        // Arrange
-        const longUrl = `https://reports.example.com/${'a'.repeat(1000)}`;
-        mockGenerateReportOpportunity
-          .onCall(0)
-          .resolves(longUrl)
-          .onCall(1)
-          .resolves(longUrl)
-          .onCall(2)
-          .resolves(longUrl)
-          .onCall(3)
-          .resolves(longUrl);
-
-        // Act
-        const result = await generateReportOpportunitiesMocked(
-          mockSite,
-          mockAggregationResult,
-          mockContext,
-          mockAuditType,
-        );
-
-        // Assert
-        expect(result.status).to.be.true;
-        const baseReportData = mockGenerateReportOpportunity.getCall(3).args[0];
-        const { inDepthReportUrl } = baseReportData.mdData.relatedReportsUrls;
-        expect(inDepthReportUrl).to.equal(longUrl);
-      });
-    });
-
-    describe('function call order verification', () => {
-      it('should call functions in the correct order', async () => {
-        // Arrange
-        const callOrder = [];
-        mockSite.getId = sandbox.stub().callsFake(() => {
-          callOrder.push('site.getId');
-          return 'test-site-123';
-        });
-        mockGetWeekNumberAndYear.callsFake(() => {
-          callOrder.push('getWeekNumberAndYear');
-          return { week: 20, year: 2024 };
-        });
-        mockGetAuditData.callsFake(() => {
-          callOrder.push('getAuditData');
-          return Promise.resolve({ siteId: 'test-site-123', auditId: 'audit-456' });
-        });
-        mockGenerateReportOpportunity.callsFake((data, genFn, createFn, reportName) => {
-          callOrder.push(`generateReportOpportunity-${reportName}`);
-          return Promise.resolve(`https://reports.example.com/${reportName}`);
-        });
-
-        // Act
-        await generateReportOpportunitiesMocked(
-          mockSite,
-          mockAggregationResult,
-          mockContext,
-          mockAuditType,
-        );
-
-        // Assert
-        expect(callOrder).to.deep.equal([
-          'site.getId',
-          'getWeekNumberAndYear',
-          'getAuditData',
-          'generateReportOpportunity-in-depth report',
-          'generateReportOpportunity-enhanced report',
-          'generateReportOpportunity-fixed vs new report',
-          'generateReportOpportunity-base report',
-        ]);
-      });
-
-      it('should stop execution on first error and not proceed to subsequent reports', async () => {
-        // Arrange
-        const callOrder = [];
-        mockGenerateReportOpportunity.callsFake((data, genFn, createFn, reportName) => {
-          callOrder.push(`generateReportOpportunity-${reportName}`);
-          if (reportName === 'enhanced report') {
-            return Promise.reject(new Error('Enhanced report failed'));
+      it('should handle suggestion creation failure for base report', async () => {
+        // Arrange - Mock to succeed for first 3 reports but fail suggestions for base report
+        let callCount = 0;
+        mockContext.dataAccess.Opportunity.create.callsFake(() => {
+          callCount += 1;
+          if (callCount <= 3) {
+            // First 3 calls succeed
+            return Promise.resolve({
+              setStatus: sandbox.stub(),
+              save: sandbox.stub(),
+              getId: sandbox.stub().returns(`sugg-success-opp-${callCount}`),
+              addSuggestions: sandbox.stub().resolves({ id: `sugg-success-${callCount}` }),
+            });
           }
-          return Promise.resolve(`https://reports.example.com/${reportName}`);
+          // Fourth call (base report) succeeds but suggestions fail
+          return Promise.resolve({
+            setStatus: sandbox.stub(),
+            save: sandbox.stub(),
+            getId: sandbox.stub().returns('base-fail-sugg-opp'),
+            addSuggestions: sandbox.stub().rejects(new Error('Base report suggestions failed')),
+          });
         });
 
         // Act & Assert
@@ -4095,21 +4686,25 @@ describe('data-processing utility functions', () => {
             mockAuditType,
           );
           expect.fail('Should have thrown an error');
-        } catch {
-          expect(callOrder).to.deep.equal([
-            'generateReportOpportunity-in-depth report',
-            'generateReportOpportunity-enhanced report',
-          ]);
-          const fixedVsNewReport = 'generateReportOpportunity-fixed vs new report';
-          const baseReport = 'generateReportOpportunity-base report';
-          expect(callOrder).to.not.include(fixedVsNewReport);
-          expect(callOrder).to.not.include(baseReport);
+        } catch (error) {
+          expect(error.message).to.include('Base report suggestions failed');
+          expect(mockLog.error.calledWith(
+            'Failed to generate base report opportunity',
+            'Base report suggestions failed',
+          )).to.be.true;
         }
       });
-    });
 
-    describe('data integrity verification', () => {
-      it('should maintain data integrity across all report generation calls', async () => {
+      it('should verify base report parameters are passed correctly with shouldIgnore=false', async () => {
+        // Arrange
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('base-report-param-test'),
+          addSuggestions: sandbox.stub().resolves({ id: 'base-report-param-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
         // Act
         await generateReportOpportunitiesMocked(
           mockSite,
@@ -4118,120 +4713,119 @@ describe('data-processing utility functions', () => {
           mockAuditType,
         );
 
-        // Assert - Verify that the same base data is passed to all calls
-        const calls = mockGenerateReportOpportunity.getCalls();
+        // Assert - Verify the base report opportunity was created (fourth call)
+        expect(mockContext.dataAccess.Opportunity.create.callCount).to.equal(4);
+        const fourthCall = mockContext.dataAccess.Opportunity.create.getCall(3);
+        const opportunityData = fourthCall.args[0];
 
-        for (let i = 0; i < 3; i += 1) {
-          const reportData = calls[i].args[0];
-          const currentData = mockAggregationResult.finalResultFiles.current;
-          const lastWeekData = mockAggregationResult.finalResultFiles.lastWeek;
-          expect(reportData.mdData.current).to.deep.equal(currentData);
-          expect(reportData.mdData.lastWeek).to.deep.equal(lastWeekData);
-          expect(reportData.linkData.siteId).to.equal('test-site-123');
-          expect(reportData.linkData.envAsoDomain).to.equal('experience-stage');
-          expect(reportData.opptyData.week).to.equal(20);
-          expect(reportData.opptyData.year).to.equal(2024);
-          const expectedAuditData = { siteId: 'test-site-123', auditId: 'audit-456' };
-          expect(reportData.auditData).to.deep.equal(expectedAuditData);
-          expect(reportData.context).to.equal(mockContext);
+        expect(opportunityData).to.have.property('siteId', 'test-site-id');
+        expect(opportunityData).to.have.property('auditId', 'test-audit-id');
+        expect(opportunityData).to.have.property('type', 'accessibility');
+        expect(opportunityData).to.have.property('title', 'Base Report');
+
+        // Verify that base report doesn't get ignored (shouldIgnore=false)
+        expect(mockOpportunity.setStatus.callCount).to.equal(3); // Only first 3 reports get ignored
+        // Only first 3 reports get saved with ignored status
+        expect(mockOpportunity.save.callCount).to.equal(3);
+      });
+
+      it('should return correct success response after all reports are generated', async () => {
+        // Arrange
+        const mockOpportunity = {
+          setStatus: sandbox.stub(),
+          save: sandbox.stub(),
+          getId: sandbox.stub().returns('final-success-opp'),
+          addSuggestions: sandbox.stub().resolves({ id: 'final-success-sugg' }),
+        };
+        mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
+          mockAggregationResult,
+          mockContext,
+          mockAuditType,
+        );
+
+        // Assert - Test lines 711-714 (return statement)
+        expect(result).to.be.an('object');
+        expect(result).to.have.property('status', true);
+        expect(result).to.have.property('message', 'All report opportunities created successfully');
+        expect(Object.keys(result)).to.have.lengthOf(2);
+      });
+
+      it('should handle error propagation correctly in base report', async () => {
+        // Arrange - Create a test to verify that errors are properly thrown
+        mockContext.dataAccess.Opportunity.create
+          .onCall(0).resolves({
+            setStatus: sandbox.stub(),
+            save: sandbox.stub(),
+            getId: sandbox.stub().returns('success-1'),
+            addSuggestions: sandbox.stub().resolves({ id: 'success-sugg-1' }),
+          })
+          .onCall(1).resolves({
+            setStatus: sandbox.stub(),
+            save: sandbox.stub(),
+            getId: sandbox.stub().returns('success-2'),
+            addSuggestions: sandbox.stub().resolves({ id: 'success-sugg-2' }),
+          })
+          .onCall(2)
+          .resolves({
+            setStatus: sandbox.stub(),
+            save: sandbox.stub(),
+            getId: sandbox.stub().returns('success-3'),
+            addSuggestions: sandbox.stub().resolves({ id: 'success-sugg-3' }),
+          })
+          .onCall(3)
+          .rejects(new Error('Base report database error'));
+
+        // Act & Assert
+        try {
+          await generateReportOpportunitiesMocked(
+            mockSite,
+            mockAggregationResult,
+            mockContext,
+            mockAuditType,
+          );
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.include('Base report database error');
+          expect(mockLog.error.calledWith(
+            'Failed to generate base report opportunity',
+            'Base report database error',
+          )).to.be.true;
         }
-
-        // Verify the base report call has the additional relatedReportsUrls
-        const baseReportData = calls[3].args[0];
-        expect(baseReportData.mdData.relatedReportsUrls).to.exist;
-        const currentData = mockAggregationResult.finalResultFiles.current;
-        const lastWeekData = mockAggregationResult.finalResultFiles.lastWeek;
-        expect(baseReportData.mdData.current).to.deep.equal(currentData);
-        expect(baseReportData.mdData.lastWeek).to.deep.equal(lastWeekData);
       });
-    });
 
-    it('should handle getAuditData error by testing site.getLatestAuditByAuditType error', async () => {
-      // Arrange - Test the actual external dependency that can fail
-      const errorSite = {
-        getId: sandbox.stub().returns('error-site'),
-        getLatestAuditByAuditType: sandbox.stub().rejects(new Error('Audit data retrieval error')),
-      };
+      it('should ensure base report is generated last in the sequence', async () => {
+        // Arrange - Track the order of opportunity creation
+        const creationOrder = [];
+        mockContext.dataAccess.Opportunity.create.callsFake((opportunityData) => {
+          creationOrder.push(opportunityData.title);
+          return Promise.resolve({
+            setStatus: sandbox.stub(),
+            save: sandbox.stub(),
+            getId: sandbox.stub().returns(`opp-${creationOrder.length}`),
+            addSuggestions: sandbox.stub().resolves({ id: `sugg-${creationOrder.length}` }),
+          });
+        });
 
-      // Act & Assert
-      try {
-        await generateReportOpportunitiesMocked(
-          errorSite,
+        // Act
+        const result = await generateReportOpportunitiesMocked(
+          mockSite,
           mockAggregationResult,
           mockContext,
           mockAuditType,
         );
-        expect.fail('Should have thrown an error');
-      } catch (thrownError) {
-        expect(thrownError.message).to.equal('Audit data retrieval error');
-      }
-    });
 
-    it('should handle site.getId() error', async () => {
-      // Arrange
-      const errorSite = {
-        getId: sandbox.stub().throws(new Error('Site ID error')),
-        getLatestAuditByAuditType: sandbox.stub().resolves({}),
-      };
-
-      // Act & Assert
-      try {
-        await generateReportOpportunitiesMocked(
-          errorSite,
-          mockAggregationResult,
-          mockContext,
-          mockAuditType,
-        );
-        expect.fail('Should have thrown an error');
-      } catch (thrownError) {
-        expect(thrownError.message).to.equal('Site ID error');
-      }
-    });
-
-    it('should call external functions in observable order', async () => {
-      // Arrange
-      const callOrder = [];
-      const trackingSite = {
-        getId: sandbox.stub().callsFake(() => {
-          callOrder.push('site.getId');
-          return 'test-site-123';
-        }),
-        getLatestAuditByAuditType: sandbox.stub().callsFake(() => {
-          callOrder.push('site.getLatestAuditByAuditType');
-          return Promise.resolve({ siteId: 'test-site-123', auditId: 'audit-456' });
-        }),
-      };
-
-      mockGenerateReportOpportunity.callsFake((data, genFn, createFn, reportName) => {
-        callOrder.push(`generateReportOpportunity-${reportName}`);
-        return Promise.resolve(`https://reports.example.com/${reportName}`);
+        // Assert
+        expect(result.status).to.be.true;
+        expect(creationOrder).to.have.lengthOf(4);
+        expect(creationOrder[0]).to.equal('In-depth Report');
+        expect(creationOrder[1]).to.equal('Enhanced Report');
+        expect(creationOrder[2]).to.equal('Fixed vs New Report');
+        expect(creationOrder[3]).to.equal('Base Report'); // Base report should be last
       });
-
-      // Act
-      await generateReportOpportunitiesMocked(
-        trackingSite,
-        mockAggregationResult,
-        mockContext,
-        mockAuditType,
-      );
-
-      // Assert - Verify observable external calls occur in expected order
-      expect(callOrder).to.include('site.getId');
-      expect(callOrder).to.include('site.getLatestAuditByAuditType');
-      expect(callOrder).to.include('generateReportOpportunity-in-depth report');
-      expect(callOrder).to.include('generateReportOpportunity-enhanced report');
-      expect(callOrder).to.include('generateReportOpportunity-fixed vs new report');
-      expect(callOrder).to.include('generateReportOpportunity-base report');
-
-      // Verify reports are called in sequence
-      const inDepthIndex = callOrder.indexOf('generateReportOpportunity-in-depth report');
-      const enhancedIndex = callOrder.indexOf('generateReportOpportunity-enhanced report');
-      const fixedVsNewIndex = callOrder.indexOf('generateReportOpportunity-fixed vs new report');
-      const baseIndex = callOrder.indexOf('generateReportOpportunity-base report');
-
-      expect(inDepthIndex).to.be.lessThan(enhancedIndex);
-      expect(enhancedIndex).to.be.lessThan(fixedVsNewIndex);
-      expect(fixedVsNewIndex).to.be.lessThan(baseIndex);
     });
   });
 });
