@@ -86,8 +86,8 @@ describe('createLowFormViewsOpportunities handler method', () => {
       siteId: 'site-id',
       auditId: 'audit-id',
       deliveryType: 'eds',
-      url: 'https://www.surest.com/existing-opportunity',
       data: {
+        url: 'https://www.surest.com/existing-opportunity',
         form_source: '',
         cta_text: '',
         cta_source: '',
@@ -99,6 +99,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         actual.type === expectedMessage.type
         && actual.siteId === expectedMessage.siteId
         && actual.auditId === expectedMessage.auditId
+        && actual.data.url === expectedMessage.data.url
         && actual.deliveryType === expectedMessage.deliveryType
         && actual.data.form_source === expectedMessage.data.form_source
         && actual.data.cta_text === expectedMessage.data.cta_text
