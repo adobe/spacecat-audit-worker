@@ -69,7 +69,7 @@ describe('Preflight Audit', () => {
         },
       }];
 
-      const result = await runInternalLinkChecks(scrapedObjects, 'token', context);
+      const result = await runInternalLinkChecks(scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
     });
 
@@ -85,7 +85,7 @@ describe('Preflight Audit', () => {
         },
       }];
 
-      const result = await runInternalLinkChecks(scrapedObjects, 'token', context);
+      const result = await runInternalLinkChecks(scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([
         { pageUrl: 'https://main--example--page.aem.page/page1', href: 'https://main--example--page.aem.page/broken', status: 404 },
       ]);
@@ -103,7 +103,7 @@ describe('Preflight Audit', () => {
         },
       }];
 
-      const result = await runInternalLinkChecks(scrapedObjects, 'token', context);
+      const result = await runInternalLinkChecks(scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
       expect(result.auditResult.brokenInternalLinks[0]).to.include({
         pageUrl: 'https://main--example--page.aem.page/page1',

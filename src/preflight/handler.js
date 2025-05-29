@@ -152,7 +152,7 @@ export const preflightAudit = async (context) => {
     );
 
     // Internal link checks
-    const { auditResult } = await runInternalLinkChecks(scrapedObjects, pageAuthToken, context);
+    const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, authHeader);
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
         const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
