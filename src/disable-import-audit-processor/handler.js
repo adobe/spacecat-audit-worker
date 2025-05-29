@@ -60,7 +60,7 @@ export async function runDisableImportAuditProcessor(message, context) {
     await configuration.save();
 
     log.info(`Disabled imports ${importTypes} and audits ${auditTypes} for site ${siteId} is complete`);
-    const slackMessage = `:check_mark: Disabled imports ${importTypes} and audits ${auditTypes} for site ${siteId} is complete`;
+    const slackMessage = `:check_mark: Disabled imports ${JSON.stringify(importTypes)} and audits ${JSON.stringify(auditTypes)} for site ${siteId} is complete`;
     await sendSlackMessage(env, log, slackContext, slackMessage);
 
     return {
