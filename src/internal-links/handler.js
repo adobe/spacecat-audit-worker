@@ -196,7 +196,7 @@ export async function opportunityAndSuggestionsStep(context) {
   const messages = brokenInternalLinksChunks.map((brokenInternalLinksChunk) => ({
     type: 'suggestions:internal-links',
     siteId: site.getId(),
-    auditId: audit.getId(),
+    //auditId: audit.getId(),
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
     data: {
