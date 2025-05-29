@@ -25,7 +25,7 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.DISABLE_IMPORT_AUDIT_PROCESSOR;
  */
 export async function runDisableImportAuditProcessor(message, context) {
   const { log, env, dataAccess } = context;
-  const { siteId, auditContext } = message;
+  const { siteId, siteUrl, auditContext } = message;
   const { Configuration } = dataAccess;
   const {
     organizationId, importTypes = [], auditTypes = [], slackContext,
@@ -42,7 +42,7 @@ export async function runDisableImportAuditProcessor(message, context) {
   try {
     // Database operations
     log.info('Starting database operations');
-    const site = await Site.findById(siteId);
+    const site = await Site.findByBaseURL(siteUrl);
     if (!site) {
       throw new Error(`Site not found for siteId: ${siteId}`);
     }

@@ -48,7 +48,7 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
   try {
     // Check latest audit status for each audit type in parallel
     const auditStatusPromises = auditTypes.map(async (auditType) => {
-      const latestAudit = await Audit.findLatestBySiteIdAndAuditType(siteId, auditType);
+      const latestAudit = await Audit.getLatestAuditByAuditType(auditType);
       log.info(`Latest audit for site ${siteId} and audit type ${auditType}: ${JSON.stringify(latestAudit)}`);
       if (latestAudit) {
         const auditResult = latestAudit.getAuditResult();
