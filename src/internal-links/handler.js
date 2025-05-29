@@ -43,39 +43,49 @@ export async function internalLinksAuditRunner(auditUrl, context) {
   const finalUrl = await wwwUrlResolver(site, context);
 
   try {
+    // 1. Create RUM API client
     const rumAPIClient = RUMAPIClient.createFrom(context);
 
+    // 2. Prepare query options
     const options = {
       domain: finalUrl,
       interval: INTERVAL,
       granularity: 'hourly',
     };
 
-    const internal404Links = await rumAPIClient.query(
-      '404-internal-links',
-      options,
+    // 3. Query for 404 internal links
+    const internal404Links = await rumAPIClient.query('404-internal-links', options);
+
+    // 4. Check accessibility in parallel before transformation
+    const accessibilityResults = await Promise.all(
+      internal404Links.map(async (link) => ({
+        link,
+        inaccessible: await isLinkInaccessible(link.url_to, log),
+      })),
     );
-    const transformedLinks = internal404Links.map((link) => ({
-      urlFrom: link.url_from,
-      urlTo: link.url_to,
-      trafficDomain: link.traffic_domain,
-    }));
 
-    let finalLinks = calculatePriority(transformedLinks);
+    // 5. Filter only inaccessible links and transform for further processing
+    const inaccessibleLinks = accessibilityResults
+      .filter((result) => result.inaccessible)
+      .map((result) => ({
+        urlFrom: result.link.url_from,
+        urlTo: result.link.url_to,
+        trafficDomain: result.link.traffic_domain,
+      }));
 
-    finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
+    // 6. Prioritize links
+    const prioritizedLinks = calculatePriority(inaccessibleLinks);
 
-    const auditResult = {
-      brokenInternalLinks: finalLinks,
-      fullAuditRef: auditUrl,
-      finalUrl,
-      auditContext: {
-        interval: INTERVAL,
-      },
-    };
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found: ${prioritizedLinks.length} broken internal links`);
 
+    // 7. Build and return audit result
     return {
-      auditResult,
+      auditResult: {
+        brokenInternalLinks: prioritizedLinks,
+        fullAuditRef: auditUrl,
+        finalUrl,
+        auditContext: { interval: INTERVAL },
+      },
       fullAuditRef: auditUrl,
     };
   } catch (error) {
@@ -109,10 +119,12 @@ export async function runAuditAndImportTopPagesStep(context) {
 
 export async function prepareScrapingStep(context) {
   const {
-    site, dataAccess,
+    log, site, dataAccess,
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages`);
 
   const urls = topPages.map((page) => ({ url: page.getUrl() }));
   return {
