@@ -57,15 +57,17 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
       },
     };
     const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
-    const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
+    let slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
 
     log.info('Audit status processor completed');
     await sendSlackMessage(slackClient, slackContext, 'Audit status processor completed');
     // prepare demo url
+    slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
     await sendSlackMessage(slackClient, slackContext, 'Preparing demo url');
     const demoUrl = prepareDemoUrl(siteUrl, organizationId, siteId);
     const slackMessage = `:tada: Demo url: ${demoUrl}`;
     log.info(`Demo url is ready ${demoUrl}`);
+    slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
     await sendSlackMessage(slackClient, slackContext, slackMessage);
 
     return {
