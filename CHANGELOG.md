@@ -1,3 +1,29 @@
+# [1.96.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.95.0...v1.96.0) (2025-05-29)
+
+
+### Features
+
+* add accessibility audit ([#895](https://github.com/adobe/spacecat-audit-worker/issues/895)) ([9a03c35](https://github.com/adobe/spacecat-audit-worker/commit/9a03c35b11fe3fdf3fa7f01c1582f802d9c28597))
+
+# [1.95.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.94.0...v1.95.0) (2025-05-29)
+
+
+### Bug Fixes
+
+* traffic data inclusion in form low conv oppoty ([#910](https://github.com/adobe/spacecat-audit-worker/issues/910)) ([92e19b2](https://github.com/adobe/spacecat-audit-worker/commit/92e19b288d4f0f026be9d17b0f33c12633a60d71))
+
+
+### Features
+
+* low view mystique bug fix: send mandatory params ([#911](https://github.com/adobe/spacecat-audit-worker/issues/911)) ([90770d0](https://github.com/adobe/spacecat-audit-worker/commit/90770d0b7865a82abec318af6fec76179635d8b7))
+
+# [1.94.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.93.1...v1.94.0) (2025-05-28)
+
+
+### Features
+
+* added includedURLs from Site config for meta-tags audit ([#856](https://github.com/adobe/spacecat-audit-worker/issues/856)) ([c8ce904](https://github.com/adobe/spacecat-audit-worker/commit/c8ce90434619758f17ca4a208216693dcaaa092e))
+
 ## [1.93.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.93.0...v1.93.1) (2025-05-28)
 
 

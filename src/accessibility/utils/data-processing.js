@@ -231,17 +231,10 @@ export async function cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekO
  * @param {number} maxRetries - maximum number of retries for failed promises (default: 1)
  * @returns {Promise<{results: Array, failedCount: number}>} - processing results
  */
-export async function processFilesWithRetry(
-  s3Client,
-  bucketName,
-  objectKeys,
-  log,
-  maxRetries = 1,
-  getObjectFromKeyFn = getObjectFromKey,
-) {
+export async function processFilesWithRetry(s3Client, bucketName, objectKeys, log, maxRetries = 1) {
   const processFile = async (key) => {
     try {
-      const data = await getObjectFromKeyFn(s3Client, bucketName, key, log);
+      const data = await getObjectFromKey(s3Client, bucketName, key, log);
 
       if (!data) {
         log.warn(`Failed to get data from ${key}, skipping`);
@@ -305,8 +298,7 @@ export async function processFilesWithRetry(
  * @param {import('@azure/logger').Logger} log - a logger instance
  * @param {string} outputKey - the key for the aggregated output file
  * @param {string} version - the version/date to filter by
- * @param {number} maxRetries - maximum number of retries for failed promises (default: 2)
- * @param {object} dependencies - optional dependencies for testing
+ * @param {number} maxRetries - maximum number of retries for failed promises (default: 1)
  * @returns {Promise<{success: boolean, aggregatedData: object, message: string}>} - result
  */
 export async function aggregateAccessibilityData(
@@ -317,18 +309,7 @@ export async function aggregateAccessibilityData(
   outputKey,
   version,
   maxRetries = 2,
-  dependencies = {},
 ) {
-  // Default dependencies
-  const {
-    getObjectKeysFromSubfoldersFn = getObjectKeysFromSubfolders,
-    processFilesWithRetryFn = processFilesWithRetry,
-    updateViolationDataFn = updateViolationData,
-    getObjectKeysUsingPrefixFn = getObjectKeysUsingPrefix,
-    getObjectFromKeyFn = getObjectFromKey,
-    cleanupS3FilesFn = cleanupS3Files,
-  } = dependencies;
-
   if (!s3Client || !bucketName || !siteId) {
     const message = 'Missing required parameters for aggregateAccessibilityData';
     log.error(message);
@@ -354,7 +335,7 @@ export async function aggregateAccessibilityData(
 
   try {
     // Get object keys from subfolders
-    const objectKeysResult = await getObjectKeysFromSubfoldersFn(
+    const objectKeysResult = await getObjectKeysFromSubfolders(
       s3Client,
       bucketName,
       siteId,
@@ -367,13 +348,12 @@ export async function aggregateAccessibilityData(
     const { objectKeys } = objectKeysResult;
 
     // Process files with retry logic
-    const { results } = await processFilesWithRetryFn(
+    const { results } = await processFilesWithRetry(
       s3Client,
       bucketName,
       objectKeys,
       log,
       maxRetries,
-      getObjectFromKeyFn,
     );
 
     // Check if we have any successful results to process
@@ -395,8 +375,8 @@ export async function aggregateAccessibilityData(
       };
 
       // Update overall data
-      aggregatedData = updateViolationDataFn(aggregatedData, violations, 'critical');
-      aggregatedData = updateViolationDataFn(aggregatedData, violations, 'serious');
+      aggregatedData = updateViolationData(aggregatedData, violations, 'critical');
+      aggregatedData = updateViolationData(aggregatedData, violations, 'serious');
       if (violations.total) {
         aggregatedData.overall.violations.total += violations.total;
       }
@@ -414,13 +394,13 @@ export async function aggregateAccessibilityData(
 
     // check if there are any other final-result files in the accessibility/siteId folder
     // if there are, we will use the latest one for comparison later on
-    const lastWeekObjectKeys = await getObjectKeysUsingPrefixFn(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
+    const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
     log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
 
     // get last week file and start creating the report
     const lastWeekFile = lastWeekObjectKeys.length < 2
       ? null
-      : await getObjectFromKeyFn(
+      : await getObjectFromKey(
         s3Client,
         bucketName,
         lastWeekObjectKeys[lastWeekObjectKeys.length - 2],
@@ -430,7 +410,7 @@ export async function aggregateAccessibilityData(
       log.info(`[A11yAudit] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
-    await cleanupS3FilesFn(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
+    await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
 
     return {
       success: true,
@@ -495,18 +475,11 @@ export async function createReportOpportunitySuggestion(
  * @param {string} bucketName - the name of the S3 bucket
  * @param {string} siteId - the site ID to look for
  * @param {import('@azure/logger').Logger} log - a logger instance
- * @param {object} dependencies - optional dependencies for testing
  */
-export async function getUrlsForAudit(s3Client, bucketName, siteId, log, dependencies = {}) {
-  // Default dependencies
-  const {
-    getObjectKeysUsingPrefixFn = getObjectKeysUsingPrefix,
-    getObjectFromKeyFn = getObjectFromKey,
-  } = dependencies;
-
+export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
   let finalResultFiles;
   try {
-    finalResultFiles = await getObjectKeysUsingPrefixFn(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
+    finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
     if (finalResultFiles.length === 0) {
       const errorMessage = `[A11yAudit] No final result files found for ${siteId}`;
       log.error(errorMessage);
@@ -521,7 +494,7 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log, depende
   let latestFinalResultFile;
   try {
     // eslint-disable-next-line max-len
-    latestFinalResultFile = await getObjectFromKeyFn(s3Client, bucketName, latestFinalResultFileKey, log);
+    latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
     if (!latestFinalResultFile) {
       const errorMessage = `[A11yAudit] No latest final result file found for ${siteId}`;
       log.error(errorMessage);
@@ -565,7 +538,6 @@ export function linkBuilder(linkData, opptyId) {
  * @param {function} createOpportunityFn - the function to create the opportunity
  * @param {string} reportName - the name of the report
  * @param {boolean} shouldIgnore - whether to ignore the opportunity
- * @param {object} dependencies - optional dependencies for testing
  * @returns {Promise<string>} - the URL of the opportunity
  */
 export async function generateReportOpportunity(
@@ -574,15 +546,7 @@ export async function generateReportOpportunity(
   createOpportunityFn,
   reportName,
   shouldIgnore = true,
-  dependencies = {},
 ) {
-  // Default dependencies
-  const {
-    createReportOpportunityFn = createReportOpportunity,
-    createReportOpportunitySuggestionFn = createReportOpportunitySuggestion,
-    linkBuilderFn = linkBuilder,
-  } = dependencies;
-
   const {
     mdData,
     linkData,
@@ -607,7 +571,7 @@ export async function generateReportOpportunity(
   let opportunityRes;
 
   try {
-    opportunityRes = await createReportOpportunityFn(opportunityInstance, auditData, context);
+    opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
   } catch (error) {
     log.error(`Failed to create report opportunity for ${reportName}`, error.message);
     throw new Error(error.message);
@@ -617,7 +581,7 @@ export async function generateReportOpportunity(
 
   // 1.3 create the suggestions for the report oppty
   try {
-    await createReportOpportunitySuggestionFn(
+    await createReportOpportunitySuggestion(
       opportunity,
       reportMarkdown,
       auditData,
@@ -635,7 +599,7 @@ export async function generateReportOpportunity(
   }
 
   const opptyId = opportunity.getId();
-  const opptyUrl = linkBuilderFn(linkData, opptyId);
+  const opptyUrl = linkBuilder(linkData, opptyId);
   return opptyUrl;
 }
 
@@ -676,40 +640,22 @@ export function getWeekNumberAndYear() {
  * @param {object} aggregationResult - the aggregation result
  * @param {import('@azure/logger').Logger} context - the context
  * @param {string} auditType - the audit type
- * @param {object} dependencies - optional dependencies for testing
  */
 export async function generateReportOpportunities(
   site,
   aggregationResult,
   context,
   auditType,
-  dependencies = {},
 ) {
-  // Default dependencies
-  const {
-    getWeekNumberAndYearFn = getWeekNumberAndYear,
-    getAuditDataFn = getAuditData,
-    getEnvAsoDomainFn = getEnvAsoDomain,
-    generateReportOpportunityFn = generateReportOpportunity,
-    generateInDepthReportMarkdownFn = generateInDepthReportMarkdown,
-    createInDepthReportOpportunityFn = createInDepthReportOpportunity,
-    generateEnhancedReportMarkdownFn = generateEnhancedReportMarkdown,
-    createEnhancedReportOpportunityFn = createEnhancedReportOpportunity,
-    generateFixedNewReportMarkdownFn = generateFixedNewReportMarkdown,
-    createFixedVsNewReportOpportunityFn = createFixedVsNewReportOpportunity,
-    generateBaseReportMarkdownFn = generateBaseReportMarkdown,
-    createBaseReportOpportunityFn = createBaseReportOpportunity,
-  } = dependencies;
-
   const siteId = site.getId();
   const { log, env } = context;
   const { finalResultFiles } = aggregationResult;
   const { current, lastWeek } = finalResultFiles;
 
   // data needed for all reports oppties
-  const { week, year } = getWeekNumberAndYearFn();
-  const auditData = await getAuditDataFn(site, auditType);
-  const envAsoDomain = getEnvAsoDomainFn(env);
+  const { week, year } = getWeekNumberAndYear();
+  const auditData = await getAuditData(site, auditType);
+  const envAsoDomain = getEnvAsoDomain(env);
 
   const relatedReportsUrls = {
     inDepthReportUrl: '',
@@ -734,21 +680,21 @@ export async function generateReportOpportunities(
   };
 
   try {
-    relatedReportsUrls.inDepthReportUrl = await generateReportOpportunityFn(reportData, generateInDepthReportMarkdownFn, createInDepthReportOpportunityFn, 'in-depth report');
+    relatedReportsUrls.inDepthReportUrl = await generateReportOpportunity(reportData, generateInDepthReportMarkdown, createInDepthReportOpportunity, 'in-depth report');
   } catch (error) {
     log.error('Failed to generate in-depth report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
-    relatedReportsUrls.enhancedReportUrl = await generateReportOpportunityFn(reportData, generateEnhancedReportMarkdownFn, createEnhancedReportOpportunityFn, 'enhanced report');
+    relatedReportsUrls.enhancedReportUrl = await generateReportOpportunity(reportData, generateEnhancedReportMarkdown, createEnhancedReportOpportunity, 'enhanced report');
   } catch (error) {
     log.error('Failed to generate enhanced report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
-    relatedReportsUrls.fixedVsNewReportUrl = await generateReportOpportunityFn(reportData, generateFixedNewReportMarkdownFn, createFixedVsNewReportOpportunityFn, 'fixed vs new report');
+    relatedReportsUrls.fixedVsNewReportUrl = await generateReportOpportunity(reportData, generateFixedNewReportMarkdown, createFixedVsNewReportOpportunity, 'fixed vs new report');
   } catch (error) {
     log.error('Failed to generate fixed vs new report opportunity', error.message);
     throw new Error(error.message);
@@ -756,7 +702,7 @@ export async function generateReportOpportunities(
 
   try {
     reportData.mdData.relatedReportsUrls = relatedReportsUrls;
-    await generateReportOpportunityFn(reportData, generateBaseReportMarkdownFn, createBaseReportOpportunityFn, 'base report', false);
+    await generateReportOpportunity(reportData, generateBaseReportMarkdown, createBaseReportOpportunity, 'base report', false);
   } catch (error) {
     log.error('Failed to generate base report opportunity', error.message);
     throw new Error(error.message);
