@@ -1,3 +1,10 @@
+# [1.96.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.95.0...v1.96.0) (2025-05-29)
+
+
+### Features
+
+* add accessibility audit ([#895](https://github.com/adobe/spacecat-audit-worker/issues/895)) ([9a03c35](https://github.com/adobe/spacecat-audit-worker/commit/9a03c35b11fe3fdf3fa7f01c1582f802d9c28597))
+
 # [1.95.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.94.0...v1.95.0) (2025-05-29)
 
 
