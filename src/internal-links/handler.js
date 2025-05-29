@@ -29,7 +29,7 @@ import {
   calculatePriority,
 } from './helpers.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
+// const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 const chunkSize = 40;
@@ -135,7 +135,7 @@ export async function opportunityAndSuggestionsStep(context) {
   // audit from above
 
   const finalUrl = await wwwUrlResolver(site, context);
-
+  let auditResult;
   try {
     const rumAPIClient = RUMAPIClient.createFrom(context);
 
@@ -159,7 +159,7 @@ export async function opportunityAndSuggestionsStep(context) {
 
     finalLinks = finalLinks.filter(async (link) => isLinkInaccessible(link.urlTo, log));
 
-    const auditResult = {
+    auditResult = {
       brokenInternalLinks: finalLinks,
       fullAuditRef: finalUrl,
       finalUrl,
@@ -178,7 +178,7 @@ export async function opportunityAndSuggestionsStep(context) {
       },
     };
   }
-// audit end
+  // audit end
 
   // const auditResult = audit.getAuditResult();
   log.info('auditResult in broken internal links opportunityAndSuggestionsStep: ', JSON.stringify(auditResult, null, 2));
