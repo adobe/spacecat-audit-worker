@@ -161,7 +161,7 @@ export async function opportunityAndSuggestionsStep(context) {
 
     const auditResult = {
       brokenInternalLinks: finalLinks,
-      fullAuditRef: auditUrl,
+      fullAuditRef: finalUrl,
       finalUrl,
       auditContext: {
         interval: INTERVAL,
@@ -170,9 +170,9 @@ export async function opportunityAndSuggestionsStep(context) {
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`);
     return {
-      fullAuditRef: auditUrl,
+      fullAuditRef: finalUrl,
       auditResult: {
-        finalUrl: auditUrl,
+        finalUrl,
         error: `[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`,
         success: false,
       },
