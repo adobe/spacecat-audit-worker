@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Site, Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
@@ -24,42 +24,49 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.DISABLE_IMPORT_AUDIT_PROCESSOR;
  * @returns {Promise<object>} The result
  */
 export async function runDisableImportAuditProcessor(message, context) {
-  const {
-    log, env, site, dataAccess,
-  } = context;
+  const { log, env, dataAccess } = context;
   const { siteId, auditContext } = message;
-  log.info('Running disable import and audit processor');
+  const { Configuration } = dataAccess;
+  const {
+    organizationId, importTypes = [], auditTypes = [], slackContext,
+  } = auditContext;
+
+  log.info('Processing disable import and audit request:', {
+    auditType: AUDIT_TYPE,
+    siteId,
+    organizationId,
+    importTypes,
+    auditTypes,
+  });
+  await sendSlackMessage(env, log, slackContext, 'Disabling imports and audits');
   try {
-    const { Configuration } = dataAccess;
-    const {
-      organizationId, importTypes = [], auditTypes = [], slackContext,
-    } = auditContext;
-
-    log.info('Processing disable request:', {
-      auditType: AUDIT_TYPE,
-      siteId,
-      organizationId,
-      importTypes,
-      auditTypes,
-    });
-
-    // Disable imports and audits
-    await sendSlackMessage(env, log, slackContext, 'Disabling imports and audits');
+    // Database operations
+    log.info('Starting database operations');
+    const site = await Site.findById(siteId);
+    if (!site) {
+      throw new Error(`Site not found for siteId: ${siteId}`);
+    }
     const siteConfig = site.getConfig();
     for (const importType of importTypes) {
+      log.info(`Disabling import type: ${importType}`);
       siteConfig.disableImport(importType);
     }
+    log.info('Import types disabled');
+
     const configuration = await Configuration.findLatest();
     for (const auditType of auditTypes) {
+      log.info(`Disabling audit type: ${auditType}`);
       configuration.disableHandlerForSite(auditType, site);
     }
-
-    log.info(`Disabled imports ${importTypes} and audits ${auditTypes} for site ${siteId} is complete`);
-    const slackMessage = `:check_mark: Disabled imports ${JSON.stringify(importTypes)} and audits ${JSON.stringify(auditTypes)} for site ${siteId} is complete`;
-    await sendSlackMessage(env, log, slackContext, slackMessage);
+    log.info('Audit types disabled');
 
     await site.save();
     await configuration.save();
+    log.info('Database changes saved successfully');
+
+    const slackMessage = `:check_mark: Disabled imports ${JSON.stringify(importTypes)} and audits ${JSON.stringify(auditTypes)} for site ${siteId} is complete`;
+    log.info('Sending second Slack message:', { message: slackMessage });
+    await sendSlackMessage(env, log, slackContext, slackMessage);
 
     return {
       siteId,

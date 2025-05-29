@@ -35,24 +35,54 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
   const {
     experienceUrl: siteUrl, organizationId, auditTypes, slackContext,
   } = auditContext;
-  try {
-    log.info('Processing audit status for site:', {
-      siteId,
-      siteUrl,
-      organizationId,
-      auditType: AUDIT_TYPE,
-      auditTypes,
-    });
 
-    log.info('Audit status processor completed');
-    await sendSlackMessage(env, log, slackContext, 'Audit status processor completed');
+  log.info('Processing audit status for site:', {
+    siteId,
+    siteUrl,
+    organizationId,
+    auditType: AUDIT_TYPE,
+    auditTypes,
+  });
+
+  await sendSlackMessage(env, log, slackContext, 'Checking audit status');
+  try {
+    // Check latest audit status for each audit type in parallel
+    const auditStatusPromises = auditTypes.map(async (auditType) => {
+      const latestAudit = await Audit.findLatestBySiteIdAndAuditType(siteId, auditType);
+      log.info(`Latest audit for site ${siteId} and audit type ${auditType}: ${JSON.stringify(latestAudit)}`);
+      if (latestAudit) {
+        const auditResult = latestAudit.getAuditResult();
+        if (auditResult.success) {
+          log.info(`Latest audit for site ${siteId} was successful for audit type ${auditType}`);
+          const slackMessage = `:check_mark: Latest audit for site ${siteId} was successful for audit type ${auditType}`;
+          return sendSlackMessage(env, log, slackContext, slackMessage);
+        } else {
+          log.warn(`Latest audit for site ${siteId} failed for audit type ${auditType}: ${auditResult.error || 'Unknown error'}`);
+          const slackMessage = `:x: Latest audit for site ${siteId} failed for audit type ${auditType}: ${auditResult.error || 'Unknown error'}`;
+          return sendSlackMessage(env, log, slackContext, slackMessage);
+        }
+      } else {
+        log.info(`No previous ${auditType} audit found for site ${siteId}`);
+        return null;
+      }
+    });
+    await Promise.all(auditStatusPromises);
+    log.info('Audit status checking completed');
+    await sendSlackMessage(env, log, slackContext, 'Audit status checking completed');
+  } catch (error) {
+    log.error('Error in audit status checking:', {
+      error: error.message,
+      stack: error.stack,
+      errorType: error.name,
+    });
+  }
+
+  try {
     // prepare demo url
-    await sendSlackMessage(env, log, slackContext, 'Preparing demo url');
     const demoUrl = prepareDemoUrl(siteUrl, organizationId, siteId);
     log.info(`Demo url is ready ${demoUrl}`);
     const slackMessage = `:tada: Demo url: ${demoUrl}`;
     await sendSlackMessage(env, log, slackContext, slackMessage);
-
     return {
       siteId,
       auditResult: {
@@ -65,7 +95,7 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
       fullAuditRef: siteUrl,
     };
   } catch (error) {
-    log.error('Error in audit status processor:', {
+    log.error('Error in preparing demo url:', {
       error: error.message,
       stack: error.stack,
       errorType: error.name,
@@ -76,7 +106,7 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
       auditResult: {
         status: 'error',
         siteId,
-        error: `Audit status processing failed for ${siteId}: ${error.message}`,
+        error: `Preparing demo url failed for ${siteId}: ${error.message}`,
         success: false,
       },
       fullAuditRef: siteUrl,
