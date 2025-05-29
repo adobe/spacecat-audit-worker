@@ -538,7 +538,6 @@ export function linkBuilder(linkData, opptyId) {
  * @param {function} createOpportunityFn - the function to create the opportunity
  * @param {string} reportName - the name of the report
  * @param {boolean} shouldIgnore - whether to ignore the opportunity
- * @param {object} dependencies - optional dependencies for testing
  * @returns {Promise<string>} - the URL of the opportunity
  */
 export async function generateReportOpportunity(
@@ -547,15 +546,7 @@ export async function generateReportOpportunity(
   createOpportunityFn,
   reportName,
   shouldIgnore = true,
-  dependencies = {},
 ) {
-  // Default dependencies
-  const {
-    createReportOpportunityFn = createReportOpportunity,
-    createReportOpportunitySuggestionFn = createReportOpportunitySuggestion,
-    linkBuilderFn = linkBuilder,
-  } = dependencies;
-
   const {
     mdData,
     linkData,
@@ -580,7 +571,7 @@ export async function generateReportOpportunity(
   let opportunityRes;
 
   try {
-    opportunityRes = await createReportOpportunityFn(opportunityInstance, auditData, context);
+    opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
   } catch (error) {
     log.error(`Failed to create report opportunity for ${reportName}`, error.message);
     throw new Error(error.message);
@@ -590,7 +581,7 @@ export async function generateReportOpportunity(
 
   // 1.3 create the suggestions for the report oppty
   try {
-    await createReportOpportunitySuggestionFn(
+    await createReportOpportunitySuggestion(
       opportunity,
       reportMarkdown,
       auditData,
@@ -608,7 +599,7 @@ export async function generateReportOpportunity(
   }
 
   const opptyId = opportunity.getId();
-  const opptyUrl = linkBuilderFn(linkData, opptyId);
+  const opptyUrl = linkBuilder(linkData, opptyId);
   return opptyUrl;
 }
 
@@ -649,40 +640,22 @@ export function getWeekNumberAndYear() {
  * @param {object} aggregationResult - the aggregation result
  * @param {import('@azure/logger').Logger} context - the context
  * @param {string} auditType - the audit type
- * @param {object} dependencies - optional dependencies for testing
  */
 export async function generateReportOpportunities(
   site,
   aggregationResult,
   context,
   auditType,
-  dependencies = {},
 ) {
-  // Default dependencies
-  const {
-    getWeekNumberAndYearFn = getWeekNumberAndYear,
-    getAuditDataFn = getAuditData,
-    getEnvAsoDomainFn = getEnvAsoDomain,
-    generateReportOpportunityFn = generateReportOpportunity,
-    generateInDepthReportMarkdownFn = generateInDepthReportMarkdown,
-    createInDepthReportOpportunityFn = createInDepthReportOpportunity,
-    generateEnhancedReportMarkdownFn = generateEnhancedReportMarkdown,
-    createEnhancedReportOpportunityFn = createEnhancedReportOpportunity,
-    generateFixedNewReportMarkdownFn = generateFixedNewReportMarkdown,
-    createFixedVsNewReportOpportunityFn = createFixedVsNewReportOpportunity,
-    generateBaseReportMarkdownFn = generateBaseReportMarkdown,
-    createBaseReportOpportunityFn = createBaseReportOpportunity,
-  } = dependencies;
-
   const siteId = site.getId();
   const { log, env } = context;
   const { finalResultFiles } = aggregationResult;
   const { current, lastWeek } = finalResultFiles;
 
   // data needed for all reports oppties
-  const { week, year } = getWeekNumberAndYearFn();
-  const auditData = await getAuditDataFn(site, auditType);
-  const envAsoDomain = getEnvAsoDomainFn(env);
+  const { week, year } = getWeekNumberAndYear();
+  const auditData = await getAuditData(site, auditType);
+  const envAsoDomain = getEnvAsoDomain(env);
 
   const relatedReportsUrls = {
     inDepthReportUrl: '',
@@ -707,21 +680,21 @@ export async function generateReportOpportunities(
   };
 
   try {
-    relatedReportsUrls.inDepthReportUrl = await generateReportOpportunityFn(reportData, generateInDepthReportMarkdownFn, createInDepthReportOpportunityFn, 'in-depth report');
+    relatedReportsUrls.inDepthReportUrl = await generateReportOpportunity(reportData, generateInDepthReportMarkdown, createInDepthReportOpportunity, 'in-depth report');
   } catch (error) {
     log.error('Failed to generate in-depth report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
-    relatedReportsUrls.enhancedReportUrl = await generateReportOpportunityFn(reportData, generateEnhancedReportMarkdownFn, createEnhancedReportOpportunityFn, 'enhanced report');
+    relatedReportsUrls.enhancedReportUrl = await generateReportOpportunity(reportData, generateEnhancedReportMarkdown, createEnhancedReportOpportunity, 'enhanced report');
   } catch (error) {
     log.error('Failed to generate enhanced report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
-    relatedReportsUrls.fixedVsNewReportUrl = await generateReportOpportunityFn(reportData, generateFixedNewReportMarkdownFn, createFixedVsNewReportOpportunityFn, 'fixed vs new report');
+    relatedReportsUrls.fixedVsNewReportUrl = await generateReportOpportunity(reportData, generateFixedNewReportMarkdown, createFixedVsNewReportOpportunity, 'fixed vs new report');
   } catch (error) {
     log.error('Failed to generate fixed vs new report opportunity', error.message);
     throw new Error(error.message);
@@ -729,7 +702,7 @@ export async function generateReportOpportunities(
 
   try {
     reportData.mdData.relatedReportsUrls = relatedReportsUrls;
-    await generateReportOpportunityFn(reportData, generateBaseReportMarkdownFn, createBaseReportOpportunityFn, 'base report', false);
+    await generateReportOpportunity(reportData, generateBaseReportMarkdown, createBaseReportOpportunity, 'base report', false);
   } catch (error) {
     log.error('Failed to generate base report opportunity', error.message);
     throw new Error(error.message);
