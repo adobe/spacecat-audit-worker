@@ -459,31 +459,35 @@ describe('Preflight Audit', () => {
       result.forEach((pageResult) => {
         expect(pageResult).to.have.property('profiling');
         expect(pageResult.profiling).to.have.property('total');
+        expect(pageResult.profiling).to.have.property('startTime');
+        expect(pageResult.profiling).to.have.property('endTime');
         expect(pageResult.profiling).to.have.property('breakdown');
+
+        // Verify timestamp format
+        expect(pageResult.profiling.startTime).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+        expect(pageResult.profiling.endTime).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        expect(breakdown).to.have.property('canonical');
-        expect(breakdown).to.have.property('scraping');
-        expect(breakdown).to.have.property('links');
-        expect(breakdown).to.have.property('metatags');
-        expect(breakdown).to.have.property('dom');
+        ['canonical', 'scraping', 'links', 'metatags', 'dom'].forEach((check) => {
+          expect(breakdown).to.have.property(check);
+          expect(breakdown[check]).to.have.property('duration');
+          expect(breakdown[check]).to.have.property('startTime');
+          expect(breakdown[check]).to.have.property('endTime');
 
-        // Verify that all timing values are strings with 2 decimal places
-        const timingValues = [
-          breakdown.canonical,
-          breakdown.scraping,
-          breakdown.links,
-          breakdown.metatags,
-          breakdown.dom,
-          pageResult.profiling.total,
-        ];
-
-        timingValues.forEach((value) => {
-          expect(value).to.be.a('string');
-          expect(value).to.match(/^\d+\.\d{2}$/);
+          // Verify timestamp format for each check
+          expect(breakdown[check].startTime).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+          expect(breakdown[check].endTime).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+          expect(breakdown[check].duration).to.match(/^\d+\.\d{2} seconds$/);
         });
+
+        // Verify that all timing values are strings with 2 decimal places and "seconds" suffix
+        expect(pageResult.profiling.total).to.match(/^\d+\.\d{2} seconds$/);
       });
+
+      // Verify that timestamps are logged
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Audit started at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Audit completed at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/));
     });
   });
 });

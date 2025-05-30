@@ -103,6 +103,7 @@ export const preflightAudit = async (context) => {
 
   try {
     const startTime = Date.now();
+    const startTimestamp = new Date().toISOString();
     const pageAuthToken = await retrievePageAuthentication(site, context);
     const baseURL = new URL(normalizedUrls[0]).origin;
     const authHeader = { headers: { Authorization: `token ${pageAuthToken}` } };
@@ -117,6 +118,7 @@ export const preflightAudit = async (context) => {
 
     // Canonical checks
     const canonicalStartTime = Date.now();
+    const canonicalStartTimestamp = new Date().toISOString();
     const canonicalResults = await Promise.all(
       normalizedUrls.map(async (url) => {
         const {
@@ -132,8 +134,9 @@ export const preflightAudit = async (context) => {
       }),
     );
     const canonicalEndTime = Date.now();
-    const canonicalElapsed = (canonicalEndTime - canonicalStartTime) / 1000;
-    log.info(`[preflight-audit] Canonical checks completed in ${canonicalElapsed.toFixed(2)} seconds`);
+    const canonicalEndTimestamp = new Date().toISOString();
+    const canonicalElapsed = ((canonicalEndTime - canonicalStartTime) / 1000).toFixed(2);
+    log.info(`[preflight-audit] Canonical checks completed in ${canonicalElapsed} seconds`);
 
     canonicalResults.forEach(({ url, checks }) => {
       const audit = resultMap.get(url).audits.find((a) => a.name === AUDIT_CANONICAL);
@@ -147,6 +150,7 @@ export const preflightAudit = async (context) => {
 
     // Retrieve scraped pages
     const scrapeStartTime = Date.now();
+    const scrapeStartTimestamp = new Date().toISOString();
     const prefix = `scrapes/${site.getId()}/`;
     const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
     const targetKeys = new Set(normalizedUrls.map((u) => `scrapes/${site.getId()}${new URL(u).pathname.replace(/\/$/, '')}/scrape.json`));
@@ -158,11 +162,13 @@ export const preflightAudit = async (context) => {
         })),
     );
     const scrapeEndTime = Date.now();
-    const scrapeElapsed = (scrapeEndTime - scrapeStartTime) / 1000;
-    log.info(`[preflight-audit] Page scraping completed in ${scrapeElapsed.toFixed(2)} seconds`);
+    const scrapeEndTimestamp = new Date().toISOString();
+    const scrapeElapsed = ((scrapeEndTime - scrapeStartTime) / 1000).toFixed(2);
+    log.info(`[preflight-audit] Page scraping completed in ${scrapeElapsed} seconds`);
 
     // Internal link checks
     const linksStartTime = Date.now();
+    const linksStartTimestamp = new Date().toISOString();
     const { auditResult } = await runInternalLinkChecks(scrapedObjects, pageAuthToken, context);
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
@@ -179,11 +185,13 @@ export const preflightAudit = async (context) => {
       });
     }
     const linksEndTime = Date.now();
-    const linksElapsed = (linksEndTime - linksStartTime) / 1000;
-    log.info(`[preflight-audit] Internal link checks completed in ${linksElapsed.toFixed(2)} seconds`);
+    const linksEndTimestamp = new Date().toISOString();
+    const linksElapsed = ((linksEndTime - linksStartTime) / 1000).toFixed(2);
+    log.info(`[preflight-audit] Internal link checks completed in ${linksElapsed} seconds`);
 
     // Meta tags checks
     const metatagsStartTime = Date.now();
+    const metatagsStartTimestamp = new Date().toISOString();
     const {
       seoChecks,
       detectedTags,
@@ -205,11 +213,13 @@ export const preflightAudit = async (context) => {
       }));
     });
     const metatagsEndTime = Date.now();
-    const metatagsElapsed = (metatagsEndTime - metatagsStartTime) / 1000;
-    log.info(`[preflight-audit] Meta tags checks completed in ${metatagsElapsed.toFixed(2)} seconds`);
+    const metatagsEndTimestamp = new Date().toISOString();
+    const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
+    log.info(`[preflight-audit] Meta tags checks completed in ${metatagsElapsed} seconds`);
 
     // DOM-based checks: body size, lorem ipsum, h1 count, bad links
     const domStartTime = Date.now();
+    const domStartTimestamp = new Date().toISOString();
     scrapedObjects.forEach(({ data }) => {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const doc = new JSDOM(rawBody).window.document;
@@ -262,30 +272,56 @@ export const preflightAudit = async (context) => {
       }
     });
     const domEndTime = Date.now();
-    const domElapsed = (domEndTime - domStartTime) / 1000;
-    log.info(`[preflight-audit] DOM-based checks completed in ${domElapsed.toFixed(2)} seconds`);
+    const domEndTimestamp = new Date().toISOString();
+    const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
+    log.info(`[preflight-audit] DOM-based checks completed in ${domElapsed} seconds`);
 
     const endTime = Date.now();
-    const totalElapsed = (endTime - startTime) / 1000;
-    log.info(`[preflight-audit] Total audit time: ${totalElapsed.toFixed(2)} seconds`);
+    const endTimestamp = new Date().toISOString();
+    const totalElapsed = ((endTime - startTime) / 1000).toFixed(2);
+    log.info(`[preflight-audit] Total audit time: ${totalElapsed} seconds`);
+    log.info(`[preflight-audit] Audit started at: ${startTimestamp}`);
+    log.info(`[preflight-audit] Audit completed at: ${endTimestamp}`);
     log.info(`[preflight-audit] Breakdown:
-      - Canonical checks: ${canonicalElapsed.toFixed(2)}s
-      - Page scraping: ${scrapeElapsed.toFixed(2)}s
-      - Internal link checks: ${linksElapsed.toFixed(2)}s
-      - Meta tags checks: ${metatagsElapsed.toFixed(2)}s
-      - DOM-based checks: ${domElapsed.toFixed(2)}s`);
+      - Canonical checks: ${canonicalElapsed}s (${canonicalStartTimestamp} - ${canonicalEndTimestamp})
+      - Page scraping: ${scrapeElapsed}s (${scrapeStartTimestamp} - ${scrapeEndTimestamp})
+      - Internal link checks: ${linksElapsed}s (${linksStartTimestamp} - ${linksEndTimestamp})
+      - Meta tags checks: ${metatagsElapsed}s (${metatagsStartTimestamp} - ${metatagsEndTimestamp})
+      - DOM-based checks: ${domElapsed}s (${domStartTimestamp} - ${domEndTimestamp})`);
 
     // Add profiling results to each page result
     const resultWithProfiling = result.map((pageResult) => ({
       ...pageResult,
       profiling: {
-        total: Number(totalElapsed).toFixed(2),
+        total: `${totalElapsed} seconds`,
+        startTime: startTimestamp,
+        endTime: endTimestamp,
         breakdown: {
-          canonical: Number(canonicalElapsed).toFixed(2),
-          scraping: Number(scrapeElapsed).toFixed(2),
-          links: Number(linksElapsed).toFixed(2),
-          metatags: Number(metatagsElapsed).toFixed(2),
-          dom: Number(domElapsed).toFixed(2),
+          canonical: {
+            duration: `${canonicalElapsed} seconds`,
+            startTime: canonicalStartTimestamp,
+            endTime: canonicalEndTimestamp,
+          },
+          scraping: {
+            duration: `${scrapeElapsed} seconds`,
+            startTime: scrapeStartTimestamp,
+            endTime: scrapeEndTimestamp,
+          },
+          links: {
+            duration: `${linksElapsed} seconds`,
+            startTime: linksStartTimestamp,
+            endTime: linksEndTimestamp,
+          },
+          metatags: {
+            duration: `${metatagsElapsed} seconds`,
+            startTime: metatagsStartTimestamp,
+            endTime: metatagsEndTimestamp,
+          },
+          dom: {
+            duration: `${domElapsed} seconds`,
+            startTime: domStartTimestamp,
+            endTime: domEndTimestamp,
+          },
         },
       },
     }));
