@@ -152,6 +152,7 @@ function convertToLowNavOpptyData(metricObject) {
 function convertToLowConversionOpptyData(metricObject) {
   const {
     pageview: { mobile: pageViewsMobile, desktop: pageViewsDesktop },
+    trafficacquisition: { sources: trafficAcquisitionSources },
   } = metricObject;
 
   const deviceWiseMetrics = getFormMetrics(metricObject);
@@ -169,7 +170,7 @@ function convertToLowConversionOpptyData(metricObject) {
     }
     const metricsConfig = [
       { type: 'conversionRate', value: conversionRate },
-      { type: 'bounceRate', value: bounceRate },
+      { type: 'formBounceRate', value: bounceRate },
       { type: 'dropoffRate', value: dropoffRate },
     ];
     metricsConfig.forEach(({ type, value }) => {
@@ -198,6 +199,16 @@ function convertToLowConversionOpptyData(metricObject) {
       page: pageViewsMobile,
     },
   });
+
+  if (Array.isArray(trafficAcquisitionSources) && trafficAcquisitionSources.length > 0) {
+    metrics.push({
+      type: 'trafficAcquisitionSource',
+      device: '*',
+      value: {
+        page: trafficAcquisitionSources,
+      },
+    });
+  }
 
   return {
     trackedFormKPIName: 'Conversion Rate',
@@ -276,12 +287,15 @@ export function shouldExcludeForm(scrapedFormData) {
 
   const containsNoInputField = scrapedFormData?.formFields?.filter((field) => field.tagName === 'input').length === 0;
 
+  const doesNotHaveButton = scrapedFormData?.formFields?.filter((field) => field.tagName === 'button').length === 0;
+
   return scrapedFormData?.formType === 'search'
     || scrapedFormData?.formType === 'login'
     || scrapedFormData?.classList?.includes('unsubscribe')
     || scrapedFormData?.fieldCount === 0
     || containsOnlyNumericInputField
-    || containsNoInputField;
+    || containsNoInputField
+    || doesNotHaveButton;
 }
 
 /**

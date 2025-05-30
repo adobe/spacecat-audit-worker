@@ -18,12 +18,14 @@ import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-u
 
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
+import accessibility from './accessibility/handler.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
 import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
+import paid from './paid/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import internalLinks from './internal-links/handler.js';
@@ -39,17 +41,20 @@ import structuredData from './structured-data/handler.js';
 import siteDetection from './site-detection/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
+import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
 
 const HANDLERS = {
+  accessibility,
   apex,
   cwv,
   'lhs-mobile': lhsMobile,
   'lhs-desktop': lhsDesktop,
   404: notfound,
   sitemap,
+  paid,
   canonical,
   'broken-backlinks': backlinks,
   'broken-internal-links': internalLinks,
@@ -67,6 +72,7 @@ const HANDLERS = {
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
+  'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   preflight,
   dummy: (message) => ok(message),
 };

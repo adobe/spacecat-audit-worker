@@ -219,11 +219,24 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
     seoChecks.performChecks(pageUrl, pageTags);
   }
   seoChecks.finalChecks();
+  const detectedTags = seoChecks.getDetectedTags();
+  log.info(`Found ${Object.keys(detectedTags).length} pages with issues out of ${extractedTagsCount} total pages`);
   return {
     seoChecks,
-    detectedTags: seoChecks.getDetectedTags(),
+    detectedTags,
     extractedTags,
   };
+}
+
+/**
+ * Transforms a URL into a scrape.json path for a given site
+ * @param {string} url - The URL to transform
+ * @param {string} siteId - The site ID
+ * @returns {string} The path to the scrape.json file
+ */
+function getScrapeJsonPath(url, siteId) {
+  const pathname = new URL(url).pathname.replace(/\/$/, '');
+  return `scrapes/${siteId}${pathname}/scrape.json`;
 }
 
 export async function runAuditAndGenerateSuggestions(context) {
@@ -233,16 +246,20 @@ export async function runAuditAndGenerateSuggestions(context) {
   // Get top pages for a site
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  const topPagesSet = new Set(topPages.map((page) => {
-    const pathname = new URL(page.url).pathname.replace(/\/$/, '');
-    return `scrapes/${site.getId()}${pathname}/scrape.json`;
-  }));
+  const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
+
+  // Transform URLs into scrape.json paths and combine them into a Set
+  const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, siteId));
+  const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
+  const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
+
+  log.info(`Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`);
 
   const {
     seoChecks,
     detectedTags,
     extractedTags,
-  } = await metatagsAutoDetect(site, topPagesSet, context);
+  } = await metatagsAutoDetect(site, totalPagesSet, context);
 
   // Calculate projected traffic lost
   const {
@@ -298,15 +315,23 @@ export async function submitForScraping(context) {
   const {
     site,
     dataAccess,
+    log,
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
   if (topPages.length === 0) {
     throw new Error('No top pages found for site');
   }
+  const topPagesUrls = topPages.map((page) => page.getUrl());
+  // Combine includedURLs and topPages URLs to scrape
+  const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
+
+  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+  log.info(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
   return {
-    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'meta-tags',
   };
