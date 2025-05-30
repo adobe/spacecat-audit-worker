@@ -207,7 +207,7 @@ export async function opportunityAndSuggestionsStep(context) {
 
   for (const message of messages) {
     // eslint-disable-next-line no-await-in-loop
-    await sqs.sendMessage(AUDIT_QUEUE_URL, message);
+    await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, message);
     log.info(`Message sent to audit queue: ${JSON.stringify(message)}`);
   }
 
