@@ -446,7 +446,6 @@ describe('Preflight Audit', () => {
 
       // Verify that timing logs are called for each sub-audit
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Canonical checks completed in \d+\.\d+ seconds/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Page scraping completed in \d+\.\d+ seconds/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Internal link checks completed in \d+\.\d+ seconds/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Meta tags checks completed in \d+\.\d+ seconds/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/DOM-based checks completed in \d+\.\d+ seconds/));
@@ -470,7 +469,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['canonical', 'scraping', 'links', 'metatags', 'dom'];
+        const expectedChecks = ['canonical', 'links', 'metatags', 'dom'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);

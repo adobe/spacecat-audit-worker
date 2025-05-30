@@ -151,8 +151,6 @@ export const preflightAudit = async (context) => {
     });
 
     // Retrieve scraped pages
-    const scrapeStartTime = Date.now();
-    const scrapeStartTimestamp = new Date().toISOString();
     const prefix = `scrapes/${site.getId()}/`;
     const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
     const targetKeys = new Set(normalizedUrls.map((u) => `scrapes/${site.getId()}${new URL(u).pathname.replace(/\/$/, '')}/scrape.json`));
@@ -163,10 +161,6 @@ export const preflightAudit = async (context) => {
           Key, data: await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, Key, log),
         })),
     );
-    const scrapeEndTime = Date.now();
-    const scrapeEndTimestamp = new Date().toISOString();
-    const scrapeElapsed = ((scrapeEndTime - scrapeStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] Page scraping completed in ${scrapeElapsed} seconds`);
 
     // Internal link checks
     const linksStartTime = Date.now();
@@ -286,7 +280,6 @@ export const preflightAudit = async (context) => {
     log.info(`[preflight-audit] Audit completed at: ${endTimestamp}`);
     log.info(`[preflight-audit] Breakdown:
       - Canonical checks: ${canonicalElapsed}s (${canonicalStartTimestamp} - ${canonicalEndTimestamp})
-      - Page scraping: ${scrapeElapsed}s (${scrapeStartTimestamp} - ${scrapeEndTimestamp})
       - Internal link checks: ${linksElapsed}s (${linksStartTimestamp} - ${linksEndTimestamp})
       - Meta tags checks: ${metatagsElapsed}s (${metatagsStartTimestamp} - ${metatagsEndTimestamp})
       - DOM-based checks: ${domElapsed}s (${domStartTimestamp} - ${domEndTimestamp})`);
@@ -304,12 +297,6 @@ export const preflightAudit = async (context) => {
             duration: `${canonicalElapsed} seconds`,
             startTime: canonicalStartTimestamp,
             endTime: canonicalEndTimestamp,
-          },
-          {
-            name: 'scraping',
-            duration: `${scrapeElapsed} seconds`,
-            startTime: scrapeStartTimestamp,
-            endTime: scrapeEndTimestamp,
           },
           {
             name: 'links',
