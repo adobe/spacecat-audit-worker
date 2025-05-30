@@ -76,6 +76,9 @@ export async function scrapePages(context) {
 }
 
 export const preflightAudit = async (context) => {
+  const startTime = Date.now();
+  const startTimestamp = new Date().toISOString();
+
   const {
     site, job, s3Client, log,
   } = context;
@@ -102,8 +105,6 @@ export const preflightAudit = async (context) => {
   }
 
   try {
-    const startTime = Date.now();
-    const startTimestamp = new Date().toISOString();
     const pageAuthToken = await retrievePageAuthentication(site, context);
     const baseURL = new URL(normalizedUrls[0]).origin;
     const authHeader = { headers: { Authorization: `token ${pageAuthToken}` } };
@@ -296,33 +297,38 @@ export const preflightAudit = async (context) => {
         total: `${totalElapsed} seconds`,
         startTime: startTimestamp,
         endTime: endTimestamp,
-        breakdown: {
-          canonical: {
+        breakdown: [
+          {
+            name: 'canonical',
             duration: `${canonicalElapsed} seconds`,
             startTime: canonicalStartTimestamp,
             endTime: canonicalEndTimestamp,
           },
-          scraping: {
+          {
+            name: 'scraping',
             duration: `${scrapeElapsed} seconds`,
             startTime: scrapeStartTimestamp,
             endTime: scrapeEndTimestamp,
           },
-          links: {
+          {
+            name: 'links',
             duration: `${linksElapsed} seconds`,
             startTime: linksStartTimestamp,
             endTime: linksEndTimestamp,
           },
-          metatags: {
+          {
+            name: 'metatags',
             duration: `${metatagsElapsed} seconds`,
             startTime: metatagsStartTimestamp,
             endTime: metatagsEndTimestamp,
           },
-          dom: {
+          {
+            name: 'dom',
             duration: `${domElapsed} seconds`,
             startTime: domStartTimestamp,
             endTime: domEndTimestamp,
           },
-        },
+        ],
       },
     }));
 

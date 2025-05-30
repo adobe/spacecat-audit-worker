@@ -469,16 +469,21 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        ['canonical', 'scraping', 'links', 'metatags', 'dom'].forEach((check) => {
-          expect(breakdown).to.have.property(check);
-          expect(breakdown[check]).to.have.property('duration');
-          expect(breakdown[check]).to.have.property('startTime');
-          expect(breakdown[check]).to.have.property('endTime');
+        const expectedChecks = ['canonical', 'scraping', 'links', 'metatags', 'dom'];
+
+        expect(breakdown).to.be.an('array');
+        expect(breakdown).to.have.lengthOf(expectedChecks.length);
+
+        breakdown.forEach((check, index) => {
+          expect(check).to.have.property('name', expectedChecks[index]);
+          expect(check).to.have.property('duration');
+          expect(check).to.have.property('startTime');
+          expect(check).to.have.property('endTime');
 
           // Verify timestamp format for each check
-          expect(breakdown[check].startTime).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-          expect(breakdown[check].endTime).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-          expect(breakdown[check].duration).to.match(/^\d+\.\d{2} seconds$/);
+          expect(check.startTime).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+          expect(check.endTime).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+          expect(check.duration).to.match(/^\d+\.\d{2} seconds$/);
         });
 
         // Verify that all timing values are strings with 2 decimal places and "seconds" suffix
