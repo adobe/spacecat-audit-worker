@@ -14,10 +14,10 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import createLowViewsOpportunities from '../../../src/forms-opportunities/oppty-handlers/low-views-handler.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import testData from '../../fixtures/forms/high-form-views-low-conversions.js';
-import { DATA_SOURCES } from '../../../src/common/constants.js';
+import createLowViewsOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
+import { DATA_SOURCES } from '../../../../src/common/constants.js';
 
 use(sinonChai);
 describe('createLowFormViewsOpportunities handler method', () => {
@@ -47,6 +47,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         pageViews: 5000,
         samples: 5000,
       }),
+      setUpdatedBy: sinon.stub(),
     };
     logStub = {
       info: sinon.stub(),
@@ -64,12 +65,47 @@ describe('createLowFormViewsOpportunities handler method', () => {
       dataAccess: dataAccessStub,
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
       site: {
         getId: sinon.stub().returns('test-site-id'),
+        getDeliveryType: sinon.stub().returns('eds'),
+      },
+      sqs: {
+        sendMessage: sinon.stub().resolves({}),
       },
     };
     auditData = testData.lowFormviewsAuditData;
+  });
+
+  it('should send message to mystique', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
+    await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+    const expectedMessage = {
+      type: 'guidance:high-page-views-low-form-views',
+      siteId: 'site-id',
+      auditId: 'audit-id',
+      deliveryType: 'eds',
+      data: {
+        url: 'https://www.surest.com/existing-opportunity',
+        form_source: '',
+        cta_text: '',
+        cta_source: '',
+      },
+    };
+    expect(context.sqs.sendMessage).to.be.calledWith(
+      'test-queue',
+      sinon.match((actual) => (
+        actual.type === expectedMessage.type
+        && actual.siteId === expectedMessage.siteId
+        && actual.auditId === expectedMessage.auditId
+        && actual.data.url === expectedMessage.data.url
+        && actual.deliveryType === expectedMessage.deliveryType
+        && actual.data.form_source === expectedMessage.data.form_source
+        && actual.data.cta_text === expectedMessage.data.cta_text
+        && actual.data.cta_source === expectedMessage.data.cta_source
+      ), 'matches expected message excluding timestamp'),
+    );
   });
 
   it('should create new high page views low form views opportunity', async () => {
@@ -79,10 +115,10 @@ describe('createLowFormViewsOpportunities handler method', () => {
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EeYKNa4HQkRAleWXjC5YZbMBMhveB08F1yTTUQSrP97Eow?e=cZdsnA',
       type: FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
       origin: 'AUTOMATION',
-      title: 'The form has low views',
+      title: 'Form has low views',
       description: 'The form has low views but the page containing the form has higher traffic',
       tags: [
-        'Forms Conversion',
+        'Form Placement',
       ],
       data: {
         form: 'https://www.surest.com/high-page-low-form-view',
@@ -136,7 +172,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
       guidance: {
         recommendations: [
           {
-            insight: 'The form in the page: https://www.surest.com/high-page-low-form-view has low discoverability and only 2.9895366218236172% visitors landing on the page are viewing the form.',
+            insight: 'The form in the page: https://www.surest.com/high-page-low-form-view has low discoverability and only 2.99% visitors landing on the page are viewing the form.',
             recommendation: 'Position the form higher up on the page so users see it without scrolling. Consider using clear and compelling CTAs, minimizing distractions, and ensuring strong visibility across devices.',
             type: 'guidance',
             rationale: 'Forms that are visible above the fold are more likely to be seen and interacted with by users.',
@@ -162,12 +198,13 @@ describe('createLowFormViewsOpportunities handler method', () => {
   it('should use existing high page views low form view opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+    expect(highPageViewsLowFormViewsOptty.setUpdatedBy).to.be.calledWith('system');
     expect(highPageViewsLowFormViewsOptty.save).to.be.calledOnce;
     expect(highPageViewsLowFormViewsOptty.setGuidance).to.be.calledWith(
       {
         recommendations: [
           {
-            insight: 'The form in the page: https://www.surest.com/existing-opportunity has low discoverability and only 2.9895366218236172% visitors landing on the page are viewing the form.',
+            insight: 'The form in the page: https://www.surest.com/existing-opportunity has low discoverability and only 2.99% visitors landing on the page are viewing the form.',
             recommendation: 'Position the form higher up on the page so users see it without scrolling. Consider using clear and compelling CTAs, minimizing distractions, and ensuring strong visibility across devices.',
             type: 'guidance',
             rationale: 'Forms that are visible above the fold are more likely to be seen and interacted with by users.',

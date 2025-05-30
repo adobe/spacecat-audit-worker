@@ -15,7 +15,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const AUDIT_TYPE = Audit.AUDIT_TYPES.AUDIT_STATUS_PROCESSOR;
+const AUDIT_TYPE = 'audit-status-processor';
 
 /** Prepare demo url for the site */
 function prepareDemoUrl(experienceUrl, organizationId, siteId) {

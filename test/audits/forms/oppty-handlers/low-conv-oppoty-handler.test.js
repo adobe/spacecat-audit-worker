@@ -14,10 +14,10 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import testData from '../../fixtures/forms/high-form-views-low-conversions.js';
-import createLowConversionOpportunities from '../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import formScrapeData from '../../fixtures/forms/formscrapedata.js';
+import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
+import createLowConversionOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import formScrapeData from '../../../fixtures/forms/formscrapedata.js';
 
 use(sinonChai);
 describe('createLowConversionOpportunities handler method', () => {
@@ -47,6 +47,7 @@ describe('createLowConversionOpportunities handler method', () => {
         pageViews: 5000,
         samples: 5000,
       }),
+      setUpdatedBy: sinon.stub(),
     };
     logStub = {
       info: sinon.stub(),
@@ -64,6 +65,7 @@ describe('createLowConversionOpportunities handler method', () => {
       dataAccess: dataAccessStub,
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique',
       },
       site: {
         getId: sinon.stub().returns('test-site-id'),
@@ -84,6 +86,10 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     // with empty guidance due to no scraping
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    // asserting spacecat to mystique message
+    const [queueArg, messageArg] = context.sqs.sendMessage.getCall(4).args;
+    expect(queueArg).to.equal('spacecat-to-mystique');
+    expect(messageArg.data).to.deep.equal(testData.mystiqueMessage.data);
   });
 
   it('should create new forms opportunity with scraped data available', async () => {
@@ -146,6 +152,7 @@ describe('createLowConversionOpportunities handler method', () => {
       undefined,
       context,
     );
+    expect(formsOppty.setUpdatedBy).to.be.calledWith('system');
     expect(formsOppty.save).to.be.callCount(1);
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
@@ -194,6 +201,6 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.callCount(3);
     expect(excludeUrls.has('https://www.surest.com/contact-us.mycontact')).to.be.true;
     expect(excludeUrls.has('https://www.surest.com/info/win-2')).to.be.true;
-    expect(excludeUrls.has('https://www.surest.com/info/win')).to.be.true;
+    expect(excludeUrls.has('https://www.surest.com/info/win')).to.be.false;
   });
 });

@@ -11,7 +11,7 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { composeAuditURL, hasText } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, hasText, isValidUrl } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
@@ -61,6 +61,11 @@ export async function defaultUrlResolver(site) {
 
 export async function wwwUrlResolver(site, context) {
   const { log } = context;
+
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  if (isValidUrl(overrideBaseURL)) {
+    return overrideBaseURL.replace(/^https?:\/\//, '');
+  }
 
   const baseURL = site.getBaseURL();
   const uri = new URI(baseURL);

@@ -204,6 +204,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     } else {
       altTextOppty.setAuditId(auditId);
       altTextOppty.setData(opportunityData);
+      altTextOppty.setUpdatedBy('system');
       await altTextOppty.save();
     }
   } catch (e) {

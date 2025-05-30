@@ -22,7 +22,9 @@ import { DATA_SOURCES } from '../../common/constants.js';
  */
 // eslint-disable-next-line max-len
 export default async function createLowViewsOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeForms = new Set()) {
-  const { dataAccess, log } = context;
+  const {
+    dataAccess, log, sqs, site, env,
+  } = context;
   const { Opportunity } = dataAccess;
 
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
@@ -57,9 +59,9 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EeYKNa4HQkRAleWXjC5YZbMBMhveB08F1yTTUQSrP97Eow?e=cZdsnA',
         type: FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
         origin: 'AUTOMATION',
-        title: 'The form has low views',
+        title: 'Form has low views',
         description: 'The form has low views but the page containing the form has higher traffic',
-        tags: ['Forms Conversion'],
+        tags: ['Form Placement'],
         data: {
           ...opptyData,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
@@ -67,7 +69,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         guidance: {
           recommendations: [
             {
-              insight: `The form in the page: ${opptyData.form} has low discoverability and only ${(opptyData.formViews / opptyData.pageViews) * 100}% visitors landing on the page are viewing the form.`,
+              insight: `The form in the page: ${opptyData.form} has low discoverability and only ${((opptyData.formViews / opptyData.pageViews) * 100).toFixed(2)}% visitors landing on the page are viewing the form.`,
               recommendation: 'Position the form higher up on the page so users see it without scrolling. Consider using clear and compelling CTAs, minimizing distractions, and ensuring strong visibility across devices.',
               type: 'guidance',
               rationale: 'Forms that are visible above the fold are more likely to be seen and interacted with by users.',
@@ -87,9 +89,29 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
           ...opportunityData.data,
         });
         highPageViewsLowFormViewsOptty.setGuidance(opportunityData.guidance);
+
+        highPageViewsLowFormViewsOptty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormViewsOptty.save();
       }
+      log.info('sending message to mystique for high-page-views-low-form-views');
+      const mystiqueMessage = {
+        type: 'guidance:high-page-views-low-form-views',
+        siteId: auditData.siteId,
+        auditId: auditData.auditId,
+        deliveryType: site.getDeliveryType(),
+        time: new Date().toISOString(),
+        data: {
+          url: opportunityData.data.form,
+          form_source: opportunityData.data.formsource,
+          cta_text: '', // This will be available after merging the changes for scraping form CTA text
+          cta_source: '', // This will be available after merging the changes for scraping form CTA text
+        },
+      };
+
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+      log.info(`forms opportunity high page views low form views sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form views for siteId ${auditData.siteId} failed with error: ${e.message}`, e);

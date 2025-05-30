@@ -15,7 +15,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const AUDIT_TYPE = Audit.AUDIT_TYPES.DISABLE_IMPORT_AUDIT_PROCESSOR;
+const AUDIT_TYPE = 'disable-import-audit-processor';
 
 /**
  * Runs the disable import and audit processor

@@ -126,7 +126,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         origin: 'AUTOMATION',
         title: 'Form has low conversions',
         description: 'Form has high views but low conversions',
-        tags: ['Forms Conversion'],
+        tags: ['Form Conversion'],
         data: {
           ...opptyData,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
@@ -148,6 +148,8 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         if (!isNonEmptyObject(highFormViewsLowConversionsOppty.guidance)) {
           highFormViewsLowConversionsOppty.setGuidance(opportunityData.guidance);
         }
+
+        highFormViewsLowConversionsOppty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop
         await highFormViewsLowConversionsOppty.save();
         log.debug('Forms Opportunity high form views low conversion updated');
@@ -164,6 +166,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
           url: opportunityData.data.form,
           cr: opportunityData.data.trackedFormKPIValue,
           screenshot: opportunityData.data.screenshot,
+          metrics: opportunityData.data.metrics,
         },
       };
 
