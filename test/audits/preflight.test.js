@@ -351,7 +351,16 @@ describe('Preflight Audit', () => {
 
       expect(job.setStatus).to.have.been.calledWith('COMPLETED');
       expect(job.setResultType).to.have.been.called;
-      expect(job.setResult).to.have.been.calledWith(suggestionData);
+
+      // Get the actual result
+      const actualResult = job.setResult.getCall(0).args[0];
+
+      // Verify the structure matches the expected data
+      expect(actualResult).to.deep.equal(suggestionData.map((expected) => ({
+        ...expected,
+        profiling: actualResult[0].profiling, // Use actual profiling data
+      })));
+
       expect(job.setEndedAt).to.have.been.called;
       expect(job.save).to.have.been.called;
     });
@@ -386,7 +395,16 @@ describe('Preflight Audit', () => {
 
       expect(job.setStatus).to.have.been.calledWith('COMPLETED');
       expect(job.setResultType).to.have.been.called;
-      expect(job.setResult).to.have.been.calledWith(identifyData);
+
+      // Get the actual result
+      const actualResult = job.setResult.getCall(0).args[0];
+
+      // Verify the structure matches the expected data
+      expect(actualResult).to.deep.equal(identifyData.map((expected) => ({
+        ...expected,
+        profiling: actualResult[0].profiling, // Use actual profiling data
+      })));
+
       expect(job.setEndedAt).to.have.been.called;
       expect(job.save).to.have.been.called;
     });
@@ -420,6 +438,52 @@ describe('Preflight Audit', () => {
 
       expect(job.setStatus).to.have.been.calledWith('FAILED');
       expect(job.save).to.have.been.called;
+    });
+
+    it('logs timing information for each sub-audit', async () => {
+      await preflightAudit(context);
+
+      // Verify that timing logs are called for each sub-audit
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Canonical checks completed in \d+\.\d+ seconds/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Page scraping completed in \d+\.\d+ seconds/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Internal link checks completed in \d+\.\d+ seconds/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Meta tags checks completed in \d+\.\d+ seconds/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/DOM-based checks completed in \d+\.\d+ seconds/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Total audit time: \d+\.\d+ seconds/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Breakdown:/));
+
+      // Get the result that was set on the job
+      const result = job.setResult.getCall(0).args[0];
+
+      // Verify that each page result has profiling data
+      result.forEach((pageResult) => {
+        expect(pageResult).to.have.property('profiling');
+        expect(pageResult.profiling).to.have.property('total');
+        expect(pageResult.profiling).to.have.property('breakdown');
+
+        // Verify breakdown structure
+        const { breakdown } = pageResult.profiling;
+        expect(breakdown).to.have.property('canonical');
+        expect(breakdown).to.have.property('scraping');
+        expect(breakdown).to.have.property('links');
+        expect(breakdown).to.have.property('metatags');
+        expect(breakdown).to.have.property('dom');
+
+        // Verify that all timing values are strings with 2 decimal places
+        const timingValues = [
+          breakdown.canonical,
+          breakdown.scraping,
+          breakdown.links,
+          breakdown.metatags,
+          breakdown.dom,
+          pageResult.profiling.total,
+        ];
+
+        timingValues.forEach((value) => {
+          expect(value).to.be.a('string');
+          expect(value).to.match(/^\d+\.\d{2}$/);
+        });
+      });
     });
   });
 });

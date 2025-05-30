@@ -102,6 +102,7 @@ export const preflightAudit = async (context) => {
   }
 
   try {
+    const startTime = process.hrtime.bigint();
     const pageAuthToken = await retrievePageAuthentication(site, context);
     const baseURL = new URL(normalizedUrls[0]).origin;
     const authHeader = { headers: { Authorization: `token ${pageAuthToken}` } };
@@ -115,6 +116,7 @@ export const preflightAudit = async (context) => {
     const resultMap = new Map(result.map((r) => [r.pageUrl, r]));
 
     // Canonical checks
+    const canonicalStartTime = process.hrtime.bigint();
     const canonicalResults = await Promise.all(
       normalizedUrls.map(async (url) => {
         const {
@@ -129,6 +131,10 @@ export const preflightAudit = async (context) => {
         return { url, checks: allChecks.filter((c) => !c.success) };
       }),
     );
+    const canonicalEndTime = process.hrtime.bigint();
+    const canonicalElapsed = Number(canonicalEndTime - canonicalStartTime) / 1e9;
+    log.info(`[preflight-audit] Canonical checks completed in ${canonicalElapsed.toFixed(2)} seconds`);
+
     canonicalResults.forEach(({ url, checks }) => {
       const audit = resultMap.get(url).audits.find((a) => a.name === AUDIT_CANONICAL);
       checks.forEach((check) => audit.opportunities.push({
@@ -140,6 +146,7 @@ export const preflightAudit = async (context) => {
     });
 
     // Retrieve scraped pages
+    const scrapeStartTime = process.hrtime.bigint();
     const prefix = `scrapes/${site.getId()}/`;
     const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
     const targetKeys = new Set(normalizedUrls.map((u) => `scrapes/${site.getId()}${new URL(u).pathname.replace(/\/$/, '')}/scrape.json`));
@@ -150,8 +157,12 @@ export const preflightAudit = async (context) => {
           Key, data: await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, Key, log),
         })),
     );
+    const scrapeEndTime = process.hrtime.bigint();
+    const scrapeElapsed = Number(scrapeEndTime - scrapeStartTime) / 1e9;
+    log.info(`[preflight-audit] Page scraping completed in ${scrapeElapsed.toFixed(2)} seconds`);
 
     // Internal link checks
+    const linksStartTime = process.hrtime.bigint();
     const { auditResult } = await runInternalLinkChecks(scrapedObjects, pageAuthToken, context);
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
@@ -167,8 +178,12 @@ export const preflightAudit = async (context) => {
         });
       });
     }
+    const linksEndTime = process.hrtime.bigint();
+    const linksElapsed = Number(linksEndTime - linksStartTime) / 1e9;
+    log.info(`[preflight-audit] Internal link checks completed in ${linksElapsed.toFixed(2)} seconds`);
 
     // Meta tags checks
+    const metatagsStartTime = process.hrtime.bigint();
     const {
       seoChecks,
       detectedTags,
@@ -189,8 +204,12 @@ export const preflightAudit = async (context) => {
         tagName: Object.keys(tags)[tag],
       }));
     });
+    const metatagsEndTime = process.hrtime.bigint();
+    const metatagsElapsed = Number(metatagsEndTime - metatagsStartTime) / 1e9;
+    log.info(`[preflight-audit] Meta tags checks completed in ${metatagsElapsed.toFixed(2)} seconds`);
 
     // DOM-based checks: body size, lorem ipsum, h1 count, bad links
+    const domStartTime = process.hrtime.bigint();
     scrapedObjects.forEach(({ data }) => {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const doc = new JSDOM(rawBody).window.document;
@@ -242,11 +261,39 @@ export const preflightAudit = async (context) => {
         auditsByName[AUDIT_LINKS].opportunities.push({ check: 'bad-links', issue: insecureLinks });
       }
     });
+    const domEndTime = process.hrtime.bigint();
+    const domElapsed = Number(domEndTime - domStartTime) / 1e9;
+    log.info(`[preflight-audit] DOM-based checks completed in ${domElapsed.toFixed(2)} seconds`);
 
-    log.info(JSON.stringify(result));
+    const endTime = process.hrtime.bigint();
+    const totalElapsed = Number(endTime - startTime) / 1e9;
+    log.info(`[preflight-audit] Total audit time: ${totalElapsed.toFixed(2)} seconds`);
+    log.info(`[preflight-audit] Breakdown:
+      - Canonical checks: ${canonicalElapsed.toFixed(2)}s
+      - Page scraping: ${scrapeElapsed.toFixed(2)}s
+      - Internal link checks: ${linksElapsed.toFixed(2)}s
+      - Meta tags checks: ${metatagsElapsed.toFixed(2)}s
+      - DOM-based checks: ${domElapsed.toFixed(2)}s`);
+
+    // Add profiling results to each page result
+    const resultWithProfiling = result.map((pageResult) => ({
+      ...pageResult,
+      profiling: {
+        total: Number(totalElapsed).toFixed(2),
+        breakdown: {
+          canonical: Number(canonicalElapsed).toFixed(2),
+          scraping: Number(scrapeElapsed).toFixed(2),
+          links: Number(linksElapsed).toFixed(2),
+          metatags: Number(metatagsElapsed).toFixed(2),
+          dom: Number(domElapsed).toFixed(2),
+        },
+      },
+    }));
+
+    log.info(JSON.stringify(resultWithProfiling));
     job.setStatus(AsyncJob.Status.COMPLETED);
     job.setResultType(AsyncJob.ResultType.INLINE);
-    job.setResult(result);
+    job.setResult(resultWithProfiling);
     job.setEndedAt(new Date().toISOString());
     await job.save();
   } catch (error) {
