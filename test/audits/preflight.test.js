@@ -170,6 +170,7 @@ describe('Preflight Audit', () => {
         allowCache: false,
         options: {
           enableAuthentication: true,
+          screenshotTypes: [],
         },
       });
     });

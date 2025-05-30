@@ -71,6 +71,7 @@ export async function scrapePages(context) {
     allowCache: false,
     options: {
       enableAuthentication: true,
+      screenshotTypes: [],
     },
   };
 }
