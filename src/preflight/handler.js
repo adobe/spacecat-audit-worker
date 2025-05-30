@@ -333,6 +333,7 @@ export const preflightAudit = async (context) => {
     }));
 
     log.info(JSON.stringify(resultWithProfiling));
+
     job.setStatus(AsyncJob.Status.COMPLETED);
     job.setResultType(AsyncJob.ResultType.INLINE);
     job.setResult(resultWithProfiling);
