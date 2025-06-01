@@ -420,6 +420,10 @@ const testData = {
             sources: [],
             owned: 2000,
           },
+          formCTAWithinPage: [
+            '#text-84bada8460 a',
+            '#text-84bada8 button',
+          ],
         },
         {
           url: 'https://www.surest.com/existing-opportunity',

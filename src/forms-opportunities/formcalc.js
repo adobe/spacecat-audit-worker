@@ -28,7 +28,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   formVitalsCollection.forEach((item) => {
     const {
       url, formview = {}, formengagement = {}, pageview = {}, formsubmit = {},
-      trafficacquisition = {}, formsource = '', iframeSrc,
+      trafficacquisition = {}, formsource = '', iframeSrc, cta,
     } = item;
 
     const totals = {
@@ -57,6 +57,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
     totals.formsubmit = calculateSums(formsubmit, totals.formsubmit);
     totals.trafficacquisition = trafficacquisition;
     totals.formsource = formsource.startsWith('dialog') ? formsource.replace('dialog ', '') : formsource;
+    totals.cta = cta;
     if (iframeSrc) {
       totals.iframeSrc = iframeSrc;
     }
@@ -135,6 +136,7 @@ export function getHighPageViewsLowFormViewsMetrics(formVitalsCollection) {
     if (hasHighViews(pageViews) && hasLowFormViews(pageViews, formViews, formEngagement)) {
       urls.push({
         url,
+        cta: metrics.cta,
         ...metrics,
       });
     }
