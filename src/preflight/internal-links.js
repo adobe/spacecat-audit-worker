@@ -51,7 +51,6 @@ export async function runInternalLinkChecks(scrapedObjects, context, options = {
           try {
             const res = await fetch(href, {
               method: 'HEAD',
-              redirect: 'manual',
               ...(options.pageAuthToken ? {
                 headers: {
                   Authorization: options.pageAuthToken,
