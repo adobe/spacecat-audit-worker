@@ -95,26 +95,21 @@ function detectLanguageFromDom({ document }) {
 }
 
 function detectLanguageFromUrl(pageUrl) {
-  try {
-    const url = new URL(pageUrl);
-    const pathSegments = url.pathname.split('/');
-    const segmentsToCheck = pathSegments.slice(0, -1);
+  const url = new URL(pageUrl);
+  const pathSegments = url.pathname.split('/');
+  const segmentsToCheck = pathSegments.slice(0, -1);
 
-    // Check each path segment for country codes
-    for (const segment of segmentsToCheck) {
-      if (segment.length > 0) {
-        const lowerSegment = segment.toLowerCase();
-        if (validCountryCodes.has(lowerSegment)) {
-          return lowerSegment;
-        }
+  // Check each path segment for country codes
+  for (const segment of segmentsToCheck) {
+    if (segment.length > 0) {
+      const lowerSegment = segment.toLowerCase();
+      if (validCountryCodes.has(lowerSegment)) {
+        return lowerSegment;
       }
     }
-
-    return null;
-  } catch (error) {
-    this.log.error(`[${AUDIT_TYPE}]: Error detecting language from URL ${pageUrl}:`, error);
-    return null;
   }
+
+  return null;
 }
 
 const getPageLanguage = ({ document, pageUrl }) => {
