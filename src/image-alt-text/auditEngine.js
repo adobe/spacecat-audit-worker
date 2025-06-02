@@ -137,12 +137,16 @@ export default class AuditEngine {
           });
         }
 
-        this.auditedImages.imagesWithoutAltText.set(image.src, {
-          pageUrl,
-          src: image.src,
-          xpath: image.xpath,
-          language: pageLanguage,
-        });
+        // Since EDS authoring adds images with an empty alt
+        // we need to still show them as suggestions
+        if (!image.isDecorative || (image.isDecorative && image.hasEmptyAlt)) {
+          this.auditedImages.imagesWithoutAltText.set(image.src, {
+            pageUrl,
+            src: image.src,
+            xpath: image.xpath,
+            language: pageLanguage,
+          });
+        }
       }
     });
   }

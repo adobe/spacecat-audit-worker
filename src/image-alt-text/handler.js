@@ -88,6 +88,7 @@ export async function fetchPageScrapeAndRunAudit(
   const imageElements = dom.window.document.getElementsByTagName('img');
   const images = Array.from(imageElements).map((img) => ({
     isDecorative: isImageDecorative(img),
+    hasEmptyAlt: hasEmptyAltAttribute(img),
     src: img.getAttribute('src'),
     alt: img.getAttribute('alt'),
     xpath: getXpath(img),

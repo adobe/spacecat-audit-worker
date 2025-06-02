@@ -53,14 +53,16 @@ describe('AuditEngine', () => {
       const pageTags = {
         images: [
           {
-            src: 'image1.jpg', alt: '', isDecorative: false, xpath: '/html/body/img[1]',
-          },
-          { src: 'image2.jpg', isDecorative: false, xpath: '/html/body/img[2]' },
-          {
-            src: 'image3.jpg', alt: null, isDecorative: false, xpath: '/html/body/img[3]',
+            src: 'image1.jpg', alt: '', isDecorative: true, hasEmptyAlt: true, xpath: '/html/body/img[1]',
           },
           {
-            src: 'image4.jpg', alt: null, isDecorative: true, xpath: '/html/body/img[4]',
+            src: 'image2.jpg', isDecorative: false, hasEmptyAlt: false, xpath: '/html/body/img[2]',
+          },
+          {
+            src: 'image3.jpg', alt: null, isDecorative: false, hasEmptyAlt: false, xpath: '/html/body/img[3]',
+          },
+          {
+            src: 'image4.jpg', alt: null, isDecorative: true, hasEmptyAlt: false, xpath: '/html/body/img[4]',
           },
         ],
       };
@@ -68,8 +70,8 @@ describe('AuditEngine', () => {
       auditEngine.performPageAudit(pageUrl, pageTags);
       const auditedImages = auditEngine.getAuditedTags();
 
-      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(4);
-      expect(auditedImages.decorativeImagesCount).to.equal(1);
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(3);
+      expect(auditedImages.decorativeImagesCount).to.equal(2);
       expect(auditedImages.imagesWithoutAltText[0]).to.deep.equal({
         pageUrl,
         src: 'image1.jpg',
