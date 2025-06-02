@@ -15,7 +15,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { JSDOM } from 'jsdom';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import AuditEngine, { getPageLanguage, detectLanguageFromText } from '../../../src/image-alt-text/auditEngine.js';
+import AuditEngine, { getPageLanguage, detectLanguageFromText, convertImagesToBase64 } from '../../../src/image-alt-text/auditEngine.js';
 
 describe('AuditEngine', () => {
   let auditEngine;
@@ -474,6 +474,109 @@ describe('AuditEngine', () => {
         const lang = detectLanguageFromText(text);
         expect(lang).to.equal('unknown');
       });
+    });
+  });
+
+  describe('convertImagesToBase64', () => {
+    let fetchStub;
+
+    beforeEach(() => {
+      logStub = {
+        info: sinon.stub(),
+        error: sinon.stub(),
+      };
+      fetchStub = sinon.stub();
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should skip images that exceed size limit based on Content-Length header', async () => {
+      const imageUrls = ['test.svg'];
+      const auditUrl = 'https://example.com';
+
+      // Mock response with Content-Length exceeding 120KB
+      fetchStub.resolves({
+        ok: true,
+        headers: {
+          get: sinon.stub().withArgs('Content-Length').returns('130000'), // 130KB > 120KB limit
+        },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      });
+
+      const result = await convertImagesToBase64(imageUrls, auditUrl, logStub, fetchStub);
+
+      expect(result).to.be.an('array').that.is.empty;
+      expect(logStub.info).to.have.been.calledWith(
+        '[alt-text]: Skipping image test.svg as it exceeds 120KB',
+      );
+    });
+
+    it('should skip images where base64 blob exceeds size limit', async () => {
+      const imageUrls = ['test.svg'];
+      const auditUrl = 'https://example.com';
+
+      // Create a large array buffer that will result in a base64 string > 120KB
+      const largeArrayBuffer = new ArrayBuffer(130000); // 130KB
+
+      fetchStub.resolves({
+        ok: true,
+        headers: {
+          get: sinon.stub().withArgs('Content-Length').returns('1000'), // Small Content-Length
+        },
+        arrayBuffer: async () => largeArrayBuffer,
+      });
+
+      const result = await convertImagesToBase64(imageUrls, auditUrl, logStub, fetchStub);
+
+      expect(result).to.be.an('array').that.is.empty;
+      expect(logStub.info).to.have.been.calledWith(
+        '[alt-text]: Skipping base64 image test.svg as it exceeds 120KB',
+      );
+    });
+
+    it('should successfully convert images within size limits', async () => {
+      const imageUrls = ['test.svg'];
+      const auditUrl = 'https://example.com';
+
+      const smallArrayBuffer = new ArrayBuffer(100); // Small buffer
+
+      fetchStub.resolves({
+        ok: true,
+        headers: {
+          get: sinon.stub().withArgs('Content-Length').returns('100'),
+        },
+        arrayBuffer: async () => smallArrayBuffer,
+      });
+
+      const result = await convertImagesToBase64(imageUrls, auditUrl, logStub, fetchStub);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.have.property('url', 'test.svg');
+      expect(result[0]).to.have.property('blob');
+      expect(result[0].blob).to.match(/^data:image\/svg\+xml;base64,/);
+    });
+
+    it('should handle missing Content-Length header', async () => {
+      const imageUrls = ['test.svg'];
+      const auditUrl = 'https://example.com';
+
+      const smallArrayBuffer = new ArrayBuffer(100);
+
+      fetchStub.resolves({
+        ok: true,
+        headers: {
+          get: sinon.stub().withArgs('Content-Length').returns(null), // No Content-Length
+        },
+        arrayBuffer: async () => smallArrayBuffer,
+      });
+
+      const result = await convertImagesToBase64(imageUrls, auditUrl, logStub, fetchStub);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.have.property('url', 'test.svg');
+      expect(result[0]).to.have.property('blob');
     });
   });
 });
