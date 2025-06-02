@@ -538,6 +538,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -563,6 +564,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -595,6 +597,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -633,6 +636,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         targetDate,
         mockLog,
@@ -661,6 +665,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -693,6 +698,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -720,6 +726,7 @@ describe('data-processing utility functions', () => {
       await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -757,6 +764,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -784,6 +792,7 @@ describe('data-processing utility functions', () => {
       await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,

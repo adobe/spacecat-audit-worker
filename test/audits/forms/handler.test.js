@@ -20,7 +20,6 @@ import {
   formsAuditRunner,
   processOpportunityStep,
   runAuditAndSendUrlsForScrapingStep,
-  createAccessibilityOpportunity,
   sendA11yUrlsForScrapingStep,
 } from '../../../src/forms-opportunities/handler.js';
 import { MockContextBuilder } from '../../shared.js';
@@ -388,80 +387,5 @@ describe('process opportunity step', () => {
     expect(result).to.deep.equal({
       status: 'complete',
     });
-  });
-});
-
-describe('send a11y issues to mystique', () => {
-  let context;
-  const siteId = 'test-site-id';
-
-  beforeEach(() => {
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        runtime: { name: 'aws-lambda', region: 'us-east-1' },
-        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
-        site: {
-          getId: sinon.stub().returns(siteId),
-        },
-        log: {
-          info: sinon.stub(),
-        },
-      })
-      .build();
-
-    context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
-    context.dataAccess.Opportunity.create = sandbox.stub().resolves();
-  });
-
-  afterEach(() => {
-    nock.cleanAll();
-    sinon.restore();
-  });
-
-  it('should not create opportunities when no a11y data is present', async () => {
-    const latestAudit = {
-      siteId: 'test-site-id',
-      auditId: 'test-audit-id',
-      getSiteId: () => 'test-site-id',
-      getAuditId: () => 'test-audit-id',
-    };
-
-    const scrapedData = {
-      formA11yData: [],
-    };
-
-    await createAccessibilityOpportunity(latestAudit, scrapedData, context);
-    expect(context.log.info).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] No a11y data found');
-  });
-
-  it('should create opportunities when a11y issues are present', async () => {
-    const latestAudit = {
-      siteId: 'test-site-id',
-      auditId: 'test-audit-id',
-      getSiteId: () => 'test-site-id',
-      getAuditId: () => 'test-audit-id',
-    };
-
-    const scrapedData = {
-      formA11yData: [{
-        a11yResult: [{
-          finalUrl: 'https://example.com/form1',
-          formSource: '#form1',
-          a11yIssues: [{
-            issue: 'Missing alt text',
-            level: 'error',
-            successCriterias: ['1.1.1'],
-            htmlWithIssues: '<img src="test.jpg">',
-            recommendation: 'Add alt text to image',
-          }],
-        }],
-      }],
-    };
-
-    await createAccessibilityOpportunity(latestAudit, scrapedData, context);
-
-    expect(context.dataAccess.Opportunity.create).to.have.been.called;
-    expect(context.log.info).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] a11y issues created');
   });
 });
