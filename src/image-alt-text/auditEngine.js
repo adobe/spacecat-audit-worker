@@ -118,15 +118,21 @@ const getPageLanguage = ({ document, pageUrl }) => {
     return lang;
   }
 
+  if (pageUrl) {
+    const urlLanguage = detectLanguageFromUrl(pageUrl);
+    if (urlLanguage) {
+      return urlLanguage;
+    }
+  }
   lang = detectLanguageFromDom({ document });
   if (lang === UNKNOWN_LANGUAGE) {
     // Check the page URL for the language
-    if (pageUrl) {
-      const urlLanguage = detectLanguageFromUrl(pageUrl);
-      if (urlLanguage) {
-        return urlLanguage;
-      }
-    }
+    // if (pageUrl) {
+    //   const urlLanguage = detectLanguageFromUrl(pageUrl);
+    //   if (urlLanguage) {
+    //     return urlLanguage;
+    //   }
+    // }
 
     const bodyText = document.querySelector('body').textContent;
     const cleanedText = bodyText.replace(/[\n\t]/g, '').replace(/ {2,}/g, ' ');
