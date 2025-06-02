@@ -53,16 +53,16 @@ describe('AuditEngine', () => {
       const pageTags = {
         images: [
           {
-            src: 'image1.jpg', alt: '', isDecorative: true, hasEmptyAlt: true, xpath: '/html/body/img[1]',
+            src: 'image1.jpg', alt: '', isDecorative: true, hasEmptyAlt: true, shouldShowAsSuggestion: true, xpath: '/html/body/img[1]',
           },
           {
-            src: 'image2.jpg', isDecorative: false, hasEmptyAlt: false, xpath: '/html/body/img[2]',
+            src: 'image2.jpg', isDecorative: false, hasEmptyAlt: false, shouldShowAsSuggestion: true, xpath: '/html/body/img[2]',
           },
           {
-            src: 'image3.jpg', alt: null, isDecorative: false, hasEmptyAlt: false, xpath: '/html/body/img[3]',
+            src: 'image3.jpg', alt: null, isDecorative: false, hasEmptyAlt: false, shouldShowAsSuggestion: true, xpath: '/html/body/img[3]',
           },
           {
-            src: 'image4.jpg', alt: null, isDecorative: true, hasEmptyAlt: false, xpath: '/html/body/img[4]',
+            src: 'image4.jpg', alt: null, isDecorative: true, hasEmptyAlt: false, shouldShowAsSuggestion: true, xpath: '/html/body/img[4]',
           },
         ],
       };
@@ -70,7 +70,7 @@ describe('AuditEngine', () => {
       auditEngine.performPageAudit(pageUrl, pageTags);
       const auditedImages = auditEngine.getAuditedTags();
 
-      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(3);
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(4);
       expect(auditedImages.decorativeImagesCount).to.equal(2);
       expect(auditedImages.imagesWithoutAltText[0]).to.deep.equal({
         pageUrl,
@@ -99,8 +99,12 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '   ', xpath: '/html/body/img[1]' },
-          { src: 'image2.jpg', alt: '\n\t', xpath: '/html/body/img[2]' },
+          {
+            src: 'image1.jpg', alt: '   ', shouldShowAsSuggestion: true, xpath: '/html/body/img[1]',
+          },
+          {
+            src: 'image2.jpg', alt: '\n\t', shouldShowAsSuggestion: true, xpath: '/html/body/img[2]',
+          },
         ],
       };
 
@@ -171,9 +175,9 @@ describe('AuditEngine', () => {
     it('should log summary of images without alt text', () => {
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '' },
+          { src: 'image1.jpg', alt: '', shouldShowAsSuggestion: true },
           { src: 'image2.jpg', alt: 'Valid alt' },
-          { src: 'image3.jpg' },
+          { src: 'image3.jpg', shouldShowAsSuggestion: true },
         ],
       };
 
@@ -204,11 +208,11 @@ describe('AuditEngine', () => {
   describe('getAuditedTags', () => {
     it('should return accumulated results from all audited pages', () => {
       auditEngine.performPageAudit('/page1', {
-        images: [{ src: 'image1.jpg' }],
+        images: [{ src: 'image1.jpg', shouldShowAsSuggestion: true }],
       });
 
       auditEngine.performPageAudit('/page2', {
-        images: [{ src: 'image2.jpg', alt: '' }],
+        images: [{ src: 'image2.jpg', alt: '', shouldShowAsSuggestion: true }],
       });
 
       const auditedImages = auditEngine.getAuditedTags();
@@ -238,9 +242,9 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '' },
-          { src: 'image2.png', alt: '' },
-          { src: 'image3.gif', alt: '' },
+          { src: 'image1.jpg', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image2.png', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image3.gif', alt: '', shouldShowAsSuggestion: true },
         ],
       };
 
@@ -255,9 +259,9 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.tiff', alt: '' },
-          { src: 'image2.bmp', alt: '' },
-          { src: 'image3.svg', alt: '' }],
+          { src: 'image1.tiff', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image2.bmp', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image3.svg', alt: '', shouldShowAsSuggestion: true }],
       };
 
       function createRandomArrayBuffer(size) {
@@ -288,8 +292,8 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.svg', alt: '' },
-          { src: 'image2.svg', alt: '' },
+          { src: 'image1.svg', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image2.svg', alt: '', shouldShowAsSuggestion: true },
         ],
       };
 
@@ -360,7 +364,7 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.svg', alt: '' },
+          { src: 'image1.svg', alt: '', shouldShowAsSuggestion: true },
         ],
       };
 
@@ -381,7 +385,7 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.svg', alt: '' },
+          { src: 'image1.svg', alt: '', shouldShowAsSuggestion: true },
         ],
       };
 

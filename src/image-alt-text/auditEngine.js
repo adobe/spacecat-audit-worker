@@ -137,9 +137,7 @@ export default class AuditEngine {
           });
         }
 
-        // Since EDS authoring adds images with an empty alt
-        // we need to still show them as suggestions
-        if (!image.isDecorative || (image.isDecorative && image.hasEmptyAlt)) {
+        if (image.shouldShowAsSuggestion) {
           this.auditedImages.imagesWithoutAltText.set(image.src, {
             pageUrl,
             src: image.src,
