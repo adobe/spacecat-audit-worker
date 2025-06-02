@@ -143,7 +143,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
             type: 'formViewRate',
             device: 'mobile',
             value: {
-              page: 0,
+              page: null,
             },
           },
           {

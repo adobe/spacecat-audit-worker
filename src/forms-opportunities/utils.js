@@ -50,7 +50,10 @@ async function getPresignedUrl(fileName, context, url, site) {
 }
 
 function calculateRate(numerator, denominator) {
-  return denominator === 0 ? 0 : Number((numerator / denominator).toFixed(3));
+  if (denominator === 0 || Number.isNaN(numerator) || Number.isNaN(denominator)) {
+    return null; // Return null if the calculation is invalid
+  }
+  return Number((numerator / denominator).toFixed(3));
 }
 
 function getFormMetrics(metricObject) {
