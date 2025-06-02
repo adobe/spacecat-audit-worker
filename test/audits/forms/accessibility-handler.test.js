@@ -17,7 +17,7 @@ import sinon from 'sinon';
 import nock from 'nock';
 import sinonChai from 'sinon-chai';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import createAccessibilityOpportunity, { createOpportunity } from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
+import createAccessibilityOpportunity from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -29,116 +29,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
   afterEach(() => {
     sandbox.restore();
-  });
-
-  describe('createOpportunity', () => {
-    let mockContext;
-    let siteId;
-    let auditId;
-    let a11yData;
-
-    beforeEach(() => {
-      siteId = 'test-site-id';
-      auditId = 'test-audit-id';
-      a11yData = [{
-        form: '/test-form',
-        formSource: '#test-form',
-        a11yIssues: [
-          {
-            successCriterias: [
-              '1.1.1 Non-text Content',
-            ],
-            issue: 'Test issue',
-            level: 'AA',
-            recommendation: 'Test recommendation',
-            solution: [
-              '<span>Solution 1</span>',
-              '<span>Solution 2</span>',
-            ],
-          },
-        ],
-      }];
-      sandbox = sinon.createSandbox();
-      mockContext = new MockContextBuilder()
-        .withSandbox(sandbox)
-        .build();
-
-      mockContext.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
-      mockContext.dataAccess.Opportunity.create = sandbox.stub().resolves();
-      mockContext.dataAccess.Opportunity.setUpdatedBy = sandbox.stub();
-    });
-
-    afterEach(() => {
-      sandbox.restore();
-    });
-
-    it('should not create opportunity if a11yData is empty', async () => {
-      // Setup
-      a11yData = [];
-
-      // Execute
-      await createOpportunity(auditId, siteId, a11yData, mockContext);
-
-      // Verify
-      expect(mockContext.dataAccess.Opportunity.create).to.not.have.been.called;
-      expect(mockContext.log.info).to.have.been.calledWith(
-        `[Form Opportunity] [Site Id: ${siteId}] No a11y data found`,
-      );
-    });
-
-    it('should not create opportunity if no a11y issues are found', async () => {
-    // Setup
-      a11yData = [{
-        form: '/test-form',
-        a11yIssues: [],
-      }];
-
-      // Execute
-      await createOpportunity(auditId, siteId, a11yData, mockContext);
-
-      // Verify
-      expect(mockContext.dataAccess.Opportunity.create).to.not.have.been.called;
-      expect(mockContext.log.info).to.have.been.calledWith(
-        `[Form Opportunity] [Site Id: ${siteId}] No accessibility issues found`,
-      );
-    });
-
-    it('should create a new opportunity', async () => {
-    // Setup
-    // Execute
-      await createOpportunity(auditId, siteId, a11yData, mockContext);
-
-      // Verify
-      expect(mockContext.dataAccess.Opportunity.create).to.have.been.calledOnce;
-      const createArgs = mockContext.dataAccess.Opportunity.create.getCall(0).args[0];
-      expect(createArgs.siteId).to.equal(siteId);
-      expect(createArgs.auditId).to.equal(auditId);
-      expect(createArgs.type).to.equal(FORM_OPPORTUNITY_TYPES.FORM_A11Y);
-      expect(createArgs.origin).to.equal('AUTOMATION');
-      expect(createArgs.data.accessibility).to.have.lengthOf(1);
-      expect(createArgs.data.accessibility[0].form).to.equal('/test-form');
-      expect(createArgs.data.accessibility[0].formSource).to.equal('#test-form');
-      expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(1);
-
-      // Check that success criteria are processed
-      const successCriteria = createArgs.data.accessibility[0].a11yIssues[0].successCriterias[0];
-      expect(successCriteria.criteriaNumber).to.equal('1.1.1');
-      expect(successCriteria.name).to.equal('Non-text Content');
-      expect(successCriteria).to.have.property('understandingUrl');
-    });
-
-    it('should fail while creating a new opportunity', async () => {
-      mockContext.dataAccess.Opportunity.create = sandbox.stub().rejects(new Error('Network error'));
-      try {
-        await createOpportunity(auditId, siteId, a11yData, mockContext);
-        expect.fail('Expected an error to be thrown');
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      } catch (e) {
-        expect(mockContext.log.error).to.have.been.calledWith(
-          '[Form Opportunity] [Site Id: test-site-id] Failed to create a11y opportunity with error: Network error',
-        );
-      }
-    });
   });
 
   describe('createAccessibilityOpportunity', () => {
@@ -184,12 +74,26 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     });
 
     it('should not create opportunities when no a11y data is present', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
       context.s3Client.send.onFirstCall().resolves({ CommonPrefixes: [] });
-      await createAccessibilityOpportunity({}, context);
+      await createAccessibilityOpportunity(latestAudit, context);
       expect(context.log.error).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] Failed to get object keys from subfolders: No accessibility data found in bucket test-bucket at prefix forms-accessibility/test-site-id/ for site test-site-id with delimiter /');
     });
 
     it('should not create opportunities when no content is present', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
       context.s3Client.send
         .onFirstCall()
         .resolves({ CommonPrefixes: [{ Prefix: `forms-accessibility/${siteId}/${version}/` }] })
@@ -207,8 +111,48 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             transformToString: sandbox.stub().resolves(null),
           },
         });
-      await createAccessibilityOpportunity({}, context);
+      await createAccessibilityOpportunity(latestAudit, context);
       expect(context.log.error).to.have.been.calledWith('[Form Opportunity] No files could be processed successfully for site test-site-id');
+    });
+
+    it('should not create opportunity if a11yData is empty', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      context.s3Client.send
+        .onFirstCall()
+        .resolves({
+          CommonPrefixes: [
+            { Prefix: `forms-accessibility/${siteId}/${version}/` },
+          ],
+        })
+        .onSecondCall()
+        .resolves({
+          Contents: [
+            { Key: `forms-accessibility/${siteId}/${version}/form1.json` },
+          ],
+          IsTruncated: false,
+        })
+        .onThirdCall()
+        .resolves({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sandbox.stub().resolves(JSON.stringify({
+              finalUrl: 'https://example.com/form1',
+              a11yResult: [],
+            })),
+          },
+        });
+
+      await createAccessibilityOpportunity(latestAudit, context);
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        `[Form Opportunity] [Site Id: ${siteId}] No a11y data found`,
+      );
     });
 
     it('should create opportunities when a11y issues are present', async () => {
@@ -236,7 +180,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         userAgent: 'mock-user-agent',
       };
 
-      // Mock S3 response for getting scraped data
       context.s3Client.send
         .onFirstCall()
         .resolves({
@@ -261,9 +204,22 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.dataAccess.Opportunity.create).to.have.been.called;
-      expect(context.s3Client.send).to.have.been.called;
-      expect(context.log.info).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] a11y opportunities created/updated');
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
+      expect(createArgs.siteId).to.equal(siteId);
+      expect(createArgs.auditId).to.equal('test-audit-id');
+      expect(createArgs.type).to.equal(FORM_OPPORTUNITY_TYPES.FORM_A11Y);
+      expect(createArgs.origin).to.equal('AUTOMATION');
+      expect(createArgs.data.accessibility).to.have.lengthOf(1);
+      expect(createArgs.data.accessibility[0].form).to.equal('https://example.com/form1');
+      expect(createArgs.data.accessibility[0].formSource).to.equal('#form1');
+      expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(1);
+
+      // Check that success criteria are processed
+      const successCriteria = createArgs.data.accessibility[0].a11yIssues[0].successCriterias[0];
+      expect(successCriteria.criteriaNumber).to.equal('1.1.1');
+      expect(successCriteria.name).to.equal('Non-text Content');
+      expect(successCriteria).to.have.property('understandingUrl');
     });
 
     it('should handle errors when processing a11y data', async () => {
@@ -281,6 +237,58 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       expect(context.log.error).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] Error creating a11y issues: S3 error');
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
+
+    it('should fail while creating a new opportunity', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      const scrapedData = {
+        finalUrl: 'https://example.com/form1',
+        a11yResult: [{
+          formSource: '#form1',
+          a11yIssues: [{
+            issue: 'Missing alt text',
+            level: 'error',
+            successCriterias: ['1.1.1'],
+            htmlWithIssues: '<img src="test.jpg">',
+            recommendation: 'Add alt text to image',
+          }],
+        }],
+      };
+
+      context.s3Client.send
+        .onFirstCall()
+        .resolves({
+          CommonPrefixes: [
+            { Prefix: `forms-accessibility/${siteId}/${version}/` },
+          ],
+        })
+        .onSecondCall()
+        .resolves({
+          Contents: [
+            { Key: `forms-accessibility/${siteId}/${version}/form1.json` },
+          ],
+          IsTruncated: false,
+        })
+        .onThirdCall()
+        .resolves({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sandbox.stub().resolves(JSON.stringify(scrapedData)),
+          },
+        });
+
+      context.dataAccess.Opportunity.create = sandbox.stub().rejects(new Error('Network error'));
+
+      await createAccessibilityOpportunity(latestAudit, context);
+      expect(context.log.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] Failed to create a11y opportunity with error: Network error',
+      );
     });
   });
 });

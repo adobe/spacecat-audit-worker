@@ -320,6 +320,8 @@ describe('process opportunity step', () => {
           },
           fullAuditRef: 'www.example.com',
           siteId: 'test-site-id',
+          getSiteId: () => siteId,
+          getAuditId: () => 'test-audit-id',
         }),
         auditUrl: 'https://example.com',
         formsOppty: {

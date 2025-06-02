@@ -10,9 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { cleanupS3Files, getObjectKeysFromSubfolders, processFilesWithRetry } from '../../accessibility/utils/data-processing.js';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
+import { getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
 
 /**
  * Create a11y opportunity for the given siteId and auditId
@@ -22,7 +24,7 @@ import { getSuccessCriteriaDetails } from '../utils.js';
  * @param {object} context - The context object
  * @returns {Promise<void>}
  */
-export async function createOpportunity(auditId, siteId, a11yData, context) {
+async function createOpportunity(auditId, siteId, a11yData, context) {
   const {
     dataAccess, log,
   } = context;
@@ -33,14 +35,8 @@ export async function createOpportunity(auditId, siteId, a11yData, context) {
     return;
   }
 
-  const filteredA11yData = a11yData.filter((a11y) => a11y.a11yIssues?.length > 0);
-  if (filteredA11yData.length === 0) {
-    log.info(`[Form Opportunity] [Site Id: ${siteId}] No accessibility issues found`);
-    return;
-  }
-
   try {
-    const a11yOpptyData = filteredA11yData.map((a11yOpty) => {
+    const a11yOpptyData = a11yData.map((a11yOpty) => {
       const a11yIssues = a11yOpty.a11yIssues.map((issue) => ({
         ...issue,
         successCriterias: issue.successCriterias.map(
@@ -79,7 +75,7 @@ export async function createOpportunity(auditId, siteId, a11yData, context) {
   log.info(`[Form Opportunity] [Site Id: ${siteId}] Successfully synced Opportunity for form-accessibility audit type.`);
 }
 
-function getWcagCriteriaString(criteria) {
+function getWCAGCriteriaString(criteria) {
   const { name, criteriaNumber } = getSuccessCriteriaDetails(criteria);
   return `${criteriaNumber} ${name}`;
 }
@@ -88,9 +84,10 @@ export default async function createAccessibilityOpportunity(auditData, context)
   const {
     log, site, s3Client, env,
   } = context;
-
+  const siteId = auditData.getSiteId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const version = new Date().toISOString().split('T')[0];
+  const outputKey = `forms-accessibility/${site.getId()}/${version}-final-result.json`;
   try {
     const objectKeysResult = await getObjectKeysFromSubfolders(
       s3Client,
@@ -120,31 +117,40 @@ export default async function createAccessibilityOpportunity(auditData, context)
       return;
     }
     const axeResults = results.map((result) => result.data);
-
-    const a11yData = [];
-    for (const a11y of axeResults) {
+    const a11yData = axeResults.flatMap((a11y) => {
       const { a11yResult } = a11y;
-      a11yResult.forEach((result) => {
-        if (result.a11yIssues.length > 0) {
-          const a11yIssues = result.a11yIssues.map((a11yIssue) => ({
+      return a11yResult
+        .filter(({ a11yIssues }) => a11yIssues.length > 0)
+        .map((result) => ({
+          form: a11y.finalUrl,
+          formSource: result.formSource,
+          a11yIssues: result.a11yIssues.map((a11yIssue) => ({
             issue: a11yIssue.issue,
             level: a11yIssue.level,
-            successCriterias: a11yIssue.successCriterias.map(getWcagCriteriaString),
-            htmlSources: a11yIssue.htmlWithIssues,
+            successCriterias: a11yIssue.successCriterias.map(getWCAGCriteriaString),
+            htmlWithIssues: a11yIssue.htmlWithIssues,
             recommendation: a11yIssue.recommendation,
-          }));
-          a11yData.push({
-            form: a11y.finalUrl,
-            formSource: result.formSource,
-            a11yIssues,
-          });
-        }
-      });
-    }
+          })),
+        }));
+    });
 
-    await createOpportunity(auditData.getAuditId(), auditData.getSiteId(), a11yData, context);
-    await cleanupS3Files(s3Client, bucketName, objectKeys, [], log);
-    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] a11y opportunities created/updated`);
+    // Save aggregated data to S3
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: outputKey,
+      Body: JSON.stringify(a11yData, null, 2),
+      ContentType: 'application/json',
+    }));
+    log.info(`[Form Opportunity] Saved aggregated forms-accessibility data to ${outputKey}`);
+
+    const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `forms-accessibility/${siteId}/`, log, 10, '-final-result.json');
+    log.info(`[Form Opportunity] Found ${lastWeekObjectKeys.length} final-result files in the forms-accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
+
+    await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
+
+    // Create opportunity
+    await createOpportunity(auditData.getAuditId(), siteId, a11yData, context);
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] a11y opportunity creation step completed`);
   } catch (error) {
     log.error(`[Form Opportunity] [Site Id: ${site.getId()}] Error creating a11y issues: ${error.message}`);
   }
