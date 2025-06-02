@@ -42,7 +42,7 @@ describe('AuditEngine', () => {
       const auditedImages = auditEngine.getAuditedTags();
       expect(auditedImages).to.deep.equal({
         imagesWithoutAltText: [],
-        presentationalImagesCount: 0,
+        decorativeImagesCount: 0,
       });
     });
   });
@@ -53,14 +53,14 @@ describe('AuditEngine', () => {
       const pageTags = {
         images: [
           {
-            src: 'image1.jpg', alt: '', isPresentational: false, xpath: '/html/body/img[1]',
+            src: 'image1.jpg', alt: '', isDecorative: false, xpath: '/html/body/img[1]',
           },
-          { src: 'image2.jpg', isPresentational: false, xpath: '/html/body/img[2]' },
+          { src: 'image2.jpg', isDecorative: false, xpath: '/html/body/img[2]' },
           {
-            src: 'image3.jpg', alt: null, isPresentational: false, xpath: '/html/body/img[3]',
+            src: 'image3.jpg', alt: null, isDecorative: false, xpath: '/html/body/img[3]',
           },
           {
-            src: 'image4.jpg', alt: null, isPresentational: true, xpath: '/html/body/img[4]',
+            src: 'image4.jpg', alt: null, isDecorative: true, xpath: '/html/body/img[4]',
           },
         ],
       };
@@ -69,7 +69,7 @@ describe('AuditEngine', () => {
       const auditedImages = auditEngine.getAuditedTags();
 
       expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(4);
-      expect(auditedImages.presentationalImagesCount).to.equal(1);
+      expect(auditedImages.decorativeImagesCount).to.equal(1);
       expect(auditedImages.imagesWithoutAltText[0]).to.deep.equal({
         pageUrl,
         src: 'image1.jpg',
