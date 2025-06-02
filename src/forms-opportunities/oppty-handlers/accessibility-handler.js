@@ -142,13 +142,7 @@ export default async function createAccessibilityOpportunity(auditData, context)
       });
     }
 
-    await createOpportunity({
-      siteId: auditData.getSiteId(),
-      auditId: auditData.getAuditId(),
-      data: {
-        a11yData,
-      },
-    }, context);
+    await createOpportunity(auditData.getAuditId(), auditData.getSiteId(), a11yData, context);
     await cleanupS3Files(s3Client, bucketName, objectKeys, [], log);
     log.info(`[Form Opportunity] [Site Id: ${site.getId()}] a11y opportunities created/updated`);
   } catch (error) {
