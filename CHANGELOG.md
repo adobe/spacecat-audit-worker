@@ -1,3 +1,10 @@
+# [1.97.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.96.4...v1.97.0) (2025-06-02)
+
+
+### Features
+
+* Filter out decorative (almost all) images from audit suggestions ([#923](https://github.com/adobe/spacecat-audit-worker/issues/923)) ([478a053](https://github.com/adobe/spacecat-audit-worker/commit/478a0539662ac1f9da34af1fc8cf74f288b5c766))
+
 ## [1.96.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.96.3...v1.96.4) (2025-05-31)
 
 

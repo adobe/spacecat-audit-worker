@@ -145,7 +145,7 @@ export default class AuditEngine {
     this.log = log;
     this.auditedImages = {
       imagesWithoutAltText: new Map(),
-      presentationalImagesWithoutAltText: new Map(),
+      decorativeImagesWithoutAltText: new Map(),
     };
   }
 
@@ -161,20 +161,22 @@ export default class AuditEngine {
 
     pageImages.images.forEach((image) => {
       if (!hasText(image.alt?.trim())) {
-        if (image.isPresentational) {
-          this.auditedImages.presentationalImagesWithoutAltText.set(image.src, {
+        if (image.isDecorative) {
+          this.auditedImages.decorativeImagesWithoutAltText.set(image.src, {
             pageUrl,
             src: image.src,
             xpath: image.xpath,
           });
         }
 
-        this.auditedImages.imagesWithoutAltText.set(image.src, {
-          pageUrl,
-          src: image.src,
-          xpath: image.xpath,
-          language: pageLanguage,
-        });
+        if (image.shouldShowAsSuggestion) {
+          this.auditedImages.imagesWithoutAltText.set(image.src, {
+            pageUrl,
+            src: image.src,
+            xpath: image.xpath,
+            language: pageLanguage,
+          });
+        }
       }
     });
   }
@@ -236,15 +238,15 @@ export default class AuditEngine {
       `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedImages.imagesWithoutAltText.values()).length} images without alt text`,
     );
     this.log.info(
-      `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedImages.presentationalImagesWithoutAltText.values()).length} presentational images`,
+      `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedImages.decorativeImagesWithoutAltText.values()).length} decorative images`,
     );
   }
 
   getAuditedTags() {
     return {
       imagesWithoutAltText: Array.from(this.auditedImages.imagesWithoutAltText.values()),
-      presentationalImagesCount: Array.from(
-        this.auditedImages.presentationalImagesWithoutAltText.values(),
+      decorativeImagesCount: Array.from(
+        this.auditedImages.decorativeImagesWithoutAltText.values(),
       ).length,
     };
   }
