@@ -1,3 +1,17 @@
+## [1.97.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.2...v1.97.3) (2025-06-02)
+
+
+### Bug Fixes
+
+* preflight response bottlenecks ([#919](https://github.com/adobe/spacecat-audit-worker/issues/919)) ([3acfaed](https://github.com/adobe/spacecat-audit-worker/commit/3acfaedcf0b5dba55cc25da28577613df4486b16))
+
+## [1.97.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.1...v1.97.2) (2025-06-02)
+
+
+### Bug Fixes
+
+* handling edge cases for calculating rates of forms ([#914](https://github.com/adobe/spacecat-audit-worker/issues/914)) ([db68a47](https://github.com/adobe/spacecat-audit-worker/commit/db68a473511851a7d08f4b349850cc903a34646a))
+
 ## [1.97.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.0...v1.97.1) (2025-06-02)
 
 
