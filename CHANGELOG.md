@@ -1,3 +1,10 @@
+## [1.97.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.1...v1.97.2) (2025-06-02)
+
+
+### Bug Fixes
+
+* handling edge cases for calculating rates of forms ([#914](https://github.com/adobe/spacecat-audit-worker/issues/914)) ([db68a47](https://github.com/adobe/spacecat-audit-worker/commit/db68a473511851a7d08f4b349850cc903a34646a))
+
 ## [1.97.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.0...v1.97.1) (2025-06-02)
 
 
