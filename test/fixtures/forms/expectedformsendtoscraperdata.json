@@ -142,7 +142,8 @@
             ]
           }
         ],
-        "formsource": "#container-1 form.newsletter"
+        "formsource": "#container-1 form.newsletter",
+        "formCTAWithinPage": [ "#teaser-related02 .cmp-teaser__action-link"]
       }
     ],
     "auditContext": {
@@ -167,7 +168,8 @@
       "url": "https://www.business.adobe.com/newsletter",
       "formSources": [
         {
-          "formSource": "#container-1 form.newsletter"
+          "formSource": "#container-1 form.newsletter",
+          "formCTAWithinPage": [ "#teaser-related02 .cmp-teaser__action-link"]
         }
       ]
     },
