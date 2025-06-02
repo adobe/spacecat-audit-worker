@@ -79,11 +79,6 @@ function detectLanguageFromText(text) {
 }
 
 function detectLanguageFromDom({ document }) {
-  const htmlTag = document.querySelector('html');
-  if (htmlTag && htmlTag.hasAttribute('lang')) {
-    return htmlTag.getAttribute('lang');
-  }
-
   const metaTags = document.querySelectorAll('meta[http-equiv="Content-Language"], meta[name="language"]');
   for (const meta of metaTags) {
     if (meta.hasAttribute('content')) {
@@ -108,36 +103,36 @@ function detectLanguageFromUrl(pageUrl) {
     }
   }
 
-  return null;
+  return UNKNOWN_LANGUAGE;
 }
 
 const getPageLanguage = ({ document, pageUrl }) => {
-  let lang = UNKNOWN_LANGUAGE;
   if (!document) {
-    return lang;
+    return UNKNOWN_LANGUAGE;
   }
 
+  // Try DOM-based detection first
+  const domLanguage = detectLanguageFromDom({ document });
+  if (domLanguage !== UNKNOWN_LANGUAGE) {
+    return domLanguage;
+  }
+
+  // Try URL-based detection if pageUrl is available
   if (pageUrl) {
     const urlLanguage = detectLanguageFromUrl(pageUrl);
-    if (urlLanguage) {
+    if (urlLanguage !== UNKNOWN_LANGUAGE) {
       return urlLanguage;
     }
   }
-  lang = detectLanguageFromDom({ document });
-  if (lang === UNKNOWN_LANGUAGE) {
-    // Check the page URL for the language
-    // if (pageUrl) {
-    //   const urlLanguage = detectLanguageFromUrl(pageUrl);
-    //   if (urlLanguage) {
-    //     return urlLanguage;
-    //   }
-    // }
 
-    const bodyText = document.querySelector('body').textContent;
+  // Fall back to text-based detection
+  const bodyText = document.querySelector('body')?.textContent;
+  if (bodyText) {
     const cleanedText = bodyText.replace(/[\n\t]/g, '').replace(/ {2,}/g, ' ');
-    lang = detectLanguageFromText(cleanedText);
+    return detectLanguageFromText(cleanedText);
   }
-  return lang;
+
+  return UNKNOWN_LANGUAGE;
 };
 
 export default class AuditEngine {
@@ -157,7 +152,7 @@ export default class AuditEngine {
 
     const pageLanguage = getPageLanguage({ document: pageImages.dom?.window?.document, pageUrl });
 
-    this.log.debug(`[${AUDIT_TYPE}]: Language: ${pageLanguage}, Page: ${pageUrl}`);
+    this.log.info(`[${AUDIT_TYPE}]: Language: ${pageLanguage}, Page: ${pageUrl}`);
 
     pageImages.images.forEach((image) => {
       if (!hasText(image.alt?.trim())) {

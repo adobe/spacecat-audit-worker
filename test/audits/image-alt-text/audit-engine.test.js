@@ -437,12 +437,6 @@ describe('AuditEngine', () => {
 
   describe('Language Detection', () => {
     describe('getPageLanguage', () => {
-      it('should return the language from the lang attribute', () => {
-        const dom = new JSDOM('<html lang="en"><body></body></html>').window.document;
-        const lang = getPageLanguage({ document: dom });
-        expect(lang).to.equal('en');
-      });
-
       it('should return the language from meta tags', () => {
         const dom = new JSDOM('<html><head><meta http-equiv="Content-Language" content="fr"></head><body></body></html>').window.document;
         const lang = getPageLanguage({ document: dom });
