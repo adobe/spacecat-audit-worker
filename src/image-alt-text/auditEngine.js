@@ -95,8 +95,7 @@ function detectLanguageFromDom({ document }) {
 }
 
 function detectLanguageFromUrl(pageUrl) {
-  const url = new URL(pageUrl);
-  const pathSegments = url.pathname.split('/');
+  const pathSegments = pageUrl.split('/');
   const segmentsToCheck = pathSegments.slice(0, -1);
 
   // Check each path segment for country codes
