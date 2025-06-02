@@ -140,8 +140,12 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   }
 
   const urlsData = Array.from(uniqueUrls).map((url) => {
-    const formSources = formVitals.filter((fv) => fv.url === url).map((fv) => fv.formsource)
-      .filter((source) => !!source);
+    const formSources = formVitals.filter((fv) => fv.url === url)
+      .map((fv) => ({
+        formSource: fv.formsource,
+        ...(fv.formCTAWithinPage && { formCTAWithinPage: fv.formCTAWithinPage }),
+      }))
+      .filter((source) => !!source.formSource);
     return {
       url,
       ...(formSources.length > 0 && { formSources }),
