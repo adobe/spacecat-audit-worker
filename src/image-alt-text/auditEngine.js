@@ -13,6 +13,7 @@
 import { isNonEmptyArray, hasText } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { franc } from 'franc-min';
+import { validCountryCodes } from './country-code.js';
 
 // GPT support: https://platform.openai.com/docs/guides/vision
 const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg)(?=\?|$)/i;
@@ -93,7 +94,30 @@ function detectLanguageFromDom({ document }) {
   return UNKNOWN_LANGUAGE;
 }
 
-const getPageLanguage = ({ document }) => {
+function detectLanguageFromUrl(pageUrl) {
+  try {
+    const url = new URL(pageUrl);
+    const pathSegments = url.pathname.split('/');
+    const segmentsToCheck = pathSegments.slice(0, -1);
+
+    // Check each path segment for country codes
+    for (const segment of segmentsToCheck) {
+      if (segment.length > 0) {
+        const lowerSegment = segment.toLowerCase();
+        if (validCountryCodes.has(lowerSegment)) {
+          return lowerSegment;
+        }
+      }
+    }
+
+    return null;
+  } catch (error) {
+    this.log.error(`[${AUDIT_TYPE}]: Error detecting language from URL ${pageUrl}:`, error);
+    return null;
+  }
+}
+
+const getPageLanguage = ({ document, pageUrl }) => {
   let lang = UNKNOWN_LANGUAGE;
   if (!document) {
     return lang;
@@ -101,6 +125,14 @@ const getPageLanguage = ({ document }) => {
 
   lang = detectLanguageFromDom({ document });
   if (lang === UNKNOWN_LANGUAGE) {
+    // Check the page URL for the language
+    if (pageUrl) {
+      const urlLanguage = detectLanguageFromUrl(pageUrl);
+      if (urlLanguage) {
+        return urlLanguage;
+      }
+    }
+
     const bodyText = document.querySelector('body').textContent;
     const cleanedText = bodyText.replace(/[\n\t]/g, '').replace(/ {2,}/g, ' ');
     lang = detectLanguageFromText(cleanedText);
@@ -123,7 +155,7 @@ export default class AuditEngine {
       return;
     }
 
-    const pageLanguage = getPageLanguage({ document: pageImages.dom?.window?.document });
+    const pageLanguage = getPageLanguage({ document: pageImages.dom?.window?.document, pageUrl });
 
     this.log.debug(`[${AUDIT_TYPE}]: Language: ${pageLanguage}, Page: ${pageUrl}`);
 
