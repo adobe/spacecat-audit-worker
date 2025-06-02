@@ -118,7 +118,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
       title: 'Form has low views',
       description: 'The form has low views but the page containing the form has higher traffic',
       tags: [
-        'Form View',
+        'Form Placement',
       ],
       data: {
         form: 'https://www.surest.com/high-page-low-form-view',
