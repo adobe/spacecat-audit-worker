@@ -1,3 +1,10 @@
+## [1.97.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.2...v1.97.3) (2025-06-02)
+
+
+### Bug Fixes
+
+* preflight response bottlenecks ([#919](https://github.com/adobe/spacecat-audit-worker/issues/919)) ([3acfaed](https://github.com/adobe/spacecat-audit-worker/commit/3acfaedcf0b5dba55cc25da28577613df4486b16))
+
 ## [1.97.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.1...v1.97.2) (2025-06-02)
 
 
