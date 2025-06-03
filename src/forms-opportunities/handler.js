@@ -12,7 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
+//  import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { generateOpptyData, getUrlsDataForAccessibilityAudit } from './utils.js';
@@ -21,6 +21,8 @@ import createLowConversionOpportunities from './oppty-handlers/low-conversion-ha
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
 import createA11yOpportunity from './oppty-handlers/accessibility-handler.js';
+
+const FORMS_AUDIT_INTERVAL = 7;
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
