@@ -146,7 +146,7 @@
       }
     ],
     "auditContext": {
-      "interval": 15
+      "interval": 7
     }
   },
   "fullAuditRef": "www.example.com"

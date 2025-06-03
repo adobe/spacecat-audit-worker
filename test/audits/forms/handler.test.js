@@ -54,7 +54,7 @@ describe('Forms Vitals audit', () => {
     sinon.restore();
   });
 
-  it.skip('form vitals audit runs rum api client formVitals query', async () => {
+  it('form vitals audit runs rum api client formVitals query', async () => {
     const FORMS_OPPTY_QUERIES = [
       'cwv',
       'form-vitals',
@@ -111,7 +111,7 @@ describe('audit and send scraping step', () => {
     sinon.restore();
   });
 
-  it.skip('run audit and send urls for scraping step', async () => {
+  it('run audit and send urls for scraping step', async () => {
     const FORMS_OPPTY_QUERIES = [
       'cwv',
       'form-vitals',
@@ -119,7 +119,7 @@ describe('audit and send scraping step', () => {
     const result = await runAuditAndSendUrlsForScrapingStep(context);
     expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
       domain: 'www.example.com',
-      interval: 15,
+      interval: 7,
       granularity: 'hourly',
     });
     expect(result).to.deep.equal(expectedFormSendToScraperData);
