@@ -142,14 +142,21 @@ export function updateViolationData(aggregatedData, violations, level) {
  * Gets object keys from subfolders for a specific site and version
  * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
  * @param {string} bucketName - the name of the S3 bucket
+ * @param {string} storagePrefix - the prefix of the S3 storage
  * @param {string} siteId - the site ID to look for
  * @param {string} version - the version/date to filter by
  * @param {import('@azure/logger').Logger} log - a logger instance
  * @returns {Promise<{success: boolean, objectKeys: string[], message: string}>} - result
  */
-export async function getObjectKeysFromSubfolders(s3Client, bucketName, siteId, version, log) {
-  // Prefix for accessibility data for this site in S3
-  const prefix = `accessibility/${siteId}/`;
+export async function getObjectKeysFromSubfolders(
+  s3Client,
+  bucketName,
+  storagePrefix,
+  siteId,
+  version,
+  log,
+) {
+  const prefix = `${storagePrefix}/${siteId}/`;
   const delimiter = '/';
   log.info(`Fetching accessibility data for site ${siteId} from bucket ${bucketName}`);
 
@@ -338,6 +345,7 @@ export async function aggregateAccessibilityData(
     const objectKeysResult = await getObjectKeysFromSubfolders(
       s3Client,
       bucketName,
+      'accessibility',
       siteId,
       version,
       log,

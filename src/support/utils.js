@@ -320,15 +320,11 @@ export const getScrapedDataForSiteId = async (site, context) => {
 
   // fetch scrape data
   await fetchFiles();
-  // fetch a11y data
-  continuationToken = null;
-  await fetchFiles(`forms-accessibility/${siteId}`);
 
   if (!isNonEmptyArray(allFiles)) {
     return {
       headerLinks: [],
       formData: [],
-      formA11yData: [],
       siteData: [],
     };
   }
@@ -359,19 +355,15 @@ export const getScrapedDataForSiteId = async (site, context) => {
   log.info(`siteData: ${JSON.stringify(extractedData)}`);
 
   let scrapedFormData;
-  let scrapedFormA11yData;
   log.info(`all files: ${JSON.stringify(allFiles)}`);
   if (allFiles) {
     const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
     scrapedFormData = await fetchContentOfFiles(formFiles);
-    const a11yFiles = allFiles.filter((file) => file.Key.includes('forms-accessibility/'));
-    scrapedFormA11yData = await fetchContentOfFiles(a11yFiles);
   }
 
   return {
     headerLinks,
     formData: scrapedFormData,
-    formA11yData: scrapedFormA11yData,
     siteData: extractedData.filter(Boolean),
   };
 };
