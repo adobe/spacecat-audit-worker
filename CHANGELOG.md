@@ -1,3 +1,10 @@
+## [1.97.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.5...v1.97.6) (2025-06-03)
+
+
+### Bug Fixes
+
+* **forms-a11y:** update accessibility data processing and opportunity creation ([#924](https://github.com/adobe/spacecat-audit-worker/issues/924)) ([6199178](https://github.com/adobe/spacecat-audit-worker/commit/61991784b484a86fa74b426e36f4b04da0bbe016))
+
 ## [1.97.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.4...v1.97.5) (2025-06-03)
 
 
