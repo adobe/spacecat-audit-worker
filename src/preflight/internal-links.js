@@ -14,63 +14,70 @@ import { JSDOM } from 'jsdom';
 
 /**
  * Preflight check for internal links
+ * @param {Array<String>} urls - Array of URLs to check
  * @param {Array<Object>} scrapedObjects - Array of objects containing the URL and scraped data
  * @param {Object} context - Context object containing the logger
  * @param {RequestOptions} options - Options for to pass to the fetch request
  * @param {String} options.pageAuthToken - Optional authorization token for the page
- * @returns {Promise<Array>} - Array of objects containing the page URL and internal link status
+ * @returns {Promise<Array<Object>>} - Array of objects containing the page URL and link status
  */
-export async function runInternalLinkChecks(scrapedObjects, context, options = {
+export async function runInternalLinkChecks(urls, scrapedObjects, context, options = {
   pageAuthToken: null,
 }) {
   const { log } = context;
   const brokenInternalLinks = [];
 
+  const urlSet = new Set(urls);
+
   await Promise.all(
-    scrapedObjects.map(async ({ data }) => {
-      const html = data.scrapeResult.rawBody;
-      const pageUrl = data.finalUrl;
-      const dom = new JSDOM(html);
+    scrapedObjects
+      .filter(({ data }) => urlSet.has(data.finalUrl))
+      .map(async ({ data }) => {
+        const html = data.scrapeResult.rawBody;
+        const pageUrl = data.finalUrl;
+        const dom = new JSDOM(html);
 
-      const doc = dom.window.document;
-      const anchors = Array.from(doc.querySelectorAll('a[href]'));
-      const pageOrigin = new URL(pageUrl).origin;
-      const internalSet = new Set();
+        const doc = dom.window.document;
+        const anchors = Array.from(doc.querySelectorAll('a[href]'));
+        const pageOrigin = new URL(pageUrl).origin;
+        const internalSet = new Set();
 
-      anchors.forEach((a) => {
-        const abs = new URL(a.href, pageUrl).toString();
-        if (new URL(abs).origin === pageOrigin) {
-          internalSet.add(abs);
-        }
-      });
-
-      log.info('[preflight-audit] Found internal links:', internalSet);
-
-      await Promise.all(
-        Array.from(internalSet).map(async (href) => {
+        anchors.forEach((a) => {
           try {
-            const res = await fetch(href, {
-              method: 'HEAD',
-              ...(options.pageAuthToken ? {
+            const abs = new URL(a.href, pageUrl).toString();
+            if (new URL(abs).origin === pageOrigin) {
+              internalSet.add(abs);
+            }
+          } catch {
+            // skip invalid hrefs
+          }
+        });
+
+        log.info('[preflight-audit] Found internal links:', internalSet);
+
+        await Promise.all(
+          Array.from(internalSet).map(async (href) => {
+            try {
+              const res = await fetch(href, {
+                method: 'HEAD',
                 headers: {
                   Authorization: options.pageAuthToken,
                 },
-              } : {}),
-            });
-            if (res.status === 404) {
-              brokenInternalLinks.push({ pageUrl, href, status: 404 });
+              });
+              if (res.status === 404) {
+                brokenInternalLinks.push({ pageUrl, href, status: 404 });
+              }
+            } catch (err) {
+              brokenInternalLinks.push({
+                pageUrl,
+                href,
+                status: null,
+                error: err.message,
+              });
             }
-          } catch (err) {
-            brokenInternalLinks.push({
-              pageUrl,
-              href,
-              status: null,
-              error: err.message,
-            });
-          }
-        }),
-      );
-    }),
+          }),
+        );
+      }),
   );
 
   return {

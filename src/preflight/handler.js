@@ -152,7 +152,7 @@ export const preflightAudit = async (context) => {
     );
 
     // Internal link checks
-    const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
+    const { auditResult } = await runInternalLinkChecks(urls, scrapedObjects, context, {
       pageAuthToken: `token ${pageAuthToken}`,
     });
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {

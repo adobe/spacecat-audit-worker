@@ -39,7 +39,7 @@ describe('Preflight Audit', () => {
     expect(result).to.be.true;
   });
 
-  describe('runInternalLinkChecks with nock', () => {
+  describe('runInternalLinkChecks', () => {
     let context;
 
     beforeEach(() => {
@@ -56,6 +56,7 @@ describe('Preflight Audit', () => {
     });
 
     it('returns no broken links when all internal links are valid', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://main--example--page.aem.page')
         .head('/foo')
         .reply(200)
@@ -65,15 +66,16 @@ describe('Preflight Audit', () => {
       const scrapedObjects = [{
         data: {
           scrapeResult: { rawBody: '<a href="/foo">foo</a><a href="https://main--example--page.aem.page/bar">bar</a>' },
-          finalUrl: 'https://main--example--page.aem.page/page1',
+          finalUrl: urls[0],
         },
       }];
 
-      const result = await runInternalLinkChecks(scrapedObjects, context);
+      const result = await runInternalLinkChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
     });
 
     it('returns broken links for 404 responses', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://main--example--page.aem.page')
         .head('/broken')
         .reply(404);
@@ -81,17 +83,18 @@ describe('Preflight Audit', () => {
       const scrapedObjects = [{
         data: {
           scrapeResult: { rawBody: '<a href="/broken">broken</a>' },
-          finalUrl: 'https://main--example--page.aem.page/page1',
+          finalUrl: urls[0],
         },
       }];
 
-      const result = await runInternalLinkChecks(scrapedObjects, context);
+      const result = await runInternalLinkChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([
         { pageUrl: 'https://main--example--page.aem.page/page1', href: 'https://main--example--page.aem.page/broken', status: 404 },
       ]);
     });
 
     it('handles fetch errors', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://main--example--page.aem.page')
         .head('/fail')
         .replyWithError('network fail');
@@ -99,18 +102,137 @@ describe('Preflight Audit', () => {
       const scrapedObjects = [{
         data: {
           scrapeResult: { rawBody: '<a href="/fail">fail</a>' },
-          finalUrl: 'https://main--example--page.aem.page/page1',
+          finalUrl: urls[0],
         },
       }];
 
-      const result = await runInternalLinkChecks(scrapedObjects, context);
+      const result = await runInternalLinkChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
       expect(result.auditResult.brokenInternalLinks[0]).to.include({
-        pageUrl: 'https://main--example--page.aem.page/page1',
+        pageUrl: urls[0],
         href: 'https://main--example--page.aem.page/fail',
         status: null,
       });
       expect(result.auditResult.brokenInternalLinks[0].error).to.match(/network fail/);
+    });
+
+    it('filters out scrapedObjects not in the urls list', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      const scrapedObjects = [
+        {
+          data: {
+            scrapeResult: { rawBody: '<a href="/foo">foo</a>' },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        },
+        {
+          data: {
+            scrapeResult: { rawBody: '<a href="/bar">bar</a>' },
+            finalUrl: 'https://main--example--page.aem.page/page2', // Not in urls list
+          },
+        },
+      ];
+
+      nock('https://main--example--page.aem.page')
+        .head('/foo')
+        .reply(200);
+      // Should NOT make a request for /bar since page2 is filtered out
+
+      const result = await runInternalLinkChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+      // Verify only one page was processed
+      expect(context.log.info).to.have.been.calledOnce;
+    });
+
+    it('returns empty array when no scrapedObjects match urls', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/foo">foo</a>' },
+          finalUrl: 'https://main--example--page.aem.page/page2', // Different URL
+        },
+      }];
+
+      const result = await runInternalLinkChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+      // Verify no pages were processed
+      expect(context.log.info).not.to.have.been.called;
+    });
+
+    it('processes multiple pages when multiple urls match', async () => {
+      const urls = ['https://main--example--page.aem.page/page1', 'https://main--example--page.aem.page/page2'];
+      const scrapedObjects = [
+        {
+          data: {
+            scrapeResult: { rawBody: '<a href="/link1">link1</a>' },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        },
+        {
+          data: {
+            scrapeResult: { rawBody: '<a href="/link2">link2</a>' },
+            finalUrl: 'https://main--example--page.aem.page/page2',
+          },
+        },
+        {
+          data: {
+            scrapeResult: { rawBody: '<a href="/link3">link3</a>' },
+            finalUrl: 'https://main--example--page.aem.page/page3', // Not in urls
+          },
+        },
+      ];
+
+      nock('https://main--example--page.aem.page')
+        .head('/link1')
+        .reply(200)
+        .head('/link2')
+        .reply(200);
+
+      const result = await runInternalLinkChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+      // Verify only two pages were processed
+      expect(context.log.info).to.have.been.calledTwice;
+    });
+
+    it('skips invalid hrefs', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://main--example--page.aem.page')
+        .head('/good')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="http://[::1">bad</a><a href="/good">good</a>' },
+          finalUrl: 'https://main--example--page.aem.page/page1',
+        },
+      }];
+
+      const result = await runInternalLinkChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+      expect(context.log.info).to.have.been.calledWithMatch('[preflight-audit] Found internal links:');
+    });
+
+    it('includes auth token in requests', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      const authToken = 'secret-token';
+
+      nock('https://main--example--page.aem.page', {
+        headers: {
+          Authorization: authToken,
+        },
+      })
+        .head('/secure')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/secure">secure</a>' },
+          finalUrl: 'https://main--example--page.aem.page/page1',
+        },
+      }];
+
+      const result = await runInternalLinkChecks(urls, scrapedObjects, context, { pageAuthToken: `token ${authToken}` });
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
     });
   });
 
