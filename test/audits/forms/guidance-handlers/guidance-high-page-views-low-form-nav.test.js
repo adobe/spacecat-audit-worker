@@ -49,6 +49,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
+        formsource: '.form',
         guidance: 'Some guidance',
       },
     };
@@ -60,7 +61,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
 
   it('should update an existing opportunity', async () => {
     const existingOpportunity = {
-      getData: sinon.stub().returns({ form: 'https://example.com' }),
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
       getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION),
       setAuditId: sinon.stub(),
       setGuidance: sinon.stub(),
