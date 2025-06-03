@@ -1,3 +1,10 @@
+## [1.97.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.6...v1.97.7) (2025-06-03)
+
+
+### Bug Fixes
+
+* **forms:** use form source to identify oppty to update guidance ([#917](https://github.com/adobe/spacecat-audit-worker/issues/917)) ([1c3da05](https://github.com/adobe/spacecat-audit-worker/commit/1c3da053472f4bae8f4a3be3206e65aeffe7f0d3))
+
 ## [1.97.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.5...v1.97.6) (2025-06-03)
 
 
