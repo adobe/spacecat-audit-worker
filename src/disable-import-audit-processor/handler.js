@@ -10,11 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { Site, Audit } from '@adobe/spacecat-shared-data-access';
+import { Site } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE = 'disable-import-audit-processor';
 
 /**
@@ -38,7 +37,7 @@ export async function runDisableImportAuditProcessor(message, context) {
     importTypes,
     auditTypes,
   });
-  await sendSlackMessage(env, log, slackContext, 'Disabling imports and audits');
+  await sendSlackMessage(env, log, slackContext, ':broom: Disabling imports and audits...');
   try {
     // Database operations
     log.info('Starting database operations');
@@ -48,14 +47,14 @@ export async function runDisableImportAuditProcessor(message, context) {
     }
     const siteConfig = site.getConfig();
     for (const importType of importTypes) {
-      log.info(`Disabling import type: ${importType}`);
+      log.info(`:broom: Disabling import type: ${importType}`);
       siteConfig.disableImport(importType);
     }
     log.info('Import types disabled');
 
     const configuration = await Configuration.findLatest();
     for (const auditType of auditTypes) {
-      log.info(`Disabling audit type: ${auditType}`);
+      log.info(`:broom: Disabling audit type: ${auditType}`);
       configuration.disableHandlerForSite(auditType, site);
     }
     log.info('Audit types disabled');
@@ -64,8 +63,7 @@ export async function runDisableImportAuditProcessor(message, context) {
     await configuration.save();
     log.info('Database changes saved successfully');
 
-    const slackMessage = `:check_mark: Disabled imports ${JSON.stringify(importTypes)} and audits ${JSON.stringify(auditTypes)} for site ${siteId} is complete`;
-    log.info('Sending second Slack message:', { message: slackMessage });
+    const slackMessage = `:check_mark: Disabled imports ${JSON.stringify(importTypes)} and audits ${JSON.stringify(auditTypes)} for site ${siteId}`;
     await sendSlackMessage(env, log, slackContext, slackMessage);
 
     return {
@@ -100,6 +98,6 @@ export async function runDisableImportAuditProcessor(message, context) {
 
 // Export the built handler for use with AuditBuilder
 export default new AuditBuilder()
+  .withRunner(runDisableImportAuditProcessor)
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('run-disable-processor', runDisableImportAuditProcessor, AUDIT_STEP_DESTINATIONS.AUDIT_WORKER)
   .build();

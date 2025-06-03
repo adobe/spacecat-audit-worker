@@ -14,13 +14,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendSlackMessage } from '../support/slack-utils.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE = 'audit-status-processor';
-
-/** Prepare demo url for the site */
-function prepareDemoUrl(experienceUrl, organizationId, siteId) {
-  return `${experienceUrl}?organizationId=${organizationId}#/@aemrefdemoshared/sites-optimizer/sites/${siteId}/home`;
-}
 
 /**
  * Runs the audit status processor
@@ -33,12 +27,11 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
   log.info('Running audit status processor');
   const { siteId, auditContext } = auditStatusMessage;
   const {
-    experienceUrl: siteUrl, organizationId, auditTypes, slackContext,
+    organizationId, auditTypes, slackContext,
   } = auditContext;
 
   log.info('Processing audit status for site:', {
     siteId,
-    siteUrl,
     organizationId,
     auditType: AUDIT_TYPE,
     auditTypes,
@@ -76,46 +69,10 @@ export async function runAuditStatusProcessor(auditStatusMessage, context) {
       errorType: error.name,
     });
   }
-
-  try {
-    // prepare demo url
-    const demoUrl = prepareDemoUrl(siteUrl, organizationId, siteId);
-    log.info(`Demo url is ready ${demoUrl}`);
-    const slackMessage = `:tada: Demo url: ${demoUrl}`;
-    await sendSlackMessage(env, log, slackContext, slackMessage);
-    return {
-      siteId,
-      auditResult: {
-        status: 'Completed',
-        siteId,
-        organizationId,
-        experienceUrl: siteUrl,
-        success: true,
-      },
-      fullAuditRef: siteUrl,
-    };
-  } catch (error) {
-    log.error('Error in preparing demo url:', {
-      error: error.message,
-      stack: error.stack,
-      errorType: error.name,
-    });
-
-    return {
-      siteId,
-      auditResult: {
-        status: 'error',
-        siteId,
-        error: `Preparing demo url failed for ${siteId}: ${error.message}`,
-        success: false,
-      },
-      fullAuditRef: siteUrl,
-    };
-  }
 }
 
 // Export the built handler for use with AuditBuilder
 export default new AuditBuilder()
+  .withRunner(runAuditStatusProcessor)
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('run-audit-status', runAuditStatusProcessor, AUDIT_STEP_DESTINATIONS.AUDIT_WORKER)
   .build();
