@@ -58,7 +58,6 @@ const promptOnlyBatchPromises = (
     model: MODEL,
     imageUrls: batch.filter((image) => !image.blob).map((image) => image.url),
   };
-  log.info(`[${AUDIT_TYPE}]: image batch: ${JSON.stringify(batch)}`);
   const prompt = await getPrompt({ images: batch }, PROMPT_FILE, log);
   return getFirefallResponse(prompt, firefallClient, firefallOptions, log);
 });
