@@ -1,3 +1,10 @@
+## [1.97.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.4...v1.97.5) (2025-06-03)
+
+
+### Bug Fixes
+
+* detect language from url ([#925](https://github.com/adobe/spacecat-audit-worker/issues/925)) ([3833206](https://github.com/adobe/spacecat-audit-worker/commit/383320655919ed000a7d7df533a5591de512781d))
+
 ## [1.97.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.3...v1.97.4) (2025-06-03)
 
 
