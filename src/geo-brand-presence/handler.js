@@ -73,6 +73,7 @@ export async function keywordQuestionsImportStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
+  .withPersister(() => true)
   .addStep('keywordQuestionsImportStep', keywordQuestionsImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('sendToMystique', sendToMystique)
   .build();
