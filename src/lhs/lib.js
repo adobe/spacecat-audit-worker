@@ -60,6 +60,16 @@ export function extractThirdPartySummary(psiAudit) {
     }));
 }
 
+export function extractNetworkRequests(psiAudit) {
+  const items = psiAudit?.['network-requests']?.details?.items || [];
+
+  return Object.values(items).map((item) => ({
+    url: item.url,
+    statusCode: item.statusCode,
+    priority: item.priority,
+  }));
+}
+
 /**
  * Retrieves the last modified date of the content from a given URL. If the URL is not accessible,
  * the function returns the current date in ISO format.
@@ -111,7 +121,7 @@ const createAuditData = (
   const scores = extractAuditScores(categories);
   const totalBlockingTime = extractTotalBlockingTime(audits);
   const thirdPartySummary = extractThirdPartySummary(audits);
-
+  const networkRequests = extractNetworkRequests(audits);
   return {
     fullAuditRef,
     auditResult: {
@@ -120,6 +130,7 @@ const createAuditData = (
       scores,
       thirdPartySummary,
       totalBlockingTime,
+      networkRequests,
       runtimeError,
     },
   };
