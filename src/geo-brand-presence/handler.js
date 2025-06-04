@@ -66,14 +66,14 @@ export async function keywordQuestionsImportStep(context) {
   return {
     type: ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE,
     siteId: site.getId(),
-    auditResult: {},
+    // auditResult can't be empty, so sending empty array
+    auditResult: { keywordQuestions: [] },
     fullAuditRef: finalUrl,
   };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withPersister(() => true)
   .addStep('keywordQuestionsImportStep', keywordQuestionsImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('sendToMystique', sendToMystique)
   .build();
