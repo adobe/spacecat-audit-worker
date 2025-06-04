@@ -18,6 +18,8 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+const ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE = 'organic-keywords-questions';
+// const ORGANIC_KEYWORDS_NONBRANDED_IMPORT_TYPE = 'organic-keywords-nonbranded';
 const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'guidance:geo-brand-presence';
 
 export async function sendToMystique(context) {
@@ -32,14 +34,14 @@ export async function sendToMystique(context) {
     },
   };
   const keywordQuestions = await getStoredMetrics(
-    { source: 'ahrefs', metric: 'keyword-questions', siteId: site.getId() },
+    { source: 'ahrefs', metric: ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE, siteId: site.getId() },
     storedMetricsConfig,
-  ).map((keywordQuestion) => ({
+  ).filter((keywordQuestion) => keywordQuestion?.questions?.length > 0).map((keywordQuestion) => ({
     keyword: keywordQuestion.keyword,
     questions: keywordQuestion.questions,
     pageUrl: keywordQuestion.url,
   }));
-
+  log.info(`Found ${keywordQuestions.length} keyword questions`);
   const message = {
     type: GEO_BRAND_PRESENCE_OPPTY_TYPE,
     siteId: site.getId(),
@@ -54,42 +56,23 @@ export async function sendToMystique(context) {
   log.info(`GEO BRAND PRESENCE Message sent to Mystique: ${JSON.stringify(message)}`);
 }
 
-export async function keywordsImportStep(context) {
-  const { site, finalUrl } = context;
+export async function keywordQuestionsImportStep(context) {
+  const {
+    site,
+    finalUrl,
+    log,
+  } = context;
+  log.info(`Keyword questions import step for ${finalUrl}`);
   return {
-    type: 'organic-keywords-nonbranded',
+    type: ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE,
     siteId: site.getId(),
     auditResult: {},
     fullAuditRef: finalUrl,
   };
 }
 
-export async function keywordQuestionsImportStep(context) {
-  const {
-    site, log, finalUrl, s3Client,
-  } = context;
-  const storedMetricsConfig = {
-    ...context,
-    s3: {
-      s3Bucket: context.env?.S3_IMPORTER_BUCKET_NAME,
-      s3Client,
-    },
-  };
-  const nonBrandedKeywords = await getStoredMetrics(
-    { source: 'ahrefs', metric: 'organic-keywords-nonbranded', siteId: site.getId() },
-    storedMetricsConfig,
-  ).filter((keyword) => keyword.isBranded === false).map((keyword) => keyword.keyword);
-  log.info(`Non branded keywords step for ${finalUrl}, found ${nonBrandedKeywords.length} keywords: ${nonBrandedKeywords.join(', ')}`);
-  return {
-    type: 'keywords-questions',
-    siteId: site.getId(),
-    keywords: nonBrandedKeywords,
-  };
-}
-
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('keywordsImportStep', keywordsImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('keywordQuestionsImportStep', keywordQuestionsImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('sendToMystique', sendToMystique)
   .build();
