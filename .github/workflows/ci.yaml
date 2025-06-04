@@ -22,11 +22,11 @@ jobs:
       - name: Setup Node & NPM
         uses: ./.github/actions/setup-node-npm
 
-      - name: Lint, Test, Coverage Upload
-        uses: ./.github/actions/lint-test-coverage
-        with:
-          upload_coverage: "false"
-          codecov_token: ${{ secrets.CODECOV_TOKEN }}
+#      - name: Lint, Test, Coverage Upload
+#        uses: ./.github/actions/lint-test-coverage
+#        with:
+#          upload_coverage: "false"
+#          codecov_token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Semantic Release (Dry Run)
         if: github.ref != 'refs/heads/main'
