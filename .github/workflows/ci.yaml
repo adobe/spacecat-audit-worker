@@ -25,7 +25,7 @@ jobs:
       - name: Lint, Test, Coverage Upload
         uses: ./.github/actions/lint-test-coverage
         with:
-          upload_coverage: "true"
+          upload_coverage: "false"
           codecov_token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Semantic Release (Dry Run)
