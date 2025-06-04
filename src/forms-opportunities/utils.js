@@ -17,7 +17,6 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
-  getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
 
@@ -265,6 +264,92 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
   }
 
   return opportunityData;
+}
+
+const DAILY_PAGEVIEW_THRESHOLD = 200;
+
+const FORMS_AUDIT_INTERVAL = 7;
+
+const MOBILE = 'mobile';
+const DESKTOP = 'desktop';
+
+function hasHighViews(views) {
+  return views > DAILY_PAGEVIEW_THRESHOLD * FORMS_AUDIT_INTERVAL;
+}
+
+function hasLowFormViews(pageViews, formViews, formEngagement) {
+  if (formViews < DAILY_PAGEVIEW_THRESHOLD * FORMS_AUDIT_INTERVAL) {
+    // If form views are less than this threshold, then we can anyways
+    // cannot proceed to detecting low form conversion opportunity as
+    // experimentation wont be possible without increasing views.
+    return formViews > 0 && (formViews / pageViews) < 0.6 && formEngagement > 0;
+  } else {
+    // if we have sufficient form views for experimentation,
+    // then we can make the ratio check stricter to 30%.
+    return formViews > 0 && (formViews / pageViews) < 0.3 && formEngagement > 0;
+  }
+}
+
+function aggregateFormVitalsByDevice(formVitalsCollection) {
+  const resultMap = new Map();
+
+  formVitalsCollection.forEach((item) => {
+    const {
+      url, formview = {}, formengagement = {}, pageview = {}, formsubmit = {},
+      trafficacquisition = {}, formsource = '', iframeSrc,
+    } = item;
+
+    const totals = {
+      formview: { total: 0, desktop: 0, mobile: 0 },
+      formengagement: { total: 0, desktop: 0, mobile: 0 },
+      pageview: { total: 0, desktop: 0, mobile: 0 },
+      formsubmit: { total: 0, desktop: 0, mobile: 0 },
+    };
+
+    const calculateSums = (metric, initialTarget) => {
+      const updatedTarget = { ...initialTarget }; // Create a new object to store the updated totals
+      Object.entries(metric).forEach(([key, value]) => {
+        updatedTarget.total += value;
+        if (key.startsWith(DESKTOP)) {
+          updatedTarget.desktop += value;
+        } else if (key.startsWith(MOBILE)) {
+          updatedTarget.mobile += value;
+        }
+      });
+      return updatedTarget; // Return the updated target
+    };
+
+    totals.formview = calculateSums(formview, totals.formview);
+    totals.formengagement = calculateSums(formengagement, totals.formengagement);
+    totals.pageview = calculateSums(pageview, totals.pageview);
+    totals.formsubmit = calculateSums(formsubmit, totals.formsubmit);
+    totals.trafficacquisition = trafficacquisition;
+    totals.formsource = formsource.startsWith('dialog') ? formsource.replace('dialog ', '') : formsource;
+    if (iframeSrc) {
+      totals.iframeSrc = iframeSrc;
+    }
+    resultMap.set(url, totals);
+  });
+
+  return resultMap;
+}
+
+function getHighPageViewsLowFormViewsMetrics(formVitalsCollection) {
+  const urls = [];
+  const resultMap = aggregateFormVitalsByDevice(formVitalsCollection);
+  resultMap.forEach((metrics, url) => {
+    const { total: pageViews } = metrics.pageview;
+    const { total: formViews } = metrics.formview;
+    const { total: formEngagement } = metrics.formengagement;
+
+    if (hasHighViews(pageViews) && hasLowFormViews(pageViews, formViews, formEngagement)) {
+      urls.push({
+        url,
+        ...metrics,
+      });
+    }
+  });
+  return urls;
 }
 
 export async function generateOpptyData(
