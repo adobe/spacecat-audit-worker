@@ -45,6 +45,8 @@ import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-ha
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import geoBrandPresence from './geo-brand-presence/handler.js';
+import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -73,6 +75,8 @@ const HANDLERS = {
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
+  'geo-brand-presence': geoBrandPresence,
+  'guidance:geo-brand-presence': guidanceGeoBrandPresence,
   preflight,
   dummy: (message) => ok(message),
 };
