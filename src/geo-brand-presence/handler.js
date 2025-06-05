@@ -33,15 +33,33 @@ export async function sendToMystique(context) {
       s3Client,
     },
   };
-  const keywordQuestions = await getStoredMetrics(
+  const keywordQuestions = (await getStoredMetrics(
     { source: 'ahrefs', metric: ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE, siteId: site.getId() },
     storedMetricsConfig,
-  ).filter((keywordQuestion) => keywordQuestion?.questions?.length > 0).map((keywordQuestion) => ({
+  ))?.filter(
+    (keywordQuestion) => keywordQuestion?.questions?.length > 0,
+  )?.map((keywordQuestion) => ({
     keyword: keywordQuestion.keyword,
     questions: keywordQuestion.questions,
     pageUrl: keywordQuestion.url,
+    importTime: keywordQuestion.importTime,
   }));
-  log.info(`Found ${keywordQuestions.length} keyword questions`);
+  // remove duplicates, as metrics will keep appending the same keyword questions for every run
+  const uniqueKeywordQuestions = keywordQuestions.reduce((acc, curr) => {
+    const existing = acc.find(
+      (item) => item.keyword === curr.keyword && item.pageUrl === curr.pageUrl,
+    );
+    if (existing && new Date(existing.importTime) > new Date(curr.importTime)) {
+      return acc;
+    }
+    return [
+      ...acc.filter(
+        (item) => item.keyword !== curr.keyword && item.pageUrl !== curr.pageUrl,
+      ),
+      curr,
+    ];
+  }, []);
+  log.info(`Found ${uniqueKeywordQuestions?.length} keyword questions`);
   const message = {
     type: GEO_BRAND_PRESENCE_OPPTY_TYPE,
     siteId: site.getId(),
@@ -49,7 +67,7 @@ export async function sendToMystique(context) {
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
     data: {
-      keywordQuestions,
+      keywordQuestions: uniqueKeywordQuestions,
     },
   };
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
@@ -75,6 +93,6 @@ export async function keywordQuestionsImportStep(context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('keywordQuestionsImportStep', keywordQuestionsImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('sendToMystique', sendToMystique)
+  .addStep('sendToMystiqueStep', sendToMystique)
   .build();
 /* c8 ignore end */
