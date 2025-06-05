@@ -173,7 +173,7 @@ describe('LLM Blocked Audit', () => {
       rank: 10,
       data: {
         url: blockedUrl,
-        blockedAgents: ['ClaudeBot/1.0'],
+        blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
       },
     });
   });
