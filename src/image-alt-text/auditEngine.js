@@ -13,6 +13,7 @@
 import { isNonEmptyArray, hasText } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { franc } from 'franc-min';
+import { validCountryCodes } from './country-code.js';
 
 // GPT support: https://platform.openai.com/docs/guides/vision
 const SUPPORTED_FORMATS = /\.(webp|png|gif|jpeg|jpg)(?=\?|$)/i;
@@ -78,11 +79,6 @@ function detectLanguageFromText(text) {
 }
 
 function detectLanguageFromDom({ document }) {
-  const htmlTag = document.querySelector('html');
-  if (htmlTag && htmlTag.hasAttribute('lang')) {
-    return htmlTag.getAttribute('lang');
-  }
-
   const metaTags = document.querySelectorAll('meta[http-equiv="Content-Language"], meta[name="language"]');
   for (const meta of metaTags) {
     if (meta.hasAttribute('content')) {
@@ -93,19 +89,50 @@ function detectLanguageFromDom({ document }) {
   return UNKNOWN_LANGUAGE;
 }
 
-const getPageLanguage = ({ document }) => {
-  let lang = UNKNOWN_LANGUAGE;
-  if (!document) {
-    return lang;
+function detectLanguageFromUrl(pageUrl) {
+  const pathSegments = pageUrl.split('/');
+  const segmentsToCheck = pathSegments.slice(0, -1);
+
+  // Check each path segment for country codes
+  for (const segment of segmentsToCheck) {
+    if (segment.length > 0) {
+      const lowerSegment = segment.toLowerCase();
+      if (validCountryCodes.has(lowerSegment)) {
+        return lowerSegment;
+      }
+    }
   }
 
-  lang = detectLanguageFromDom({ document });
-  if (lang === UNKNOWN_LANGUAGE) {
-    const bodyText = document.querySelector('body').textContent;
-    const cleanedText = bodyText.replace(/[\n\t]/g, '').replace(/ {2,}/g, ' ');
-    lang = detectLanguageFromText(cleanedText);
+  return UNKNOWN_LANGUAGE;
+}
+
+const getPageLanguage = ({ document, pageUrl }) => {
+  if (!document) {
+    return UNKNOWN_LANGUAGE;
   }
-  return lang;
+
+  // Try DOM-based detection first
+  const domLanguage = detectLanguageFromDom({ document });
+  if (domLanguage !== UNKNOWN_LANGUAGE) {
+    return domLanguage;
+  }
+
+  // Try URL-based detection if pageUrl is available
+  if (pageUrl) {
+    const urlLanguage = detectLanguageFromUrl(pageUrl);
+    if (urlLanguage !== UNKNOWN_LANGUAGE) {
+      return urlLanguage;
+    }
+  }
+
+  // Fall back to text-based detection
+  const bodyText = document.querySelector('body')?.textContent;
+  if (bodyText) {
+    const cleanedText = bodyText.replace(/[\n\t]/g, '').replace(/ {2,}/g, ' ');
+    return detectLanguageFromText(cleanedText);
+  }
+
+  return UNKNOWN_LANGUAGE;
 };
 
 export default class AuditEngine {
@@ -123,7 +150,7 @@ export default class AuditEngine {
       return;
     }
 
-    const pageLanguage = getPageLanguage({ document: pageImages.dom?.window?.document });
+    const pageLanguage = getPageLanguage({ document: pageImages.dom?.window?.document, pageUrl });
 
     this.log.debug(`[${AUDIT_TYPE}]: Language: ${pageLanguage}, Page: ${pageUrl}`);
 

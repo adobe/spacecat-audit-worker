@@ -71,7 +71,7 @@ function hasHighViews(views) {
 }
 
 function hasLowerConversionRate(formSubmit, formViews, formEngagement) {
-  return formSubmit / formViews < CR_THRESHOLD_RATIO && formEngagement > 0;
+  return (formViews > 0 && formSubmit / formViews < CR_THRESHOLD_RATIO) && formEngagement > 0;
 }
 
 function hasLowFormViews(pageViews, formViews, formEngagement) {

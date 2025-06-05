@@ -437,12 +437,6 @@ describe('AuditEngine', () => {
 
   describe('Language Detection', () => {
     describe('getPageLanguage', () => {
-      it('should return the language from the lang attribute', () => {
-        const dom = new JSDOM('<html lang="en"><body></body></html>').window.document;
-        const lang = getPageLanguage({ document: dom });
-        expect(lang).to.equal('en');
-      });
-
       it('should return the language from meta tags', () => {
         const dom = new JSDOM('<html><head><meta http-equiv="Content-Language" content="fr"></head><body></body></html>').window.document;
         const lang = getPageLanguage({ document: dom });
@@ -473,6 +467,24 @@ describe('AuditEngine', () => {
         const text = '1234567890';
         const lang = detectLanguageFromText(text);
         expect(lang).to.equal('unknown');
+      });
+    });
+
+    describe('detectCountryFromUrl', () => {
+      it('should detect language from URL country code - jp', () => {
+        const dom = new JSDOM('<html><body></body></html>').window.document;
+        const lang = getPageLanguage({ document: dom, pageUrl: 'https://www.example.com/jp/about/global-network' });
+        expect(lang).to.equal('jp');
+      });
+      it('should return unknown when URL contains unrecognized country codes', () => {
+        const dom = new JSDOM('<html><body></body></html>').window.document;
+        const lang = getPageLanguage({ document: dom, pageUrl: 'https://www.example.com/hk/jp' });
+        expect(lang).to.equal('unknown');
+      });
+      it('should fall back to DOM detection when no country code in URL', () => {
+        const dom = new JSDOM('<html><body>Ceci est une phrase française simple.</body></html>').window.document;
+        const lang = getPageLanguage({ document: dom, pageUrl: 'https://example.com/products' });
+        expect(lang).to.equal('fra');
       });
     });
   });
