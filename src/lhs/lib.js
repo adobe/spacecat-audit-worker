@@ -67,9 +67,8 @@ export function extractThirdPartySummary(psiAudit) {
  * @param {Object} [log=console] - Logger object.
  * @return {Object[]} - The extracted network requests.
  */
-export function extractNetworkRequests(psiAudit, log = console) {
+export function extractNetworkRequests(psiAudit) {
   const items = psiAudit?.['network-requests']?.details?.items || [];
-  log.debug('Network requests items:', items);
 
   return Object.values(items).map((item) => ({
     url: item.url,
