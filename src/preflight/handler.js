@@ -159,6 +159,9 @@ export const preflightAudit = async (context) => {
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
         const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
+        // if (normalizedStep === AUDIT_STEP_SUGGEST) {
+        //
+        // }
         audit.opportunities.push({
           check: 'broken-internal-links',
           issue: {
