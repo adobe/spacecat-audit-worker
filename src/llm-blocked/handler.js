@@ -31,7 +31,11 @@ export async function importTopPages(context) {
   };
 }
 
-export async function checkLLMBlocked(context) {
+export function createSuggestion() {
+
+}
+
+export async function checkLLMBlocked(context, _convertToOpportunity, _syncSuggestions) {
   const {
     site,
     dataAccess,
@@ -82,12 +86,12 @@ export async function checkLLMBlocked(context) {
 
   if (failedUrls.length <= 0) {
     return {
-      auditResult: 'No blocked urls detected.',
+      auditResult: JSON.stringify([]),
       fullAuditRef: `llm-blocked::${finalUrl}`,
     };
   }
 
-  const opportunity = await convertToOpportunity(
+  const opportunity = await _convertToOpportunity(
     finalUrl,
     {
       siteId: site.getId(),
@@ -99,7 +103,7 @@ export async function checkLLMBlocked(context) {
     'llm-blocked',
   );
 
-  await syncSuggestions({
+  await _syncSuggestions({
     opportunity,
     newData: failedUrls,
     buildKey: (data) => data.url,
@@ -119,13 +123,19 @@ The following user agents have been blocked for the URL ${entry.url}: ${entry.bl
   });
 
   return {
-    auditResult: `Failed results: ${failedUrls.length} URLs blocked by CDN.`,
+    auditResult: JSON.stringify(failedUrls),
     fullAuditRef: `llm-blocked::${finalUrl}`,
   };
 }
 
+const checkLLMBlockedStep = (context) => checkLLMBlocked(
+  context,
+  convertToOpportunity,
+  syncSuggestions,
+);
+
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('check-llm-blocked', checkLLMBlocked)
+  .addStep('check-llm-blocked', checkLLMBlockedStep)
   .build();
