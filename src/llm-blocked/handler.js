@@ -110,10 +110,7 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
       type: 'CODE_CHANGE',
       rank: 10,
       data: {
-        recommendations: [],
-        suggestionValue: `
-The following user agents have been blocked for the URL ${entry.url}: ${entry.blockedAgents.map((a) => a.agent).join('; ')}
-        `,
+        ...entry,
       },
     }),
   });
