@@ -40,7 +40,7 @@ export async function sendToMystique(context) {
     (keywordQuestion) => keywordQuestion?.questions?.length > 0,
   )?.map((keywordQuestion) => ({
     keyword: keywordQuestion.keyword,
-    questions: keywordQuestion.questions,
+    q: keywordQuestion.questions,
     pageUrl: keywordQuestion.url,
     importTime: keywordQuestion.importTime,
   }));
@@ -63,6 +63,7 @@ export async function sendToMystique(context) {
   const message = {
     type: GEO_BRAND_PRESENCE_OPPTY_TYPE,
     siteId: site.getId(),
+    url: site.getBaseUrl(),
     auditId: audit.getId(),
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
