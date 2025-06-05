@@ -49,6 +49,13 @@ async function getPresignedUrl(fileName, context, url, site) {
     });
 }
 
+function calculateRate(numerator, denominator) {
+  if (denominator === 0 || Number.isNaN(numerator) || Number.isNaN(denominator)) {
+    return null; // Return null if the calculation is invalid
+  }
+  return Number((numerator / denominator).toFixed(3));
+}
+
 function getFormMetrics(metricObject) {
   const { formview, formengagement, formsubmit } = metricObject;
 
@@ -59,11 +66,11 @@ function getFormMetrics(metricObject) {
     let dropoffRate = null;
 
     if (_formViews > 0) {
-      conversionRate = _formSubmit / _formViews;
-      bounceRate = 1 - (_formEngagement / _formViews);
+      conversionRate = calculateRate(_formSubmit, _formViews);
+      bounceRate = 1 - calculateRate(_formEngagement, _formViews);
     }
     if (_formEngagement > 0) {
-      dropoffRate = 1 - (_formSubmit / _formEngagement);
+      dropoffRate = 1 - calculateRate(_formSubmit, _formEngagement);
     }
 
     return {
@@ -99,27 +106,27 @@ function convertToLowViewOpptyData(metricObject) {
   } = metricObject;
   return {
     trackedFormKPIName: 'Form View Rate',
-    trackedFormKPIValue: Number((formViews / pageViews).toFixed(3)),
+    trackedFormKPIValue: calculateRate(formViews, pageViews),
     metrics: [
       {
         type: 'formViewRate',
         device: '*',
         value: {
-          page: Number((formViews / pageViews).toFixed(3)),
+          page: calculateRate(formViews, pageViews),
         },
       },
       {
         type: 'formViewRate',
         device: 'mobile',
         value: {
-          page: Number((formViewsMobile / pageViewsMobile).toFixed(3)),
+          page: calculateRate(formViewsMobile, pageViewsMobile),
         },
       },
       {
         type: 'formViewRate',
         device: 'desktop',
         value: {
-          page: Number((formViewsDesktop / pageViewsDesktop).toFixed(3)),
+          page: calculateRate(formViewsDesktop, pageViewsDesktop),
         },
       },
       {
@@ -152,6 +159,7 @@ function convertToLowNavOpptyData(metricObject) {
 function convertToLowConversionOpptyData(metricObject) {
   const {
     pageview: { mobile: pageViewsMobile, desktop: pageViewsDesktop },
+    trafficacquisition: { sources: trafficAcquisitionSources },
   } = metricObject;
 
   const deviceWiseMetrics = getFormMetrics(metricObject);
@@ -169,7 +177,7 @@ function convertToLowConversionOpptyData(metricObject) {
     }
     const metricsConfig = [
       { type: 'conversionRate', value: conversionRate },
-      { type: 'bounceRate', value: bounceRate },
+      { type: 'formBounceRate', value: bounceRate },
       { type: 'dropoffRate', value: dropoffRate },
     ];
     metricsConfig.forEach(({ type, value }) => {
@@ -198,6 +206,16 @@ function convertToLowConversionOpptyData(metricObject) {
       page: pageViewsMobile,
     },
   });
+
+  if (Array.isArray(trafficAcquisitionSources) && trafficAcquisitionSources.length > 0) {
+    metrics.push({
+      type: 'trafficAcquisitionSource',
+      device: '*',
+      value: {
+        page: trafficAcquisitionSources,
+      },
+    });
+  }
 
   return {
     trackedFormKPIName: 'Conversion Rate',
@@ -276,12 +294,15 @@ export function shouldExcludeForm(scrapedFormData) {
 
   const containsNoInputField = scrapedFormData?.formFields?.filter((field) => field.tagName === 'input').length === 0;
 
+  const doesNotHaveButton = scrapedFormData?.formFields?.filter((field) => field.tagName === 'button').length === 0;
+
   return scrapedFormData?.formType === 'search'
     || scrapedFormData?.formType === 'login'
     || scrapedFormData?.classList?.includes('unsubscribe')
     || scrapedFormData?.fieldCount === 0
     || containsOnlyNumericInputField
-    || containsNoInputField;
+    || containsNoInputField
+    || doesNotHaveButton;
 }
 
 /**

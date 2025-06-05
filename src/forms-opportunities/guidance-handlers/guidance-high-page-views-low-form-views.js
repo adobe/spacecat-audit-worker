@@ -17,12 +17,12 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   const { auditId, siteId, data } = message;
-  const { url, guidance, formsource } = data;
-  log.info(`Message received in high-page-views-low-form-nav guidance handler: ${JSON.stringify(message, null, 2)}`);
+  const { url, formsource, guidance } = data;
+  log.info(`Message received in high-page-views-low-form-views guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   const opportunity = existingOpportunities
-    .filter((oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION)
+    .filter((oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_VIEWS)
     .find((oppty) => oppty.getData()?.form === url && (!formsource
       || oppty.getData()?.formsource === formsource));
 
@@ -34,7 +34,7 @@ export default async function handler(message, context) {
     opportunity.setGuidance(wrappedGuidance);
     opportunity.setUpdatedBy('system');
     await opportunity.save();
-    log.info(`high-page-views-low-form-nav guidance updated oppty : ${JSON.stringify(opportunity, null, 2)}`);
+    log.info(`high-page-views-low-form-views guidance updated oppty : ${JSON.stringify(opportunity, null, 2)}`);
   }
 
   return ok();

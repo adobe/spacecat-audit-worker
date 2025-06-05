@@ -19,7 +19,7 @@ import { metatagsAutoDetect } from '../metatags/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
 import { runInternalLinkChecks } from './internal-links.js';
-import { validateCanonicalFormat, validateCanonicalRecursively, validateCanonicalTag } from '../canonical/handler.js';
+import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const AUDIT_STEP_IDENTIFY = 'identify';
@@ -71,6 +71,7 @@ export async function scrapePages(context) {
     allowCache: false,
     options: {
       enableAuthentication: true,
+      screenshotTypes: [],
     },
   };
 }
@@ -120,12 +121,11 @@ export const preflightAudit = async (context) => {
         const {
           canonicalUrl,
           checks: tagChecks,
-        } = await validateCanonicalTag(url, log, authHeader);
+        } = await validateCanonicalTag(url, log, authHeader, true);
         const allChecks = [...tagChecks];
         if (canonicalUrl) {
           log.info(`Found Canonical URL: ${canonicalUrl}`);
-          allChecks.push(...validateCanonicalFormat(canonicalUrl, baseURL, log));
-          allChecks.push(...(await validateCanonicalRecursively(canonicalUrl, log, authHeader)));
+          allChecks.push(...validateCanonicalFormat(canonicalUrl, baseURL, log, true));
         }
         return { url, checks: allChecks.filter((c) => !c.success) };
       }),
@@ -153,7 +153,9 @@ export const preflightAudit = async (context) => {
     );
 
     // Internal link checks
-    const { auditResult } = await runInternalLinkChecks(scrapedObjects, pageAuthToken, context);
+    const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
+      pageAuthToken: `token ${pageAuthToken}`,
+    });
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
         const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);

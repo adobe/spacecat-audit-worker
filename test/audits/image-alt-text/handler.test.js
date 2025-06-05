@@ -144,7 +144,7 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should process images and identify presentational ones', async () => {
+    it('should process images and identify decorative ones', async () => {
       const mockScrapeResult = {
         scrapeResult: {
           rawBody: `
@@ -179,7 +179,7 @@ describe('Image Alt Text Handler', () => {
       expect(result).to.have.property('/page1');
       expect(result['/page1']).to.have.property('images');
       expect(result['/page1'].images).to.have.lengthOf(4);
-      expect(result['/page1'].images.filter((img) => img.isPresentational)).to.have.lengthOf(3);
+      expect(result['/page1'].images.filter((img) => img.isDecorative)).to.have.lengthOf(3);
     });
   });
 
@@ -287,7 +287,7 @@ describe('Image Alt Text Handler', () => {
         },
       });
       auditEngineStub.getAuditedTags.returns(
-        { imagesWithoutAltText: [], presentationalImagesCount: 0 },
+        { imagesWithoutAltText: [], decorativeImagesCount: 0 },
       );
 
       const result = await handlerModule.processAltTextAuditStep(context);
