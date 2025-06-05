@@ -122,7 +122,7 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
   };
 }
 
-const checkLLMBlockedStep = (context) => checkLLMBlocked(
+export const checkLLMBlockedStep = (context) => checkLLMBlocked(
   context,
   convertToOpportunity,
   syncSuggestions,

@@ -18,7 +18,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { MockContextBuilder } from '../shared.js';
-import { checkLLMBlocked, importTopPages } from '../../src/llm-blocked/handler.js';
+import { checkLLMBlocked, checkLLMBlockedStep, importTopPages } from '../../src/llm-blocked/handler.js';
 import { createOpportunityData } from '../../src/llm-blocked/opportunity-data-mapper.js';
 
 use(sinonChai);
@@ -203,7 +203,7 @@ describe('LLM Blocked Audit', () => {
       .withSandbox(sandbox).build();
 
     // Act & Assert
-    await expect(checkLLMBlocked(contextWithNoPages)).to.be.rejectedWith('No top pages found for site');
+    await expect(checkLLMBlockedStep(contextWithNoPages)).to.be.rejectedWith('No top pages found for site');
   });
 
   it('should return correct data structure from importTopPages', async () => {
