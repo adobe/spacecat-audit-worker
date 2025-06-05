@@ -111,6 +111,7 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
       rank: 10,
       data: {
         ...entry,
+        blockedAgents: entry.blockedAgents.map((a) => a.agent),
       },
     }),
   });
