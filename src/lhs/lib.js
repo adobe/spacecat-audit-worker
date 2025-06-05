@@ -60,8 +60,16 @@ export function extractThirdPartySummary(psiAudit) {
     }));
 }
 
-export function extractNetworkRequests(psiAudit) {
+/**
+ * Extracts network requests from an audit.
+ *
+ * @param {Object} psiAudit - The audit to extract network requests from.
+ * @param {Object} [log=console] - Logger object.
+ * @return {Object[]} - The extracted network requests.
+ */
+export function extractNetworkRequests(psiAudit, log = console) {
   const items = psiAudit?.['network-requests']?.details?.items || [];
+  log.debug('Network requests items:', items);
 
   return Object.values(items).map((item) => ({
     url: item.url,
@@ -229,7 +237,7 @@ function initServices(config, log = console) {
  * The message is expected to contain the following properties:
  * - type: The type of audit to perform.
  * - url: The base URL of the site to audit.
- * - auditContext: The audit context object containing information about the audit.
+ * @param {Object} auditContext - The audit context object containing information about the audit.
  * The context object is expected to contain the following properties:
  * - dataAccess: The data access object for database operations.
  * - log: The logging object.
