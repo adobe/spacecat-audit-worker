@@ -172,10 +172,8 @@ describe('LLM Blocked Audit', () => {
       type: 'CODE_CHANGE',
       rank: 10,
       data: {
-        recommendations: [],
-        suggestionValue: `
-The following user agents have been blocked for the URL ${blockedUrl}: ClaudeBot/1.0
-        `,
+        url: blockedUrl,
+        blockedAgents: ['ClaudeBot/1.0'],
       },
     });
   });
