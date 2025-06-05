@@ -31,10 +31,6 @@ export async function importTopPages(context) {
   };
 }
 
-export function createSuggestion() {
-
-}
-
 export async function checkLLMBlocked(context, _convertToOpportunity, _syncSuggestions) {
   const {
     site,
