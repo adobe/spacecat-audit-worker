@@ -69,6 +69,8 @@ export function extractThirdPartySummary(psiAudit) {
  */
 export function extractNetworkRequests(psiAudit) {
   const items = psiAudit?.['network-requests']?.details?.items || [];
+  // eslint-disable-next-line no-console
+  console.log('items', items);
 
   return Object.values(items).map((item) => ({
     url: item.url,
