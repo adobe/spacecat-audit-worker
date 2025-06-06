@@ -47,13 +47,16 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
 
   log.info(`Checking top URLs for blocked AI bots, finalUrl: ${finalUrl}`);
 
-  const agents = [
-    'ClaudeBot/1.0',
-    'Perplexity-User/1.0',
-    'PerplexityBot/1.0',
-    'ChatGPT-User/1.0',
-    'GPTBot/1.0',
-  ];
+  const agentsWithRationale = {
+    'ClaudeBot/1.0': 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
+    'Perplexity-User/1.0': 'Unblock Perplexity-User/1.0 to let Perplexity AI directly browse and reference your website in users\' queries.',
+    'PerplexityBot/1.0': 'Unblock PerplexityBot/1.0 to enable Perplexity AI to index your content.',
+    'ChatGPT-User/1.0': 'Unblock ChatGPT-User/1.0 to allow ChatGPT to visit your website while answering a user’s question in browsing-enabled mode.',
+    'GPTBot/1.0': 'Unblock GPTBot/1.0 to permit OpenAI’s GPT models to access and learn from your content for improved future responses.',
+    'OAI-SearchBot/1.0': 'Unblock OAI-SearchBot/1.0 to let OpenAI’s search infrastructure retrieve your website content for ChatGPT search results.',
+  };
+
+  const agents = [...Object.keys(agentsWithRationale)];
 
   // check the top 20 pages
   const failedUrlsPromises = topPages.slice(0, 20).map(async (page) => {
@@ -62,6 +65,7 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
       async (agent) => ({
         status: (await fetch(page.getUrl(), { headers: { 'User-Agent': agent } })).status,
         agent,
+        rationale: agentsWithRationale[agent],
       }),
     ));
 
