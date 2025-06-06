@@ -142,7 +142,7 @@ describe('LLM Blocked Audit', () => {
     // Assert
     expect(result.auditResult).to.equal(JSON.stringify([{
       url: blockedUrl,
-      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0', rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.' }],
+      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
     }]));
     expect(fetchStub.callCount).to.equal(14); // 2 pages × (6 user agents + 1 baseline)
     expect(fetchStub.calledWith(blockedUrl, { headers: { 'User-Agent': 'ClaudeBot/1.0' } })).to.be.true;
@@ -150,31 +150,35 @@ describe('LLM Blocked Audit', () => {
     expect(convertToOpportunityStub).to.have.been.calledOnce;
     expect(syncSuggestionsStub).to.have.been.calledOnce;
 
+    const expectedSuggestionsData = [
+      {
+        affectedUrls: [
+          {
+            status: 403,
+            url: 'https://example.com/page1',
+          },
+        ],
+        agent: 'ClaudeBot/1.0',
+        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
+      },
+    ];
+
     // Assert that syncSuggestionsStub was called with the correct parameters
     const syncCall = syncSuggestionsStub.getCall(0);
     const syncArgs = syncCall.args[0];
     expect(syncArgs.opportunity).to.equal(mockOpportunity);
-    expect(syncArgs.newData).to.deep.equal([{
-      url: blockedUrl,
-      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0', rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.' }],
-    }]);
+    expect(syncArgs.newData).to.deep.equal(expectedSuggestionsData);
     expect(syncArgs.buildKey).to.be.a('function');
-    expect(syncArgs.buildKey({ url: 'test-url' })).to.equal('test-url');
+    expect(syncArgs.buildKey(expectedSuggestionsData[0])).to.equal('ClaudeBot/1.0');
     expect(syncArgs.mapNewSuggestion).to.be.a('function');
 
     // Test the mapNewSuggestion callback
-    const mappedSuggestion = syncArgs.mapNewSuggestion({
-      url: blockedUrl,
-      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
-    });
+    const mappedSuggestion = syncArgs.mapNewSuggestion(expectedSuggestionsData[0]);
     expect(mappedSuggestion).to.deep.equal({
       opportunityId: 'test-opportunity-id',
       type: 'CODE_CHANGE',
       rank: 10,
-      data: {
-        url: blockedUrl,
-        blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
-      },
+      data: expectedSuggestionsData[0],
     });
   });
 

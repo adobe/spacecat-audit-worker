@@ -65,7 +65,6 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
       async (agent) => ({
         status: (await fetch(page.getUrl(), { headers: { 'User-Agent': agent } })).status,
         agent,
-        rationale: agentsWithRationale[agent],
       }),
     ));
 
@@ -91,6 +90,23 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
     };
   }
 
+  // reshape the results to be grouped by agent instead of URL for the suggestions UI
+  const resultsByAgent = {};
+  agents.forEach((agent) => {
+    resultsByAgent[agent] = { agent, affectedUrls: [], rationale: agentsWithRationale[agent] };
+  });
+
+  failedUrls.forEach((result) => {
+    result.blockedAgents.forEach((blockedAgentInfo) => {
+      resultsByAgent[blockedAgentInfo.agent].affectedUrls
+        .push({ url: result.url, status: blockedAgentInfo.status });
+    });
+  });
+
+  const suggestionsArray = [...Object.values(resultsByAgent)]
+    .filter((x) => x.affectedUrls.length > 0);
+
+  // Create the opportunity
   const opportunity = await _convertToOpportunity(
     finalUrl,
     {
@@ -103,10 +119,11 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
     'llm-blocked',
   );
 
+  // Create the suggestions
   await _syncSuggestions({
     opportunity,
-    newData: failedUrls,
-    buildKey: (data) => data.url,
+    newData: suggestionsArray,
+    buildKey: (data) => data.agent,
     context,
     log,
     mapNewSuggestion: (entry) => ({
