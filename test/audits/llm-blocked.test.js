@@ -88,7 +88,7 @@ describe('LLM Blocked Audit', () => {
     const result = await checkLLMBlocked(context);
 
     expect(result.auditResult).to.equal('[]');
-    expect(fetchStub.callCount).to.equal(12); // 2 pages × (5 user agents + 1 baseline)
+    expect(fetchStub.callCount).to.equal(14); // 2 pages × (6 user agents + 1 baseline)
 
     // Verify each page was checked with each user agent
     const userAgents = [
@@ -142,9 +142,9 @@ describe('LLM Blocked Audit', () => {
     // Assert
     expect(result.auditResult).to.equal(JSON.stringify([{
       url: blockedUrl,
-      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
+      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0', rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.' }],
     }]));
-    expect(fetchStub.callCount).to.equal(12); // 2 pages × (5 user agents + 1 baseline)
+    expect(fetchStub.callCount).to.equal(14); // 2 pages × (6 user agents + 1 baseline)
     expect(fetchStub.calledWith(blockedUrl, { headers: { 'User-Agent': 'ClaudeBot/1.0' } })).to.be.true;
     expect(fetchStub.calledWith(blockedUrl)).to.be.true;
     expect(convertToOpportunityStub).to.have.been.calledOnce;
@@ -156,7 +156,7 @@ describe('LLM Blocked Audit', () => {
     expect(syncArgs.opportunity).to.equal(mockOpportunity);
     expect(syncArgs.newData).to.deep.equal([{
       url: blockedUrl,
-      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
+      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0', rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.' }],
     }]);
     expect(syncArgs.buildKey).to.be.a('function');
     expect(syncArgs.buildKey({ url: 'test-url' })).to.equal('test-url');
