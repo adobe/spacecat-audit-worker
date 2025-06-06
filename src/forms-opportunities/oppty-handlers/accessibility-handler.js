@@ -11,6 +11,7 @@
  */
 
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { ok } from '@adobe/spacecat-shared-http-utils';
 import { cleanupS3Files, getObjectKeysFromSubfolders, processFilesWithRetry } from '../../accessibility/utils/data-processing.js';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
@@ -24,19 +25,26 @@ import { getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
  * @param {object} context - The context object
  * @returns {Promise<void>}
  */
-async function createOpportunity(auditId, siteId, a11yData, context) {
+async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opportunityId = null) {
   const {
     dataAccess, log,
   } = context;
   const { Opportunity } = dataAccess;
+  let opportunity = null;
 
   if (a11yData?.length === 0) {
     log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y data found`);
-    return;
+    return null;
+  }
+
+  const filteredA11yData = a11yData.filter((a11y) => a11y.a11yIssues?.length > 0);
+  if (filteredA11yData.length === 0) {
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y issues found`);
+    return null;
   }
 
   try {
-    const a11yOpptyData = a11yData.map((a11yOpty) => {
+    const a11yOpptyData = filteredA11yData.map((a11yOpty) => {
       const a11yIssues = a11yOpty.a11yIssues.map((issue) => ({
         ...issue,
         successCriterias: issue.successCriterias.map(
@@ -50,29 +58,66 @@ async function createOpportunity(auditId, siteId, a11yData, context) {
       };
     });
 
-    const opportunityData = {
-      siteId,
-      auditId,
-      runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
-      type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
-      origin: 'AUTOMATION',
-      title: 'Form Accessibility Issues',
-      description: 'Form Accessibility Issues',
-      tags: [
-        'Forms Accessibility',
-      ],
-      data: {
-        accessibility: a11yOpptyData,
-      },
-    };
+    // If opportunityId is provided, try to update existing opportunity
+    if (opportunityId) {
+      const existingOpportunity = await Opportunity.findById(opportunityId);
+      if (existingOpportunity) {
+        const existingData = existingOpportunity.data.accessibility;
 
-    await Opportunity.create(opportunityData);
-    log.info(`[Form Opportunity] [Site Id: ${siteId}] Created a11y opportunity`);
+        // Merge new data with existing data
+        const mergedData = [...existingData];
+        a11yOpptyData.forEach((newForm) => {
+          const existingFormIndex = mergedData.findIndex(
+            (form) => form.form === newForm.form && form.formSource === newForm.formSource,
+          );
+
+          if (existingFormIndex !== -1) {
+            // Update existing form's a11yIssues
+            mergedData[existingFormIndex].a11yIssues = [
+              ...mergedData[existingFormIndex].a11yIssues,
+              ...newForm.a11yIssues,
+            ];
+          } else {
+            // Add new form data
+            mergedData.push({
+              form: newForm.form,
+              formSource: newForm.formSource,
+              a11yIssues: newForm.a11yIssues,
+            });
+          }
+        });
+
+        existingOpportunity.data.accessibility = mergedData;
+        opportunity = await existingOpportunity.save();
+        log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated existing a11y opportunity`);
+      }
+    }
+
+    // If no opportunityId or update failed, create new opportunity
+    if (!opportunity) {
+      const opportunityData = {
+        siteId,
+        auditId,
+        runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
+        type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
+        origin: 'AUTOMATION',
+        title: 'Form Accessibility Issues',
+        description: 'Form Accessibility Issues',
+        tags: [
+          'Forms Accessibility',
+        ],
+        data: {
+          accessibility: a11yOpptyData,
+        },
+      };
+      opportunity = await Opportunity.create(opportunityData);
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] Created new a11y opportunity`);
+    }
   } catch (e) {
-    log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create a11y opportunity with error: ${e.message}`);
-    throw new Error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create a11y opportunity with error: ${e.message}`);
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create/update a11y opportunity with error: ${e.message}`);
+    throw new Error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create/update a11y opportunity with error: ${e.message}`);
   }
-  log.info(`[Form Opportunity] [Site Id: ${siteId}] Successfully synced Opportunity for form-accessibility audit type.`);
+  return opportunity;
 }
 
 function getWCAGCriteriaString(criteria) {
@@ -80,11 +125,12 @@ function getWCAGCriteriaString(criteria) {
   return `${criteriaNumber} ${name}`;
 }
 
-export default async function createAccessibilityOpportunity(auditData, context) {
+export async function createAccessibilityOpportunity(auditData, context) {
   const {
-    log, site, s3Client, env,
+    log, site, s3Client, env, sqs,
   } = context;
   const siteId = auditData.getSiteId();
+  const auditId = auditData.getAuditId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const version = new Date().toISOString().split('T')[0];
   const outputKey = `forms-accessibility/${site.getId()}/${version}-final-result.json`;
@@ -120,7 +166,6 @@ export default async function createAccessibilityOpportunity(auditData, context)
     const a11yData = axeResults.flatMap((a11y) => {
       const { a11yResult } = a11y;
       return a11yResult
-        .filter(({ a11yIssues }) => a11yIssues.length > 0)
         .map((result) => ({
           form: a11y.finalUrl,
           formSource: result.formSource,
@@ -149,9 +194,55 @@ export default async function createAccessibilityOpportunity(auditData, context)
     await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
 
     // Create opportunity
-    await createOpportunity(auditData.getAuditId(), siteId, a11yData, context);
-    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] a11y opportunity creation step completed`);
+    const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);
+
+    // Send message to mystique for detection
+    const mystiqueMessage = {
+      type: 'detect:forms-a11y',
+      siteId,
+      auditId,
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        opportunityId: opportunity?.getId(),
+        a11y: a11yData,
+      },
+    };
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] a11y opportunity created (if issues found) and sent to mystique`);
   } catch (error) {
     log.error(`[Form Opportunity] [Site Id: ${site.getId()}] Error creating a11y issues: ${error.message}`);
   }
+}
+
+export default async function handler(message, context) {
+  const {
+    log, site, env, sqs,
+  } = context;
+  const { auditId, siteId, data } = message;
+  const { opportunityId, a11y } = data;
+  log.info(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
+  const opportunity = await createOrUpdateOpportunity(
+    auditId,
+    siteId,
+    a11y,
+    context,
+    opportunityId,
+  );
+
+  // send message to mystique for guidance
+  const mystiqueMessage = {
+    type: 'guidance:forms-a11y',
+    siteId,
+    auditId,
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      opportunityId: opportunity?.getId(),
+    },
+  };
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] Sent message to mystique for guidance`);
+  return ok();
 }
