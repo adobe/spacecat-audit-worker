@@ -63,7 +63,7 @@ export async function sendToMystique(context) {
   const message = {
     type: GEO_BRAND_PRESENCE_OPPTY_TYPE,
     siteId: site.getId(),
-    url: site.getBaseUrl(),
+    url: site.getBaseURL(),
     auditId: audit.getId(),
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
