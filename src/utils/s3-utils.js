@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export async function getObjectKeysUsingPrefix(
   s3Client,
@@ -105,4 +106,33 @@ export async function getObjectFromKey(s3Client, bucketName, key, log) {
     );
     return null;
   }
+}
+
+/**
+ * Retrieves signed url of a file valid for default 7200 seconds (2 hrs)
+ * @param {import('@aws-sdk/client-s3').S3Client} s3Client
+ * @param {string} bucketName - the name of the S3 bucket
+ * @param {string} key - the key of the S3 object
+ * @param {import('@azure/logger').Logger} log
+ * @param {integer} expiresInSeconds - the validity time of url
+ * @returns {string} - the signed url
+ */
+export async function generateSignedUrl(s3Client, bucketName, key, log, expiresInSeconds = 7200) {
+  const command = new GetObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+  });
+  try {
+    const signedUrl = await getSignedUrl(s3Client, command, {
+      expiresIn: expiresInSeconds,
+    });
+    return signedUrl;
+  } catch (err) {
+    log.error(
+      `Error while fetching S3 signed key for bucked ${bucketName} using key ${key} and validity seconds ${expiresInSeconds}`,
+      err,
+    );
+  }
+
+  return null;
 }
