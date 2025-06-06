@@ -24,7 +24,7 @@ import {
 } from '../../src/preflight/handler.js';
 import { runInternalLinkChecks } from '../../src/preflight/internal-links.js';
 import { MockContextBuilder } from '../shared.js';
-import suggestionData from '../fixtures/preflight/preflight-suggest.json' with { type: 'json' };
+import { suggestionData } from '../fixtures/preflight/preflight-suggest.js';
 import identifyData from '../fixtures/preflight/preflight-identify.json' with { type: 'json' };
 
 use(sinonChai);
@@ -89,7 +89,7 @@ describe('Preflight Audit', () => {
 
       const result = await runInternalLinkChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([
-        { pageUrl: 'https://main--example--page.aem.page/page1', href: 'https://main--example--page.aem.page/broken', status: 404 },
+        { urlTo: 'https://main--example--page.aem.page/page1', href: 'https://main--example--page.aem.page/broken', status: 404 },
       ]);
     });
 
@@ -109,7 +109,7 @@ describe('Preflight Audit', () => {
       const result = await runInternalLinkChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
       expect(result.auditResult.brokenInternalLinks[0]).to.include({
-        pageUrl: urls[0],
+        urlTo: urls[0],
         href: 'https://main--example--page.aem.page/fail',
         status: null,
       });
@@ -469,7 +469,6 @@ describe('Preflight Audit', () => {
 
       await preflightAudit(context);
 
-      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
       expect(genvarClient.generateSuggestions).to.have.been.called;
 
       expect(job.setStatus).to.have.been.calledWith('COMPLETED');
@@ -480,11 +479,14 @@ describe('Preflight Audit', () => {
     });
 
     it('completes successfully on the happy path for the identify step', async () => {
+      const head = '<head><link rel="canonical" href="https://example.com/wrong-canonical"/></head>';
+      const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
       s3Client.send.onCall(1).resolves({
         ContentType: 'application/json',
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify({
-            scrapeResult: { rawBody: '' },
+            scrapeResult: { rawBody: html },
             finalUrl: 'https://main--example--page.aem.page/page1',
             tags: {
               title: 'Page 1 Title',

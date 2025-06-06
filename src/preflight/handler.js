@@ -19,6 +19,7 @@ import { metatagsAutoDetect } from '../metatags/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
 import { runInternalLinkChecks } from './internal-links.js';
+import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
 import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -157,21 +158,39 @@ export const preflightAudit = async (context) => {
       pageAuthToken: `token ${pageAuthToken}`,
     });
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
-      auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
-        const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
-        // if (normalizedStep === AUDIT_STEP_SUGGEST) {
-        //
-        // }
-        audit.opportunities.push({
-          check: 'broken-internal-links',
-          issue: {
-            url: href,
-            issue: `Status ${status}`,
-            seoImpact: 'High',
-            seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-          },
+      if (normalizedStep === AUDIT_STEP_SUGGEST) {
+        const brokenInternalLinks = await
+        generateSuggestionData(baseURL, auditResult.brokenInternalLinks, context, site);
+        brokenInternalLinks.forEach(({
+          urlTo, href, status, urlsSuggested, aiRationale,
+        }) => {
+          const audit = resultMap.get(urlTo).audits.find((a) => a.name === AUDIT_LINKS);
+          audit.opportunities.push({
+            check: 'broken-internal-links',
+            issue: {
+              url: href,
+              issue: `Status ${status}`,
+              seoImpact: 'High',
+              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+              urlsSuggested,
+              aiRationale,
+            },
+          });
         });
-      });
+      } else {
+        auditResult.brokenInternalLinks.forEach(({ urlTo, href, status }) => {
+          const audit = resultMap.get(urlTo).audits.find((a) => a.name === AUDIT_LINKS);
+          audit.opportunities.push({
+            check: 'broken-internal-links',
+            issue: {
+              url: href,
+              issue: `Status ${status}`,
+              seoImpact: 'High',
+              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+            },
+          });
+        });
+      }
     }
 
     // Meta tags checks
@@ -258,7 +277,7 @@ export const preflightAudit = async (context) => {
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}. Error during preflight audit for jobId: ${job.getId()}`, error);
     job.setStatus(AsyncJob.Status.FAILED);
-    job.setError({ code: '', message: error.message });
+    job.setError({ code: '', message: error.message, details: '' });
     await job.save();
     throw error;
   }
