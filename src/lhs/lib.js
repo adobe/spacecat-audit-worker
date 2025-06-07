@@ -131,6 +131,9 @@ const createAuditData = (
   const totalBlockingTime = extractTotalBlockingTime(audits);
   const thirdPartySummary = extractThirdPartySummary(audits);
   const networkRequests = extractNetworkRequests(audits);
+  // eslint-disable-next-line no-console
+  console.log('networkRequests', networkRequests);
+
   return {
     fullAuditRef,
     auditResult: {
