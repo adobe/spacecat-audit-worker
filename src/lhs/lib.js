@@ -76,6 +76,7 @@ export function extractNetworkRequests(psiAudit) {
     url: item.url,
     statusCode: item.statusCode,
     priority: item.priority,
+    entity: item.entity,
   }));
 }
 
