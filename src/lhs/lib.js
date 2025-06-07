@@ -61,6 +61,26 @@ export function extractThirdPartySummary(psiAudit) {
 }
 
 /**
+ * Extracts network requests from an audit.
+ *
+ * @param {Object} psiAudit - The audit to extract network requests from.
+ * @param {Object} [log=console] - Logger object.
+ * @return {Object[]} - The extracted network requests.
+ */
+export function extractNetworkRequests(psiAudit) {
+  const items = psiAudit?.['network-requests']?.details?.items || [];
+  // eslint-disable-next-line no-console
+  console.log('items', items);
+
+  return Object.values(items).map((item) => ({
+    url: item.url,
+    statusCode: item.statusCode,
+    priority: item.priority,
+    entity: item.entity,
+  }));
+}
+
+/**
  * Retrieves the last modified date of the content from a given URL. If the URL is not accessible,
  * the function returns the current date in ISO format.
  * @param {string} finalURL - The URL from which to fetch the content's last modified date.
@@ -111,6 +131,9 @@ const createAuditData = (
   const scores = extractAuditScores(categories);
   const totalBlockingTime = extractTotalBlockingTime(audits);
   const thirdPartySummary = extractThirdPartySummary(audits);
+  const networkRequests = extractNetworkRequests(audits);
+  // eslint-disable-next-line no-console
+  console.log('networkRequests', networkRequests);
 
   return {
     fullAuditRef,
@@ -120,6 +143,7 @@ const createAuditData = (
       scores,
       thirdPartySummary,
       totalBlockingTime,
+      networkRequests,
       runtimeError,
     },
   };
@@ -218,7 +242,7 @@ function initServices(config, log = console) {
  * The message is expected to contain the following properties:
  * - type: The type of audit to perform.
  * - url: The base URL of the site to audit.
- * - auditContext: The audit context object containing information about the audit.
+ * @param {Object} auditContext - The audit context object containing information about the audit.
  * The context object is expected to contain the following properties:
  * - dataAccess: The data access object for database operations.
  * - log: The logging object.
