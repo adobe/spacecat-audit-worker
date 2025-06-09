@@ -17,7 +17,7 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   const { auditId, siteId, data } = message;
-  const { url, formSource: formsource, guidance } = data;
+  const { url, form_source: formsource, guidance } = data;
   log.info(`Message received in high-page-views-low-form-views guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);

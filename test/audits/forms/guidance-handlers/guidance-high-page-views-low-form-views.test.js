@@ -48,7 +48,7 @@ describe('Guidance High Page Views Low Form Views Handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        formSource: '.form',
+        form_source: '.form',
         url: 'https://example.com',
         guidance: 'Some guidance',
       },
