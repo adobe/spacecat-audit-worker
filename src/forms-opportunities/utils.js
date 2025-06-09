@@ -432,6 +432,9 @@ export function getSuccessCriteriaDetails(criteria) {
 
 // eslint-disable-next-line no-shadow
 function getCostSaved(originalTraffic, conversionRate, cpc, conversionBoostPercent) {
+  if (conversionRate === 0) {
+    return 0;
+  }
   const originalConversions = originalTraffic * conversionRate;
   const newConversionRate = conversionRate * (1 + conversionBoostPercent / 100);
   const newTrafficNeeded = originalConversions / newConversionRate;
@@ -460,8 +463,10 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
       (m) => m.type === 'conversionRate' && m.device === '*',
     )?.value?.page;
 
+    // traffic is calculated for 15 days - extrapolating for a year
+    const trafficPerYear = originalTraffic * 24;
     const projectedConversionValue = getCostSaved(
-      originalTraffic,
+      trafficPerYear,
       conversionRate,
       cpcValue,
       CONVERSION_BOOST_PERCENT,

@@ -286,6 +286,25 @@ describe('calculateProjectedConversionValue', () => {
     };
 
     const result = await calculateProjectedConversionValue(context, siteId, opportunityData);
-    expect(result.projectedConversionValue).to.equal(448.33);
+    expect(result.projectedConversionValue).to.equal(10760);
+  });
+
+  it('should calculate projected conversion value with conversion rate 0', async () => {
+    const siteId = 'test-site-id';
+    const opportunityData = {
+      pageViews: 1000,
+      metrics: [
+        {
+          type: 'conversionRate',
+          device: '*',
+          value: {
+            page: 0.00,
+          },
+        },
+      ],
+    };
+
+    const result = await calculateProjectedConversionValue(context, siteId, opportunityData);
+    expect(result.projectedConversionValue).to.equal(0);
   });
 });
