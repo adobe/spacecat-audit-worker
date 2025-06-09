@@ -89,7 +89,7 @@ describe('Preflight Audit', () => {
 
       const result = await runInternalLinkChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([
-        { urlTo: 'https://main--example--page.aem.page/page1', href: 'https://main--example--page.aem.page/broken', status: 404 },
+        { urlTo: 'https://main--example--page.aem.page/broken', href: 'https://main--example--page.aem.page/page1', status: 404 },
       ]);
     });
 
@@ -109,8 +109,8 @@ describe('Preflight Audit', () => {
       const result = await runInternalLinkChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
       expect(result.auditResult.brokenInternalLinks[0]).to.include({
-        urlTo: urls[0],
-        href: 'https://main--example--page.aem.page/fail',
+        urlTo: 'https://main--example--page.aem.page/fail',
+        href: urls[0],
         status: null,
       });
       expect(result.auditResult.brokenInternalLinks[0].error).to.match(/network fail/);
@@ -331,7 +331,7 @@ describe('Preflight Audit', () => {
     beforeEach(() => {
       site = {
         getId: () => 'site-123',
-        getBaseURL: () => 'https://main--example--page.aem.page',
+        getBaseURL: () => 'https://example.com',
       };
       s3Client = {
         send: sinon.stub(),
@@ -385,56 +385,9 @@ describe('Preflight Audit', () => {
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
 
-      // Setup S3 client mocks
-      s3Client.send.onCall(0).resolves({
-        Contents: [
-          { Key: 'scrapes/site-123/page1/scrape.json' },
-        ],
-      });
-      const head = '<head><link rel="canonical" href="https://example.com/wrong-canonical"/></head>';
-      const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a><h1>First H1</h1><h1>Second H1</h1></body>`;
-      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
-      s3Client.send.onCall(1).resolves({
-        ContentType: 'application/json',
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            scrapeResult: { rawBody: html },
-            finalUrl: 'https://main--example--page.aem.page/page1',
-            tags: {
-              title: 'Page 1 Title',
-              description: 'Page 1 Description',
-              h1: ['First H1', 'First H1'],
-            },
-          })),
-        },
-      });
-      s3Client.send.onCall(2).resolves({
-        Contents: [
-          { Key: 'scrapes/site-123/page1/scrape.json' },
-        ],
-        IsTruncated: false,
-        NextContinuationToken: 'token',
-      });
-      s3Client.send.onCall(4).resolves({
-        ContentType: 'application/json',
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            scrapeResult: {
-              rawBody: '<a href="/foo">foo</a>',
-              tags: {
-                title: 'Page 1 Title',
-                description: 'Page 1 Description',
-                h1: ['Page 1 H1', 'Page 1 H1'],
-              },
-            },
-            finalUrl: 'https://main--example--page.aem.page/page1',
-          })),
-        },
-      });
-
       nock('https://main--example--page.aem.page')
         .get('/page1')
-        .reply(200, html, { 'Content-Type': 'text/html' });
+        .reply(200, '<html><head><link rel="canonical" href="https://main--example--page.aem.page/wrong"/></head><body><h1>Test</h1></body></html>', { 'Content-Type': 'text/html' });
 
       nock('https://main--example--page.aem.page')
         .head('/broken')
@@ -447,13 +400,67 @@ describe('Preflight Audit', () => {
     });
 
     it('completes successfully on the happy path for the suggest step', async () => {
+      const head = '<head><a href="https://example.com/header-url"/></head>';
+      const body = '<body><a href="https://example.com/broken"></a><a href="https://example.com/another-broken-url"></a><h1>Page 1 H1</h1><h1>Page 1 H1</h1></h1></body>';
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/page1/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  tags: {
+                    title: 'Page 1 Title',
+                    description: 'Page 1 Description',
+                    h1: ['Page 1 H1', 'Page 1 H1'],
+                  },
+                },
+                finalUrl: 'https://main--example--page.aem.page/page1',
+              })),
+            },
+          });
+        }
+      });
+
+      nock('https://main--example--page.aem.page')
+        .head('/header-url')
+        .reply(200);
+      nock('https://main--example--page.aem.page')
+        .head('/broken')
+        .reply(404);
+      nock('https://main--example--page.aem.page')
+        .head('/another-broken-url')
+        .reply(404);
+
       job.getMetadata = () => ({
         payload: {
           step: AUDIT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page/page1'],
         },
       });
-      configuration.isHandlerEnabledForSite.returns(false);
+
+      firefallClient.fetchChatCompletion.resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://example.com/fix'], aiRationale: 'Rationale' }),
+            aiRationale: 'Rationale',
+          },
+          finish_reason: 'stop',
+        }],
+      });
+
+      configuration.isHandlerEnabledForSite.onCall(0).returns(true);
+      configuration.isHandlerEnabledForSite.onCall(1).returns(false);
       genvarClient.generateSuggestions.resolves({
         '/page1': {
           h1: {
@@ -479,23 +486,38 @@ describe('Preflight Audit', () => {
     });
 
     it('completes successfully on the happy path for the identify step', async () => {
-      const head = '<head><link rel="canonical" href="https://example.com/wrong-canonical"/></head>';
+      const head = '<head><link rel="canonical" href="https://main--example--page.aem.page/page1"/></head>';
       const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
-      s3Client.send.onCall(1).resolves({
-        ContentType: 'application/json',
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            scrapeResult: { rawBody: html },
-            finalUrl: 'https://main--example--page.aem.page/page1',
-            tags: {
-              title: 'Page 1 Title',
-              description: 'Page 1 Description',
-              h1: [],
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/page1/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: html,
+                  tags: {
+                    title: 'Page 1 Title',
+                    description: 'Page 1 Description',
+                    h1: [],
+                  },
+                },
+                finalUrl: 'https://main--example--page.aem.page/page1',
+              })),
             },
-          })),
-        },
+          });
+        }
       });
+
       job.getMetadata = () => ({
         payload: {
           step: AUDIT_STEP_IDENTIFY,

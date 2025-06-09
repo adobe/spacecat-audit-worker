@@ -46,6 +46,13 @@
         "type": "seo",
         "opportunities": [
           {
+            "seoImpact": "High",
+            "issue": "Missing H1",
+            "issueDetails": "H1 tag is missing",
+            "seoRecommendation": "Should be present",
+            "tagName": "h1"
+          },
+          {
             "seoImpact": "Moderate",
             "issue": "Title too short",
             "issueDetails": "28 chars below limit",

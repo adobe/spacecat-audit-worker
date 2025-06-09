@@ -159,31 +159,37 @@ export const preflightAudit = async (context) => {
     });
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       if (normalizedStep === AUDIT_STEP_SUGGEST) {
+        const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
+          urlTo: new URL(site.getBaseURL()).origin + new URL(link.urlTo).pathname.replace(/\/$/, ''),
+          href: link.href,
+          status: link.status,
+        }));
         const brokenInternalLinks = await
-        generateSuggestionData(baseURL, auditResult.brokenInternalLinks, context, site);
+        generateSuggestionData(baseURL, brokenLinks, context, site);
         brokenInternalLinks.forEach(({
           urlTo, href, status, urlsSuggested, aiRationale,
         }) => {
-          const audit = resultMap.get(urlTo).audits.find((a) => a.name === AUDIT_LINKS);
+          const audit = resultMap.get(href).audits.find((a) => a.name === AUDIT_LINKS);
+          const aiUrls = urlsSuggested?.map((url) => (new URL(baseURL).origin + new URL(url).pathname.replace(/\/$/, '')));
           audit.opportunities.push({
             check: 'broken-internal-links',
             issue: {
-              url: href,
+              url: urlTo,
               issue: `Status ${status}`,
               seoImpact: 'High',
               seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-              urlsSuggested,
+              urlsSuggested: aiUrls,
               aiRationale,
             },
           });
         });
       } else {
         auditResult.brokenInternalLinks.forEach(({ urlTo, href, status }) => {
-          const audit = resultMap.get(urlTo).audits.find((a) => a.name === AUDIT_LINKS);
+          const audit = resultMap.get(href).audits.find((a) => a.name === AUDIT_LINKS);
           audit.opportunities.push({
             check: 'broken-internal-links',
             issue: {
-              url: href,
+              url: urlTo,
               issue: `Status ${status}`,
               seoImpact: 'High',
               seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',

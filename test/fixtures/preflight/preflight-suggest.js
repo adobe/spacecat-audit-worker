@@ -33,24 +33,28 @@ export const suggestionData = [
           {
             check: 'broken-internal-links',
             issue: {
-              url: 'https://main--example--page.aem.page/broken',
+              url: 'https://example.com/broken',
               issue: 'Status 404',
               seoImpact: 'High',
               seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-              urlsSuggested: undefined,
-              aiRationale: undefined,
+              urlsSuggested: [
+                'https://main--example--page.aem.page/fix',
+              ],
+              aiRationale: 'Rationale',
             },
           },
           {
-            check: 'bad-links',
-            issue: [
-              {
-                url: 'http://test.com/',
-                issue: 'Link using HTTP instead of HTTPS',
-                seoImpact: 'High',
-                seoRecommendation: 'Update all links to use HTTPS protocol',
-              },
-            ],
+            check: 'broken-internal-links',
+            issue: {
+              url: 'https://example.com/another-broken-url',
+              issue: 'Status 404',
+              seoImpact: 'High',
+              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+              urlsSuggested: [
+                'https://main--example--page.aem.page/fix',
+              ],
+              aiRationale: 'Rationale',
+            },
           },
         ],
       },
@@ -93,14 +97,7 @@ export const suggestionData = [
       {
         name: 'lorem-ipsum',
         type: 'seo',
-        opportunities: [
-          {
-            check: 'placeholder-text',
-            issue: 'Found Lorem ipsum placeholder text in the page content',
-            seoImpact: 'High',
-            seoRecommendation: 'Replace placeholder text with meaningful content',
-          },
-        ],
+        opportunities: [],
       },
       {
         name: 'h1-count',

@@ -65,12 +65,12 @@ export async function runInternalLinkChecks(urls, scrapedObjects, context, optio
                 },
               });
               if (res.status === 404) {
-                brokenInternalLinks.push({ urlTo: pageUrl, href, status: 404 });
+                brokenInternalLinks.push({ urlTo: href, href: pageUrl, status: 404 });
               }
             } catch (err) {
               brokenInternalLinks.push({
-                urlTo: pageUrl,
-                href,
+                urlTo: href,
+                href: pageUrl,
                 status: null,
                 error: err.message,
               });
