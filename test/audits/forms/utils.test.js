@@ -286,7 +286,7 @@ describe('calculateProjectedConversionValue', () => {
     };
 
     const result = await calculateProjectedConversionValue(context, siteId, opportunityData);
-    expect(result.projectedConversionValue).to.equal(10760);
+    expect(result.projectedConversionValue).to.equal(10800.35);
   });
 
   it('should calculate projected conversion value with conversion rate 0', async () => {
@@ -302,6 +302,16 @@ describe('calculateProjectedConversionValue', () => {
           },
         },
       ],
+    };
+
+    const result = await calculateProjectedConversionValue(context, siteId, opportunityData);
+    expect(result.projectedConversionValue).to.equal(0);
+  });
+
+  it('should calculate projected conversion value with conversion rate undefined', async () => {
+    const siteId = 'test-site-id';
+    const opportunityData = {
+      pageViews: 1000,
     };
 
     const result = await calculateProjectedConversionValue(context, siteId, opportunityData);

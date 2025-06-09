@@ -11,6 +11,7 @@
  */
 
 import {
+  FORMS_AUDIT_INTERVAL,
   isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
@@ -23,7 +24,7 @@ import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
-const CONVERSION_BOOST_PERCENT = 20;
+const CONVERSION_BOOST = 0.2;
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -431,12 +432,12 @@ export function getSuccessCriteriaDetails(criteria) {
 }
 
 // eslint-disable-next-line no-shadow
-function getCostSaved(originalTraffic, conversionRate, cpc, conversionBoostPercent) {
+function getCostSaved(originalTraffic, conversionRate, cpc, conversionBoost) {
   if (conversionRate === 0) {
     return 0;
   }
   const originalConversions = originalTraffic * conversionRate;
-  const newConversionRate = conversionRate * (1 + conversionBoostPercent / 100);
+  const newConversionRate = conversionRate * (1 + conversionBoost);
   const newTrafficNeeded = originalConversions / newConversionRate;
   const trafficDelta = originalTraffic - newTrafficNeeded;
   const costSaved = trafficDelta * cpc;
@@ -459,17 +460,17 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
     log.info(`Calculated CPC value: ${cpcValue} for site: ${siteId}`);
 
     const originalTraffic = opportunityData.pageViews;
-    const conversionRate = opportunityData.metrics.find(
-      (m) => m.type === 'conversionRate' && m.device === '*',
-    )?.value?.page;
+    const conversionRate = opportunityData?.metrics?.find(
+      (m) => m?.type === 'conversionRate' && m?.device === '*',
+    )?.value?.page ?? 0;
 
     // traffic is calculated for 15 days - extrapolating for a year
-    const trafficPerYear = originalTraffic * 24;
+    const trafficPerYear = Math.floor((originalTraffic / FORMS_AUDIT_INTERVAL)) * 365;
     const projectedConversionValue = getCostSaved(
       trafficPerYear,
       conversionRate,
       cpcValue,
-      CONVERSION_BOOST_PERCENT,
+      CONVERSION_BOOST,
     );
 
     return {
