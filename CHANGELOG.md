@@ -1,3 +1,10 @@
+# [1.99.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.98.0...v1.99.0) (2025-06-09)
+
+
+### Features
+
+* adding projected conversion value in forms opportunities ([#940](https://github.com/adobe/spacecat-audit-worker/issues/940)) ([28beef4](https://github.com/adobe/spacecat-audit-worker/commit/28beef40833b327d14c389a7cce0d1aacf262d89))
+
 # [1.98.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.11...v1.98.0) (2025-06-09)
 
 
