@@ -99,6 +99,7 @@ describe('createLowNavigationOpportunities handler method', () => {
         formsource: '',
         samples: 8670,
         scrapedStatus: false,
+        projectedConversionValue: null,
         dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         metrics: [
           {
@@ -187,6 +188,7 @@ describe('createLowNavigationOpportunities handler method', () => {
         iframeSrc: 'https://www.iframe-example.com/content/iframe-example/en-us/test/getting-iframe-example/guide/begin/jcr:content/contentpar/columns/0/aemform.iframe.en.html',
         samples: 8670,
         scrapedStatus: false,
+        projectedConversionValue: null,
         dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         metrics: [
           {
