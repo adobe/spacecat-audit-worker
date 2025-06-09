@@ -278,6 +278,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(sqsMessage.siteId).to.equal(siteId);
       expect(sqsMessage.auditId).to.equal('test-audit-id');
       expect(sqsMessage.deliveryType).to.equal('aem');
+      expect(sqsMessage.data.url).to.equal('https://example.com');
       expect(sqsMessage.data.opportunityId).to.equal('test-opportunity-id');
     });
 
@@ -365,6 +366,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           func: { package: 'spacecat-services', version: 'ci', name: 'test' },
           site: {
             getId: sinon.stub().returns(siteId),
+            getBaseURL: sinon.stub().returns('https://example.com'),
             getDeliveryType: sinon.stub().returns('aem'),
           },
           env: {

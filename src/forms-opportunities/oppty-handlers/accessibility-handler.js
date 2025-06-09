@@ -204,6 +204,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
+        url: site.getBaseURL(),
         opportunityId: opportunity?.getId(),
         a11y: a11yData,
       },
@@ -239,6 +240,7 @@ export default async function handler(message, context) {
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
     data: {
+      url: site.getBaseURL(),
       opportunityId: opportunity?.getId(),
     },
   };
