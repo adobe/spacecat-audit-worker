@@ -20,8 +20,10 @@ import {
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
+import { calculateCPCValue } from '../support/utils.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
+const CONVERSION_BOOST_PERCENT = 20;
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -426,4 +428,50 @@ export function getSuccessCriteriaDetails(criteria) {
     criteriaNumber: successCriteriaNumber,
     understandingUrl: successCriteriaDetails.understandingUrl,
   };
+}
+
+// eslint-disable-next-line no-shadow
+function getCostSaved(originalTraffic, conversionRate, cpc, conversionBoostPercent) {
+  const originalConversions = originalTraffic * conversionRate;
+  const newConversionRate = conversionRate * (1 + conversionBoostPercent / 100);
+  const newTrafficNeeded = originalConversions / newConversionRate;
+  const trafficDelta = originalTraffic - newTrafficNeeded;
+  const costSaved = trafficDelta * cpc;
+
+  return parseFloat(costSaved.toFixed(2));
+}
+
+/**
+ * Calculates the projected conversion value for a form based on its views and CPC
+ * @param {Object} context - The context object containing necessary dependencies
+ * @param {string} siteId - The site ID
+ * @param {Object} formMetrics - The form metrics object containing traffic data
+ * @returns {Promise<Object>} Object containing cpcValue and projectedConversionValue
+ */
+export async function calculateProjectedConversionValue(context, siteId, opportunityData) {
+  const { log } = context;
+
+  try {
+    const cpcValue = await calculateCPCValue(context, siteId);
+    log.info(`Calculated CPC value: ${cpcValue} for site: ${siteId}`);
+
+    const originalTraffic = opportunityData.pageViews;
+    const conversionRate = opportunityData.metrics.find(
+      (m) => m.type === 'conversionRate' && m.device === '*',
+    )?.value?.page;
+
+    const projectedConversionValue = getCostSaved(
+      originalTraffic,
+      conversionRate,
+      cpcValue,
+      CONVERSION_BOOST_PERCENT,
+    );
+
+    return {
+      projectedConversionValue,
+    };
+  } catch (error) {
+    log.error(`Error calculating projected conversion value for site ${siteId}:`, error);
+    return null;
+  }
 }

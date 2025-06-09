@@ -130,6 +130,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         formsource: '',
         samples: 5690,
         scrapedStatus: false,
+        projectedConversionValue: null,
         dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         metrics: [
           {
