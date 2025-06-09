@@ -1,3 +1,10 @@
+# [1.98.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.11...v1.98.0) (2025-06-09)
+
+
+### Features
+
+* form source will be sent as camel case from mystique ([#939](https://github.com/adobe/spacecat-audit-worker/issues/939)) ([98ade4a](https://github.com/adobe/spacecat-audit-worker/commit/98ade4af1c75b87dcc901892464e708c50f5f79e))
+
 ## [1.97.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.10...v1.97.11) (2025-06-08)
 
 
