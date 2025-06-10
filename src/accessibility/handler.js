@@ -37,7 +37,7 @@ export async function scrapeAccessibilityData(context) {
 
   const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
   const existingUrls = await getExistingUrlsFromFailedAudits(s3Client, bucketName, siteId, log);
-  const remainingUrls = urlsToScrape.filter((url) => !existingUrls.includes(url));
+  const remainingUrls = urlsToScrape.filter((item) => !existingUrls.includes(item.url));
   log.info(`[A11yAudit] Found existing URLs from failed audits: ${existingUrls}`);
   log.info(`[A11yAudit] Remaining URLs to scrape: ${remainingUrls}`);
 
