@@ -250,6 +250,6 @@ export default async function handler(message, context) {
     },
   };
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] Sent message to mystique for guidance`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] Sent a11y message to mystique for guidance`);
   return ok();
 }

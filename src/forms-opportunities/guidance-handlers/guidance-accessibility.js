@@ -20,7 +20,7 @@ export default async function handler(message, context) {
   log.info(`Message received in accessibility guidance handler: ${JSON.stringify(message, null, 2)}`);
   const opportunity = await Opportunity.findById(opportunityId);
   if (!opportunity) {
-    log.error(`[Form Opportunity] [Site Id: ${siteId}] Opportunity not found`);
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not found`);
     return ok();
   }
   const a11yData = opportunity.data.accessibility;
