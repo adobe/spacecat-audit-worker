@@ -55,6 +55,7 @@ async function saveIntermediateResults(job, result, logger) {
     job.setResult(result);
     job.setUpdatedAt(new Date().toISOString());
     await job.save();
+    logger.warn('Intermediate results saved successfully');
   } catch (error) {
     // ignore any intermediate errors
     logger.warn(`Failed to save intermediate results: ${error.message}`);
@@ -359,7 +360,7 @@ export const preflightAudit = async (context) => {
     job.setEndedAt(new Date().toISOString());
     await job.save();
   } catch (error) {
-    log.error(`[preflight-audit] site: ${site.getId()}. Error during preflight audit for jobId: ${job.getId()}`, error);
+    log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Error during preflight audit.`, error);
     job.setStatus(AsyncJob.Status.FAILED);
     job.setError({ code: '', message: error.message });
     await job.save();
