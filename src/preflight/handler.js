@@ -53,7 +53,6 @@ async function saveIntermediateResults(job, result, logger) {
     job.setStatus(AsyncJob.Status.IN_PROGRESS);
     job.setResultType(AsyncJob.ResultType.INLINE);
     job.setResult(result);
-    job.setUpdatedAt(new Date().toISOString());
     await job.save();
     logger.warn('Intermediate results saved successfully');
   } catch (error) {

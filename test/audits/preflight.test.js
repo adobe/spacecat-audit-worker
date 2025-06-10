@@ -233,7 +233,6 @@ describe('Preflight Audit', () => {
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
         setResult: sinon.stub(),
-        setUpdatedAt: sinon.stub(),
         setEndedAt: sinon.stub(),
         setError: sinon.stub(),
         save: sinon.stub().resolves(),
