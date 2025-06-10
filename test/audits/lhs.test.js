@@ -21,6 +21,7 @@ import nock from 'nock';
 import { isIsoDate } from '@adobe/spacecat-shared-utils';
 import createLHSAuditRunner, {
   extractAuditScores,
+  extractCSP,
   extractThirdPartySummary,
   extractTotalBlockingTime,
   getContentLastModified,
@@ -242,6 +243,120 @@ describe('LHS Data Utils', () => {
       const summary = extractThirdPartySummary(psiAudit);
 
       expect(summary).to.be.an('array').that.is.empty;
+    });
+  });
+
+  describe('extractCSP', () => {
+    it('extracts CSP correctly', () => {
+      const psiAudit = {
+        'csp-xss': {
+          id: 'csp-xss',
+          title: 'Ensure CSP is effective against XSS attacks',
+          description: 'A strong Content Security Policy (CSP) significantly reduces the risk of cross-site scripting (XSS) attacks. [Learn how to use a CSP to prevent XSS](https://developer.chrome.com/docs/lighthouse/best-practices/csp-xss/)',
+          details: {
+            type: 'table',
+            items: [
+              {
+                severity: 'High',
+                description: 'No CSP found in enforcement mode',
+              },
+            ],
+          },
+        },
+      };
+
+      const csp = extractCSP(psiAudit);
+
+      expect(csp).to.deep.equal([
+        {
+          severity: 'High',
+          description: 'No CSP found in enforcement mode',
+        },
+      ]);
+    });
+
+    it('extracts CSP with subitems correctly', () => {
+      const psiAudit = {
+        'csp-xss': {
+          details: {
+            items: [
+              {
+                severity: 'Syntax',
+                description: {
+                  type: 'code',
+                  value: 'script-src \'self\' \'unsafe-eval\' \'unsafe-inline\' *.cloudfront.net/js/hapyak.js ...',
+                },
+                subItems: {
+                  type: 'subitems',
+                  items: [
+                    {
+                      directive: 'worker-src',
+                      description: 'unsafe-eval seems to be an invalid keyword.',
+                    },
+                    {
+                      directive: 'worker-src',
+                      description: 'unsafe-inline seems to be an invalid keyword.',
+                    },
+                  ],
+                },
+              },
+              {
+                directive: 'script-src',
+                description: 'Host allowlists can frequently be bypassed. Consider using CSP nonces or hashes instead, along with `\'strict-dynamic\'` if necessary.',
+                severity: 'High',
+              },
+              {
+                directive: 'script-src',
+                description: '`\'unsafe-inline\'` allows the execution of unsafe in-page scripts and event handlers. Consider using CSP nonces or hashes to allow scripts individually.',
+                severity: 'High',
+              },
+            ],
+          },
+        },
+      };
+
+      const csp = extractCSP(psiAudit);
+
+      expect(csp).to.deep.equal([
+        {
+          severity: 'Syntax',
+          description: {
+            type: 'code',
+            value: 'script-src \'self\' \'unsafe-eval\' \'unsafe-inline\' *.cloudfront.net/js/hapyak.js ...',
+          },
+          subItems: {
+            type: 'subitems',
+            items: [
+              {
+                directive: 'worker-src',
+                description: 'unsafe-eval seems to be an invalid keyword.',
+              },
+              {
+                directive: 'worker-src',
+                description: 'unsafe-inline seems to be an invalid keyword.',
+              },
+            ],
+          },
+        },
+        {
+          directive: 'script-src',
+          description: 'Host allowlists can frequently be bypassed. Consider using CSP nonces or hashes instead, along with `\'strict-dynamic\'` if necessary.',
+          severity: 'High',
+        },
+        {
+          directive: 'script-src',
+          description: '`\'unsafe-inline\'` allows the execution of unsafe in-page scripts and event handlers. Consider using CSP nonces or hashes to allow scripts individually.',
+          severity: 'High',
+        },
+      ]);
+    });
+
+    it('returns an empty array if csp-xss details are absent', () => {
+      const psiAudit = {};
+
+      const csp = extractCSP(psiAudit);
+
+      expect(csp).to.be.an('array').that.is.empty;
     });
   });
 
