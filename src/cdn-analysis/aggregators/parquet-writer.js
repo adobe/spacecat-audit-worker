@@ -30,10 +30,11 @@ export async function saveToS3AsParquet(options) {
   } = options;
 
   try {
-    const year = hourProcessed.getFullYear();
-    const month = String(hourProcessed.getMonth() + 1).padStart(2, '0');
-    const day = String(hourProcessed.getDate()).padStart(2, '0');
-    const hour = String(hourProcessed.getHours()).padStart(2, '0');
+    // Use UTC methods since S3 paths should be in UTC to match CDN log structure
+    const year = hourProcessed.getUTCFullYear();
+    const month = String(hourProcessed.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(hourProcessed.getUTCDate()).padStart(2, '0');
+    const hour = String(hourProcessed.getUTCHours()).padStart(2, '0');
 
     // S3 key with customer-aware partitioning
     const customerPrefix = customerDomain ? `customer=${customerDomain}/` : '';

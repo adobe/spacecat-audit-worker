@@ -11,10 +11,11 @@
  */
 
 /* c8 ignore start */
+import { getHourlyPartitionFilter, QUERY_LIMITS } from './query-helpers.js';
+
 export const referrerAnalysisQueries = {
   hourlyReferrers: (hourToProcess, tableName = 'raw_logs') => {
-    const startHour = `${hourToProcess.toISOString().slice(0, 13)}:00:00`;
-    const endHour = `${new Date(hourToProcess.getTime() + 60 * 60 * 1000).toISOString().slice(0, 13)}:00:00`;
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     return `
       SELECT 
@@ -37,10 +38,10 @@ export const referrerAnalysisQueries = {
         host,
         geo_country
       FROM cdn_logs.${tableName} 
-      WHERE timestamp >= '${startHour}'
-        AND timestamp < '${endHour}'
+      ${whereClause}
       GROUP BY url, request_user_agent, referer, host, geo_country
       ORDER BY hits DESC
+      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
     `;
   },
 };

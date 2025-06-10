@@ -11,6 +11,8 @@
  */
 
 /* c8 ignore start */
+import { getHourlyPartitionFilter, QUERY_LIMITS } from './query-helpers.js';
+
 /**
  * Error Analysis for CDN logs
  * Analyzes HTTP error patterns by source (AI bots vs humans)
@@ -21,8 +23,7 @@ export const errorAnalysisQueries = {
      * Generate SQL query for hourly error analysis
      */
   hourlyErrors(hourToProcess, tableName = 'raw_logs') {
-    const startHour = `${hourToProcess.toISOString().slice(0, 13)}:00:00`;
-    const endHour = `${new Date(hourToProcess.getTime() + 60 * 60 * 1000).toISOString().slice(0, 13)}:00:00`;
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     return `
         SELECT 
@@ -46,8 +47,7 @@ export const errorAnalysisQueries = {
           request_user_agent,
           COUNT(*) as error_count
         FROM cdn_logs.${tableName}
-        WHERE timestamp >= '${startHour}'
-          AND timestamp < '${endHour}'
+        ${whereClause}
           AND response_status >= 400
         GROUP BY 
           response_status,
@@ -69,7 +69,7 @@ export const errorAnalysisQueries = {
           url,
           request_user_agent
         ORDER BY error_count DESC
-        LIMIT 1000;
+        LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT};
       `;
   },
 };

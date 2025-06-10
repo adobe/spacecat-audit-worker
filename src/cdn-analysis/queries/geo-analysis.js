@@ -11,10 +11,11 @@
  */
 
 /* c8 ignore start */
+import { getHourlyPartitionFilter, AGENTIC_PATTERNS, QUERY_LIMITS } from './query-helpers.js';
+
 export const geoAnalysisQueries = {
   hourlyByCountry: (hourToProcess, tableName = 'raw_logs') => {
-    const startHour = `${hourToProcess.toISOString().slice(0, 13)}:00:00`;
-    const endHour = `${new Date(hourToProcess.getTime() + 60 * 60 * 1000).toISOString().slice(0, 13)}:00:00`;
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     return `
       SELECT 
@@ -24,17 +25,14 @@ export const geoAnalysisQueries = {
         COUNT(DISTINCT request_user_agent) as unique_user_agents,
         AVG(CASE WHEN response_status = 200 THEN 1.0 ELSE 0.0 END) * 100 as success_rate,
         COUNT(CASE WHEN response_status >= 400 THEN 1 END) as error_requests,
-        COUNT(CASE WHEN request_user_agent LIKE '%ChatGPT%' OR 
-                     request_user_agent LIKE '%Perplexity%' OR 
-                     request_user_agent LIKE '%Claude%' OR
-                     request_user_agent LIKE '%GPTBot%' THEN 1 END) as agentic_requests,
+        ${AGENTIC_PATTERNS.COUNT_AGENTIC} as agentic_requests,
         ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage_of_traffic
       FROM cdn_logs.${tableName} 
-      WHERE timestamp >= '${startHour}'
-        AND timestamp < '${endHour}'
+      ${whereClause}
         AND geo_country IS NOT NULL
       GROUP BY geo_country
       ORDER BY total_requests DESC
+      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
     `;
   },
 };
