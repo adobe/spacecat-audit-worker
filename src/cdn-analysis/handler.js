@@ -289,16 +289,22 @@ async function ensureAthenaTablesExist(athenaClient, s3Config, log) {
       log,
     );
 
-    // Create aggregated data table with customer partitioning
-    const analysisLocation = s3Config.getAnalysisLocation();
-    const aggregatedTableDDL = `
+    // Create new Parquet analysis table for improved performance
+    const parquetAnalysisTableDDL = `
       CREATE EXTERNAL TABLE IF NOT EXISTS cdn_logs.cdn_analysis_data (
         analysis_type string,
-        hour_processed string,
-        record_count int,
-        generated_at string,
         customer_domain string,
-        data_json string
+        hour_processed timestamp,
+        generated_at timestamp,
+        record_index int,
+        total_requests bigint,
+        success_rate double,
+        agentic_requests bigint,
+        geo_country string,
+        response_status bigint,
+        request_user_agent string,
+        referer string,
+        additional_data string
       )
       PARTITIONED BY (
         customer string,
@@ -307,32 +313,33 @@ async function ensureAthenaTablesExist(athenaClient, s3Config, log) {
         day string,
         hour string
       )
-      ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe'
-      LOCATION '${analysisLocation}'
+      STORED AS PARQUET
+      LOCATION '${s3Config.analysisBucket}/cdn-analysis/'
       TBLPROPERTIES (
         'projection.enabled' = 'true',
         'projection.customer.type' = 'enum',
-        'projection.customer.values' = 'adobe_com,bulk_com,default_customer',
+        'projection.customer.values' = 'blog_adobe_com,other_domains',
         'projection.year.type' = 'integer',
         'projection.year.range' = '2024,2030',
+        'projection.year.format' = 'yyyy',
         'projection.month.type' = 'integer',
-        'projection.month.range' = '01,12',
-        'projection.month.digits' = '2',
+        'projection.month.range' = '1,12',
+        'projection.month.format' = 'MM',
         'projection.day.type' = 'integer',
-        'projection.day.range' = '01,31', 
-        'projection.day.digits' = '2',
+        'projection.day.range' = '1,31',
+        'projection.day.format' = 'dd',
         'projection.hour.type' = 'integer',
-        'projection.hour.range' = '00,23',
-        'projection.hour.digits' = '2',
-        'storage.location.template' = '${analysisLocation}customer=\${customer}/year=\${year}/month=\${month}/day=\${day}/hour=\${hour}/',
+        'projection.hour.range' = '0,23',
+        'projection.hour.format' = 'HH',
+        'storage.location.template' = 's3://${s3Config.analysisBucket}/cdn-analysis/customer=\${customer}/year=\${year}/month=\${month}/day=\${day}/hour=\${hour}/',
         'has_encrypted_data' = 'false'
       )
     `;
 
     await executeAthenaSetupQuery(
       athenaClient,
-      aggregatedTableDDL,
-      'cdn_analysis_data table',
+      parquetAnalysisTableDDL,
+      'cdn_analysis_parquet table',
       s3Config,
       log,
     );

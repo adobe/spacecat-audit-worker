@@ -84,6 +84,7 @@
     "@aws-sdk/client-sqs": "3.826.0",
     "@aws-sdk/credential-provider-node": "3.826.0",
     "@aws-sdk/s3-request-presigner": "3.826.0",
+    "@dsnp/parquetjs": "1.8.6",
     "aws-xray-sdk": "3.10.3",
     "cheerio": "1.0.0",
     "diff": "7.0.0",
