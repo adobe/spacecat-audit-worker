@@ -11,9 +11,12 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter, AGENTIC_PATTERNS, QUERY_LIMITS } from './query-helpers.js';
+import { getHourlyPartitionFilter, AGENTIC_PATTERNS } from './query-helpers.js';
 
 export const geoAnalysisQueries = {
+  /**
+   * Traffic by country for a specific hour
+   */
   hourlyByCountry: (hourToProcess, tableName = 'raw_logs') => {
     const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
@@ -32,7 +35,6 @@ export const geoAnalysisQueries = {
         AND geo_country IS NOT NULL
       GROUP BY geo_country
       ORDER BY total_requests DESC
-      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
     `;
   },
 };

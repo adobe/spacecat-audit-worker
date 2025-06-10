@@ -46,7 +46,6 @@ export const frequencyAnalysisQueries = {
       ${whereClause}
       GROUP BY request_user_agent
       ORDER BY total_requests DESC
-      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
     `;
   },
 

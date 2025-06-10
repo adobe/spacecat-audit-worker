@@ -11,7 +11,7 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter, QUERY_LIMITS } from './query-helpers.js';
+import { getHourlyPartitionFilter } from './query-helpers.js';
 
 /**
  * Error Analysis for CDN logs
@@ -20,8 +20,8 @@ import { getHourlyPartitionFilter, QUERY_LIMITS } from './query-helpers.js';
 
 export const errorAnalysisQueries = {
   /**
-     * Generate SQL query for hourly error analysis
-     */
+   * Generate SQL query for hourly error analysis
+   */
   hourlyErrors(hourToProcess, tableName = 'raw_logs') {
     const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
@@ -68,8 +68,7 @@ export const errorAnalysisQueries = {
           geo_country,
           url,
           request_user_agent
-        ORDER BY error_count DESC
-        LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT};
+        ORDER BY error_count DESC;
       `;
   },
 };
