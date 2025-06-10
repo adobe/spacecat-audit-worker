@@ -154,7 +154,7 @@ export const preflightAudit = async (context) => {
     const canonicalEndTime = Date.now();
     const canonicalEndTimestamp = new Date().toISOString();
     const canonicalElapsed = ((canonicalEndTime - canonicalStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Canonical checks completed in ${canonicalElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Canonical audit completed in ${canonicalElapsed} seconds`);
 
     canonicalResults.forEach(({ url, checks }) => {
       const audit = resultMap.get(url).audits.find((a) => a.name === AUDIT_CANONICAL);
@@ -182,8 +182,8 @@ export const preflightAudit = async (context) => {
     );
 
     // Internal link checks
-    const linksStartTime = Date.now();
-    const linksStartTimestamp = new Date().toISOString();
+    const internalLinksStartTime = Date.now();
+    const internalLinksStartTimestamp = new Date().toISOString();
     const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
       pageAuthToken: `token ${pageAuthToken}`,
     });
@@ -201,10 +201,11 @@ export const preflightAudit = async (context) => {
         });
       });
     }
-    const linksEndTime = Date.now();
-    const linksEndTimestamp = new Date().toISOString();
-    const linksElapsed = ((linksEndTime - linksStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Internal link checks completed in ${linksElapsed} seconds`);
+    const internalLinksEndTime = Date.now();
+    const internalLinksEndTimestamp = new Date().toISOString();
+    const internalLinksElapsed = ((internalLinksEndTime - internalLinksStartTime) / 1000)
+      .toFixed(2);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Internal links audit completed in ${internalLinksElapsed} seconds`);
 
     const internalLinksAuditLogger = intermediateStepLogger('internal links audit');
     await saveIntermediateResults(job, result, internalLinksAuditLogger);
@@ -235,7 +236,7 @@ export const preflightAudit = async (context) => {
     const metatagsEndTime = Date.now();
     const metatagsEndTimestamp = new Date().toISOString();
     const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Meta tags checks completed in ${metatagsElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Meta tags audit completed in ${metatagsElapsed} seconds`);
 
     const metaTagsAuditLogger = intermediateStepLogger('meta tags audit');
     await saveIntermediateResults(job, result, metaTagsAuditLogger);
@@ -297,7 +298,7 @@ export const preflightAudit = async (context) => {
     const domEndTime = Date.now();
     const domEndTimestamp = new Date().toISOString();
     const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. DOM-based checks completed in ${domElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. DOM-based audit completed in ${domElapsed} seconds`);
 
     const domAuditLogger = intermediateStepLogger('DOM-based audit');
     await saveIntermediateResults(job, result, domAuditLogger);
@@ -309,10 +310,10 @@ export const preflightAudit = async (context) => {
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Audit started at: ${startTimestamp}`);
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Audit completed at: ${endTimestamp}`);
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Breakdown:
-      - Canonical checks: ${canonicalElapsed}s (${canonicalStartTimestamp} - ${canonicalEndTimestamp})
-      - Internal link checks: ${linksElapsed}s (${linksStartTimestamp} - ${linksEndTimestamp})
-      - Meta tags checks: ${metatagsElapsed}s (${metatagsStartTimestamp} - ${metatagsEndTimestamp})
-      - DOM-based checks: ${domElapsed}s (${domStartTimestamp} - ${domEndTimestamp})`);
+      - Canonical audit: ${canonicalElapsed}s (${canonicalStartTimestamp} - ${canonicalEndTimestamp})
+      - Internal links audit: ${internalLinksElapsed}s (${internalLinksStartTimestamp} - ${internalLinksEndTimestamp})
+      - Meta tags audit: ${metatagsElapsed}s (${metatagsStartTimestamp} - ${metatagsEndTimestamp})
+      - DOM-based audit: ${domElapsed}s (${domStartTimestamp} - ${domEndTimestamp})`);
 
     // Add profiling results to each page result
     const resultWithProfiling = result.map((pageResult) => ({
@@ -330,9 +331,9 @@ export const preflightAudit = async (context) => {
           },
           {
             name: 'links',
-            duration: `${linksElapsed} seconds`,
-            startTime: linksStartTimestamp,
-            endTime: linksEndTimestamp,
+            duration: `${internalLinksElapsed} seconds`,
+            startTime: internalLinksStartTimestamp,
+            endTime: internalLinksEndTimestamp,
           },
           {
             name: 'metatags',
@@ -365,7 +366,7 @@ export const preflightAudit = async (context) => {
     throw error;
   }
 
-  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Preflight audit completed for jobId: ${job.getId()}`);
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Preflight audit completed.`);
 };
 
 export default new AuditBuilder()
