@@ -48,6 +48,19 @@ export function isValidUrls(urls) {
   );
 }
 
+async function saveIntermediateResults(job, result, logger) {
+  try {
+    job.setStatus(AsyncJob.Status.IN_PROGRESS);
+    job.setResultType(AsyncJob.ResultType.INLINE);
+    job.setResult(result);
+    job.setUpdatedAt(new Date().toISOString());
+    await job.save();
+  } catch (error) {
+    // ignore any intermediate errors
+    logger.warn(`Failed to save intermediate results: ${error.message}`);
+  }
+}
+
 export async function scrapePages(context) {
   const { site, job } = context;
   const siteId = site.getId();
@@ -104,6 +117,9 @@ export const preflightAudit = async (context) => {
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
+  const intermediateStepLogger = (checkName) => ({
+    warn: (message) => log.warn(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. ${checkName}: ${message}`),
+  });
 
   try {
     const pageAuthToken = await retrievePageAuthentication(site, context);
@@ -150,6 +166,9 @@ export const preflightAudit = async (context) => {
       }));
     });
 
+    const canonicalAuditLogger = intermediateStepLogger('canonical audit');
+    await saveIntermediateResults(job, result, canonicalAuditLogger);
+
     // Retrieve scraped pages
     const prefix = `scrapes/${site.getId()}/`;
     const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
@@ -187,6 +206,9 @@ export const preflightAudit = async (context) => {
     const linksElapsed = ((linksEndTime - linksStartTime) / 1000).toFixed(2);
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Internal link checks completed in ${linksElapsed} seconds`);
 
+    const internalLinksAuditLogger = intermediateStepLogger('internal links audit');
+    await saveIntermediateResults(job, result, internalLinksAuditLogger);
+
     // Meta tags checks
     const metatagsStartTime = Date.now();
     const metatagsStartTimestamp = new Date().toISOString();
@@ -214,6 +236,9 @@ export const preflightAudit = async (context) => {
     const metatagsEndTimestamp = new Date().toISOString();
     const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Meta tags checks completed in ${metatagsElapsed} seconds`);
+
+    const metaTagsAuditLogger = intermediateStepLogger('meta tags audit');
+    await saveIntermediateResults(job, result, metaTagsAuditLogger);
 
     // DOM-based checks: body size, lorem ipsum, h1 count, bad links
     const domStartTime = Date.now();
@@ -273,6 +298,9 @@ export const preflightAudit = async (context) => {
     const domEndTimestamp = new Date().toISOString();
     const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. DOM-based checks completed in ${domElapsed} seconds`);
+
+    const domAuditLogger = intermediateStepLogger('DOM-based audit');
+    await saveIntermediateResults(job, result, domAuditLogger);
 
     const endTime = Date.now();
     const endTimestamp = new Date().toISOString();
