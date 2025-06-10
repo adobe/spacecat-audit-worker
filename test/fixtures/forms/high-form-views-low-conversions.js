@@ -410,7 +410,6 @@ const testData = {
           },
           pageview: {
             'desktop:windows': 5690,
-            'mobile:ios': 1000,
           },
           trafficacquisition: {
             paid: 2690,
@@ -469,7 +468,6 @@ const testData = {
           },
           pageview: {
             'desktop:windows': 5690,
-            'mobile:ios': 1000,
           },
         },
         {
@@ -488,7 +486,6 @@ const testData = {
           },
           pageview: {
             'desktop:windows': 5690,
-            'mobile:ios': 1000,
           },
         },
         {
@@ -657,7 +654,6 @@ const testData = {
           },
           pageview: {
             'desktop:windows': 5690,
-            'mobile:ios': 1000,
           },
         },
         {
@@ -806,28 +802,28 @@ const testData = {
     time: '2025-05-29T03:51:51.564Z',
     data: {
       url: 'https://www.surest.com/newsletter',
-      cr: 0.03125,
+      cr: 0.031,
       screenshot: '',
       metrics: [
         {
           type: 'conversionRate',
           device: '*',
           value: {
-            page: 0.03125,
+            page: 0.031,
           },
         },
         {
           type: 'formBounceRate',
           device: '*',
           value: {
-            page: 0.90625,
+            page: 0.906,
           },
         },
         {
           type: 'dropoffRate',
           device: '*',
           value: {
-            page: 0.6666666666666667,
+            page: 0.667,
           },
         },
         {
@@ -862,7 +858,7 @@ const testData = {
           type: 'formBounceRate',
           device: 'mobile',
           value: {
-            page: 0.90625,
+            page: 0.906,
           },
         },
         {
@@ -914,27 +910,27 @@ const testData = {
     ],
     data: {
       trackedFormKPIName: 'Conversion Rate',
-      trackedFormKPIValue: 0.03125,
+      trackedFormKPIValue: 0.031,
       metrics: [
         {
           type: 'conversionRate',
           device: '*',
           value: {
-            page: 0.03125,
+            page: 0.031,
           },
         },
         {
           type: 'formBounceRate',
           device: '*',
           value: {
-            page: 0.90625,
+            page: 0.906,
           },
         },
         {
           type: 'dropoffRate',
           device: '*',
           value: {
-            page: 0.6666666666666667,
+            page: 0.667,
           },
         },
         {
@@ -969,7 +965,7 @@ const testData = {
           type: 'formBounceRate',
           device: 'mobile',
           value: {
-            page: 0.90625,
+            page: 0.906,
           },
         },
         {
@@ -1013,6 +1009,7 @@ const testData = {
       screenshot: '',
       samples: 8670,
       scrapedStatus: false,
+      projectedConversionValue: null,
       dataSources: [
         'RUM',
         'Page',
@@ -1035,26 +1032,27 @@ const testData = {
       form: 'https://www.surest.com/contact-us',
       screenshot: '',
       trackedFormKPIName: 'Conversion Rate',
-      trackedFormKPIValue: 0.014947683109118086,
+      trackedFormKPIValue: 0.015,
       formViews: 6690,
       pageViews: 6690,
       formsource: '',
       samples: 6690,
       scrapedStatus: false,
+      projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
       metrics: [
         {
           type: 'conversionRate',
           device: '*',
           value: {
-            page: 0.014947683109118086,
+            page: 0.015,
           },
         },
         {
           type: 'formBounceRate',
           device: '*',
           value: {
-            page: 0.8505231689088191,
+            page: 0.851,
           },
         },
         {
@@ -1068,21 +1066,21 @@ const testData = {
           type: 'conversionRate',
           device: 'desktop',
           value: {
-            page: 0.01757469244288225,
+            page: 0.018,
           },
         },
         {
           type: 'formBounceRate',
           device: 'desktop',
           value: {
-            page: 0.8769771528998243,
+            page: 0.877,
           },
         },
         {
           type: 'dropoffRate',
           device: 'desktop',
           value: {
-            page: 0.8571428571428572,
+            page: 0.857,
           },
         },
         {
@@ -1139,26 +1137,27 @@ const testData = {
       form: 'https://www.surest.com/contact-us',
       screenshot: '',
       trackedFormKPIName: 'Conversion Rate',
-      trackedFormKPIValue: 0.014947683109118086,
+      trackedFormKPIValue: 0.015,
       formViews: 6690,
       pageViews: 6690,
       formsource: '',
       samples: 6690,
       scrapedStatus: false,
+      projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
       metrics: [
         {
           type: 'conversionRate',
           device: '*',
           value: {
-            page: 0.014947683109118086,
+            page: 0.015,
           },
         },
         {
           type: 'formBounceRate',
           device: '*',
           value: {
-            page: 0.8505231689088191,
+            page: 0.851,
           },
         },
         {
@@ -1172,21 +1171,21 @@ const testData = {
           type: 'conversionRate',
           device: 'desktop',
           value: {
-            page: 0.01757469244288225,
+            page: 0.018,
           },
         },
         {
           type: 'formBounceRate',
           device: 'desktop',
           value: {
-            page: 0.8769771528998243,
+            page: 0.877,
           },
         },
         {
           type: 'dropoffRate',
           device: 'desktop',
           value: {
-            page: 0.8571428571428572,
+            page: 0.857,
           },
         },
         {
@@ -1252,26 +1251,27 @@ const testData = {
       form: 'https://www.surest.com/contact-us',
       screenshot: '',
       trackedFormKPIName: 'Conversion Rate',
-      trackedFormKPIValue: 0.014947683109118086,
+      trackedFormKPIValue: 0.015,
       formViews: 6690,
       pageViews: 6690,
       formsource: '',
       samples: 6690,
       scrapedStatus: true,
+      projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
       metrics: [
         {
           type: 'conversionRate',
           device: '*',
           value: {
-            page: 0.014947683109118086,
+            page: 0.015,
           },
         },
         {
           type: 'formBounceRate',
           device: '*',
           value: {
-            page: 0.8505231689088191,
+            page: 0.851,
           },
         },
         {
@@ -1285,21 +1285,21 @@ const testData = {
           type: 'conversionRate',
           device: 'desktop',
           value: {
-            page: 0.01757469244288225,
+            page: 0.018,
           },
         },
         {
           type: 'formBounceRate',
           device: 'desktop',
           value: {
-            page: 0.8769771528998243,
+            page: 0.877,
           },
         },
         {
           type: 'dropoffRate',
           device: 'desktop',
           value: {
-            page: 0.8571428571428572,
+            page: 0.857,
           },
         },
         {
@@ -1363,20 +1363,20 @@ const testData = {
     ],
     data: {
       trackedFormKPIName: 'Conversion Rate',
-      trackedFormKPIValue: 0.0625,
+      trackedFormKPIValue: 0.063,
       metrics: [
         {
           type: 'conversionRate',
           device: '*',
           value: {
-            page: 0.0625,
+            page: 0.063,
           },
         },
         {
           type: 'formBounceRate',
           device: '*',
           value: {
-            page: 0.6875,
+            page: 0.687,
           },
         },
         {
@@ -1404,14 +1404,14 @@ const testData = {
           type: 'dropoffRate',
           device: 'desktop',
           value: {
-            page: 0.8571428571428572,
+            page: 0.857,
           },
         },
         {
           type: 'conversionRate',
           device: 'mobile',
           value: {
-            page: 0.08333333333333333,
+            page: 0.083,
           },
         },
         {
@@ -1425,7 +1425,7 @@ const testData = {
           type: 'dropoffRate',
           device: 'mobile',
           value: {
-            page: 0.6666666666666667,
+            page: 0.667,
           },
         },
         {
@@ -1450,6 +1450,7 @@ const testData = {
       screenshot: '',
       samples: 7690,
       scrapedStatus: false,
+      projectedConversionValue: null,
       dataSources: [
         'RUM',
         'Page',

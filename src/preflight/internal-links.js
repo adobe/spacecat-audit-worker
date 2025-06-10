@@ -14,12 +14,15 @@ import { JSDOM } from 'jsdom';
 
 /**
  * Preflight check for internal links
- * @param scrapedObjects - Array of objects containing the URL and scraped data
- * @param pageAuthToken - Authentication token for the page
-  * @param context - Context object containing the logger
+ * @param {Array<Object>} scrapedObjects - Array of objects containing the URL and scraped data
+ * @param {Object} context - Context object containing the logger
+ * @param {RequestOptions} options - Options for to pass to the fetch request
+ * @param {String} options.pageAuthToken - Optional authorization token for the page
  * @returns {Promise<Array>} - Array of objects containing the page URL and internal link status
  */
-export async function runInternalLinkChecks(scrapedObjects, pageAuthToken, context) {
+export async function runInternalLinkChecks(scrapedObjects, context, options = {
+  pageAuthToken: null,
+}) {
   const { log } = context;
   const brokenInternalLinks = [];
 
@@ -48,9 +51,11 @@ export async function runInternalLinkChecks(scrapedObjects, pageAuthToken, conte
           try {
             const res = await fetch(href, {
               method: 'HEAD',
-              headers: {
-                Authorization: pageAuthToken,
-              },
+              ...(options.pageAuthToken ? {
+                headers: {
+                  Authorization: options.pageAuthToken,
+                },
+              } : {}),
             });
             if (res.status === 404) {
               brokenInternalLinks.push({ pageUrl, href, status: 404 });

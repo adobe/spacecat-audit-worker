@@ -17,13 +17,14 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   const { auditId, siteId, data } = message;
-  const { url, guidance } = data;
+  const { url, guidance, form_source: formsource } = data;
   log.info(`Message received in high-form-views-low-conversions guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   const opportunity = existingOpportunities
     .filter((oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION)
-    .find((oppty) => oppty.getData()?.form === url);
+    .find((oppty) => oppty.getData()?.form === url && (!formsource
+      || oppty.getData()?.formsource === formsource));
 
   if (opportunity) {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
