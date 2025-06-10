@@ -13,8 +13,9 @@ import { getObjectKeysFromSubfolders } from './data-processing.js';
 
 export async function getExistingUrlsFromFailedAudits(s3Client, bucketName, siteId, log) {
   const version = new Date().toISOString().split('T')[0];
+  let existingKeys = [];
   try {
-    const objectKeysResult = await getObjectKeysFromSubfolders(
+    existingKeys = await getObjectKeysFromSubfolders(
       s3Client,
       bucketName,
       'accessibility',
@@ -22,10 +23,23 @@ export async function getExistingUrlsFromFailedAudits(s3Client, bucketName, site
       version,
       log,
     );
-    log.info(`[A11yAudit] Found existing URLs from failed audits: ${objectKeysResult.objectKeys}`);
-    return objectKeysResult.objectKeys;
+    log.info(`[A11yAudit] Found existing URLs from failed audits: ${existingKeys.objectKeys}`);
   } catch (error) {
     log.error(`[A11yAudit] Error getting existing URLs from failed audits: ${error}`);
-    return [];
   }
+
+  const existingUrls = existingKeys.map((key) => {
+    const fileName = key.split('/').pop();
+    const url = fileName.replace('.json', '');
+    const pieces = url.split('_');
+    const almostFullUrl = pieces.reduce((acc, piece, index) => {
+      if (index < 2) {
+        return `${acc}${piece}.`;
+      }
+      return `${acc}${piece}/`;
+    }, '');
+    return `https://${almostFullUrl}`;
+  });
+
+  return existingUrls;
 }
