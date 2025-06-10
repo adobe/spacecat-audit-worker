@@ -11,7 +11,7 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter, QUERY_LIMITS } from './query-helpers.js';
+import { getHourlyPartitionFilter } from './query-helpers.js';
 
 export const referrerAnalysisQueries = {
   hourlyReferrers: (hourToProcess, tableName = 'raw_logs') => {
@@ -41,7 +41,6 @@ export const referrerAnalysisQueries = {
       ${whereClause}
       GROUP BY url, request_user_agent, referer, host, geo_country
       ORDER BY hits DESC
-      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
     `;
   },
 };

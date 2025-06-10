@@ -39,7 +39,6 @@ export const userAgentAnalysisQueries = {
       ${whereClause}
       GROUP BY url, request_user_agent, response_status, host, geo_country
       ORDER BY count DESC
-      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
     `;
   },
 
