@@ -622,7 +622,7 @@ describe('Canonical URL Tests', () => {
       const html = `<html lang="en"><head><link rel="canonical" href="${baseURL}"><title>test</title></head><body></body></html>`;
 
       const captured1 = {};
-      nock('http://example.page').get('/page1').reply(function (uri, requestBody) {
+      nock('http://example.page').get('/page1').reply(function captureRequest1(uri, requestBody) {
         // `this` is the interceptor context
         captured1.uri = uri;
         captured1.requestBody = requestBody;
@@ -630,7 +630,7 @@ describe('Canonical URL Tests', () => {
         return [200, html];
       });
       const captured2 = {};
-      nock(baseURL).get('/').reply(function (uri, requestBody) {
+      nock(baseURL).get('/').reply(function captureRequest2(uri, requestBody) {
         // `this` is the interceptor context
         captured2.uri = uri;
         captured2.requestBody = requestBody;
