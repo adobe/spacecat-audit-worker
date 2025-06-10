@@ -53,7 +53,7 @@ export async function scrapePages(context) {
   const siteId = site.getId();
 
   const jobMetadata = job.getMetadata();
-  const { urls } = jobMetadata.payload;
+  const { urls, imsTokenRefId } = jobMetadata.payload;
 
   if (!isValidUrls(urls)) {
     throw new Error(`[preflight-audit] site: ${siteId}. Invalid urls provided for scraping`);
@@ -72,6 +72,7 @@ export async function scrapePages(context) {
     options: {
       enableAuthentication: true,
       screenshotTypes: [],
+      imsTokenRefId,
     },
   };
 }
