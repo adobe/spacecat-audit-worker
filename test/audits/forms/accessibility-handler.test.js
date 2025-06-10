@@ -157,7 +157,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await createAccessibilityOpportunity(latestAudit, context);
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
-        `[Form Opportunity] [Site Id: ${siteId}] No a11y data found`,
+        `[Form Opportunity] [Site Id: ${siteId}] No a11y data found to create or update opportunity `,
       );
     });
 
@@ -201,7 +201,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await createAccessibilityOpportunity(latestAudit, context);
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
-        `[Form Opportunity] [Site Id: ${siteId}] No a11y issues found`,
+        `[Form Opportunity] [Site Id: ${siteId}] No a11y issues found to create or update opportunity`,
       );
     });
 
@@ -441,6 +441,23 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(sqsMessage.deliveryType).to.equal('aem');
       expect(sqsMessage.data.opportunityId).to.equal(opportunityId);
       expect(sqsMessage.data.a11y).to.not.exist;
+    });
+
+    it('should not send message to mystique when no opportunity is found', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          opportunityId: null,
+          a11y: [],
+        },
+      };
+
+      await mystiqueDetectedFormAccessibilityHandler(message, context);
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] A11y opportunity not detected, skipping guidance',
+      );
     });
 
     it('should append accessibility issue detected by mystique', async () => {

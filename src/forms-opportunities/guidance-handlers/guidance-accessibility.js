@@ -15,7 +15,7 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { auditId, siteId, data } = message;
-  const { opportunityId, accessibility: a11yGuidanceOfIssues } = data;
+  const { opportunityId, a11y: a11yGuidanceOfIssues } = data;
   const { Opportunity } = dataAccess;
   log.info(`Message received in accessibility guidance handler: ${JSON.stringify(message, null, 2)}`);
   const opportunity = await Opportunity.findById(opportunityId);
@@ -44,6 +44,6 @@ export default async function handler(message, context) {
   opportunity.setUpdatedBy('system');
   opportunity.setAuditId(auditId);
   await opportunity.save();
-  log.info(`[Form Opportunity] [Site Id: ${siteId}] Opportunity updated with guidance`);
+  log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity updated with guidance`);
   return ok();
 }

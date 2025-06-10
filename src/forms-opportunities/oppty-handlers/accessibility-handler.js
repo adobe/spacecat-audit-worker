@@ -32,18 +32,22 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
   const { Opportunity } = dataAccess;
   let opportunity = null;
 
-  if (a11yData?.length === 0) {
-    log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y data found`);
-    return null;
-  }
-
-  const filteredA11yData = a11yData.filter((a11y) => a11y.a11yIssues?.length > 0);
-  if (filteredA11yData.length === 0) {
-    log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y issues found`);
-    return null;
-  }
-
   try {
+    if (opportunityId) {
+      opportunity = await Opportunity.findById(opportunityId);
+    }
+
+    if (a11yData?.length === 0) {
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y data found to create or update opportunity `);
+      return opportunity;
+    }
+
+    const filteredA11yData = a11yData.filter((a11y) => a11y.a11yIssues?.length > 0);
+    if (filteredA11yData.length === 0) {
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y issues found to create or update opportunity`);
+      return opportunity;
+    }
+
     const a11yOpptyData = filteredA11yData.map((a11yOpty) => {
       const a11yIssues = a11yOpty.a11yIssues.map((issue) => ({
         ...issue,
@@ -58,47 +62,44 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
       };
     });
 
-    // If opportunityId is provided, try to update existing opportunity
-    if (opportunityId) {
-      const existingOpportunity = await Opportunity.findById(opportunityId);
-      if (existingOpportunity) {
-        const existingData = existingOpportunity.data.accessibility;
+    // Update existing opportunity
+    if (opportunity) {
+      const existingData = opportunity.data.accessibility;
 
-        // Merge new data with existing data
-        const mergedData = [...existingData];
-        a11yOpptyData.forEach((newForm) => {
-          const existingFormIndex = mergedData.findIndex(
-            (form) => form.form === newForm.form && form.formSource === newForm.formSource,
-          );
+      // Merge new data with existing data
+      const mergedData = [...existingData];
+      a11yOpptyData.forEach((newForm) => {
+        const existingFormIndex = mergedData.findIndex(
+          (form) => form.form === newForm.form && form.formSource === newForm.formSource,
+        );
 
-          if (existingFormIndex !== -1) {
-            // Update existing form's a11yIssues
-            mergedData[existingFormIndex].a11yIssues = [
-              ...mergedData[existingFormIndex].a11yIssues,
-              ...newForm.a11yIssues,
-            ];
-          } else {
-            // Add new form data
-            mergedData.push({
-              form: newForm.form,
-              formSource: newForm.formSource,
-              a11yIssues: newForm.a11yIssues,
-            });
-          }
-        });
+        if (existingFormIndex !== -1) {
+          // Update existing form's a11yIssues
+          mergedData[existingFormIndex].a11yIssues = [
+            ...mergedData[existingFormIndex].a11yIssues,
+            ...newForm.a11yIssues,
+          ];
+        } else {
+          // Add new form data
+          mergedData.push({
+            form: newForm.form,
+            formSource: newForm.formSource,
+            a11yIssues: newForm.a11yIssues,
+          });
+        }
+      });
 
-        existingOpportunity.data.accessibility = mergedData;
-        opportunity = await existingOpportunity.save();
-        log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated existing a11y opportunity`);
-      }
+      opportunity.data.accessibility = mergedData;
+      opportunity = await opportunity.save();
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated existing a11y opportunity`);
     }
 
-    // If no opportunityId or update failed, create new opportunity
+    // If no existing opportunity, create new opportunity
     if (!opportunity) {
       const opportunityData = {
         siteId,
         auditId,
-        runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
+        runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
         type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
         origin: 'AUTOMATION',
         title: 'Form Accessibility Issues',
@@ -231,6 +232,10 @@ export default async function handler(message, context) {
     context,
     opportunityId,
   );
+  if (!opportunity) {
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`);
+    return ok();
+  }
 
   // send message to mystique for guidance
   const mystiqueMessage = {

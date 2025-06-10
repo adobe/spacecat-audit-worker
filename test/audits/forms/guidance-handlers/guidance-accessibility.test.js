@@ -69,7 +69,7 @@ describe('Guidance Accessibility Handler', () => {
       siteId: 'site123',
       data: {
         opportunityId: 'opp123',
-        accessibility: [
+        a11y: [
           {
             form: 'form1',
             formSource: 'source1',
@@ -106,7 +106,7 @@ describe('Guidance Accessibility Handler', () => {
       siteId: 'site123',
       data: {
         opportunityId: 'opp123',
-        accessibility: [],
+        a11y: [],
       },
     };
 
@@ -125,7 +125,7 @@ describe('Guidance Accessibility Handler', () => {
       siteId: 'site123',
       data: {
         opportunityId: 'opp123',
-        accessibility: [
+        a11y: [
           {
             form: 'form1',
             formSource: 'source1',

@@ -76,7 +76,7 @@ const HANDLERS = {
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'guidance:forms-a11y': formAccessibilityGuidance,
-  'forms-opportunities:a11y': mystiqueDetectedFormAccessibilityOpportunity,
+  'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   preflight,
   dummy: (message) => ok(message),
 };
