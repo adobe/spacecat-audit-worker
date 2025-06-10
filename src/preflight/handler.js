@@ -165,7 +165,9 @@ export const preflightAudit = async (context) => {
     // Internal link checks
     const linksStartTime = Date.now();
     const linksStartTimestamp = new Date().toISOString();
-    const { auditResult } = await runInternalLinkChecks(scrapedObjects, pageAuthToken, context);
+    const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
+      pageAuthToken: `token ${pageAuthToken}`,
+    });
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
         const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
