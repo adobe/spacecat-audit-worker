@@ -49,3 +49,14 @@ export async function getExistingUrlsFromFailedAudits(s3Client, bucketName, site
 
 //   1749564180063/ 1749563780590/
 }
+
+export function getRemainingUrls(urlsToScrape, existingUrls) {
+  return urlsToScrape.filter((item) => {
+    const { url } = item;
+    let urlToCheck = url;
+    if (urlToCheck[urlToCheck.length - 1] !== '/') {
+      urlToCheck = `${urlToCheck}/`;
+    }
+    return !existingUrls.includes(urlToCheck);
+  });
+}
