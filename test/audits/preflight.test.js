@@ -365,7 +365,6 @@ describe('Preflight Audit', () => {
       })));
 
       expect(job.setEndedAt).to.have.been.called;
-      // Should be called at least once (final save), intermediate saves may fail silently
       expect(job.save).to.have.been.called;
     });
 
@@ -411,7 +410,6 @@ describe('Preflight Audit', () => {
       })));
 
       expect(job.setEndedAt).to.have.been.called;
-      // Should be called at least once (final save), intermediate saves may fail silently
       expect(job.save).to.have.been.called;
     });
 
@@ -513,12 +511,11 @@ describe('Preflight Audit', () => {
 
       job.save = sinon.stub().callsFake(async () => {
         // Only fail saves that happen when job status is being set to IN_PROGRESS
-        // This indicates intermediate saves within saveIntermediateResults
         if (isIntermediateSave) {
           throw new Error('Connection timeout to database');
         }
 
-        // Final save and later intermediate saves succeed
+        // Final save succeeds
         return Promise.resolve();
       });
 
