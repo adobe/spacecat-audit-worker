@@ -233,6 +233,7 @@ describe('Preflight Audit', () => {
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
         setResult: sinon.stub(),
+        setUpdatedAt: sinon.stub(),
         setEndedAt: sinon.stub(),
         setError: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -491,6 +492,46 @@ describe('Preflight Audit', () => {
       expect(job.setResultType).to.have.been.called;
 
       // Verify that save was called at least once
+      expect(job.save).to.have.been.called;
+    });
+
+    it('handles errors during intermediate saves gracefully', async () => {
+      // Mock job.save to simulate database issues during intermediate saves only
+      // We track calls and only fail those that happen within the intermediate save context
+      const originalSetStatus = job.setStatus;
+      let isIntermediateSave = false;
+
+      // Track when we're in intermediate save context
+      job.setStatus = sinon.stub().callsFake((status) => {
+        if (status === 'IN_PROGRESS') {
+          isIntermediateSave = true;
+        } else if (status === 'COMPLETED') {
+          isIntermediateSave = false;
+        }
+        return originalSetStatus.call(job, status);
+      });
+
+      job.save = sinon.stub().callsFake(async () => {
+        // Only fail saves that happen when job status is being set to IN_PROGRESS
+        // This indicates intermediate saves within saveIntermediateResults
+        if (isIntermediateSave) {
+          throw new Error('Connection timeout to database');
+        }
+
+        // Final save and later intermediate saves succeed
+        return Promise.resolve();
+      });
+
+      await preflightAudit(context);
+
+      // Verify that warn was called for failed intermediate saves
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to save intermediate results: Connection timeout to database/),
+      );
+
+      // Verify that the audit completed successfully despite intermediate save failures
+      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(job.setEndedAt).to.have.been.called;
       expect(job.save).to.have.been.called;
     });
   });
