@@ -99,7 +99,7 @@ export const preflightAudit = async (context) => {
     return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`;
   });
 
-  log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit started for jobId: ${job.getId()} and step: ${normalizedStep}`);
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Preflight audit started.`);
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
@@ -129,7 +129,7 @@ export const preflightAudit = async (context) => {
         } = await validateCanonicalTag(url, log, authHeader, true);
         const allChecks = [...tagChecks];
         if (canonicalUrl) {
-          log.info(`Found Canonical URL: ${canonicalUrl}`);
+          log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Found Canonical URL: ${canonicalUrl}`);
           allChecks.push(...validateCanonicalFormat(canonicalUrl, baseURL, log, true));
         }
         return { url, checks: allChecks.filter((c) => !c.success) };
@@ -138,7 +138,7 @@ export const preflightAudit = async (context) => {
     const canonicalEndTime = Date.now();
     const canonicalEndTimestamp = new Date().toISOString();
     const canonicalElapsed = ((canonicalEndTime - canonicalStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] Canonical checks completed in ${canonicalElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Canonical checks completed in ${canonicalElapsed} seconds`);
 
     canonicalResults.forEach(({ url, checks }) => {
       const audit = resultMap.get(url).audits.find((a) => a.name === AUDIT_CANONICAL);
@@ -185,7 +185,7 @@ export const preflightAudit = async (context) => {
     const linksEndTime = Date.now();
     const linksEndTimestamp = new Date().toISOString();
     const linksElapsed = ((linksEndTime - linksStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] Internal link checks completed in ${linksElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Internal link checks completed in ${linksElapsed} seconds`);
 
     // Meta tags checks
     const metatagsStartTime = Date.now();
@@ -213,7 +213,7 @@ export const preflightAudit = async (context) => {
     const metatagsEndTime = Date.now();
     const metatagsEndTimestamp = new Date().toISOString();
     const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] Meta tags checks completed in ${metatagsElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Meta tags checks completed in ${metatagsElapsed} seconds`);
 
     // DOM-based checks: body size, lorem ipsum, h1 count, bad links
     const domStartTime = Date.now();
@@ -272,15 +272,15 @@ export const preflightAudit = async (context) => {
     const domEndTime = Date.now();
     const domEndTimestamp = new Date().toISOString();
     const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] DOM-based checks completed in ${domElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. DOM-based checks completed in ${domElapsed} seconds`);
 
     const endTime = Date.now();
     const endTimestamp = new Date().toISOString();
     const totalElapsed = ((endTime - startTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] Total audit time: ${totalElapsed} seconds`);
-    log.info(`[preflight-audit] Audit started at: ${startTimestamp}`);
-    log.info(`[preflight-audit] Audit completed at: ${endTimestamp}`);
-    log.info(`[preflight-audit] Breakdown:
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Total audit time: ${totalElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Audit started at: ${startTimestamp}`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Audit completed at: ${endTimestamp}`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Breakdown:
       - Canonical checks: ${canonicalElapsed}s (${canonicalStartTimestamp} - ${canonicalEndTimestamp})
       - Internal link checks: ${linksElapsed}s (${linksStartTimestamp} - ${linksEndTimestamp})
       - Meta tags checks: ${metatagsElapsed}s (${metatagsStartTimestamp} - ${metatagsEndTimestamp})
@@ -322,7 +322,7 @@ export const preflightAudit = async (context) => {
       },
     }));
 
-    log.info(JSON.stringify(resultWithProfiling));
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. ${JSON.stringify(resultWithProfiling)}`);
 
     job.setStatus(AsyncJob.Status.COMPLETED);
     job.setResultType(AsyncJob.ResultType.INLINE);
@@ -337,7 +337,7 @@ export const preflightAudit = async (context) => {
     throw error;
   }
 
-  log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit completed for jobId: ${job.getId()}`);
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Preflight audit completed for jobId: ${job.getId()}`);
 };
 
 export default new AuditBuilder()
