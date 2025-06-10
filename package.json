@@ -78,6 +78,7 @@
     "@adobe/spacecat-shared-rum-api-client": "2.28.1",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.38.6",
+    "@aws-sdk/client-athena": "^3.826.0",
     "@aws-sdk/client-lambda": "3.826.0",
     "@aws-sdk/client-s3": "3.826.0",
     "@aws-sdk/client-sqs": "3.826.0",
