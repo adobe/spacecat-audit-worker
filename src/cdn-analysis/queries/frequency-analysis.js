@@ -11,6 +11,8 @@
  */
 
 /* c8 ignore start */
+import { getHourlyPartitionFilter, USER_TYPE_CLASSIFICATION, QUERY_LIMITS } from './query-helpers.js';
+
 /**
  * Frequency Analysis Athena Queries
  * Supports request pattern analysis, bot vs human behavior
@@ -21,8 +23,7 @@ export const frequencyAnalysisQueries = {
    * Request frequency patterns for a specific hour
    */
   hourlyFrequencyPatterns: (hourToProcess, tableName = 'raw_logs') => {
-    const startHour = `${hourToProcess.toISOString().slice(0, 13)}:00:00`;
-    const endHour = `${new Date(hourToProcess.getTime() + 60 * 60 * 1000).toISOString().slice(0, 13)}:00:00`;
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     return `
       SELECT 
@@ -33,16 +34,7 @@ export const frequencyAnalysisQueries = {
         ROUND(COUNT(*) / 60.0, 2) as requests_per_minute,
         ROUND(COUNT(DISTINCT url) * 100.0 / COUNT(*), 2) as url_diversity_percentage,
         AVG(CASE WHEN response_status = 200 THEN 1.0 ELSE 0.0 END) * 100 as success_rate,
-        CASE 
-          WHEN request_user_agent LIKE '%ChatGPT%' OR request_user_agent LIKE '%GPTBot%' 
-               OR request_user_agent LIKE '%Perplexity%' OR request_user_agent LIKE '%Claude%'
-               OR request_user_agent LIKE '%Bard%' OR request_user_agent LIKE '%Gemini%' THEN 'Agentic AI'
-          WHEN request_user_agent LIKE '%bot%' OR request_user_agent LIKE '%Bot%' 
-               OR request_user_agent LIKE '%spider%' OR request_user_agent LIKE '%Spider%'
-               OR request_user_agent LIKE '%crawler%' OR request_user_agent LIKE '%Crawler%' THEN 'Traditional Bot'
-          WHEN request_user_agent LIKE '%Mozilla%' AND request_user_agent LIKE '%Chrome%' THEN 'Human Browser'
-          ELSE 'Unknown'
-        END as user_type,
+        ${USER_TYPE_CLASSIFICATION} as user_type,
         CASE 
           WHEN COUNT(*) >= 1000 THEN 'Very High (1000+/hour)'
           WHEN COUNT(*) >= 500 THEN 'High (500-999/hour)'
@@ -51,19 +43,18 @@ export const frequencyAnalysisQueries = {
           ELSE 'Very Low (<10/hour)'
         END as frequency_category
       FROM cdn_logs.${tableName} 
-      WHERE timestamp >= '${startHour}'
-        AND timestamp < '${endHour}'
+      ${whereClause}
       GROUP BY request_user_agent
       ORDER BY total_requests DESC
+      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
     `;
   },
 
   /**
    * Bot behavior analysis - frequency patterns
    */
-  botFrequencyAnalysis: (hourToProcess) => {
-    const startHour = `${hourToProcess.toISOString().slice(0, 13)}:00:00`;
-    const endHour = `${new Date(hourToProcess.getTime() + 60 * 60 * 1000).toISOString().slice(0, 13)}:00:00`;
+  botFrequencyAnalysis: (hourToProcess, tableName = 'raw_logs') => {
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     return `
       SELECT 
@@ -89,9 +80,8 @@ export const frequencyAnalysisQueries = {
           WHEN COUNT(*) / 60.0 >= 1 THEN 'Light (1-9/min)'
           ELSE 'Minimal (<1/min)'
         END as request_intensity
-      FROM cdn_logs.raw_logs 
-      WHERE timestamp >= '${startHour}'
-        AND timestamp < '${endHour}'
+      FROM cdn_logs.${tableName} 
+      ${whereClause}
         AND (request_user_agent LIKE '%ChatGPT%' 
              OR request_user_agent LIKE '%GPTBot%'
              OR request_user_agent LIKE '%Perplexity%'
@@ -100,15 +90,15 @@ export const frequencyAnalysisQueries = {
              OR request_user_agent LIKE '%Gemini%')
       GROUP BY ai_agent_type
       ORDER BY total_requests DESC
+      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
     `;
   },
 
   /**
    * URL access patterns - identify popular vs rare URLs
    */
-  urlAccessPatterns: (hourToProcess, limit = 100) => {
-    const startHour = `${hourToProcess.toISOString().slice(0, 13)}:00:00`;
-    const endHour = `${new Date(hourToProcess.getTime() + 60 * 60 * 1000).toISOString().slice(0, 13)}:00:00`;
+  urlAccessPatterns: (hourToProcess, tableName = 'raw_logs', limit = 100) => {
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     return `
       SELECT 
@@ -117,14 +107,8 @@ export const frequencyAnalysisQueries = {
         COUNT(*) as total_requests,
         COUNT(DISTINCT request_user_agent) as unique_user_agents,
         COUNT(DISTINCT geo_country) as unique_countries,
-        COUNT(CASE WHEN request_user_agent LIKE '%ChatGPT%' OR 
-                     request_user_agent LIKE '%Perplexity%' OR 
-                     request_user_agent LIKE '%Claude%' OR
-                     request_user_agent LIKE '%GPTBot%' THEN 1 END) as agentic_requests,
-        ROUND(COUNT(CASE WHEN request_user_agent LIKE '%ChatGPT%' OR 
-                           request_user_agent LIKE '%Perplexity%' OR 
-                           request_user_agent LIKE '%Claude%' OR
-                           request_user_agent LIKE '%GPTBot%' THEN 1 END) * 100.0 / COUNT(*), 2) as agentic_percentage,
+        ${USER_TYPE_CLASSIFICATION.COUNT_AGENTIC} as agentic_requests,
+        ROUND(${USER_TYPE_CLASSIFICATION.COUNT_AGENTIC} * 100.0 / COUNT(*), 2) as agentic_percentage,
         AVG(CASE WHEN response_status = 200 THEN 1.0 ELSE 0.0 END) * 100 as success_rate,
         CASE 
           WHEN COUNT(*) >= 100 THEN 'High Traffic'
@@ -132,9 +116,8 @@ export const frequencyAnalysisQueries = {
           WHEN COUNT(*) >= 5 THEN 'Low Traffic'
           ELSE 'Rare Access'
         END as traffic_level
-      FROM cdn_logs.raw_logs 
-      WHERE timestamp >= '${startHour}'
-        AND timestamp < '${endHour}'
+      FROM cdn_logs.${tableName} 
+      ${whereClause}
       GROUP BY url, host
       ORDER BY total_requests DESC
       LIMIT ${limit}
@@ -144,28 +127,24 @@ export const frequencyAnalysisQueries = {
   /**
    * Time-based request distribution within the hour
    */
-  minuteByMinuteDistribution: (hourToProcess) => {
-    const startHour = `${hourToProcess.toISOString().slice(0, 13)}:00:00`;
-    const endHour = `${new Date(hourToProcess.getTime() + 60 * 60 * 1000).toISOString().slice(0, 13)}:00:00`;
+  minuteByMinuteDistribution: (hourToProcess, tableName = 'raw_logs') => {
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     return `
       SELECT 
         MINUTE(PARSE_DATETIME(timestamp, 'yyyy-MM-dd''T''HH:mm:ss''+0000')) as minute_of_hour,
         COUNT(*) as total_requests,
-        COUNT(CASE WHEN request_user_agent LIKE '%ChatGPT%' OR 
-                     request_user_agent LIKE '%Perplexity%' OR 
-                     request_user_agent LIKE '%Claude%' OR
-                     request_user_agent LIKE '%GPTBot%' THEN 1 END) as agentic_requests,
+        ${USER_TYPE_CLASSIFICATION.COUNT_AGENTIC} as agentic_requests,
         COUNT(CASE WHEN request_user_agent LIKE '%bot%' OR request_user_agent LIKE '%Bot%' 
                      OR request_user_agent LIKE '%spider%' OR request_user_agent LIKE '%Spider%'
                      OR request_user_agent LIKE '%crawler%' OR request_user_agent LIKE '%Crawler%' THEN 1 END) as bot_requests,
         COUNT(CASE WHEN request_user_agent LIKE '%Mozilla%' AND request_user_agent LIKE '%Chrome%' THEN 1 END) as human_requests,
         AVG(CASE WHEN response_status = 200 THEN 1.0 ELSE 0.0 END) * 100 as success_rate
-      FROM cdn_logs.raw_logs 
-      WHERE timestamp >= '${startHour}'
-        AND timestamp < '${endHour}'
+      FROM cdn_logs.${tableName} 
+      ${whereClause}
       GROUP BY minute_of_hour
       ORDER BY minute_of_hour
+      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
     `;
   },
 };

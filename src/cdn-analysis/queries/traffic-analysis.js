@@ -11,6 +11,8 @@
  */
 
 /* c8 ignore start */
+import { getHourlyPartitionFilter, AGENTIC_PATTERNS } from './query-helpers.js';
+
 /**
  * Traffic Analysis Athena Queries
  * Supports weekly traffic patterns, request counts, and success rates
@@ -21,12 +23,11 @@ export const trafficAnalysisQueries = {
    * Hourly traffic analysis for a specific hour
    */
   hourlyTraffic: (hourToProcess, tableName = 'raw_logs') => {
-    const startHour = `${hourToProcess.toISOString().slice(0, 13)}:00:00`;
-    const endHour = `${new Date(hourToProcess.getTime() + 60 * 60 * 1000).toISOString().slice(0, 13)}:00:00`;
+    const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
 
     return `
       SELECT 
-        '${startHour}' as hour,
+        '${hourLabel}' as hour,
         COUNT(*) as total_requests,
         COUNT(DISTINCT url) as unique_urls,
         COUNT(DISTINCT host) as unique_hosts,
@@ -35,20 +36,17 @@ export const trafficAnalysisQueries = {
         COUNT(CASE WHEN response_status >= 400 THEN 1 END) as error_requests,
         COUNT(CASE WHEN response_status = 404 THEN 1 END) as not_found_requests,
         COUNT(CASE WHEN response_status = 503 THEN 1 END) as service_unavailable_requests,
-        COUNT(CASE WHEN request_user_agent LIKE '%ChatGPT%' OR 
-                     request_user_agent LIKE '%Perplexity%' OR 
-                     request_user_agent LIKE '%Claude%' OR
-                     request_user_agent LIKE '%GPTBot%' THEN 1 END) as agentic_requests
+        ${AGENTIC_PATTERNS.COUNT_AGENTIC} as agentic_requests
       FROM cdn_logs.${tableName} 
-      WHERE timestamp >= '${startHour}'
-        AND timestamp < '${endHour}'
+      ${whereClause}
     `;
   },
 
   /**
    * Weekly traffic analysis
+   * Note: Multi-day queries use timestamp filtering (slower but necessary)
    */
-  weeklyTraffic: (startDate, endDate) => `
+  weeklyTraffic: (startDate, endDate, tableName = 'raw_logs') => `
       SELECT 
         DATE_TRUNC('week', PARSE_DATETIME(timestamp, 'yyyy-MM-dd''T''HH:mm:ss''+0000')) as week,
         COUNT(*) as total_requests,
@@ -56,11 +54,8 @@ export const trafficAnalysisQueries = {
         COUNT(DISTINCT host) as unique_hosts,
         AVG(CASE WHEN response_status = 200 THEN 1.0 ELSE 0.0 END) * 100 as success_rate,
         COUNT(CASE WHEN response_status >= 400 THEN 1 END) as error_requests,
-        COUNT(CASE WHEN request_user_agent LIKE '%ChatGPT%' OR 
-                     request_user_agent LIKE '%Perplexity%' OR 
-                     request_user_agent LIKE '%Claude%' OR
-                     request_user_agent LIKE '%GPTBot%' THEN 1 END) as agentic_requests
-      FROM cdn_logs.raw_logs 
+        ${AGENTIC_PATTERNS.COUNT_AGENTIC} as agentic_requests
+      FROM cdn_logs.${tableName} 
       WHERE timestamp >= '${startDate.toISOString()}'
         AND timestamp < '${endDate.toISOString()}'
       GROUP BY 1 
@@ -70,9 +65,8 @@ export const trafficAnalysisQueries = {
   /**
    * Top URLs by traffic volume
    */
-  topUrlsByTraffic: (hourToProcess, limit = 50) => {
-    const startHour = `${hourToProcess.toISOString().slice(0, 13)}:00:00`;
-    const endHour = `${new Date(hourToProcess.getTime() + 60 * 60 * 1000).toISOString().slice(0, 13)}:00:00`;
+  topUrlsByTraffic: (hourToProcess, tableName = 'raw_logs', limit = 50) => {
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     return `
       SELECT 
@@ -81,14 +75,10 @@ export const trafficAnalysisQueries = {
         COUNT(*) as total_requests,
         COUNT(DISTINCT request_user_agent) as unique_user_agents,
         AVG(CASE WHEN response_status = 200 THEN 1.0 ELSE 0.0 END) * 100 as success_rate,
-        COUNT(CASE WHEN request_user_agent LIKE '%ChatGPT%' OR 
-                     request_user_agent LIKE '%Perplexity%' OR 
-                     request_user_agent LIKE '%Claude%' OR
-                     request_user_agent LIKE '%GPTBot%' THEN 1 END) as agentic_requests,
+        ${AGENTIC_PATTERNS.COUNT_AGENTIC} as agentic_requests,
         COUNT(CASE WHEN response_status = 404 THEN 1 END) as not_found_count
-      FROM cdn_logs.raw_logs 
-      WHERE timestamp >= '${startHour}'
-        AND timestamp < '${endHour}'
+      FROM cdn_logs.${tableName} 
+      ${whereClause}
       GROUP BY url, host
       ORDER BY total_requests DESC
       LIMIT ${limit}
@@ -97,17 +87,15 @@ export const trafficAnalysisQueries = {
 
   /**
    * Traffic by hour of day pattern
+   * Note: Multi-day queries use timestamp filtering (slower but necessary)
    */
-  trafficByHour: (startDate, endDate) => `
+  trafficByHour: (startDate, endDate, tableName = 'raw_logs') => `
       SELECT 
         HOUR(PARSE_DATETIME(timestamp, 'yyyy-MM-dd''T''HH:mm:ss''+0000')) as hour_of_day,
         COUNT(*) as total_requests,
         AVG(CASE WHEN response_status = 200 THEN 1.0 ELSE 0.0 END) * 100 as success_rate,
-        COUNT(CASE WHEN request_user_agent LIKE '%ChatGPT%' OR 
-                     request_user_agent LIKE '%Perplexity%' OR 
-                     request_user_agent LIKE '%Claude%' OR
-                     request_user_agent LIKE '%GPTBot%' THEN 1 END) as agentic_requests
-      FROM cdn_logs.raw_logs 
+        ${AGENTIC_PATTERNS.COUNT_AGENTIC} as agentic_requests
+      FROM cdn_logs.${tableName} 
       WHERE timestamp >= '${startDate.toISOString()}'
         AND timestamp < '${endDate.toISOString()}'
       GROUP BY 1 

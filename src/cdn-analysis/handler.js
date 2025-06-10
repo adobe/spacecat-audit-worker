@@ -47,7 +47,7 @@ function parseAthenaResults(results) {
 /**
  * Wait for Athena query execution to complete
  */
-async function waitForQueryExecution(athenaClient, queryExecutionId, maxAttempts = 30) {
+async function waitForQueryExecution(athenaClient, queryExecutionId, maxAttempts = 60) {
   let queryExecution;
   let attempts = 0;
 
@@ -60,10 +60,16 @@ async function waitForQueryExecution(athenaClient, queryExecutionId, maxAttempts
     queryExecution = await athenaClient.send(getCommand);
     attempts += 1;
 
-    if (queryExecution.QueryExecution.Status.State !== 'RUNNING'
-      && queryExecution.QueryExecution.Status.State !== 'QUEUED') {
+    const state = queryExecution.QueryExecution.Status.State;
+    if (state !== 'RUNNING' && state !== 'QUEUED') {
       break;
     }
+  }
+
+  // If we've reached max attempts and query is still running, throw an error
+  const finalState = queryExecution.QueryExecution.Status.State;
+  if ((finalState === 'RUNNING' || finalState === 'QUEUED') && attempts >= maxAttempts) {
+    throw new Error(`Query execution timed out after ${maxAttempts} attempts. Current state: ${finalState}`);
   }
 
   return queryExecution;
@@ -292,28 +298,7 @@ async function ensureAthenaTablesExist(athenaClient, s3Config, log) {
         record_count int,
         generated_at string,
         customer_domain string,
-        data array<struct<
-          url: string,
-          request_user_agent: string,
-          response_status: int,
-          count: int,
-          agent_type: string,
-          is_agentic: string,
-          host: string,
-          geo_country: string,
-          referer: string,
-          hits: int,
-          agentic_hits: int,
-          referrer_type: string,
-          error_count: int,
-          error_type: string,
-          total_requests: int,
-          unique_urls: int,
-          success_rate: double,
-          not_found_requests: int,
-          request_frequency: int,
-          requests_per_minute: double
-        >>
+        data_json string
       )
       PARTITIONED BY (
         customer string,
@@ -339,8 +324,7 @@ async function ensureAthenaTablesExist(athenaClient, s3Config, log) {
         'projection.hour.type' = 'integer',
         'projection.hour.range' = '00,23',
         'projection.hour.digits' = '2',
-        'storage.location.template' = '${analysisLocation}customer=\${customer}/'
-          + 'year=\${year}/month=\${month}/day=\${day}/hour=\${hour}/',
+        'storage.location.template' = '${analysisLocation}customer=\${customer}/year=\${year}/month=\${month}/day=\${day}/hour=\${hour}/',
         'has_encrypted_data' = 'false'
       )
     `;
