@@ -28,7 +28,11 @@ export async function getExistingUrlsFromFailedAudits(s3Client, bucketName, site
     log.error(`[A11yAudit] Error getting existing URLs from failed audits: ${error}`);
   }
 
-  const existingUrls = existingKeys.map((key) => {
+  if (existingKeys.length === 0) {
+    return [];
+  }
+
+  const existingUrls = existingKeys.objectKeys.map((key) => {
     const fileName = key.split('/').pop();
     const url = fileName.replace('.json', '');
     const pieces = url.split('_');
@@ -42,4 +46,6 @@ export async function getExistingUrlsFromFailedAudits(s3Client, bucketName, site
   });
 
   return existingUrls;
+
+//   1749564180063/ 1749563780590/
 }

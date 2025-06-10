@@ -37,7 +37,9 @@ export async function scrapeAccessibilityData(context) {
 
   const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
   const existingUrls = await getExistingUrlsFromFailedAudits(s3Client, bucketName, siteId, log);
+  const remainingUrls = urlsToScrape.filter((url) => !existingUrls.includes(url));
   log.info(`[A11yAudit] Found existing URLs from failed audits: ${existingUrls}`);
+  log.info(`[A11yAudit] Remaining URLs to scrape: ${remainingUrls}`);
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
