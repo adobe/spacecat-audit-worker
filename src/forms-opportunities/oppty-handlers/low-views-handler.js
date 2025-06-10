@@ -11,7 +11,7 @@
  */
 
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
-import { filterForms, generateOpptyData } from '../utils.js';
+import { calculateProjectedConversionValue, filterForms, generateOpptyData } from '../utils.js';
 import { DATA_SOURCES } from '../../common/constants.js';
 
 /**
@@ -52,6 +52,8 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_VIEWS
           && oppty.getData().form === opptyData.form,
       );
+      // eslint-disable-next-line no-await-in-loop,max-len
+      const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
       const opportunityData = {
         siteId: auditData.siteId,
@@ -61,9 +63,10 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         origin: 'AUTOMATION',
         title: 'Form has low views',
         description: 'The form has low views but the page containing the form has higher traffic',
-        tags: ['Form View'],
+        tags: ['Form Placement'],
         data: {
           ...opptyData,
+          projectedConversionValue,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         },
         guidance: {
@@ -93,26 +96,25 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         highPageViewsLowFormViewsOptty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormViewsOptty.save();
-
-        log.info('sending message to mystique for high-page-views-low-form-views');
-        const mystiqueMessage = {
-          type: 'guidance:high-page-views-low-form-views',
-          siteId: auditData.siteId,
-          auditId: auditData.auditId,
-          deliveryType: site.getDeliveryType(),
-          time: new Date().toISOString(),
-          url: opportunityData.data.form,
-          data: {
-            form_source: opportunityData.data.formsource,
-            cta_text: '', // This will be available after merging the changes for scraping form CTA text
-            cta_source: '', // This will be available after merging the changes for scraping form CTA text
-          },
-        };
-
-        // eslint-disable-next-line no-await-in-loop
-        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-        log.info(`forms opportunity high page views low form views sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
       }
+      log.info('sending message to mystique for high-page-views-low-form-views');
+      const mystiqueMessage = {
+        type: 'guidance:high-page-views-low-form-views',
+        siteId: auditData.siteId,
+        auditId: auditData.auditId,
+        deliveryType: site.getDeliveryType(),
+        time: new Date().toISOString(),
+        data: {
+          url: opportunityData.data.form,
+          form_source: opportunityData.data.formsource,
+          cta_text: '', // This will be available after merging the changes for scraping form CTA text
+          cta_source: '', // This will be available after merging the changes for scraping form CTA text
+        },
+      };
+
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+      log.info(`forms opportunity high page views low form views sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form views for siteId ${auditData.siteId} failed with error: ${e.message}`, e);

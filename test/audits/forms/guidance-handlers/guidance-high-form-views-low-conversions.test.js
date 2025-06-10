@@ -52,6 +52,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
+        form_source: '.form',
         guidance: 'Some guidance',
         suggestions: ['Suggestion 1', 'Suggestion 2'],
       },
@@ -64,7 +65,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
 
   it('should update an existing opportunity', async () => {
     const existingOpportunity = {
-      getData: sinon.stub().returns({ form: 'https://example.com' }),
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
       getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_CONVERSION),
       setAuditId: sinon.stub(),
       setGuidance: sinon.stub(),

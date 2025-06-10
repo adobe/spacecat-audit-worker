@@ -18,6 +18,7 @@ import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-u
 
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
+import accessibility from './accessibility/handler.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
@@ -46,6 +47,7 @@ import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
 
 const HANDLERS = {
+  accessibility,
   apex,
   cwv,
   'lhs-mobile': lhsMobile,
