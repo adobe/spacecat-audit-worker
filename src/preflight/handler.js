@@ -97,17 +97,17 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${jobId}. Status: ${job.getStatus()}`);
   }
 
-  async function saveIntermediateResults(result, checkName) {
+  async function saveIntermediateResults(result, auditName) {
     try {
       const jobEntity = await AsyncJobEntity.findById(jobId);
       jobEntity.setStatus(AsyncJob.Status.IN_PROGRESS);
       jobEntity.setResultType(AsyncJob.ResultType.INLINE);
       jobEntity.setResult(result);
       await jobEntity.save();
-      log.warn(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${checkName}: Intermediate results saved successfully`);
+      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${auditName}: Intermediate results saved successfully`);
     } catch (error) {
       // ignore any intermediate errors
-      log.warn(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${checkName}: Failed to save intermediate results: ${error.message}`);
+      log.warn(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${auditName}: Failed to save intermediate results: ${error.message}`);
     }
   }
 
@@ -153,8 +153,7 @@ export const preflightAudit = async (context) => {
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Canonical audit completed in ${canonicalElapsed} seconds`);
 
     canonicalResults.forEach(({ url, checks }) => {
-      const pageResult = resultMap.get(url);
-      const audit = pageResult.audits.find((a) => a.name === AUDIT_CANONICAL);
+      const audit = resultMap.get(url).audits.find((a) => a.name === AUDIT_CANONICAL);
       checks.forEach((check) => audit.opportunities.push({
         check: check.check,
         issue: check.explanation,
@@ -191,8 +190,7 @@ export const preflightAudit = async (context) => {
     });
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
-        const pageResult = resultMap.get(pageUrl);
-        const audit = pageResult.audits.find((a) => a.name === AUDIT_LINKS);
+        const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
         audit.opportunities.push({
           check: 'broken-internal-links',
           issue: {
@@ -235,14 +233,11 @@ export const preflightAudit = async (context) => {
       : detectedTags;
     Object.entries(tagCollection).forEach(([path, tags]) => {
       const pageUrl = `${baseURL}${path}`;
-      const pageResult = resultMap.get(pageUrl);
-      if (pageResult && tags && Object.keys(tags).length > 0) {
-        const audit = pageResult.audits.find((a) => a.name === AUDIT_METATAGS);
-        Object.values(tags).forEach((data, tag) => audit.opportunities.push({
-          ...data,
-          tagName: Object.keys(tags)[tag],
-        }));
-      }
+      const audit = resultMap.get(pageUrl)?.audits.find((a) => a.name === AUDIT_METATAGS);
+      return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
+        ...data,
+        tagName: Object.keys(tags)[tag],
+      }));
     });
     const metatagsEndTime = Date.now();
     const metatagsEndTimestamp = new Date().toISOString();
@@ -265,13 +260,15 @@ export const preflightAudit = async (context) => {
     scrapedObjects.forEach(({ data }) => {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const doc = new JSDOM(rawBody).window.document;
-      const pageResult = resultMap.get(finalUrl);
+
+      const auditsByName = Object.fromEntries(
+        resultMap.get(finalUrl).audits.map((auditEntry) => [auditEntry.name, auditEntry]),
+      );
 
       const textContent = doc.body.textContent.replace(/\n/g, '').trim();
 
       if (textContent.length > 0 && textContent.length <= 100) {
-        const audit = pageResult.audits.find((a) => a.name === AUDIT_BODY_SIZE);
-        audit.opportunities.push({
+        auditsByName[AUDIT_BODY_SIZE].opportunities.push({
           check: 'content-length',
           issue: 'Body content length is below 100 characters',
           seoImpact: 'Moderate',
@@ -280,8 +277,7 @@ export const preflightAudit = async (context) => {
       }
 
       if (/lorem ipsum/i.test(textContent)) {
-        const audit = pageResult.audits.find((a) => a.name === AUDIT_LOREM_IPSUM);
-        audit.opportunities.push({
+        auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
           check: 'placeholder-text',
           issue: 'Found Lorem ipsum placeholder text in the page content',
           seoImpact: 'High',
@@ -291,8 +287,7 @@ export const preflightAudit = async (context) => {
 
       const headingCount = doc.querySelectorAll('h1').length;
       if (headingCount !== 1) {
-        const audit = pageResult.audits.find((a) => a.name === AUDIT_H1_COUNT);
-        audit.opportunities.push({
+        auditsByName[AUDIT_H1_COUNT].opportunities.push({
           check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
           issue: headingCount > 1 ? `Found ${headingCount} H1 tags` : 'No H1 tag found on the page',
           seoImpact: 'High',
@@ -310,8 +305,7 @@ export const preflightAudit = async (context) => {
         }));
 
       if (insecureLinks.length > 0) {
-        const audit = pageResult.audits.find((a) => a.name === AUDIT_LINKS);
-        audit.opportunities.push({ check: 'bad-links', issue: insecureLinks });
+        auditsByName[AUDIT_LINKS].opportunities.push({ check: 'bad-links', issue: insecureLinks });
       }
     });
     const domEndTime = Date.now();
