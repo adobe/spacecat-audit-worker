@@ -11,7 +11,7 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter } from './query-helpers.js';
+import { getHourlyPartitionFilter, createUnloadQuery } from './query-helpers.js';
 
 /**
  * Query Source Analysis Athena Queries
@@ -23,10 +23,10 @@ export const querySourceAnalysisQueries = {
    * Hourly query source analysis for agentic traffic
    * Extracts utm_source parameter from URLs
    */
-  hourlyQuerySource: (hourToProcess, tableName = 'filtered_logs') => {
+  hourlyQuerySource: (hourToProcess, tableName, s3Config) => {
     const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
 
-    return `
+    const selectQuery = `
       SELECT 
         '${hourLabel}' as hour,
         url,
@@ -60,6 +60,8 @@ export const querySourceAnalysisQueries = {
                agentic_type
       ORDER BY agentic_traffic_count DESC
     `;
+
+    return createUnloadQuery(selectQuery, 'querySource', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */

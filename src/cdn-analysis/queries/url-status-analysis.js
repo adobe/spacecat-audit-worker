@@ -11,7 +11,7 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter } from './query-helpers.js';
+import { getHourlyPartitionFilter, createUnloadQuery } from './query-helpers.js';
 
 /**
  * URL-Status Analysis Athena Queries
@@ -22,10 +22,10 @@ export const urlStatusAnalysisQueries = {
   /**
    * Hourly URL-Status analysis for agentic traffic
    */
-  hourlyUrlStatus: (hourToProcess, tableName = 'filtered_logs') => {
+  hourlyUrlStatus: (hourToProcess, tableName, s3Config) => {
     const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
 
-    return `
+    const selectQuery = `
       SELECT 
         '${hourLabel}' as hour,
         url,
@@ -40,6 +40,8 @@ export const urlStatusAnalysisQueries = {
       GROUP BY url, response_status
       ORDER BY count DESC
     `;
+
+    return createUnloadQuery(selectQuery, 'urlStatus', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */

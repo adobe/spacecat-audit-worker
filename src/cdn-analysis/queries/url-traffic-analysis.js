@@ -11,7 +11,7 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter } from './query-helpers.js';
+import { getHourlyPartitionFilter, createUnloadQuery } from './query-helpers.js';
 
 /**
  * URL-Level Traffic Analysis Athena Queries
@@ -22,10 +22,10 @@ export const urlTrafficAnalysisQueries = {
   /**
    * Hourly URL-level traffic breakdown for agentic traffic
    */
-  hourlyUrlTraffic: (hourToProcess, tableName = 'filtered_logs') => {
+  hourlyUrlTraffic: (hourToProcess, tableName, s3Config) => {
     const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
 
-    return `
+    const selectQuery = `
       SELECT 
         '${hourLabel}' as hour,
         url,
@@ -47,6 +47,8 @@ export const urlTrafficAnalysisQueries = {
       GROUP BY url
       ORDER BY total_agentic_requests DESC
     `;
+
+    return createUnloadQuery(selectQuery, 'urlTraffic', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */

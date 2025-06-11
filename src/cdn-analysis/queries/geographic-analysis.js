@@ -11,7 +11,7 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter } from './query-helpers.js';
+import { getHourlyPartitionFilter, createUnloadQuery } from './query-helpers.js';
 
 /**
  * Geographic Analysis Athena Queries
@@ -22,10 +22,10 @@ export const geographicAnalysisQueries = {
   /**
    * Hourly geographic analysis for agentic traffic
    */
-  hourlyHitsByCountry: (hourToProcess, tableName = 'filtered_logs') => {
+  hourlyHitsByCountry: (hourToProcess, tableName, s3Config) => {
     const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
 
-    return `
+    const selectQuery = `
       SELECT 
         '${hourLabel}' as hour,
         geo_country as country_code,
@@ -49,6 +49,8 @@ export const geographicAnalysisQueries = {
       GROUP BY geo_country
       ORDER BY request_count DESC
     `;
+
+    return createUnloadQuery(selectQuery, 'geographic', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */
