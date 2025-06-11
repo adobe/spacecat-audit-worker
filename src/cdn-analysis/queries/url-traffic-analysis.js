@@ -22,7 +22,7 @@ export const urlTrafficAnalysisQueries = {
   /**
    * Hourly URL-level traffic breakdown for agentic traffic
    */
-  hourlyUrlTraffic: (hourToProcess, tableName = 'formatted_logs') => {
+  hourlyUrlTraffic: (hourToProcess, tableName = 'filtered_logs') => {
     const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
 
     return `
@@ -40,13 +40,10 @@ export const urlTrafficAnalysisQueries = {
         COUNT(CASE WHEN response_status = 403 THEN 1 END) as status_403,
         COUNT(CASE WHEN response_status = 404 THEN 1 END) as status_404,
         COUNT(CASE WHEN response_status BETWEEN 500 AND 599 THEN 1 END) as status_5xx,
-        -- Traffic totals
-        COUNT(CASE WHEN agentic_type IS NOT NULL AND agentic_type != '' THEN 1 END) as total_agentic_requests,
-        COUNT(*) as total_overall_traffic
+        COUNT(*) as total_agentic_requests
       FROM cdn_logs.${tableName} 
       ${whereClause}
-      AND agentic_type IS NOT NULL 
-      AND agentic_type != ''
+      AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       GROUP BY url
       ORDER BY total_agentic_requests DESC
     `;

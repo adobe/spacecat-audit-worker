@@ -22,7 +22,7 @@ export const userAgentRequestAnalysisQueries = {
   /**
    * Hourly user agent analysis for agentic traffic
    */
-  hourlyUserAgentRequests: (hourToProcess, tableName = 'formatted_logs') => {
+  hourlyUserAgentRequests: (hourToProcess, tableName = 'filtered_logs') => {
     const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
 
     return `
@@ -31,14 +31,10 @@ export const userAgentRequestAnalysisQueries = {
         request_user_agent as user_agent,
         response_status as status_code,
         COUNT(*) as count,
-        -- Additional context
-        agentic_type,
-        COUNT(DISTINCT url) as unique_urls,
-        COUNT(DISTINCT geo_country) as unique_countries
+        agentic_type
       FROM cdn_logs.${tableName} 
       ${whereClause}
-      AND agentic_type IS NOT NULL 
-      AND agentic_type != ''
+      AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       GROUP BY request_user_agent, response_status, agentic_type
       ORDER BY count DESC
     `;
