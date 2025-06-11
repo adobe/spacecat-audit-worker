@@ -50,7 +50,7 @@ export function getS3Config(context, site = null) {
 }
 
 export function getCustomerRawLogsLocation(s3Config) {
-  return `s3://${s3Config.rawLogsBucket}/`;
+  return `s3://${s3Config.rawLogsBucket}/raw/`;
 }
 
 export function getRawLogsPartitionConfig(s3Config) {
