@@ -12,128 +12,152 @@
 
 /* c8 ignore start */
 import { executeAthenaQuery } from './athena-client.js';
-import { trafficAnalysisQueries } from '../queries/traffic-analysis.js';
-import { referrerAnalysisQueries } from '../queries/referrer-analysis.js';
-import { userAgentAnalysisQueries } from '../queries/user-agent-analysis.js';
-import { errorAnalysisQueries } from '../queries/error-analysis.js';
-import { geoAnalysisQueries } from '../queries/geo-analysis.js';
-import { frequencyAnalysisQueries } from '../queries/frequency-analysis.js';
+import { requestAnalysisQueries } from '../queries/request-analysis.js';
+import { urlTrafficAnalysisQueries } from '../queries/url-traffic-analysis.js';
+import { userAgentRequestAnalysisQueries } from '../queries/user-agent-request-analysis.js';
+import { querySourceAnalysisQueries } from '../queries/query-source-analysis.js';
+import { urlUserAgentStatusAnalysisQueries } from '../queries/url-user-agent-status-analysis.js';
+import { urlStatusAnalysisQueries } from '../queries/url-status-analysis.js';
+import { geographicAnalysisQueries } from '../queries/geographic-analysis.js';
 
 /**
- * Run traffic analysis
+ * 1. Run request analysis
  */
-export async function runTrafficAnalysis(
+export async function runRequestAnalysis(
   athenaClient,
   hourToProcess,
   s3Config,
   customerTableName,
   log,
 ) {
-  const query = trafficAnalysisQueries.hourlyTraffic(hourToProcess, customerTableName);
+  const query = requestAnalysisQueries.hourlyRequests(hourToProcess, customerTableName);
   return executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
 }
 
 /**
- * Run referrer analysis
+ * 2. Run URL-level traffic breakdown analysis
  */
-export async function runReferrerAnalysis(
+export async function runUrlTrafficAnalysis(
   athenaClient,
   hourToProcess,
   s3Config,
   customerTableName,
   log,
 ) {
-  const query = referrerAnalysisQueries.hourlyReferrers(hourToProcess, customerTableName);
+  const query = urlTrafficAnalysisQueries.hourlyUrlTraffic(hourToProcess, customerTableName);
   return executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
 }
 
 /**
- * Run user agent analysis
+ * 3. Run user agent request analysis (agentic traffic only)
  */
-export async function runUserAgentAnalysis(
+export async function runUserAgentRequestAnalysis(
   athenaClient,
   hourToProcess,
   s3Config,
   customerTableName,
   log,
 ) {
-  const query = userAgentAnalysisQueries.hourlyUserAgents(hourToProcess, customerTableName);
+  const query = userAgentRequestAnalysisQueries.hourlyUserAgentRequests(
+    hourToProcess,
+    customerTableName,
+  );
   return executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
 }
 
 /**
- * Run error analysis
+ * 4. Run query source analysis (UTM parameters)
  */
-export async function runErrorAnalysis(
+export async function runQuerySourceAnalysis(
   athenaClient,
   hourToProcess,
   s3Config,
   customerTableName,
   log,
 ) {
-  const query = errorAnalysisQueries.hourlyErrors(hourToProcess, customerTableName);
+  const query = querySourceAnalysisQueries.hourlyQuerySource(hourToProcess, customerTableName);
   return executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
 }
 
 /**
- * Run geographic analysis
+ * 5. Run URL-User-Agent-Status analysis
  */
-export async function runGeoAnalysis(
+export async function runUrlUserAgentStatusAnalysis(
   athenaClient,
   hourToProcess,
   s3Config,
   customerTableName,
   log,
 ) {
-  const query = geoAnalysisQueries.hourlyByCountry(hourToProcess, customerTableName);
+  const query = urlUserAgentStatusAnalysisQueries.hourlyUrlUserAgentStatus(
+    hourToProcess,
+    customerTableName,
+  );
   return executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
 }
 
 /**
- * Run frequency analysis
+ * 6. Run URL-Status analysis
  */
-export async function runFrequencyAnalysis(
+export async function runUrlStatusAnalysis(
   athenaClient,
   hourToProcess,
   s3Config,
   customerTableName,
   log,
 ) {
-  const query = frequencyAnalysisQueries.hourlyFrequencyPatterns(hourToProcess, customerTableName);
+  const query = urlStatusAnalysisQueries.hourlyUrlStatus(hourToProcess, customerTableName);
   return executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
 }
 
 /**
- * Run all analysis types in parallel
+ * 7. Run geographic analysis (hits by country)
+ */
+export async function runGeographicAnalysis(
+  athenaClient,
+  hourToProcess,
+  s3Config,
+  customerTableName,
+  log,
+) {
+  const query = geographicAnalysisQueries.hourlyHitsByCountry(hourToProcess, customerTableName);
+  return executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
+}
+
+/**
+ * Run all 7 agentic analysis types in parallel
  */
 export async function runAllAnalysis(athenaClient, hourToProcess, s3Config, tableName, log) {
   const analysisPromises = [
-    runTrafficAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runReferrerAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runUserAgentAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runErrorAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runGeoAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runFrequencyAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
+    runRequestAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
+    runUrlTrafficAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
+    runUserAgentRequestAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
+    runQuerySourceAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
+    runUrlUserAgentStatusAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
+    runUrlStatusAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
+    runGeographicAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
   ];
 
   const [
-    trafficData,
-    referrerData,
-    userAgentData,
-    errorData,
-    geoData,
-    frequencyData,
+    requestData,
+    urlTrafficData,
+    userAgentRequestData,
+    querySourceData,
+    urlUserAgentStatusData,
+    urlStatusData,
+    geographicData,
   ] = await Promise.allSettled(analysisPromises);
 
   const analysisResults = {};
 
   // Collect successful results
-  if (trafficData.status === 'fulfilled') analysisResults.traffic = trafficData.value;
-  if (referrerData.status === 'fulfilled') analysisResults.referrer = referrerData.value;
-  if (userAgentData.status === 'fulfilled') analysisResults.userAgent = userAgentData.value;
-  if (errorData.status === 'fulfilled') analysisResults.error = errorData.value;
-  if (geoData.status === 'fulfilled') analysisResults.geo = geoData.value;
-  if (frequencyData.status === 'fulfilled') analysisResults.frequency = frequencyData.value;
+  if (requestData.status === 'fulfilled') analysisResults.request = requestData.value;
+  if (urlTrafficData.status === 'fulfilled') analysisResults.urlTraffic = urlTrafficData.value;
+  if (userAgentRequestData.status === 'fulfilled') analysisResults.userAgentRequest = userAgentRequestData.value;
+  if (querySourceData.status === 'fulfilled') analysisResults.querySource = querySourceData.value;
+  if (urlUserAgentStatusData.status === 'fulfilled') analysisResults.urlUserAgentStatus = urlUserAgentStatusData.value;
+  if (urlStatusData.status === 'fulfilled') analysisResults.urlStatus = urlStatusData.value;
+  if (geographicData.status === 'fulfilled') analysisResults.geographic = geographicData.value;
 
   return analysisResults;
 }
@@ -150,7 +174,10 @@ export function createAnalysisSummary(analysisResults, hourProcessed, s3Config) 
     analysisTypes: Object.keys(analysisResults),
     recordCounts: {},
     totalAgenticRequests: 0,
+    totalOverallTraffic: 0,
     agentTypeBreakdown: {},
+    statusCodeBreakdown: {},
+    geographicSummary: {},
   };
 
   // Count records in each analysis
@@ -158,27 +185,36 @@ export function createAnalysisSummary(analysisResults, hourProcessed, s3Config) 
     summary.recordCounts[type] = Array.isArray(data) ? data.length : 0;
   });
 
-  // Extract key metrics from traffic analysis
-  if (analysisResults.traffic && analysisResults.traffic.length > 0) {
-    const trafficData = analysisResults.traffic[0];
-    summary.totalAgenticRequests = parseInt(trafficData.total_requests || 0, 10);
+  // Extract key metrics from request analysis
+  if (analysisResults.request && analysisResults.request.length > 0) {
+    const requestData = analysisResults.request[0];
+    summary.totalAgenticRequests = parseInt(requestData.total_agentic_requests || 0, 10);
+    summary.totalOverallTraffic = parseInt(requestData.total_overall_traffic || 0, 10);
 
-    // Extract agentic type breakdown if available
+    // Extract agentic type breakdown
     const agentBreakdown = {};
-    if (trafficData.chatgpt_requests) {
-      agentBreakdown.chatgpt = parseInt(trafficData.chatgpt_requests, 10);
+    if (requestData.chatgpt_requests) {
+      agentBreakdown.chatgpt = parseInt(requestData.chatgpt_requests, 10);
     }
-    if (trafficData.perplexity_requests) {
-      agentBreakdown.perplexity = parseInt(trafficData.perplexity_requests, 10);
+    if (requestData.perplexity_requests) {
+      agentBreakdown.perplexity = parseInt(requestData.perplexity_requests, 10);
     }
-    if (trafficData.claude_requests) {
-      agentBreakdown.claude = parseInt(trafficData.claude_requests, 10);
-    }
-    if (trafficData.gemini_requests) {
-      agentBreakdown.gemini = parseInt(trafficData.gemini_requests, 10);
+    if (requestData.claude_requests) {
+      agentBreakdown.claude = parseInt(requestData.claude_requests, 10);
     }
 
     summary.agentTypeBreakdown = agentBreakdown;
+
+    // Extract status code breakdown
+    const statusBreakdown = {};
+    if (requestData.status_2xx) statusBreakdown.status_2xx = parseInt(requestData.status_2xx, 10);
+    if (requestData.status_3xx) statusBreakdown.status_3xx = parseInt(requestData.status_3xx, 10);
+    if (requestData.status_401) statusBreakdown.status_401 = parseInt(requestData.status_401, 10);
+    if (requestData.status_403) statusBreakdown.status_403 = parseInt(requestData.status_403, 10);
+    if (requestData.status_404) statusBreakdown.status_404 = parseInt(requestData.status_404, 10);
+    if (requestData.status_5xx) statusBreakdown.status_5xx = parseInt(requestData.status_5xx, 10);
+
+    summary.statusCodeBreakdown = statusBreakdown;
   }
 
   // Calculate agent type diversity
@@ -187,22 +223,34 @@ export function createAnalysisSummary(analysisResults, hourProcessed, s3Config) 
   );
   summary.uniqueAgentTypes = activeAgentTypes.length;
 
-  // Extract success rate if available
-  if (analysisResults.traffic && analysisResults.traffic.length > 0) {
-    summary.successRate = parseFloat(analysisResults.traffic[0].success_rate || 0);
+  // Calculate success rate from status codes
+  const total2xx = summary.statusCodeBreakdown.status_2xx || 0;
+  if (summary.totalAgenticRequests > 0) {
+    summary.successRate = parseFloat(((total2xx / summary.totalAgenticRequests) * 100).toFixed(2));
   }
 
   // Extract geographic diversity
-  if (analysisResults.geo && Array.isArray(analysisResults.geo)) {
-    summary.uniqueCountries = analysisResults.geo.length;
+  if (analysisResults.geographic && Array.isArray(analysisResults.geographic)) {
+    summary.geographicSummary.uniqueCountries = analysisResults.geographic.length;
+
+    // Top 3 countries by traffic
+    const topCountries = analysisResults.geographic
+      .slice(0, 3)
+      .map((country) => ({
+        code: country.country_code,
+        requests: parseInt(country.request_count || 0, 10),
+      }));
+    summary.geographicSummary.topCountries = topCountries;
   }
 
-  // Extract error summary
-  if (analysisResults.error && Array.isArray(analysisResults.error)) {
-    summary.totalErrors = analysisResults.error.reduce(
-      (sum, error) => sum + parseInt(error.error_count || 0, 10),
-      0,
-    );
+  // Extract URL analysis summary
+  if (analysisResults.urlTraffic && Array.isArray(analysisResults.urlTraffic)) {
+    summary.uniqueUrls = analysisResults.urlTraffic.length;
+  }
+
+  // Extract query source summary
+  if (analysisResults.querySource && Array.isArray(analysisResults.querySource)) {
+    summary.urlsWithUtmSource = analysisResults.querySource.length;
   }
 
   return summary;

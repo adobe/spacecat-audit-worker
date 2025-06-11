@@ -60,7 +60,7 @@ export const AGENTIC_PATTERNS = {
   TYPE_CLASSIFICATION: 'agentic_type',
 
   // For agentic-only data, all records are agentic
-  IS_AGENTIC_FLAG: '\'true\'',
+  IS_AGENTIC_FLAG: "'true'",
 
   // For agentic-only data, count all records
   COUNT_AGENTIC: 'COUNT(*)',
