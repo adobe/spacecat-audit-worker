@@ -406,6 +406,12 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 setAuditId: sandbox.stub(),
               }),
             },
+            Site: {
+              findById: sandbox.stub().resolves({
+                getDeliveryType: sinon.stub().returns('aem'),
+                getBaseURL: sinon.stub().returns('https://example.com'),
+              }),
+            },
           },
         })
         .build();
@@ -457,6 +463,22 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] A11y opportunity not detected, skipping guidance',
+      );
+    });
+
+    it('handle error when no site is found', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          opportunityId,
+          a11y: [],
+        },
+      };
+      context.dataAccess.Site.findById.rejects(new Error('Site not found'));
+      await mystiqueDetectedFormAccessibilityHandler(message, context);
+      expect(context.log.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] Failed to process a11y opportunity from mystique: Site not found',
       );
     });
 

@@ -220,36 +220,41 @@ export async function createAccessibilityOpportunity(auditData, context) {
 
 export default async function handler(message, context) {
   const {
-    log, site, env, sqs,
+    log, env, sqs, dataAccess,
   } = context;
+  const { Site } = dataAccess;
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y } = data;
   log.info(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
-  const opportunity = await createOrUpdateOpportunity(
-    auditId,
-    siteId,
-    a11y,
-    context,
-    opportunityId,
-  );
-  if (!opportunity) {
-    log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`);
-    return ok();
+  try {
+    const opportunity = await createOrUpdateOpportunity(
+      auditId,
+      siteId,
+      a11y,
+      context,
+      opportunityId,
+    );
+    if (!opportunity) {
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`);
+      return ok();
+    }
+    const site = await Site.findById(siteId);
+    // send message to mystique for guidance
+    const mystiqueMessage = {
+      type: 'guidance:forms-a11y',
+      siteId,
+      auditId,
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        url: site.getBaseURL(),
+        opportunityId: opportunity?.getId(),
+      },
+    };
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] Sent a11y message to mystique for guidance`);
+  } catch (error) {
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to process a11y opportunity from mystique: ${error.message}`);
   }
-
-  // send message to mystique for guidance
-  const mystiqueMessage = {
-    type: 'guidance:forms-a11y',
-    siteId,
-    auditId,
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      url: site.getBaseURL(),
-      opportunityId: opportunity?.getId(),
-    },
-  };
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] Sent a11y message to mystique for guidance`);
   return ok();
 }
