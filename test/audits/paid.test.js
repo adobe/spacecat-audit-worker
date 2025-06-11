@@ -19,7 +19,9 @@ import nock from 'nock';
 import { describe } from 'mocha';
 import rumData from '../fixtures/paid/mock-segments-data.json' with { type: 'json' };
 import expectedSubmitted from '../fixtures/paid/expected-submitted-audit.json' with {type: 'json'};
-import { paidAuditRunner } from '../../src/paid/handler.js';
+import {
+  paidAuditRunner, auditAndScrapeBannerOn, scrapeBannerOff, submitForMystiqueEvaluation,
+} from '../../src/paid/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -69,24 +71,24 @@ const runDataUrlMissingType = [
 ];
 
 const pageTypes = {
-  'homepage | Homepage': /^\/(home\/?)?$/,
-  'homepage | Homepage (Customer Variant)': /^\/homepage(-customer)?(\/|$)/i,
-  'productpage | Product/Feature Pages': /^\/(products?|features?|services?)(\/|$)/i,
-  'other | Other Pages': /.*/,
+  Homepage: /https?:\/\/[^/]+\/(home\/?|$)/i,
+  Developer: /https?:\/\/[^/]+\/developer(\/|$)/i,
+  Documentation: /https?:\/\/[^/]+\/docs(\/|$)/i,
+  Tools: /https?:\/\/[^/]+\/tools\/rum\/explorer\.html$/i,
+  'other | Other Pages': /.*/, // fallback
 };
 
-function getSite() {
+function getSite(overrides = {}) {
   const config = Object.entries(pageTypes).map(([name, patternReg]) => {
     const safeRegex = {
       pattern: patternReg.source,
       flags: patternReg.flags,
     };
 
-    return (
-      {
-        name,
-        pattern: JSON.stringify(safeRegex),
-      });
+    return ({
+      name,
+      pattern: JSON.stringify(safeRegex),
+    });
   });
 
   const siteConfig = {
@@ -95,11 +97,13 @@ function getSite() {
 
   return {
     getConfig: () => siteConfig,
-    getSiteId: () => 'some-id',
+    getId: () => 'test-site-id',
+    getDeliveryType: () => 'aem-edge',
+    ...overrides,
   };
 }
 
-describe('Paid audit incorporates optel data as input', () => {
+describe('Paid Audit', () => {
   const logStub = {
     info: sinon.stub(),
     debug: sinon.stub(),
@@ -107,18 +111,42 @@ describe('Paid audit incorporates optel data as input', () => {
     warn: sinon.stub(),
   };
 
-  let site = getSite();
+  let site;
+  let audit;
+  let context;
 
-  let context = {
-    runtime: { name: 'aws-lambda', region: 'us-east-1' },
-    func: { package: 'spacecat-services', version: 'ci', name: 'test' },
-    rumApiClient: {
-      query: sandbox.stub().resolves(rumData),
-    },
-    dataAccess: {},
-    env: {},
-    log: logStub,
-  };
+  beforeEach(() => {
+    site = getSite();
+    audit = {
+      getAuditResult: sinon.stub().returns({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+        ],
+      }),
+      getAuditId: () => 'test-audit-id',
+    };
+
+    context = {
+      runtime: { name: 'aws-lambda', region: 'us-east-1' },
+      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+      rumApiClient: {
+        query: sandbox.stub().resolves(rumData),
+      },
+      dataAccess: {},
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      site,
+      audit,
+      log: logStub,
+      s3Client: {},
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+    };
+  });
 
   afterEach(() => {
     nock.cleanAll();
@@ -126,15 +154,28 @@ describe('Paid audit incorporates optel data as input', () => {
   });
 
   const expectedSegments = ['url', 'pageType'];
-  it('Paid should submit expected rum query data', async () => {
+  it('should submit expected rum query data', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
-    expect(result).to.deep.equal(expectedSubmitted);
     const submittedSegments = (result.auditResult.map((entry) => (entry.key)));
-    submittedSegments.forEach((key) => expect(expectedSegments).to.include(key));
+    submittedSegments.forEach((key) => {
+      expect(expectedSegments).to.include(key);
+    });
     result.auditResult.forEach((resultItem) => expect(resultItem.value?.length).to.eqls(3));
+    const pageTypesValues = result.auditResult.find((segment) => segment.key === 'pageType').value;
+    pageTypesValues.forEach((type) => expect(type.urls.length).to.be.lessThanOrEqual(3));
+    expect(result).to.deep.equal(expectedSubmitted);
   });
 
-  it('Paid should submit values ordered by total sessions', async () => {
+  it('should submit expected urls for scrapping', async () => {
+    const submited = await auditAndScrapeBannerOn(context);
+    expect(submited.type).to.eql('paid-top-segment-scrape-banner-on');
+    expect(submited.siteId).to.eql('test-site-id');
+    expect(submited.auditResult.length).to.eql(2);
+    expect(submited.urls.length).to.eql(6);
+    submited.urls.forEach((url) => expect(url.url).to.not.be.empty);
+  });
+
+  it('should submit values ordered by total sessions', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
     result.auditResult.forEach((segment) => {
       const values = segment.value;
@@ -144,7 +185,7 @@ describe('Paid audit incorporates optel data as input', () => {
     });
   });
 
-  it('Paid should enrich urls with pageType info', async () => {
+  it('should enrich urls with pageType info', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
     const urlSegment = result.auditResult.find((segment) => segment.key === 'url');
     urlSegment.value.forEach((valueItem) => {
@@ -152,7 +193,7 @@ describe('Paid audit incorporates optel data as input', () => {
     });
   });
 
-  it('Paid should handle missing page data', async () => {
+  it('should handle missing page data', async () => {
     context = {
       ...context,
       rumApiClient: { query: sandbox.stub().resolves(runDataMissingType) },
@@ -163,7 +204,7 @@ describe('Paid audit incorporates optel data as input', () => {
     expect(result.auditResult[0].value).to.not.have.property('pageType');
   });
 
-  it('Paid should handle empty query respone', async () => {
+  it('should handle empty query respone', async () => {
     context = {
       ...context,
       rumApiClient: { query: sandbox.stub().resolves([]) },
@@ -173,7 +214,7 @@ describe('Paid audit incorporates optel data as input', () => {
     expect(result.auditResult.length).to.eql(0);
   });
 
-  it('Paid should handle url and page type mismatch', async () => {
+  it('should handle url and page type mismatch', async () => {
     context = {
       ...context,
       rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
@@ -196,7 +237,7 @@ describe('Paid audit incorporates optel data as input', () => {
     expect(missingUrl.pageType).to.eq('other | Other Pages');
   });
 
-  it('Paid should handle regex settings', async () => {
+  it('should handle regex settings', async () => {
     context = {
       ...context,
       rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
@@ -215,22 +256,109 @@ describe('Paid audit incorporates optel data as input', () => {
     expect(missingUrl.pageType).to.eq('other | Other Pages');
   });
 
-  it('Paid should handle missing config', async () => {
+  it('should handle missing config', async () => {
     context = {
       ...context,
       rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
     };
 
-    const siteConfig = {
-      getGroupedURLs: sandbox.stub().returns(null),
-    };
-
-    const siteWithMissingConfig = {
-      getConfig: () => siteConfig,
-      getSiteId: () => 'someId',
-    };
+    const siteWithMissingConfig = getSite({
+      getConfig: () => ({
+        getGroupedURLs: sandbox.stub().return(null),
+      }),
+    });
 
     const result = await paidAuditRunner(auditUrl, context, siteWithMissingConfig);
     expect(result.auditResult.length).to.eql(2);
+  });
+
+  it('should return correct scrape configuration with banner off', async () => {
+    const result = await scrapeBannerOff(context);
+
+    expect(result).to.deep.equal({
+      type: 'paid-top-segment-scrape-banner-off',
+      siteId: 'test-site-id',
+      urls: [
+        { url: 'https://example.com/page1' },
+        { url: 'https://example.com/page2' },
+      ],
+      allowCache: false,
+      options: {
+        storagePrefix: 'consent-banner-off',
+        screenshotTypes: ['viewport'],
+        hideConsentBanners: true,
+      },
+    });
+  });
+
+  it('should throw error when no URLs in audit result', async () => {
+    audit.getAuditResult.returns({});
+
+    await expect(scrapeBannerOff(context))
+      .to.be.rejectedWith('No URLs found in previous step audit result');
+  });
+
+  it('should throw error when URLs is not an array', async () => {
+    audit.getAuditResult.returns({ urls: 'not-an-array' });
+
+    await expect(scrapeBannerOff(context))
+      .to.be.rejectedWith('No URLs found in previous step audit result');
+  });
+
+  describe('submitForMystiqueEvaluation error handling', () => {
+    it('should handle empty URLs array from audit result', async () => {
+      context.audit.getAuditResult = sinon.stub().returns({
+        urls: [],
+      });
+
+      await expect(submitForMystiqueEvaluation(context))
+        .to.be.rejectedWith('No URLs found in previous step audit result');
+
+      expect(context.sqs.sendMessage.called).to.be.false;
+    });
+
+    it('should handle missing URLs in audit result', async () => {
+      context.audit.getAuditResult = sinon.stub().returns({});
+
+      await expect(submitForMystiqueEvaluation(context))
+        .to.be.rejectedWith('No URLs found in previous step audit result');
+
+      expect(context.sqs.sendMessage.called).to.be.false;
+    });
+
+    it('should submit expected result to mistique', async () => {
+      context.audit.getAuditResult = sinon.stub().returns({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+        ],
+      });
+
+      context.s3Presigner = { getSignedUrl: sinon.stub().resolves('expected-signed-url') };
+
+      await submitForMystiqueEvaluation(context);
+
+      expect(context.sqs.sendMessage.called).to.be.true;
+      expect(logStub.info.callCount).to.be.above(1);
+    });
+
+    it('should fail on fetchUrl errors', async () => {
+      context.audit.getAuditResult = sinon.stub().returns({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+        ],
+      });
+      const expectedError = new Error('Failed to generate signed URL');
+      context.s3Presigner = {
+        getSignedUrl: () => {
+          throw expectedError;
+        },
+      };
+
+      await expect(submitForMystiqueEvaluation(context))
+        .to.be.rejectedWith(expectedError);
+      expect(logStub.error.callCount).to.be.above(0);
+    });
   });
 });

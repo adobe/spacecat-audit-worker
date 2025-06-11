@@ -24,7 +24,38 @@ const UNCATEGORIZED = 'uncategorized';
 
 const ALLOWED_SEGMENTS = ['url', 'pageType'];
 const SITE_CLASSIFIER = {};
-let log;
+
+const AUDIT_CONSTANTS = {
+  TYPES: {
+    BANNER_ON: 'paid-top-segment-scrape-banner-on',
+    BANNER_OFF: 'paid-top-segment-scrape-banner-off',
+    MYSTIQUE: 'guidance:paid-cookie-consent',
+  },
+  OBSERVATION: 'Landing page should not have a blocking cookie concent banner',
+  STORAGE_PREFIX: {
+    BANNER_ON: 'consent-banner-on',
+    BANNER_OFF: 'consent-banner-off',
+  },
+};
+
+const SCREENSHOT_CONF = {
+  BANNER_STATES: {
+    ON: 'consent-banner-on',
+    OFF: 'consent-banner-off',
+  },
+  TYPES: {
+    MOBILE: 'screenshot-iphone-6-viewport.png',
+    DESKTOP: 'screenshot-desktop-viewport.png',
+  },
+  OPTIONS: {
+    TYPES: ['viewport'],
+  },
+};
+
+const normalizeUrl = (url) => {
+  const urlObj = new URL(typeof url === 'string' ? url : url.url);
+  return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`;
+};
 
 const isAllowedSegment = (segment) => ALLOWED_SEGMENTS.includes(segment.key);
 const filterByTopSessionViews = (segment) => {
@@ -88,9 +119,9 @@ function classifyUrl(url, classifier) {
   return pageType;
 }
 
-function fetchPageTypeClassifier(site) {
-  const siteId = site.getSiteId();
-  log.info(`Fetching classifier for site ${siteId}`);
+function fetchPageTypeClassifier(site, log) {
+  const siteId = site.getId();
+  log.info(`[paid-audit] [Site: ${siteId}] Fetching page type classifier`);
 
   let classifier = SITE_CLASSIFIER[siteId];
   if (!classifier) {
@@ -161,42 +192,42 @@ function enrichPageTypes(auditResult, classifier) {
   return enriched;
 }
 
-function tryEnrich(segments, classifier, auditUrl) {
+function tryEnrich(segments, classifier, auditUrl, log) {
   if (isNonEmptyObject(classifier)) {
     return enrichPageTypes(segments, classifier);
   }
-  log.warn(`Page type configuration is missing for site ${auditUrl}. Proceeding with auit without page and url enrichment`);
-
+  log.warn(`[paid-audit] [Site: ${auditUrl}] Page type configuration missing, proceeding without enrichment`);
   return segments;
 }
 
 function getUrlKeys(site, urls) {
+  const blPath = (basePath, bannerState, type) => `${basePath}/${bannerState}/${type}`;
+
   return urls.map((item) => {
-    const url = new URL(item.url);
-    const suffix = url.pathname === '/' ? '' : `${url.pathname}`;
-    const key = `scrapes/${site.getSiteId()}${suffix}`;
+    const urlPath = new URL(item.url).pathname;
+    const suffix = urlPath === '/' ? '' : urlPath;
+    const base = `scrapes/${site.getId()}${suffix}`;
+
     return {
       url: item.url,
-      mobile_on: `${key}/consent-banner-on/screenshot-iphone-6-viewport.png`,
-      desktop_on: `${key}/consent-banner-on/screenshot-desktop-viewport.png`,
-      mobile_off: `${key}/consent-banner-off/screenshot-iphone-6-viewport.png`,
-      desktop_off: `${key}/consent-banner-off/screenshot-desktop-viewport.png`,
+      mobile_on: blPath(base, SCREENSHOT_CONF.BANNER_STATES.ON, SCREENSHOT_CONF.TYPES.MOBILE),
+      desktop_on: blPath(base, SCREENSHOT_CONF.BANNER_STATES.ON, SCREENSHOT_CONF.TYPES.DESKTOP),
+      mobile_off: blPath(base, SCREENSHOT_CONF.BANNER_STATES.OFF, SCREENSHOT_CONF.TYPES.MOBILE),
+      desktop_off: blPath(base, SCREENSHOT_CONF.BANNER_STATES.OFF, SCREENSHOT_CONF.TYPES.DESKTOP),
     };
   });
 }
 
 async function getSignedUrls(context, keys) {
-  const { s3Client } = context;
-  if (typeof log === 'undefined') {
-    log = context.log;
-  }
-  const { S3_SCRAPER_BUCKET_NAME } = context.env;
+  const { s3Client, s3Presigner, log } = context;
+
+  const { S3_SCRAPER_BUCKET_NAME: SCRAPER_BUCKET } = context.env;
   return Promise.all(
     keys.map(async (item) => {
-      const mOn = await getSignedUrl(s3Client, S3_SCRAPER_BUCKET_NAME, item.mobile_on, log);
-      const dOn = await getSignedUrl(s3Client, S3_SCRAPER_BUCKET_NAME, item.desktop_on, log);
-      const mOff = await getSignedUrl(s3Client, S3_SCRAPER_BUCKET_NAME, item.mobile_off, log);
-      const dOff = await getSignedUrl(s3Client, S3_SCRAPER_BUCKET_NAME, item.desktop_off, log);
+      const mOn = await getSignedUrl(s3Presigner, s3Client, SCRAPER_BUCKET, item.mobile_on, log);
+      const dOn = await getSignedUrl(s3Presigner, s3Client, SCRAPER_BUCKET, item.desktop_on, log);
+      const mOff = await getSignedUrl(s3Presigner, s3Client, SCRAPER_BUCKET, item.mobile_off, log);
+      const dOff = await getSignedUrl(s3Presigner, s3Client, SCRAPER_BUCKET, item.desktop_off, log);
       return {
         url: item.url,
         mOn,
@@ -208,13 +239,36 @@ async function getSignedUrls(context, keys) {
   );
 }
 
-export async function paidAuditRunner(auditUrl, context, site) {
-  if (typeof log === 'undefined') {
-    log = context.log;
-  }
+async function fetchScrappedUrls(context, site, urls) {
+  const keys = getUrlKeys(site, urls);
+  const signedUrls = await getSignedUrls(context, keys);
+  return signedUrls;
+}
 
+function buildMystiqueMessage(site, audit, signedUrls) {
+  const { url } = signedUrls;
+  return {
+    type: AUDIT_CONSTANTS.TYPES.MYSTIQUE,
+    observation: AUDIT_CONSTANTS.OBSERVATION,
+    siteId: site.getId(),
+    url,
+    auditId: audit.getAuditId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      url,
+      mobile_path_cookie_banner_on: signedUrls.mOn,
+      mobile_path_cookie_banner_off: signedUrls.mOff,
+      desktop_path_cookie_banner_on: signedUrls.dOn,
+      desktop_path_cookie_banner_off: signedUrls.dOff,
+    },
+  };
+}
+
+export async function paidAuditRunner(auditUrl, context, site) {
+  const { log } = context;
   const rumAPIClient = RUMAPIClient.createFrom(context, auditUrl, site);
-  const classifier = fetchPageTypeClassifier(site);
+  const classifier = fetchPageTypeClassifier(site, log);
 
   const hasClassifier = isNonEmptyObject(classifier);
   const options = {
@@ -224,39 +278,33 @@ export async function paidAuditRunner(auditUrl, context, site) {
     pageTypes: classifier,
   };
 
-  log.info(`Querying paid Optel metrics for site ${auditUrl} with hasPageClassifier: ${hasClassifier}`);
+  log.info(`[paid-audit] [Site: ${auditUrl}] Querying paid Optel metrics (hasPageClassifier: ${hasClassifier})`);
   const allSegments = await rumAPIClient.query('trafficMetrics', options);
-  const segmentsFiltered = allSegments
-    .filter(isAllowedSegment);
+  const segmentsFiltered = allSegments.filter(isAllowedSegment);
 
-  const enrichedResult = tryEnrich(segmentsFiltered, classifier, auditUrl);
+  const enrichedResult = tryEnrich(segmentsFiltered, classifier, auditUrl, log);
 
-  log.info(`Filtering ${enrichedResult?.length} segments by top totalSessions`);
+  log.info(`[paid-audit] [Site: ${auditUrl}] Processing ${enrichedResult?.length} segments`);
   const auditResult = enrichedResult
     .filter(hasValues)
     .map(removeUncategorizedPages)
     .map(filterByTopSessionViews)
     .map(filterByMaxUrls);
 
-  log.info(`Traffic metric runner has completed  for domain: ${auditUrl} and found segment Count: ${auditResult?.length}`);
-
+  log.info(`[paid-audit] [Site: ${auditUrl}] Completed traffic metrics (segments: ${auditResult?.length})`);
   return {
     auditResult,
     fullAuditRef: auditUrl,
   };
 }
 
-export async function fetchScrappedUrls(context, site, urls) {
-  const keys = getUrlKeys(site, urls);
-  const signedUrls = await getSignedUrls(context, keys);
-  return signedUrls;
-}
-
 export async function auditAndScrapeBannerOn(context) {
-  const {
-    site, finalUrl, sqs, env,
-  } = context;
+  const { site, finalUrl, log } = context;
+  const siteId = site.getId();
+
+  log.info(`[paid-audit] [Site: ${siteId}] Starting banner-on audit step`);
   const result = await paidAuditRunner(finalUrl, context, site);
+
   const urlsRaw = result
     .auditResult
     .find((segment) => (segment.key === 'url'))?.value
@@ -266,77 +314,49 @@ export async function auditAndScrapeBannerOn(context) {
     .forEach((valueItem) => (urlsRaw.push(...valueItem.urls)));
 
   const uniqueUrls = [...new Set(urlsRaw)];
-  const cleanUrls = uniqueUrls.map((url) => {
-    const urlObj = new URL(url);
-    return {
-      url: `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`,
-    };
-  });
+  const cleanUrls = uniqueUrls.map((url) => ({
+    url: normalizeUrl(url),
+  }));
 
-  const signedUrls = await fetchScrappedUrls(context, site, cleanUrls.slice(0, 1));
-
-  const mystiqueMessage = {
-    observation: 'Url important for paid traffic checking if consent banner affects users',
-    siteId: site.getSiteId(),
-    url: signedUrls[0].url,
-    auditId: '08d0ed9a-f07d-4b1d-bd6f-15835346419a',
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      url: signedUrls[0].url,
-      mobile_path_cookie_banner_on: signedUrls[0].mOn,
-      mobile_path_cookie_banner_off: signedUrls[0].mOff,
-      desktop_path_cookie_banner_on: signedUrls[0].dOn,
-      desktop_path_cookie_banner_off: signedUrls[0].dOff,
-    },
-  };
-
-  log.info(`Sending sqs message to mistique ${JSON.stringify(mystiqueMessage, 0, 2)}`);
-
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-
+  log.info(`[paid-audit] [Site: ${siteId}] Completed banner-on audit step (urls: ${cleanUrls.length})`);
   return {
-    type: 'paid-top-segment-scrape-banner-on',
-    siteId: site.getSiteId(),
-    observation: 'Landing page should not have a blocking cookie concent banner',
+    type: AUDIT_CONSTANTS.TYPES.BANNER_ON,
+    siteId: site.getId(),
+    observation: AUDIT_CONSTANTS.OBSERVATION,
     auditResult: result.auditResult,
     urls: cleanUrls,
     fullAuditRef: result.fullAuditRef,
     allowCache: false,
     options: {
-      storagePrefix: 'consent-banner-on',
-      screenshotTypes: ['viewport'],
+      storagePrefix: SCREENSHOT_CONF.BANNER_STATES.ON,
+      screenshotTypes: SCREENSHOT_CONF.OPTIONS.TYPES,
       hideConsentBanners: false,
     },
   };
 }
 
 export async function scrapeBannerOff(context) {
-  const { site, job, audit } = context;
+  const { site, audit, log } = context;
+  const siteId = site.getId();
 
-  if (typeof log === 'undefined') {
-    log = context.log;
+  log.info(`[paid-audit] [Site: ${siteId}] Starting banner-off scrape step`);
+  const auditResult = audit.getAuditResult();
+  log.debug(`[paid-audit] [Site: ${siteId}] Previous step result: ${JSON.stringify(auditResult, null, 1)}`);
+
+  const { urls } = auditResult;
+  if (!urls || !Array.isArray(urls)) {
+    throw new Error('No URLs found in previous step audit result');
   }
-  log.info(`${JSON.stringify(audit.getAuditResult(), null, 1)}`);
-  const jobMetadata = job.getMetadata();
-  const { urls } = jobMetadata.payload;
-  const normalizedUrls = urls.map((url) => {
-    const urlObj = new URL(url);
-    return {
-      url: `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`,
-    };
-  });
 
-  log.info(`[paid-audit-scrape-banner-off] site: Submit scrapper with banner off has started for site ${site.getId()}.`);
-
+  log.info(`[paid-audit] [Site: ${siteId}] Completed banner-off scrape step (urls: ${urls.length})`);
   return {
-    type: 'paid-top-segment-scrape-banner-off',
-    siteId: site.getSiteId(),
-    urls: normalizedUrls,
+    type: AUDIT_CONSTANTS.TYPES.BANNER_OFF,
+    siteId: site.getId(),
+    urls,
     allowCache: false,
     options: {
-      storagePrefix: 'consent-banner-off',
-      screenshotTypes: ['viewport'],
+      storagePrefix: SCREENSHOT_CONF.BANNER_STATES.OFF,
+      screenshotTypes: SCREENSHOT_CONF.OPTIONS.TYPES,
       hideConsentBanners: true,
     },
   };
@@ -344,47 +364,36 @@ export async function scrapeBannerOff(context) {
 
 export async function submitForMystiqueEvaluation(context) {
   const {
-    site, job, env, audit, sqs,
+    site, env, audit, sqs, log,
   } = context;
+  const siteId = site.getId();
 
+  log.info(`[paid-audit] [Site: ${siteId}] Starting mystique evaluation step`);
   const auditResult = audit.getAuditResult();
-  log.info('auditResult in submitForMystiqueEvaluation: ', JSON.stringify(auditResult, null, 2));
+  log.debug(`[paid-audit] [Site: ${siteId}] Previous step result: ${JSON.stringify(auditResult, null, 2)}`);
 
-  if (typeof log === 'undefined') {
-    log = context.log;
+  if (!auditResult?.urls || !Array.isArray(auditResult.urls) || auditResult.urls.length === 0) {
+    throw new Error('No URLs found in previous step audit result');
   }
 
-  const jobMetadata = job.getMetadata();
-  const { urls } = jobMetadata.payload;
-  const normalizedUrls = urls.map((url) => {
-    const urlObj = new URL(url);
-    return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`;
-  });
+  const normalizedUrls = auditResult.urls.map((url) => ({
+    url: normalizeUrl(url),
+  }));
 
-  log.info(`[Paid Audit] [Site Id: ${site.getId()}] processing data to send for opportunity evaluation`);
+  log.info(`[paid-audit] [Site: ${siteId}] Processing opportunity evaluation data`);
+  let signedUrls;
+  try {
+    signedUrls = await fetchScrappedUrls(context, site, normalizedUrls.slice(0, 1));
+  } catch (error) {
+    log.error(`[paid-audit] [Site: ${siteId}] Error fetching scrapped URLs: ${error.message}`);
+    throw error;
+  }
 
-  const signedUrls = await fetchScrappedUrls(context, site, normalizedUrls.slice(0, 1))[0];
+  const mystiqueMessage = buildMystiqueMessage(site, audit, signedUrls[0]);
 
-  const mystiqueMessage = {
-    type: 'guidance:paid-cookie-consent',
-    observation: 'Landing page should not have a blocking cookie concent banner',
-    siteId: site.getSiteId(),
-    url: signedUrls[0].url,
-    auditId: audit.getAuditId(),
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      url: signedUrls[0].url,
-      mobile_path_cookie_banner_on: signedUrls[0].mOn,
-      mobile_path_cookie_banner_off: signedUrls[0].mOff,
-      desktop_path_cookie_banner_on: signedUrls[0].dOn,
-      desktop_path_cookie_banner_off: signedUrls[0].dOff,
-    },
-  };
-
-  log.info(`sending to mysticque ${mystiqueMessage}`);
+  log.info(`[paid-audit] [Site: ${siteId}] Sending evaluation to mystique`);
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  log.info();
+  log.info(`[paid-audit] [Site: ${siteId}] Completed mystique evaluation step`);
 }
 
 export default new AuditBuilder()
