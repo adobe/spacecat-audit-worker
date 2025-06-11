@@ -65,7 +65,7 @@ const HANDLERS = {
   'experimentation-ess-all': essExperimentationAll,
   'experimentation-opportunities': experimentationOpportunities,
   'meta-tags': metaTags,
-  soft404s,
+  'soft-404s': soft404s,
   costs,
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
