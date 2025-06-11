@@ -50,8 +50,6 @@ export function isValidUrls(urls) {
 
 async function saveIntermediateResults(job, result, logger) {
   try {
-    job.setStatus(AsyncJob.Status.IN_PROGRESS);
-    job.setResultType(AsyncJob.ResultType.INLINE);
     job.setResult(result);
     await job.save();
     logger.warn('Intermediate results saved successfully');

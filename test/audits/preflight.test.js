@@ -477,40 +477,25 @@ describe('Preflight Audit', () => {
     it('saves intermediate results after each audit step', async () => {
       await preflightAudit(context);
 
-      // Verify that setStatus was called with IN_PROGRESS for intermediate saves
-      expect(job.setStatus).to.have.been.calledWith('IN_PROGRESS');
-      // Final call should be COMPLETED
-      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
-
-      // Verify that setResult was called multiple times (at least 1 final call)
       expect(job.setResult).to.have.been.called;
+      expect(job.setResult.callCount).to.equal(5);
 
-      // Verify that setResultType was called multiple times
+      // Verify that the final save was called
+      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
       expect(job.setResultType).to.have.been.called;
-
-      // Verify that save was called at least once
+      expect(job.setEndedAt).to.have.been.called;
       expect(job.save).to.have.been.called;
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
       // Mock job.save to simulate database issues during intermediate saves only
       // We track calls and only fail those that happen within the intermediate save context
-      const originalSetStatus = job.setStatus;
-      let isIntermediateSave = false;
-
-      // Track when we're in intermediate save context
-      job.setStatus = sinon.stub().callsFake((status) => {
-        if (status === 'IN_PROGRESS') {
-          isIntermediateSave = true;
-        } else if (status === 'COMPLETED') {
-          isIntermediateSave = false;
-        }
-        return originalSetStatus.call(job, status);
-      });
+      let saveCallCount = 0;
 
       job.save = sinon.stub().callsFake(async () => {
-        // Only fail saves that happen when job status is being set to IN_PROGRESS
-        if (isIntermediateSave) {
+        saveCallCount += 1;
+        // Only fail intermediate saves
+        if (saveCallCount < 5) {
           throw new Error('Connection timeout to database');
         }
 
@@ -527,6 +512,7 @@ describe('Preflight Audit', () => {
 
       // Verify that the audit completed successfully despite intermediate save failures
       expect(job.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(job.setResultType).to.have.been.called;
       expect(job.setEndedAt).to.have.been.called;
       expect(job.save).to.have.been.called;
     });
