@@ -39,8 +39,13 @@ export function getHourlyPartitionFilter(hourToProcess) {
 
 /**
  * Common agentic AI detection patterns
+ * Updated for pre-filtered agentic data with agentic_type field
  */
 export const AGENTIC_PATTERNS = {
+  // Since data is pre-filtered, we can use agentic_type directly
+  TYPE_FROM_FIELD: 'agentic_type',
+
+  // Keep for backwards compatibility with mixed data sources
   DETECTION_CLAUSE: `(request_user_agent LIKE '%ChatGPT%' OR 
                      request_user_agent LIKE '%Perplexity%' OR 
                      request_user_agent LIKE '%Claude%' OR
@@ -51,47 +56,24 @@ export const AGENTIC_PATTERNS = {
                      request_user_agent LIKE '%Gemini%' OR
                      request_user_agent LIKE '%BingBot%')`,
 
-  TYPE_CLASSIFICATION: `CASE 
-    WHEN request_user_agent LIKE '%ChatGPT%' OR request_user_agent LIKE '%GPTBot%' THEN 'chatgpt'
-    WHEN request_user_agent LIKE '%Perplexity%' THEN 'perplexity'
-    WHEN request_user_agent LIKE '%Claude%' OR request_user_agent LIKE '%Anthropic%' THEN 'claude'
-    WHEN request_user_agent LIKE '%GoogleOther%' OR request_user_agent LIKE '%Bard%' OR request_user_agent LIKE '%Gemini%' THEN 'gemini'
-    WHEN request_user_agent LIKE '%BingBot%' OR request_user_agent LIKE '%msnbot%' THEN 'bing'
-    ELSE 'human'
-  END`,
+  // Updated to use agentic_type field directly
+  TYPE_CLASSIFICATION: 'agentic_type',
 
-  IS_AGENTIC_FLAG: `CASE 
-    WHEN request_user_agent LIKE '%ChatGPT%' OR 
-         request_user_agent LIKE '%Perplexity%' OR 
-         request_user_agent LIKE '%Claude%' OR
-         request_user_agent LIKE '%GPTBot%' OR
-         request_user_agent LIKE '%Anthropic%' OR
-         request_user_agent LIKE '%GoogleOther%' OR
-         request_user_agent LIKE '%Bard%' OR
-         request_user_agent LIKE '%Gemini%' OR
-         request_user_agent LIKE '%BingBot%' THEN 'true'
-    ELSE 'false'
-  END`,
+  // For agentic-only data, all records are agentic
+  IS_AGENTIC_FLAG: '\'true\'',
 
-  COUNT_AGENTIC: `COUNT(CASE WHEN request_user_agent LIKE '%ChatGPT%' OR 
-                               request_user_agent LIKE '%Perplexity%' OR 
-                               request_user_agent LIKE '%Claude%' OR
-                               request_user_agent LIKE '%GPTBot%' THEN 1 END)`,
+  // For agentic-only data, count all records
+  COUNT_AGENTIC: 'COUNT(*)',
 };
 
 /**
- * Common user agent type classification
+ * User type classification for agentic-only data
+ * Since all data is agentic, we classify by agentic_type
  */
-export const USER_TYPE_CLASSIFICATION = `CASE 
-  WHEN request_user_agent LIKE '%ChatGPT%' OR request_user_agent LIKE '%GPTBot%' 
-       OR request_user_agent LIKE '%Perplexity%' OR request_user_agent LIKE '%Claude%'
-       OR request_user_agent LIKE '%Bard%' OR request_user_agent LIKE '%Gemini%' THEN 'Agentic AI'
-  WHEN request_user_agent LIKE '%bot%' OR request_user_agent LIKE '%Bot%' 
-       OR request_user_agent LIKE '%spider%' OR request_user_agent LIKE '%Spider%'
-       OR request_user_agent LIKE '%crawler%' OR request_user_agent LIKE '%Crawler%' THEN 'Traditional Bot'
-  WHEN request_user_agent LIKE '%Mozilla%' AND request_user_agent LIKE '%Chrome%' THEN 'Human Browser'
-  ELSE 'Unknown'
-END`;
+export const USER_TYPE_CLASSIFICATION = 'agentic_type';
+
+// Add convenience property for counting
+USER_TYPE_CLASSIFICATION.COUNT_AGENTIC = AGENTIC_PATTERNS.COUNT_AGENTIC;
 
 /**
  * Standard query performance optimization settings

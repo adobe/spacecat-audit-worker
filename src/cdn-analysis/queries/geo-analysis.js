@@ -11,13 +11,13 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter, AGENTIC_PATTERNS } from './query-helpers.js';
+import { getHourlyPartitionFilter, QUERY_LIMITS } from './query-helpers.js';
 
 export const geoAnalysisQueries = {
   /**
-   * Traffic by country for a specific hour
+   * Agentic traffic by country for a specific hour
    */
-  hourlyByCountry: (hourToProcess, tableName = 'raw_logs') => {
+  hourlyByCountry: (hourToProcess, tableName = 'formatted_logs') => {
     const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     return `
@@ -25,16 +25,23 @@ export const geoAnalysisQueries = {
         geo_country,
         COUNT(*) as total_requests,
         COUNT(DISTINCT url) as unique_urls,
+        COUNT(DISTINCT agentic_type) as unique_agent_types,
         COUNT(DISTINCT request_user_agent) as unique_user_agents,
         AVG(CASE WHEN response_status = 200 THEN 1.0 ELSE 0.0 END) * 100 as success_rate,
         COUNT(CASE WHEN response_status >= 400 THEN 1 END) as error_requests,
-        ${AGENTIC_PATTERNS.COUNT_AGENTIC} as agentic_requests,
-        ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage_of_traffic
+        COUNT(CASE WHEN response_status = 403 THEN 1 END) as forbidden_requests,
+        ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage_of_traffic,
+        -- Breakdown by agentic type
+        COUNT(CASE WHEN agentic_type = 'chatgpt' THEN 1 END) as chatgpt_requests,
+        COUNT(CASE WHEN agentic_type = 'perplexity' THEN 1 END) as perplexity_requests,
+        COUNT(CASE WHEN agentic_type = 'claude' THEN 1 END) as claude_requests,
+        COUNT(CASE WHEN agentic_type = 'gemini' THEN 1 END) as gemini_requests
       FROM cdn_logs.${tableName} 
       ${whereClause}
         AND geo_country IS NOT NULL
       GROUP BY geo_country
       ORDER BY total_requests DESC
+      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
     `;
   },
 };
