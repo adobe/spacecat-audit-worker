@@ -46,9 +46,10 @@ export function reconstructUrlFromS3Key(key) {
 
   const urlPath = fileName.replace('.json', '');
   const pieces = urlPath.split('_');
+  const dotIndex = pieces.includes('www') ? 2 : 1;
 
   const almostFullUrl = pieces.reduce((acc, piece, index) => {
-    if (index < 2) {
+    if (index < dotIndex) {
       return `${acc}${piece}.`;
     }
     return `${acc}${piece}/`;
