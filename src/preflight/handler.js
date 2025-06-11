@@ -324,14 +324,6 @@ export const preflightAudit = async (context) => {
     const endTime = Date.now();
     const endTimestamp = new Date().toISOString();
     const totalElapsed = ((endTime - startTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Total audit time: ${totalElapsed} seconds`);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Audit started at: ${startTimestamp}`);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Audit completed at: ${endTimestamp}`);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Breakdown:
-      - Canonical audit: ${canonicalElapsed}s (${canonicalStartTimestamp} - ${canonicalEndTimestamp})
-      - Internal links audit: ${internalLinksElapsed}s (${internalLinksStartTimestamp} - ${internalLinksEndTimestamp})
-      - Meta tags audit: ${metatagsElapsed}s (${metatagsStartTimestamp} - ${metatagsEndTimestamp})
-      - DOM-based audit: ${domElapsed}s (${domStartTimestamp} - ${domEndTimestamp})`);
 
     // Add profiling results to each page result
     const resultWithProfiling = result.map((pageResult) => ({
