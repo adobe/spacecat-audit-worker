@@ -1,3 +1,38 @@
+# [1.99.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.98.0...v1.99.0) (2025-06-09)
+
+
+### Features
+
+* adding projected conversion value in forms opportunities ([#940](https://github.com/adobe/spacecat-audit-worker/issues/940)) ([28beef4](https://github.com/adobe/spacecat-audit-worker/commit/28beef40833b327d14c389a7cce0d1aacf262d89))
+
+# [1.98.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.11...v1.98.0) (2025-06-09)
+
+
+### Features
+
+* form source will be sent as camel case from mystique ([#939](https://github.com/adobe/spacecat-audit-worker/issues/939)) ([98ade4a](https://github.com/adobe/spacecat-audit-worker/commit/98ade4af1c75b87dcc901892464e708c50f5f79e))
+
+## [1.97.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.10...v1.97.11) (2025-06-08)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#938](https://github.com/adobe/spacecat-audit-worker/issues/938)) ([342c353](https://github.com/adobe/spacecat-audit-worker/commit/342c3534ef899bbbcf34475aece8073229d3261e))
+
+## [1.97.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.9...v1.97.10) (2025-06-07)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#937](https://github.com/adobe/spacecat-audit-worker/issues/937)) ([e72b304](https://github.com/adobe/spacecat-audit-worker/commit/e72b304b1875435cec791756e4e1ed7a70ac0289))
+
+## [1.97.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.8...v1.97.9) (2025-06-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.14.1 ([#935](https://github.com/adobe/spacecat-audit-worker/issues/935)) ([79f5e08](https://github.com/adobe/spacecat-audit-worker/commit/79f5e086ca35b3ed06e9a95775c8e0689f354b78))
+
 ## [1.97.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.97.7...v1.97.8) (2025-06-04)
 
 
