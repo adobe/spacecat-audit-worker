@@ -46,6 +46,8 @@ import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-ha
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
+import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -75,6 +77,8 @@ const HANDLERS = {
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
+  'guidance:forms-a11y': formAccessibilityGuidance,
+  'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   preflight,
   dummy: (message) => ok(message),
 };
