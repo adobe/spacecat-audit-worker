@@ -23,7 +23,7 @@ export const requestAnalysisQueries = {
    * Hourly request analysis for a specific hour
    * Tracks requests per platform, status codes, and traffic totals
    */
-  hourlyRequests: (hourToProcess, tableName = 'formatted_logs') => {
+  hourlyRequests: (hourToProcess, tableName = 'filtered_logs') => {
     const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
 
     return `
@@ -41,10 +41,11 @@ export const requestAnalysisQueries = {
         COUNT(CASE WHEN response_status = 404 THEN 1 END) as status_404,
         COUNT(CASE WHEN response_status BETWEEN 500 AND 599 THEN 1 END) as status_5xx,
         -- Traffic totals
-        COUNT(CASE WHEN agentic_type IN ('chatgpt', 'perplexity', 'claude', 'gemini') THEN 1 END) as total_agentic_requests,
+        COUNT(CASE WHEN agentic_type IN ('chatgpt', 'perplexity', 'claude') THEN 1 END) as total_agentic_requests,
         COUNT(*) as total_overall_traffic
       FROM cdn_logs.${tableName} 
       ${whereClause}
+      AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
     `;
   },
 };

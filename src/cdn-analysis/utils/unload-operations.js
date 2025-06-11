@@ -15,7 +15,7 @@ import { executeAthenaQuery } from './athena-client.js';
 import { AGENTIC_PATTERNS, getHourlyPartitionFilter } from '../queries/query-helpers.js';
 
 /**
- * Filter and store agentic logs to formatted-logs path using UNLOAD
+ * Filter and store agentic logs to filtered logs path using UNLOAD
  */
 export async function filterAndStoreAgenticLogs(
   athenaClient,
@@ -25,7 +25,7 @@ export async function filterAndStoreAgenticLogs(
   log,
 ) {
   try {
-    log.info('Filtering and storing agentic logs to formatted-logs...');
+    log.info('Filtering and storing agentic logs to filtered...');
 
     const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
@@ -36,7 +36,7 @@ export async function filterAndStoreAgenticLogs(
     const hour = String(hourToProcess.getUTCHours()).padStart(2, '0');
 
     // UNLOAD query to filter agentic logs and export directly to S3
-    const outputPath = `s3://${s3Config.rawLogsBucket}/formatted-logs/year=${year}/month=${month}/day=${day}/hour=${hour}/`;
+    const outputPath = `s3://${s3Config.rawLogsBucket}/filtered/year=${year}/month=${month}/day=${day}/hour=${hour}/`;
 
     const unloadQuery = `
       UNLOAD (
@@ -58,8 +58,7 @@ export async function filterAndStoreAgenticLogs(
           AND ${AGENTIC_PATTERNS.DETECTION_CLAUSE}
       ) TO '${outputPath}'
       WITH (
-        format = 'JSON',
-        compression = 'GZIP'
+        format = 'PARQUET'
       )
     `;
 

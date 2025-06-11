@@ -14,15 +14,12 @@
 import { executeAthenaSetupQuery } from './athena-client.js';
 import { getCustomerRawLogsLocation, getRawLogsPartitionConfig } from '../config/s3-config.js';
 
-/**
- * Create formatted logs table for storing agentic traffic
- */
-export async function createFormattedLogsTable(athenaClient, s3Config, log) {
+export async function createFilteredLogsTable(athenaClient, s3Config, log) {
   try {
-    log.info('🔧 Creating formatted logs table for agentic traffic...');
+    log.info('🔧 Creating filtered logs table for agentic traffic...');
 
-    const formattedLogsLocation = `s3://${s3Config.rawLogsBucket}/formatted-logs/`;
-    const formattedTableName = `formatted_logs_${s3Config.customerDomain}`;
+    const formattedLogsLocation = `s3://${s3Config.rawLogsBucket}/filtered/`;
+    const formattedTableName = `filtered_logs_${s3Config.customerDomain}`;
     const partitionConfig = getRawLogsPartitionConfig(s3Config);
 
     const formattedLogsTableDDL = `
@@ -46,7 +43,7 @@ export async function createFormattedLogsTable(athenaClient, s3Config, log) {
         day string,
         hour string
       )
-      ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe'
+      STORED AS PARQUET
       LOCATION '${formattedLogsLocation}'
       TBLPROPERTIES (
         'projection.enabled' = '${partitionConfig.projectionEnabled}',
@@ -64,9 +61,9 @@ export async function createFormattedLogsTable(athenaClient, s3Config, log) {
       log,
     );
 
-    log.info('✅ Formatted logs table created successfully!');
+    log.info('✅ Filtered logs table created successfully!');
   } catch (error) {
-    log.error('❌ Failed to create formatted logs table:', error);
+    log.error('❌ Failed to create filtered logs table:', error);
     throw error;
   }
 }

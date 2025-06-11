@@ -26,7 +26,6 @@ export async function saveToS3AsParquet(options) {
     data,
     hourProcessed,
     bucket,
-    basePrefix = 'cdn-analysis',
     log,
     customerDomain = 'unknown',
     s3Client,
@@ -39,10 +38,6 @@ export async function saveToS3AsParquet(options) {
     const month = String(hourProcessed.getUTCMonth() + 1).padStart(2, '0');
     const day = String(hourProcessed.getUTCDate()).padStart(2, '0');
     const hour = String(hourProcessed.getUTCHours()).padStart(2, '0');
-
-    // S3 key with customer-aware partitioning
-    const customerPrefix = customerDomain ? `customer=${customerDomain}/` : '';
-
     // Prepare metadata
     const metadata = {
       analysisType,
@@ -72,7 +67,7 @@ export async function saveToS3AsParquet(options) {
     });
 
     // Save as Parquet (optimized for Athena performance)
-    const parquetKey = `${basePrefix}/${customerPrefix}year=${year}/month=${month}/day=${day}/hour=${hour}/${analysisType}.parquet`;
+    const parquetKey = `aggregated/year=${year}/month=${month}/day=${day}/hour=${hour}/${analysisType}.parquet`;
 
     // Create a temporary file to write parquet data
     tempFileName = join(tmpdir(), `parquet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.parquet`);
