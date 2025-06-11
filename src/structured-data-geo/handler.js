@@ -30,11 +30,8 @@ export async function findPagesWithFAQMismatch(allPages, context) {
       const { pathname } = new URL(page.url);
       const scrape = await getScrapeForPath(pathname, context, site);
 
-      // skip if no scrape of page available
-      if (!scrape) return false;
-
       // check if there is already FAQ data on this page - if yes, skip
-      const hasFAQData = scrape.scrapeResult?.structuredData?.find((data) => data['@type'] === 'FAQPage') >= 0;
+      const hasFAQData = scrape.scrapeResult?.structuredData?.findIndex((data) => data['@type'] === 'FAQPage') >= 0;
       if (hasFAQData) {
         return false;
       }
@@ -68,6 +65,15 @@ export async function handleGEOStructuredData(context) {
   }
 
   const pagesWithFAQMismatch = await findPagesWithFAQMismatch(topPages.slice(0, 20), context);
+
+  if (!isNonEmptyArray(pagesWithFAQMismatch)) {
+    return {
+      fullAuditRef: finalUrl,
+      auditResult: {
+        message: 'No pages with FAQ mismatch found',
+      },
+    };
+  }
 
   const opportunity = await convertToOpportunity(
     finalUrl,
@@ -104,7 +110,8 @@ export async function handleGEOStructuredData(context) {
   return {
     fullAuditRef: finalUrl,
     auditResult: {
-      success: true,
+      message: `Successfully created suggestion to update ${pagesWithFAQMismatch.length} pages with FAQ structured data`,
+      pages: JSON.stringify(pagesWithFAQMismatch),
     },
   };
 }
