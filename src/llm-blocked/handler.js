@@ -31,7 +31,7 @@ export async function importTopPages(context) {
   };
 }
 
-export async function checkLLMBlocked(context, _convertToOpportunity, _syncSuggestions) {
+export async function checkLLMBlocked(context) {
   const {
     site,
     dataAccess,
@@ -107,7 +107,7 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
     .filter((x) => x.affectedUrls.length > 0);
 
   // Create the opportunity
-  const opportunity = await _convertToOpportunity(
+  const opportunity = await convertToOpportunity(
     finalUrl,
     {
       siteId: site.getId(),
@@ -120,7 +120,7 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
   );
 
   // Create the suggestions
-  await _syncSuggestions({
+  await syncSuggestions({
     opportunity,
     newData: suggestionsArray,
     buildKey: (data) => data.agent,
@@ -142,14 +142,8 @@ export async function checkLLMBlocked(context, _convertToOpportunity, _syncSugge
   };
 }
 
-export const checkLLMBlockedStep = (context) => checkLLMBlocked(
-  context,
-  convertToOpportunity,
-  syncSuggestions,
-);
-
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('check-llm-blocked', checkLLMBlockedStep)
+  .addStep('check-llm-blocked', checkLLMBlocked)
   .build();
