@@ -18,7 +18,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { MockContextBuilder } from '../shared.js';
-import { checkLLMBlocked, checkLLMBlockedStep, importTopPages } from '../../src/llm-blocked/handler.js';
+import { checkLLMBlocked, importTopPages } from '../../src/llm-blocked/handler.js';
 import { createOpportunityData } from '../../src/llm-blocked/opportunity-data-mapper.js';
 
 use(sinonChai);
@@ -30,13 +30,9 @@ describe('LLM Blocked Audit', () => {
   let sandbox;
   let mockTopPages;
   let fetchStub;
-  let convertToOpportunityStub;
-  let syncSuggestionsStub;
 
   before('setup', () => {
     sandbox = sinon.createSandbox();
-    convertToOpportunityStub = sandbox.stub();
-    syncSuggestionsStub = sandbox.stub();
   });
 
   beforeEach('setup', () => {
@@ -61,11 +57,6 @@ describe('LLM Blocked Audit', () => {
           getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
         },
-        dataAccess: {
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: () => mockTopPages,
-          },
-        },
         finalUrl: 'https://example.com',
         audit: {
           getId: () => 'test-audit-id',
@@ -76,6 +67,8 @@ describe('LLM Blocked Audit', () => {
         },
       })
       .withSandbox(sandbox).build();
+
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves(mockTopPages);
   });
 
   afterEach(() => {
@@ -115,7 +108,6 @@ describe('LLM Blocked Audit', () => {
   it('should return blocked URLs when a user agent is blocked', async () => {
     // Arrange: page1 returns 403 for ClaudeBot/1.0, 200 for all others and baseline
     const blockedUrl = 'https://example.com/page1';
-    const mockOpportunity = { getId: () => 'test-opportunity-id' };
 
     // Set up fetchStub to return 403 for ClaudeBot/1.0 on page1, 200 otherwise
     fetchStub.callsFake((url, opts) => {
@@ -124,31 +116,6 @@ describe('LLM Blocked Audit', () => {
       }
       return Promise.resolve({ status: 200 });
     });
-
-    // Set up convertToOpportunityStub to return mock opportunity
-    convertToOpportunityStub.resolves(mockOpportunity);
-
-    // Set up syncSuggestionsStub to call the mapNewSuggestion callback
-    syncSuggestionsStub.callsFake(async (options) => {
-      const { mapNewSuggestion, newData } = options;
-      // Call the callback for each entry in newData
-      const suggestions = newData.map(mapNewSuggestion);
-      return suggestions;
-    });
-
-    // Act
-    const result = await checkLLMBlocked(context, convertToOpportunityStub, syncSuggestionsStub);
-
-    // Assert
-    expect(result.auditResult).to.equal(JSON.stringify([{
-      url: blockedUrl,
-      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
-    }]));
-    expect(fetchStub.callCount).to.equal(14); // 2 pages × (6 user agents + 1 baseline)
-    expect(fetchStub.calledWith(blockedUrl, { headers: { 'User-Agent': 'ClaudeBot/1.0' } })).to.be.true;
-    expect(fetchStub.calledWith(blockedUrl)).to.be.true;
-    expect(convertToOpportunityStub).to.have.been.calledOnce;
-    expect(syncSuggestionsStub).to.have.been.calledOnce;
 
     const expectedSuggestionsData = [
       {
@@ -163,23 +130,23 @@ describe('LLM Blocked Audit', () => {
       },
     ];
 
-    // Assert that syncSuggestionsStub was called with the correct parameters
-    const syncCall = syncSuggestionsStub.getCall(0);
-    const syncArgs = syncCall.args[0];
-    expect(syncArgs.opportunity).to.equal(mockOpportunity);
-    expect(syncArgs.newData).to.deep.equal(expectedSuggestionsData);
-    expect(syncArgs.buildKey).to.be.a('function');
-    expect(syncArgs.buildKey(expectedSuggestionsData[0])).to.equal('ClaudeBot/1.0');
-    expect(syncArgs.mapNewSuggestion).to.be.a('function');
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+    context.dataAccess.Opportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.addSuggestions.resolves(expectedSuggestionsData);
 
-    // Test the mapNewSuggestion callback
-    const mappedSuggestion = syncArgs.mapNewSuggestion(expectedSuggestionsData[0]);
-    expect(mappedSuggestion).to.deep.equal({
-      opportunityId: 'test-opportunity-id',
-      type: 'CODE_CHANGE',
-      rank: 10,
-      data: expectedSuggestionsData[0],
-    });
+    // Act
+    const result = await checkLLMBlocked(context);
+
+    // Assert
+    expect(result.auditResult).to.equal(JSON.stringify([{
+      url: blockedUrl,
+      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
+    }]));
+    expect(fetchStub.callCount).to.equal(14); // 2 pages × (6 user agents + 1 baseline)
+    expect(fetchStub.calledWith(blockedUrl, { headers: { 'User-Agent': 'ClaudeBot/1.0' } })).to.be.true;
+    expect(fetchStub.calledWith(blockedUrl)).to.be.true;
   });
 
   it('should throw an error when no top pages are returned', async () => {
@@ -207,7 +174,7 @@ describe('LLM Blocked Audit', () => {
       .withSandbox(sandbox).build();
 
     // Act & Assert
-    await expect(checkLLMBlockedStep(contextWithNoPages)).to.be.rejectedWith('No top pages found for site');
+    await expect(checkLLMBlocked(contextWithNoPages)).to.be.rejectedWith('No top pages found for site');
   });
 
   it('should return correct data structure from importTopPages', async () => {
