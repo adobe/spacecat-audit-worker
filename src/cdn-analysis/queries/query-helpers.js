@@ -36,4 +36,24 @@ export const AGENTIC_PATTERNS = {
                      request_user_agent LIKE '%Anthropic%')`,
   COUNT_AGENTIC: 'COUNT(*)',
 };
+
+/**
+ * Creates an UNLOAD query wrapper with standardized S3 path structure
+ */
+export function createUnloadQuery(selectQuery, analysisType, hourToProcess, s3Config) {
+  // Get partition values for S3 path
+  const year = hourToProcess.getUTCFullYear();
+  const month = String(hourToProcess.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(hourToProcess.getUTCDate()).padStart(2, '0');
+  const hour = String(hourToProcess.getUTCHours()).padStart(2, '0');
+
+  const outputPath = `s3://${s3Config.analysisBucket}/aggregated/analysis_type=${analysisType}/year=${year}/month=${month}/day=${day}/hour=${hour}/`;
+
+  return `
+    UNLOAD (
+      ${selectQuery}
+    ) TO '${outputPath}'
+    WITH (format = 'PARQUET')
+  `;
+}
 /* c8 ignore stop */

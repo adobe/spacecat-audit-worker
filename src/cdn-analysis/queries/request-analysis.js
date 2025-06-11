@@ -11,7 +11,7 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter } from './query-helpers.js';
+import { getHourlyPartitionFilter, createUnloadQuery } from './query-helpers.js';
 
 /**
  * Request Analysis Athena Queries
@@ -23,10 +23,10 @@ export const requestAnalysisQueries = {
    * Hourly request analysis for a specific hour
    * Tracks requests per platform, status codes, and traffic totals
    */
-  hourlyRequests: (hourToProcess, tableName = 'filtered_logs') => {
+  hourlyRequests: (hourToProcess, tableName, s3Config) => {
     const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
 
-    return `
+    const selectQuery = `
       SELECT 
         '${hourLabel}' as hour,
         -- Platform-specific requests
@@ -47,6 +47,8 @@ export const requestAnalysisQueries = {
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
     `;
+
+    return createUnloadQuery(selectQuery, 'request', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */

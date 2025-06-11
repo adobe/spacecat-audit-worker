@@ -11,7 +11,7 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter } from './query-helpers.js';
+import { getHourlyPartitionFilter, createUnloadQuery } from './query-helpers.js';
 
 /**
  * User-Agent Request Analysis Athena Queries
@@ -22,10 +22,10 @@ export const userAgentRequestAnalysisQueries = {
   /**
    * Hourly user agent analysis for agentic traffic
    */
-  hourlyUserAgentRequests: (hourToProcess, tableName = 'filtered_logs') => {
+  hourlyUserAgentRequests: (hourToProcess, tableName, s3Config) => {
     const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
 
-    return `
+    const selectQuery = `
       SELECT 
         '${hourLabel}' as hour,
         request_user_agent as user_agent,
@@ -38,6 +38,8 @@ export const userAgentRequestAnalysisQueries = {
       GROUP BY request_user_agent, response_status, agentic_type
       ORDER BY count DESC
     `;
+
+    return createUnloadQuery(selectQuery, 'userAgentRequest', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */
