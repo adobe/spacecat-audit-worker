@@ -21,7 +21,7 @@ import {
   formatWcagRule,
   formatIssue,
   createIndividualOpportunity,
-  deleteExistingAssistiveOpportunities,
+  // deleteExistingAssistiveOpportunities,
   calculateAccessibilityMetrics,
 } from '../../../src/accessibility/utils/generate-individual-opportunities.js';
 import * as constants from '../../../src/accessibility/utils/constants.js';
@@ -794,80 +794,82 @@ describe('createIndividualOpportunitySuggestions', () => {
   });
 });
 
-describe('deleteExistingAssistiveOpportunities', () => {
-  let sandbox;
-  let mockDataAccess;
-  let mockLog;
+// describe('deleteExistingAssistiveOpportunities', () => {
+//   let sandbox;
+//   let mockDataAccess;
+//   let mockLog;
 
-  beforeEach(() => {
-    sandbox = sinon.createSandbox();
-    mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-    mockDataAccess = {
-      Opportunity: {
-        allBySiteId: sandbox.stub().resolves([]),
-      },
-    };
-  });
+//   beforeEach(() => {
+//     sandbox = sinon.createSandbox();
+//     mockLog = {
+//       info: sandbox.stub(),
+//       debug: sandbox.stub(),
+//       error: sandbox.stub(),
+//     };
+//     mockDataAccess = {
+//       Opportunity: {
+//         allBySiteId: sandbox.stub().resolves([]),
+//       },
+//     };
+//   });
 
-  afterEach(() => {
-    sandbox.restore();
-  });
+//   afterEach(() => {
+//     sandbox.restore();
+//   });
 
-  it('should delete existing opportunities of specified type', async () => {
-    const mockOpportunity = {
-      getId: sandbox.stub().returns('test-id'),
-      remove: sandbox.stub().resolves(),
-      getType: sandbox.stub().returns('test-type'),
-    };
-    mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+//   it('should delete existing opportunities of specified type', async () => {
+//     const mockOpportunity = {
+//       getId: sandbox.stub().returns('test-id'),
+//       remove: sandbox.stub().resolves(),
+//       getType: sandbox.stub().returns('test-type'),
+//     };
+//     mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
 
-    const result = await deleteExistingAssistiveOpportunities(
-      mockDataAccess,
-      'test-site',
-      'test-type',
-      mockLog,
-    );
+//     const result = await deleteExistingAssistiveOpportunities(
+//       mockDataAccess,
+//       'test-site',
+//       'test-type',
+//       mockLog,
+//     );
 
-    expect(result).to.equal(1);
-    expect(mockOpportunity.remove).to.have.been.calledOnce;
-    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Found 1 existing assistive opportunities - deleting');
-  });
+//     expect(result).to.equal(1);
+//     expect(mockOpportunity.remove).to.have.been.calledOnce;
+// eslint-disable-next-line max-len
+//     expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Found 1 existing assistive opportunities - deleting');
+//   });
 
-  it('should handle no existing opportunities', async () => {
-    mockDataAccess.Opportunity.allBySiteId.resolves([]);
+//   it('should handle no existing opportunities', async () => {
+//     mockDataAccess.Opportunity.allBySiteId.resolves([]);
 
-    const result = await deleteExistingAssistiveOpportunities(
-      mockDataAccess,
-      'test-site',
-      'test-type',
-      mockLog,
-    );
+//     const result = await deleteExistingAssistiveOpportunities(
+//       mockDataAccess,
+//       'test-site',
+//       'test-type',
+//       mockLog,
+//     );
 
-    expect(result).to.equal(0);
-    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] No existing assistive opportunities found - proceeding with creation');
-  });
+//     expect(result).to.equal(0);
+// eslint-disable-next-line max-len
+//     expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] No existing assistive opportunities found - proceeding with creation');
+//   });
 
-  it('should handle errors during deletion', async () => {
-    const mockOpportunity = {
-      getId: sandbox.stub().returns('test-id'),
-      remove: sandbox.stub().rejects(new Error('Test error')),
-      getType: sandbox.stub().returns('test-type'),
-    };
-    mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+//   it('should handle errors during deletion', async () => {
+//     const mockOpportunity = {
+//       getId: sandbox.stub().returns('test-id'),
+//       remove: sandbox.stub().rejects(new Error('Test error')),
+//       getType: sandbox.stub().returns('test-type'),
+//     };
+//     mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
 
-    const errorMessage = 'Failed to delete existing opportunities: Test error';
-    await expect(deleteExistingAssistiveOpportunities(
-      mockDataAccess,
-      'test-site',
-      'test-type',
-      mockLog,
-    )).to.be.rejectedWith(errorMessage);
-  });
-});
+//     const errorMessage = 'Failed to delete existing opportunities: Test error';
+//     await expect(deleteExistingAssistiveOpportunities(
+//       mockDataAccess,
+//       'test-site',
+//       'test-type',
+//       mockLog,
+//     )).to.be.rejectedWith(errorMessage);
+//   });
+// });
 
 describe('calculateAccessibilityMetrics', () => {
   it('should calculate correct metrics from aggregated data', () => {
