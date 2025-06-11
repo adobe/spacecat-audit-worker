@@ -48,18 +48,6 @@ export function isValidUrls(urls) {
   );
 }
 
-async function saveIntermediateResults(AsyncJobEntity, job, result, logger) {
-  try {
-    const jobEntity = await AsyncJobEntity.findById(job.getId());
-    jobEntity.setResult(result);
-    await jobEntity.save();
-    logger.warn('Intermediate results saved successfully');
-  } catch (error) {
-    // ignore any intermediate errors
-    logger.warn(`Failed to save intermediate results: ${error.message}`);
-  }
-}
-
 export async function scrapePages(context) {
   const { site, job } = context;
   const siteId = site.getId();
@@ -117,9 +105,18 @@ export const preflightAudit = async (context) => {
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
-  const intermediateStepLogger = (checkName) => ({
-    warn: (message) => log.warn(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. ${checkName}: ${message}`),
-  });
+
+  async function saveIntermediateResults(result, checkName) {
+    try {
+      const jobEntity = await AsyncJobEntity.findById(job.getId());
+      jobEntity.setResult(result);
+      await jobEntity.save();
+      log.warn(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. ${checkName}: Intermediate results saved successfully`);
+    } catch (error) {
+      // ignore any intermediate errors
+      log.warn(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. ${checkName}: Failed to save intermediate results: ${error.message}`);
+    }
+  }
 
   try {
     const pageAuthToken = await retrievePageAuthentication(site, context);
@@ -166,8 +163,7 @@ export const preflightAudit = async (context) => {
       }));
     });
 
-    const canonicalAuditLogger = intermediateStepLogger('canonical audit');
-    await saveIntermediateResults(AsyncJobEntity, job, result, canonicalAuditLogger);
+    await saveIntermediateResults(result, 'canonical audit');
 
     // Retrieve scraped pages
     const prefix = `scrapes/${site.getId()}/`;
@@ -207,8 +203,7 @@ export const preflightAudit = async (context) => {
       .toFixed(2);
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Internal links audit completed in ${internalLinksElapsed} seconds`);
 
-    const internalLinksAuditLogger = intermediateStepLogger('internal links audit');
-    await saveIntermediateResults(AsyncJobEntity, job, result, internalLinksAuditLogger);
+    await saveIntermediateResults(result, 'internal links audit');
 
     // Meta tags checks
     const metatagsStartTime = Date.now();
@@ -238,8 +233,7 @@ export const preflightAudit = async (context) => {
     const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Meta tags audit completed in ${metatagsElapsed} seconds`);
 
-    const metaTagsAuditLogger = intermediateStepLogger('meta tags audit');
-    await saveIntermediateResults(AsyncJobEntity, job, result, metaTagsAuditLogger);
+    await saveIntermediateResults(result, 'meta tags audit');
 
     // DOM-based checks: body size, lorem ipsum, h1 count, bad links
     const domStartTime = Date.now();
@@ -300,8 +294,7 @@ export const preflightAudit = async (context) => {
     const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. DOM-based audit completed in ${domElapsed} seconds`);
 
-    const domAuditLogger = intermediateStepLogger('DOM-based audit');
-    await saveIntermediateResults(AsyncJobEntity, job, result, domAuditLogger);
+    await saveIntermediateResults(result, 'DOM-based audit');
 
     const endTime = Date.now();
     const endTimestamp = new Date().toISOString();
@@ -353,16 +346,18 @@ export const preflightAudit = async (context) => {
 
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. ${JSON.stringify(resultWithProfiling)}`);
 
-    job.setStatus(AsyncJob.Status.COMPLETED);
-    job.setResultType(AsyncJob.ResultType.INLINE);
-    job.setResult(resultWithProfiling);
-    job.setEndedAt(new Date().toISOString());
-    await job.save();
+    const jobEntity = await AsyncJobEntity.findById(job.getId());
+    jobEntity.setStatus(AsyncJob.Status.COMPLETED);
+    jobEntity.setResultType(AsyncJob.ResultType.INLINE);
+    jobEntity.setResult(resultWithProfiling);
+    jobEntity.setEndedAt(new Date().toISOString());
+    await jobEntity.save();
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Error during preflight audit.`, error);
-    job.setStatus(AsyncJob.Status.FAILED);
-    job.setError({ code: '', message: error.message });
-    await job.save();
+    const jobEntity = await AsyncJobEntity.findById(job.getId());
+    jobEntity.setStatus(AsyncJob.Status.FAILED);
+    jobEntity.setError({ code: '', message: error.message });
+    await jobEntity.save();
     throw error;
   }
 
