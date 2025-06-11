@@ -47,6 +47,8 @@ import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
 import { runAuditStatusProcessor as auditStatusProcessor } from './audit-status-processor/handler.js';
 import { runDisableImportAuditProcessor as disableImportAuditProcessor } from './disable-import-audit-processor/handler.js';
+import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
+import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -75,6 +77,8 @@ const HANDLERS = {
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
+  'guidance:forms-a11y': formAccessibilityGuidance,
+  'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   preflight,
   'audit-status-processor': auditStatusProcessor,
   'disable-import-audit-processor': disableImportAuditProcessor,
