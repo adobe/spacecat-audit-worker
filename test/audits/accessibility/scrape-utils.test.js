@@ -71,6 +71,12 @@ describe('Scrape Utils', () => {
       expect(reconstructUrlFromS3Key(key)).to.equal(expected);
     });
 
+    it('reconstructs a URL with .html extension', () => {
+      const key = 'audits/2024/www_example_com_path_page_html.json';
+      const expected = 'https://www.example.com/path/page.html/';
+      expect(reconstructUrlFromS3Key(key)).to.equal(expected);
+    });
+
     it('reconstructs a URL with only a domain', () => {
       const key = 'www_example_com.json';
       const expected = 'https://www.example.com/';

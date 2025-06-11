@@ -52,6 +52,9 @@ export function reconstructUrlFromS3Key(key) {
     if (index < dotIndex) {
       return `${acc}${piece}.`;
     }
+    if (pieces[index + 1] === 'html') {
+      return `${acc}${piece}.`;
+    }
     return `${acc}${piece}/`;
   }, '');
 
