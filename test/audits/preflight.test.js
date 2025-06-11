@@ -24,6 +24,8 @@ import {
 } from '../../src/preflight/handler.js';
 import { runInternalLinkChecks } from '../../src/preflight/internal-links.js';
 import { MockContextBuilder } from '../shared.js';
+import suggestionData from '../fixtures/preflight/preflight-suggest.json' with { type: 'json' };
+import identifyData from '../fixtures/preflight/preflight-identify.json' with { type: 'json' };
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -361,6 +363,20 @@ describe('Preflight Audit', () => {
 
       // Verify that AsyncJob.findById was called for the final save
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+
+      // Get the last call to AsyncJob.findById (which is the final save)
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      // Verify that setResult was called with the expected data structure
+      expect(finalJobEntity.setResult).to.have.been.called;
+      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+
+      // Verify the structure matches the expected data (excluding profiling which is dynamic)
+      expect(actualResult).to.deep.equal(suggestionData.map((expected) => ({
+        ...expected,
+        profiling: actualResult[0].profiling, // Use actual profiling data
+      })));
     });
 
     it('completes successfully on the happy path for the identify step', async () => {
@@ -393,6 +409,20 @@ describe('Preflight Audit', () => {
 
       // Verify that AsyncJob.findById was called for the final save
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+
+      // Get the last call to AsyncJob.findById (which is the final save)
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      // Verify that setResult was called with the expected data structure
+      expect(finalJobEntity.setResult).to.have.been.called;
+      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+
+      // Verify the structure matches the expected data (excluding profiling which is dynamic)
+      expect(actualResult).to.deep.equal(identifyData.map((expected) => ({
+        ...expected,
+        profiling: actualResult[0].profiling, // Use actual profiling data
+      })));
     });
 
     it('throws if job is not in progress', async () => {
@@ -431,6 +461,37 @@ describe('Preflight Audit', () => {
 
       // Verify that AsyncJob.findById was called for the final save
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+
+      // Get the last call to AsyncJob.findById (which is the final save)
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      // Get the result that was set on the job entity
+      expect(finalJobEntity.setResult).to.have.been.called;
+      const result = finalJobEntity.setResult.getCall(0).args[0];
+
+      // Verify that each page result has profiling data
+      result.forEach((pageResult) => {
+        expect(pageResult).to.have.property('profiling');
+        expect(pageResult.profiling).to.have.property('total');
+        expect(pageResult.profiling).to.have.property('startTime');
+        expect(pageResult.profiling).to.have.property('endTime');
+        expect(pageResult.profiling).to.have.property('breakdown');
+
+        // Verify breakdown structure
+        const { breakdown } = pageResult.profiling;
+        const expectedChecks = ['canonical', 'links', 'metatags', 'dom'];
+
+        expect(breakdown).to.be.an('array');
+        expect(breakdown).to.have.lengthOf(expectedChecks.length);
+
+        breakdown.forEach((check, index) => {
+          expect(check).to.have.property('name', expectedChecks[index]);
+          expect(check).to.have.property('duration');
+          expect(check).to.have.property('startTime');
+          expect(check).to.have.property('endTime');
+        });
+      });
     });
 
     it('saves intermediate results after each audit step', async () => {
