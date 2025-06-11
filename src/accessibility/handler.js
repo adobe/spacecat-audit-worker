@@ -47,11 +47,11 @@ export async function scrapeAccessibilityData(context) {
     auditResult: {
       status: 'SCRAPING_REQUESTED',
       message: 'Content scraping for accessibility audit initiated.',
-      scrapedUrls: urlsToScrape,
+      scrapedUrls: remainingUrls,
     },
     fullAuditRef: finalUrl,
     // Data for the CONTENT_SCRAPER
-    urls: urlsToScrape,
+    urls: remainingUrls,
     siteId,
     jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,

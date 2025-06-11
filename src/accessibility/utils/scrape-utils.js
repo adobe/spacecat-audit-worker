@@ -11,11 +11,65 @@
  */
 import { getObjectKeysFromSubfolders } from './data-processing.js';
 
+/**
+ * Normalizes a URL by ensuring it ends with a trailing slash.
+ * This function is pure and easily testable.
+ * Exported for testing purposes.
+ * @param {string} url The URL to normalize.
+ * @returns {string} The normalized URL.
+ */
+export function normalizeUrl(url) {
+  if (!url) {
+    return '/';
+  }
+  return url.endsWith('/') ? url : `${url}/`;
+}
+
+/**
+ * Reconstructs a URL from an S3 object key.
+ * The key is expected to encode a URL in its filename, like '.../www_example_com_path_page.json'.
+ * This function is pure and can be tested in isolation.
+ * Exported for testing purposes.
+ *
+ * NOTE: This reconstruction logic is based on the original implementation and assumes
+ * a specific format for the file name. It might be fragile if the domain structure varies
+ * unexpectedly (e.g. example.com vs www.example.com vs sub.example.co.uk).
+ *
+ * @param {string} key The S3 object key.
+ * @returns {string} The reconstructed URL.
+ */
+export function reconstructUrlFromS3Key(key) {
+  const fileName = key.split('/').pop();
+  if (!fileName) {
+    return '';
+  }
+
+  const urlPath = fileName.replace('.json', '');
+  const pieces = urlPath.split('_');
+
+  const almostFullUrl = pieces.reduce((acc, piece, index) => {
+    if (index < 2) {
+      return `${acc}${piece}.`;
+    }
+    return `${acc}${piece}/`;
+  }, '');
+
+  return `https://${almostFullUrl}`;
+}
+
+/**
+ * Fetches existing URLs from previously failed audits stored in S3.
+ *
+ * @param {S3Client} s3Client - The S3 client instance.
+ * @param {string} bucketName - The name of the S3 bucket.
+ * @param {string} siteId - The ID of the site being audited.
+ * @param {object} log - The logger instance.
+ * @returns {Promise<string[]>} A promise that resolves to an array of existing URLs.
+ */
 export async function getExistingUrlsFromFailedAudits(s3Client, bucketName, siteId, log) {
   const version = new Date().toISOString().split('T')[0];
-  let existingKeys = [];
   try {
-    existingKeys = await getObjectKeysFromSubfolders(
+    const { objectKeys } = await getObjectKeysFromSubfolders(
       s3Client,
       bucketName,
       'accessibility',
@@ -23,40 +77,34 @@ export async function getExistingUrlsFromFailedAudits(s3Client, bucketName, site
       version,
       log,
     );
-    log.info(`[A11yAudit] Found existing URLs from failed audits: ${existingKeys.objectKeys}`);
+
+    if (!objectKeys || objectKeys.length === 0) {
+      log.info('[A11yAudit] No existing URLs from failed audits found.');
+      return [];
+    }
+
+    log.info(`[A11yAudit] Found ${objectKeys.length} existing URLs from failed audits.`);
+    // Reconstruct URLs and filter out any empty results from malformed keys
+    return objectKeys.map(reconstructUrlFromS3Key).filter(Boolean);
   } catch (error) {
-    log.error(`[A11yAudit] Error getting existing URLs from failed audits: ${error}`);
+    log.error(`[A11yAudit] Error getting existing URLs from failed audits: ${error.message}`);
+    return []; // Return empty array on error to prevent downstream issues
   }
-
-  if (existingKeys.length === 0) {
-    return [];
-  }
-
-  const existingUrls = existingKeys.objectKeys.map((key) => {
-    const fileName = key.split('/').pop();
-    const url = fileName.replace('.json', '');
-    const pieces = url.split('_');
-    const almostFullUrl = pieces.reduce((acc, piece, index) => {
-      if (index < 2) {
-        return `${acc}${piece}.`;
-      }
-      return `${acc}${piece}/`;
-    }, '');
-    return `https://${almostFullUrl}`;
-  });
-
-  return existingUrls;
-
-//   1749564180063/ 1749563780590/
 }
 
+/**
+ * Filters a list of URLs to scrape, removing those that already have a failed audit.
+ *
+ * @param {Array<{url: string}>} urlsToScrape - An array of objects, each with a URL to scrape.
+ * @param {string[]} existingUrls - An array of URLs that have existing failed audits.
+ * @returns {Array<{url: string}>} The filtered array of URLs to scrape.
+ */
 export function getRemainingUrls(urlsToScrape, existingUrls) {
+  // Using a Set for efficient lookups (O(1) average time complexity)
+  const existingUrlSet = new Set(existingUrls.map(normalizeUrl));
+
   return urlsToScrape.filter((item) => {
-    const { url } = item;
-    let urlToCheck = url;
-    if (urlToCheck[urlToCheck.length - 1] !== '/') {
-      urlToCheck = `${urlToCheck}/`;
-    }
-    return !existingUrls.includes(urlToCheck);
+    const normalizedUrl = normalizeUrl(item.url);
+    return !existingUrlSet.has(normalizedUrl);
   });
 }
