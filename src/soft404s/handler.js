@@ -79,7 +79,7 @@ export async function submitForScraping(context) {
   }
   const topPagesUrls = topPages.map((page) => page.getUrl());
   // Combine includedURLs and topPages URLs to scrape
-  const includedURLs = (await site?.getConfig()?.getIncludedURLs('soft404s')) || [];
+  const includedURLs = (await site?.getConfig())?.getIncludedURLs('soft-404s') || [];
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.info(
@@ -263,7 +263,7 @@ export async function soft404sAuditRunner(context) {
       context,
       log,
     );
-    const includedURLs = (await site?.getConfig()?.getIncludedURLs('soft404s')) || [];
+    const includedURLs = (await site?.getConfig())?.getIncludedURLs('soft-404s') || [];
 
     // Transform URLs into scrape.json paths and combine them into a Set
     const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, siteId));
