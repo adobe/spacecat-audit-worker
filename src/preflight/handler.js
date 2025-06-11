@@ -30,16 +30,6 @@ const AUDIT_METATAGS = 'metatags';
 const AUDIT_BODY_SIZE = 'body-size';
 const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 const AUDIT_H1_COUNT = 'h1-count';
-const AUDITS = {
-  seo: [
-    AUDIT_CANONICAL,
-    AUDIT_LINKS,
-    AUDIT_METATAGS,
-    AUDIT_BODY_SIZE,
-    AUDIT_LOREM_IPSUM,
-    AUDIT_H1_COUNT,
-  ],
-};
 
 export function isValidUrls(urls) {
   return (
@@ -130,13 +120,19 @@ export const preflightAudit = async (context) => {
     const result = normalizedUrls.map((url) => ({
       pageUrl: url,
       step: normalizedStep,
-      audits: AUDITS.seo.map((auditName) => ({ name: auditName, type: 'seo', opportunities: [] })),
+      audits: [],
     }));
     const resultMap = new Map(result.map((r) => [r.pageUrl, r]));
 
     // Canonical checks
     const canonicalStartTime = Date.now();
     const canonicalStartTimestamp = new Date().toISOString();
+    // Create canonical audit entries for all pages
+    normalizedUrls.forEach((url) => {
+      const pageResult = resultMap.get(url);
+      pageResult.audits.push({ name: AUDIT_CANONICAL, type: 'seo', opportunities: [] });
+    });
+
     const canonicalResults = await Promise.all(
       normalizedUrls.map(async (url) => {
         const {
@@ -157,7 +153,8 @@ export const preflightAudit = async (context) => {
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Canonical audit completed in ${canonicalElapsed} seconds`);
 
     canonicalResults.forEach(({ url, checks }) => {
-      const audit = resultMap.get(url).audits.find((a) => a.name === AUDIT_CANONICAL);
+      const pageResult = resultMap.get(url);
+      const audit = pageResult.audits.find((a) => a.name === AUDIT_CANONICAL);
       checks.forEach((check) => audit.opportunities.push({
         check: check.check,
         issue: check.explanation,
@@ -183,12 +180,19 @@ export const preflightAudit = async (context) => {
     // Internal link checks
     const internalLinksStartTime = Date.now();
     const internalLinksStartTimestamp = new Date().toISOString();
+    // Create links audit entries for all pages
+    normalizedUrls.forEach((url) => {
+      const pageResult = resultMap.get(url);
+      pageResult.audits.push({ name: AUDIT_LINKS, type: 'seo', opportunities: [] });
+    });
+
     const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
       pageAuthToken: `token ${pageAuthToken}`,
     });
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
-        const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
+        const pageResult = resultMap.get(pageUrl);
+        const audit = pageResult.audits.find((a) => a.name === AUDIT_LINKS);
         audit.opportunities.push({
           check: 'broken-internal-links',
           issue: {
@@ -211,6 +215,12 @@ export const preflightAudit = async (context) => {
     // Meta tags checks
     const metatagsStartTime = Date.now();
     const metatagsStartTimestamp = new Date().toISOString();
+    // Create metatags audit entries for all pages
+    normalizedUrls.forEach((url) => {
+      const pageResult = resultMap.get(url);
+      pageResult.audits.push({ name: AUDIT_METATAGS, type: 'seo', opportunities: [] });
+    });
+
     const {
       seoChecks,
       detectedTags,
@@ -225,11 +235,14 @@ export const preflightAudit = async (context) => {
       : detectedTags;
     Object.entries(tagCollection).forEach(([path, tags]) => {
       const pageUrl = `${baseURL}${path}`;
-      const audit = resultMap.get(pageUrl)?.audits.find((a) => a.name === AUDIT_METATAGS);
-      return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
-        ...data,
-        tagName: Object.keys(tags)[tag],
-      }));
+      const pageResult = resultMap.get(pageUrl);
+      if (pageResult && tags && Object.keys(tags).length > 0) {
+        const audit = pageResult.audits.find((a) => a.name === AUDIT_METATAGS);
+        Object.values(tags).forEach((data, tag) => audit.opportunities.push({
+          ...data,
+          tagName: Object.keys(tags)[tag],
+        }));
+      }
     });
     const metatagsEndTime = Date.now();
     const metatagsEndTimestamp = new Date().toISOString();
@@ -241,18 +254,24 @@ export const preflightAudit = async (context) => {
     // DOM-based checks: body size, lorem ipsum, h1 count, bad links
     const domStartTime = Date.now();
     const domStartTimestamp = new Date().toISOString();
+    // Create DOM-based audit entries for all pages
+    normalizedUrls.forEach((url) => {
+      const pageResult = resultMap.get(url);
+      pageResult.audits.push({ name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] });
+      pageResult.audits.push({ name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] });
+      pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
+    });
+
     scrapedObjects.forEach(({ data }) => {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const doc = new JSDOM(rawBody).window.document;
-
-      const auditsByName = Object.fromEntries(
-        resultMap.get(finalUrl).audits.map((auditEntry) => [auditEntry.name, auditEntry]),
-      );
+      const pageResult = resultMap.get(finalUrl);
 
       const textContent = doc.body.textContent.replace(/\n/g, '').trim();
 
       if (textContent.length > 0 && textContent.length <= 100) {
-        auditsByName[AUDIT_BODY_SIZE].opportunities.push({
+        const audit = pageResult.audits.find((a) => a.name === AUDIT_BODY_SIZE);
+        audit.opportunities.push({
           check: 'content-length',
           issue: 'Body content length is below 100 characters',
           seoImpact: 'Moderate',
@@ -261,7 +280,8 @@ export const preflightAudit = async (context) => {
       }
 
       if (/lorem ipsum/i.test(textContent)) {
-        auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
+        const audit = pageResult.audits.find((a) => a.name === AUDIT_LOREM_IPSUM);
+        audit.opportunities.push({
           check: 'placeholder-text',
           issue: 'Found Lorem ipsum placeholder text in the page content',
           seoImpact: 'High',
@@ -271,7 +291,8 @@ export const preflightAudit = async (context) => {
 
       const headingCount = doc.querySelectorAll('h1').length;
       if (headingCount !== 1) {
-        auditsByName[AUDIT_H1_COUNT].opportunities.push({
+        const audit = pageResult.audits.find((a) => a.name === AUDIT_H1_COUNT);
+        audit.opportunities.push({
           check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
           issue: headingCount > 1 ? `Found ${headingCount} H1 tags` : 'No H1 tag found on the page',
           seoImpact: 'High',
@@ -289,7 +310,8 @@ export const preflightAudit = async (context) => {
         }));
 
       if (insecureLinks.length > 0) {
-        auditsByName[AUDIT_LINKS].opportunities.push({ check: 'bad-links', issue: insecureLinks });
+        const audit = pageResult.audits.find((a) => a.name === AUDIT_LINKS);
+        audit.opportunities.push({ check: 'bad-links', issue: insecureLinks });
       }
     });
     const domEndTime = Date.now();
