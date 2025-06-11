@@ -47,6 +47,7 @@ describe('Preflight Audit', () => {
         log: {
           warn: sinon.stub(),
           info: sinon.stub(),
+          error: sinon.stub(),
         },
       };
     });
@@ -107,13 +108,8 @@ describe('Preflight Audit', () => {
       }];
 
       const result = await runInternalLinkChecks(urls, scrapedObjects, context);
-      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
-      expect(result.auditResult.brokenInternalLinks[0]).to.include({
-        urlTo: 'https://main--example--page.aem.page/fail',
-        href: urls[0],
-        status: null,
-      });
-      expect(result.auditResult.brokenInternalLinks[0].error).to.match(/network fail/);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking internal link https://main--example--page.aem.page/fail from https://main--example--page.aem.page/page1:', 'network fail');
     });
 
     it('filters out scrapedObjects not in the urls list', async () => {

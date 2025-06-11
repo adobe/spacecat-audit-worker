@@ -68,12 +68,7 @@ export async function runInternalLinkChecks(urls, scrapedObjects, context, optio
                 brokenInternalLinks.push({ urlTo: href, href: pageUrl, status: 404 });
               }
             } catch (err) {
-              brokenInternalLinks.push({
-                urlTo: href,
-                href: pageUrl,
-                status: null,
-                error: err.message,
-              });
+              log.error(`[preflight-audit] Error checking internal link ${href} from ${pageUrl}:`, err.message);
             }
           }),
         );
