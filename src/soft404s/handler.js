@@ -11,12 +11,44 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { noopUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { checkSoft404Indicators, extractTextAndCountWords } from './utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+/**
+ * Makes HTTP request to check current status of URL
+ * @param {string} url - URL to check
+ * @param {object} log - Logger instance
+ * @returns {Promise<object>} - Promise that resolves to object with status,
+ *   statusCode, and error info
+ */
+async function checkUrlStatus(url, log) {
+  try {
+    const response = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      timeout: 10000,
+    });
+
+    return Promise.resolve({
+      status: 'success',
+      statusCode: response.status,
+      finalUrl: response.url,
+    });
+  } catch (error) {
+    log.warn(`Failed to check status for ${url}: ${error.message}`);
+    return Promise.resolve({
+      status: 'error',
+      statusCode: null,
+      error: error.message,
+    });
+  }
+}
 
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
@@ -85,11 +117,8 @@ export async function fetchAndProcessPageObject(
   }
   return {
     [pageUrl]: {
-      title: object.scrapeResult.tags.title,
-      description: object.scrapeResult.tags.description,
-      h1: object.scrapeResult.tags.h1 || [],
-      s3key: key,
       rawBody: object.scrapeResult.rawBody,
+      finalUrl: object.finalUrl,
     },
   };
 }
@@ -112,7 +141,95 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
       .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)),
   );
 
-  log.info(`Page metadata results: ${JSON.stringify(pageMetadataResults)}`);
+  log.info(`Page metadata results: ${pageMetadataResults.length} pages processed`);
+
+  const soft404Results = {};
+  const urlStatusChecks = [];
+
+  // Process each page for soft 404 detection
+  for (const pageMetadata of pageMetadataResults) {
+    if (pageMetadata) {
+      const pageUrl = Object.keys(pageMetadata)[0];
+      const pageData = pageMetadata[pageUrl];
+
+      if (pageData.rawBody && pageData.finalUrl) {
+        // Extract text content and count words
+        const { textContent, wordCount } = extractTextAndCountWords(pageData.rawBody);
+
+        // Check for soft 404 indicators
+        const matchedIndicators = checkSoft404Indicators(textContent);
+
+        // Check if this might be a soft 404 based on content analysis
+        const hasSoft404Indicators = matchedIndicators.length > 0;
+        const hasLowWordCount = wordCount < 500;
+
+        if (hasSoft404Indicators && hasLowWordCount) {
+          // Add to URL status check queue
+          urlStatusChecks.push({
+            pageUrl,
+            finalUrl: pageData.finalUrl,
+            matchedIndicators,
+            wordCount,
+            textContent: textContent.substring(0, 200), // First 200 chars for context
+          });
+        }
+      } else {
+        log.warn(`Missing rawBody or finalUrl for page: ${Object.keys(pageMetadata)[0]}`);
+      }
+    }
+  }
+
+  log.info(`Found ${urlStatusChecks.length} potential soft 404 pages to verify`);
+
+  // Check current HTTP status for potential soft 404 pages using Promise.allSettled
+  // This ensures all requests complete even if some individual requests fail
+  const statusCheckPromises = urlStatusChecks.map(async (page) => {
+    const statusResult = await checkUrlStatus(page.finalUrl, log);
+
+    // Only consider it a soft 404 if:
+    // 1. HTTP status is 200 (OK)
+    // 2. Content has soft 404 indicators
+    // 3. Content has low word count
+    if (statusResult.statusCode === 200) {
+      return {
+        pageUrl: page.pageUrl,
+        finalUrl: page.finalUrl,
+        isSoft404: true,
+        statusCode: statusResult.statusCode,
+        matchedIndicators: page.matchedIndicators,
+        wordCount: page.wordCount,
+        textPreview: page.textContent,
+        detectedAt: new Date().toISOString(),
+      };
+    }
+
+    return null;
+  });
+
+  const allSettledResults = await Promise.allSettled(statusCheckPromises);
+
+  // Process results from Promise.allSettled
+  const statusResults = allSettledResults
+    .filter((result) => result.status === 'fulfilled' && result.value !== null)
+    .map((result) => result.value);
+
+  // Build final results object
+  statusResults.forEach((result) => {
+    soft404Results[result.pageUrl] = {
+      finalUrl: result.finalUrl,
+      isSoft404: result.isSoft404,
+      statusCode: result.statusCode,
+      matchedIndicators: result.matchedIndicators,
+      wordCount: result.wordCount,
+      textPreview: result.textPreview,
+      detectedAt: result.detectedAt,
+    };
+  });
+
+  const detectedCount = Object.keys(soft404Results).length;
+  log.info(`Detected ${detectedCount} soft 404 pages out of ${pageMetadataResults.length} total pages`);
+
+  return soft404Results;
 }
 
 /**
@@ -140,7 +257,6 @@ export async function soft404sAuditRunner(context) {
 
   try {
     // Get top pages for a site
-    // const siteId = site.getId();
     const topPages = await getTopPagesForSiteId(
       dataAccess,
       siteId,
@@ -158,9 +274,17 @@ export async function soft404sAuditRunner(context) {
       `Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`,
     );
 
-    await soft404sAutoDetect(site, totalPagesSet, context);
+    const soft404Results = await soft404sAutoDetect(site, totalPagesSet, context);
 
-    return {};
+    return {
+      auditResult: {
+        soft404Pages: soft404Results,
+        totalPagesChecked: totalPagesSet.size,
+        soft404Count: Object.keys(soft404Results).length,
+        success: true,
+      },
+      fullAuditRef: baseURL,
+    };
   } catch (error) {
     return {
       fullAuditRef: baseURL,
@@ -174,15 +298,7 @@ export async function soft404sAuditRunner(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .addStep(
-    'submit-for-import-top-pages',
-    importTopPages,
-    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
-  )
-  .addStep(
-    'submit-for-scraping',
-    submitForScraping,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
-  )
+  .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('soft404s-audit-runner', soft404sAuditRunner)
   .build();
