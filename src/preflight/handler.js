@@ -48,10 +48,11 @@ export function isValidUrls(urls) {
   );
 }
 
-async function saveIntermediateResults(job, result, logger) {
+async function saveIntermediateResults(AsyncJobEntity, job, result, logger) {
   try {
-    job.setResult(result);
-    await job.save();
+    const jobEntity = await AsyncJobEntity.findById(job.getId());
+    jobEntity.setResult(result);
+    await jobEntity.save();
     logger.warn('Intermediate results saved successfully');
   } catch (error) {
     // ignore any intermediate errors
@@ -92,8 +93,9 @@ export const preflightAudit = async (context) => {
   const startTimestamp = new Date().toISOString();
 
   const {
-    site, job, s3Client, log,
+    site, job, s3Client, log, dataAccess,
   } = context;
+  const { AsyncJob: AsyncJobEntity } = dataAccess;
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
 
   const jobMetadata = job.getMetadata();
@@ -165,7 +167,7 @@ export const preflightAudit = async (context) => {
     });
 
     const canonicalAuditLogger = intermediateStepLogger('canonical audit');
-    await saveIntermediateResults(job, result, canonicalAuditLogger);
+    await saveIntermediateResults(AsyncJobEntity, job, result, canonicalAuditLogger);
 
     // Retrieve scraped pages
     const prefix = `scrapes/${site.getId()}/`;
@@ -206,7 +208,7 @@ export const preflightAudit = async (context) => {
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Internal links audit completed in ${internalLinksElapsed} seconds`);
 
     const internalLinksAuditLogger = intermediateStepLogger('internal links audit');
-    await saveIntermediateResults(job, result, internalLinksAuditLogger);
+    await saveIntermediateResults(AsyncJobEntity, job, result, internalLinksAuditLogger);
 
     // Meta tags checks
     const metatagsStartTime = Date.now();
@@ -237,7 +239,7 @@ export const preflightAudit = async (context) => {
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. Meta tags audit completed in ${metatagsElapsed} seconds`);
 
     const metaTagsAuditLogger = intermediateStepLogger('meta tags audit');
-    await saveIntermediateResults(job, result, metaTagsAuditLogger);
+    await saveIntermediateResults(AsyncJobEntity, job, result, metaTagsAuditLogger);
 
     // DOM-based checks: body size, lorem ipsum, h1 count, bad links
     const domStartTime = Date.now();
@@ -299,7 +301,7 @@ export const preflightAudit = async (context) => {
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. DOM-based audit completed in ${domElapsed} seconds`);
 
     const domAuditLogger = intermediateStepLogger('DOM-based audit');
-    await saveIntermediateResults(job, result, domAuditLogger);
+    await saveIntermediateResults(AsyncJobEntity, job, result, domAuditLogger);
 
     const endTime = Date.now();
     const endTimestamp = new Date().toISOString();

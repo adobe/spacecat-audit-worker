@@ -258,6 +258,13 @@ describe('Preflight Audit', () => {
         })
         .build();
 
+      // Mock AsyncJob.findById to return a fresh job entity for intermediate saves
+      context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
+        getId: () => 'job-123',
+        setResult: sinon.stub(),
+        save: sinon.stub().resolves(),
+      }));
+
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
       };
@@ -477,10 +484,12 @@ describe('Preflight Audit', () => {
     it('saves intermediate results after each audit step', async () => {
       await preflightAudit(context);
 
-      expect(job.setResult).to.have.been.called;
-      expect(job.setResult.callCount).to.equal(5);
+      // Verify that AsyncJob.findById was called for each intermediate save (4 times)
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(4);
 
-      // Verify that the final save was called
+      // Verify that the final save was called on the original job
+      expect(job.setResult).to.have.been.called;
       expect(job.setStatus).to.have.been.calledWith('COMPLETED');
       expect(job.setResultType).to.have.been.called;
       expect(job.setEndedAt).to.have.been.called;
@@ -488,19 +497,22 @@ describe('Preflight Audit', () => {
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
-      // Mock job.save to simulate database issues during intermediate saves only
-      // We track calls and only fail those that happen within the intermediate save context
-      let saveCallCount = 0;
+      // Mock AsyncJob.findById to return job entities that fail on save for intermediate saves
+      let findByIdCallCount = 0;
 
-      job.save = sinon.stub().callsFake(async () => {
-        saveCallCount += 1;
-        // Only fail intermediate saves
-        if (saveCallCount < 5) {
-          throw new Error('Connection timeout to database');
-        }
-
-        // Final save succeeds
-        return Promise.resolve();
+      context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => {
+        findByIdCallCount += 1;
+        return Promise.resolve({
+          getId: () => 'job-123',
+          setResult: sinon.stub(),
+          save: sinon.stub().callsFake(async () => {
+            // Only fail intermediate saves (first 4 calls are intermediate saves)
+            if (findByIdCallCount <= 4) {
+              throw new Error('Connection timeout to database');
+            }
+            return Promise.resolve();
+          }),
+        });
       });
 
       await preflightAudit(context);
