@@ -21,19 +21,13 @@ import {
 import AuditEngine from './auditEngine.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import convertToOpportunity from './opportunityHandler.js';
+import {
+  shouldShowImageAsSuggestion,
+  isImageDecorative,
+} from './utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
-
-const isImagePresentational = (img) => {
-  const isHiddenForScreenReader = img.getAttribute('aria-hidden') === 'true';
-  const hasRolePresentation = img.getAttribute('role') === 'presentation';
-  const hasAltAttribute = img.hasAttribute('alt');
-  // For presentational images, an image MUST have the alt attribute WITH a falsy value
-  // Not having it at all is not the same, the image is not considered presentational
-  const isAltEmpty = hasAltAttribute && !img.getAttribute('alt');
-  return isHiddenForScreenReader || hasRolePresentation || isAltEmpty;
-};
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
@@ -81,7 +75,8 @@ export async function fetchPageScrapeAndRunAudit(
   const dom = new JSDOM(pageScrape.scrapeResult.rawBody);
   const imageElements = dom.window.document.getElementsByTagName('img');
   const images = Array.from(imageElements).map((img) => ({
-    isPresentational: isImagePresentational(img),
+    shouldShowAsSuggestion: shouldShowImageAsSuggestion(img),
+    isDecorative: isImageDecorative(img),
     src: img.getAttribute('src'),
     alt: img.getAttribute('alt'),
     xpath: getXpath(img),
