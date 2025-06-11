@@ -11,65 +11,148 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter } from './query-helpers.js';
+import { getHourlyPartitionFilter, QUERY_LIMITS } from './query-helpers.js';
 
 /**
- * Error Analysis for CDN logs
- * Analyzes HTTP error patterns by source (AI bots vs humans)
+ * Error Analysis Athena Queries
+ * Analyzes error patterns in agentic traffic
  */
 
 export const errorAnalysisQueries = {
   /**
-   * Generate SQL query for hourly error analysis
+   * Error analysis for agentic traffic by type and status
    */
-  hourlyErrors(hourToProcess, tableName = 'raw_logs') {
+  hourlyErrors: (hourToProcess, tableName = 'formatted_logs') => {
     const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     return `
         SELECT 
           response_status,
-          CASE 
-            WHEN LOWER(request_user_agent) LIKE '%chatgpt%' 
-              OR LOWER(request_user_agent) LIKE '%gpt-%'
-              OR LOWER(request_user_agent) LIKE '%openai%'
-              OR LOWER(request_user_agent) LIKE '%perplexity%'
-              OR LOWER(request_user_agent) LIKE '%claude%'
-              OR LOWER(request_user_agent) LIKE '%anthropic%'
-              OR LOWER(request_user_agent) LIKE '%gemini%'
-              OR LOWER(request_user_agent) LIKE '%bard%'
-              OR LOWER(request_user_agent) LIKE '%bing%'
-              OR LOWER(request_user_agent) LIKE '%copilot%'
-            THEN 'AI Bot'
-            ELSE 'Human'
-          END as source_type,
+          agentic_type,
           geo_country,
           url,
           request_user_agent,
-          COUNT(*) as error_count
+          COUNT(*) as error_count,
+          ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage_of_errors
         FROM cdn_logs.${tableName}
         ${whereClause}
           AND response_status >= 400
         GROUP BY 
           response_status,
-          CASE 
-            WHEN LOWER(request_user_agent) LIKE '%chatgpt%' 
-              OR LOWER(request_user_agent) LIKE '%gpt-%'
-              OR LOWER(request_user_agent) LIKE '%openai%'
-              OR LOWER(request_user_agent) LIKE '%perplexity%'
-              OR LOWER(request_user_agent) LIKE '%claude%'
-              OR LOWER(request_user_agent) LIKE '%anthropic%'
-              OR LOWER(request_user_agent) LIKE '%gemini%'
-              OR LOWER(request_user_agent) LIKE '%bard%'
-              OR LOWER(request_user_agent) LIKE '%bing%'
-              OR LOWER(request_user_agent) LIKE '%copilot%'
-            THEN 'AI Bot'
-            ELSE 'Human'
-          END,
+          agentic_type,
           geo_country,
           url,
           request_user_agent
-        ORDER BY error_count DESC;
+        ORDER BY error_count DESC
+        LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
       `;
+  },
+
+  /**
+   * Error summary by agentic type
+   */
+  errorsByAgentType: (hourToProcess, tableName = 'formatted_logs') => {
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
+
+    return `
+      SELECT 
+        agentic_type,
+        COUNT(*) as total_errors,
+        COUNT(DISTINCT url) as unique_error_urls,
+        COUNT(DISTINCT geo_country) as unique_countries,
+        COUNT(CASE WHEN response_status = 403 THEN 1 END) as forbidden_errors,
+        COUNT(CASE WHEN response_status = 404 THEN 1 END) as not_found_errors,
+        COUNT(CASE WHEN response_status = 429 THEN 1 END) as rate_limit_errors,
+        COUNT(CASE WHEN response_status >= 500 THEN 1 END) as server_errors,
+        ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage_of_all_errors
+      FROM cdn_logs.${tableName}
+      ${whereClause}
+        AND response_status >= 400
+      GROUP BY agentic_type
+      ORDER BY total_errors DESC
+      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
+    `;
+  },
+
+  /**
+   * Top error URLs by agentic traffic
+   */
+  topErrorUrls: (hourToProcess, tableName = 'formatted_logs', limit = 50) => {
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
+
+    return `
+      SELECT 
+        url,
+        host,
+        response_status,
+        COUNT(*) as error_count,
+        COUNT(DISTINCT agentic_type) as unique_agent_types,
+        COUNT(DISTINCT geo_country) as unique_countries,
+        -- Most common agentic type causing errors for this URL
+        (SELECT agentic_type 
+         FROM cdn_logs.${tableName} sub 
+         WHERE sub.url = main.url 
+           AND sub.response_status = main.response_status 
+           ${whereClause.replace('WHERE', 'AND')}
+           AND sub.response_status >= 400
+         GROUP BY agentic_type 
+         ORDER BY COUNT(*) DESC 
+         LIMIT 1) as primary_error_agent,
+        -- Breakdown by agentic type
+        COUNT(CASE WHEN agentic_type = 'chatgpt' THEN 1 END) as chatgpt_errors,
+        COUNT(CASE WHEN agentic_type = 'perplexity' THEN 1 END) as perplexity_errors,
+        COUNT(CASE WHEN agentic_type = 'claude' THEN 1 END) as claude_errors,
+        COUNT(CASE WHEN agentic_type = 'gemini' THEN 1 END) as gemini_errors
+      FROM cdn_logs.${tableName} main
+      ${whereClause}
+        AND response_status >= 400
+      GROUP BY url, host, response_status
+      ORDER BY error_count DESC
+      LIMIT ${limit}
+    `;
+  },
+
+  /**
+   * Error patterns by time of day for agentic traffic
+   */
+  errorsByTimeOfDay: (startDate, endDate, tableName = 'formatted_logs') => `
+      SELECT 
+        HOUR(PARSE_DATETIME(timestamp, 'yyyy-MM-dd''T''HH:mm:ss''+0000')) as hour_of_day,
+        response_status,
+        agentic_type,
+        COUNT(*) as error_count,
+        COUNT(DISTINCT url) as unique_error_urls
+      FROM cdn_logs.${tableName}
+      WHERE timestamp >= '${startDate.toISOString()}'
+        AND timestamp < '${endDate.toISOString()}'
+        AND response_status >= 400
+      GROUP BY 1, 2, 3
+      ORDER BY 1, error_count DESC
+      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
+    `,
+
+  /**
+   * Geographic distribution of errors for agentic traffic
+   */
+  errorsByCountry: (hourToProcess, tableName = 'formatted_logs') => {
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
+
+    return `
+      SELECT 
+        geo_country,
+        agentic_type,
+        response_status,
+        COUNT(*) as error_count,
+        COUNT(DISTINCT url) as unique_error_urls,
+        ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (PARTITION BY geo_country), 2) as percentage_of_country_errors
+      FROM cdn_logs.${tableName}
+      ${whereClause}
+        AND response_status >= 400
+        AND geo_country IS NOT NULL
+      GROUP BY geo_country, agentic_type, response_status
+      ORDER BY geo_country, error_count DESC
+      LIMIT ${QUERY_LIMITS.DEFAULT_LIMIT}
+    `;
   },
 };
 /* c8 ignore stop */

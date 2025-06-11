@@ -139,7 +139,7 @@ export async function runAllAnalysis(athenaClient, hourToProcess, s3Config, tabl
 }
 
 /**
- * Create summary of all analysis results
+ * Create summary of all analysis results for agentic-only data
  */
 export function createAnalysisSummary(analysisResults, hourProcessed, s3Config) {
   const summary = {
@@ -149,8 +149,8 @@ export function createAnalysisSummary(analysisResults, hourProcessed, s3Config) 
     environment: s3Config.environment,
     analysisTypes: Object.keys(analysisResults),
     recordCounts: {},
-    totalRequests: 0,
-    agenticRequests: 0,
+    totalAgenticRequests: 0,
+    agentTypeBreakdown: {},
   };
 
   // Count records in each analysis
@@ -158,20 +158,52 @@ export function createAnalysisSummary(analysisResults, hourProcessed, s3Config) 
     summary.recordCounts[type] = Array.isArray(data) ? data.length : 0;
   });
 
-  // Extract key metrics
+  // Extract key metrics from traffic analysis
   if (analysisResults.traffic && analysisResults.traffic.length > 0) {
-    summary.totalRequests = parseInt(analysisResults.traffic[0].total_requests || 0, 10);
+    const trafficData = analysisResults.traffic[0];
+    summary.totalAgenticRequests = parseInt(trafficData.total_requests || 0, 10);
+
+    // Extract agentic type breakdown if available
+    const agentBreakdown = {};
+    if (trafficData.chatgpt_requests) {
+      agentBreakdown.chatgpt = parseInt(trafficData.chatgpt_requests, 10);
+    }
+    if (trafficData.perplexity_requests) {
+      agentBreakdown.perplexity = parseInt(trafficData.perplexity_requests, 10);
+    }
+    if (trafficData.claude_requests) {
+      agentBreakdown.claude = parseInt(trafficData.claude_requests, 10);
+    }
+    if (trafficData.gemini_requests) {
+      agentBreakdown.gemini = parseInt(trafficData.gemini_requests, 10);
+    }
+
+    summary.agentTypeBreakdown = agentBreakdown;
   }
 
-  if (analysisResults.userAgent) {
-    summary.agenticRequests = analysisResults.userAgent
-      .filter((ua) => ua.is_agentic === 'true')
-      .reduce((sum, ua) => sum + parseInt(ua.count || 0, 10), 0);
+  // Calculate agent type diversity
+  const activeAgentTypes = Object.keys(summary.agentTypeBreakdown).filter(
+    (type) => summary.agentTypeBreakdown[type] > 0,
+  );
+  summary.uniqueAgentTypes = activeAgentTypes.length;
+
+  // Extract success rate if available
+  if (analysisResults.traffic && analysisResults.traffic.length > 0) {
+    summary.successRate = parseFloat(analysisResults.traffic[0].success_rate || 0);
   }
 
-  summary.agenticPercentage = summary.totalRequests > 0
-    ? (summary.agenticRequests / summary.totalRequests) * 100
-    : 0;
+  // Extract geographic diversity
+  if (analysisResults.geo && Array.isArray(analysisResults.geo)) {
+    summary.uniqueCountries = analysisResults.geo.length;
+  }
+
+  // Extract error summary
+  if (analysisResults.error && Array.isArray(analysisResults.error)) {
+    summary.totalErrors = analysisResults.error.reduce(
+      (sum, error) => sum + parseInt(error.error_count || 0, 10),
+      0,
+    );
+  }
 
   return summary;
 }
