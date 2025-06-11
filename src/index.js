@@ -45,6 +45,7 @@ import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-ha
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import llmBlocked from './llm-blocked/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -66,6 +67,7 @@ const HANDLERS = {
   'meta-tags': metaTags,
   costs,
   'structured-data': structuredData,
+  'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
