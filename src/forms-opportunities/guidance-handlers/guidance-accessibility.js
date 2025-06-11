@@ -23,7 +23,7 @@ export default async function handler(message, context) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not found`);
     return ok();
   }
-  const a11yData = opportunity.data.accessibility;
+  const a11yData = opportunity.getData().accessibility;
   a11yGuidanceOfIssues.forEach((a11y) => {
     const { form, formSource, a11yIssues } = a11y;
     const formA11yData = a11yData.find(
@@ -43,6 +43,10 @@ export default async function handler(message, context) {
   });
   opportunity.setUpdatedBy('system');
   opportunity.setAuditId(auditId);
+  opportunity.setData({
+    ...opportunity.getData(),
+    accessibility: a11yData,
+  });
   await opportunity.save();
   log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity updated with guidance`);
   return ok();
