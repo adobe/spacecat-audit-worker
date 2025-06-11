@@ -49,7 +49,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        formsource: '.form',
+        form_source: '.form',
         guidance: 'Some guidance',
       },
     };

@@ -52,7 +52,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        formsource: '.form',
+        form_source: '.form',
         guidance: 'Some guidance',
         suggestions: ['Suggestion 1', 'Suggestion 2'],
       },
