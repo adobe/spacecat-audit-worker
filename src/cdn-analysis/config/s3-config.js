@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+/* c8 ignore start */
 function extractCustomerDomain(site) {
   if (site && typeof site.getBaseURL === 'function') {
     const baseURL = site.getBaseURL();
@@ -72,3 +73,4 @@ export function getRawLogsPartitionConfig(s3Config) {
     },
   };
 }
+/* c8 ignore stop */

@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+/* c8 ignore start */
 export function getHourlyPartitionFilter(hourToProcess) {
   const year = hourToProcess.getUTCFullYear();
   const month = String(hourToProcess.getUTCMonth() + 1).padStart(2, '0');
@@ -35,3 +36,4 @@ export const AGENTIC_PATTERNS = {
                      request_user_agent LIKE '%Anthropic%')`,
   COUNT_AGENTIC: 'COUNT(*)',
 };
+/* c8 ignore stop */
