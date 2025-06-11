@@ -12,7 +12,7 @@
 
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
-import { successCriteriaLinks, accessibilityOpportunitiesIDs } from './constants.js';
+import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
 import { getAuditData } from './data-processing.js';
 
 /**
@@ -103,7 +103,7 @@ export function formatIssue(type, issueData, severity) {
  * Groups accessibility issues by URL for individual opportunity creation
  *
  * Processes the aggregated accessibility data and creates URL-specific issue groups.
- * Only includes issues that are in our tracked categories (accessibilityOpportunitiesIDs)
+ * Only includes issues that are in our tracked categories (from accessibilityOpportunitiesMap)
  * and only includes URLs that have at least one issue.
  *
  * @param {Object} accessibilityData - The accessibility data to process
@@ -116,25 +116,39 @@ export function aggregateAccessibilityIssues(accessibilityData) {
     return { data: [] };
   }
 
-  const data = [];
+  // Initialize grouped data structure by opportunity type
+  const groupedData = {};
+  for (const [opportunityType] of Object.entries(accessibilityOpportunitiesMap)) {
+    groupedData[opportunityType] = [];
+  }
 
   // Process each page (skip 'overall' summary which contains site-wide data)
   for (const [url, pageData] of Object.entries(accessibilityData)) {
     if (url !== 'overall' && pageData.violations) {
-      const pageIssues = {
-        type: 'url', // Indicates this is a URL-based suggestion
-        url,
-        issues: [], // Will contain all accessibility issues for this URL
-      };
+      // Initialize page issues for each opportunity type
+      const pageIssuesByType = {};
+      for (const [opportunityType] of Object.entries(accessibilityOpportunitiesMap)) {
+        pageIssuesByType[opportunityType] = {
+          type: 'url', // Indicates this is a URL-based suggestion
+          url,
+          issues: [], // Will contain accessibility issues for this opportunity type
+        };
+      }
 
       const { violations } = pageData;
 
       // Process critical issues (only those in our tracked categories)
       if (violations.critical?.items) {
         for (const [issueType, issueData] of Object.entries(violations.critical.items)) {
-          // Only include issues we're tracking for opportunities
-          if (accessibilityOpportunitiesIDs.includes(issueType)) {
-            pageIssues.issues.push(formatIssue(issueType, issueData, 'critical'));
+          // Check which opportunity type this issue belongs to
+          for (const [opportunityType, issuesList] of Object.entries(
+            accessibilityOpportunitiesMap,
+          )) {
+            if (issuesList.includes(issueType)) {
+              pageIssuesByType[opportunityType].issues.push(
+                formatIssue(issueType, issueData, 'critical'),
+              );
+            }
           }
         }
       }
@@ -142,21 +156,36 @@ export function aggregateAccessibilityIssues(accessibilityData) {
       // Process serious issues (only those in our tracked categories)
       if (violations.serious?.items) {
         for (const [issueType, issueData] of Object.entries(violations.serious.items)) {
-          // Only include issues we're tracking for opportunities
-          if (accessibilityOpportunitiesIDs.includes(issueType)) {
-            pageIssues.issues.push(formatIssue(issueType, issueData, 'serious'));
+          // Check which opportunity type this issue belongs to
+          for (const [opportunityType, issuesList] of Object.entries(
+            accessibilityOpportunitiesMap,
+          )) {
+            if (issuesList.includes(issueType)) {
+              pageIssuesByType[opportunityType].issues.push(
+                formatIssue(issueType, issueData, 'serious'),
+              );
+            }
           }
         }
       }
 
-      // Only add pages that have issues to avoid empty suggestions
-      if (pageIssues.issues.length > 0) {
-        data.push(pageIssues);
+      // Add URLs with issues directly to their respective opportunity type groups
+      for (const [opportunityType, urlData] of Object.entries(pageIssuesByType)) {
+        if (urlData.issues.length > 0) {
+          groupedData[opportunityType].push(urlData);
+        }
       }
     }
   }
 
-  return { data };
+  // Convert grouped data to the desired format
+  const formattedData = Object.entries(groupedData)
+    .filter(([, urls]) => urls.length > 0) // Only include types that have URLs with issues
+    .map(([opportunityType, urls]) => ({
+      [opportunityType]: urls,
+    }));
+
+  return { data: formattedData };
 }
 
 /**
@@ -249,7 +278,7 @@ export async function createIndividualOpportunitySuggestions(
 }
 
 /**
- * Deletes existing assistive opportunities for a site
+ * Deletes existing individual accessibility opportunities for a site
  *
  * @param {Object} dataAccess - Data access object containing Opportunity model
  * @param {string} siteId - Site identifier
@@ -257,7 +286,7 @@ export async function createIndividualOpportunitySuggestions(
  * @param {Object} log - Logger instance
  * @returns {Promise<number>} Number of deleted opportunities
  */
-export async function deleteExistingAssistiveOpportunities(
+export async function deleteExistingAccessibilityOpportunities(
   dataAccess,
   siteId,
   opportunityType,
@@ -272,20 +301,20 @@ export async function deleteExistingAssistiveOpportunities(
 
   if (existingOpportunities.length > 0) {
     const count = existingOpportunities.length;
-    log.info(`[A11yIndividual] Found ${count} existing assistive opportunities - deleting`);
+    log.info(`[A11yIndividual] Found ${count} existing opportunities of type ${opportunityType} - deleting`);
     try {
       await Promise.all(existingOpportunities.map(async (opportunity) => {
         await opportunity.remove();
-        log.debug(`[A11yIndividual] Deleted assistive opportunity ID: ${opportunity.getId()}`);
+        log.debug(`[A11yIndividual] Deleted opportunity ID: ${opportunity.getId()}`);
       }));
-      log.info('[A11yIndividual] Successfully deleted all existing assistive opportunities');
+      log.info(`[A11yIndividual] Successfully deleted all existing opportunities of type ${opportunityType}`);
       return existingOpportunities.length;
     } catch (error) {
-      log.error(`[A11yIndividual] Error deleting existing assistive opportunities: ${error.message}`);
+      log.error(`[A11yIndividual] Error deleting existing opportunities of type ${opportunityType}: ${error.message}`);
       throw new Error(`Failed to delete existing opportunities: ${error.message}`);
     }
   } else {
-    log.info('[A11yIndividual] No existing assistive opportunities found - proceeding with creation');
+    log.info(`[A11yIndividual] No existing opportunities of type ${opportunityType} found - proceeding with creation`);
     return 0;
   }
 }
@@ -317,7 +346,7 @@ export function calculateAccessibilityMetrics(aggregatedData) {
  * This is the main entry point that orchestrates the creation of individual
  * accessibility opportunities. It follows the same pattern as report opportunities:
  * 1. Aggregates accessibility issues by URL
- * 2. Creates a single opportunity using the assistive opportunity template
+ * 2. Creates opportunities for each opportunity type that has issues
  * 3. Creates suggestions for each URL that has accessibility issues
  *
  * The resulting structure provides actionable, URL-specific accessibility improvements
@@ -352,47 +381,102 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     const auditData = await getAuditData(site, 'accessibility');
     log.debug(`[A11yIndividual] Using auditId: ${auditData.auditId}`);
 
-    // Step 2a: Delete existing assistive opportunities
-    const opportunityInstance = createAccessibilityAssistiveOpportunity();
-    await deleteExistingAssistiveOpportunities(
-      dataAccess,
-      auditData.siteId,
-      opportunityInstance.type,
-      log,
+    // Map opportunity types to their creation functions
+    const opportunityCreators = {
+      'a11y-assistive': createAccessibilityAssistiveOpportunity,
+      // Add more opportunity types here as they are created
+    };
+
+    // Create separate opportunities for each opportunity type that has data
+    const opportunityResults = await Promise.all(
+      aggregatedData.data.map(
+        async (opportunityTypeData) => {
+          // Each item is an object with one key (the opportunity type) and an array of URLs
+          const [opportunityType, typeData] = Object.entries(opportunityTypeData)[0];
+
+          log.debug(`[A11yIndividual] Creating opportunity for type: ${opportunityType}`);
+
+          // Get the appropriate opportunity creator function
+          const creatorFunc = opportunityCreators[opportunityType];
+          if (!creatorFunc) {
+            const availableCreators = Object.keys(opportunityCreators).join(', ');
+            log.error(
+              `[A11yIndividual] No opportunity creator found for type: ${opportunityType}. Available creators: ${availableCreators}`,
+            );
+            throw new Error(`No opportunity creator found for type: ${opportunityType}`);
+          }
+
+          const opportunityInstance = creatorFunc();
+
+          // Step 2a: Delete existing opportunities for this specific type
+          await deleteExistingAccessibilityOpportunities(
+            dataAccess,
+            auditData.siteId,
+            opportunityInstance.type,
+            log,
+          );
+
+          // Step 2b: Create the new accessibility opportunity for this type
+          let opportunityRes;
+          try {
+            opportunityRes = await createIndividualOpportunity(
+              opportunityInstance,
+              auditData,
+              context,
+            );
+          } catch (error) {
+            log.error(
+              `Failed to create individual accessibility opportunity for ${opportunityType}: ${error.message}`,
+            );
+            throw new Error(error.message);
+          }
+
+          const { opportunity } = opportunityRes;
+
+          // Step 3: Create the suggestions for this opportunity type only
+          const typeSpecificData = { data: typeData };
+          try {
+            await createIndividualOpportunitySuggestions(
+              opportunity,
+              typeSpecificData,
+              context,
+              log,
+            );
+          } catch (error) {
+            const errorMsg = `Failed to create individual accessibility opportunity suggestions for ${opportunityType}: ${error.message}`;
+            log.error(errorMsg);
+            throw new Error(error.message);
+          }
+
+          // Calculate metrics for this opportunity type
+          const typeMetrics = calculateAccessibilityMetrics(typeSpecificData);
+
+          // Calculate pages with issues for this specific opportunity type
+          const uniqueUrlsForType = new Set(typeData.map((urlData) => urlData.url));
+          const pagesWithIssuesForType = uniqueUrlsForType.size;
+
+          const logMsg = `[A11yIndividual] Created opportunity for ${opportunityType} with ${typeMetrics.totalSuggestions} suggestions (${typeMetrics.totalIssues} issues) across ${pagesWithIssuesForType} pages`;
+          log.info(logMsg);
+
+          // Return the individual opportunity result with its own status
+          return {
+            status: 'OPPORTUNITY_CREATED',
+            opportunityType,
+            opportunityId: opportunity.getId(),
+            suggestionsCount: typeMetrics.totalSuggestions,
+            totalIssues: typeMetrics.totalIssues,
+            pagesWithIssues: pagesWithIssuesForType,
+            summary: `Created ${opportunityType} opportunity with ${typeMetrics.totalSuggestions} suggestions across ${pagesWithIssuesForType} pages`,
+          };
+        },
+      ),
     );
 
-    // Step 2b: Create the new accessibility assistive opportunity
-    let opportunityRes;
-    try {
-      opportunityRes = await createIndividualOpportunity(opportunityInstance, auditData, context);
-    } catch (error) {
-      log.error(`Failed to create individual accessibility opportunity: ${error.message}`);
-      throw new Error(error.message);
-    }
-
-    const { opportunity } = opportunityRes;
-
-    // Step 3: Create the suggestions for the opportunity (one per URL with issues)
-    try {
-      await createIndividualOpportunitySuggestions(opportunity, aggregatedData, context, log);
-    } catch (error) {
-      log.error(`Failed to create individual accessibility opportunity suggestions: ${error.message}`);
-      throw new Error(error.message);
-    }
-
-    // Calculate metrics for reporting
-    const metrics = calculateAccessibilityMetrics(aggregatedData);
-
-    log.info(`[A11yIndividual] Created 1 opportunity with ${metrics.totalSuggestions} suggestions (${metrics.totalIssues} total issues)`);
+    log.info(`[A11yIndividual] Successfully created ${opportunityResults.length} individual accessibility opportunities`);
 
     return {
-      status: 'OPPORTUNITIES_CREATED',
-      opportunitiesCount: 1, // One opportunity containing multiple suggestions
-      suggestionsCount: metrics.totalSuggestions, // One suggestion per URL with issues
-      totalIssues: metrics.totalIssues,
-      pagesWithIssues: metrics.pagesWithIssues,
-      summary: `Created accessibility opportunity with ${metrics.totalSuggestions} URL suggestions across ${metrics.pagesWithIssues} pages`,
-      // Include the aggregated data for potential UI consumption
+      opportunities: opportunityResults, // Return individual opportunity details
+      // Include the aggregated data for UI consumption
       ...aggregatedData,
     };
   } catch (error) {
