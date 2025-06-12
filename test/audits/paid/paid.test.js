@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -330,34 +329,26 @@ describe('Paid Audit', () => {
         urls: [
           { url: 'https://example.com/page1' },
           { url: 'https://example.com/page2' },
+          { url: 'https://example.com' },
         ],
       });
 
-      context.s3Presigner = { getSignedUrl: sinon.stub().resolves('expected-signed-url') };
-
-      await submitForMystiqueEvaluation(context);
-
-      expect(context.sqs.sendMessage.called).to.be.true;
-      expect(logStub.info.callCount).to.be.above(1);
-    });
-
-    it('should fail on fetchUrl errors', async () => {
-      context.audit.getAuditResult = sinon.stub().returns({
-        urls: [
-          { url: 'https://example.com/page1' },
-          { url: 'https://example.com/page2' },
-        ],
-      });
-      const expectedError = new Error('Failed to generate signed URL');
-      context.s3Presigner = {
-        getSignedUrl: () => {
-          throw expectedError;
+      const expectedSubmitedMsg = {
+        type: 'guidance:paid-cookie-consent',
+        observation: 'Landing page should not have a blocking cookie concent banner',
+        siteId: 'test-site-id',
+        url: 'https://example.com/page1',
+        auditId: 'test-audit-id',
+        deliveryType: 'aem-edge',
+        data: {
+          url: 'https://example.com/page1',
         },
       };
 
-      await expect(submitForMystiqueEvaluation(context))
-        .to.be.rejectedWith(expectedError);
-      expect(logStub.error.callCount).to.be.above(0);
+      await submitForMystiqueEvaluation(context);
+      expect(context.sqs.sendMessage.called).to.be.true;
+      const submittedMsg = context.sqs.sendMessage.getCall(0).args[1];
+      expect(submittedMsg).to.deep.include(expectedSubmitedMsg);
     });
   });
 });

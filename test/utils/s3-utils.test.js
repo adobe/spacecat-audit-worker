@@ -15,24 +15,15 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { beforeEach } from 'mocha';
-import { getObjectKeysUsingPrefix, getObjectFromKey, generateSignedUrl } from '../../src/utils/s3-utils.js';
+import { getObjectKeysUsingPrefix, getObjectFromKey } from '../../src/utils/s3-utils.js';
 
 use(chaiAsPromised);
 
 describe('S3 Utility Functions', () => {
-  let logMock;
-
-  beforeEach(() => {
-    logMock = {
-      info: sinon.stub(),
-      error: sinon.stub(),
-    };
-  });
-
-  afterEach(() => {
-    sinon.restore();
-  });
+  const logMock = {
+    info: () => {},
+    error: () => {},
+  };
 
   describe('getObjectKeysUsingPrefix', () => {
     it('should throw if params are missing', async () => {
@@ -187,57 +178,6 @@ describe('S3 Utility Functions', () => {
 
       const result = await getObjectFromKey(s3ClientMock, bucketName, key, logMock2);
       expect(result).to.be.null;
-    });
-  });
-
-  describe('generateSignedUrl', () => {
-    const expectedUrl = 'https://test-signed-url.com';
-    const s3ClientMock = {};
-    const s3Presigner = {
-      getSignedUrl: () => expectedUrl,
-    };
-
-    it('should generate a signed URL with default expiration', async () => {
-      const bucketName = 'test-bucket';
-      const key = 'test-key';
-
-      const url = await generateSignedUrl(s3Presigner, s3ClientMock, bucketName, key, logMock);
-      expect(url).to.equal(expectedUrl);
-    });
-
-    it('should generate a signed URL with custom expiration', async () => {
-      const bucketName = 'test-bucket';
-      const key = 'test-key';
-      const customExpiration = 3600;
-
-      const url = await generateSignedUrl(
-        s3Presigner,
-        s3ClientMock,
-        bucketName,
-        key,
-        logMock,
-        customExpiration,
-      );
-      expect(url).to.equal(expectedUrl);
-    });
-
-    it('should throw an error when URL generation fails', async () => {
-      const bucketName = 'test-bucket';
-      const key = 'test-key';
-      const expectedError = new Error('Failed to generate signed URL');
-      const s3PresignerError = {
-        getSignedUrl: () => {
-          throw expectedError;
-        },
-      };
-
-      await expect(generateSignedUrl(s3PresignerError, s3ClientMock, bucketName, key, logMock))
-        .to.be.rejectedWith(expectedError);
-
-      expect(logMock.error.calledOnce).to.be.true;
-      const errorLog = logMock.error.firstCall.args[0];
-      expect(errorLog).to.include(bucketName);
-      expect(errorLog).to.include(key);
     });
   });
 });

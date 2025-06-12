@@ -14,7 +14,6 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { generateSignedUrl as getSignedUrl } from '../utils/s3-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -32,20 +31,12 @@ const AUDIT_CONSTANTS = {
     MYSTIQUE: 'guidance:paid-cookie-consent',
   },
   OBSERVATION: 'Landing page should not have a blocking cookie concent banner',
-  STORAGE_PREFIX: {
-    BANNER_ON: 'consent-banner-on',
-    BANNER_OFF: 'consent-banner-off',
-  },
 };
 
 const SCREENSHOT_CONF = {
   BANNER_STATES: {
     ON: 'consent-banner-on',
     OFF: 'consent-banner-off',
-  },
-  TYPES: {
-    MOBILE: 'screenshot-iphone-6-viewport.png',
-    DESKTOP: 'screenshot-desktop-viewport.png',
   },
   OPTIONS: {
     TYPES: ['viewport'],
@@ -200,53 +191,7 @@ function tryEnrich(segments, classifier, auditUrl, log) {
   return segments;
 }
 
-function getUrlKeys(site, urls) {
-  const blPath = (basePath, bannerState, type) => `${basePath}/${bannerState}/${type}`;
-
-  return urls.map((item) => {
-    const urlPath = new URL(item.url).pathname;
-    const suffix = urlPath === '/' ? '' : urlPath;
-    const base = `scrapes/${site.getId()}${suffix}`;
-
-    return {
-      url: item.url,
-      mobile_on: blPath(base, SCREENSHOT_CONF.BANNER_STATES.ON, SCREENSHOT_CONF.TYPES.MOBILE),
-      desktop_on: blPath(base, SCREENSHOT_CONF.BANNER_STATES.ON, SCREENSHOT_CONF.TYPES.DESKTOP),
-      mobile_off: blPath(base, SCREENSHOT_CONF.BANNER_STATES.OFF, SCREENSHOT_CONF.TYPES.MOBILE),
-      desktop_off: blPath(base, SCREENSHOT_CONF.BANNER_STATES.OFF, SCREENSHOT_CONF.TYPES.DESKTOP),
-    };
-  });
-}
-
-async function getSignedUrls(context, keys) {
-  const { s3Client, s3Presigner, log } = context;
-
-  const { S3_SCRAPER_BUCKET_NAME: SCRAPER_BUCKET } = context.env;
-  return Promise.all(
-    keys.map(async (item) => {
-      const mOn = await getSignedUrl(s3Presigner, s3Client, SCRAPER_BUCKET, item.mobile_on, log);
-      const dOn = await getSignedUrl(s3Presigner, s3Client, SCRAPER_BUCKET, item.desktop_on, log);
-      const mOff = await getSignedUrl(s3Presigner, s3Client, SCRAPER_BUCKET, item.mobile_off, log);
-      const dOff = await getSignedUrl(s3Presigner, s3Client, SCRAPER_BUCKET, item.desktop_off, log);
-      return {
-        url: item.url,
-        mOn,
-        dOn,
-        mOff,
-        dOff,
-      };
-    }),
-  );
-}
-
-async function fetchScrapedUrls(context, site, urls) {
-  const keys = getUrlKeys(site, urls);
-  const signedUrls = await getSignedUrls(context, keys);
-  return signedUrls;
-}
-
-function buildMystiqueMessage(site, audit, signedUrls) {
-  const { url } = signedUrls;
+function buildMystiqueMessage(site, audit, url) {
   return {
     type: AUDIT_CONSTANTS.TYPES.MYSTIQUE,
     observation: AUDIT_CONSTANTS.OBSERVATION,
@@ -257,10 +202,6 @@ function buildMystiqueMessage(site, audit, signedUrls) {
     time: new Date().toISOString(),
     data: {
       url,
-      mobile_path_cookie_banner_on: signedUrls.mOn,
-      mobile_path_cookie_banner_off: signedUrls.mOff,
-      desktop_path_cookie_banner_on: signedUrls.dOn,
-      desktop_path_cookie_banner_off: signedUrls.dOff,
     },
   };
 }
@@ -380,16 +321,8 @@ export async function submitForMystiqueEvaluation(context) {
     url: normalizeUrl(url),
   }));
 
-  log.info(`[paid-audit] [Site: ${siteId}] Processing opportunity evaluation data`);
-  let signedUrls;
-  try {
-    signedUrls = await fetchScrapedUrls(context, site, normalizedUrls.slice(0, 1));
-  } catch (error) {
-    log.error(`[paid-audit] [Site: ${siteId}] Error fetching scraped URLs: ${error.message}`);
-    throw error;
-  }
-
-  const mystiqueMessage = buildMystiqueMessage(site, audit, signedUrls[0]);
+  // Logic for which url to pick will be improved
+  const mystiqueMessage = buildMystiqueMessage(site, audit, normalizedUrls[0].url);
 
   log.info(`[paid-audit] [Site: ${siteId}] Sending evaluation to mystique`);
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);

@@ -12,7 +12,6 @@
 
 import AWSXray from 'aws-xray-sdk';
 import { S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 /**
  * Adds an S3Client instance to the context.
@@ -25,7 +24,6 @@ export default function s3Client(fn) {
       const region = context.env?.AWS_REGION;
       const options = region ? { region } : {};
       context.s3Client = AWSXray.captureAWSv3Client(new S3Client(options));
-      context.s3Presigner = { getSignedUrl };
     }
     return fn(request, context);
   };
