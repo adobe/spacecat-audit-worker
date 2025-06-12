@@ -1,3 +1,10 @@
+## [1.100.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.100.1...v1.100.2) (2025-06-12)
+
+
+### Bug Fixes
+
+* error due to invalid access from opportunity object ([#949](https://github.com/adobe/spacecat-audit-worker/issues/949)) ([fb0f323](https://github.com/adobe/spacecat-audit-worker/commit/fb0f323ecd9cf3cb1c7483d529b654487797d1c2))
+
 ## [1.100.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.100.0...v1.100.1) (2025-06-11)
 
 
