@@ -94,7 +94,7 @@ export const preflightAudit = async (context) => {
   log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Preflight audit started.`);
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
-    throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${jobId}. Status: ${job.getStatus()}`);
+    throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
   async function saveIntermediateResults(result, auditName) {
