@@ -116,11 +116,33 @@ export function aggregateAccessibilityIssues(accessibilityData) {
     return { data: [] };
   }
 
+  // Create reverse mapping from issueType to opportunityType
+  // This eliminates the O(n³) complexity by converting the innermost loop to O(1) lookup
+  const issueTypeToOpportunityMap = {};
+  for (const [opportunityType, issuesList] of Object.entries(accessibilityOpportunitiesMap)) {
+    for (const issueType of issuesList) {
+      issueTypeToOpportunityMap[issueType] = opportunityType;
+    }
+  }
+
   // Initialize grouped data structure by opportunity type
   const groupedData = {};
   for (const [opportunityType] of Object.entries(accessibilityOpportunitiesMap)) {
     groupedData[opportunityType] = [];
   }
+
+  // Helper function to process issues for a given severity level
+  const processIssuesForSeverity = (items, severity, pageIssuesByType) => {
+    for (const [issueType, issueData] of Object.entries(items)) {
+      // O(1) lookup instead of O(n) search through all opportunity types
+      const opportunityType = issueTypeToOpportunityMap[issueType];
+      if (opportunityType) {
+        pageIssuesByType[opportunityType].issues.push(
+          formatIssue(issueType, issueData, severity),
+        );
+      }
+    }
+  };
 
   // Process each page (skip 'overall' summary which contains site-wide data)
   for (const [url, pageData] of Object.entries(accessibilityData)) {
@@ -139,34 +161,12 @@ export function aggregateAccessibilityIssues(accessibilityData) {
 
       // Process critical issues (only those in our tracked categories)
       if (violations.critical?.items) {
-        for (const [issueType, issueData] of Object.entries(violations.critical.items)) {
-          // Check which opportunity type this issue belongs to
-          for (const [opportunityType, issuesList] of Object.entries(
-            accessibilityOpportunitiesMap,
-          )) {
-            if (issuesList.includes(issueType)) {
-              pageIssuesByType[opportunityType].issues.push(
-                formatIssue(issueType, issueData, 'critical'),
-              );
-            }
-          }
-        }
+        processIssuesForSeverity(violations.critical.items, 'critical', pageIssuesByType);
       }
 
       // Process serious issues (only those in our tracked categories)
       if (violations.serious?.items) {
-        for (const [issueType, issueData] of Object.entries(violations.serious.items)) {
-          // Check which opportunity type this issue belongs to
-          for (const [opportunityType, issuesList] of Object.entries(
-            accessibilityOpportunitiesMap,
-          )) {
-            if (issuesList.includes(issueType)) {
-              pageIssuesByType[opportunityType].issues.push(
-                formatIssue(issueType, issueData, 'serious'),
-              );
-            }
-          }
-        }
+        processIssuesForSeverity(violations.serious.items, 'serious', pageIssuesByType);
       }
 
       // Add URLs with issues directly to their respective opportunity type groups
