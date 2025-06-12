@@ -33,6 +33,7 @@ import {
 } from '../../src/sitemap/handler.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
+import { DATA_SOURCES } from '../../src/common/constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -838,6 +839,7 @@ describe('Sitemap Audit', () => {
   describe('opportunityAndSuggestions', () => {
     let auditDataFailure;
     let auditDataSuccess;
+    let auditDataWithSuggestions;
 
     beforeEach(() => {
       auditDataFailure = {
@@ -893,6 +895,14 @@ describe('Sitemap Audit', () => {
         ],
       };
 
+      auditDataWithSuggestions = {
+        ...JSON.parse(JSON.stringify(auditDataFailure)),
+        auditResult: {
+          ...JSON.parse(JSON.stringify(auditDataFailure.auditResult)),
+          success: true,
+        },
+      };
+
       auditDataSuccess = {
         siteId: 'site-id',
         auditId: 'audit-id',
@@ -922,6 +932,25 @@ describe('Sitemap Audit', () => {
       sandbox.restore();
     });
 
+    it('should skip opportunity creation when audit result success is false', async () => {
+      if (context.dataAccess.Opportunity.create.resetHistory) {
+        context.dataAccess.Opportunity.create.resetHistory();
+      }
+
+      await opportunityAndSuggestions(
+        'https://example.com',
+        auditDataFailure,
+        context,
+      );
+
+      expect(context.log.info).to.have.been.calledWith(
+        'Sitemap audit failed, skipping opportunity and suggestions creation',
+      );
+      // Check that the existing stubs weren't called
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;
+    });
+
     it('should handle errors when creating opportunity', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([
         context.dataAccess.Opportunity,
@@ -933,7 +962,7 @@ describe('Sitemap Audit', () => {
       await expect(
         opportunityAndSuggestions(
           'https://example.com',
-          auditDataFailure,
+          auditDataWithSuggestions,
           context,
         ),
       ).to.be.rejectedWith('Creation failed');
@@ -978,7 +1007,7 @@ describe('Sitemap Audit', () => {
 
       await opportunityAndSuggestions(
         'https://example.com',
-        auditDataFailure,
+        auditDataWithSuggestions,
         context,
       );
 
@@ -999,7 +1028,9 @@ describe('Sitemap Audit', () => {
             ],
           },
           tags: ['Traffic Acquisition'],
-          data: null,
+          data: {
+            dataSources: [DATA_SOURCES.SITE],
+          },
         },
       );
     });
@@ -1014,11 +1045,11 @@ describe('Sitemap Audit', () => {
       context.dataAccess.Opportunity.save.resolves();
       context.dataAccess.Opportunity.getSuggestions.resolves([]);
       context.dataAccess.Opportunity.addSuggestions.resolves({
-        createdItems: auditDataFailure.suggestions,
+        createdItems: auditDataWithSuggestions.suggestions,
       });
       await opportunityAndSuggestions(
         'https://example.com',
-        auditDataFailure,
+        auditDataWithSuggestions,
         context,
       );
 
@@ -1029,7 +1060,7 @@ describe('Sitemap Audit', () => {
       expect(
         context.dataAccess.Opportunity.addSuggestions,
       ).to.have.been.calledOnceWith(
-        auditDataFailure.suggestions.map((suggestion) => ({
+        auditDataWithSuggestions.suggestions.map((suggestion) => ({
           opportunityId: opptyId,
           type: 'REDIRECT_UPDATE',
           rank: 0,
@@ -1067,11 +1098,11 @@ describe('Sitemap Audit', () => {
       ];
       context.dataAccess.Opportunity.getSuggestions.resolves(existingSuggestions);
       context.dataAccess.Opportunity.addSuggestions.resolves({
-        createdItems: auditDataFailure.suggestions,
+        createdItems: auditDataWithSuggestions.suggestions,
       });
       await opportunityAndSuggestions(
         'https://example.com',
-        auditDataFailure,
+        auditDataWithSuggestions,
         context,
       );
 
@@ -1079,14 +1110,9 @@ describe('Sitemap Audit', () => {
         context.dataAccess.Opportunity.setAuditId,
       ).to.have.been.calledOnceWith('audit-id');
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
-      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
-        existingSuggestions,
-        'OUTDATED',
-      );
-      expect(
-        context.dataAccess.Opportunity.addSuggestions,
-      ).to.have.been.calledOnceWith(
-        auditDataFailure.suggestions.map((suggestion) => ({
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(existingSuggestions, 'OUTDATED');
+      expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(
+        auditDataWithSuggestions.suggestions.map((suggestion) => ({
           opportunityId: opptyId,
           type: 'REDIRECT_UPDATE',
           rank: 0,
@@ -1169,13 +1195,73 @@ describe('filterValidUrls with redirect handling', () => {
     ]);
   });
 
-  it('should handle failed redirect follows', async () => {
+  it('should suggest homepage URL for redirects to 404 status pages', async () => {
+    const urls = [
+      'https://example.com/redirect-to-404',
+      'https://example.com/redirect-to-200',
+      'https://example.com/redirect-to-404-custom-path',
+      'https://subdomain.example.com/redirect-to-404',
+    ];
+
+    // Redirect to a page that returns 404
+    nock('https://example.com')
+      .head('/redirect-to-404')
+      .reply(301, '', { Location: 'https://example.com/not-found' });
+    nock('https://example.com').head('/not-found').reply(404);
+
+    // Redirect to a page that returns 200
+    nock('https://example.com')
+      .head('/redirect-to-200')
+      .reply(302, '', { Location: 'https://example.com/valid-page' });
+    nock('https://example.com').head('/valid-page').reply(200);
+
+    // Redirect to a URL that contains '404.html' in the path
+    nock('https://example.com')
+      .head('/redirect-to-404-custom-path')
+      .reply(301, '', { Location: 'https://example.com/errors/404.html' });
+    nock('https://example.com').head('/errors/404.html').reply(200); // Even with 200 response, path detection should work
+
+    // Test with subdomain
+    nock('https://subdomain.example.com')
+      .head('/redirect-to-404')
+      .reply(302, '', { Location: 'https://subdomain.example.com/not-found' });
+    nock('https://subdomain.example.com').head('/not-found').reply(404);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect-to-404',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com',
+      },
+      {
+        url: 'https://example.com/redirect-to-200',
+        statusCode: 302,
+        urlsSuggested: 'https://example.com/valid-page',
+      },
+      {
+        url: 'https://example.com/redirect-to-404-custom-path',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com',
+      },
+      {
+        url: 'https://subdomain.example.com/redirect-to-404',
+        statusCode: 302,
+        urlsSuggested: 'https://subdomain.example.com',
+      },
+    ]);
+  });
+
+  it('should handle failed redirect follows with 404 detection', async () => {
     const urls = ['https://example.com/broken-redirect'];
 
+    // First request succeeds with redirect
     nock('https://example.com')
       .head('/broken-redirect')
       .reply(301, '', { Location: 'https://example.com/error' });
 
+    // Second request fails with network error
     nock('https://example.com')
       .get('/broken-redirect')
       .replyWithError('Network error');
@@ -1288,7 +1374,6 @@ describe('filterValidUrls with redirect handling', () => {
           .head(`/url${i + 1}`)
           .reply(200);
       } else {
-        // Remaining URLs are not found
         nock('https://example.com')
           .head(`/url${i + 1}`)
           .reply(404);
@@ -1304,6 +1389,49 @@ describe('filterValidUrls with redirect handling', () => {
     result.networkErrors.forEach((error) => {
       expect(error).to.have.property('url');
       expect(error).to.have.property('error', 'NETWORK_ERROR');
+    });
+  });
+
+  it('should not flag redirects to login pages as issues', async () => {
+    const urls = [
+      'https://example.com/myaccount',
+      'https://example.com/profile',
+      'https://example.com/cart/checkout',
+      'https://example.com/normal-redirect',
+    ];
+
+    // Redirect to login pages
+    nock('https://example.com')
+      .head('/myaccount')
+      .reply(302, '', { Location: 'https://example.com/login.html' });
+
+    nock('https://example.com')
+      .head('/profile')
+      .reply(302, '', { Location: 'https://example.com/signin' });
+
+    nock('https://example.com')
+      .head('/cart/checkout')
+      .reply(302, '', { Location: 'https://example.com/auth/user' });
+
+    // Normal redirect to non-login page
+    nock('https://example.com')
+      .head('/normal-redirect')
+      .reply(302, '', { Location: 'https://example.com/some-page' });
+
+    nock('https://example.com').head('/some-page').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    // login redirects should be treated as OK
+    expect(result.ok).to.include('https://example.com/myaccount');
+    expect(result.ok).to.include('https://example.com/profile');
+    expect(result.ok).to.include('https://example.com/cart/checkout');
+
+    // normal redirects should still be in notOk
+    expect(result.notOk).to.deep.include({
+      url: 'https://example.com/normal-redirect',
+      statusCode: 302,
+      urlsSuggested: 'https://example.com/some-page',
     });
   });
 });
@@ -1387,10 +1515,7 @@ describe('filterValidUrls with status code tracking', () => {
 
     const result = await filterValidUrls(urls);
 
-    // Should include 200 responses in ok array
-    expect(result.ok).to.deep.equal([
-      'https://example.com/ok',
-    ]);
+    expect(result.ok).to.deep.equal(['https://example.com/ok']);
 
     // Should only include tracked status codes in notOk array
     expect(result.notOk).to.deep.equal([
@@ -1415,106 +1540,50 @@ describe('filterValidUrls with status code tracking', () => {
     expect(result.notOk.some((item) => item.statusCode === 403)).to.be.false;
   });
 
-  it('should only include tracked status codes in issues collection', async () => {
+  it('should suggest homepage for redirects to 404 patterns and final URL for normal redirects', async () => {
     const urls = [
-      'https://example.com/ok',
-      'https://example.com/redirect',
-      'https://example.com/not-found',
-      'https://example.com/forbidden',
-      'https://example.com/server-error',
+      'https://example.com/redirect-to-404-page',
+      'https://example.com/redirect-to-404-path',
+      'https://example.com/redirect-to-errors-404',
+      'https://example.com/normal-redirect',
     ];
 
-    nock('https://example.com').head('/ok').reply(200);
+    // Mock redirects to URLs with 404 patterns
     nock('https://example.com')
-      .head('/redirect')
-      .reply(301, '', { Location: 'https://example.com/new' });
-    nock('https://example.com').head('/not-found').reply(404);
-    nock('https://example.com').head('/forbidden').reply(403);
-    nock('https://example.com').head('/server-error').reply(500);
+      .head('/redirect-to-404-page')
+      .reply(301, '', { Location: 'https://example.com/404.html' });
 
-    const result = await filterValidUrls(urls);
-    const trackedIssues = result.notOk
-      .filter((issue) => [301, 302, 404].includes(issue.statusCode));
-
-    expect(trackedIssues).to.deep.equal([
-      {
-        url: 'https://example.com/redirect',
-        statusCode: 301,
-        urlsSuggested: 'https://example.com/new',
-      },
-      {
-        url: 'https://example.com/not-found',
-        statusCode: 404,
-      },
-    ]);
-
-    // Verify untracked status codes are not included
-    expect(result.notOk.some((issue) => [403, 500].includes(issue.statusCode)))
-      .to.be.false;
-  });
-
-  it('should categorize non-tracked status codes in otherStatusCodes array', async () => {
-    const urls = [
-      'https://example.com/ok',
-      'https://example.com/redirect',
-      'https://example.com/not-found',
-      'https://example.com/forbidden',
-      'https://example.com/server-error',
-      'https://example.com/service-unavailable',
-      'https://example.com/bad-gateway',
-    ];
-
-    nock('https://example.com').head('/ok').reply(200);
     nock('https://example.com')
-      .head('/redirect')
-      .reply(301, '', { Location: 'https://example.com/new' });
-    nock('https://example.com').head('/not-found').reply(404);
-    nock('https://example.com').head('/forbidden').reply(403);
-    nock('https://example.com').head('/server-error').reply(500);
-    nock('https://example.com').head('/service-unavailable').reply(503);
-    nock('https://example.com').head('/bad-gateway').reply(502);
+      .head('/redirect-to-404-path')
+      .reply(301, '', { Location: 'https://example.com/404/not-found' });
+
+    nock('https://example.com')
+      .head('/redirect-to-errors-404')
+      .reply(301, '', { Location: 'https://example.com/errors/404/page' });
+
+    // Mock normal redirect
+    nock('https://example.com')
+      .head('/normal-redirect')
+      .reply(301, '', { Location: 'https://example.com/valid-page' });
 
     const result = await filterValidUrls(urls);
 
-    // Should include only 200 responses in ok array
-    expect(result.ok).to.deep.equal(['https://example.com/ok']);
+    expect(result.notOk).to.have.length(4);
 
-    // Should only include tracked status codes (301, 302, 404) in notOk array
-    expect(result.notOk).to.deep.equal([
-      {
-        url: 'https://example.com/redirect',
-        statusCode: 301,
-        urlsSuggested: 'https://example.com/new',
-      },
-      {
-        url: 'https://example.com/not-found',
-        statusCode: 404,
-      },
-    ]);
+    // Redirects to 404 patterns should suggest homepage URL
+    const redirectsTo404 = result.notOk.filter(
+      (item) => item.url.includes('redirect-to-404')
+        || item.url.includes('redirect-to-errors-404'),
+    );
 
-    // Should include all other status codes in otherStatusCodes array
-    expect(result.otherStatusCodes).to.deep.equal([
-      {
-        url: 'https://example.com/forbidden',
-        statusCode: 403,
-      },
-      {
-        url: 'https://example.com/server-error',
-        statusCode: 500,
-      },
-      {
-        url: 'https://example.com/service-unavailable',
-        statusCode: 503,
-      },
-      {
-        url: 'https://example.com/bad-gateway',
-        statusCode: 502,
-      },
-    ]);
+    redirectsTo404.forEach((item) => {
+      expect(item.statusCode).to.equal(301);
+      expect(item.urlsSuggested).to.equal('https://example.com');
+    });
 
-    // Verify these status codes don't appear in the audit results
-    expect(
-      result.notOk.some((issue) => [403, 500, 502, 503].includes(issue.statusCode)),
-    ).to.be.false;
+    // Normal redirect should suggest the final URL
+    const normalRedirect = result.notOk.find((item) => item.url.includes('normal-redirect'));
+    expect(normalRedirect.statusCode).to.equal(301);
+    expect(normalRedirect.urlsSuggested).to.equal('https://example.com/valid-page');
   });
 });

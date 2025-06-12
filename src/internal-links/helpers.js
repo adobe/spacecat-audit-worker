@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { AbortController, AbortError } from '@adobe/fetch';
 
 const LINK_TIMEOUT = 3000;
 export const CPC_DEFAULT_VALUE = 1;
@@ -29,10 +28,9 @@ export const resolveCpcValue = () => CPC_DEFAULT_VALUE;
  * @param {Object} auditData - The audit data containing results
  * @returns {Object} KPI delta calculations
  */
-export const calculateKpiDeltasForAudit = (auditData) => {
+export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
   const cpcValue = resolveCpcValue();
 
-  const brokenInternalLinks = auditData?.auditResult?.brokenInternalLinks;
   const linksMap = {};
 
   for (const link of brokenInternalLinks) {
@@ -78,12 +76,8 @@ export const calculateKpiDeltasForAudit = (auditData) => {
  * false if reachable/accessible
  */
 export async function isLinkInaccessible(url, log) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), LINK_TIMEOUT);
-
   try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
+    const response = await fetch(url, { timeout: LINK_TIMEOUT });
     const { status } = response;
 
     // Log non-404, non-200 status codes
@@ -94,9 +88,41 @@ export async function isLinkInaccessible(url, log) {
     // URL is valid if status code is less than 400, otherwise it is invalid
     return status >= 400;
   } catch (error) {
-    clearTimeout(timeoutId);
-    log.info(`broken-internal-links audit: Error checking ${url}: ${error instanceof AbortError ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
+    log.info(`broken-internal-links audit: Error checking ${url}: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
     // Any error means the URL is inaccessible
     return true;
   }
+}
+
+/**
+ * Classifies links into priority categories based on views
+ * High: top 25%, Medium: next 25%, Low: bottom 50%
+ * @param {Array} links - Array of objects with views property
+ * @returns {Array} - Links with priority classifications included
+ */
+export function calculatePriority(links) {
+  // Sort links by views in descending order
+  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
+
+  // Calculate indices for the 25% and 50% marks
+  const quarterIndex = Math.ceil(sortedLinks.length * 0.25);
+  const halfIndex = Math.ceil(sortedLinks.length * 0.5);
+
+  // Map through sorted links and assign priority
+  return sortedLinks.map((link, index) => {
+    let priority;
+
+    if (index < quarterIndex) {
+      priority = 'high';
+    } else if (index < halfIndex) {
+      priority = 'medium';
+    } else {
+      priority = 'low';
+    }
+
+    return {
+      ...link,
+      priority,
+    };
+  });
 }

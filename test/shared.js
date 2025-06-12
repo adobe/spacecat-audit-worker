@@ -55,9 +55,15 @@ export class MockContextBuilder {
         addSuggestions: this.sandbox.stub(),
         setAuditId: this.sandbox.stub(),
         save: this.sandbox.stub(),
+        setData: this.sandbox.stub(),
+        getData: this.sandbox.stub(),
+        setUpdatedBy: this.sandbox.stub(),
       },
       Suggestion: {
         bulkUpdateStatus: this.sandbox.stub(),
+      },
+      AsyncJob: {
+        findById: this.sandbox.stub(),
       },
     };
 

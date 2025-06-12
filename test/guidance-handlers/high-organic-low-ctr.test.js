@@ -44,6 +44,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     setData: sandbox.stub(),
     setGuidance: sandbox.stub(),
     save: sandbox.stub().resolvesThis(),
+    setUpdatedBy: sandbox.stub(),
   };
 
   beforeEach(async () => {

@@ -10,12 +10,14 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, tracingFetch } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import suggestionsEngine from './suggestionsEngine.js';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
 import { CPC, PENALTY_PER_IMAGE, RUM_INTERVAL } from './constants.js';
+import { DATA_SOURCES } from '../common/constants.js';
+import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
 const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -69,15 +71,25 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
 const getProjectedMetrics = async ({
   images, auditUrl, context, log,
 }) => {
-  const finalUrl = await getRUMUrl(auditUrl);
+  let finalUrl;
+  let results;
 
-  const rumAPIClient = RUMAPIClient.createFrom(context);
-  const options = {
-    domain: finalUrl,
-    interval: RUM_INTERVAL,
-  };
+  try {
+    finalUrl = await getRUMUrl(auditUrl);
+    const rumAPIClient = RUMAPIClient.createFrom(context);
+    const options = {
+      domain: finalUrl,
+      interval: RUM_INTERVAL,
+    };
 
-  const results = await rumAPIClient.query('traffic-acquisition', options);
+    results = await rumAPIClient.query('traffic-acquisition', options);
+  } catch (err) {
+    log.error(`[${AUDIT_TYPE}]: Failed to get RUM results for ${auditUrl} with error: ${err.message}`);
+    return {
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+    };
+  }
 
   const pageUrlToOrganicTrafficMap = results.reduce((acc, page) => {
     acc[page.url] = {
@@ -96,7 +108,7 @@ const getProjectedMetrics = async ({
     } else if (pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)]) {
       pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)].imagesWithoutAltText += 1;
     } else {
-      log.error(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} or ${toggleWWW(fullPageUrl)} not found in RUM API results`);
+      log.debug(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} or ${toggleWWW(fullPageUrl)} not found in RUM API results`);
     }
   });
 
@@ -122,30 +134,53 @@ const getProjectedMetrics = async ({
 export default async function convertToOpportunity(auditUrl, auditData, context) {
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
-  const { detectedTags } = auditData.auditResult;
+  const { detectedImages, siteId, auditId } = auditData;
 
-  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${auditData.siteId}`);
+  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${siteId}`);
   let altTextOppty;
 
   try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
     altTextOppty = opportunities.find(
       (oppty) => oppty.getType() === AUDIT_TYPE,
     );
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
-  const opportunityData = await getProjectedMetrics({
-    images: detectedTags.imagesWithoutAltText, auditUrl, context, log,
+  const projectedMetrics = await getProjectedMetrics({
+    images:
+      detectedImages.imagesWithoutAltText
+        .map((image) => ({ src: image.src, pageUrl: image.pageUrl })),
+    auditUrl,
+    context,
+    log,
   });
+
+  const opportunityData = {
+    ...projectedMetrics,
+    decorativeImagesCount: detectedImages.decorativeImagesCount,
+  };
+  opportunityData.dataSources = [
+    DATA_SOURCES.RUM,
+    DATA_SOURCES.SITE,
+    DATA_SOURCES.AHREFS,
+    DATA_SOURCES.GSC,
+  ];
+
+  const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
+
+  if (!isGoogleConnected && opportunityData.dataSources) {
+    opportunityData.dataSources = opportunityData.dataSources
+      .filter((source) => source !== DATA_SOURCES.GSC);
+  }
 
   try {
     if (!altTextOppty) {
       const opportunityDTO = {
-        siteId: auditData.siteId,
-        auditId: auditData.id,
+        siteId,
+        auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
         type: AUDIT_TYPE,
         origin: 'AUTOMATION',
@@ -167,32 +202,44 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       altTextOppty = await Opportunity.create(opportunityDTO);
       log.debug(`[${AUDIT_TYPE}]: Opportunity created`);
     } else {
-      altTextOppty.setAuditId(auditData.id);
+      altTextOppty.setAuditId(auditId);
       altTextOppty.setData(opportunityData);
+      altTextOppty.setUpdatedBy('system');
       await altTextOppty.save();
     }
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Creating alt-text opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to create alt-text opportunity for siteId ${auditData.siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: Creating alt-text opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
+    throw new Error(`[${AUDIT_TYPE}]: Failed to create alt-text opportunity for siteId ${siteId}: ${e.message}`);
   }
 
-  const imageUrls = detectedTags.imagesWithoutAltText.map(
-    (image) => new URL(image.src, auditUrl).toString(),
-  );
+  const imageUrls = detectedImages.imagesWithoutAltText.map(
+    (image) => {
+      const el = { url: new URL(image.src, auditUrl).toString() };
+
+      if (image.blob) {
+        el.blob = image.blob;
+      }
+      el.language = image.language;
+      return el;
+    },
+  ).filter((image) => image !== null);
 
   const imageSuggestions = await suggestionsEngine.getImageSuggestions(
     imageUrls,
-    auditUrl,
     context,
+    tracingFetch,
   );
 
-  const suggestions = detectedTags.imagesWithoutAltText.map((image) => {
+  const suggestions = detectedImages.imagesWithoutAltText.map((image) => {
     const imageUrl = new URL(image.src, auditUrl).toString();
     return {
       id: getImageSuggestionIdentifier(image),
       pageUrl: new URL(image.pageUrl, auditUrl).toString(),
       imageUrl,
       altText: imageSuggestions[imageUrl]?.suggestion || '',
+      isAppropriate: imageSuggestions[imageUrl]?.is_appropriate ?? null,
+      xpath: image.xpath,
+      language: image.language,
     };
   });
 
@@ -209,5 +256,5 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
     log,
   });
 
-  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and alt-text audit type.`);
+  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${siteId} and alt-text audit type.`);
 }

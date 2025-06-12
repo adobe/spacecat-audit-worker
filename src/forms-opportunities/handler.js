@@ -12,16 +12,17 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { generateOpptyData, generateOpptyDataForHighPageViewsLowFormNav } from './utils.js';
+import { generateOpptyData, getUrlsDataForAccessibilityAudit } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
-import convertToOpportunity from './opportunityHandler.js';
-import highPageViewsLowFormNavOpportunity from './highPageViewsLowFormNavOpportunity.js';
+import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
+import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
+import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
+import { createAccessibilityOpportunity } from './oppty-handlers/accessibility-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const DAILY_THRESHOLD = 200;
-const INTERVAL = 7; // days
 const FORMS_OPPTY_QUERIES = [
   'cwv',
   'form-vitals',
@@ -31,35 +32,15 @@ export async function formsAuditRunner(auditUrl, context) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
     domain: auditUrl,
-    interval: INTERVAL,
+    interval: FORMS_AUDIT_INTERVAL,
     granularity: 'hourly',
   };
 
   const queryResults = await rumAPIClient.queryMulti(FORMS_OPPTY_QUERIES, options);
-  const cwvMap = new Map(
-    queryResults.cwv
-      .filter((cwv) => cwv.type === 'url')
-      .map((cwv) => [cwv.url, cwv]),
-  );
-
   const auditResult = {
-    formVitals: queryResults['form-vitals'].filter((data) => {
-      // Calculate the sum of all values inside the `pageview` object
-      const pageviewsSum = Object.values(data.pageview).reduce((sum, value) => sum + value, 0);
-      return pageviewsSum >= DAILY_THRESHOLD * INTERVAL;
-    })
-      .map((formVital) => {
-        const cwvData = cwvMap.get(formVital.url);
-        const filteredCwvData = cwvData
-          ? Object.fromEntries(Object.entries(cwvData).filter(([key]) => key !== 'url' && key !== 'pageviews' && key !== 'type'))
-          : {};
-        return {
-          ...formVital,
-          cwv: filteredCwvData, // Append cwv data
-        };
-      }),
+    formVitals: queryResults['form-vitals'],
     auditContext: {
-      interval: INTERVAL,
+      interval: FORMS_AUDIT_INTERVAL,
     },
   };
 
@@ -79,30 +60,69 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   const { formVitals } = formsAuditRunnerResult.auditResult;
 
   // generating opportunity data from audit to be send to scraper
-  let formOpportunities = await generateOpptyData(formVitals, context);
+  const formOpportunities = await generateOpptyData(formVitals, context);
   const uniqueUrls = new Set();
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
   }
 
-  // generating opportunity data from audit to be send to scraper
-  // high page views low form navigation
-  // eslint-disable-next-line max-len
-  formOpportunities = await generateOpptyDataForHighPageViewsLowFormNav(formVitals, context);
-  for (const opportunity of formOpportunities) {
-    uniqueUrls.add(opportunity.form);
+  if (uniqueUrls.size < 10) {
+    // Create a copy of formVitals to sort without modifying the original array
+    const sortedFormVitals = [...formVitals].sort((a, b) => {
+      const totalPageViewsA = Object.values(a.pageview).reduce((acc, curr) => acc + curr, 0);
+      const totalPageViewsB = Object.values(b.pageview).reduce((acc, curr) => acc + curr, 0);
+      return totalPageViewsB - totalPageViewsA;
+    });
+    for (const fv of sortedFormVitals) {
+      uniqueUrls.add(fv.url);
+      if (uniqueUrls.size >= 10) {
+        break;
+      }
+    }
   }
 
+  const urlsData = Array.from(uniqueUrls).map((url) => {
+    const formSources = formVitals.filter((fv) => fv.url === url).map((fv) => fv.formsource)
+      .filter((source) => !!source);
+    return {
+      url,
+      ...(formSources.length > 0 && { formSources }),
+    };
+  });
+
   const result = {
+    processingType: 'form',
+    allowCache: false,
+    jobId: site.getId(),
+    urls: urlsData,
+    siteId: site.getId(),
     auditResult: formsAuditRunnerResult.auditResult,
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
-    processingType: 'form',
-    jobId: site.getId(),
-    urls: Array.from(uniqueUrls).map((url) => ({ url })),
-    siteId: site.getId(),
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping`);
+  return result;
+}
+
+export async function sendA11yUrlsForScrapingStep(context) {
+  const {
+    log, site,
+  } = context;
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
+  const scrapedData = await getScrapedDataForSiteId(site, context);
+  const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
+  const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+  const result = {
+    auditResult: latestAudit.auditResult,
+    fullAuditRef: latestAudit.fullAuditRef,
+    processingType: 'form-accessibility',
+    jobId: site.getId(),
+    urls: urlsData,
+    siteId: site.getId(),
+  };
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit`);
   return result;
 }
 
@@ -114,8 +134,11 @@ export async function processOpportunityStep(context) {
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
-  await convertToOpportunity(finalUrl, latestAudit, scrapedData, context);
-  await highPageViewsLowFormNavOpportunity(finalUrl, latestAudit, scrapedData, context);
+  const excludeForms = new Set();
+  await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  await createAccessibilityOpportunity(latestAudit, context);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',
@@ -125,5 +148,6 @@ export async function processOpportunityStep(context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('runAuditAndSendUrlsForScraping', runAuditAndSendUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('sendA11yUrlsForScrapingStep', sendA11yUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processOpportunity', processOpportunityStep)
   .build();

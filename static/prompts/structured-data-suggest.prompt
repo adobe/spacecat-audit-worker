@@ -2,10 +2,11 @@ You are tasked to correct the LD+JSON structured data object for the provided we
 
 ### Rules:
 1. If data required to fix the wrong LD-JSON object cannot be retrieved from the makeup, please return an empty JSON object `{}`.
-2. Focus on correcting mistakes in the LD-JSON object.
-3. The completed LD-JSON object needs to be valid according to schema.org specifications.
-4. For breadcrumbs, try avoiding duplicate entries.
-5. Provide a explanation of the provided errors and a rationale of how you fixed those errors.
+2. If the provided entity does not contain the errors mentioned, return an empty JSON object `{}`.
+3. Focus on correcting mistakes in the LD-JSON object.
+4. The completed LD-JSON object needs to be valid according to schema.org specifications.
+5. For breadcrumbs, try avoiding duplicate entries.
+6. Provide a explanation of the provided errors and a rationale of how you fixed those errors.
 
 ### Response Format:
 Your response must be a valid JSON object with the following structure:

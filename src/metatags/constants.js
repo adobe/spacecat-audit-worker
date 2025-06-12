@@ -26,6 +26,7 @@ export const SEO_RECOMMENDATION = 'seoRecommendation';
 export const SEO_IMPACT = 'seoImpact';
 export const DUPLICATES = 'duplicates';
 export const MULTIPLE_H1_ON_PAGE = 'Multiple H1 on page';
+export const PROJECTED_VALUE_THRESHOLD = 500;
 
 // SEO Guidelines Suggestions
 export const SHOULD_BE_PRESENT = 'Should be present';

@@ -73,10 +73,10 @@ export class StepAudit extends BaseAudit {
     };
 
     const queueUrl = destination.getQueueUrl(context);
-    const payload = destination.formatPayload(stepResult, auditContext);
+    const payload = destination.formatPayload(stepResult, auditContext, context);
     await sendContinuationMessage({ queueUrl, payload }, context);
 
-    log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${this.type}, message sent to ${step.destination}`);
+    log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${audit.getAuditType()}, message sent to ${step.destination}`);
 
     return stepResult;
   }
@@ -101,12 +101,11 @@ export class StepAudit extends BaseAudit {
       const step = this.getStep(stepName);
       const stepContext = { ...context, site };
 
+      stepContext.finalUrl = await this.urlResolver(site, context);
+
       // For subsequent steps, load existing audit
       if (hasNext) {
         stepContext.audit = await loadExistingAudit(auditContext.auditId, context);
-      } else {
-        // For first step, resolve URL
-        stepContext.finalUrl = await this.urlResolver(site);
       }
 
       // Run the step

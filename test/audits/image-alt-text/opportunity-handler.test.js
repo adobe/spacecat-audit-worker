@@ -14,9 +14,11 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import GoogleClient from '@adobe/spacecat-shared-google-client';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
 import suggestionsEngine from '../../../src/image-alt-text/suggestionsEngine.js';
+import { DATA_SOURCES } from '../../../src/common/constants.js';
 
 describe('Image Alt Text Opportunity Handler', () => {
   let logStub;
@@ -47,6 +49,7 @@ describe('Image Alt Text Opportunity Handler', () => {
         .returns({ errorItems: [], createdItems: [1] }),
       getType: () => Audit.AUDIT_TYPES.ALT_TEXT,
       getSiteId: () => 'site-id',
+      setUpdatedBy: sinon.stub(),
     };
 
     logStub = {
@@ -81,14 +84,14 @@ describe('Image Alt Text Opportunity Handler', () => {
 
     auditData = {
       siteId: 'site-id',
-      id: 'audit-id',
-      auditResult: {
-        detectedTags: {
-          imagesWithoutAltText: [
-            { pageUrl: '/page1', src: 'image1.jpg' },
-            { pageUrl: '/page2', src: 'image2.jpg' },
-          ],
-        },
+      auditId: 'audit-id',
+      detectedImages: {
+        imagesWithoutAltText: [
+          { pageUrl: '/page1', src: 'image1.jpg' },
+          { pageUrl: '/page2', src: 'image2.jpg' },
+          { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
+        ],
+        decorativeImagesCount: 0,
       },
     };
 
@@ -102,8 +105,11 @@ describe('Image Alt Text Opportunity Handler', () => {
     sinon.restore();
   });
 
-  it('should create new opportunity when none exists', async () => {
+  it('should create new opportunity when none exists', async function createNewOpportunity() {
+    this.timeout(5000);
+
     dataAccessStub.Opportunity.create.resolves(altTextOppty);
+    sinon.stub(GoogleClient, 'createFrom').resolves(true);
 
     await convertToOpportunity(auditUrl, auditData, context);
 
@@ -129,7 +135,12 @@ describe('Image Alt Text Opportunity Handler', () => {
         ],
       },
       tags: ['seo', 'accessibility'],
-      data: sinon.match.object,
+      data: sinon.match({
+        projectedTrafficLost: sinon.match.number,
+        projectedTrafficValue: sinon.match.number,
+        decorativeImagesCount: 0,
+        dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS, DATA_SOURCES.GSC],
+      }),
     }));
     expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Opportunity created',
@@ -142,6 +153,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     await convertToOpportunity(auditUrl, auditData, context);
 
     expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
+    expect(altTextOppty.setUpdatedBy).to.have.been.calledWith('system');
     expect(altTextOppty.save).to.have.been.called;
     expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
   });
@@ -153,7 +165,9 @@ describe('Image Alt Text Opportunity Handler', () => {
     await convertToOpportunity(auditUrl, auditData, context);
 
     expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
+    expect(altTextOppty.setUpdatedBy).to.have.been.calledWith('system');
     expect(altTextOppty.save).to.have.been.called;
+
     expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
   });
 
@@ -301,10 +315,10 @@ describe('Image Alt Text Opportunity Handler', () => {
     await convertToOpportunity(auditUrl, auditData, context);
 
     // Verify the error was logged for both missing pages with correct www/non-www format
-    expect(logStub.error).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Page URL https://example.com/page1 or https://www.example.com/page1 not found in RUM API results',
     );
-    expect(logStub.error).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Page URL https://example.com/page2 or https://www.example.com/page2 not found in RUM API results',
     );
 
@@ -323,7 +337,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     ]);
 
     // Make sure our test data has the correct format for pageUrl
-    auditData.auditResult.detectedTags.imagesWithoutAltText = [
+    auditData.detectedImages.imagesWithoutAltText = [
       { pageUrl: '/page1', src: 'image1.jpg' },
       { pageUrl: '/page2', src: 'image2.jpg' },
     ];
@@ -362,7 +376,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     ]);
 
     // Our test data has non-www URLs
-    auditData.auditResult.detectedTags.imagesWithoutAltText = [
+    auditData.detectedImages.imagesWithoutAltText = [
       { pageUrl: '/page1', src: 'image1.jpg' },
       { pageUrl: '/page2', src: 'image2.jpg' },
     ];
@@ -381,8 +395,40 @@ describe('Image Alt Text Opportunity Handler', () => {
     expect(setDataCall.args[0].projectedTrafficValue).to.equal(expectedTrafficValue);
 
     // Verify that no errors were logged about missing URLs
-    expect(logStub.error).to.not.have.been.calledWith(
+    expect(logStub.debug).to.not.have.been.calledWith(
       sinon.match(/Page URL .* not found in RUM API results/),
+    );
+  });
+
+  it('should handle errors when fetching RUM API results', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+    sinon.stub(GoogleClient, 'createFrom').resolves(true);
+
+    // Make RUM API client throw an error
+    const rumError = new Error('RUM API connection failed');
+    rumClientStub.query.rejects(rumError);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    // Verify error was logged
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Failed to get RUM results for https://example.com with error: RUM API connection failed',
+    );
+
+    // Verify opportunity was still created/updated with default metrics
+    expect(altTextOppty.setData).to.have.been.calledWith({
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+      decorativeImagesCount: 0,
+      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS, DATA_SOURCES.GSC],
+    });
+
+    expect(altTextOppty.save).to.have.been.called;
+
+    // Verify suggestions were still created despite RUM API failure
+    expect(altTextOppty.addSuggestions).to.have.been.called;
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Successfully synced Opportunity And Suggestions for site: https://example.com siteId: site-id and alt-text audit type.',
     );
   });
 });

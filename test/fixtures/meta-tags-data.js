@@ -9,11 +9,13 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import { DATA_SOURCES } from '../../src/common/constants.js';
+
 const testData = {
   auditData: {
     type: 'meta-tags',
     siteId: 'site-id',
-    id: 'audit-id',
+    auditId: 'audit-id',
     auditResult: {
       finalUrl: 'www.test-site.com/',
       detectedTags: {
@@ -59,6 +61,8 @@ const testData = {
           },
         },
       },
+      projectedTrafficLost: 100,
+      projectedTrafficValue: 50,
     },
   },
   expectedSuggestions: [
@@ -180,6 +184,7 @@ const testData = {
         url: 'www.test-site.com/page10',
         rank: 5,
       }),
+      setUpdatedBy: () => {},
     },
     {
       opportunityId: 'opportunity-id',
@@ -209,6 +214,7 @@ const testData = {
         url: 'www.test-site.com/page1',
         rank: 9,
       }),
+      setUpdatedBy: () => {},
     },
     {
       opportunityId: 'opportunity-id',
@@ -242,6 +248,7 @@ const testData = {
         aiRationale: 'This is why AI generated it',
         toOverride: 'user entered data',
       }),
+      setUpdatedBy: () => {},
     },
     {
       opportunityId: 'opportunity-id',
@@ -271,6 +278,7 @@ const testData = {
         url: 'www.test-site.com/page2',
         rank: 11,
       }),
+      setUpdatedBy: () => {},
     },
   ],
   expectedSyncedSuggestion: [
@@ -374,10 +382,12 @@ const testData = {
         'Publish the changes to apply the updates to your live site.',
       ],
     },
-    tags: [
-      'Traffic acquisition',
-    ],
-    data: null,
+    tags: ['Traffic acquisition'],
+    data: {
+      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
+      projectedTrafficLost: 100,
+      projectedTrafficValue: 50,
+    },
   },
 };
 

@@ -23,8 +23,19 @@ import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 
 URI.preventInvalidHostname = true;
+const DEFAULT_CPC_VALUE = 2.69; // $2.69
 
 // weekly pageview threshold to eliminate urls with lack of samples
+
+/**
+ * Checks if a URL appears to be a login or authentication page.
+ *
+ * @param {string} url - URL to check
+ * @returns {boolean} - True if it looks like a login or authentication page
+ */
+export function isLoginPage(url) {
+  return /login|log-in|signin|sign-in|auth|authentication/i.test(url);
+}
 
 export async function getRUMUrl(url) {
   const urlWithScheme = prependSchema(url);
@@ -67,6 +78,17 @@ export function toggleWWW(baseUrl) {
   return baseUrl.startsWith('https://www')
     ? baseUrl.replace('https://www.', 'https://')
     : baseUrl.replace('https://', 'https://www.');
+}
+
+/**
+ * Toggles the www subdomain in a given hostname.
+ * @param {string} hostname - The URL to toggle the www subdomain in.
+ * @returns {string} - The URL with the www subdomain toggled.
+ */
+export function toggleWWWHostname(hostname) {
+  /* c8 ignore next 1 */
+  if (hasNonWWWSubdomain(`https://${hostname}`)) return hostname;
+  return hostname.startsWith('www.') ? hostname.replace('www.', '') : `www.${hostname}`;
 }
 
 /**
@@ -211,6 +233,48 @@ export const extractLinksFromHeader = (data, baseUrl, log) => {
   return links;
 };
 
+/**
+ * Fetches the organic traffic data for a site from S3 and calculate the CPC value as per
+ * https://wiki.corp.adobe.com/pages/viewpage.action?spaceKey=AEMSites&title=Success+Studio+Projected+Business+Impact+Metrics#SuccessStudioProjectedBusinessImpactMetrics-IdentifyingCPCvalueforadomain
+ * @param context
+ * @param siteId
+ * @returns {number} CPC value
+ */
+export async function calculateCPCValue(context, siteId) {
+  if (!context?.env?.S3_IMPORTER_BUCKET_NAME) {
+    throw new Error('S3 importer bucket name is required');
+  }
+  if (!context.s3Client) {
+    throw new Error('S3 client is required');
+  }
+  if (!context.log) {
+    throw new Error('Logger is required');
+  }
+  if (!siteId) {
+    throw new Error('SiteId is required');
+  }
+  const { s3Client, log } = context;
+  const bucketName = context.env.S3_IMPORTER_BUCKET_NAME;
+  const key = `metrics/${siteId}/ahrefs/organic-traffic.json`;
+  try {
+    const organicTrafficData = await getObjectFromKey(s3Client, bucketName, key, log);
+    if (!Array.isArray(organicTrafficData) || organicTrafficData.length === 0) {
+      log.warn(`Organic traffic data not available for ${siteId}. Using Default CPC value.`);
+      return DEFAULT_CPC_VALUE;
+    }
+    const lastTraffic = organicTrafficData[organicTrafficData.length - 1];
+    if (!lastTraffic.cost || !lastTraffic.value) {
+      log.warn(`Invalid organic traffic data present for ${siteId} - cost:${lastTraffic.cost} value:${lastTraffic.value}, Using Default CPC value.`);
+      return DEFAULT_CPC_VALUE;
+    }
+    // dividing by 100 for cents to dollar conversion
+    return lastTraffic.cost / lastTraffic.value / 100;
+  } catch (err) {
+    log.error(`Error fetching organic traffic data for site ${siteId}. Using Default CPC value.`, err);
+    return DEFAULT_CPC_VALUE;
+  }
+}
+
 export const getScrapedDataForSiteId = async (site, context) => {
   const { s3Client, env, log } = context;
   const siteId = site.getId();
@@ -219,10 +283,10 @@ export const getScrapedDataForSiteId = async (site, context) => {
   let isTruncated = true;
   let continuationToken = null;
 
-  async function fetchFiles() {
+  async function fetchFiles(prefix = `scrapes/${siteId}`) {
     const listCommand = new ListObjectsV2Command({
       Bucket: env.S3_SCRAPER_BUCKET_NAME,
-      Prefix: `scrapes/${siteId}`,
+      Prefix: prefix,
       ContinuationToken: continuationToken,
     });
 
@@ -240,6 +304,21 @@ export const getScrapedDataForSiteId = async (site, context) => {
     }
   }
 
+  async function fetchContentOfFiles(files) {
+    return Promise.all(
+      files.map(async (file) => {
+        const fileContent = await getObjectFromKey(
+          s3Client,
+          env.S3_SCRAPER_BUCKET_NAME,
+          file.Key,
+          log,
+        );
+        return fileContent;
+      }),
+    );
+  }
+
+  // fetch scrape data
   await fetchFiles();
 
   if (!isNonEmptyArray(allFiles)) {
@@ -279,17 +358,7 @@ export const getScrapedDataForSiteId = async (site, context) => {
   log.info(`all files: ${JSON.stringify(allFiles)}`);
   if (allFiles) {
     const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
-    scrapedFormData = await Promise.all(
-      formFiles.map(async (file) => {
-        const fileContent = await getObjectFromKey(
-          s3Client,
-          env.S3_SCRAPER_BUCKET_NAME,
-          file.Key,
-          log,
-        );
-        return fileContent;
-      }),
-    );
+    scrapedFormData = await fetchContentOfFiles(formFiles);
   }
 
   return {

@@ -51,8 +51,7 @@ Expected message body format in `AUDIT_JOBS_QUEUE` is:
 ```json
 {
   "type": "string",
-  "url": "string",
-  "auditContext": "object"
+  "siteId": "string"
 }
 ```
 
@@ -67,20 +66,108 @@ Output message body format sent to `AUDIT_RESULTS_QUEUE` is:
 }
 ```
 
-## Required ENV Variables
+## How to Run Locally
 
-Currently, audit worker requires a couple of env variables:
+### 1. Using `nodemon` and AWS Credentials
 
-```plaintext
-AUDIT_RESULTS_QUEUE_URL=url of the queue to send audit results to
-RUM_DOMAIN_KEY=global domain key for the rum api
-PAGESPEED_API_BASE_URL = URL of the pagespeed api
-DYNAMO_TABLE_NAME_SITES = name of the dynamo table to store site data
-DYNAMO_TABLE_NAME_AUDITS = name of the dynamo table to store audit data
-DYNAMO_TABLE_NAME_LATEST_AUDITS = name of the dynamo table to store latest audit data
-DYNAMO_INDEX_NAME_ALL_SITES = name of the dynamo index to query all sites
-DYNAMO_INDEX_NAME_ALL_LATEST_AUDIT_SCORES = name of the dynamo index to query all latest audits by scores
+Everyone working on Spacecat should have access to the development environments via [KLAM](https://klam.corp.adobe.com/).  
+If you don’t have access, please refer to the engineering onboarding guide or contact your Spacecat team representative.
+
+After logging into KLAM, you’ll receive the following credentials required to access AWS resources such as DynamoDB and S3 for local development:
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_SESSION_TOKEN`
+
+**IMPORTANT: DO NOT USE THE AWS TOKENS FROM KLAM PRODUCTION PROFILES. USE ONLY DEV TOKENS.**
+
+
+### Steps to use `nodemon`
+
+#### 1. Create an `.env` File
+
+Create a `.env` file in the root directory with the following environment variables, which are required for all audits.  
+Add any additional environment variables specific to the audit you're working on.
+
 ```
+AWS_REGION=us-east-1
+DYNAMO_TABLE_NAME_DATA=spacecat-services-data
+AWS_ACCESS_KEY_ID=<acquired from KLAM>
+AWS_SECRET_ACCESS_KEY=<acquired from KLAM>
+AWS_SESSION_TOKEN=<acquired from KLAM>
+# ... other required variables depending on the audit
+```
+
+#### 2. Run/Debug with `npm start`
+
+Once your `.env` file is set up, start the local development server using:
+
+```bash
+npm start
+```
+
+To use breakpoints, make sure to use the debugging tools provided by your IDE (e.g., VSCode, WebStorm, etc.).
+
+#### 3. Trigger an Audit
+
+With the server running, you can trigger an audit using a `curl` POST request. The request body should include the audit type and `siteId`:
+
+```json
+{
+  "type": "<audit handler name>",
+  "siteId": "<siteId>"
+}
+```
+
+- A list of audit handler names can be found in the [index.js file](https://github.com/adobe/spacecat-audit-worker/blob/main/src/index.js#L45).
+- You can retrieve a `siteId` using:
+    - The [Spacecat API](https://opensource.adobe.com/spacecat-api-service/#tag/site/operation/getSiteByBaseUrl)
+    - The Slack command: `@spacecat-dev get site domain.com`
+
+Example `curl` request to trigger the "apex" audit:
+
+```bash
+curl -X POST http://localhost:3000 \
+     -H "Content-Type: application/json" \
+     -d '{ "type": "apex", "siteId": "9ab0575a-c238-4470-ae82-9d37fb2d0e78" }'
+```
+
+#### 4. Inspect the Audit Result in DynamoDB
+
+Once the audit completes, the results are saved to DynamoDB by default (unless configured otherwise).
+
+To retrieve the audit result, use the [Spacecat API](https://opensource.adobe.com/spacecat-api-service/#tag/audit/operation/getLatestAuditForSite).
+
+For example, to fetch the result for the "apex" audit triggered above:
+
+```bash
+curl -H "x-api-key: <YOUR_API_KEY>" \
+     "https://spacecat.experiencecloud.live/api/ci/sites/9ab0575a-c238-4470-ae82-9d37fb2d0e78/latest-audit/apex"
+```
+
+**Note:**  
+Always verify the timestamp of the returned audit result. If the audit failed to save (e.g., due to a bug), you might receive results from a previous run.
+
+
+
+
+### 2. Using AWS SAM and Docker.
+
+1. Ensure you have [Docker](https://docs.docker.com/desktop/setup/install/mac-install/), [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) and [jq](https://jqlang.org/) installed.
+2. Login to AWS using [KLAM](https://klam.corp.adobe.com/) and login with your [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
+    * KLAM dev project: `SpaceCat Development (AWS3338)`
+3. To provide secrets to the audit, please run `./scripts/populate-env.sh` once. It will fetch all secrets from the AWS Secret Manager.
+4. To run the audit locally, execute the following commands:
+    ```bash
+    source env.sh
+    npm run local-build
+    npm run local-run
+    ```
+5. Starting point of the execution is `src/index-local.js`. Output of the audit can be found in `output.txt`.
+6. To hot reload any changes in the `/src` folder, you can use `npm run local-watch`. Note: This will require to run `npm run local-build` at least once beforehand.
+
+If you need to add additional secrets, make sure to adjust the Lambda `template.yml` accordingly.
+
 
 ## Audit Worker Flow
 
@@ -548,20 +635,3 @@ Here's how messages flow between workers in a step-based audit:
 ```
 
 Each message preserves the `auditContext` to maintain the step chain. The `next` field determines which step runs next, while `auditId` and `fullAuditRef` track the audit state across workers.
-
-## Run Audits locally
-
-You can run the audit locally using AWS SAM and Docker.
-
-1. Ensure you have [Docker](https://docs.docker.com/desktop/setup/install/mac-install/), [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) and [jq](https://jqlang.org/) installed.
-2. Login to AWS using KLAM and login with your AWS CLI.
-3. To provide secrets to the audit, please run `./populate-env.sh` once. It will fetch all secrets from the AWS Secret Manager.
-4. To run the audit locally, execute the following commands:
-    ```bash
-    source env.sh
-    npm run local-build
-    npm run local-run
-    ```
-5. Starting point of the execution is `src/index-local.js`. Output of the audit can be found in `output.txt`.
-
-If you need to add additional secrets, make sure to adjust the Lambda `template.yml` accordingly.

@@ -12,7 +12,6 @@
 
 import { getPrompt, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { AbortController, AbortError } from '@adobe/fetch';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -20,29 +19,24 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import calculateKpiDeltasForAudit from './kpi-metrics.js';
+
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const auditType = Audit.AUDIT_TYPES.BROKEN_BACKLINKS;
 const TIMEOUT = 3000;
 
 async function filterOutValidBacklinks(backlinks, log) {
   const fetchWithTimeout = async (url, timeout) => {
-    const controller = new AbortController();
-    const { signal } = controller;
-    const id = setTimeout(() => controller.abort(), timeout);
-
     try {
-      const response = await fetch(url, { signal });
-      clearTimeout(id);
-      return response;
+      return await fetch(url, { timeout });
     } catch (error) {
-      if (error instanceof AbortError) {
+      if (error.code === 'ETIMEOUT') {
         log.warn(`Request to ${url} timed out after ${timeout}ms`);
         return { ok: false, status: 408 };
       } else {
         log.warn(`Request to ${url} failed with error: ${error.message}`);
       }
-    } finally {
-      clearTimeout(id);
     }
     return { ok: false, status: 500 };
   };
@@ -56,7 +50,16 @@ async function filterOutValidBacklinks(backlinks, log) {
     return !response.ok;
   };
 
-  const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
+  const backlinkStatuses = [];
+  for (const backlink of backlinks) {
+    log.info(`Checking backlink: ${backlink.url_to}`);
+
+    // eslint-disable-next-line no-await-in-loop
+    const result = await isStillBrokenBacklink(backlink);
+    backlinkStatuses.push(result);
+  }
+
+  // const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
   return backlinks.filter((_, index) => backlinkStatuses[index]);
 }
 
@@ -96,20 +99,49 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
   }
 }
 
-export const generateSuggestionData = async (finalUrl, auditData, context, site) => {
-  const { dataAccess, log } = context;
+export async function runAuditAndImportTopPages(context) {
+  const { site, finalUrl } = context;
+  const result = await brokenBacklinksAuditRunner(finalUrl, context, site);
+
+  return {
+    type: 'top-pages',
+    siteId: site.getId(),
+    auditResult: result.auditResult,
+    fullAuditRef: result.fullAuditRef,
+  };
+}
+
+export async function submitForScraping(context) {
+  const { site, dataAccess } = context;
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (topPages.length === 0) {
+    throw new Error('No top pages found for site');
+  }
+
+  return {
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'broken-backlinks',
+  };
+}
+
+export const generateSuggestionData = async (context) => {
+  const {
+    site, audit, finalUrl, dataAccess, log,
+  } = context;
   const { Configuration } = dataAccess;
   const { FIREFALL_MODEL } = context.env;
 
-  if (auditData.auditResult.success === false) {
+  if (audit.getAuditResult().success === false) {
     log.info('Audit failed, skipping suggestions generation');
-    return { ...auditData };
+    throw new Error('Audit failed, skipping suggestions generation');
   }
 
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
     log.info('Auto-suggest is disabled for site');
-    return { ...auditData };
+    throw new Error('Auto-suggest is disabled for site');
   }
 
   log.info(`Generating suggestions for site ${finalUrl}`);
@@ -198,7 +230,7 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
     };
   };
 
-  const headerSuggestionsPromises = auditData.auditResult.brokenBacklinks.map(async (backlink) => {
+  const headerSuggestionsPromises = audit.getAuditResult().brokenBacklinks.map(async (backlink) => {
     try {
       const requestBody = await getPrompt(
         { alternative_urls: headerLinks, broken_url: backlink.url_to },
@@ -220,43 +252,29 @@ export const generateSuggestionData = async (finalUrl, auditData, context, site)
   });
   const headerSuggestionsResults = await Promise.all(headerSuggestionsPromises);
 
-  const updatedBacklinkPromises = auditData.auditResult.brokenBacklinks.map(
+  const updatedBacklinkPromises = audit.getAuditResult().brokenBacklinks.map(
     (backlink, index) => processBacklink(backlink, headerSuggestionsResults[index]),
   );
   const updatedBacklinks = await Promise.all(updatedBacklinkPromises);
 
-  log.info('Suggestions generation complete.');
-  return {
-    ...auditData,
-    auditResult: {
-      brokenBacklinks: updatedBacklinks,
-    },
-  };
-};
+  log.info(`Broken backlinks suggestions generation for ${site.getId()} complete.`);
 
-/**
-  * Converts audit data to an opportunity and synchronizes suggestions.
-  *
-  * @param {string} auditUrl - The URL of the audit.
-  * @param {Object} auditData - The data from the audit.
-  * @param {Object} context - The context contains logging and data access utilities.
-  */
+  const kpiDeltas = await calculateKpiDeltasForAudit(audit, context, site);
 
-export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
+    finalUrl,
+    { siteId: site.getId(), id: audit.getId() },
     context,
     createOpportunityData,
     auditType,
+    kpiDeltas,
   );
-  const { log } = context;
 
-  const buildKey = (data) => `${data.url_from}|${data.url_to}`;
+  const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
 
   await syncSuggestions({
     opportunity,
-    newData: auditData.auditResult.brokenBacklinks,
+    newData: updatedBacklinks,
     buildKey,
     context,
     mapNewSuggestion: (backlink) => ({
@@ -274,10 +292,14 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     }),
     log,
   });
-}
+  return {
+    status: 'complete',
+  };
+};
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
-  .withRunner(brokenBacklinksAuditRunner)
-  .withPostProcessors([generateSuggestionData, opportunityAndSuggestions])
+  .addStep('audit-and-import-top-pages', runAuditAndImportTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('generate-suggestions', generateSuggestionData)
   .build();
