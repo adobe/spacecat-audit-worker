@@ -23,7 +23,6 @@ export function getHourlyPartitionFilter(hourToProcess) {
     day,
     hour,
     whereClause: `WHERE year = '${year}' AND month = '${month}' AND day = '${day}' AND hour = '${hour}'`,
-    hourLabel: `${year}-${month}-${day}T${hour}:00:00Z`,
   };
 }
 

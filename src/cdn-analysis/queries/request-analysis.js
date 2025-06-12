@@ -24,11 +24,10 @@ export const requestAnalysisQueries = {
    * Tracks requests per platform, status codes, and traffic totals
    */
   hourlyRequests: (hourToProcess, tableName, s3Config) => {
-    const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     const selectQuery = `
       SELECT 
-        '${hourLabel}' as hour,
         -- Platform-specific requests
         COUNT(CASE WHEN agentic_type = 'chatgpt' THEN 1 END) as chatgpt_requests,
         COUNT(CASE WHEN agentic_type = 'perplexity' THEN 1 END) as perplexity_requests,
@@ -43,12 +42,12 @@ export const requestAnalysisQueries = {
         -- Traffic totals
         COUNT(CASE WHEN agentic_type IN ('chatgpt', 'perplexity', 'claude') THEN 1 END) as total_agentic_requests,
         COUNT(*) as total_overall_traffic
-      FROM cdn_logs.${tableName} 
+      FROM cdn_logs_${s3Config.customerDomain}.${tableName}
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
     `;
 
-    return createUnloadQuery(selectQuery, 'request', hourToProcess, s3Config);
+    return createUnloadQuery(selectQuery, 'reqCountByLLMProvider', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */

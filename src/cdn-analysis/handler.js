@@ -15,51 +15,49 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getCdnProvider } from './providers/cdn-provider-factory.js';
 import { runAllAnalysis, createAnalysisExecutionSummary } from './utils/analysis-runners.js';
 
-async function runCdnAnalysis(auditUrl, context) {
-  const { log } = context;
-  const site = context.site || { baseURL: auditUrl };
-  const { athenaClient } = context;
-
-  // Get the appropriate CDN provider based on site configuration
-  const cdnProvider = getCdnProvider(site, context);
-  const s3Config = cdnProvider.getS3Config(context, site);
+async function runCdnAnalysis(auditUrl, context, site) {
+  const { log, athenaClient } = context;
+  const provider = getCdnProvider(site, context);
   const hourToProcess = new Date(Date.now() - 60 * 60 * 1000);
 
-  log.info(`Starting CDN Analysis for ${auditUrl} using ${cdnProvider.cdnType.toUpperCase()} provider`);
+  log.info(`Starting CDN Analysis for ${auditUrl} using ${provider.constructor.config.cdnType.toUpperCase()} provider`);
 
-  // Ensure tables exist using the CDN-specific provider
-  await cdnProvider.ensureTablesExist(athenaClient, s3Config, log);
+  // make sure athena tables exist
+  await provider.ensureTablesExist(athenaClient, log);
 
-  // Filter agentic logs using the CDN-specific provider
+  // filter agentic logs
   log.info(`Filtering agentic logs for ${hourToProcess.toISOString()}`);
-  const sourceTableName = `raw_logs_${s3Config.customerDomain}`;
-  const agenticLogCount = await cdnProvider.filterAndStoreAgenticLogs(
+  const agenticLogCount = await provider.filterAndStoreAgenticLogs(
     athenaClient,
     hourToProcess,
-    s3Config,
-    sourceTableName,
     log,
   );
   log.info(`Filtered ${agenticLogCount} agentic logs`);
 
-  // Create filtered logs table using the CDN-specific provider
+  // create filtered logs table
   log.info(`Creating filtered logs table for ${hourToProcess.toISOString()}`);
-  await cdnProvider.createFilteredLogsTable(athenaClient, s3Config, log);
+  await provider.createFilteredLogsTable(athenaClient, log);
 
-  // Run analysis
+  // run all analyses
   log.info(`Running analysis for ${hourToProcess.toISOString()}`);
-  const filteredTableName = `filtered_logs_${s3Config.customerDomain}`;
   const executionResults = await runAllAnalysis(
     athenaClient,
     hourToProcess,
-    s3Config,
-    filteredTableName,
-    cdnProvider,
+    provider.s3Config,
+    provider.filteredTableName,
+    provider,
     log,
   );
-  log.info(`Analysis execution completed: ${executionResults.completed}/${executionResults.total} succeeded`);
+  log.info(
+    `Analysis execution completed: ${executionResults.completed}/${executionResults.total} succeeded`,
+  );
 
-  const summary = createAnalysisExecutionSummary(executionResults, hourToProcess, s3Config);
+  // build summary
+  const summary = createAnalysisExecutionSummary(
+    executionResults,
+    hourToProcess,
+    provider.s3Config,
+  );
 
   log.info(`CDN Analysis completed for ${auditUrl}`);
 
@@ -68,14 +66,14 @@ async function runCdnAnalysis(auditUrl, context) {
       hourProcessed: hourToProcess.toISOString(),
       agenticLogCount,
       cdnAgenticAnalysis: summary,
-      cdnType: cdnProvider.cdnType,
-      databaseName: cdnProvider.getDatabaseName(),
-      customerDomain: s3Config.customerDomain,
-      environment: s3Config.environment,
+      cdnType: provider.constructor.config.cdnType,
+      databaseName: provider.databaseName,
+      customerDomain: provider.customerDomain,
+      environment: provider.environment,
       analysisTypes: summary.analysisTypes,
       s3OutputLocation: summary.s3OutputLocation,
-      sourceTable: sourceTableName,
-      filteredTable: filteredTableName,
+      sourceTable: provider.rawTableName,
+      filteredTable: provider.filteredTableName,
       completedAt: new Date().toISOString(),
     },
     fullAuditRef: auditUrl,
