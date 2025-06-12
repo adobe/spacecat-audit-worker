@@ -17,15 +17,14 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { describe } from 'mocha';
-import rumData from '../fixtures/paid/mock-segments-data.json' with { type: 'json' };
-import expectedSubmitted from '../fixtures/paid/expected-submitted-audit.json' with {type: 'json'};
+import rumData from '../../fixtures/paid/mock-segments-data.json' with { type: 'json' };
+import expectedSubmitted from '../../fixtures/paid/expected-submitted-audit.json' with {type: 'json'};
 import {
   paidAuditRunner, auditAndScrapeBannerOn, scrapeBannerOff, submitForMystiqueEvaluation,
-} from '../../src/paid/handler.js';
+} from '../../../src/paid/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
-const sandbox = sinon.createSandbox();
 const auditUrl = 'www.spacecat.com';
 
 const runDataMissingType = [
@@ -78,7 +77,7 @@ const pageTypes = {
   'other | Other Pages': /.*/, // fallback
 };
 
-function getSite(overrides = {}) {
+function getSite(sandbox, overrides = {}) {
   const config = Object.entries(pageTypes).map(([name, patternReg]) => {
     const safeRegex = {
       pattern: patternReg.source,
@@ -104,21 +103,24 @@ function getSite(overrides = {}) {
 }
 
 describe('Paid Audit', () => {
-  const logStub = {
-    info: sinon.stub(),
-    debug: sinon.stub(),
-    error: sinon.stub(),
-    warn: sinon.stub(),
-  };
+  let sandbox;
 
+  let logStub;
   let site;
   let audit;
   let context;
 
   beforeEach(() => {
-    site = getSite();
+    sandbox = sinon.createSandbox();
+    logStub = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    site = getSite(sandbox);
     audit = {
-      getAuditResult: sinon.stub().returns({
+      getAuditResult: sandbox.stub().returns({
         urls: [
           { url: 'https://example.com/page1' },
           { url: 'https://example.com/page2' },
@@ -154,6 +156,21 @@ describe('Paid Audit', () => {
   });
 
   const expectedSegments = ['url', 'pageType'];
+
+  it('should handle missing config', async () => {
+    context = {
+      ...context,
+      rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
+    };
+
+    const siteWithMissingConfig = getSite(sandbox);
+    siteWithMissingConfig.getConfig().getGroupedURLs.returns(null);
+    context.getConfig = () => siteWithMissingConfig;
+    const result = await paidAuditRunner(auditUrl, context, siteWithMissingConfig);
+    expect(result.auditResult.length).to.eql(2);
+    expect(logStub.warn.callCount).to.be.above(0);
+  });
+
   it('should submit expected rum query data', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
     const submittedSegments = (result.auditResult.map((entry) => (entry.key)));
@@ -243,9 +260,7 @@ describe('Paid Audit', () => {
       rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
     };
 
-    site = getSite(false);
-
-    const result = await paidAuditRunner(auditUrl, context, site);
+    const result = await paidAuditRunner(auditUrl, context, context.site);
     expect(result.auditResult.length).to.eql(2);
 
     const missingUrl = result.auditResult
@@ -254,22 +269,6 @@ describe('Paid Audit', () => {
       .find((valueItem) => !valueItem.url);
 
     expect(missingUrl.pageType).to.eq('other | Other Pages');
-  });
-
-  it('should handle missing config', async () => {
-    context = {
-      ...context,
-      rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
-    };
-
-    const siteWithMissingConfig = getSite({
-      getConfig: () => ({
-        getGroupedURLs: sandbox.stub().return(null),
-      }),
-    });
-
-    const result = await paidAuditRunner(auditUrl, context, siteWithMissingConfig);
-    expect(result.auditResult.length).to.eql(2);
   });
 
   it('should return correct scrape configuration with banner off', async () => {
