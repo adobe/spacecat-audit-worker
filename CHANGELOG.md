@@ -1,3 +1,10 @@
+# [1.101.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.100.4...v1.101.0) (2025-06-12)
+
+
+### Features
+
+* save intermediate results and perform preflight profiling ([#916](https://github.com/adobe/spacecat-audit-worker/issues/916)) ([d87222b](https://github.com/adobe/spacecat-audit-worker/commit/d87222b896f02c97e152264e1278fc6421eaba20))
+
 ## [1.100.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.100.3...v1.100.4) (2025-06-12)
 
 
