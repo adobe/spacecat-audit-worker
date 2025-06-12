@@ -1,3 +1,10 @@
+## [1.100.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.100.3...v1.100.4) (2025-06-12)
+
+
+### Bug Fixes
+
+* prevent re-scraping of URLs that have already failed an audit ([#948](https://github.com/adobe/spacecat-audit-worker/issues/948)) ([2c821da](https://github.com/adobe/spacecat-audit-worker/commit/2c821dad099f4ffa9af26671ad5caa5542270755))
+
 ## [1.100.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.100.2...v1.100.3) (2025-06-12)
 
 
