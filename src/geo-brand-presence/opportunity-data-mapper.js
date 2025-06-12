@@ -26,7 +26,7 @@ export function convertToOpportunityEntity(siteId, auditId) {
     description:
       'The page is not optimized for the GEO Brand presence.',
     status: 'NEW',
-    tags: ['Awareness', 'Engagement'],
+    tags: ['Awareness', 'Engagement', 'isElmo'],
     data: {
       subType: 'guidance:geo-brand-presence',
       dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.AHREFS],

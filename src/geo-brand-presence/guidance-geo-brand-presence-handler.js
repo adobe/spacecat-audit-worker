@@ -19,7 +19,7 @@ function getSuggestionValue(suggestions) {
   // TODO: convert the suggestions to markdown table, read
   // the url, type, keywords, copy from suggestion and add it to the table
   // return the markdown table
-  let suggestionValue = 'Url | Questions | Screenshot |\n';
+  let suggestionValue = '| Url | Questions | Screenshot |\n |-----|-----------|------------|\n';
   suggestions.forEach((suggestion) => {
     suggestionValue += `| ${suggestion.url} | ${suggestion.q.join('\n')} | [![${suggestion.name}](${suggestion.previewImage})](${suggestion.screenshotUrl})|\n`;
   });
