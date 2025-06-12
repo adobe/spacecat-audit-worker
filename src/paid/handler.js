@@ -239,7 +239,7 @@ async function getSignedUrls(context, keys) {
   );
 }
 
-async function fetchScrappedUrls(context, site, urls) {
+async function fetchScrapedUrls(context, site, urls) {
   const keys = getUrlKeys(site, urls);
   const signedUrls = await getSignedUrls(context, keys);
   return signedUrls;
@@ -383,9 +383,9 @@ export async function submitForMystiqueEvaluation(context) {
   log.info(`[paid-audit] [Site: ${siteId}] Processing opportunity evaluation data`);
   let signedUrls;
   try {
-    signedUrls = await fetchScrappedUrls(context, site, normalizedUrls.slice(0, 1));
+    signedUrls = await fetchScrapedUrls(context, site, normalizedUrls.slice(0, 1));
   } catch (error) {
-    log.error(`[paid-audit] [Site: ${siteId}] Error fetching scrapped URLs: ${error.message}`);
+    log.error(`[paid-audit] [Site: ${siteId}] Error fetching scraped URLs: ${error.message}`);
     throw error;
   }
 
