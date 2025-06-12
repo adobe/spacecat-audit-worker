@@ -42,14 +42,15 @@ export async function scrapeAccessibilityData(context) {
     siteId,
     log,
   );
+  log.info(`[A11yAudit] Found existing files from failed audits: ${existingObjectKeys}`);
   const existingUrls = await getExistingUrlsFromFailedAudits(
     s3Client,
     bucketName,
     log,
     existingObjectKeys,
   );
+  log.info(`[A11yAudit] Found existing URLs from failed audits: ${existingUrls}`);
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
-  log.info(`[A11yAudit] Found existing URLs from failed audits: ${existingObjectKeys}`);
   log.info(`[A11yAudit] Remaining URLs to scrape: ${JSON.stringify(remainingUrls, null, 2)}`);
 
   // The first step MUST return auditResult and fullAuditRef.

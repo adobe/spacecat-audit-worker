@@ -13,20 +13,6 @@ import { getObjectKeysFromSubfolders } from './data-processing.js';
 import { getObjectFromKey } from '../../utils/s3-utils.js';
 
 /**
- * Normalizes a URL by ensuring it ends with a trailing slash.
- * This function is pure and easily testable.
- * Exported for testing purposes.
- * @param {string} url The URL to normalize.
- * @returns {string} The normalized URL.
- */
-export function normalizeUrl(url) {
-  if (!url) {
-    return '/';
-  }
-  return url.endsWith('/') ? url : `${url}/`;
-}
-
-/**
  * Fetches existing URLs from previously failed audits stored in S3.
  *
  * @param {S3Client} s3Client - The S3 client instance.
@@ -107,11 +93,6 @@ export async function getExistingUrlsFromFailedAudits(
  * @returns {Array<{url: string}>} The filtered array of URLs to scrape.
  */
 export function getRemainingUrls(urlsToScrape, existingUrls) {
-  // Using a Set for efficient lookups (O(1) average time complexity)
-  const existingUrlSet = new Set(existingUrls.map(normalizeUrl));
-
-  return urlsToScrape.filter((item) => {
-    const normalizedUrl = normalizeUrl(item.url);
-    return !existingUrlSet.has(normalizedUrl);
-  });
+  const existingUrlSet = new Set(existingUrls);
+  return urlsToScrape.filter((item) => !existingUrlSet.has(item.url));
 }

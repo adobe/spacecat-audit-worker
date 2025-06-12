@@ -18,48 +18,12 @@ import esmock from 'esmock';
 import sinonChai from 'sinon-chai';
 import {
   getRemainingUrls,
-  normalizeUrl,
   extractUrlsFromSettledResults,
 } from '../../../src/accessibility/utils/scrape-utils.js';
 
 use(sinonChai);
 
 describe('Scrape Utils', () => {
-  describe('normalizeUrl', () => {
-    it('adds a trailing slash to a URL without one', () => {
-      const url = 'https://www.example.com/path';
-      const expected = 'https://www.example.com/path/';
-      expect(normalizeUrl(url)).to.equal(expected);
-    });
-
-    it('does not add a trailing slash to a URL that already has one', () => {
-      const url = 'https://www.example.com/path/';
-      expect(normalizeUrl(url)).to.equal(url);
-    });
-
-    it('returns "/" for a null URL', () => {
-      expect(normalizeUrl(null)).to.equal('/');
-    });
-
-    it('returns "/" for an undefined URL', () => {
-      expect(normalizeUrl(undefined)).to.equal('/');
-    });
-
-    it('returns "/" for an empty string URL', () => {
-      expect(normalizeUrl('')).to.equal('/');
-    });
-
-    it('handles root URL correctly', () => {
-      expect(normalizeUrl('/')).to.equal('/');
-    });
-
-    it('handles a domain without path', () => {
-      const url = 'https://www.example.com';
-      const expected = 'https://www.example.com/';
-      expect(normalizeUrl(url)).to.equal(expected);
-    });
-  });
-
   describe('getRemainingUrls', () => {
     it('returns all URLs when there are no existing URLs', () => {
       const urlsToScrape = [{ url: 'https://a.com' }, { url: 'https://b.com' }];
