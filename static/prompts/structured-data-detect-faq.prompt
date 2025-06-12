@@ -1,0 +1,23 @@
+You are tasked to detect whether a HTML page provided to you contains an FAQ section.
+
+### Rules:
+1. If the provided page does not contain an FAQ section, return the following JSON object `{ "hasFAQ": false }`.
+2. If the provided page does contain an FAQ section, return the following JSON object `{ "hasFAQ": true }`.
+3. An FAQ section must have at least one question and one answer to count.
+4. An FAQ section must be structured as such, with a title, under which there are questions each followed by an answer - if there are some simply facts on the webpage, this is not enough to count as an FAQ section.
+
+### Response Format:
+Your response must be a valid JSON object with the following structure:
+```json
+{
+  "hasFAQ": boolean
+}
+```
+
+**IMPORTANT:**
+- Provide only the JSON object. Do not include any additional text, explanation, or formatting.
+
+### Data:
+- **Website markup:** ```html
+{{website_markup}}
+```

@@ -10,7 +10,8 @@
  * governing permissions and limitations under the License.
  */
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { importTopPages, submitForScraping } from '../structured-data/handler.js';
 import { getScrapeForPath } from '../support/utils.js';
@@ -25,6 +26,14 @@ const structuredDataAuditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 export async function findPagesWithFAQMismatch(allPages, context) {
   const { site, log } = context;
 
+  const firefallClient = FirefallClient.createFrom(context);
+  const firefallOptions = {
+    model: 'gpt-4o-mini',
+    responseFormat: 'json_object',
+  };
+
+  let numAiCalls = 0;
+  const AI_CALL_LIMIT = 10;
   const faqScrapeResults = await Promise.all(allPages.map(async (page) => {
     try {
       const { pathname } = new URL(page.url);
@@ -36,15 +45,36 @@ export async function findPagesWithFAQMismatch(allPages, context) {
         return false;
       }
 
+      if (!scrape.scrapeResult?.rawBody) {
+        return false;
+      }
+
+      if (numAiCalls >= AI_CALL_LIMIT) {
+        return false;
+      }
+      numAiCalls += 1;
+
+      const firefallInput = {
+        website_markup: scrape.scrapeResult.rawBody,
+      };
+
       // determine whether there is an FAQ on the page
-      // TODO use AI to handle this check
-      const foundFAQ = scrape.scrapeResult.rawBody?.includes('faq');
-      return foundFAQ;
+      const prompt = await getPrompt(firefallInput, 'structured-data-detect-faq', log);
+      const aiResult = await firefallClient.fetchChatCompletion(prompt, firefallOptions);
+
+      if (!aiResult?.choices?.[0]?.message?.content) {
+        return false;
+      }
+
+      const responseJson = JSON.parse(aiResult.choices[0].message.content);
+      return responseJson.hasFAQ;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      log.error(e);
       return false;
     }
   }));
+
+  log.info(`Ran ${numAiCalls} pages through LLM.`);
 
   return allPages.filter((page, i) => faqScrapeResults[i]);
 }
