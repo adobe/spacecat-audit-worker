@@ -28,10 +28,12 @@ export async function runRequestAnalysis(
   hourToProcess,
   s3Config,
   customerTableName,
+  cdnProvider,
   log,
 ) {
   const query = requestAnalysisQueries.hourlyRequests(hourToProcess, customerTableName, s3Config);
-  await executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
+  const databaseName = cdnProvider.getDatabaseName();
+  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
   log.info('Request analysis UNLOAD completed');
 }
 
@@ -43,6 +45,7 @@ export async function runUrlTrafficAnalysis(
   hourToProcess,
   s3Config,
   customerTableName,
+  cdnProvider,
   log,
 ) {
   const query = urlTrafficAnalysisQueries.hourlyUrlTraffic(
@@ -50,7 +53,8 @@ export async function runUrlTrafficAnalysis(
     customerTableName,
     s3Config,
   );
-  await executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
+  const databaseName = cdnProvider.getDatabaseName();
+  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
   log.info('URL traffic analysis UNLOAD completed');
 }
 
@@ -62,6 +66,7 @@ export async function runUserAgentRequestAnalysis(
   hourToProcess,
   s3Config,
   customerTableName,
+  cdnProvider,
   log,
 ) {
   const query = userAgentRequestAnalysisQueries.hourlyUserAgentRequests(
@@ -69,7 +74,8 @@ export async function runUserAgentRequestAnalysis(
     customerTableName,
     s3Config,
   );
-  await executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
+  const databaseName = cdnProvider.getDatabaseName();
+  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
   log.info('User agent request analysis UNLOAD completed');
 }
 
@@ -81,6 +87,7 @@ export async function runQuerySourceAnalysis(
   hourToProcess,
   s3Config,
   customerTableName,
+  cdnProvider,
   log,
 ) {
   const query = querySourceAnalysisQueries.hourlyQuerySource(
@@ -88,18 +95,20 @@ export async function runQuerySourceAnalysis(
     customerTableName,
     s3Config,
   );
-  await executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
+  const databaseName = cdnProvider.getDatabaseName();
+  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
   log.info('Query source analysis UNLOAD completed');
 }
 
 /**
  * 5. Run URL-User-Agent-Status analysis - UNLOAD to S3
  */
-export async function runUrlUserAgentStatusAnalysis(
+export async function runUrlUAStatusAnalysis(
   athenaClient,
   hourToProcess,
   s3Config,
   customerTableName,
+  cdnProvider,
   log,
 ) {
   const query = urlUserAgentStatusAnalysisQueries.hourlyUrlUserAgentStatus(
@@ -107,7 +116,8 @@ export async function runUrlUserAgentStatusAnalysis(
     customerTableName,
     s3Config,
   );
-  await executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
+  const databaseName = cdnProvider.getDatabaseName();
+  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
   log.info('URL-User-Agent-Status analysis UNLOAD completed');
 }
 
@@ -119,6 +129,7 @@ export async function runUrlStatusAnalysis(
   hourToProcess,
   s3Config,
   customerTableName,
+  cdnProvider,
   log,
 ) {
   const query = urlStatusAnalysisQueries.hourlyUrlStatus(
@@ -126,7 +137,8 @@ export async function runUrlStatusAnalysis(
     customerTableName,
     s3Config,
   );
-  await executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
+  const databaseName = cdnProvider.getDatabaseName();
+  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
   log.info('URL-Status analysis UNLOAD completed');
 }
 
@@ -138,6 +150,7 @@ export async function runGeographicAnalysis(
   hourToProcess,
   s3Config,
   customerTableName,
+  cdnProvider,
   log,
 ) {
   const query = geographicAnalysisQueries.hourlyHitsByCountry(
@@ -145,22 +158,30 @@ export async function runGeographicAnalysis(
     customerTableName,
     s3Config,
   );
-  await executeAthenaQuery(athenaClient, query, s3Config, log, 'cdn_logs');
+  const databaseName = cdnProvider.getDatabaseName();
+  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
   log.info('Geographic analysis UNLOAD completed');
 }
 
 /**
  * Run all 7 agentic analysis types in parallel - All UNLOAD to S3
  */
-export async function runAllAnalysis(athenaClient, hourToProcess, s3Config, tableName, log) {
+export async function runAllAnalysis(
+  athenaClient,
+  hourToProcess,
+  s3Config,
+  tableName,
+  cdnProvider,
+  log,
+) {
   const analysisPromises = [
-    runRequestAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runUrlTrafficAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runUserAgentRequestAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runQuerySourceAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runUrlUserAgentStatusAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runUrlStatusAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
-    runGeographicAnalysis(athenaClient, hourToProcess, s3Config, tableName, log),
+    runRequestAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
+    runUrlTrafficAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
+    runUserAgentRequestAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
+    runQuerySourceAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
+    runUrlUAStatusAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
+    runUrlStatusAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
+    runGeographicAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
   ];
 
   const results = await Promise.allSettled(analysisPromises);
@@ -177,7 +198,9 @@ export async function runAllAnalysis(athenaClient, hourToProcess, s3Config, tabl
     });
 
     if (failures.length > successes.length) {
-      throw new Error(`Critical failure: ${failures.length}/${results.length} analysis UNLOADs failed`);
+      throw new Error(
+        `Critical failure: ${failures.length}/${results.length} analysis UNLOADs failed`,
+      );
     }
   }
 
