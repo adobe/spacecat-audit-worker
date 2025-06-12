@@ -17,7 +17,9 @@ import sinon from 'sinon';
 import esmock from 'esmock';
 import sinonChai from 'sinon-chai';
 import {
-  getRemainingUrls, normalizeUrl, reconstructUrlFromS3Key,
+  getRemainingUrls,
+  normalizeUrl,
+  extractUrlsFromSettledResults,
 } from '../../../src/accessibility/utils/scrape-utils.js';
 
 use(sinonChai);
@@ -55,65 +57,6 @@ describe('Scrape Utils', () => {
       const url = 'https://www.example.com';
       const expected = 'https://www.example.com/';
       expect(normalizeUrl(url)).to.equal(expected);
-    });
-  });
-
-  describe('reconstructUrlFromS3Key', () => {
-    it('reconstructs a URL from a standard S3 key with www', () => {
-      const key = 'audits/2024/www_example_com_path_page.json';
-      const expected = 'https://www.example.com/path/page/';
-      expect(reconstructUrlFromS3Key(key)).to.equal(expected);
-    });
-
-    it('reconstructs a URL from a standard S3 key without www', () => {
-      const key = 'audits/2024/example_com_path_page.json';
-      const expected = 'https://example.com/path/page/';
-      expect(reconstructUrlFromS3Key(key)).to.equal(expected);
-    });
-
-    it('reconstructs a URL with .html extension', () => {
-      const key = 'audits/2024/www_example_com_path_page_html.json';
-      const expected = 'https://www.example.com/path/page.html/';
-      expect(reconstructUrlFromS3Key(key)).to.equal(expected);
-    });
-
-    it('reconstructs a URL with only a domain', () => {
-      const key = 'www_example_com.json';
-      const expected = 'https://www.example.com/';
-      expect(reconstructUrlFromS3Key(key)).to.equal(expected);
-    });
-
-    it('reconstructs a URL with only a domain and no www', () => {
-      const key = 'example_com.json';
-      const expected = 'https://example.com/';
-      expect(reconstructUrlFromS3Key(key)).to.equal(expected);
-    });
-
-    it('returns an empty string for an empty key', () => {
-      expect(reconstructUrlFromS3Key('')).to.equal('');
-    });
-
-    it('returns an empty string for a key ending in a slash', () => {
-      const key = 'some/path/';
-      expect(reconstructUrlFromS3Key(key)).to.equal('');
-    });
-
-    it('handles a key that is just a filename', () => {
-      const key = 'www_example_com.json';
-      const expected = 'https://www.example.com/';
-      expect(reconstructUrlFromS3Key(key)).to.equal(expected);
-    });
-
-    it('handles a key with a subdomain incorrectly due to current logic', () => {
-      const key = 'sub_example_com.json';
-      const expected = 'https://sub.example/com/';
-      expect(reconstructUrlFromS3Key(key)).to.equal(expected);
-    });
-
-    it('handles a key with a multi-part TLD incorrectly', () => {
-      const key = 'example_co_uk.json';
-      const expected = 'https://example.co/uk/';
-      expect(reconstructUrlFromS3Key(key)).to.equal(expected);
     });
   });
 
@@ -159,7 +102,162 @@ describe('Scrape Utils', () => {
     });
   });
 
+  describe('extractUrlsFromSettledResults', () => {
+    it('extracts URLs from fulfilled promises', () => {
+      const settledResults = [
+        { status: 'fulfilled', value: { data: { url: 'https://a.com/' } } },
+        { status: 'fulfilled', value: { data: { url: 'https://b.com/' } } },
+      ];
+      const result = extractUrlsFromSettledResults(settledResults);
+      expect(result).to.deep.equal(['https://a.com/', 'https://b.com/']);
+    });
+
+    it('returns an empty array if all promises are rejected', () => {
+      const settledResults = [
+        { status: 'rejected', reason: 'Error 1' },
+        { status: 'rejected', reason: 'Error 2' },
+      ];
+      const result = extractUrlsFromSettledResults(settledResults);
+      expect(result).to.deep.equal([]);
+    });
+
+    it('filters out rejected promises and extracts from fulfilled ones', () => {
+      const settledResults = [
+        { status: 'fulfilled', value: { data: { url: 'https://a.com/' } } },
+        { status: 'rejected', reason: 'Error' },
+        { status: 'fulfilled', value: { data: { url: 'https://c.com/' } } },
+      ];
+      const result = extractUrlsFromSettledResults(settledResults);
+      expect(result).to.deep.equal(['https://a.com/', 'https://c.com/']);
+    });
+
+    it('handles fulfilled promises without a url property gracefully', () => {
+      const settledResults = [
+        { status: 'fulfilled', value: { data: { url: 'https://a.com/' } } },
+        { status: 'fulfilled', value: { data: {} } },
+        { status: 'fulfilled', value: {} },
+        { status: 'fulfilled', value: null },
+      ];
+      const result = extractUrlsFromSettledResults(settledResults);
+      expect(result).to.deep.equal(['https://a.com/']);
+    });
+
+    it('returns an empty array when given an empty array', () => {
+      const settledResults = [];
+      const result = extractUrlsFromSettledResults(settledResults);
+      expect(result).to.deep.equal([]);
+    });
+  });
+
   describe('getExistingUrlsFromFailedAudits', () => {
+    let mockS3Client;
+    let mockLog;
+    let sandbox;
+    let getObjectFromKeyStub;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+      mockS3Client = { send: sandbox.stub() };
+      mockLog = {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+        warn: sandbox.stub(),
+      };
+      getObjectFromKeyStub = sandbox.stub();
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    async function getModuleWithMocks() {
+      return esmock('../../../src/accessibility/utils/scrape-utils.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: getObjectFromKeyStub,
+        },
+      });
+    }
+
+    it('fetches objects and extracts their URLs', async () => {
+      const existingObjectKeys = ['key1', 'key2'];
+      getObjectFromKeyStub
+        .withArgs(mockS3Client, 'test-bucket', 'key1', mockLog)
+        .resolves({ url: 'https://a.com/' });
+      getObjectFromKeyStub
+        .withArgs(mockS3Client, 'test-bucket', 'key2', mockLog)
+        .resolves({ url: 'https://b.com/' });
+
+      const { getExistingUrlsFromFailedAudits: getExistingUrls } = await getModuleWithMocks();
+
+      const urls = await getExistingUrls(
+        mockS3Client,
+        'test-bucket',
+        mockLog,
+        existingObjectKeys,
+      );
+
+      expect(urls).to.deep.equal(['https://a.com/', 'https://b.com/']);
+      expect(getObjectFromKeyStub).to.have.been.calledTwice;
+    });
+
+    it('handles a mix of successful and failed object fetches', async () => {
+      const existingObjectKeys = ['key1', 'key2', 'key3'];
+      getObjectFromKeyStub
+        .withArgs(mockS3Client, 'test-bucket', 'key1', mockLog)
+        .resolves({ url: 'https://a.com/' });
+      getObjectFromKeyStub
+        .withArgs(mockS3Client, 'test-bucket', 'key2', mockLog)
+        .rejects(new Error('S3 fetch error'));
+      getObjectFromKeyStub
+        .withArgs(mockS3Client, 'test-bucket', 'key3', mockLog)
+        .resolves({ url: 'https://c.com/' });
+
+      const { getExistingUrlsFromFailedAudits: getExistingUrls } = await getModuleWithMocks();
+
+      const urls = await getExistingUrls(
+        mockS3Client,
+        'test-bucket',
+        mockLog,
+        existingObjectKeys,
+      );
+
+      expect(urls).to.deep.equal(['https://a.com/', 'https://c.com/']);
+      expect(getObjectFromKeyStub).to.have.been.calledThrice;
+    });
+
+    it('returns an empty array if all object fetches fail', async () => {
+      const existingObjectKeys = ['key1', 'key2'];
+      getObjectFromKeyStub.rejects(new Error('S3 fetch error'));
+
+      const { getExistingUrlsFromFailedAudits: getExistingUrls } = await getModuleWithMocks();
+
+      const urls = await getExistingUrls(
+        mockS3Client,
+        'test-bucket',
+        mockLog,
+        existingObjectKeys,
+      );
+
+      expect(urls).to.deep.equal([]);
+    });
+
+    it('returns an empty array for no object keys', async () => {
+      const existingObjectKeys = [];
+      const { getExistingUrlsFromFailedAudits: getExistingUrls } = await getModuleWithMocks();
+
+      const urls = await getExistingUrls(
+        mockS3Client,
+        'test-bucket',
+        mockLog,
+        existingObjectKeys,
+      );
+
+      expect(urls).to.deep.equal([]);
+      expect(getObjectFromKeyStub).to.not.have.been.called;
+    });
+  });
+
+  describe('getExistingObjectKeysFromFailedAudits', () => {
     let mockS3Client;
     let mockLog;
     let sandbox;
@@ -190,21 +288,21 @@ describe('Scrape Utils', () => {
       });
     }
 
-    it('fetches and reconstructs URLs when failed audits exist', async () => {
+    it('fetches and returns object keys when failed audits exist', async () => {
       const objectKeys = [
         'audits/www_site1_com_page1.json',
         'audits/www_site1_com_page2.json',
-        'audits/malformed_key.json', // Will be filtered
+        'audits/malformed_key.json',
       ];
       getObjectKeysFromSubfoldersStub.resolves({ objectKeys });
 
-      const { getExistingUrlsFromFailedAudits } = await getModule({
+      const { getExistingObjectKeysFromFailedAudits: getKeys } = await getModule({
         getObjectKeysFromSubfolders: getObjectKeysFromSubfoldersStub,
       });
 
-      const urls = await getExistingUrlsFromFailedAudits(mockS3Client, 'test-bucket', 'site1', mockLog);
+      const keys = await getKeys(mockS3Client, 'test-bucket', 'site1', mockLog);
 
-      expect(urls).to.deep.equal(['https://www.site1.com/page1/', 'https://www.site1.com/page2/', 'https://malformed.key/']);
+      expect(keys).to.deep.equal(objectKeys);
       expect(getObjectKeysFromSubfoldersStub).to.have.been.calledWith(
         mockS3Client,
         'test-bucket',
@@ -218,40 +316,39 @@ describe('Scrape Utils', () => {
 
     it('returns an empty array when no failed audits are found', async () => {
       getObjectKeysFromSubfoldersStub.resolves({ objectKeys: [] });
-      const { getExistingUrlsFromFailedAudits } = await getModule({
+      const { getExistingObjectKeysFromFailedAudits: getKeys } = await getModule({
         getObjectKeysFromSubfolders: getObjectKeysFromSubfoldersStub,
       });
 
-      const urls = await getExistingUrlsFromFailedAudits(mockS3Client, 'test-bucket', 'site1', mockLog);
+      const keys = await getKeys(mockS3Client, 'test-bucket', 'site1', mockLog);
 
-      expect(urls).to.deep.equal([]);
+      expect(keys).to.deep.equal([]);
       expect(mockLog.info).to.have.been.calledWith('[A11yAudit] No existing URLs from failed audits found.');
     });
 
     it('returns an empty array and logs error when getObjectKeysFromSubfolders fails', async () => {
       const error = new Error('S3 Error');
       getObjectKeysFromSubfoldersStub.rejects(error);
-      const { getExistingUrlsFromFailedAudits } = await getModule({
+      const { getExistingObjectKeysFromFailedAudits: getKeys } = await getModule({
         getObjectKeysFromSubfolders: getObjectKeysFromSubfoldersStub,
       });
 
-      const urls = await getExistingUrlsFromFailedAudits(mockS3Client, 'test-bucket', 'site1', mockLog);
+      const keys = await getKeys(mockS3Client, 'test-bucket', 'site1', mockLog);
 
-      expect(urls).to.deep.equal([]);
+      expect(keys).to.deep.equal([]);
       expect(mockLog.error).to.have.been.calledWith(`[A11yAudit] Error getting existing URLs from failed audits: ${error.message}`);
     });
 
-    it('filters out empty URLs from malformed keys', async () => {
-      // Key ending in a slash will produce an empty URL
+    it('returns all keys even if some are malformed', async () => {
       const objectKeys = ['audits/www_site1_com_page1.json', 'audits/some_path/'];
       getObjectKeysFromSubfoldersStub.resolves({ objectKeys });
-      const { getExistingUrlsFromFailedAudits } = await getModule({
+      const { getExistingObjectKeysFromFailedAudits: getKeys } = await getModule({
         getObjectKeysFromSubfolders: getObjectKeysFromSubfoldersStub,
       });
 
-      const urls = await getExistingUrlsFromFailedAudits(mockS3Client, 'test-bucket', 'site1', mockLog);
+      const keys = await getKeys(mockS3Client, 'test-bucket', 'site1', mockLog);
 
-      expect(urls).to.deep.equal(['https://www.site1.com/page1/']);
+      expect(keys).to.deep.equal(objectKeys);
     });
   });
 });

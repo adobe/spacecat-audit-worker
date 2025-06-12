@@ -13,7 +13,7 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
-import { getExistingUrlsFromFailedAudits, getRemainingUrls } from './utils/scrape-utils.js';
+import { getExistingObjectKeysFromFailedAudits, getRemainingUrls, getExistingUrlsFromFailedAudits } from './utils/scrape-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
@@ -36,9 +36,20 @@ export async function scrapeAccessibilityData(context) {
   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
   const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
-  const existingUrls = await getExistingUrlsFromFailedAudits(s3Client, bucketName, siteId, log);
+  const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
+    s3Client,
+    bucketName,
+    siteId,
+    log,
+  );
+  const existingUrls = await getExistingUrlsFromFailedAudits(
+    s3Client,
+    bucketName,
+    log,
+    existingObjectKeys,
+  );
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
-  log.info(`[A11yAudit] Found existing URLs from failed audits: ${existingUrls}`);
+  log.info(`[A11yAudit] Found existing URLs from failed audits: ${existingObjectKeys}`);
   log.info(`[A11yAudit] Remaining URLs to scrape: ${JSON.stringify(remainingUrls, null, 2)}`);
 
   // The first step MUST return auditResult and fullAuditRef.

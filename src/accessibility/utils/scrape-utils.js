@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { getObjectKeysFromSubfolders } from './data-processing.js';
+import { getObjectFromKey } from '../../utils/s3-utils.js';
 
 /**
  * Normalizes a URL by ensuring it ends with a trailing slash.
@@ -26,42 +27,6 @@ export function normalizeUrl(url) {
 }
 
 /**
- * Reconstructs a URL from an S3 object key.
- * The key is expected to encode a URL in its filename, like '.../www_example_com_path_page.json'.
- * This function is pure and can be tested in isolation.
- * Exported for testing purposes.
- *
- * NOTE: This reconstruction logic is based on the original implementation and assumes
- * a specific format for the file name. It might be fragile if the domain structure varies
- * unexpectedly (e.g. example.com vs www.example.com vs sub.example.co.uk).
- *
- * @param {string} key The S3 object key.
- * @returns {string} The reconstructed URL.
- */
-export function reconstructUrlFromS3Key(key) {
-  const fileName = key.split('/').pop();
-  if (!fileName) {
-    return '';
-  }
-
-  const urlPath = fileName.replace('.json', '');
-  const pieces = urlPath.split('_');
-  const dotIndex = pieces.includes('www') ? 2 : 1;
-
-  const almostFullUrl = pieces.reduce((acc, piece, index) => {
-    if (index < dotIndex) {
-      return `${acc}${piece}.`;
-    }
-    if (pieces[index + 1] === 'html') {
-      return `${acc}${piece}.`;
-    }
-    return `${acc}${piece}/`;
-  }, '');
-
-  return `https://${almostFullUrl}`;
-}
-
-/**
  * Fetches existing URLs from previously failed audits stored in S3.
  *
  * @param {S3Client} s3Client - The S3 client instance.
@@ -70,7 +35,7 @@ export function reconstructUrlFromS3Key(key) {
  * @param {object} log - The logger instance.
  * @returns {Promise<string[]>} A promise that resolves to an array of existing URLs.
  */
-export async function getExistingUrlsFromFailedAudits(s3Client, bucketName, siteId, log) {
+export async function getExistingObjectKeysFromFailedAudits(s3Client, bucketName, siteId, log) {
   const version = new Date().toISOString().split('T')[0];
   try {
     const { objectKeys } = await getObjectKeysFromSubfolders(
@@ -88,12 +53,50 @@ export async function getExistingUrlsFromFailedAudits(s3Client, bucketName, site
     }
 
     log.info(`[A11yAudit] Found ${objectKeys.length} existing URLs from failed audits.`);
-    // Reconstruct URLs and filter out any empty results from malformed keys
-    return objectKeys.map(reconstructUrlFromS3Key).filter(Boolean);
+    return objectKeys;
   } catch (error) {
     log.error(`[A11yAudit] Error getting existing URLs from failed audits: ${error.message}`);
     return []; // Return empty array on error to prevent downstream issues
   }
+}
+
+/**
+ * Extracts URLs from the settled results of promise executions.
+ * This function is pure and easily testable.
+ * Exported for testing purposes.
+ * @param {SettledAuditResult[]} settledResults - An array of settled promise results.
+ * @returns {string[]} An array of successfully extracted URLs.
+ */
+export function extractUrlsFromSettledResults(settledResults) {
+  return settledResults
+    .filter((result) => result.status === 'fulfilled' && result.value?.data?.url)
+    .map((result) => result.value.data.url);
+}
+
+/**
+ * Reconstructs URLs from S3 object keys.
+ *
+ * @param {S3Client} s3Client - The S3 client instance.
+ * @param {string} bucketName - The name of the S3 bucket.
+ * @param {object} log - The logger instance.
+ * @param {string[]} existingObjectKeys - An array of S3 object keys.
+ * @returns {Promise<string[]>} A promise that resolves to an array of existing URLs.
+ */
+export async function getExistingUrlsFromFailedAudits(
+  s3Client,
+  bucketName,
+  log,
+  existingObjectKeys,
+) {
+  const processFilePromises = existingObjectKeys.map(async (key) => {
+    const object = await getObjectFromKey(s3Client, bucketName, key, log);
+    return { data: object };
+  });
+
+  // Use Promise.allSettled to handle potential failures without stopping the entire process
+  const settledResults = await Promise.allSettled(processFilePromises);
+
+  return extractUrlsFromSettledResults(settledResults);
 }
 
 /**
