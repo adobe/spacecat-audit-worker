@@ -28,19 +28,24 @@ describe('Guidance Accessibility Handler', () => {
       error: sinon.spy(),
     };
 
+    let mockOpportunityData = {
+      accessibility: [
+        {
+          form: 'form1',
+          formSource: 'source1',
+          a11yIssues: [
+            { issue: 'issue1' },
+            { issue: 'issue2' },
+          ],
+        },
+      ],
+    };
+
     mockOpportunity = {
       getId: () => 'opp123',
-      data: {
-        accessibility: [
-          {
-            form: 'form1',
-            formSource: 'source1',
-            a11yIssues: [
-              { issue: 'issue1' },
-              { issue: 'issue2' },
-            ],
-          },
-        ],
+      getData: () => mockOpportunityData,
+      setData: (data) => {
+        mockOpportunityData = data;
       },
       setUpdatedBy: sinon.spy(),
       setAuditId: sinon.spy(),
@@ -94,7 +99,7 @@ describe('Guidance Accessibility Handler', () => {
     expect(mockLog.info.called).to.be.true;
 
     // Verify the guidance was merged correctly
-    expect(mockOpportunity.data.accessibility[0].a11yIssues).to.deep.equal([
+    expect(mockOpportunity.getData().accessibility[0].a11yIssues).to.deep.equal([
       { issue: 'issue1', guidance: 'guidance1' },
       { issue: 'issue2', guidance: 'guidance2' },
     ]);
@@ -144,7 +149,7 @@ describe('Guidance Accessibility Handler', () => {
       },
     };
 
-    mockOpportunity.data.accessibility.push({
+    mockOpportunity.getData().accessibility.push({
       form: 'form2',
       formSource: 'source2',
       a11yIssues: [
@@ -158,8 +163,8 @@ describe('Guidance Accessibility Handler', () => {
 
     expect(result.status).to.deep.equal(200);
     expect(mockOpportunity.save.called).to.be.true;
-    expect(mockOpportunity.data.accessibility).to.have.lengthOf(2);
-    expect(mockOpportunity.data.accessibility[1].a11yIssues[0]).to.deep.equal({
+    expect(mockOpportunity.getData().accessibility).to.have.lengthOf(2);
+    expect(mockOpportunity.getData().accessibility[1].a11yIssues[0]).to.deep.equal({
       issue: 'issue3',
       guidance: 'guidance3',
     });
