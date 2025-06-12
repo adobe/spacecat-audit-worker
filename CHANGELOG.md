@@ -1,3 +1,17 @@
+## [1.100.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.100.0...v1.100.1) (2025-06-11)
+
+
+### Bug Fixes
+
+* filter out valid broken internal links code refactor for accuracy ([#905](https://github.com/adobe/spacecat-audit-worker/issues/905)) ([132509c](https://github.com/adobe/spacecat-audit-worker/commit/132509cec47237bbbc624545811bf5fb3870ee8b))
+
+# [1.100.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.99.0...v1.100.0) (2025-06-11)
+
+
+### Features
+
+* **forms:** form a11y handlers communication with M ([#933](https://github.com/adobe/spacecat-audit-worker/issues/933)) ([ac7bea8](https://github.com/adobe/spacecat-audit-worker/commit/ac7bea8fd9cad6dc5cffea9eb241b0a54092d353))
+
 # [1.99.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.98.0...v1.99.0) (2025-06-09)
 
 
