@@ -293,7 +293,7 @@ describe('Accessibility Audit Handler', () => {
         { url: 'https://example.com/page3' },
       ];
       const mockObjectKeys = ['key1', 'key2'];
-      const existingUrls = ['https://example.com/page1/', 'https://example.com/page2'];
+      const existingUrls = ['https://example.com/page1', 'https://example.com/page2'];
 
       getUrlsForAuditStub.resolves(mockUrls);
       getExistingObjectKeysFromFailedAuditsStub.resolves(mockObjectKeys);

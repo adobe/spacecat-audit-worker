@@ -32,18 +32,18 @@ describe('Scrape Utils', () => {
     });
 
     it('returns an empty array when all URLs already exist', () => {
-      const urlsToScrape = [{ url: 'https://a.com' }, { url: 'https://b.com/' }];
+      const urlsToScrape = [{ url: 'https://a.com/' }, { url: 'https://b.com' }];
       const existingUrls = ['https://a.com/', 'https://b.com'];
       expect(getRemainingUrls(urlsToScrape, existingUrls)).to.deep.equal([]);
     });
 
-    it('filters out URLs that exist, considering normalization', () => {
+    it('filters out URLs that exist', () => {
       const urlsToScrape = [
         { url: 'https://a.com' }, // exists
         { url: 'https://b.com/' }, // exists
         { url: 'https://c.com' }, // does not exist
       ];
-      const existingUrls = ['https://a.com/', 'https://b.com'];
+      const existingUrls = ['https://a.com', 'https://b.com/'];
       const expected = [{ url: 'https://c.com' }];
       expect(getRemainingUrls(urlsToScrape, existingUrls)).to.deep.equal(expected);
     });
@@ -54,14 +54,18 @@ describe('Scrape Utils', () => {
       expect(getRemainingUrls(urlsToScrape, existingUrls)).to.deep.equal([]);
     });
 
-    it('handles a mix of URLs with and without trailing slashes', () => {
+    it('does not filter if trailing slashes do not match', () => {
       const urlsToScrape = [
         { url: 'https://a.com' },
         { url: 'https://b.com/' },
         { url: 'https://c.com' },
       ];
       const existingUrls = ['https://a.com/'];
-      const expected = [{ url: 'https://b.com/' }, { url: 'https://c.com' }];
+      const expected = [
+        { url: 'https://a.com' },
+        { url: 'https://b.com/' },
+        { url: 'https://c.com' },
+      ];
       expect(getRemainingUrls(urlsToScrape, existingUrls)).to.deep.equal(expected);
     });
   });
