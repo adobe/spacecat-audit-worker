@@ -30,16 +30,6 @@ const AUDIT_METATAGS = 'metatags';
 const AUDIT_BODY_SIZE = 'body-size';
 const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 const AUDIT_H1_COUNT = 'h1-count';
-const AUDITS = {
-  seo: [
-    AUDIT_CANONICAL,
-    AUDIT_LINKS,
-    AUDIT_METATAGS,
-    AUDIT_BODY_SIZE,
-    AUDIT_LOREM_IPSUM,
-    AUDIT_H1_COUNT,
-  ],
-};
 
 export function isValidUrls(urls) {
   return (
@@ -77,10 +67,15 @@ export async function scrapePages(context) {
 }
 
 export const preflightAudit = async (context) => {
+  const startTime = Date.now();
+  const startTimestamp = new Date().toISOString();
+
   const {
-    site, job, s3Client, log,
+    site, job, s3Client, log, dataAccess,
   } = context;
+  const { AsyncJob: AsyncJobEntity } = dataAccess;
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
+  const jobId = job.getId();
 
   const jobMetadata = job.getMetadata();
   /**
@@ -96,10 +91,24 @@ export const preflightAudit = async (context) => {
     return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`;
   });
 
-  log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit started for jobId: ${job.getId()} and step: ${normalizedStep}`);
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Preflight audit started.`);
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
+  }
+
+  async function saveIntermediateResults(result, auditName) {
+    try {
+      const jobEntity = await AsyncJobEntity.findById(jobId);
+      jobEntity.setStatus(AsyncJob.Status.IN_PROGRESS);
+      jobEntity.setResultType(AsyncJob.ResultType.INLINE);
+      jobEntity.setResult(result);
+      await jobEntity.save();
+      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${auditName}: Intermediate results saved successfully`);
+    } catch (error) {
+      // ignore any intermediate errors
+      log.warn(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${auditName}: Failed to save intermediate results: ${error.message}`);
+    }
   }
 
   try {
@@ -111,11 +120,19 @@ export const preflightAudit = async (context) => {
     const result = normalizedUrls.map((url) => ({
       pageUrl: url,
       step: normalizedStep,
-      audits: AUDITS.seo.map((auditName) => ({ name: auditName, type: 'seo', opportunities: [] })),
+      audits: [],
     }));
     const resultMap = new Map(result.map((r) => [r.pageUrl, r]));
 
     // Canonical checks
+    const canonicalStartTime = Date.now();
+    const canonicalStartTimestamp = new Date().toISOString();
+    // Create canonical audit entries for all pages
+    normalizedUrls.forEach((url) => {
+      const pageResult = resultMap.get(url);
+      pageResult.audits.push({ name: AUDIT_CANONICAL, type: 'seo', opportunities: [] });
+    });
+
     const canonicalResults = await Promise.all(
       normalizedUrls.map(async (url) => {
         const {
@@ -124,12 +141,17 @@ export const preflightAudit = async (context) => {
         } = await validateCanonicalTag(url, log, authHeader, true);
         const allChecks = [...tagChecks];
         if (canonicalUrl) {
-          log.info(`Found Canonical URL: ${canonicalUrl}`);
+          log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Found Canonical URL: ${canonicalUrl}`);
           allChecks.push(...validateCanonicalFormat(canonicalUrl, baseURL, log, true));
         }
         return { url, checks: allChecks.filter((c) => !c.success) };
       }),
     );
+    const canonicalEndTime = Date.now();
+    const canonicalEndTimestamp = new Date().toISOString();
+    const canonicalElapsed = ((canonicalEndTime - canonicalStartTime) / 1000).toFixed(2);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Canonical audit completed in ${canonicalElapsed} seconds`);
+
     canonicalResults.forEach(({ url, checks }) => {
       const audit = resultMap.get(url).audits.find((a) => a.name === AUDIT_CANONICAL);
       checks.forEach((check) => audit.opportunities.push({
@@ -139,6 +161,8 @@ export const preflightAudit = async (context) => {
         seoRecommendation: check.explanation,
       }));
     });
+
+    await saveIntermediateResults(result, 'canonical audit');
 
     // Retrieve scraped pages
     const prefix = `scrapes/${site.getId()}/`;
@@ -153,6 +177,14 @@ export const preflightAudit = async (context) => {
     );
 
     // Internal link checks
+    const internalLinksStartTime = Date.now();
+    const internalLinksStartTimestamp = new Date().toISOString();
+    // Create links audit entries for all pages
+    normalizedUrls.forEach((url) => {
+      const pageResult = resultMap.get(url);
+      pageResult.audits.push({ name: AUDIT_LINKS, type: 'seo', opportunities: [] });
+    });
+
     const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
       pageAuthToken: `token ${pageAuthToken}`,
     });
@@ -170,8 +202,23 @@ export const preflightAudit = async (context) => {
         });
       });
     }
+    const internalLinksEndTime = Date.now();
+    const internalLinksEndTimestamp = new Date().toISOString();
+    const internalLinksElapsed = ((internalLinksEndTime - internalLinksStartTime) / 1000)
+      .toFixed(2);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Internal links audit completed in ${internalLinksElapsed} seconds`);
+
+    await saveIntermediateResults(result, 'internal links audit');
 
     // Meta tags checks
+    const metatagsStartTime = Date.now();
+    const metatagsStartTimestamp = new Date().toISOString();
+    // Create metatags audit entries for all pages
+    normalizedUrls.forEach((url) => {
+      const pageResult = resultMap.get(url);
+      pageResult.audits.push({ name: AUDIT_METATAGS, type: 'seo', opportunities: [] });
+    });
+
     const {
       seoChecks,
       detectedTags,
@@ -192,8 +239,24 @@ export const preflightAudit = async (context) => {
         tagName: Object.keys(tags)[tag],
       }));
     });
+    const metatagsEndTime = Date.now();
+    const metatagsEndTimestamp = new Date().toISOString();
+    const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Meta tags audit completed in ${metatagsElapsed} seconds`);
+
+    await saveIntermediateResults(result, 'meta tags audit');
 
     // DOM-based checks: body size, lorem ipsum, h1 count, bad links
+    const domStartTime = Date.now();
+    const domStartTimestamp = new Date().toISOString();
+    // Create DOM-based audit entries for all pages
+    normalizedUrls.forEach((url) => {
+      const pageResult = resultMap.get(url);
+      pageResult.audits.push({ name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] });
+      pageResult.audits.push({ name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] });
+      pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
+    });
+
     scrapedObjects.forEach(({ data }) => {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const doc = new JSDOM(rawBody).window.document;
@@ -245,22 +308,71 @@ export const preflightAudit = async (context) => {
         auditsByName[AUDIT_LINKS].opportunities.push({ check: 'bad-links', issue: insecureLinks });
       }
     });
+    const domEndTime = Date.now();
+    const domEndTimestamp = new Date().toISOString();
+    const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. DOM-based audit completed in ${domElapsed} seconds`);
 
-    log.info(JSON.stringify(result));
-    job.setStatus(AsyncJob.Status.COMPLETED);
-    job.setResultType(AsyncJob.ResultType.INLINE);
-    job.setResult(result);
-    job.setEndedAt(new Date().toISOString());
-    await job.save();
+    await saveIntermediateResults(result, 'DOM-based audit');
+
+    const endTime = Date.now();
+    const endTimestamp = new Date().toISOString();
+    const totalElapsed = ((endTime - startTime) / 1000).toFixed(2);
+
+    // Add profiling results to each page result
+    const resultWithProfiling = result.map((pageResult) => ({
+      ...pageResult,
+      profiling: {
+        total: `${totalElapsed} seconds`,
+        startTime: startTimestamp,
+        endTime: endTimestamp,
+        breakdown: [
+          {
+            name: 'canonical',
+            duration: `${canonicalElapsed} seconds`,
+            startTime: canonicalStartTimestamp,
+            endTime: canonicalEndTimestamp,
+          },
+          {
+            name: 'links',
+            duration: `${internalLinksElapsed} seconds`,
+            startTime: internalLinksStartTimestamp,
+            endTime: internalLinksEndTimestamp,
+          },
+          {
+            name: 'metatags',
+            duration: `${metatagsElapsed} seconds`,
+            startTime: metatagsStartTimestamp,
+            endTime: metatagsEndTimestamp,
+          },
+          {
+            name: 'dom',
+            duration: `${domElapsed} seconds`,
+            startTime: domStartTimestamp,
+            endTime: domEndTimestamp,
+          },
+        ],
+      },
+    }));
+
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${JSON.stringify(resultWithProfiling)}`);
+
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    jobEntity.setStatus(AsyncJob.Status.COMPLETED);
+    jobEntity.setResultType(AsyncJob.ResultType.INLINE);
+    jobEntity.setResult(resultWithProfiling);
+    jobEntity.setEndedAt(new Date().toISOString());
+    await jobEntity.save();
   } catch (error) {
-    log.error(`[preflight-audit] site: ${site.getId()}. Error during preflight audit for jobId: ${job.getId()}`, error);
-    job.setStatus(AsyncJob.Status.FAILED);
-    job.setError({ code: '', message: error.message });
-    await job.save();
+    log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Error during preflight audit.`, error);
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    jobEntity.setStatus(AsyncJob.Status.FAILED);
+    jobEntity.setError({ code: '', message: error.message });
+    await jobEntity.save();
     throw error;
   }
 
-  log.info(`[preflight-audit] site: ${site.getId()}. Preflight audit completed for jobId: ${job.getId()}`);
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Preflight audit completed.`);
 };
 
 export default new AuditBuilder()
