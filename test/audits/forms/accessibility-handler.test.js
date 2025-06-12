@@ -359,6 +359,19 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     const opportunityId = 'test-opportunity-id';
 
     beforeEach(() => {
+      let mockOpportunityData = {
+        accessibility: [{
+          form: 'https://example.com/form1',
+          formSource: '#form1',
+          a11yIssues: [{
+            issue: 'Missing alt text',
+            level: 'error',
+            successCriterias: ['1.1.1 Non-text Content'],
+            htmlWithIssues: ['<img src="test.jpg">'],
+            recommendation: 'Add alt text to image',
+          }],
+        }],
+      };
       context = new MockContextBuilder()
         .withSandbox(sandbox)
         .withOverrides({
@@ -386,18 +399,9 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 save: sandbox.stub().resolves({
                   getId: () => opportunityId,
                 }),
-                data: {
-                  accessibility: [{
-                    form: 'https://example.com/form1',
-                    formSource: '#form1',
-                    a11yIssues: [{
-                      issue: 'Missing alt text',
-                      level: 'error',
-                      successCriterias: ['1.1.1 Non-text Content'],
-                      htmlWithIssues: ['<img src="test.jpg">'],
-                      recommendation: 'Add alt text to image',
-                    }],
-                  }],
+                getData: () => mockOpportunityData,
+                setData: (data) => {
+                  mockOpportunityData = data;
                 },
               }),
               create: sandbox.stub().resolves({
@@ -501,6 +505,13 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           }],
         },
       };
+      let mockOpportunityData = {
+        accessibility: [{
+          form: 'https://example.com/form1',
+          formSource: '#form1',
+          a11yIssues: [],
+        }],
+      };
 
       // mock existing opportunity
       context.dataAccess.Opportunity.findById.resolves({
@@ -508,12 +519,9 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           getId: () => opportunityId,
         }),
         setUpdatedBy: sandbox.stub(),
-        data: {
-          accessibility: [{
-            form: 'https://example.com/form1',
-            formSource: '#form1',
-            a11yIssues: [],
-          }],
+        getData: () => mockOpportunityData,
+        setData: (data) => {
+          mockOpportunityData = data;
         },
       });
 
@@ -522,8 +530,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(context.dataAccess.Opportunity.findById).to.have.been.calledOnce;
       const existingOpportunity = await context.dataAccess.Opportunity.findById
         .getCall(0).returnValue;
-      expect(existingOpportunity.data.accessibility).to.have.lengthOf(1);
-      expect(existingOpportunity.data.accessibility[0].a11yIssues).to.have.lengthOf(1);
+      expect(existingOpportunity.getData().accessibility).to.have.lengthOf(1);
+      expect(existingOpportunity.getData().accessibility[0].a11yIssues).to.have.lengthOf(1);
       expect(existingOpportunity.save).to.have.been.calledOnce;
     });
 
@@ -546,25 +554,28 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           }],
         },
       };
-
+      let mockOpportunityData = {
+        accessibility: [{
+          form: 'https://example.com/form2',
+          formSource: '#form2',
+          a11yIssues: [{
+            issue: 'label missing',
+            level: 'A',
+            successCriterias: ['1.1.1'],
+            htmlWithIssues: ['<label>test</label>'],
+            recommendation: 'Add label to input',
+          }],
+        }],
+      };
       // mock existing opportunity
       context.dataAccess.Opportunity.findById.resolves({
         save: sandbox.stub().resolves({
           getId: () => opportunityId,
         }),
         setUpdatedBy: sandbox.stub(),
-        data: {
-          accessibility: [{
-            form: 'https://example.com/form2',
-            formSource: '#form2',
-            a11yIssues: [{
-              issue: 'label missing',
-              level: 'A',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: ['<label>test</label>'],
-              recommendation: 'Add label to input',
-            }],
-          }],
+        getData: () => mockOpportunityData,
+        setData: (data) => {
+          mockOpportunityData = data;
         },
       });
 
@@ -573,8 +584,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(context.dataAccess.Opportunity.findById).to.have.been.calledOnce;
       const existingOpportunity = await context.dataAccess.Opportunity.findById
         .getCall(0).returnValue;
-      expect(existingOpportunity.data.accessibility).to.have.lengthOf(2);
-      expect(existingOpportunity.data.accessibility[0].a11yIssues).to.have.lengthOf(1);
+      expect(existingOpportunity.getData().accessibility).to.have.lengthOf(2);
+      expect(existingOpportunity.getData().accessibility[0].a11yIssues).to.have.lengthOf(1);
       expect(existingOpportunity.save).to.have.been.calledOnce;
     });
 
