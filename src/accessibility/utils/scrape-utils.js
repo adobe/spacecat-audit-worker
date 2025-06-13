@@ -97,14 +97,81 @@ export function getRemainingUrls(urlsToScrape, existingUrls) {
   return urlsToScrape.filter((item) => !existingUrlSet.has(item.url));
 }
 
-export async function updateStatusToIgnored(dataAccess, siteId, log) {
-  const { Opportunity } = dataAccess;
-  const opportunities = await Opportunity.allBySiteId(siteId);
-  log.info(`[A11yAudit] Found ${opportunities.length} opportunities for site ${siteId}: ${JSON.stringify(opportunities, null, 2)}`);
+/**
+ * Filters opportunities to find accessibility-related ones that need to be ignored.
+ * This is a pure function that can be easily tested.
+ *
+ * @param {Array} opportunities - Array of opportunity objects
+ * @returns {Array} Filtered array of accessibility opportunities
+ */
+export function filterAccessibilityOpportunities(opportunities) {
+  return opportunities.filter((oppty) => oppty.getStatus() === 'NEW'
+    && oppty.getType() === 'generic-opportunity'
+    && oppty.getTags().includes('a11y')
+    && oppty.getTitle().includes('Accessibility report - Desktop'));
+}
 
-  if (opportunities.length > 0) {
-    const accessibilityOppties = opportunities.filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getType() === 'generic-opportunity' && oppty.getTags().includes('a11y') && oppty.getTitle().includes('Accessibility report - Desktop'));
-    // await Promise.allSettled(accessibilityOppties.map((oppty) => oppty.setStatus('IGNORED')));
-    log.info(`[A11yAudit] Found ${accessibilityOppties.length} opportunities to update to IGNORED for site ${siteId}: ${JSON.stringify(accessibilityOppties, null, 2)}`);
+/**
+ * Updates the status of an opportunity and saves it.
+ *
+ * @param {Object} oppty - The opportunity object
+ * @param {string} status - The new status to set
+ * @returns {Promise<Object>} The updated opportunity object
+ */
+export async function updateStatusAndSave(oppty, status) {
+  oppty.setStatus(status);
+  await oppty.save();
+  return oppty;
+}
+
+/**
+ * Updates the status of accessibility opportunities to IGNORED.
+ *
+ * @param {Object} dataAccess - Data access object containing Opportunity model
+ * @param {string} siteId - The ID of the site
+ * @param {Object} log - Logger instance
+ * Result of the operation
+ * @returns {Promise<{success: boolean, updatedCount: number, error?: string}>}
+ */
+export async function updateStatusToIgnored(dataAccess, siteId, log) {
+  try {
+    const { Opportunity } = dataAccess;
+    const opportunities = await Opportunity.allBySiteId(siteId);
+    log.info(`[A11yAudit] Found ${opportunities.length} opportunities for site ${siteId}`);
+
+    if (opportunities.length === 0) {
+      return { success: true, updatedCount: 0 };
+    }
+
+    const accessibilityOppties = filterAccessibilityOpportunities(opportunities);
+    log.info(`[A11yAudit] Found ${accessibilityOppties.length} opportunities to update to IGNORED for site ${siteId}`);
+
+    if (accessibilityOppties.length === 0) {
+      return { success: true, updatedCount: 0 };
+    }
+
+    const updateResults = await Promise.allSettled(
+      accessibilityOppties.map((oppty) => updateStatusAndSave(oppty, 'IGNORED')),
+    );
+
+    const successfulUpdates = updateResults.filter((result) => result.status === 'fulfilled').length;
+    const failedUpdates = updateResults.filter((result) => result.status === 'rejected');
+
+    if (failedUpdates.length > 0) {
+      log.error(`[A11yAudit] Failed to update ${failedUpdates.length} opportunities: ${JSON.stringify(failedUpdates)}`);
+    }
+
+    return {
+      success: failedUpdates.length === 0,
+      updatedCount: successfulUpdates,
+      error: failedUpdates.length > 0 ? 'Some updates failed' : undefined,
+    };
+  } catch (error) {
+    log.error(`[A11yAudit] Error updating opportunities to IGNORED: ${error.message}`);
+    return {
+      success: false,
+      updatedCount: 0,
+      error: error.message,
+    };
   }
 }

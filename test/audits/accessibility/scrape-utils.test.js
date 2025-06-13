@@ -19,6 +19,8 @@ import sinonChai from 'sinon-chai';
 import {
   getRemainingUrls,
   extractUrlsFromSettledResults,
+  filterAccessibilityOpportunities,
+  updateStatusToIgnored,
 } from '../../../src/accessibility/utils/scrape-utils.js';
 
 use(sinonChai);
@@ -320,96 +322,169 @@ describe('Scrape Utils', () => {
     });
   });
 
+  describe('filterAccessibilityOpportunities', () => {
+    it('filters opportunities correctly based on criteria', () => {
+      const opportunities = [
+        {
+          getStatus: () => 'NEW',
+          getType: () => 'generic-opportunity',
+          getTags: () => ['a11y'],
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+        {
+          getStatus: () => 'IGNORED',
+          getType: () => 'generic-opportunity',
+          getTags: () => ['a11y'],
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+        {
+          getStatus: () => 'NEW',
+          getType: () => 'other-type',
+          getTags: () => ['a11y'],
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+        {
+          getStatus: () => 'NEW',
+          getType: () => 'generic-opportunity',
+          getTags: () => ['other-tag'],
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+        {
+          getStatus: () => 'NEW',
+          getType: () => 'generic-opportunity',
+          getTags: () => ['a11y'],
+          getTitle: () => 'Other title',
+        },
+      ];
+
+      const filtered = filterAccessibilityOpportunities(opportunities);
+
+      expect(filtered).to.have.lengthOf(1);
+      expect(filtered[0].getStatus()).to.equal('NEW');
+      expect(filtered[0].getType()).to.equal('generic-opportunity');
+      expect(filtered[0].getTags()).to.include('a11y');
+      expect(filtered[0].getTitle()).to.include('Accessibility report - Desktop');
+    });
+
+    it('returns empty array when no opportunities match criteria', () => {
+      const opportunities = [
+        {
+          getStatus: () => 'IGNORED',
+          getType: () => 'generic-opportunity',
+          getTags: () => ['a11y'],
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+        {
+          getStatus: () => 'NEW',
+          getType: () => 'other-type',
+          getTags: () => ['a11y'],
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+      ];
+
+      const filtered = filterAccessibilityOpportunities(opportunities);
+
+      expect(filtered).to.be.an('array').that.is.empty;
+    });
+  });
+
   describe('updateStatusToIgnored', () => {
-    let mockOpportunities;
-    let mockLog;
     let mockDataAccess;
+    let mockLog;
+    let sandbox;
+    let mockOpportunity;
+    let mockOpportunities;
 
     beforeEach(() => {
+      sandbox = sinon.createSandbox();
       mockLog = {
-        info: sinon.stub(),
-        error: sinon.stub(),
+        info: sandbox.stub(),
+        error: sandbox.stub(),
       };
-      mockOpportunities = [
-        {
-          getStatus: sinon.stub().returns('NEW'),
-          getType: sinon.stub().returns('generic-opportunity'),
-          getTags: sinon.stub().returns(['a11y']),
-          getTitle: sinon.stub().returns('Accessibility report - Desktop'),
-          setStatus: sinon.stub().resolves(),
-        },
-        {
-          getStatus: sinon.stub().returns('IN_PROGRESS'),
-          getType: sinon.stub().returns('generic-opportunity'),
-          getTags: sinon.stub().returns(['a11y']),
-          getTitle: sinon.stub().returns('Accessibility report - Desktop'),
-          setStatus: sinon.stub().resolves(),
-        },
-        {
-          getStatus: sinon.stub().returns('NEW'),
-          getType: sinon.stub().returns('other-type'),
-          getTags: sinon.stub().returns(['a11y']),
-          getTitle: sinon.stub().returns('Accessibility report - Desktop'),
-          setStatus: sinon.stub().resolves(),
-        },
-      ];
+
+      mockOpportunity = {
+        getStatus: sandbox.stub().returns('NEW'),
+        getType: sandbox.stub().returns('generic-opportunity'),
+        getTags: sandbox.stub().returns(['a11y']),
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop'),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockOpportunities = [mockOpportunity];
       mockDataAccess = {
         Opportunity: {
-          allBySiteId: sinon.stub().resolves(mockOpportunities),
+          allBySiteId: sandbox.stub().resolves(mockOpportunities),
         },
       };
     });
 
-    it('should filter opportunities correctly based on criteria', async () => {
-      const { updateStatusToIgnored } = await esmock('../../../src/accessibility/utils/scrape-utils.js');
-      await updateStatusToIgnored(mockDataAccess, 'test-site', mockLog);
-
-      expect(mockLog.info).to.have.been.calledWith(
-        `[A11yAudit] Found ${mockOpportunities.length} opportunities for site test-site: ${JSON.stringify(mockOpportunities, null, 2)}`,
-      );
-      expect(mockLog.info).to.have.been.calledWith(
-        `[A11yAudit] Found 1 opportunities to update to IGNORED for site test-site: ${JSON.stringify([mockOpportunities[0]], null, 2)}`,
-      );
+    afterEach(() => {
+      sandbox.restore();
     });
 
-    it('should handle empty opportunities array', async () => {
+    it('successfully updates opportunities to IGNORED status', async () => {
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+
+      expect(result).to.deep.equal({
+        success: true,
+        updatedCount: 1,
+        error: undefined,
+      });
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] Found 1 opportunities for site site1');
+      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] Found 1 opportunities to update to IGNORED for site site1');
+    });
+
+    it('handles case when no opportunities are found', async () => {
       mockDataAccess.Opportunity.allBySiteId.resolves([]);
-      const { updateStatusToIgnored } = await esmock('../../../src/accessibility/utils/scrape-utils.js');
-      await updateStatusToIgnored(mockDataAccess, 'test-site', mockLog);
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
 
-      expect(mockLog.info).to.have.been.calledWith(
-        '[A11yAudit] Found 0 opportunities for site test-site: []',
-      );
-      expect(mockLog.info).to.not.have.been.calledWith(
-        sinon.match(/Found \d+ opportunities to update to IGNORED/),
+      expect(result).to.deep.equal({
+        success: true,
+        updatedCount: 0,
+      });
+      expect(mockOpportunity.setStatus).to.not.have.been.called;
+      expect(mockOpportunity.save).to.not.have.been.called;
+    });
+
+    it('handles case when no accessibility opportunities match criteria', async () => {
+      mockOpportunity.getStatus.returns('IGNORED');
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+
+      expect(result).to.deep.equal({
+        success: true,
+        updatedCount: 0,
+      });
+      expect(mockOpportunity.setStatus).to.not.have.been.called;
+      expect(mockOpportunity.save).to.not.have.been.called;
+    });
+
+    it('handles errors during opportunity update', async () => {
+      mockOpportunity.save.rejects(new Error('Save failed'));
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+
+      expect(result).to.deep.equal({
+        success: false,
+        updatedCount: 0,
+        error: 'Some updates failed',
+      });
+      expect(mockLog.error).to.have.been.calledWith(
+        '[A11yAudit] Failed to update 1 opportunities: [{"status":"rejected","reason":{}}]',
       );
     });
 
-    it('should handle opportunities with missing required fields', async () => {
-      const incompleteOpportunities = [
-        {
-          getStatus: sinon.stub().returns('NEW'),
-          getType: sinon.stub().returns('generic-opportunity'),
-          getTags: sinon.stub().returns([]),
-          getTitle: sinon.stub().returns('Accessibility report - Desktop'),
-        },
-        {
-          getStatus: sinon.stub().returns('NEW'),
-          getType: sinon.stub().returns('generic-opportunity'),
-          getTags: sinon.stub().returns(['a11y']),
-          getTitle: sinon.stub().returns('Different title'),
-        },
-      ];
-      mockDataAccess.Opportunity.allBySiteId.resolves(incompleteOpportunities);
-      const { updateStatusToIgnored } = await esmock('../../../src/accessibility/utils/scrape-utils.js');
-      await updateStatusToIgnored(mockDataAccess, 'test-site', mockLog);
+    it('handles errors during opportunity fetch', async () => {
+      mockDataAccess.Opportunity.allBySiteId.rejects(new Error('Fetch failed'));
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
 
-      expect(mockLog.info).to.have.been.calledWith(
-        `[A11yAudit] Found ${incompleteOpportunities.length} opportunities for site test-site: ${JSON.stringify(incompleteOpportunities, null, 2)}`,
-      );
-      expect(mockLog.info).to.have.been.calledWith(
-        '[A11yAudit] Found 0 opportunities to update to IGNORED for site test-site: []',
-      );
+      expect(result).to.deep.equal({
+        success: false,
+        updatedCount: 0,
+        error: 'Fetch failed',
+      });
+      expect(mockLog.error).to.have.been.calledWith('[A11yAudit] Error updating opportunities to IGNORED: Fetch failed');
     });
   });
 });
