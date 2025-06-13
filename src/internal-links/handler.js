@@ -11,23 +11,25 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+// import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
+// from '@adobe/spacecat-shared-data-access';
+// import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { syncSuggestions } from '../utils/data-access.js';
-import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
-import { generateSuggestionData } from './suggestions-generator.js';
+// import { syncSuggestions } from '../utils/data-access.js';
+// import { convertToOpportunity } from '../common/opportunity.js';
+// import { createOpportunityData } from './opportunity-data-mapper.js';
+// import { generateSuggestionData } from './suggestions-generator.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
-  calculateKpiDeltasForAudit,
+  // calculateKpiDeltasForAudit,
   isLinkInaccessible,
   calculatePriority,
 } from './helpers.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
+// const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
-const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
+const AUDIT_TYPE = 'broken-internal-links';
+const LINKS_CHUNK_SIZE = 3;
 
 /**
  * Perform an audit to check which internal links for domain are broken.
@@ -136,96 +138,45 @@ export async function prepareScrapingStep(context) {
 
 export async function opportunityAndSuggestionsStep(context) {
   const {
-    log, site, finalUrl, audit, dataAccess,
+    log, site, finalUrl, sqs, env,
   } = context;
 
-  let { brokenInternalLinks } = audit.getAuditResult();
-
-  // generate suggestions
-  try {
-    brokenInternalLinks = await generateSuggestionData(
-      finalUrl,
-      audit,
-      context,
-      site,
-    );
-  } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
-  }
-
-  // TODO: skip opportunity creation if no internal link items are found in the audit data
-  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
-
-  if (!isNonEmptyArray(brokenInternalLinks)) {
-    // no broken internal links found
-    // fetch opportunity
-    const { Opportunity } = dataAccess;
-    let opportunity;
-    try {
-      const opportunities = await Opportunity
-        .allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
-      opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-    } catch (e) {
-      log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
-      throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
-    }
-
-    if (!opportunity) {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`);
-    } else {
-      // no broken internal links found, update opportunity status to RESOLVED
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`);
-      await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
-
-      // We also need to update all suggestions inside this opportunity
-      // Get all suggestions for this opportunity
-      const suggestions = await opportunity.getSuggestions();
-
-      // If there are suggestions, update their status to outdated
-      if (isNonEmptyArray(suggestions)) {
-        const { Suggestion } = dataAccess;
-        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
-      }
-      opportunity.setUpdatedBy('system');
-      await opportunity.save();
-    }
-    return {
-      status: 'complete',
-    };
-  }
-
-  const opportunity = await convertToOpportunity(
+  // test code
+  const { auditResult } = await internalLinksAuditRunner(
     finalUrl,
-    { siteId: site.getId(), id: audit.getId() },
     context,
-    createOpportunityData,
-    AUDIT_TYPE,
-    {
-      kpiDeltas,
-    },
   );
 
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
-  await syncSuggestions({
-    opportunity,
-    newData: brokenInternalLinks,
-    context,
-    buildKey,
-    mapNewSuggestion: (entry) => ({
-      opportunityId: opportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
-        trafficDomain: entry.trafficDomain,
-      },
-    }),
-    log,
-  });
+  const { brokenInternalLinks } = auditResult;
+
+  // Chunk the brokenInternalLinks array into pieces of LINKS_CHUNK_SIZE URLs each
+  // for further processing or batching.
+  const brokenInternalLinksChunks = [];
+  for (let i = 0; i < brokenInternalLinks.length; i += LINKS_CHUNK_SIZE) {
+    brokenInternalLinksChunks.push(brokenInternalLinks.slice(i, i + LINKS_CHUNK_SIZE));
+  }
+  // brokenInternalLinksChunks is an array of arrays, each containing up to LINKS_CHUNK_SIZE items.
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] brokenInternalLinksChunks: ${JSON.stringify(brokenInternalLinksChunks)}`);
+
+  const messages = brokenInternalLinksChunks.map((brokenInternalLinksChunk) => ({
+    type: 'suggestions:internal-links',
+    siteId: site.getId(),
+    // auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      brokenInternalLinks: brokenInternalLinksChunk,
+      size: brokenInternalLinksChunk.length,
+    },
+  }));
+
+  for (const message of messages) {
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, message);
+    log.info(`Message sent to audit queue: ${JSON.stringify(message)}`);
+  }
+
+  // end test code
   return {
     status: 'complete',
   };
@@ -233,15 +184,15 @@ export async function opportunityAndSuggestionsStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep(
-    'runAuditAndImportTopPages',
-    runAuditAndImportTopPagesStep,
-    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
-  )
-  .addStep(
-    'prepareScraping',
-    prepareScrapingStep,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
-  )
+  // .addStep(
+  //   'runAuditAndImportTopPages',
+  //   runAuditAndImportTopPagesStep,
+  //   AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
+  // )
+  // .addStep(
+  //   'prepareScraping',
+  //   prepareScrapingStep,
+  //   AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  // )
   .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
   .build();
