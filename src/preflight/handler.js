@@ -19,6 +19,7 @@ import { metatagsAutoDetect } from '../metatags/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
 import { runInternalLinkChecks } from './internal-links.js';
+import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
 import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -185,22 +186,51 @@ export const preflightAudit = async (context) => {
       pageResult.audits.push({ name: AUDIT_LINKS, type: 'seo', opportunities: [] });
     });
 
-    const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
+    const { auditResult } = await runInternalLinkChecks(urls, scrapedObjects, context, {
       pageAuthToken: `token ${pageAuthToken}`,
     });
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
-      auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
-        const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
-        audit.opportunities.push({
-          check: 'broken-internal-links',
-          issue: {
-            url: href,
-            issue: `Status ${status}`,
-            seoImpact: 'High',
-            seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-          },
+      if (normalizedStep === AUDIT_STEP_SUGGEST) {
+        const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
+          urlTo: new URL(site.getBaseURL()).origin + new URL(link.urlTo).pathname.replace(/\/$/, ''),
+          href: link.href,
+          status: link.status,
+        }));
+        log.debug(`[preflight-audit] Found ${JSON.stringify(brokenLinks)} broken internal links`);
+        const brokenInternalLinks = await
+        generateSuggestionData(baseURL, brokenLinks, context, site);
+        log.debug(`[preflight-audit] Generated suggestions for broken internal links: ${JSON.stringify(brokenInternalLinks)}`);
+        brokenInternalLinks.forEach(({
+          urlTo, href, status, urlsSuggested, aiRationale,
+        }) => {
+          const audit = resultMap.get(href).audits.find((a) => a.name === AUDIT_LINKS);
+          const aiUrls = urlsSuggested?.map((url) => (new URL(baseURL).origin + new URL(url).pathname.replace(/\/$/, '')));
+          audit.opportunities.push({
+            check: 'broken-internal-links',
+            issue: {
+              url: urlTo,
+              issue: `Status ${status}`,
+              seoImpact: 'High',
+              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+              urlsSuggested: aiUrls,
+              aiRationale,
+            },
+          });
         });
-      });
+      } else {
+        auditResult.brokenInternalLinks.forEach(({ urlTo, href, status }) => {
+          const audit = resultMap.get(href).audits.find((a) => a.name === AUDIT_LINKS);
+          audit.opportunities.push({
+            check: 'broken-internal-links',
+            issue: {
+              url: urlTo,
+              issue: `Status ${status}`,
+              seoImpact: 'High',
+              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+            },
+          });
+        });
+      }
     }
     const internalLinksEndTime = Date.now();
     const internalLinksEndTimestamp = new Date().toISOString();
@@ -367,7 +397,12 @@ export const preflightAudit = async (context) => {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Error during preflight audit.`, error);
     const jobEntity = await AsyncJobEntity.findById(jobId);
     jobEntity.setStatus(AsyncJob.Status.FAILED);
-    jobEntity.setError({ code: '', message: error.message });
+    jobEntity.setError({
+      code: 'EXCEPTION',
+      message: error.message,
+      details: error.stack,
+    });
+    jobEntity.setEndedAt(new Date().toISOString());
     await jobEntity.save();
     throw error;
   }

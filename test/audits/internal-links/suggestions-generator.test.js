@@ -121,16 +121,15 @@ describe('generateSuggestionData', async function test() {
       }),
     };
 
-    const result = await generateSuggestionData('https://example.com', FailureAuditData, context, site);
+    const result = await generateSuggestionData('https://example.com', FailureAuditData.getAuditResult().brokenInternalLinks, context, site);
 
     expect(result).to.deep.equal(auditData.getAuditResult().brokenInternalLinks);
-    expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
   });
 
   it('returns original auditData if auto-suggest is disabled for the site', async () => {
     configuration.isHandlerEnabledForSite.returns(false);
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', auditData.getAuditResult().brokenInternalLinks, context, site);
 
     expect(result).to.deep.equal(auditData.getAuditResult().brokenInternalLinks);
     expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Auto-suggest is disabled for site`);
@@ -188,7 +187,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', auditData.getAuditResult().brokenInternalLinks, context, site);
 
     expect(firefallClient.fetchChatCompletion).to.have.been.callCount(4);
     expect(result).to.deep.equal([
@@ -257,7 +256,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', auditData.getAuditResult().brokenInternalLinks, context, site);
 
     expect(firefallClient.fetchChatCompletion).to.have.been.callCount(8);
     expect(result).to.deep.equal([
@@ -306,7 +305,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', auditData.getAuditResult().brokenInternalLinks, context, site);
 
     expect(result).to.deep.equal([
       {
