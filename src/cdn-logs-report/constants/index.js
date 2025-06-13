@@ -159,8 +159,28 @@ export const DEFAULT_PATTERNS = [
 export const DOMAIN_SPECIFIC_PATTERNS = {
   bulk_com: [
     {
-      name: 'UK product pages',
-      pattern: 'https://www\\.bulk\\.com/uk/products/.+',
+      name: 'Homepage',
+      pattern: '.*/[a-z]{2}/$',
+    },
+    {
+      name: 'Product Detail Page',
+      pattern: '.*/products/.*',
+    },
+    {
+      name: 'The Core Blog',
+      pattern: '.*/the-core/.*',
+    },
+    {
+      name: 'Sitemap',
+      pattern: '.*sitemap.*',
+    },
+    {
+      name: 'Robots',
+      pattern: '.*robots.*',
+    },
+    {
+      name: 'Product Listing Page',
+      pattern: '.*/.*',
     },
     ...DEFAULT_PATTERNS,
   ],
