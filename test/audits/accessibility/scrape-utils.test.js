@@ -396,7 +396,7 @@ describe('Scrape Utils', () => {
         {
           getStatus: sinon.stub().returns('NEW'),
           getType: sinon.stub().returns('generic-opportunity'),
-          getTags: sinon.stub().returns(['accessibility']),
+          getTags: sinon.stub().returns(['a11y']),
           getTitle: sinon.stub().returns('Different title'),
         },
       ];

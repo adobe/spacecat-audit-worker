@@ -103,7 +103,7 @@ export async function updateStatusToIgnored(dataAccess, siteId, log) {
   log.info(`[A11yAudit] Found ${opportunities.length} opportunities for site ${siteId}: ${JSON.stringify(opportunities, null, 2)}`);
 
   if (opportunities.length > 0) {
-    const accessibilityOppties = opportunities.filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getType() === 'generic-opportunity' && oppty.getTags().includes('accessibility') && oppty.getTitle().includes('Accessibility report - Desktop'));
+    const accessibilityOppties = opportunities.filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getType() === 'generic-opportunity' && oppty.getTags().includes('a11y') && oppty.getTitle().includes('Accessibility report - Desktop'));
     // await Promise.allSettled(accessibilityOppties.map((oppty) => oppty.setStatus('IGNORED')));
     log.info(`[A11yAudit] Found ${accessibilityOppties.length} opportunities to update to IGNORED for site ${siteId}: ${JSON.stringify(accessibilityOppties, null, 2)}`);
   }
