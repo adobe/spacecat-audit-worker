@@ -237,6 +237,8 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
   const detectedCount = Object.keys(soft404Results).length;
   log.info(`Detected ${detectedCount} soft 404 pages out of ${pageMetadataResults.length} total pages`);
 
+  log.info(`Soft 404 results: ${JSON.stringify(soft404Results)}`);
+
   return soft404Results;
 }
 

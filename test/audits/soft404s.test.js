@@ -589,6 +589,81 @@ describe('Soft404s Tests', () => {
         'Missing rawBody or finalUrl for page: /page1',
       );
     });
+
+    it('should detect soft 404 for page with very low word count (< 100) even without indicators', async () => {
+      const mockObject = {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: {
+          tags: { title: 'Test Title' },
+          rawBody: '<html><body>Very short content</body></html>',
+        },
+      };
+
+      s3ClientStub.send.resolves({
+        Body: { transformToString: () => JSON.stringify(mockObject) },
+        ContentType: 'application/json',
+      });
+
+      nock('https://example.com')
+        .head('/page1')
+        .reply(200);
+
+      const result = await soft404sAutoDetect(site, new Set(['scrapes/test-site-id/page1/scrape.json']), context);
+
+      expect(result).to.have.property('/page1');
+      expect(result['/page1']).to.deep.include({
+        isSoft404: true,
+        statusCode: 200,
+        wordCount: 2, // "Very short content" = 2 words
+      });
+    });
+
+    it('should not detect soft 404 for page with very low word count if status is not 200', async () => {
+      const mockObject = {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: {
+          tags: { title: 'Test Title' },
+          rawBody: '<html><body>Very short content</body></html>',
+        },
+      };
+
+      s3ClientStub.send.resolves({
+        Body: { transformToString: () => JSON.stringify(mockObject) },
+        ContentType: 'application/json',
+      });
+
+      nock('https://example.com')
+        .head('/page1')
+        .reply(404);
+
+      const result = await soft404sAutoDetect(site, new Set(['scrapes/test-site-id/page1/scrape.json']), context);
+
+      expect(result).to.be.empty;
+    });
+
+    it('should detect soft 404 for page with word count between 100 and 500 only if it has indicators', async () => {
+      const mockObject = {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: {
+          tags: { title: 'Test Title' },
+          rawBody: '<html><body>This is a page with more than 100 words but less than 500 words. It should only be detected as a soft 404 if it contains soft 404 indicators. Otherwise, it should be considered a valid page even though it has relatively low content.</body></html>',
+        },
+      };
+
+      s3ClientStub.send.resolves({
+        Body: { transformToString: () => JSON.stringify(mockObject) },
+        ContentType: 'application/json',
+      });
+
+      nock('https://example.com')
+        .head('/page1')
+        .reply(200);
+
+      const result = await soft404sAutoDetect(site, new Set(['scrapes/test-site-id/page1/scrape.json']), context);
+
+      // Should not be detected as soft 404 because it has no indicators
+      expect(result).to.be.empty;
+    });
   });
 
   describe('soft404sAuditRunner', () => {
