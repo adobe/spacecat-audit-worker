@@ -42,6 +42,10 @@ export function extractTotalBlockingTime(psiAudit) {
   return psiAudit?.['total-blocking-time']?.numericValue || null;
 }
 
+export function extractCSP(psiAudit) {
+  return psiAudit?.['csp-xss']?.details?.items || [];
+}
+
 /**
  * Extracts third party summary from an audit.
  *
@@ -111,7 +115,7 @@ const createAuditData = (
   const scores = extractAuditScores(categories);
   const totalBlockingTime = extractTotalBlockingTime(audits);
   const thirdPartySummary = extractThirdPartySummary(audits);
-
+  const csp = extractCSP(audits);
   return {
     fullAuditRef,
     auditResult: {
@@ -120,6 +124,7 @@ const createAuditData = (
       scores,
       thirdPartySummary,
       totalBlockingTime,
+      csp,
       runtimeError,
     },
   };
