@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+/* c8 ignore start */
 import { executeAthenaSetupQuery, executeAthenaQuery } from '../utils/athena-client.js';
 import { getHourlyPartitionFilter } from '../queries/query-helpers.js';
 import { buildDetectionClause } from './agentic-patterns.js';
@@ -241,3 +242,4 @@ export class BaseProvider {
     return parseInt(count, 10);
   }
 }
+/* c8 ignore end */

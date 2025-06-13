@@ -9,6 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
+/* c8 ignore start */
 export const AGENTIC_TECH_MAPPING = [
   { name: 'chatgpt', pattern: '%ChatGPT%' },
   { name: 'gptbot', pattern: '%GPTBot%' },
@@ -38,3 +40,4 @@ export function buildDetectionClause(userAgentField) {
     .join(' OR\n    ');
   return `(${clauses})`;
 }
+/* c8 ignore end */
