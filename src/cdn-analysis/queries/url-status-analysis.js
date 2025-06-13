@@ -23,25 +23,24 @@ export const urlStatusAnalysisQueries = {
    * Hourly URL-Status analysis for agentic traffic
    */
   hourlyUrlStatus: (hourToProcess, tableName, s3Config) => {
-    const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     const selectQuery = `
       SELECT 
-        '${hourLabel}' as hour,
         url,
         response_status as status_code,
         COUNT(*) as count,
         COUNT(CASE WHEN agentic_type = 'chatgpt' THEN 1 END) as chatgpt_requests,
         COUNT(CASE WHEN agentic_type = 'perplexity' THEN 1 END) as perplexity_requests,
         COUNT(CASE WHEN agentic_type = 'claude' THEN 1 END) as claude_requests
-      FROM cdn_logs.${tableName} 
+      FROM cdn_logs_${s3Config.customerDomain}.${tableName} 
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       GROUP BY url, response_status
       ORDER BY count DESC
     `;
 
-    return createUnloadQuery(selectQuery, 'urlStatus', hourToProcess, s3Config);
+    return createUnloadQuery(selectQuery, 'reqCountByUrlStatus', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */

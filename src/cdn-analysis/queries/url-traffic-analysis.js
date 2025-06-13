@@ -23,11 +23,10 @@ export const urlTrafficAnalysisQueries = {
    * Hourly URL-level traffic breakdown for agentic traffic
    */
   hourlyUrlTraffic: (hourToProcess, tableName, s3Config) => {
-    const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     const selectQuery = `
       SELECT 
-        '${hourLabel}' as hour,
         url,
         -- Platform-specific requests
         COUNT(CASE WHEN agentic_type = 'chatgpt' THEN 1 END) as chatgpt_requests,
@@ -41,14 +40,14 @@ export const urlTrafficAnalysisQueries = {
         COUNT(CASE WHEN response_status = 404 THEN 1 END) as status_404,
         COUNT(CASE WHEN response_status BETWEEN 500 AND 599 THEN 1 END) as status_5xx,
         COUNT(*) as total_agentic_requests
-      FROM cdn_logs.${tableName} 
+      FROM cdn_logs_${s3Config.customerDomain}.${tableName}
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       GROUP BY url
       ORDER BY total_agentic_requests DESC
     `;
 
-    return createUnloadQuery(selectQuery, 'urlTraffic', hourToProcess, s3Config);
+    return createUnloadQuery(selectQuery, 'reqCountByUrlWithLLMProvider', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */
