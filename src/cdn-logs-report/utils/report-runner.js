@@ -132,7 +132,7 @@ export async function runReport(
     periodEnd = parsed.endDate;
   } else {
     // For Monday audit jobs, get previous week (Monday to Sunday that just ended)
-    const { weekStart, weekEnd } = getWeekRange(0);
+    const { weekStart, weekEnd } = getWeekRange(-1);
     periodStart = weekStart;
     periodEnd = weekEnd;
   }
