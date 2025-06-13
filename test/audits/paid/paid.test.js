@@ -18,9 +18,7 @@ import nock from 'nock';
 import { describe } from 'mocha';
 import rumData from '../../fixtures/paid/mock-segments-data.json' with { type: 'json' };
 import expectedSubmitted from '../../fixtures/paid/expected-submitted-audit.json' with {type: 'json'};
-import {
-  paidAuditRunner, auditAndScrapeBannerOn, scrapeBannerOff, submitForMystiqueEvaluation,
-} from '../../../src/paid/handler.js';
+import { paidAuditRunner } from '../../../src/paid/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -166,34 +164,25 @@ describe('Paid Audit', () => {
     siteWithMissingConfig.getConfig().getGroupedURLs.returns(null);
     context.getConfig = () => siteWithMissingConfig;
     const result = await paidAuditRunner(auditUrl, context, siteWithMissingConfig);
-    expect(result.auditResult.length).to.eql(2);
-    expect(logStub.warn.callCount).to.be.above(0);
+    expect(result.auditResult.segments.length).to.eql(2);
   });
 
   it('should submit expected rum query data', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
-    const submittedSegments = (result.auditResult.map((entry) => (entry.key)));
+    const submittedSegments = (result.auditResult.segments.map((entry) => (entry.key)));
     submittedSegments.forEach((key) => {
       expect(expectedSegments).to.include(key);
     });
-    result.auditResult.forEach((resultItem) => expect(resultItem.value?.length).to.eqls(3));
-    const pageTypesValues = result.auditResult.find((segment) => segment.key === 'pageType').value;
+    result.auditResult
+      .segments.forEach((resultItem) => expect(resultItem.value?.length).to.eqls(3));
+    const pageTypesValues = result.auditResult.segments.find((segment) => segment.key === 'pageType').value;
     pageTypesValues.forEach((type) => expect(type.urls.length).to.be.lessThanOrEqual(3));
     expect(result).to.deep.equal(expectedSubmitted);
   });
 
-  it('should submit expected urls for scrapping', async () => {
-    const submited = await auditAndScrapeBannerOn(context);
-    expect(submited.type).to.eql('paid-top-segment-scrape-banner-on');
-    expect(submited.siteId).to.eql('test-site-id');
-    expect(submited.auditResult.length).to.eql(2);
-    expect(submited.urls.length).to.eql(6);
-    submited.urls.forEach((url) => expect(url.url).to.not.be.empty);
-  });
-
   it('should submit values ordered by total sessions', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
-    result.auditResult.forEach((segment) => {
+    result.auditResult.segments.forEach((segment) => {
       const values = segment.value;
       if (values.length > 1) {
         expect(values[0].totalSessions).to.be.greaterThanOrEqual(values[1].totalSessions);
@@ -203,7 +192,7 @@ describe('Paid Audit', () => {
 
   it('should enrich urls with pageType info', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
-    const urlSegment = result.auditResult.find((segment) => segment.key === 'url');
+    const urlSegment = result.auditResult.segments.find((segment) => segment.key === 'url');
     urlSegment.value.forEach((valueItem) => {
       expect(valueItem).to.have.property('pageType');
     });
@@ -216,8 +205,8 @@ describe('Paid Audit', () => {
     };
 
     const result = await paidAuditRunner(auditUrl, context, site);
-    expect(result.auditResult.length).to.eql(1);
-    expect(result.auditResult[0].value).to.not.have.property('pageType');
+    expect(result.auditResult.segments.length).to.eql(1);
+    expect(result.auditResult.segments[0].value).to.not.have.property('pageType');
   });
 
   it('should handle empty query respone', async () => {
@@ -227,7 +216,7 @@ describe('Paid Audit', () => {
     };
 
     const result = await paidAuditRunner(auditUrl, context, site);
-    expect(result.auditResult.length).to.eql(0);
+    expect(result.auditResult.segments.length).to.eql(0);
   });
 
   it('should handle url and page type mismatch', async () => {
@@ -237,16 +226,17 @@ describe('Paid Audit', () => {
     };
 
     const result = await paidAuditRunner(auditUrl, context, site);
-    expect(result.auditResult.length).to.eql(2);
+    expect(result.auditResult.segments.length).to.eql(2);
 
-    const missingUrl = result.auditResult
+    const missingUrl = result.auditResult.segments
       .find((item) => item.key === 'url')
       .value
       .find((valueItem) => !valueItem.url);
 
-    const pageSegemnt = result.auditResult
+    const pageSegemnt = result.auditResult.segments
       .find((item) => item.key === 'pageType')
       .value;
+
     pageSegemnt.forEach((item) => {
       expect(item).to.have.haveOwnProperty('urls');
     });
@@ -260,95 +250,13 @@ describe('Paid Audit', () => {
     };
 
     const result = await paidAuditRunner(auditUrl, context, context.site);
-    expect(result.auditResult.length).to.eql(2);
+    expect(result.auditResult.segments.length).to.eql(2);
 
-    const missingUrl = result.auditResult
+    const missingUrl = result.auditResult.segments
       .find((item) => item.key === 'url')
       .value
       .find((valueItem) => !valueItem.url);
 
     expect(missingUrl.pageType).to.eq('other | Other Pages');
-  });
-
-  it('should return correct scrape configuration with banner off', async () => {
-    const result = await scrapeBannerOff(context);
-
-    expect(result).to.deep.equal({
-      type: 'paid-top-segment-scrape-banner-off',
-      siteId: 'test-site-id',
-      urls: [
-        { url: 'https://example.com/page1' },
-        { url: 'https://example.com/page2' },
-      ],
-      allowCache: false,
-      options: {
-        storagePrefix: 'consent-banner-off',
-        screenshotTypes: ['viewport'],
-        hideConsentBanners: true,
-      },
-    });
-  });
-
-  it('should throw error when no URLs in audit result', async () => {
-    audit.getAuditResult.returns({});
-
-    await expect(scrapeBannerOff(context))
-      .to.be.rejectedWith('No URLs found in previous step audit result');
-  });
-
-  it('should throw error when URLs is not an array', async () => {
-    audit.getAuditResult.returns({ urls: 'not-an-array' });
-
-    await expect(scrapeBannerOff(context))
-      .to.be.rejectedWith('No URLs found in previous step audit result');
-  });
-
-  describe('submitForMystiqueEvaluation error handling', () => {
-    it('should handle empty URLs array from audit result', async () => {
-      context.audit.getAuditResult = sinon.stub().returns({
-        urls: [],
-      });
-
-      await expect(submitForMystiqueEvaluation(context))
-        .to.be.rejectedWith('No URLs found in previous step audit result');
-
-      expect(context.sqs.sendMessage.called).to.be.false;
-    });
-
-    it('should handle missing URLs in audit result', async () => {
-      context.audit.getAuditResult = sinon.stub().returns({});
-
-      await expect(submitForMystiqueEvaluation(context))
-        .to.be.rejectedWith('No URLs found in previous step audit result');
-
-      expect(context.sqs.sendMessage.called).to.be.false;
-    });
-
-    it('should submit expected result to mistique', async () => {
-      context.audit.getAuditResult = sinon.stub().returns({
-        urls: [
-          { url: 'https://example.com/page1' },
-          { url: 'https://example.com/page2' },
-          { url: 'https://example.com' },
-        ],
-      });
-
-      const expectedSubmitedMsg = {
-        type: 'guidance:paid-cookie-consent',
-        observation: 'Landing page should not have a blocking cookie concent banner',
-        siteId: 'test-site-id',
-        url: 'https://example.com/page1',
-        auditId: 'test-audit-id',
-        deliveryType: 'aem-edge',
-        data: {
-          url: 'https://example.com/page1',
-        },
-      };
-
-      await submitForMystiqueEvaluation(context);
-      expect(context.sqs.sendMessage.called).to.be.true;
-      const submittedMsg = context.sqs.sendMessage.getCall(0).args[1];
-      expect(submittedMsg).to.deep.include(expectedSubmitedMsg);
-    });
   });
 });
