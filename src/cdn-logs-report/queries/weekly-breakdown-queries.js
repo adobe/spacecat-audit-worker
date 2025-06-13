@@ -32,14 +32,13 @@ const buildWhereClause = (conditions) => {
 };
 
 const buildWeekFilters = (periods, countColumn) => periods.weeks.map((week) => {
-  const year = week.startDate.getUTCFullYear();
-  const month = String(week.startDate.getUTCMonth() + 1).padStart(2, '0');
-  const startDay = String(week.startDate.getUTCDate()).padStart(2, '0');
-  const endDay = String(week.endDate.getUTCDate()).padStart(2, '0');
+  const startDate = week.startDate.toISOString().split('T')[0];
+  const endDate = week.endDate.toISOString().split('T')[0];
   const weekKey = week.weekLabel.replace(' ', '_').toLowerCase();
 
   return `SUM(CASE 
-      WHEN year = '${year}' AND month = '${month}' AND day >= '${startDay}' AND day <= '${endDay}'
+      WHEN CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) >= '${startDate}' 
+       AND CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) <= '${endDate}'
       THEN ${countColumn} ELSE 0 
     END) as ${weekKey}`;
 }).join(',\n      ');
