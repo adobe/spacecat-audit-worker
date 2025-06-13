@@ -44,7 +44,7 @@ const buildWeekFilters = (periods, countColumn) => periods.weeks.map((week) => {
     END) as ${weekKey}`;
 }).join(',\n      ');
 
-function createCountryWeeklyBreakdownQuery(periods, databaseName, provider = null) {
+function createCountryWeeklyBreakdownQuery(periods, databaseName, provider) {
   const countColumn = getCountColumn(provider, 'COUNTRY');
   const weekFilters = buildWeekFilters(periods, countColumn);
   const whereClause = buildWhereClause([buildProviderColumnFilter(provider)]);
@@ -64,7 +64,7 @@ function createCountryWeeklyBreakdownQuery(periods, databaseName, provider = nul
   `;
 }
 
-function createUserAgentWeeklyBreakdownQuery(periods, databaseName, provider = null) {
+function createUserAgentWeeklyBreakdownQuery(periods, databaseName, provider) {
   const whereClause = buildWhereClause([
     buildDateFilter(periods),
     buildAgenticTypeFilter(provider),
@@ -108,7 +108,7 @@ function createUrlStatusWeeklyBreakdownQuery(
   `;
 }
 
-function createUrlUserAgentStatusBreakdownQuery(periods, databaseName, provider = null) {
+function createUrlUserAgentStatusBreakdownQuery(periods, databaseName, provider) {
   const whereClause = buildWhereClause([
     buildDateFilter(periods),
     buildAgenticTypeFilter(provider),
@@ -127,7 +127,7 @@ function createUrlUserAgentStatusBreakdownQuery(periods, databaseName, provider 
   `;
 }
 
-function createTopBottomUrlsByStatusQuery(periods, databaseName, provider = null) {
+function createTopBottomUrlsByStatusQuery(periods, databaseName, provider) {
   const countColumn = getCountColumn(provider, 'URL_STATUS');
   const whereClause = buildWhereClause([
     buildDateFilter(periods),

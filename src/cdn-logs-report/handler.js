@@ -49,15 +49,16 @@ async function runCdnLogsReport(url, context, site) {
     }
 
     log.info(`Running custom date range report: ${startDate} to ${endDate}`);
-    const result = await runCustomDateRangeReport(
+    const result = await runCustomDateRangeReport({
       athenaClient,
-      startDate,
-      endDate,
+      startDateStr: startDate,
+      endDateStr: endDate,
       databaseName,
       s3Config,
       s3Client,
       log,
-    );
+      site,
+    });
 
     return createAuditResult(AUDIT_TYPES.CUSTOM, result, {
       dateRange: { startDate, endDate },
@@ -65,7 +66,14 @@ async function runCdnLogsReport(url, context, site) {
   }
 
   log.info('Running weekly report...');
-  const result = await runWeeklyReport(athenaClient, databaseName, s3Config, s3Client, log);
+  const result = await runWeeklyReport({
+    athenaClient,
+    databaseName,
+    s3Config,
+    s3Client,
+    log,
+    site,
+  });
 
   return createAuditResult(AUDIT_TYPES.WEEKLY, result, {}, url);
 }

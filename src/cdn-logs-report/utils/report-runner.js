@@ -79,8 +79,8 @@ async function collectReportData(
   databaseName,
   s3Config,
   log,
-  provider = null,
-  site = null,
+  provider,
+  site,
 ) {
   const reportData = {};
   const periods = generateReportingPeriods(endDate);
@@ -120,7 +120,7 @@ export async function runReport(
   options = {},
 ) {
   const {
-    startDate, endDate, reportType = 'period', provider = null, site = null,
+    startDate, endDate, reportType = 'period', provider, site,
   } = options;
 
   let periodStart;
@@ -132,7 +132,7 @@ export async function runReport(
     periodEnd = parsed.endDate;
   } else {
     // For Monday audit jobs, get previous week (Monday to Sunday that just ended)
-    const { weekStart, weekEnd } = getWeekRange(-1);
+    const { weekStart, weekEnd } = getWeekRange(0);
     periodStart = weekStart;
     periodEnd = weekEnd;
   }
@@ -206,14 +206,14 @@ export async function runReport(
   }
 }
 
-async function runProviderSpecificReports(
+async function runProviderSpecificReports({
   athenaClient,
   databaseName,
   s3Config,
   s3Client,
   log,
   options = {},
-) {
+}) {
   const providers = SUPPORTED_PROVIDERS;
   const results = [];
 
@@ -246,15 +246,22 @@ async function runProviderSpecificReports(
   return results;
 }
 
-export async function runWeeklyReport(athenaClient, databaseName, s3Config, s3Client, log) {
-  const providerReports = await runProviderSpecificReports(
+export async function runWeeklyReport({
+  athenaClient,
+  databaseName,
+  s3Config,
+  s3Client,
+  log,
+  site,
+}) {
+  const providerReports = await runProviderSpecificReports({
     athenaClient,
     databaseName,
     s3Config,
     s3Client,
     log,
-    { reportType: 'weekly' },
-  );
+    options: { reportType: 'weekly', site },
+  });
 
   return {
     providerReports,
@@ -263,7 +270,7 @@ export async function runWeeklyReport(athenaClient, databaseName, s3Config, s3Cl
   };
 }
 
-export async function runCustomDateRangeReport(
+export async function runCustomDateRangeReport({
   athenaClient,
   startDateStr,
   endDateStr,
@@ -271,19 +278,21 @@ export async function runCustomDateRangeReport(
   s3Config,
   s3Client,
   log,
-) {
-  const providerReports = await runProviderSpecificReports(
+  site,
+}) {
+  const providerReports = await runProviderSpecificReports({
     athenaClient,
     databaseName,
     s3Config,
     s3Client,
     log,
-    {
+    options: {
       startDate: startDateStr,
       endDate: endDateStr,
       reportType: 'custom',
+      site,
     },
-  );
+  });
 
   return {
     providerReports,

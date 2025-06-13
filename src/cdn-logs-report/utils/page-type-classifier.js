@@ -19,7 +19,9 @@ function getPatterns(domain) {
 }
 
 function buildCaseConditions(patterns) {
-  return patterns.map((pattern) => `WHEN url REGEXP '${pattern.pattern}' THEN '${pattern.name}'`).join('\n        ');
+  return patterns
+    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.pattern}') THEN '${pattern.name}'`)
+    .join('\n');
 }
 
 export function generatePageTypeCaseStatement(patterns) {
@@ -29,9 +31,8 @@ export function generatePageTypeCaseStatement(patterns) {
 
   const caseConditions = buildCaseConditions(patterns);
 
-  return `
-    CASE 
-      ${caseConditions}
+  return `CASE
+${caseConditions}
       ELSE 'Uncategorized'
     END`;
 }

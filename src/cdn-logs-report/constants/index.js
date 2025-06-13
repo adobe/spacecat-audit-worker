@@ -135,18 +135,6 @@ export const LOG_MESSAGES = {
 
 export const DEFAULT_PATTERNS = [
   {
-    name: 'Product Detail Page',
-    pattern: '.*/product/.*|.*/p/.*|.*/item/.*',
-  },
-  {
-    name: 'Product Listing Page',
-    pattern: '.*/products.*|.*/category.*|.*/shop.*',
-  },
-  {
-    name: 'Blog Posts',
-    pattern: '.*/blog/.*|.*/article/.*|.*/news/.*',
-  },
-  {
     name: 'Robots',
     pattern: '.*/robots\\.txt$',
   },
@@ -171,14 +159,6 @@ export const DOMAIN_SPECIFIC_PATTERNS = {
       pattern: '.*/the-core/.*',
     },
     {
-      name: 'Sitemap',
-      pattern: '.*sitemap.*',
-    },
-    {
-      name: 'Robots',
-      pattern: '.*robots.*',
-    },
-    {
       name: 'Product Listing Page',
       pattern: '.*/.*',
     },
@@ -188,7 +168,7 @@ export const DOMAIN_SPECIFIC_PATTERNS = {
 
 export const FALLBACK_CASE_STATEMENT = `
   CASE 
-    WHEN url LIKE '%robots.txt%' THEN 'Robots'
+    WHEN url LIKE '%robots%' THEN 'Robots'
     WHEN url LIKE '%sitemap%' THEN 'Sitemap'
     ELSE 'Uncategorized'
   END`;
