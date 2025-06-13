@@ -61,7 +61,6 @@ export function formatWcagRule(wcagRule) {
  *
  * Transforms raw accessibility issue data into a standardized format with:
  * - Formatted WCAG rule information
- * - Priority mapping based on severity
  * - Complete issue metadata for suggestions
  *
  * @param {string} type - The type of accessibility issue (e.g., "color-contrast")
@@ -76,23 +75,12 @@ export function formatIssue(type, issueData, severity) {
   // Format the WCAG rule (e.g., "wcag412" -> "4.1.2 Name, Role, Value")
   const wcagRule = formatWcagRule(rawWcagRule);
 
-  // Map severity levels to priority levels for UI display
-  let priority;
-  if (severity === 'critical') {
-    priority = 'High';
-  } else if (severity === 'serious') {
-    priority = 'Medium';
-  } else {
-    priority = 'Low'; // For moderate, minor, etc.
-  }
-
   return {
     type,
     description: issueData.description || '',
     wcagRule,
     wcagLevel: issueData.level || '', // AA, AAA, etc.
     severity,
-    priority,
     occurrences: issueData.count || 0,
     htmlWithIssues: issueData.htmlWithIssues || [],
     failureSummary: issueData.failureSummary || '',

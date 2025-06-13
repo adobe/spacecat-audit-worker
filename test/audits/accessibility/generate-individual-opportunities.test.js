@@ -138,7 +138,7 @@ describe('formatIssue', () => {
     sandbox.restore();
   });
 
-  it('should format critical severity issues with High priority', () => {
+  it('should format critical severity issues', () => {
     const result = formatIssue('color-contrast', {
       successCriteriaTags: ['wcag412'],
       description: 'Test description',
@@ -154,30 +154,27 @@ describe('formatIssue', () => {
       wcagRule: '4.1.2 Name, Role, Value',
       wcagLevel: 'AA',
       severity: 'critical',
-      priority: 'High',
       occurrences: 5,
       htmlWithIssues: ['<div>test</div>'],
       failureSummary: 'Test summary',
     });
   });
 
-  it('should format serious severity issues with Medium priority', () => {
+  it('should format serious severity issues', () => {
     const result = formatIssue('color-contrast', {
       successCriteriaTags: ['wcag412'],
       description: 'Test description',
     }, 'serious');
 
-    expect(result.priority).to.equal('Medium');
     expect(result.severity).to.equal('serious');
   });
 
-  it('should format other severity issues with Low priority', () => {
+  it('should format moderate severity issues', () => {
     const result = formatIssue('color-contrast', {
       successCriteriaTags: ['wcag412'],
       description: 'Test description',
     }, 'moderate');
 
-    expect(result.priority).to.equal('Low');
     expect(result.severity).to.equal('moderate');
   });
 
