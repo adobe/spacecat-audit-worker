@@ -113,6 +113,8 @@ export class StepAudit extends BaseAudit {
       let response = ok();
 
       if (!hasNext) {
+        log.info(`Processing audit result for step ${stepName}`);
+        log.info(`Step result: ${JSON.stringify(stepResult)}`);
         response = await this.processAuditResult(
           stepResult,
           {
