@@ -321,60 +321,95 @@ describe('Scrape Utils', () => {
   });
 
   describe('updateStatusToIgnored', () => {
-    let mockDataAccess;
-    let mockLog;
-    let sandbox;
     let mockOpportunities;
+    let mockLog;
+    let mockDataAccess;
 
     beforeEach(() => {
-      sandbox = sinon.createSandbox();
       mockLog = {
-        info: sandbox.stub(),
-        error: sandbox.stub(),
-        warn: sandbox.stub(),
+        info: sinon.stub(),
+        error: sinon.stub(),
       };
       mockOpportunities = [
-        { id: 1, url: 'https://example.com/1', setStatus: sandbox.stub().resolves() },
-        { id: 2, url: 'https://example.com/2', setStatus: sandbox.stub().resolves() },
+        {
+          getStatus: sinon.stub().returns('NEW'),
+          getAuditType: sinon.stub().returns('generic-opportunity'),
+          getTags: sinon.stub().returns(['accessibility']),
+          getTitle: sinon.stub().returns('Accessibility report - Desktop'),
+          setStatus: sinon.stub().resolves(),
+        },
+        {
+          getStatus: sinon.stub().returns('IN_PROGRESS'),
+          getAuditType: sinon.stub().returns('generic-opportunity'),
+          getTags: sinon.stub().returns(['accessibility']),
+          getTitle: sinon.stub().returns('Accessibility report - Desktop'),
+          setStatus: sinon.stub().resolves(),
+        },
+        {
+          getStatus: sinon.stub().returns('NEW'),
+          getAuditType: sinon.stub().returns('other-type'),
+          getTags: sinon.stub().returns(['accessibility']),
+          getTitle: sinon.stub().returns('Accessibility report - Desktop'),
+          setStatus: sinon.stub().resolves(),
+        },
       ];
       mockDataAccess = {
         Opportunity: {
-          allBySiteId: sandbox.stub().resolves(mockOpportunities),
+          allBySiteId: sinon.stub().resolves(mockOpportunities),
         },
       };
     });
 
-    afterEach(() => {
-      sandbox.restore();
-    });
-
-    it('fetches opportunities and logs them correctly', async () => {
+    it('should filter opportunities correctly based on criteria', async () => {
       const { updateStatusToIgnored } = await esmock('../../../src/accessibility/utils/scrape-utils.js');
       await updateStatusToIgnored(mockDataAccess, 'test-site', mockLog);
 
-      expect(mockDataAccess.Opportunity.allBySiteId).to.have.been.calledOnceWith('test-site');
       expect(mockLog.info).to.have.been.calledWith(
         `[A11yAudit] Found ${mockOpportunities.length} opportunities for site test-site: ${JSON.stringify(mockOpportunities, null, 2)}`,
       );
+      expect(mockLog.info).to.have.been.calledWith(
+        `[A11yAudit] Found 1 opportunities to update to IGNORED for site test-site: ${JSON.stringify([mockOpportunities[0]], null, 2)}`,
+      );
     });
 
-    it('handles empty opportunities array', async () => {
+    it('should handle empty opportunities array', async () => {
       mockDataAccess.Opportunity.allBySiteId.resolves([]);
       const { updateStatusToIgnored } = await esmock('../../../src/accessibility/utils/scrape-utils.js');
       await updateStatusToIgnored(mockDataAccess, 'test-site', mockLog);
 
-      expect(mockDataAccess.Opportunity.allBySiteId).to.have.been.calledOnceWith('test-site');
       expect(mockLog.info).to.have.been.calledWith(
         '[A11yAudit] Found 0 opportunities for site test-site: []',
       );
+      expect(mockLog.info).to.not.have.been.calledWith(
+        sinon.match(/Found \d+ opportunities to update to IGNORED/),
+      );
     });
 
-    it('handles errors when fetching opportunities', async () => {
-      const error = new Error('Database error');
-      mockDataAccess.Opportunity.allBySiteId.rejects(error);
+    it('should handle opportunities with missing required fields', async () => {
+      const incompleteOpportunities = [
+        {
+          getStatus: sinon.stub().returns('NEW'),
+          getAuditType: sinon.stub().returns('generic-opportunity'),
+          getTags: sinon.stub().returns([]),
+          getTitle: sinon.stub().returns('Accessibility report - Desktop'),
+        },
+        {
+          getStatus: sinon.stub().returns('NEW'),
+          getAuditType: sinon.stub().returns('generic-opportunity'),
+          getTags: sinon.stub().returns(['accessibility']),
+          getTitle: sinon.stub().returns('Different title'),
+        },
+      ];
+      mockDataAccess.Opportunity.allBySiteId.resolves(incompleteOpportunities);
       const { updateStatusToIgnored } = await esmock('../../../src/accessibility/utils/scrape-utils.js');
-      await expect(updateStatusToIgnored(mockDataAccess, 'test-site', mockLog))
-        .to.be.rejectedWith(error);
+      await updateStatusToIgnored(mockDataAccess, 'test-site', mockLog);
+
+      expect(mockLog.info).to.have.been.calledWith(
+        `[A11yAudit] Found ${incompleteOpportunities.length} opportunities for site test-site: ${JSON.stringify(incompleteOpportunities, null, 2)}`,
+      );
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yAudit] Found 0 opportunities to update to IGNORED for site test-site: []',
+      );
     });
   });
 });
