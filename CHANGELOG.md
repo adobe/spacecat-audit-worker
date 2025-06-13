@@ -1,3 +1,10 @@
+# [1.102.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.101.2...v1.102.0) (2025-06-13)
+
+
+### Features
+
+* a11y assistive opportunity (SITES-31943) ([#907](https://github.com/adobe/spacecat-audit-worker/issues/907)) ([4142e06](https://github.com/adobe/spacecat-audit-worker/commit/4142e06ae15e77aa5c8c8bd31d81b4465d2eca15))
+
 ## [1.101.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.101.1...v1.101.2) (2025-06-13)
 
 
