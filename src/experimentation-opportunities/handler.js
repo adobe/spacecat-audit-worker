@@ -121,9 +121,7 @@ export async function runAuditAndScrapeStep(context) {
     type: 'experimentation-opportunities',
     processingType: 'default',
     jobId: site.getId(),
-    urls: getHighOrganicLowCtrOpportunityUrls(
-      result.auditResult?.experimentationOpportunities,
-    ).map((url) => ({ url })),
+    urls: [],
     siteId: site.getId(),
   };
 }
@@ -156,7 +154,7 @@ export function importAllTrafficStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('runAuditAndScrapeStep', runAuditAndScrapeStep)
+  .addStep('runAuditAndScrapeStep', runAuditAndScrapeStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('organicKeywordsStep', organicKeywordsStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('importAllTrafficStep', importAllTrafficStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('generateOpportunityAndSuggestions', generateOpportunityAndSuggestions)
