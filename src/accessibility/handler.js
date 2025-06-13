@@ -80,7 +80,7 @@ export async function scrapeAccessibilityData(context) {
 // Second step: gets data from the first step and processes it to create new opportunities
 export async function processAccessibilityOpportunities(context) {
   const {
-    site, log, s3Client, env, dataAccess,
+    site, log, s3Client, env,
   } = context;
   const siteId = site.getId();
   const version = new Date().toISOString().split('T')[0];
@@ -127,7 +127,7 @@ export async function processAccessibilityOpportunities(context) {
   }
 
   // change status to IGNORED for older opportunities
-  await updateStatusToIgnored(dataAccess, siteId);
+  // await updateStatusToIgnored(dataAccess, siteId);
 
   try {
     await generateReportOpportunities(
