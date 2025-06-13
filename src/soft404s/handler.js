@@ -294,6 +294,7 @@ export async function soft404sAuditRunner(context) {
         success: true,
       },
       fullAuditRef: baseURL,
+      status: 'complete',
     };
   } catch (error) {
     return {
@@ -302,6 +303,7 @@ export async function soft404sAuditRunner(context) {
         error: `Audit failed with error: ${error.message}`,
         success: false,
       },
+      status: 'complete',
     };
   }
 }
