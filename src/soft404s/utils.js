@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import { load } from 'cheerio';
 import { SOFT_404_INDICATORS } from './constants.js';
 
 export const extractTextAndCountWords = (html) => {
@@ -16,16 +17,19 @@ export const extractTextAndCountWords = (html) => {
     return { textContent: '', wordCount: 0 };
   }
 
-  // Remove script and style elements
+  // Remove script and style elements using regex (before parsing)
   const cleanHtml = html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
 
-  // Extract text content by removing HTML tags
-  const textContent = cleanHtml
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  // Use cheerio to parse and manipulate DOM
+  const $ = load(cleanHtml);
+
+  // Remove nav, header, footer, and ad-related elements
+  $('nav, header, footer, [class*="ad" i], [id*="ad" i]').remove();
+
+  // Extract text content from the remaining DOM
+  const textContent = $.root().text().replace(/\s+/g, ' ').trim();
 
   // Count words (split by whitespace and filter out empty strings)
   const words = textContent.split(/\s+/).filter((word) => word.length > 0);

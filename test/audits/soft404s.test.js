@@ -689,4 +689,116 @@ describe('Soft404s Tests', () => {
       expect(Object.keys(result)).to.have.lengthOf(0);
     });
   });
+
+  describe('extractTextAndCountWords', () => {
+    let extractTextAndCountWords;
+
+    beforeEach(async () => {
+      const utils = await import('../../src/soft404s/utils.js');
+      extractTextAndCountWords = utils.extractTextAndCountWords;
+    });
+
+    it('should handle invalid HTML input in extractTextAndCountWords', async () => {
+      let result = extractTextAndCountWords(null);
+      expect(result).to.deep.equal({ textContent: '', wordCount: 0 });
+
+      result = extractTextAndCountWords(undefined);
+      expect(result).to.deep.equal({ textContent: '', wordCount: 0 });
+
+      result = extractTextAndCountWords(123);
+      expect(result).to.deep.equal({ textContent: '', wordCount: 0 });
+
+      result = extractTextAndCountWords('');
+      expect(result).to.deep.equal({ textContent: '', wordCount: 0 });
+    });
+
+    it('should exclude navigation content from word count', () => {
+      const html = `
+        <nav>
+          <ul>
+            <li>Home</li>
+            <li>About</li>
+            <li>Contact</li>
+          </ul>
+        </nav>
+        <main>
+          <p>This is the main content</p>
+          <p>With multiple paragraphs</p>
+        </main>
+      `;
+      const result = extractTextAndCountWords(html);
+      expect(result.wordCount).to.equal(8); // Only counts words from main content
+      expect(result.textContent).to.not.include('Home');
+      expect(result.textContent).to.not.include('About');
+      expect(result.textContent).to.not.include('Contact');
+    });
+
+    it('should exclude header and footer content from word count', () => {
+      const html = `
+        <header>
+          <h1>Welcome to our site</h1>
+          <p>Header content</p>
+        </header>
+        <main>
+          <p>Main content here</p>
+        </main>
+        <footer>
+          <p>Copyright 2024</p>
+          <p>Footer links</p>
+        </footer>
+      `;
+      const result = extractTextAndCountWords(html);
+      expect(result.wordCount).to.equal(3); // Only counts words from main content
+      expect(result.textContent).to.not.include('Welcome');
+      expect(result.textContent).to.not.include('Copyright');
+      expect(result.textContent).to.not.include('Footer');
+    });
+
+    it('should exclude ad content from word count', () => {
+      const html = `
+        <div class="ad-container">
+          <p>Buy our products</p>
+          <p>Special offer</p>
+        </div>
+        <div id="sidebar-ad">
+          <p>Advertisement</p>
+        </div>
+        <main>
+          <p>Actual content here</p>
+        </main>
+      `;
+      const result = extractTextAndCountWords(html);
+      expect(result.wordCount).to.equal(3); // Only counts words from main content
+      expect(result.textContent).to.not.include('Buy');
+      expect(result.textContent).to.not.include('Advertisement');
+      expect(result.textContent).to.not.include('Special');
+    });
+
+    it('should handle nested elements correctly', () => {
+      const html = `
+        <header>
+          <nav>
+            <ul>
+              <li>Menu item</li>
+            </ul>
+          </nav>
+        </header>
+        <main>
+          <p>Main content</p>
+          <div class="ad-container">
+            <p>Ad content</p>
+          </div>
+          <p>More content</p>
+        </main>
+        <footer>
+          <p>Footer text</p>
+        </footer>
+      `;
+      const result = extractTextAndCountWords(html);
+      expect(result.wordCount).to.equal(4); // Only counts "Main content More content"
+      expect(result.textContent).to.not.include('Menu');
+      expect(result.textContent).to.not.include('Ad');
+      expect(result.textContent).to.not.include('Footer');
+    });
+  });
 });
