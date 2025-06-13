@@ -13,8 +13,13 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
+import {
+  getExistingObjectKeysFromFailedAudits,
+  getRemainingUrls,
+  getExistingUrlsFromFailedAudits,
+  updateStatusToIgnored,
+} from './utils/scrape-utils.js';
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
-import { getExistingObjectKeysFromFailedAudits, getRemainingUrls, getExistingUrlsFromFailedAudits } from './utils/scrape-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
@@ -74,7 +79,7 @@ export async function scrapeAccessibilityData(context) {
 // Second step: gets data from the first step and processes it to create new opportunities
 export async function processAccessibilityOpportunities(context) {
   const {
-    site, log, s3Client, env,
+    site, log, s3Client, env, dataAccess,
   } = context;
   const siteId = site.getId();
   const version = new Date().toISOString().split('T')[0];
@@ -119,6 +124,9 @@ export async function processAccessibilityOpportunities(context) {
       error: error.message,
     };
   }
+
+  // change status to IGNORED for older opportunities
+  await updateStatusToIgnored(dataAccess, siteId, log);
 
   try {
     await generateReportOpportunities(
