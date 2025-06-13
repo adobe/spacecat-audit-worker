@@ -13,7 +13,12 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
-import { getExistingObjectKeysFromFailedAudits, getRemainingUrls, getExistingUrlsFromFailedAudits } from './utils/scrape-utils.js';
+import {
+  getExistingObjectKeysFromFailedAudits,
+  getRemainingUrls,
+  getExistingUrlsFromFailedAudits,
+  updateStatusToIgnored,
+} from './utils/scrape-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
@@ -21,7 +26,7 @@ const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined aud
 // First step: sends a message to the content scraper to generate accessibility audits
 export async function scrapeAccessibilityData(context) {
   const {
-    site, log, finalUrl, env, s3Client,
+    site, log, finalUrl, env, s3Client, dataAccess,
   } = context;
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -34,6 +39,8 @@ export async function scrapeAccessibilityData(context) {
     };
   }
   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
+
+  await updateStatusToIgnored(dataAccess, siteId, log);
 
   const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
   const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
@@ -73,7 +80,7 @@ export async function scrapeAccessibilityData(context) {
 // Second step: gets data from the first step and processes it to create new opportunities
 export async function processAccessibilityOpportunities(context) {
   const {
-    site, log, s3Client, env,
+    site, log, s3Client, env, dataAccess,
   } = context;
   const siteId = site.getId();
   const version = new Date().toISOString().split('T')[0];
@@ -118,6 +125,9 @@ export async function processAccessibilityOpportunities(context) {
       error: error.message,
     };
   }
+
+  // change status to IGNORED for older opportunities
+  await updateStatusToIgnored(dataAccess, siteId);
 
   try {
     await generateReportOpportunities(

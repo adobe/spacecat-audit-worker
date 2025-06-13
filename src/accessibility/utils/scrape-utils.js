@@ -96,3 +96,10 @@ export function getRemainingUrls(urlsToScrape, existingUrls) {
   const existingUrlSet = new Set(existingUrls);
   return urlsToScrape.filter((item) => !existingUrlSet.has(item.url));
 }
+
+export async function updateStatusToIgnored(dataAccess, siteId, log) {
+  const { Opportunity } = dataAccess;
+  const opportunities = await Opportunity.allBySiteId(siteId);
+  log.info(`[A11yAudit] Found ${opportunities.length} opportunities for site ${siteId}: ${JSON.stringify(opportunities, null, 2)}`);
+  // await Promise.all(opportunities.map((oppty) => oppty.setStatus('IGNORED')));
+}
