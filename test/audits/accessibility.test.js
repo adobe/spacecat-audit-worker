@@ -32,6 +32,8 @@ describe('Accessibility Audit Handler', () => {
   let aggregateAccessibilityDataStub;
   let generateReportOpportunitiesStub;
   let createAccessibilityIndividualOpportunitiesStub;
+  let getExistingObjectKeysFromFailedAuditsStub;
+  let getExistingUrlsFromFailedAuditsStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -63,6 +65,8 @@ describe('Accessibility Audit Handler', () => {
     aggregateAccessibilityDataStub = sandbox.stub();
     generateReportOpportunitiesStub = sandbox.stub();
     createAccessibilityIndividualOpportunitiesStub = sandbox.stub();
+    getExistingObjectKeysFromFailedAuditsStub = sandbox.stub().resolves([]);
+    getExistingUrlsFromFailedAuditsStub = sandbox.stub().resolves([]);
 
     const accessibilityModule = await esmock('../../src/accessibility/handler.js', {
       '../../src/accessibility/utils/data-processing.js': {
@@ -72,6 +76,9 @@ describe('Accessibility Audit Handler', () => {
       },
       '../../src/accessibility/utils/generate-individual-opportunities.js': {
         createAccessibilityIndividualOpportunities: createAccessibilityIndividualOpportunitiesStub,
+      '../../src/accessibility/utils/scrape-utils.js': {
+        getExistingObjectKeysFromFailedAudits: getExistingObjectKeysFromFailedAuditsStub,
+        getExistingUrlsFromFailedAudits: getExistingUrlsFromFailedAuditsStub,
       },
     });
 
@@ -102,6 +109,15 @@ describe('Accessibility Audit Handler', () => {
         'test-site-id',
         mockContext.log,
       );
+
+      expect(getExistingObjectKeysFromFailedAuditsStub).to.have.been.calledOnceWith(
+        mockS3Client,
+        'test-bucket',
+        'test-site-id',
+        mockContext.log,
+      );
+
+      expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledOnce;
 
       expect(mockContext.log.info).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for accessibility audit for https://example.com with siteId test-site-id',
@@ -271,6 +287,34 @@ describe('Accessibility Audit Handler', () => {
       // Act & Assert
       await expect(scrapeAccessibilityData(mockContext))
         .to.be.rejectedWith('Invalid input parameters');
+    });
+
+    it('filters out urls that have existing failed audits', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1' },
+        { url: 'https://example.com/page2' },
+        { url: 'https://example.com/page3' },
+      ];
+      const mockObjectKeys = ['key1', 'key2'];
+      const existingUrls = ['https://example.com/page1', 'https://example.com/page2'];
+
+      getUrlsForAuditStub.resolves(mockUrls);
+      getExistingObjectKeysFromFailedAuditsStub.resolves(mockObjectKeys);
+      getExistingUrlsFromFailedAuditsStub.resolves(existingUrls);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledWith(
+        mockS3Client,
+        'test-bucket',
+        mockContext.log,
+        mockObjectKeys,
+      );
+
+      expect(result.urls).to.deep.equal([{ url: 'https://example.com/page3' }]);
     });
   });
 
