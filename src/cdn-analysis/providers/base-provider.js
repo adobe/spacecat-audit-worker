@@ -15,7 +15,7 @@ import { getHourlyPartitionFilter } from '../queries/query-helpers.js';
 import { buildDetectionClause } from './agentic-patterns.js';
 
 export class BaseProvider {
-  static s3BucketPrefix = 'cdn_logs_';
+  static dbPrefix = 'cdn_logs_';
 
   static rawTableNamePrefix = 'raw_logs_';
 
@@ -57,7 +57,7 @@ export class BaseProvider {
       getAthenaTempLocation: this.getAthenaTempLocation,
     };
 
-    this.databaseName = `${BaseProvider.s3BucketPrefix}${this.customerDomain}`;
+    this.databaseName = `${BaseProvider.dbPrefix}${this.customerDomain}`;
     this.rawTableName = `${this.constructor.rawTableNamePrefix}${this.customerDomain}`;
     this.filteredTableName = `${this.constructor.filteredTableNamePrefix}${this.customerDomain}`;
 
@@ -75,9 +75,6 @@ export class BaseProvider {
   }
 
   static getRawLogsBucket(environment, customerDomain) {
-    if (environment === 'dev') {
-      return 'elmo-fastly-wknd-site-cdn-logs';
-    }
     const bucketCustomer = customerDomain.replace(/[._]/g, '-');
     return `cdn-logs-${bucketCustomer}`;
   }
