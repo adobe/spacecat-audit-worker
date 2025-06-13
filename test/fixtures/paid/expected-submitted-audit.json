@@ -1,46 +1,102 @@
 {
-    "auditResult": [
-        {
-            "key": "url",
-            "value": [
-                {
-                    "ctr": 0.3435114503816794,
-                    "clickedSessions": 900,
-                    "totalSessions": 2620,
-                    "sessionsWithEnter": 2000,
-                    "clicksOverViews": 0.3435114503816794,
-                    "bounceRate": 0.6564885496183206,
-                    "totalNumClicks": 1000,
-                    "avgClicksPerSession": 1.1111111111111112,
-                    "url": "https://www.aem.live/home",
-                    "pageType": "other | Other Pages"
-                },
-                {
-                    "ctr": 0.2,
-                    "clickedSessions": 400,
-                    "totalSessions": 2000,
-                    "sessionsWithEnter": 100,
-                    "clicksOverViews": 0.2,
-                    "bounceRate": 0.8,
-                    "totalNumClicks": 900,
-                    "avgClicksPerSession": 2.25,
-                    "url": "https://www.aem.live/developer/block-collection",
-                    "pageType": "other | Other Pages"
-                },
-                {
-                    "ctr": 0.31413612565445026,
-                    "clickedSessions": 600,
-                    "totalSessions": 1910,
-                    "sessionsWithEnter": 602,
-                    "clicksOverViews": 0.31413612565445026,
-                    "bounceRate": 0.6858638743455497,
-                    "totalNumClicks": 700,
-                    "avgClicksPerSession": 1.1666666666666667,
-                    "url": "https://www.aem.live/docs/",
-                    "pageType": "other | Other Pages"
-                }
-            ]
-        }
-    ],
+    "auditResult": {
+        "segments": [
+            {
+                "key": "url",
+                "value": [
+                    {
+                        "ctr": 0.3435114503816794,
+                        "clickedSessions": 900,
+                        "totalSessions": 2620,
+                        "sessionsWithEnter": 2000,
+                        "clicksOverViews": 0.3435114503816794,
+                        "bounceRate": 0.6564885496183206,
+                        "totalNumClicks": 1000,
+                        "avgClicksPerSession": 1.1111111111111112,
+                        "url": "https://www.aem.live/home",
+                        "pageType": "Homepage"
+                    },
+                    {
+                        "ctr": 0.2,
+                        "clickedSessions": 400,
+                        "totalSessions": 2000,
+                        "sessionsWithEnter": 100,
+                        "clicksOverViews": 0.2,
+                        "bounceRate": 0.8,
+                        "totalNumClicks": 900,
+                        "avgClicksPerSession": 2.25,
+                        "url": "https://www.aem.live/developer/block-collection",
+                        "pageType": "Developer"
+                    },
+                    {
+                        "ctr": 0.31413612565445026,
+                        "clickedSessions": 600,
+                        "totalSessions": 1910,
+                        "sessionsWithEnter": 602,
+                        "clicksOverViews": 0.31413612565445026,
+                        "bounceRate": 0.6858638743455497,
+                        "totalNumClicks": 700,
+                        "avgClicksPerSession": 1.1666666666666667,
+                        "url": "https://www.aem.live/docs/",
+                        "pageType": "Documentation"
+                    }
+                ]
+            },
+            {
+                "key": "pageType",
+                "value": [
+                    {
+                        "ctr": 0.2027468663384768,
+                        "clickedSessions": 4901,
+                        "totalSessions": 24173,
+                        "sessionsWithEnter": 5603,
+                        "clicksOverViews": 0.2027468663384768,
+                        "bounceRate": 0.7972531336615232,
+                        "totalNumClicks": 11003,
+                        "avgClicksPerSession": 2.2450520301979187,
+                        "type": "Tools",
+                        "urls": [
+                            "https://www.aem.live/tools/rum/explorer.html"
+                        ]
+                    },
+                    {
+                        "ctr": 0.2027468663384768,
+                        "clickedSessions": 4901,
+                        "totalSessions": 24173,
+                        "sessionsWithEnter": 5603,
+                        "clicksOverViews": 0.2027468663384768,
+                        "bounceRate": 0.7972531336615232,
+                        "totalNumClicks": 11003,
+                        "avgClicksPerSession": 2.2450520301979187,
+                        "type": "Documentation",
+                        "urls": [
+                            "https://www.aem.live/docs/",
+                            "https://www.aem.live/docs/custom-headers",
+                            "https://www.aem.live/docs/dev-collab-and-good-practices"
+                        ]
+                    },
+                    {
+                        "ctr": 0.2027468663384768,
+                        "clickedSessions": 4901,
+                        "totalSessions": 24173,
+                        "sessionsWithEnter": 5603,
+                        "clicksOverViews": 0.2027468663384768,
+                        "bounceRate": 0.7972531336615232,
+                        "totalNumClicks": 11003,
+                        "avgClicksPerSession": 2.2450520301979187,
+                        "type": "Homepage",
+                        "urls": [
+                            "https://www.aem.live/home"
+                        ]
+                    }
+                ]
+            }
+        ],
+        "urls": [
+            "https://www.aem.live/home",
+            "https://www.aem.live/developer/block-collection",
+            "https://www.aem.live/docs/"
+        ]
+    },
     "fullAuditRef": "www.spacecat.com"
 }
