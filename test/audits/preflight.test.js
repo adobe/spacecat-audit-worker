@@ -48,6 +48,7 @@ describe('Preflight Audit', () => {
           warn: sinon.stub(),
           info: sinon.stub(),
           error: sinon.stub(),
+          debug: sinon.stub(),
         },
       };
     });

@@ -196,8 +196,10 @@ export const preflightAudit = async (context) => {
           href: link.href,
           status: link.status,
         }));
+        log.debug(`[preflight-audit] Found ${JSON.stringify(brokenLinks)} broken internal links`);
         const brokenInternalLinks = await
         generateSuggestionData(baseURL, brokenLinks, context, site);
+        log.debug(`[preflight-audit] Generated suggestions for broken internal links: ${JSON.stringify(brokenInternalLinks)}`);
         brokenInternalLinks.forEach(({
           urlTo, href, status, urlsSuggested, aiRationale,
         }) => {

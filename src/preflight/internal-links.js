@@ -64,8 +64,9 @@ export async function runInternalLinkChecks(urls, scrapedObjects, context, optio
                   Authorization: options.pageAuthToken,
                 },
               });
-              if (res.status === 404) {
-                brokenInternalLinks.push({ urlTo: href, href: pageUrl, status: 404 });
+              if (res.status >= 400) {
+                log.debug(`[preflight-audit] url ${href} returned with status code: %s`, res.status, res.statusText);
+                brokenInternalLinks.push({ urlTo: href, href: pageUrl, status: res.status });
               }
             } catch (err) {
               log.error(`[preflight-audit] Error checking internal link ${href} from ${pageUrl}:`, err.message);
@@ -75,6 +76,7 @@ export async function runInternalLinkChecks(urls, scrapedObjects, context, optio
       }),
   );
 
+  log.debug(`[preflight-audit] Broken internal links found: ${JSON.stringify(brokenInternalLinks)}`);
   return {
     auditResult: {
       brokenInternalLinks,
