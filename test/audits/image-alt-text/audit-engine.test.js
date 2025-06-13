@@ -443,6 +443,91 @@ describe('AuditEngine', () => {
         `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Error processing images for base64 conversion`,
       );
     });
+
+    it('should handle unreachable images and move them to unreachableImages', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.jpg', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image2.jpg', alt: '', shouldShowAsSuggestion: true },
+        ],
+      };
+
+      // Mock fetch to return different responses for each image
+      tracingFetchStub
+        .onFirstCall()
+        .resolves({
+          ok: false,
+          url: 'https://example.com/image1.jpg',
+        })
+        .onSecondCall()
+        .resolves({
+          ok: true,
+          headers: {
+            get: sinon.stub().withArgs('content-type').returns('image/jpeg'),
+          },
+          url: 'https://example.com/image2.jpg',
+        });
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
+
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(1);
+      expect(auditedImages.unreachableImages).to.have.lengthOf(1);
+      expect(auditedImages.unreachableImages[0].src).to.equal('image1.jpg');
+      expect(auditedImages.imagesWithoutAltText[0].src).to.equal('image2.jpg');
+    });
+
+    it('should handle non-image content types after redirects', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.jpg', alt: '', shouldShowAsSuggestion: true },
+        ],
+      };
+
+      // Mock fetch to return a non-image content type after redirect
+      tracingFetchStub.resolves({
+        ok: true,
+        headers: {
+          get: sinon.stub().withArgs('content-type').returns('text/html'),
+        },
+        url: 'https://example.com/redirected-page',
+      });
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
+
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(0);
+      expect(auditedImages.unreachableImages).to.have.lengthOf(1);
+      expect(auditedImages.unreachableImages[0].src).to.equal('image1.jpg');
+      expect(auditedImages.unreachableImages[0].finalUrl).to.equal('https://example.com/redirected-page');
+    });
+
+    it('should handle network errors during reachability check', async () => {
+      const pageUrl = '/test-page';
+      const pageTags = {
+        images: [
+          { src: 'image1.jpg', alt: '', shouldShowAsSuggestion: true },
+        ],
+      };
+
+      // Mock fetch to throw a network error
+      tracingFetchStub.rejects(new Error('Network error'));
+
+      auditEngine.performPageAudit(pageUrl, pageTags);
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
+
+      const auditedImages = auditEngine.getAuditedTags();
+      expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(0);
+      expect(auditedImages.unreachableImages).to.have.lengthOf(1);
+      expect(auditedImages.unreachableImages[0].src).to.equal('image1.jpg');
+      expect(logStub.error).to.have.been.calledWithMatch(
+        `[${AuditModel.AUDIT_TYPES.ALT_TEXT}]: Error checking reachability for image1.jpg:`,
+      );
+    });
   });
 
   describe('Language Detection', () => {

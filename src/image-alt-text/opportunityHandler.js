@@ -161,7 +161,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const opportunityData = {
     ...projectedMetrics,
     decorativeImagesCount: detectedImages.decorativeImagesCount,
-    unreachableImagesCount: detectedImages.unreachableImages?.length || 0,
+    unreachableImagesCount: detectedImages.unreachableImages?.length,
   };
   opportunityData.dataSources = [
     DATA_SOURCES.RUM,
