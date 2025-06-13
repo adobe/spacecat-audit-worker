@@ -138,7 +138,7 @@ describe('Broken internal links audit ', () => {
     );
     expect(context.rumApiClient.query).calledWith('404-internal-links', {
       domain: 'www.example.com',
-      interval: 30,
+      interval: 180,
       granularity: 'hourly',
     });
     expect(result).to.deep.equal({
@@ -147,7 +147,7 @@ describe('Broken internal links audit ', () => {
         fullAuditRef: auditUrl,
         finalUrl: auditUrl,
         auditContext: {
-          interval: 30,
+          interval: 180,
         },
       },
       fullAuditRef: auditUrl,
@@ -180,7 +180,7 @@ describe('Broken internal links audit ', () => {
         fullAuditRef: auditUrl,
         finalUrl: 'www.example.com',
         auditContext: {
-          interval: 30,
+          interval: 180,
         },
       },
       fullAuditRef: auditUrl,
@@ -265,14 +265,14 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       auditResult: {
         brokenInternalLinks: AUDIT_RESULT_DATA,
         auditContext: {
-          interval: 30,
+          interval: 180,
         },
       },
       getAuditResult: () => ({
         brokenInternalLinks: AUDIT_RESULT_DATA,
         success: true,
         auditContext: {
-          interval: 30,
+          interval: 180,
         },
       }),
       fullAuditRef: auditUrl,
