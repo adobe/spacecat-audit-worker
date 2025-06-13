@@ -156,7 +156,7 @@ export function importAllTrafficStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('runAuditAndScrapeStep', runAuditAndScrapeStep, '')
+  .addStep('runAuditAndScrapeStep', runAuditAndScrapeStep)
   .addStep('organicKeywordsStep', organicKeywordsStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('importAllTrafficStep', importAllTrafficStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('generateOpportunityAndSuggestions', generateOpportunityAndSuggestions)
