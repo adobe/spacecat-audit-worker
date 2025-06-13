@@ -398,7 +398,7 @@ export const preflightAudit = async (context) => {
     jobEntity.setError({
       code: 'EXCEPTION',
       message: error.message,
-      details: error.stack ?? null,
+      details: error.stack,
     });
     jobEntity.setEndedAt(new Date().toISOString());
     await jobEntity.save();
