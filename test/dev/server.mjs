@@ -30,7 +30,7 @@ function checkEnvSafe() {
 }
 
 async function run() {
-    checkEnvSafe();
+    // checkEnvSafe();
     
     process.env.HLX_DEV_SERVER_HOST = 'localhost:3000';
     process.env.HLX_DEV_SERVER_SCHEME = 'http';

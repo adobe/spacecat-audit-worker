@@ -16,7 +16,6 @@ import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunitie
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
 import { getExistingObjectKeysFromFailedAudits, getRemainingUrls, getExistingUrlsFromFailedAudits } from './utils/scrape-utils.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
 // First step: sends a message to the content scraper to generate accessibility audits
@@ -169,7 +168,6 @@ export async function processAccessibilityOpportunities(context) {
 
 export default new AuditBuilder()
   // First step: Prepare and send data to CONTENT_SCRAPER
-  .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   // Second step: Process the scraped data to find opportunities
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();

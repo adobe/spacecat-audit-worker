@@ -26,7 +26,7 @@ import {
 } from './helpers.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const INTERVAL = 30; // days
+const INTERVAL = 180; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
@@ -50,7 +50,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     const options = {
       domain: finalUrl,
       interval: INTERVAL,
-      granularity: 'hourly',
+      granularity: 'daily',
     };
 
     // 3. Query for 404 internal links
@@ -237,11 +237,6 @@ export default new AuditBuilder()
     'runAuditAndImportTopPages',
     runAuditAndImportTopPagesStep,
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
-  )
-  .addStep(
-    'prepareScraping',
-    prepareScrapingStep,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
   )
   .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
   .build();

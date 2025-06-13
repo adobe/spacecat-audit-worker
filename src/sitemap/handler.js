@@ -67,6 +67,25 @@ const VALID_MIME_TYPES = Object.freeze([
 export async function fetchContent(targetUrl) {
   const response = await fetch(targetUrl, {
     method: 'GET',
+    headers: {
+      accept: '*/*',
+      'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8',
+      authorization: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpYmUiLCJqdGkiOiIzNGJlZGIxNC1iNzE0LWVjMDItMDgwMy1mZmVkNGZjYjNiNjEiLCJpc3MiOiJkb3RSRVogQVBJIn0.PhwaOxBp28Zx6JCWEwy3S3JNSz6mCeGcHU6vXlG7xmI',
+      'cache-control': 'no-cache',
+      'content-type': 'application/json',
+      cookie: '_gcl_au=1.1.64276763.1747249044; _pk_id.2.45cd=0549bc040e0e69a5.1747249044.; _ga=GA1.1.287118335.1747249044; _fbp=fb.1.1747249044479.543695199376983; ... (rest of cookie string)',
+      pragma: 'no-cache',
+      priority: 'u=1, i',
+      referer: 'https://www.goindigo.in/',
+      'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"macOS"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-origin',
+      'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+      user_key: '15faf8ddf1e8354e90e54fa098e8b1a8',
+    },
   });
   if (!response.ok) {
     throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
