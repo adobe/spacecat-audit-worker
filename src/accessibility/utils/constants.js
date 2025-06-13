@@ -720,10 +720,4 @@ export const accessibilityOpportunitiesMap = {
     'aria-valid-attr-value',
     'aria-required-parent',
   ],
-  'a11y-usability': [
-    'button-name',
-    'aria-input-field-name',
-    'label',
-    'select-name',
-  ],
 };

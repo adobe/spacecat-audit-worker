@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { createAccessibilityAssistiveOpportunity, createAccessibilityUsabilityOpportunity } from './report-oppty.js';
+import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
 import { getAuditData } from './data-processing.js';
@@ -384,7 +384,6 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     // Map opportunity types to their creation functions
     const opportunityCreators = {
       'a11y-assistive': createAccessibilityAssistiveOpportunity,
-      'a11y-usability': createAccessibilityUsabilityOpportunity,
       // Add more opportunity types here as they are created
     };
 

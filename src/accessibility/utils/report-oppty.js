@@ -95,20 +95,3 @@ export function createAccessibilityAssistiveOpportunity() {
     },
   };
 }
-
-export function createAccessibilityUsabilityOpportunity() {
-  return {
-    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
-    origin: 'AUTOMATION',
-    type: 'a11y-usability',
-    title: 'Accessibility - Lack of usability of input elements ',
-    description: 'This report provides a structured overview of all detected accessibility issues across your website, organized by severity and page. Each issue includes WCAG guidelines, impact assessment, and actionable recommendations for improvement.',
-    tags: [
-      'a11y',
-    ],
-    status: 'NEW',
-    data: {
-      dataSources: ['axe-core'],
-    },
-  };
-}

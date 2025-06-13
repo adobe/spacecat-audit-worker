@@ -622,7 +622,6 @@ describe('Canonical URL Tests', () => {
       const html = `<html lang="en"><head><link rel="canonical" href="${baseURL}"><title>test</title></head><body></body></html>`;
 
       const captured1 = {};
-      // eslint-disable-next-line func-names
       nock('http://example.page').get('/page1').reply(function (uri, requestBody) {
         // `this` is the interceptor context
         captured1.uri = uri;
@@ -631,7 +630,6 @@ describe('Canonical URL Tests', () => {
         return [200, html];
       });
       const captured2 = {};
-      // eslint-disable-next-line func-names
       nock(baseURL).get('/').reply(function (uri, requestBody) {
         // `this` is the interceptor context
         captured2.uri = uri;
