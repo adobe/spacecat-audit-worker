@@ -105,23 +105,9 @@ export function getRemainingUrls(urlsToScrape, existingUrls) {
  * @returns {Array} Filtered array of accessibility opportunities
  */
 export function filterAccessibilityOpportunities(opportunities) {
-  return opportunities.filter((oppty) => oppty.getStatus() === 'NEW'
-    && oppty.getType() === 'generic-opportunity'
+  return opportunities.filter((oppty) => oppty.getType() === 'generic-opportunity'
     && oppty.getTags().includes('a11y')
     && oppty.getTitle().includes('Accessibility report - Desktop'));
-}
-
-/**
- * Updates the status of an opportunity and saves it.
- *
- * @param {Object} oppty - The opportunity object
- * @param {string} status - The new status to set
- * @returns {Promise<Object>} The updated opportunity object
- */
-export async function updateStatusAndSave(oppty, status) {
-  oppty.setStatus(status);
-  await oppty.save();
-  return oppty;
 }
 
 /**
@@ -136,7 +122,7 @@ export async function updateStatusAndSave(oppty, status) {
 export async function updateStatusToIgnored(dataAccess, siteId, log) {
   try {
     const { Opportunity } = dataAccess;
-    const opportunities = await Opportunity.allBySiteId(siteId);
+    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
     log.info(`[A11yAudit] Found ${opportunities.length} opportunities for site ${siteId}`);
 
     if (opportunities.length === 0) {
@@ -151,7 +137,11 @@ export async function updateStatusToIgnored(dataAccess, siteId, log) {
     }
 
     const updateResults = await Promise.allSettled(
-      accessibilityOppties.map((oppty) => updateStatusAndSave(oppty, 'IGNORED')),
+      accessibilityOppties.map(async (oppty) => {
+        oppty.setStatus('IGNORED');
+        await oppty.save();
+        return oppty;
+      }),
     );
 
     const successfulUpdates = updateResults.filter((result) => result.status === 'fulfilled').length;

@@ -326,31 +326,26 @@ describe('Scrape Utils', () => {
     it('filters opportunities correctly based on criteria', () => {
       const opportunities = [
         {
-          getStatus: () => 'NEW',
           getType: () => 'generic-opportunity',
           getTags: () => ['a11y'],
           getTitle: () => 'Accessibility report - Desktop',
         },
         {
-          getStatus: () => 'IGNORED',
           getType: () => 'generic-opportunity',
           getTags: () => ['a11y'],
           getTitle: () => 'Accessibility report - Desktop',
         },
         {
-          getStatus: () => 'NEW',
           getType: () => 'other-type',
           getTags: () => ['a11y'],
           getTitle: () => 'Accessibility report - Desktop',
         },
         {
-          getStatus: () => 'NEW',
           getType: () => 'generic-opportunity',
           getTags: () => ['other-tag'],
           getTitle: () => 'Accessibility report - Desktop',
         },
         {
-          getStatus: () => 'NEW',
           getType: () => 'generic-opportunity',
           getTags: () => ['a11y'],
           getTitle: () => 'Other title',
@@ -359,8 +354,7 @@ describe('Scrape Utils', () => {
 
       const filtered = filterAccessibilityOpportunities(opportunities);
 
-      expect(filtered).to.have.lengthOf(1);
-      expect(filtered[0].getStatus()).to.equal('NEW');
+      expect(filtered).to.have.lengthOf(2);
       expect(filtered[0].getType()).to.equal('generic-opportunity');
       expect(filtered[0].getTags()).to.include('a11y');
       expect(filtered[0].getTitle()).to.include('Accessibility report - Desktop');
@@ -369,15 +363,13 @@ describe('Scrape Utils', () => {
     it('returns empty array when no opportunities match criteria', () => {
       const opportunities = [
         {
-          getStatus: () => 'IGNORED',
-          getType: () => 'generic-opportunity',
+          getType: () => 'other-type',
           getTags: () => ['a11y'],
           getTitle: () => 'Accessibility report - Desktop',
         },
         {
-          getStatus: () => 'NEW',
-          getType: () => 'other-type',
-          getTags: () => ['a11y'],
+          getType: () => 'generic-opportunity',
+          getTags: () => ['a11y-other-tag'],
           getTitle: () => 'Accessibility report - Desktop',
         },
       ];
@@ -403,7 +395,6 @@ describe('Scrape Utils', () => {
       };
 
       mockOpportunity = {
-        getStatus: sandbox.stub().returns('NEW'),
         getType: sandbox.stub().returns('generic-opportunity'),
         getTags: sandbox.stub().returns(['a11y']),
         getTitle: sandbox.stub().returns('Accessibility report - Desktop'),
@@ -414,7 +405,7 @@ describe('Scrape Utils', () => {
       mockOpportunities = [mockOpportunity];
       mockDataAccess = {
         Opportunity: {
-          allBySiteId: sandbox.stub().resolves(mockOpportunities),
+          allBySiteIdAndStatus: sandbox.stub().resolves(mockOpportunities),
         },
       };
     });
@@ -438,7 +429,7 @@ describe('Scrape Utils', () => {
     });
 
     it('handles case when no opportunities are found', async () => {
-      mockDataAccess.Opportunity.allBySiteId.resolves([]);
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
 
       expect(result).to.deep.equal({
@@ -450,15 +441,24 @@ describe('Scrape Utils', () => {
     });
 
     it('handles case when no accessibility opportunities match criteria', async () => {
-      mockOpportunity.getStatus.returns('IGNORED');
+      // Create a mock opportunity that doesn't match the filtering criteria
+      const nonMatchingOpportunity = {
+        getType: sandbox.stub().returns('other-type'), // Different type
+        getTags: sandbox.stub().returns(['a11y']),
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop'),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([nonMatchingOpportunity]);
       const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
 
       expect(result).to.deep.equal({
         success: true,
         updatedCount: 0,
       });
-      expect(mockOpportunity.setStatus).to.not.have.been.called;
-      expect(mockOpportunity.save).to.not.have.been.called;
+      expect(nonMatchingOpportunity.setStatus).to.not.have.been.called;
+      expect(nonMatchingOpportunity.save).to.not.have.been.called;
     });
 
     it('handles errors during opportunity update', async () => {
@@ -476,7 +476,7 @@ describe('Scrape Utils', () => {
     });
 
     it('handles errors during opportunity fetch', async () => {
-      mockDataAccess.Opportunity.allBySiteId.rejects(new Error('Fetch failed'));
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('Fetch failed'));
       const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
 
       expect(result).to.deep.equal({

@@ -58,7 +58,7 @@ describe('Accessibility Audit Handler', () => {
         },
         dataAccess: {
           Opportunity: {
-            allBySiteId: sandbox.stub().resolves([]),
+            allBySiteIdAndStatus: sandbox.stub().resolves([]),
           },
         },
       })
