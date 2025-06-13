@@ -20,7 +20,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
 
 const DAILY_THRESHOLD = 1000;
-const INTERVAL = 7; // days
+const INTERVAL = 120; // days
 const auditType = Audit.AUDIT_TYPES.CWV;
 
 export async function CWVRunner(auditUrl, context, site) {
@@ -29,7 +29,7 @@ export async function CWVRunner(auditUrl, context, site) {
   const options = {
     domain: auditUrl,
     interval: INTERVAL,
-    granularity: 'hourly',
+    granularity: 'daily',
     groupedURLs,
   };
   const cwvData = await rumAPIClient.query(auditType, options);

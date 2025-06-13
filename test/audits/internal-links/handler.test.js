@@ -139,7 +139,7 @@ describe('Broken internal links audit ', () => {
     expect(context.rumApiClient.query).calledWith('404-internal-links', {
       domain: 'www.example.com',
       interval: 180,
-      granularity: 'hourly',
+      granularity: 'daily',
     });
     expect(result).to.deep.equal({
       auditResult: {
