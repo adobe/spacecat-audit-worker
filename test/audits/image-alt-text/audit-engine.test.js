@@ -43,6 +43,7 @@ describe('AuditEngine', () => {
       expect(auditedImages).to.deep.equal({
         imagesWithoutAltText: [],
         decorativeImagesCount: 0,
+        unreachableImages: [],
       });
     });
   });
@@ -248,8 +249,17 @@ describe('AuditEngine', () => {
         ],
       };
 
+      // Mock successful fetch responses for reachability checks
+      tracingFetchStub.resolves({
+        ok: true,
+        headers: {
+          get: sinon.stub().withArgs('content-type').returns('image/jpeg'),
+        },
+        url: 'https://example.com/image1.jpg',
+      });
+
       auditEngine.performPageAudit(pageUrl, pageTags);
-      await auditEngine.filterImages();
+      await auditEngine.filterImages('https://example.com', tracingFetchStub);
 
       const auditedImages = auditEngine.getAuditedTags();
       expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(3);

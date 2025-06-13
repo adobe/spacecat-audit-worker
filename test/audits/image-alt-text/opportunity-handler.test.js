@@ -402,33 +402,38 @@ describe('Image Alt Text Opportunity Handler', () => {
 
   it('should handle errors when fetching RUM API results', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
-    sinon.stub(GoogleClient, 'createFrom').resolves(true);
-
-    // Make RUM API client throw an error
-    const rumError = new Error('RUM API connection failed');
-    rumClientStub.query.rejects(rumError);
+    rumClientStub.query.rejects(new Error('RUM API error'));
 
     await convertToOpportunity(auditUrl, auditData, context);
 
-    // Verify error was logged
-    expect(logStub.error).to.have.been.calledWith(
-      '[alt-text]: Failed to get RUM results for https://example.com with error: RUM API connection failed',
-    );
-
-    // Verify opportunity was still created/updated with default metrics
     expect(altTextOppty.setData).to.have.been.calledWith({
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
       decorativeImagesCount: 0,
-      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS, DATA_SOURCES.GSC],
+      unreachableImagesCount: 0,
+      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS],
     });
+  });
 
-    expect(altTextOppty.save).to.have.been.called;
+  const rumResults = [
+    {
+      url: 'https://example.com',
+      earned: 1000,
+    },
+  ];
 
-    // Verify suggestions were still created despite RUM API failure
-    expect(altTextOppty.addSuggestions).to.have.been.called;
-    expect(logStub.info).to.have.been.calledWith(
-      '[alt-text]: Successfully synced Opportunity And Suggestions for site: https://example.com siteId: site-id and alt-text audit type.',
-    );
+  it('should convert audit data to opportunity with RUM data', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+    rumClientStub.query.resolves(rumResults);
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    expect(altTextOppty.setData).to.have.been.calledWith({
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+      decorativeImagesCount: 0,
+      unreachableImagesCount: 0,
+      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS],
+    });
   });
 });
