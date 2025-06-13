@@ -333,21 +333,21 @@ describe('Scrape Utils', () => {
       mockOpportunities = [
         {
           getStatus: sinon.stub().returns('NEW'),
-          getAuditType: sinon.stub().returns('generic-opportunity'),
+          getType: sinon.stub().returns('generic-opportunity'),
           getTags: sinon.stub().returns(['accessibility']),
           getTitle: sinon.stub().returns('Accessibility report - Desktop'),
           setStatus: sinon.stub().resolves(),
         },
         {
           getStatus: sinon.stub().returns('IN_PROGRESS'),
-          getAuditType: sinon.stub().returns('generic-opportunity'),
+          getType: sinon.stub().returns('generic-opportunity'),
           getTags: sinon.stub().returns(['accessibility']),
           getTitle: sinon.stub().returns('Accessibility report - Desktop'),
           setStatus: sinon.stub().resolves(),
         },
         {
           getStatus: sinon.stub().returns('NEW'),
-          getAuditType: sinon.stub().returns('other-type'),
+          getType: sinon.stub().returns('other-type'),
           getTags: sinon.stub().returns(['accessibility']),
           getTitle: sinon.stub().returns('Accessibility report - Desktop'),
           setStatus: sinon.stub().resolves(),
@@ -389,13 +389,13 @@ describe('Scrape Utils', () => {
       const incompleteOpportunities = [
         {
           getStatus: sinon.stub().returns('NEW'),
-          getAuditType: sinon.stub().returns('generic-opportunity'),
+          getType: sinon.stub().returns('generic-opportunity'),
           getTags: sinon.stub().returns([]),
           getTitle: sinon.stub().returns('Accessibility report - Desktop'),
         },
         {
           getStatus: sinon.stub().returns('NEW'),
-          getAuditType: sinon.stub().returns('generic-opportunity'),
+          getType: sinon.stub().returns('generic-opportunity'),
           getTags: sinon.stub().returns(['accessibility']),
           getTitle: sinon.stub().returns('Different title'),
         },
