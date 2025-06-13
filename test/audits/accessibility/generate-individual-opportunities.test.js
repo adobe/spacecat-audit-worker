@@ -328,7 +328,7 @@ describe('aggregateAccessibilityIssues', () => {
         violations: {
           serious: {
             items: {
-              'button-name': {
+              'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
                 count: 3,
@@ -341,12 +341,12 @@ describe('aggregateAccessibilityIssues', () => {
 
     const result = aggregateAccessibilityIssues(input);
     expect(result.data).to.have.lengthOf(1);
-    expect(result.data[0]['a11y-usability']).to.have.lengthOf(1);
-    expect(result.data[0]['a11y-usability'][0].url).to.equal('https://example.com');
-    expect(result.data[0]['a11y-usability'][0].issues).to.have.lengthOf(1);
-    expect(result.data[0]['a11y-usability'][0].issues[0].type).to.equal('button-name');
-    expect(result.data[0]['a11y-usability'][0].issues[0].severity).to.equal('serious');
-    expect(result.data[0]['a11y-usability'][0].issues[0].occurrences).to.equal(3);
+    expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
+    expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com');
+    expect(result.data[0]['a11y-assistive'][0].issues).to.have.lengthOf(1);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].type).to.equal('aria-hidden-focus');
+    expect(result.data[0]['a11y-assistive'][0].issues[0].severity).to.equal('serious');
+    expect(result.data[0]['a11y-assistive'][0].issues[0].occurrences).to.equal(3);
   });
 
   it('should process both critical and serious violations', () => {
@@ -355,7 +355,7 @@ describe('aggregateAccessibilityIssues', () => {
         violations: {
           critical: {
             items: {
-              'aria-hidden-focus': {
+              'aria-required-parent': {
                 description: 'Critical issue',
                 successCriteriaTags: ['wcag412'],
                 count: 2,
@@ -364,7 +364,7 @@ describe('aggregateAccessibilityIssues', () => {
           },
           serious: {
             items: {
-              'button-name': {
+              'aria-hidden-focus': {
                 description: 'Serious issue',
                 successCriteriaTags: ['wcag412'],
                 count: 1,
@@ -376,17 +376,12 @@ describe('aggregateAccessibilityIssues', () => {
     };
 
     const result = aggregateAccessibilityIssues(input);
-    expect(result.data).to.have.lengthOf(2);
-
-    // Check that both opportunity types are present
-    const assistiveOppty = result.data.find((item) => item['a11y-assistive']);
-    const usabilityOppty = result.data.find((item) => item['a11y-usability']);
-
-    expect(assistiveOppty).to.exist;
-    expect(usabilityOppty).to.exist;
-
-    expect(assistiveOppty['a11y-assistive'][0].issues).to.have.lengthOf(1);
-    expect(usabilityOppty['a11y-usability'][0].issues).to.have.lengthOf(1);
+    expect(result.data).to.have.lengthOf(1);
+    const opportunity = result.data[0];
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(1);
+    expect(opportunity['a11y-assistive'][0].issues).to.have.lengthOf(2);
+    expect(opportunity['a11y-assistive'][0].issues[0].severity).to.equal('critical');
+    expect(opportunity['a11y-assistive'][0].issues[1].severity).to.equal('serious');
   });
 
   it('should handle multiple URLs', () => {
@@ -395,7 +390,7 @@ describe('aggregateAccessibilityIssues', () => {
         violations: {
           critical: {
             items: {
-              'aria-hidden-focus': {
+              'aria-required-parent': {
                 description: 'Page 1 issue',
                 successCriteriaTags: ['wcag412'],
                 count: 2,
@@ -408,7 +403,7 @@ describe('aggregateAccessibilityIssues', () => {
         violations: {
           serious: {
             items: {
-              'button-name': {
+              'aria-hidden-focus': {
                 description: 'Page 2 issue',
                 successCriteriaTags: ['wcag111'],
                 count: 3,
@@ -420,13 +415,11 @@ describe('aggregateAccessibilityIssues', () => {
     };
 
     const result = aggregateAccessibilityIssues(input);
-    expect(result.data).to.have.lengthOf(2);
-
-    const assistiveOppty = result.data.find((item) => item['a11y-assistive']);
-    const usabilityOppty = result.data.find((item) => item['a11y-usability']);
-
-    expect(assistiveOppty['a11y-assistive']).to.have.lengthOf(1);
-    expect(usabilityOppty['a11y-usability']).to.have.lengthOf(1);
+    expect(result.data).to.have.lengthOf(1);
+    const opportunity = result.data[0];
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(2);
+    expect(opportunity['a11y-assistive'][0].url).to.equal('https://example.com/page1');
+    expect(opportunity['a11y-assistive'][1].url).to.equal('https://example.com/page2');
   });
 
   it('should skip URLs with no issues', () => {
