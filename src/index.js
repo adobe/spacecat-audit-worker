@@ -19,6 +19,7 @@ import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-u
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
 import athenaClient from './support/athena-client.js';
+import glueClient from './support/glue-client.js';
 import accessibility from './accessibility/handler.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
@@ -130,5 +131,6 @@ export const main = wrap(run)
   .with(sqs)
   .with(s3Client)
   .with(athenaClient)
+  .with(glueClient)
   .with(secrets, { name: resolveSecretsName })
   .with(helixStatus);
