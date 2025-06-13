@@ -135,6 +135,8 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
     log,
   );
 
+  log.info(`Scraped object keys: ${scrapedObjectKeys}`);
+
   const pageMetadataResults = await Promise.all(
     scrapedObjectKeys
       .filter((key) => pagesSet.has(key))
