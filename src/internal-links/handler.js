@@ -26,7 +26,7 @@ import {
 } from './helpers.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const INTERVAL = 30; // days
+const INTERVAL = 180; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
