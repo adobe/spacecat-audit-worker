@@ -39,11 +39,13 @@ export function isValidUrls(urls) {
 }
 
 export async function scrapePages(context) {
-  const { site, job } = context;
+  const { site, job, log } = context;
   const siteId = site.getId();
 
   const jobMetadata = job.getMetadata();
   const { urls } = jobMetadata.payload;
+  const { promiseToken } = jobMetadata.payload;
+  log.info(`Received promise token in worker: ${JSON.stringify(promiseToken)}`);
 
   if (!isValidUrls(urls)) {
     throw new Error(`[preflight-audit] site: ${siteId}. Invalid urls provided for scraping`);
@@ -62,6 +64,7 @@ export async function scrapePages(context) {
     options: {
       enableAuthentication: true,
       screenshotTypes: [],
+      promiseToken,
     },
   };
 }
