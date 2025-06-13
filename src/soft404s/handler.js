@@ -166,11 +166,12 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
         // Check if this might be a soft 404 based on content analysis
         const hasSoft404Indicators = matchedIndicators.length > 0;
         const hasLowWordCount = wordCount < 500;
+        const hasVeryLowWordCount = wordCount < 100;
 
         log.info(`Page ${pageUrl} has ${wordCount} words and ${matchedIndicators.length} soft 404 indicators`);
         log.info(`Text content: ${textContent}`);
 
-        if (hasSoft404Indicators && hasLowWordCount) {
+        if ((hasSoft404Indicators && hasLowWordCount) || hasVeryLowWordCount) {
           // Add to URL status check queue
           urlStatusChecks.push({
             pageUrl,
