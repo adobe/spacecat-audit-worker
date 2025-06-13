@@ -188,13 +188,13 @@ function tryEnrich(segments, classifier, auditUrl, log) {
   return segments;
 }
 
-function buildMystiqueMessage(site, audit, url) {
+function buildMystiqueMessage(site, auditId, url) {
   return {
     type: AUDIT_CONSTANTS.GUIDANCE_TYPE,
     observation: AUDIT_CONSTANTS.OBSERVATION,
     siteId: site.getId(),
     url,
-    auditId: audit.getAuditId(),
+    auditId,
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
     data: {
@@ -205,7 +205,7 @@ function buildMystiqueMessage(site, audit, url) {
 
 export async function paidAuditRunner(auditUrl, context, site) {
   const {
-    log, sqs, audit, env,
+    log, sqs, env,
   } = context;
   const rumAPIClient = RUMAPIClient.createFrom(context, auditUrl, site);
   const classifier = fetchPageTypeClassifier(site, log);
@@ -242,7 +242,9 @@ export async function paidAuditRunner(auditUrl, context, site) {
 
   // Logic for which url to pick will be improved
   const selectedPage = auditResult.urls[0];
-  const mystiqueMessage = buildMystiqueMessage(site, audit, selectedPage);
+
+  // using siteId for now until we have a way to save and know the auditId;
+  const mystiqueMessage = buildMystiqueMessage(site, site.getId(), selectedPage);
 
   log.info(`[paid-audit] [Site: ${auditUrl}] Sending page ${selectedPage} evaluation to mystique`);
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
