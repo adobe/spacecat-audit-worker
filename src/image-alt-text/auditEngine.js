@@ -141,6 +141,7 @@ export default class AuditEngine {
     this.auditedImages = {
       imagesWithoutAltText: new Map(),
       decorativeImagesWithoutAltText: new Map(),
+      unreachableImages: new Map(),
     };
   }
 
@@ -181,6 +182,47 @@ export default class AuditEngine {
       const imageUrls = Array.from(this.auditedImages.imagesWithoutAltText.keys());
       const supportedBlobUrls = imageUrls.filter((url) => SUPPORTED_BLOB_FORMATS.test(url));
       const supportedImageUrls = imageUrls.filter((url) => SUPPORTED_FORMATS.test(url));
+
+      // Check if regular images (non-blobs) are reachable
+      const reachabilityChecks = await Promise.all(
+        supportedImageUrls.map(async (url) => {
+          try {
+            const response = await fetch(new URL(url, baseURL).toString(), {
+              method: 'HEAD', // Only fetch headers to check reachability
+              redirect: 'follow', // Explicitly follow redirects
+              headers: {
+                Accept: 'image/*', // Only accept image content types
+              },
+            });
+
+            // Check if the final URL after redirects is still an image
+            const contentType = response.headers.get('content-type');
+            const isImage = contentType?.startsWith('image/');
+
+            return {
+              url,
+              isReachable: response.ok && isImage,
+              finalUrl: response.url, // Keep track of the final URL after redirects
+            };
+          } catch (error) {
+            this.log.error(`[${AUDIT_TYPE}]: Error checking reachability for ${url}:`, error);
+            return { url, isReachable: false };
+          }
+        }),
+      );
+
+      // Move unreachable regular images to unreachableImages
+      reachabilityChecks.forEach(({ url, isReachable, finalUrl }) => {
+        if (!isReachable) {
+          const originalData = this.auditedImages.imagesWithoutAltText.get(url);
+          this.auditedImages.unreachableImages.set(url, {
+            ...originalData,
+            finalUrl: finalUrl || url, // Store the final URL if there was a redirect
+          });
+          this.auditedImages.imagesWithoutAltText.delete(url);
+        }
+      });
+
       const base64Blobs = await convertImagesToBase64(
         supportedBlobUrls,
         baseURL,
@@ -192,7 +234,9 @@ export default class AuditEngine {
       // Add supported images directly to the map
       supportedImageUrls.forEach((url) => {
         const originalData = this.auditedImages.imagesWithoutAltText.get(url);
-        filteredImages.set(url, originalData);
+        if (originalData) { // Only add if the image is still in imagesWithoutAltText
+          filteredImages.set(url, originalData);
+        }
       });
       this.log.info(`[${AUDIT_TYPE}]: Supported images:`, Array.from(filteredImages.values()));
 
@@ -201,7 +245,9 @@ export default class AuditEngine {
       base64Blobs.forEach(({ url, blob }) => {
         if (!uniqueBlobsMap.has(blob)) {
           const originalData = this.auditedImages.imagesWithoutAltText.get(url);
-          uniqueBlobsMap.set(blob, { ...originalData, blob });
+          if (originalData) { // Only add if the image is still in imagesWithoutAltText
+            uniqueBlobsMap.set(blob, { ...originalData, blob });
+          }
         }
       });
 
@@ -221,6 +267,7 @@ export default class AuditEngine {
         filteredImages.set(originalData.src, { ...originalData, blob: !!originalData.blob });
       });
 
+      // Update the main imagesWithoutAltText Map with the filtered results
       this.auditedImages.imagesWithoutAltText = filteredImages;
     } catch (error) {
       this.log.error(`[${AUDIT_TYPE}]: Error processing images for base64 conversion:`, error);
@@ -235,6 +282,9 @@ export default class AuditEngine {
     this.log.info(
       `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedImages.decorativeImagesWithoutAltText.values()).length} decorative images`,
     );
+    this.log.info(
+      `[${AUDIT_TYPE}]: Found ${Array.from(this.auditedImages.unreachableImages.values()).length} unreachable images`,
+    );
   }
 
   getAuditedTags() {
@@ -243,6 +293,7 @@ export default class AuditEngine {
       decorativeImagesCount: Array.from(
         this.auditedImages.decorativeImagesWithoutAltText.values(),
       ).length,
+      unreachableImages: Array.from(this.auditedImages.unreachableImages.values()),
     };
   }
 }
