@@ -64,7 +64,7 @@ export async function generateOpportunityAndSuggestions(context) {
     data: {
       url: oppty.page,
       ctr: oppty.trackedPageKPIValue,
-      siteAgerageCtr: oppty.trackedKPISiteAverage,
+      siteAverageCtr: oppty.trackedKPISiteAverage,
     },
   }));
 
