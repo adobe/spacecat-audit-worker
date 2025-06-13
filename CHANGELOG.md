@@ -1,3 +1,31 @@
+## [1.102.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.0...v1.102.1) (2025-06-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.24.0 ([#960](https://github.com/adobe/spacecat-audit-worker/issues/960)) ([0aa64b7](https://github.com/adobe/spacecat-audit-worker/commit/0aa64b778552450edc37520ed511942ddf293ae6))
+
+# [1.102.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.101.2...v1.102.0) (2025-06-13)
+
+
+### Features
+
+* a11y assistive opportunity (SITES-31943) ([#907](https://github.com/adobe/spacecat-audit-worker/issues/907)) ([4142e06](https://github.com/adobe/spacecat-audit-worker/commit/4142e06ae15e77aa5c8c8bd31d81b4465d2eca15))
+
+## [1.101.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.101.1...v1.101.2) (2025-06-13)
+
+
+### Bug Fixes
+
+* correct typo in site average CTR variable name ([#955](https://github.com/adobe/spacecat-audit-worker/issues/955)) ([bc41054](https://github.com/adobe/spacecat-audit-worker/commit/bc41054c7aacfeaeed6699c7a8e38373f898213b))
+
+## [1.101.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.101.0...v1.101.1) (2025-06-13)
+
+
+### Bug Fixes
+
+* add form_source and remove screenszshot prop from M msg ([#954](https://github.com/adobe/spacecat-audit-worker/issues/954)) ([0762e4c](https://github.com/adobe/spacecat-audit-worker/commit/0762e4c46fba1f115f29d09593ef50211ec0d6aa))
+
 # [1.101.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.100.4...v1.101.0) (2025-06-12)
 
 
