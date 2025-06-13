@@ -190,7 +190,7 @@ export function generatePeriodIdentifier(startDate, endDate) {
   const diffDays = Math.ceil((endDate - startDate) / TIME_CONSTANTS.MILLISECONDS_PER_DAY);
   if (diffDays === TIME_CONSTANTS.DAYS_PER_WEEK) {
     const year = startDate.getUTCFullYear();
-    const weekNum = Math.ceil(startDate.getUTCDate() / TIME_CONSTANTS.DAYS_PER_WEEK);
+    const weekNum = getISOWeekNumber(startDate);
     return `${year}W${padNumber(weekNum)}`;
   }
 
