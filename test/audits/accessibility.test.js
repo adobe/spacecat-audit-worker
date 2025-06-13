@@ -76,6 +76,7 @@ describe('Accessibility Audit Handler', () => {
       },
       '../../src/accessibility/utils/generate-individual-opportunities.js': {
         createAccessibilityIndividualOpportunities: createAccessibilityIndividualOpportunitiesStub,
+      },
       '../../src/accessibility/utils/scrape-utils.js': {
         getExistingObjectKeysFromFailedAudits: getExistingObjectKeysFromFailedAuditsStub,
         getExistingUrlsFromFailedAudits: getExistingUrlsFromFailedAuditsStub,
