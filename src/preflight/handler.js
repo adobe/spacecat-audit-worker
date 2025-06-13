@@ -395,7 +395,12 @@ export const preflightAudit = async (context) => {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Error during preflight audit.`, error);
     const jobEntity = await AsyncJobEntity.findById(jobId);
     jobEntity.setStatus(AsyncJob.Status.FAILED);
-    jobEntity.setError({ code: '', message: error.message, details: '' });
+    jobEntity.setError({
+      code: 'EXCEPTION',
+      message: error.message,
+      details: error.stack ?? null,
+    });
+    jobEntity.setEndedAt(new Date().toISOString());
     await jobEntity.save();
     throw error;
   }
