@@ -10,8 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import AWSXray from 'aws-xray-sdk';
 import { AthenaClient } from '@aws-sdk/client-athena';
+import { instrumentAWSClient } from '@adobe/spacecat-shared-utils';
 
 /**
  * Adds an AthenaClient instance to the context.
@@ -23,7 +23,7 @@ export default function athenaClient(fn) {
     if (!context.athenaClient) {
       const region = context.env?.AWS_REGION || 'us-east-1';
       const options = { region };
-      context.athenaClient = AWSXray.captureAWSv3Client(new AthenaClient(options));
+      context.athenaClient = instrumentAWSClient(new AthenaClient(options));
     }
     return fn(request, context);
   };

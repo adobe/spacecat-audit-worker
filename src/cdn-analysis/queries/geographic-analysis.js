@@ -23,11 +23,10 @@ export const geographicAnalysisQueries = {
    * Hourly geographic analysis for agentic traffic
    */
   hourlyHitsByCountry: (hourToProcess, tableName, s3Config) => {
-    const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     const selectQuery = `
       SELECT 
-        '${hourLabel}' as hour,
         geo_country as country_code,
         COUNT(*) as request_count,
         -- Platform breakdown by country
@@ -42,7 +41,7 @@ export const geographicAnalysisQueries = {
         COUNT(CASE WHEN response_status = 404 THEN 1 END) as status_404,
         COUNT(CASE WHEN response_status BETWEEN 500 AND 599 THEN 1 END) as status_5xx,
         ROUND(COUNT(CASE WHEN response_status BETWEEN 200 AND 299 THEN 1 END) * 100.0 / COUNT(*), 2) as success_rate_percent
-      FROM cdn_logs.${tableName} 
+      FROM cdn_logs_${s3Config.customerDomain}.${tableName} 
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       AND geo_country IS NOT NULL
@@ -50,7 +49,7 @@ export const geographicAnalysisQueries = {
       ORDER BY request_count DESC
     `;
 
-    return createUnloadQuery(selectQuery, 'geographic', hourToProcess, s3Config);
+    return createUnloadQuery(selectQuery, 'reqCountByCountry', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */

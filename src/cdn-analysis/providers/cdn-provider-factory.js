@@ -11,64 +11,44 @@
  */
 
 /* c8 ignore start */
-import fastlyProvider from './fastly/index.js';
-import akamaiProvider from './akamai/index.js';
+import { FastlyProvider } from './fastly-provider.js';
+import { AkamaiProvider } from './akamai-provider.js';
 
-// CDN provider mappings
 const CDN_PROVIDER_MAP = {
-  fastly: fastlyProvider,
-  akamai: akamaiProvider,
+  fastly: FastlyProvider,
+  akamai: AkamaiProvider,
 };
 
-/**
- * Determines the CDN type based on site configuration
- */
 function determineCdnType(site, context) {
   const { log } = context;
-
   if (!site) {
-    log.warn('No site provided, defaulting to fastly CDN');
+    log.warn('No site provided, defaulting to Fastly CDN');
     return 'fastly';
   }
-
-  // Check for specific domains
-  const baseURL = typeof site.getBaseURL === 'function' ? site.getBaseURL() : site.baseURL;
+  const baseURL = typeof site.getBaseURL === 'function'
+    ? site.getBaseURL()
+    : site.baseURL;
   if (baseURL) {
-    const hostname = new URL(baseURL).hostname.toLowerCase();
-
-    // Adobe domains use Akamai
-    if (hostname.includes('adobe.com')) {
-      log.info(`Detected Adobe domain (${hostname}), using Akamai CDN provider`);
+    const host = new URL(baseURL).hostname.toLowerCase();
+    if (host.includes('adobe.com')) {
+      log.info(`Detected Adobe domain (${host}), using Akamai CDN`);
       return 'akamai';
     }
-
-    // Bulk domains use Fastly
-    if (hostname.includes('bulk.com')) {
-      log.info(`Detected Bulk domain (${hostname}), using Fastly CDN provider`);
+    if (host.includes('bulk.com')) {
+      log.info(`Detected Bulk domain (${host}), using Fastly CDN`);
       return 'fastly';
     }
   }
-
-  // Default to Fastly
-  log.info('No specific CDN type detected, defaulting to Fastly CDN provider');
+  log.info('No specific CDN type detected, defaulting to Fastly CDN');
   return 'fastly';
 }
 
-/**
- * Factory function to get the appropriate CDN provider
- */
 export function getCdnProvider(site, context) {
   const { log } = context;
-
   const cdnType = determineCdnType(site, context);
-  const provider = CDN_PROVIDER_MAP[cdnType];
-
-  if (!provider) {
-    log.error(`Unsupported CDN type: ${cdnType}. Falling back to Fastly.`);
-    return CDN_PROVIDER_MAP.fastly;
-  }
-
+  const CDNProvider = CDN_PROVIDER_MAP[cdnType] || FastlyProvider;
   log.info(`Using ${cdnType.toUpperCase()} CDN provider`);
-  return provider;
+  return new CDNProvider(context, site);
 }
+
 /* c8 ignore stop */

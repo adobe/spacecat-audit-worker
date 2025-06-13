@@ -24,11 +24,10 @@ export const querySourceAnalysisQueries = {
    * Extracts utm_source parameter from URLs
    */
   hourlyQuerySource: (hourToProcess, tableName, s3Config) => {
-    const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     const selectQuery = `
       SELECT 
-        '${hourLabel}' as hour,
         url,
         -- Extract utm_source parameter using URL parsing
         CASE 
@@ -42,7 +41,7 @@ export const querySourceAnalysisQueries = {
         -- Status breakdown
         COUNT(CASE WHEN response_status BETWEEN 200 AND 299 THEN 1 END) as successful_requests,
         COUNT(CASE WHEN response_status >= 400 THEN 1 END) as error_requests
-      FROM cdn_logs.${tableName} 
+      FROM cdn_logs_${s3Config.customerDomain}.${tableName}
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       AND (
@@ -61,7 +60,7 @@ export const querySourceAnalysisQueries = {
       ORDER BY agentic_traffic_count DESC
     `;
 
-    return createUnloadQuery(selectQuery, 'querySource', hourToProcess, s3Config);
+    return createUnloadQuery(selectQuery, 'reqCountByReferrer', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */

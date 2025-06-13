@@ -23,23 +23,22 @@ export const userAgentRequestAnalysisQueries = {
    * Hourly user agent analysis for agentic traffic
    */
   hourlyUserAgentRequests: (hourToProcess, tableName, s3Config) => {
-    const { whereClause, hourLabel } = getHourlyPartitionFilter(hourToProcess);
+    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
 
     const selectQuery = `
       SELECT 
-        '${hourLabel}' as hour,
         request_user_agent as user_agent,
         response_status as status_code,
         COUNT(*) as count,
         agentic_type
-      FROM cdn_logs.${tableName} 
+      FROM cdn_logs_${s3Config.customerDomain}.${tableName} 
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       GROUP BY request_user_agent, response_status, agentic_type
       ORDER BY count DESC
     `;
 
-    return createUnloadQuery(selectQuery, 'userAgentRequest', hourToProcess, s3Config);
+    return createUnloadQuery(selectQuery, 'reqCountByUserAgent', hourToProcess, s3Config);
   },
 };
 /* c8 ignore stop */
