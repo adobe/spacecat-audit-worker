@@ -242,17 +242,18 @@
 //       errorItems: [],
 //     };
 
-//     opportunity = {
-//       getType: () => 'broken-internal-links',
-//       getId: () => 'oppty-id-1',
-//       getSiteId: () => 'site-id-1',
-//       addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
-//       getSuggestions: sandbox.stub().resolves([]),
-//       setAuditId: sandbox.stub(),
-//       save: sandbox.stub().resolves(),
-//       setData: () => {},
-//       getData: () => {},
-//     };
+    // opportunity = {
+    //   getType: () => 'broken-internal-links',
+    //   getId: () => 'oppty-id-1',
+    //   getSiteId: () => 'site-id-1',
+    //   addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
+    //   getSuggestions: sandbox.stub().resolves([]),
+    //   setAuditId: sandbox.stub(),
+    //   save: sandbox.stub().resolves(),
+    //   setData: () => {},
+    //   getData: () => {},
+    //   setUpdatedBy: sandbox.stub().returnsThis(),
+    // };
 
 //     auditData = {
 //       siteId: 'site-id-1',
@@ -404,12 +405,13 @@
 //     // Create mock suggestions
 //     const mockSuggestions = [{}];
 
-//     const existingOpportunity = {
-//       setStatus: sandbox.spy(sandbox.stub().resolves()),
-//       save: sandbox.spy(sandbox.stub().resolves()),
-//       getType: () => 'broken-internal-links',
-//       getSuggestions: sandbox.stub().resolves(mockSuggestions),
-//     };
+    // const existingOpportunity = {
+    //   setStatus: sandbox.spy(sandbox.stub().resolves()),
+    //   save: sandbox.spy(sandbox.stub().resolves()),
+    //   getType: () => 'broken-internal-links',
+    //   getSuggestions: sandbox.stub().resolves(mockSuggestions),
+    //   setUpdatedBy: sandbox.stub().returnsThis(),
+    // };
 
 //     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
 
@@ -474,18 +476,19 @@
 //     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
 //   }).timeout(5000);
 
-//   it('updates the existing opportunity object', async () => {
-//     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
-//     const existingSuggestions = expectedSuggestions.map((suggestion) => ({
-//       ...suggestion,
-//       opportunityId: opportunity.getId(),
-//       remove: sinon.stub(),
-//       save: sinon.stub(),
-//       getData: () => suggestion.data,
-//       setData: sinon.stub(),
-//       getStatus: sinon.stub().returns('NEW'),
-//     }));
-//     opportunity.getSuggestions.resolves(existingSuggestions);
+  // it('updates the existing opportunity object', async () => {
+  //   context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+  //   const existingSuggestions = expectedSuggestions.map((suggestion) => ({
+  //     ...suggestion,
+  //     opportunityId: opportunity.getId(),
+  //     remove: sinon.stub(),
+  //     save: sinon.stub(),
+  //     getData: () => suggestion.data,
+  //     setData: sinon.stub(),
+  //     getStatus: sinon.stub().returns('NEW'),
+  //     setUpdatedBy: sinon.stub().returnsThis(),
+  //   }));
+  //   opportunity.getSuggestions.resolves(existingSuggestions);
 
 //     await handler.opportunityAndSuggestionsStep(context);
 

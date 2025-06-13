@@ -52,6 +52,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
+        form_source: '.form',
         guidance: 'Some guidance',
         suggestions: ['Suggestion 1', 'Suggestion 2'],
       },
@@ -64,13 +65,14 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
 
   it('should update an existing opportunity', async () => {
     const existingOpportunity = {
-      getData: sinon.stub().returns({ form: 'https://example.com' }),
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
       getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_CONVERSION),
       setAuditId: sinon.stub(),
       setGuidance: sinon.stub(),
       save: sinon.stub().resolvesThis(),
       getId: sinon.stub().resolves('testId'),
       getSuggestions: sinon.stub().resolves([]),
+      setUpdatedBy: sinon.stub(),
     };
     dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
 
@@ -78,6 +80,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
 
     expect(existingOpportunity.setAuditId).to.be.calledWith('audit-id');
     expect(existingOpportunity.setGuidance).to.be.calledWith({ recommendations: 'Some guidance' });
+    expect(existingOpportunity.setUpdatedBy).to.be.calledWith('system');
     expect(existingOpportunity.save).to.be.calledOnce;
   });
 

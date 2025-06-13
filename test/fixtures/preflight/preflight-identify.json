@@ -1,0 +1,69 @@
+[
+  {
+    "pageUrl": "https://main--example--page.aem.page/page1",
+    "step": "identify",
+    "audits": [
+      {
+        "name": "canonical",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "canonical-self-referenced",
+            "issue": "The canonical URL should point to itself to indicate that it is the preferred version of the content.",
+            "seoImpact": "Moderate",
+            "seoRecommendation": "The canonical URL should point to itself to indicate that it is the preferred version of the content."
+          }
+        ]
+      },
+      {
+        "name": "links",
+        "type": "seo",
+        "opportunities": []
+      },
+      {
+        "name": "metatags",
+        "type": "seo",
+        "opportunities": [
+          {
+            "seoImpact": "Moderate",
+            "issue": "Title too short",
+            "issueDetails": "28 chars below limit",
+            "seoRecommendation": "40-60 characters long",
+            "tagContent": "Page 1 Title",
+            "tagName": "title"
+          },
+          {
+            "seoImpact": "Moderate",
+            "issue": "Description too short",
+            "issueDetails": "122 chars below limit",
+            "seoRecommendation": "140-160 characters long",
+            "tagContent": "Page 1 Description",
+            "tagName": "description"
+          }
+        ]
+      },
+      {
+        "name": "body-size",
+        "type": "seo",
+        "opportunities": []
+      },
+      {
+        "name": "lorem-ipsum",
+        "type": "seo",
+        "opportunities": []
+      },
+      {
+        "name": "h1-count",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "missing-h1",
+            "issue": "No H1 tag found on the page",
+            "seoImpact": "High",
+            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
+          }
+        ]
+      }
+    ]
+  }
+]

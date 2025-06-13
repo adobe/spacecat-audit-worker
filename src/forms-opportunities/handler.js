@@ -20,7 +20,7 @@ import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
-import createA11yOpportunity from './oppty-handlers/accessibility-handler.js';
+import { createAccessibilityOpportunity } from './oppty-handlers/accessibility-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -48,64 +48,6 @@ export async function formsAuditRunner(auditUrl, context) {
     auditResult,
     fullAuditRef: auditUrl,
   };
-}
-
-export async function createAccessibilityOpportunity(auditData, scrapedData, context) {
-  const {
-    log, site,
-  } = context;
-
-  const { formA11yData } = scrapedData;
-  if (formA11yData?.length === 0) {
-    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] No a11y data found`);
-    return;
-  }
-
-  const a11yData = [];
-  for (const a11y of formA11yData) {
-    const { a11yResult } = a11y;
-    a11yResult.forEach((result) => {
-      if (result.a11yIssues.length > 0) {
-        const a11yIssues = result.a11yIssues.map((a11yIssue) => ({
-          issue: a11yIssue.issue,
-          level: a11yIssue.level,
-          successCriterias: a11yIssue.successCriterias,
-          solution: a11yIssue.htmlWithIssues,
-          recommendation: a11yIssue.recommendation,
-        }));
-        a11yData.push({
-          form: a11y.finalUrl,
-          formSource: result.formSource,
-          a11yIssues,
-        });
-      }
-    });
-  }
-
-  await createA11yOpportunity({
-    siteId: auditData.getSiteId(),
-    auditId: auditData.getAuditId(),
-    data: {
-      a11yData,
-    },
-  }, context);
-
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] a11y issues created`);
-
-  // TODO: Uncomment this when we have a way to send a11y issues to mystique
-  // const mystiqueMessage = {
-  //   type: 'opportunity:forms-a11y',
-  //   siteId: site.getId(),
-  //   auditId: latestAudit.auditId,
-  //   deliveryType: site.getDeliveryType(),
-  //   time: new Date().toISOString(),
-  //   data: {
-  //     a11yData,
-  //   },
-  // };
-
-  // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  // log.info(`[Form Opportunity] [Site Id: ${site.getId()}] Sent a11y issues to mystique`);
 }
 
 export async function runAuditAndSendUrlsForScrapingStep(context) {
@@ -196,7 +138,7 @@ export async function processOpportunityStep(context) {
   await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
-  await createAccessibilityOpportunity(latestAudit, scrapedData, context);
+  await createAccessibilityOpportunity(latestAudit, context);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',

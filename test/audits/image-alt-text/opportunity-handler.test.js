@@ -49,6 +49,7 @@ describe('Image Alt Text Opportunity Handler', () => {
         .returns({ errorItems: [], createdItems: [1] }),
       getType: () => Audit.AUDIT_TYPES.ALT_TEXT,
       getSiteId: () => 'site-id',
+      setUpdatedBy: sinon.stub(),
     };
 
     logStub = {
@@ -90,7 +91,7 @@ describe('Image Alt Text Opportunity Handler', () => {
           { pageUrl: '/page2', src: 'image2.jpg' },
           { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
         ],
-        presentationalImagesCount: 0,
+        decorativeImagesCount: 0,
       },
     };
 
@@ -137,7 +138,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       data: sinon.match({
         projectedTrafficLost: sinon.match.number,
         projectedTrafficValue: sinon.match.number,
-        presentationalImagesCount: 0,
+        decorativeImagesCount: 0,
         dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS, DATA_SOURCES.GSC],
       }),
     }));
@@ -152,6 +153,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     await convertToOpportunity(auditUrl, auditData, context);
 
     expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
+    expect(altTextOppty.setUpdatedBy).to.have.been.calledWith('system');
     expect(altTextOppty.save).to.have.been.called;
     expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
   });
@@ -163,6 +165,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     await convertToOpportunity(auditUrl, auditData, context);
 
     expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
+    expect(altTextOppty.setUpdatedBy).to.have.been.calledWith('system');
     expect(altTextOppty.save).to.have.been.called;
 
     expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
@@ -416,7 +419,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     expect(altTextOppty.setData).to.have.been.calledWith({
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
-      presentationalImagesCount: 0,
+      decorativeImagesCount: 0,
       dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS, DATA_SOURCES.GSC],
     });
 
