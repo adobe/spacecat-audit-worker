@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
-
 import { getStoredMetrics } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -59,7 +57,11 @@ export async function sendToMystique(context) {
       curr,
     ];
   }, []);
-  log.info(`Found ${uniqueKeywordQuestions?.length} keyword questions`);
+  log.info(`GEO BRAND PRESENCE: Found ${uniqueKeywordQuestions?.length} keyword questions`);
+  if (uniqueKeywordQuestions.length === 0) {
+    log.info('GEO BRAND PRESENCE: No keyword questions found, skipping message to mystique');
+    return;
+  }
   const message = {
     type: GEO_BRAND_PRESENCE_OPPTY_TYPE,
     siteId: site.getId(),
@@ -96,4 +98,3 @@ export default new AuditBuilder()
   .addStep('keywordQuestionsImportStep', keywordQuestionsImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('sendToMystiqueStep', sendToMystique)
   .build();
-/* c8 ignore end */

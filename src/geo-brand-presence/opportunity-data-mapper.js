@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
-
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function convertToOpportunityEntity(siteId, auditId) {
@@ -33,4 +31,3 @@ export function convertToOpportunityEntity(siteId, auditId) {
     },
   };
 }
-/* c8 ignore end */

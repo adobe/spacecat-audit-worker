@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
-
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
 
@@ -83,4 +81,3 @@ export default async function handler(message, context) {
 
   return ok();
 }
-/* c8 ignore end */
