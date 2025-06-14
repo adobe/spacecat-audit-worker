@@ -45,6 +45,8 @@ import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-ha
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import { runAuditStatusProcessor as auditStatusProcessor } from './audit-status-processor/handler.js';
+import { runDisableImportAuditProcessor as disableImportAuditProcessor } from './disable-import-audit-processor/handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 
@@ -78,6 +80,8 @@ const HANDLERS = {
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   preflight,
+  'audit-status-processor': auditStatusProcessor,
+  'disable-import-audit-processor': disableImportAuditProcessor,
   dummy: (message) => ok(message),
 };
 
@@ -97,8 +101,14 @@ async function run(message, context) {
   const { log } = context;
   const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}`);
-  log.info(`Message ${JSON.stringify(message)}`);
+  log.info(`Received message with type: ${type} for site: ${siteId}`);
+  log.info('Message structure:', {
+    messageKeys: Object.keys(message),
+    messageValues: Object.entries(message).reduce((acc, [key, value]) => {
+      acc[key] = typeof value === 'object' ? JSON.stringify(value) : value;
+      return acc;
+    }, {}),
+  });
 
   const handler = HANDLERS[type];
   if (!handler) {
@@ -107,10 +117,30 @@ async function run(message, context) {
     return notFound();
   }
 
+  log.info(`Found handler for type: ${type}`);
+  log.info('Handler details:', {
+    handler,
+    hasRun: typeof handler.run === 'function',
+    hasExecute: typeof handler.execute === 'function',
+    handlerKeys: Object.keys(handler),
+    handlerType: typeof handler,
+    handlerString: handler.toString(),
+  });
+
   const startTime = process.hrtime();
 
   try {
-    const result = await (typeof handler.run === 'function' ? handler.run(message, context) : handler(message, context));
+    let result;
+    if (typeof handler.execute === 'function') {
+      log.info('Using handler.execute');
+      result = await handler.execute(message, context);
+    } else if (typeof handler.run === 'function') {
+      log.info('Using handler.run');
+      result = await handler.run(message, context);
+    } else {
+      log.info('Using handler directly');
+      result = await handler(message, context);
+    }
 
     log.info(`${type} audit for ${siteId} completed in ${getElapsedSeconds(startTime)} seconds`);
 
