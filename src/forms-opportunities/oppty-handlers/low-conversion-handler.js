@@ -172,8 +172,8 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         data: {
           url: opportunityData.data.form,
           cr: opportunityData.data.trackedFormKPIValue,
-          screenshot: opportunityData.data.screenshot,
           metrics: opportunityData.data.metrics,
+          form_source: opportunityData.data.formsource || '',
         },
       };
 

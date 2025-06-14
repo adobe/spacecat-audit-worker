@@ -98,10 +98,11 @@ export async function getSubfoldersUsingPrefixAndDelimiter(
       Delimiter: delimiter,
     };
     const data = await s3Client.send(new ListObjectsV2Command(params));
+    const commonPrefixes = data.CommonPrefixes || [];
     log.info(
-      `Fetched ${data.CommonPrefixes.length} keys from S3 for bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
+      `Fetched ${commonPrefixes.length} keys from S3 for bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
     );
-    return data.CommonPrefixes.map((subfolder) => subfolder.Prefix);
+    return commonPrefixes.map((subfolder) => subfolder.Prefix);
   } catch (err) {
     log.error(
       `Error while fetching S3 object keys using bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
