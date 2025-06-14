@@ -803,7 +803,7 @@ const testData = {
     data: {
       url: 'https://www.surest.com/newsletter',
       cr: 0.031,
-      screenshot: '',
+      form_source: '',
       metrics: [
         {
           type: 'conversionRate',
@@ -1009,6 +1009,7 @@ const testData = {
       screenshot: '',
       samples: 8670,
       scrapedStatus: false,
+      projectedConversionValue: null,
       dataSources: [
         'RUM',
         'Page',
@@ -1037,6 +1038,7 @@ const testData = {
       formsource: '',
       samples: 6690,
       scrapedStatus: false,
+      projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
       metrics: [
         {
@@ -1141,6 +1143,7 @@ const testData = {
       formsource: '',
       samples: 6690,
       scrapedStatus: false,
+      projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
       metrics: [
         {
@@ -1254,6 +1257,7 @@ const testData = {
       formsource: '',
       samples: 6690,
       scrapedStatus: true,
+      projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
       metrics: [
         {
@@ -1446,6 +1450,7 @@ const testData = {
       screenshot: '',
       samples: 7690,
       scrapedStatus: false,
+      projectedConversionValue: null,
       dataSources: [
         'RUM',
         'Page',

@@ -11,7 +11,9 @@
  */
 
 import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
-import { filterForms, generateOpptyData, shouldExcludeForm } from '../utils.js';
+import {
+  filterForms, generateOpptyData, shouldExcludeForm, calculateProjectedConversionValue,
+} from '../utils.js';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { DATA_SOURCES } from '../../common/constants.js';
 
@@ -112,12 +114,16 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
   log.info(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
+
   try {
     for (const opptyData of filteredOpportunities) {
       let highFormViewsLowConversionsOppty = opportunities.find(
         (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION
           && oppty.getData().form === opptyData.form,
       );
+      // eslint-disable-next-line no-await-in-loop,max-len
+      const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
+
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.auditId,
@@ -129,6 +135,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         tags: ['Form Conversion'],
         data: {
           ...opptyData,
+          projectedConversionValue,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         },
         guidance: generateDefaultGuidance(scrapedData, opptyData),
@@ -165,8 +172,8 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         data: {
           url: opportunityData.data.form,
           cr: opportunityData.data.trackedFormKPIValue,
-          screenshot: opportunityData.data.screenshot,
           metrics: opportunityData.data.metrics,
+          form_source: opportunityData.data.formsource || '',
         },
       };
 

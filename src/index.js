@@ -47,6 +47,8 @@ import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
+import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
+import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -77,6 +79,8 @@ const HANDLERS = {
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
   'guidance:geo-brand-presence': guidanceGeoBrandPresence,
+  'guidance:forms-a11y': formAccessibilityGuidance,
+  'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   preflight,
   dummy: (message) => ok(message),
 };
