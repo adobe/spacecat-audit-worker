@@ -13,7 +13,6 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
-import { noopUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import { checkSoft404Indicators, extractTextAndCountWords } from './utils.js';
@@ -70,11 +69,7 @@ export async function importTopPages(context) {
 export async function submitForScraping(context) {
   const { site, dataAccess, log } = context;
   const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(
-    site.getId(),
-    'ahrefs',
-    'global',
-  );
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   if (topPages.length === 0) {
     throw new Error('No top pages found for site');
@@ -84,6 +79,7 @@ export async function submitForScraping(context) {
   const includedURLs = (await site?.getConfig())?.getIncludedURLs('soft-404s') || [];
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+
   log.info(
     `Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`,
   );
@@ -196,10 +192,11 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
   const statusCheckPromises = urlStatusChecks.map(async (page) => {
     const statusResult = await checkUrlStatus(page.finalUrl, log);
 
-    // Only consider it a soft 404 if:
+    // A page is considered a soft 404 if:
     // 1. HTTP status is 200 (OK)
-    // 2. Content has soft 404 indicators
-    // 3. Content has low word count
+    // 2. AND either:
+    //    a. Has soft 404 indicators AND low word count (< 500 words)
+    //    b. OR has very low word count (< 100 words)
     if (statusResult.statusCode === 200) {
       return {
         pageUrl: page.pageUrl,
@@ -296,6 +293,7 @@ export async function soft404sAuditRunner(context) {
       fullAuditRef: baseURL,
     };
   } catch (error) {
+    log.error(`Soft-404s audit failed for ${baseURL}`, error);
     return {
       fullAuditRef: baseURL,
       auditResult: {
@@ -307,8 +305,8 @@ export async function soft404sAuditRunner(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-  .withRunner(soft404sAuditRunner)
+  .addStep('soft404s-audit-runner', soft404sAuditRunner)
   .build();
