@@ -35,6 +35,8 @@ async function checkUrlStatus(url, log) {
       timeout: 10000,
     });
 
+    log.info(`successfully checked status for ${url} ${response}`);
+
     return Promise.resolve({
       status: 'success',
       statusCode: response.status,
@@ -89,7 +91,7 @@ export async function submitForScraping(context) {
   return {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
-    type: 'soft404s',
+    type: 'soft-404s',
   };
 }
 
