@@ -209,7 +209,6 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
         matchedIndicators: page.matchedIndicators,
         wordCount: page.wordCount,
         textPreview: page.textContent,
-        detectedAt: new Date().toISOString(),
       };
     }
 
@@ -232,7 +231,6 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
       matchedIndicators: result.matchedIndicators,
       wordCount: result.wordCount,
       textPreview: result.textPreview,
-      detectedAt: result.detectedAt,
     };
   });
 
@@ -296,7 +294,6 @@ export async function soft404sAuditRunner(context) {
         success: true,
       },
       fullAuditRef: baseURL,
-      status: 'complete',
     };
   } catch (error) {
     return {
@@ -305,7 +302,6 @@ export async function soft404sAuditRunner(context) {
         error: `Audit failed with error: ${error.message}`,
         success: false,
       },
-      status: 'complete',
     };
   }
 }
