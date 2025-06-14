@@ -115,7 +115,7 @@ describe('Soft404s Tests', () => {
         { url: 'https://example.com/page2' },
       ]);
       expect(result.siteId).to.equal('test-site-id');
-      expect(result.type).to.equal('soft404s');
+      expect(result.type).to.equal('soft-404s');
     });
 
     it('should throw error when no top pages found', async () => {
