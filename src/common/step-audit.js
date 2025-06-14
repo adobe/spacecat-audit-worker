@@ -94,8 +94,6 @@ export class StepAudit extends BaseAudit {
         return ok();
       }
 
-      log.info(`Audit context here >>>: ${JSON.stringify(auditContext)}`);
-
       // Determine which step to run
       const hasNext = hasText(auditContext.next);
       const stepName = auditContext.next || stepNames[0];
@@ -109,6 +107,9 @@ export class StepAudit extends BaseAudit {
       if (hasNext) {
         stepContext.audit = await loadExistingAudit(auditContext.auditId, context);
       }
+
+      log.info(`Audit context here >>>: ${JSON.stringify(auditContext)}`);
+      log.info(`Step context here >>>: ${JSON.stringify(stepContext)}`);
 
       // Run the step
       const stepResult = await step.handler(stepContext);
