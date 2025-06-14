@@ -119,8 +119,7 @@ export class StepAudit extends BaseAudit {
       log.info(`Has next: ${hasNext}`);
       log.info(`Is last step: ${isLastStep}`);
 
-      // Process audit result if it's the first step or the last step
-      if (!hasNext || isLastStep) {
+      if (!hasNext) {
         log.info(`Processing audit result for step ${stepName}`);
         response = await this.processAuditResult(
           stepResult,
@@ -134,7 +133,6 @@ export class StepAudit extends BaseAudit {
         );
       }
 
-      // Chain to next step if not the last step
       if (!isLastStep) {
         const result = await this.chainStep(step, stepResult, stepContext);
         response = ok(result);

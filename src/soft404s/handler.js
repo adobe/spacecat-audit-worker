@@ -310,5 +310,5 @@ export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-  .addStep('soft404s-audit-runner', soft404sAuditRunner)
+  .withRunner(soft404sAuditRunner)
   .build();
