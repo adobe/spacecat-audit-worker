@@ -121,8 +121,11 @@ export async function runAuditAndScrapeStep(context) {
     type: 'experimentation-opportunities',
     processingType: 'default',
     jobId: site.getId(),
-    urls: [],
+    urls: getHighOrganicLowCtrOpportunityUrls(
+      result.auditResult?.experimentationOpportunities,
+    ).map((url) => ({ url })),
     siteId: site.getId(),
+    allowCache: true,
   };
 }
 
