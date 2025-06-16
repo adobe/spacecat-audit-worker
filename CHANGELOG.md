@@ -1,3 +1,10 @@
+## [1.102.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.4...v1.102.5) (2025-06-16)
+
+
+### Bug Fixes
+
+* allowing scraper cache for forms ([#966](https://github.com/adobe/spacecat-audit-worker/issues/966)) ([52bfd0d](https://github.com/adobe/spacecat-audit-worker/commit/52bfd0dcf1bbab8413d33f57b0ba1596195a549c))
+
 ## [1.102.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.3...v1.102.4) (2025-06-16)
 
 
