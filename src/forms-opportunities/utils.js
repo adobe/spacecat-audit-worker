@@ -25,6 +25,7 @@ import { calculateCPCValue } from '../support/utils.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
 const CONVERSION_BOOST = 0.2;
+const DEFAULT_CONVERSION_RATE = 0.04;
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -434,7 +435,8 @@ export function getSuccessCriteriaDetails(criteria) {
 // eslint-disable-next-line no-shadow
 function getCostSaved(originalTraffic, conversionRate, cpc, conversionBoost) {
   if (conversionRate === 0) {
-    return 0;
+    // assuming 4 percent conversion rate if it's not available - which is industry average
+    return DEFAULT_CONVERSION_RATE;
   }
   const originalConversions = originalTraffic * conversionRate;
   const newConversionRate = conversionRate * (1 + conversionBoost);
