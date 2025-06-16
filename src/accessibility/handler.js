@@ -14,6 +14,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
 // First step: sends a message to the content scraper to generate accessibility audits
@@ -35,6 +36,8 @@ export async function scrapeAccessibilityData(context) {
 
   const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
 
+  console.log(urlsToScrape);
+
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
   return {
@@ -49,6 +52,7 @@ export async function scrapeAccessibilityData(context) {
     siteId,
     jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
+    allowCache: true,
   };
 }
 
@@ -134,5 +138,6 @@ export async function processAccessibilityOpportunities(context) {
 export default new AuditBuilder()
   // First step: Prepare and send data to CONTENT_SCRAPER
   // Second step: Process the scraped data to find opportunities
+  .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();
