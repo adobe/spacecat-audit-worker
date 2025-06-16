@@ -160,6 +160,49 @@ async function ensureCrawlerExists(glueClient, crawlerName, databaseName, s3Loca
   return crawlerName;
 }
 
+async function waitForCrawlerToComplete(glueClient, crawlerName, log) {
+  const maxWaitTime = 5 * 60 * 1000; // 5 minutes max wait
+  const pollInterval = 10 * 1000; // Poll every 10 seconds
+  const startTime = Date.now();
+
+  log.info(`Waiting for crawler ${crawlerName} to complete...`);
+
+  while (Date.now() - startTime < maxWaitTime) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const response = await glueClient.send(new GetCrawlerCommand({ Name: crawlerName }));
+      const state = response.Crawler.State;
+
+      log.info(`Crawler ${crawlerName} state: ${state}`);
+
+      if (state === 'READY') {
+        const lastRun = response.Crawler.LastCrawl;
+        if (lastRun) {
+          if (lastRun.Status === 'SUCCEEDED') {
+            log.info(`Crawler ${crawlerName} completed successfully`);
+            return;
+          } else if (lastRun.Status === 'FAILED') {
+            throw new Error(`Crawler ${crawlerName} failed: ${lastRun.ErrorMessage || 'Unknown error'}`);
+          }
+        }
+        log.info(`Crawler ${crawlerName} is ready but no recent run info available`);
+        return;
+      } else {
+        log.warn(`Crawler ${crawlerName} in still running: ${state}`);
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => {
+          setTimeout(resolve, pollInterval);
+        });
+      }
+    } catch (error) {
+      log.error(`Error checking crawler status: ${error.message}`);
+      throw error;
+    }
+  }
+
+  throw new Error(`Crawler ${crawlerName} did not complete within ${maxWaitTime / 1000} seconds`);
+}
+
 async function runCrawler(glueClient, crawlerName, log) {
   log.info(`Starting crawler ${crawlerName}`);
 
@@ -167,9 +210,10 @@ async function runCrawler(glueClient, crawlerName, log) {
     await glueClient.send(new StartCrawlerCommand({ Name: crawlerName }));
     log.info(`Crawler ${crawlerName} started successfully`);
 
+    await waitForCrawlerToComplete(glueClient, crawlerName, log);
     return {
-      status: 'started',
-      message: 'Crawler started - it will discover tables and schema automatically',
+      status: 'completed',
+      message: 'Crawler completed successfully',
     };
   } catch (error) {
     if (error.name === 'CrawlerRunningException') {

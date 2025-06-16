@@ -24,9 +24,9 @@ const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
   const result = [valueExtractor(row)];
   periods.weeks.forEach((week) => {
     const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
-    result.push(row[weekKey] || 0);
+    result.push(Number(row[weekKey]) || 0);
   });
-  result.push(row.last_30d || 0);
+  result.push(Number(row.last_30d) || 0);
   return result;
 }) || [];
 
@@ -71,12 +71,11 @@ const SHEET_CONFIGS = {
       `Interval: 30d (${periods.last30Days.dateRange.start} - ${periods.last30Days.dateRange.end})`,
     ],
     headerColor: SHEET_COLORS.DEFAULT,
-    columnWidths: [15, 15, 15, 15],
     numberColumns: [2],
     processData: (data) => data?.map((row) => [
       row.user_agent || 'Unknown',
-      row.status_code || 'All',
-      row.total_requests || 0,
+      Number(row.status_code) || 'All',
+      Number(row.total_requests) || 0,
       '',
     ]) || [],
   },
@@ -84,7 +83,6 @@ const SHEET_CONFIGS = {
   country: {
     getHeaders: (periods) => ['Country Code', ...periods.columns],
     headerColor: SHEET_COLORS.DEFAULT,
-    getColumnWidths: (periods) => [12, ...Array(periods.columns.length - 1).fill(12)],
     getNumberColumns: (periods) => (
       Array.from({ length: periods.columns.length - 1 }, (_, i) => i + 1)
     ),
@@ -96,7 +94,6 @@ const SHEET_CONFIGS = {
   pageType: {
     getHeaders: (periods) => ['Page Type', ...periods.columns],
     headerColor: SHEET_COLORS.DEFAULT,
-    getColumnWidths: (periods) => [15, ...Array(periods.columns.length - 1).fill(15)],
     getNumberColumns: (periods) => (
       Array.from({ length: periods.columns.length - 1 }, (_, i) => i + 1)
     ),
@@ -111,7 +108,6 @@ const SHEET_CONFIGS = {
   topBottom: {
     getHeaders: () => ['Status', 'TOP', '', '', 'BOTTOM', ''],
     headerColor: SHEET_COLORS.DEFAULT,
-    columnWidths: [20, 20, 20, 20, 20, 20],
     numberColumns: [2, 5],
     processData: (data) => {
       const rows = [['', 'URL', 'Hits', '', 'URL', 'Hits']];
@@ -126,10 +122,10 @@ const SHEET_CONFIGS = {
           rows.push([
             '',
             topUrl?.url || '',
-            topUrl?.hits || '',
+            Number(topUrl?.hits) || '',
             '',
             bottomUrl?.url || '',
-            bottomUrl?.hits || '',
+            Number(bottomUrl?.hits) || '',
           ]);
         }
       });
@@ -140,34 +136,31 @@ const SHEET_CONFIGS = {
   error404: {
     getHeaders: () => ['URL', 'Number of 404s'],
     headerColor: SHEET_COLORS.ERROR,
-    columnWidths: [50, 15],
     numberColumns: [1],
     processData: (data) => {
       const urls404 = filterByStatusCodes(data, STATUS_CODES.NOT_FOUND);
-      return urls404.map((row) => [row.url || '', row.total_requests || 0]);
+      return urls404.map((row) => [row.url || '', Number(row.total_requests) || 0]);
     },
   },
 
   error503: {
     getHeaders: () => ['URL', 'Number of 503s'],
     headerColor: SHEET_COLORS.ERROR,
-    columnWidths: [50, 15],
     numberColumns: [1],
     processData: (data) => {
       const urls503 = filterByStatusCodes(data, STATUS_CODES.SERVER_ERROR);
-      return urls503.map((row) => [row.url || '', row.total_requests || 0]);
+      return urls503.map((row) => [row.url || '', Number(row.total_requests) || 0]);
     },
   },
 
   category: {
     getHeaders: () => ['Category', 'Number of Hits'],
     headerColor: SHEET_COLORS.SUCCESS,
-    columnWidths: [40, 20],
     numberColumns: [1],
     processData: (data) => {
       const urls200 = filterByStatusCodes(data, STATUS_CODES.OK);
       if (urls200.length > 0) {
-        return urls200.map((row) => [row.url || 'Other', row.total_requests || 0]);
+        return urls200.map((row) => [row.url || 'Other', Number(row.total_requests) || 0]);
       }
       return [['No data', 0]];
     },
@@ -183,7 +176,6 @@ function getSheetConfig(type, periods) {
   return {
     headers: typeof config.getHeaders === 'function' ? config.getHeaders(periods) : config.getHeaders(),
     headerColor: config.headerColor,
-    columnWidths: typeof config.getColumnWidths === 'function' ? config.getColumnWidths(periods) : config.columnWidths,
     numberColumns: typeof config.getNumberColumns === 'function' ? config.getNumberColumns(periods) : config.numberColumns,
     processData: config.processData,
   };
@@ -194,14 +186,24 @@ function styleHeaders(worksheet) {
   headerRow.font = EXCEL_CONFIG.FONT;
 }
 
-function formatColumns(worksheet, widths, numberColumns) {
-  worksheet.columns.forEach((col, index) => {
-    const column = col;
-    column.width = widths[index] || EXCEL_CONFIG.DEFAULT_COLUMN_WIDTH;
-    if (numberColumns.includes(index)) {
-      column.numFmt = EXCEL_CONFIG.NUMBER_FORMAT;
-    }
+function formatColumns(worksheet, config) {
+  worksheet.columns.forEach((_, index) => {
+    const column = worksheet.getColumn(index + 1);
+
+    let maxLength = 0;
+    column.eachCell({ includeEmpty: false }, (cell) => {
+      const cellValue = cell.value ? cell.value.toString() : '';
+      maxLength = Math.max(maxLength, cellValue.length);
+    });
+    column.width = Math.min(Math.max(maxLength + 2, 10), 60);
   });
+
+  if (config.numberColumns) {
+    config.numberColumns.forEach((colIndex) => {
+      const column = worksheet.getColumn(colIndex + 1);
+      column.numFmt = EXCEL_CONFIG.NUMBER_FORMAT;
+    });
+  }
 }
 
 function createSheet(workbook, name, data, type, periods) {
@@ -214,7 +216,7 @@ function createSheet(workbook, name, data, type, periods) {
   const processedData = config.processData(data, periods);
   processedData.forEach((row) => worksheet.addRow(row));
 
-  formatColumns(worksheet, config.columnWidths, config.numberColumns);
+  formatColumns(worksheet, config);
 
   return worksheet;
 }
