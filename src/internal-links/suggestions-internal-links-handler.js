@@ -18,18 +18,22 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 export async function suggestionsInternalLinksHandler(message, context) {
   const {
-    log, site, finalUrl, dataAccess,
+    log, finalUrl, dataAccess,
   } = context;
 
   let { brokenInternalLinks } = message.data;
   const { opportunityId } = message.data;
 
-  const { Opportunity } = dataAccess;
+  const { Opportunity, Site } = dataAccess;
+
+  const site = await Site.findById(message.siteId);
+  log.info(`Message received in suggestions-internal-links handler: site: ${JSON.stringify(site, null, 2)}`);
   // const { auditId, siteId, data } = message;
   // const { urls, msg } = data;
   log.info(`Message received in suggestions-internal-links handler brokenInternalLinks: ${JSON.stringify(message.data.brokenInternalLinks, null, 2)}`);
   log.info(`Message received in suggestions-internal-links handler: opportunityId: ${JSON.stringify(message.data.opportunityId, null, 2)}`);
-  log.info(`Message received in suggestions-internal-links handler: context: ${JSON.stringify(context, null, 2)}`);
+  // log.info(`Message received in suggestions-internal-links handler:
+  // context: ${JSON.stringify(context, null, 2)}`);
 
   // generate suggestions
   try {
