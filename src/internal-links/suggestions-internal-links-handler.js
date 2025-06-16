@@ -74,9 +74,6 @@ export async function suggestionsInternalLinksHandler(message, context) {
     }),
     log,
   });
-  return {
-    status: 'complete',
-  };
 }
 
 // export default new AuditBuilder()
