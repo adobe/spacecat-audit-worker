@@ -10,128 +10,66 @@
  * governing permissions and limitations under the License.
  */
 
-// import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-// import { Audit } from '@adobe/spacecat-shared-data-access';
-// import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-// import { AuditBuilder } from '../common/audit-builder.js';
-// import { syncSuggestions } from '../utils/data-access.js';
-// import { convertToOpportunity } from '../common/opportunity.js';
-// import { createOpportunityData } from './opportunity-data-mapper.js';
-// import { generateSuggestionData } from './suggestions-generator.js';
-// import { wwwUrlResolver } from '../common/index.js';
-// import {
-//   calculateKpiDeltasForAudit,
-//   isLinkInaccessible,
-//   calculatePriority,
-// } from './helpers.js';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+import { syncSuggestions } from '../utils/data-access.js';
+import { generateSuggestionData } from './suggestions-generator.js';
 
-// const { AUDIT_STEP_DESTINATIONS } = Audit;
-// const INTERVAL = 30; // days
-// const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
+const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 export async function suggestionsInternalLinksHandler(message, context) {
-  // const { log, dataAccess } = context;
-  const { log } = context;
-  // const { Audit, Opportunity, Suggestion } = dataAccess;
+  const {
+    log, site, finalUrl, dataAccess,
+  } = context;
+
+  let { brokenInternalLinks } = message.data;
+  const { opportunityId } = message.data;
+
+  const { Opportunity } = dataAccess;
   // const { auditId, siteId, data } = message;
   // const { urls, msg } = data;
-  log.info(`Message received in suggestions-internal-links handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`Message received in suggestions-internal-links handler brokenInternalLinks: ${JSON.stringify(message.data.brokenInternalLinks, null, 2)}`);
+  log.info(`Message received in suggestions-internal-links handler: opportunityId: ${JSON.stringify(message.data.opportunityId, null, 2)}`);
+  log.info(`Message received in suggestions-internal-links handler: context: ${JSON.stringify(context, null, 2)}`);
 
-  // const {
-  //   log, site, finalUrl, audit, dataAccess,
-  // } = context;
+  // generate suggestions
+  try {
+    brokenInternalLinks = await generateSuggestionData(
+      finalUrl,
+      brokenInternalLinks,
+      context,
+      site,
+    );
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
+  }
 
-  // let { brokenInternalLinks } = audit.getAuditResult();
+  // find opportunity by id
+  const opportunity = await Opportunity.findById(opportunityId);
+  if (!opportunity || opportunity.getSiteId() !== site.getId()) {
+    throw new Error('Opportunity not found');
+  }
 
-  // // generate suggestions
-  // try {
-  //   brokenInternalLinks = await generateSuggestionData(
-  //     finalUrl,
-  //     audit,
-  //     context,
-  //     site,
-  //   );
-  // } catch (error) {
-  //   log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]
-  // suggestion generation error: ${error.message}`);
-  // }
-
-  // // TODO: skip opportunity creation if no internal link items are found in the audit data
-  // const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
-
-  // if (!isNonEmptyArray(brokenInternalLinks)) {
-  //   // no broken internal links found
-  //   // fetch opportunity
-  //   const { Opportunity } = dataAccess;
-  //   let opportunity;
-  //   try {
-  //     const opportunities = await Opportunity
-  //       .allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
-  //     opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-  //   } catch (e) {
-  //     log.error(`Fetching opportunities for siteId
-  // ${site.getId()} failed with error: ${e.message}`);
-  //     throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
-  //   }
-
-  //   if (!opportunity) {
-  //     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}]
-  // no broken internal links found, skipping opportunity creation`);
-  //   } else {
-  //     // no broken internal links found, update opportunity status to RESOLVED
-  //     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal
-  // links found, but found opportunity, updating status to RESOLVED`);
-  //     await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
-
-  //     // We also need to update all suggestions inside this opportunity
-  //     // Get all suggestions for this opportunity
-  //     const suggestions = await opportunity.getSuggestions();
-
-  //     // If there are suggestions, update their status to outdated
-  //     if (isNonEmptyArray(suggestions)) {
-  //       const { Suggestion } = dataAccess;
-  //       await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
-  //     }
-  //     opportunity.setUpdatedBy('system');
-  //     await opportunity.save();
-  //   }
-  //   return {
-  //     status: 'complete',
-  //   };
-  // }
-
-  // const opportunity = await convertToOpportunity(
-  //   finalUrl,
-  //   { siteId: site.getId(), id: audit.getId() },
-  //   context,
-  //   createOpportunityData,
-  //   AUDIT_TYPE,
-  //   {
-  //     kpiDeltas,
-  //   },
-  // );
-
-  // const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
-  // await syncSuggestions({
-  //   opportunity,
-  //   newData: brokenInternalLinks,
-  //   context,
-  //   buildKey,
-  //   mapNewSuggestion: (entry) => ({
-  //     opportunityId: opportunity.getId(),
-  //     type: 'CONTENT_UPDATE',
-  //     rank: entry.trafficDomain,
-  //     data: {
-  //       title: entry.title,
-  //       urlFrom: entry.urlFrom,
-  //       urlTo: entry.urlTo,
-  //       urlsSuggested: entry.urlsSuggested || [],
-  //       aiRationale: entry.aiRationale || '',
-  //       trafficDomain: entry.trafficDomain,
-  //     },
-  //   }),
-  //   log,
-  // });
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  await syncSuggestions({
+    opportunity,
+    newData: brokenInternalLinks,
+    context,
+    buildKey,
+    mapNewSuggestion: (entry) => ({
+      opportunityId,
+      type: 'CONTENT_UPDATE',
+      rank: entry.trafficDomain,
+      data: {
+        title: entry.title,
+        urlFrom: entry.urlFrom,
+        urlTo: entry.urlTo,
+        urlsSuggested: entry.urlsSuggested || [],
+        aiRationale: entry.aiRationale || '',
+        trafficDomain: entry.trafficDomain,
+      },
+    }),
+    log,
+  });
   return {
     status: 'complete',
   };
