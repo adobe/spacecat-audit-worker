@@ -283,13 +283,31 @@ export async function soft404sAuditRunner(context) {
 
     const soft404Results = await soft404sAutoDetect(site, totalPagesSet, context);
 
+    /** store the soft404 audit result in dynamo db */
+
+    const { Audit: AuditDataAccess } = dataAccess;
+
+    const auditResult = {
+      soft404Pages: soft404Results,
+      totalPagesChecked: totalPagesSet.size,
+      soft404Count: Object.keys(soft404Results).length,
+      success: true,
+    };
+
+    // save the soft404 audit result in db
+    await AuditDataAccess.create({
+      siteId: site.getId(),
+      isLive: site.getIsLive(),
+      auditedAt: new Date().toISOString(),
+      auditType: 'soft-404s',
+      auditResult,
+      fullAuditRef: baseURL,
+    });
+
+    log.info('Soft404s audit result successfully saved in the db');
+
     return {
-      auditResult: {
-        soft404Pages: soft404Results,
-        totalPagesChecked: totalPagesSet.size,
-        soft404Count: Object.keys(soft404Results).length,
-        success: true,
-      },
+      auditResult,
       fullAuditRef: baseURL,
     };
   } catch (error) {

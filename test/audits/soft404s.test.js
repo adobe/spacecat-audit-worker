@@ -693,6 +693,11 @@ describe('Soft404s Tests', () => {
         { getUrl: () => 'https://example.com/page1' },
       ]);
 
+      // Mock AuditDataAccess.create
+      context.dataAccess.Audit = {
+        create: sinon.stub().resolves(),
+      };
+
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(ListObjectsV2Command))
         .resolves({ Contents: [] });
@@ -701,6 +706,7 @@ describe('Soft404s Tests', () => {
 
       expect(result).to.have.property('auditResult');
       expect(result.auditResult.success).to.be.true;
+      expect(context.dataAccess.Audit.create).to.have.been.calledOnce;
     });
 
     it('should handle audit errors gracefully', async () => {
@@ -737,6 +743,11 @@ describe('Soft404s Tests', () => {
       // Override site to have getConfig method that returns null
       site.getConfig = sinon.stub().resolves(null);
 
+      // Mock AuditDataAccess.create
+      context.dataAccess.Audit = {
+        create: sinon.stub().resolves(),
+      };
+
       s3ClientStub.send
         .withArgs(sinon.match.instanceOf(ListObjectsV2Command))
         .resolves({ Contents: [] });
@@ -746,6 +757,7 @@ describe('Soft404s Tests', () => {
       expect(result).to.have.property('auditResult');
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.totalPagesChecked).to.equal(1);
+      expect(context.dataAccess.Audit.create).to.have.been.calledOnce;
     });
   });
 
