@@ -108,17 +108,9 @@ export class StepAudit extends BaseAudit {
         stepContext.audit = await loadExistingAudit(auditContext.auditId, context);
       }
 
-      log.info(`Audit context here >>>: ${JSON.stringify(auditContext)}`);
-      log.info(`Step context here >>>: ${JSON.stringify(stepContext)}`);
-
       // Run the step
       const stepResult = await step.handler(stepContext);
       let response = ok();
-
-      log.info(`Step result: ${JSON.stringify(stepResult)}`);
-      log.info(`Step name: ${stepName}`);
-      log.info(`Has next: ${hasNext}`);
-      log.info(`Is last step: ${isLastStep}`);
 
       if (!hasNext) {
         log.info(`Processing audit result for step ${stepName}`);

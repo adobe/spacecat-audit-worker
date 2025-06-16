@@ -15,7 +15,7 @@ import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
-import { checkSoft404Indicators, extractTextAndCountWords } from './utils.js';
+import { checkSoft404Indicators, extractTextAndCountWords, isNonHtmlFile } from './utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -34,8 +34,6 @@ async function checkUrlStatus(url, log) {
       timeout: 10000,
     });
 
-    log.info(`successfully checked status for ${url} ${response}`);
-
     return Promise.resolve({
       status: 'success',
       statusCode: response.status,
@@ -51,6 +49,12 @@ async function checkUrlStatus(url, log) {
   }
 }
 
+/**
+ * Imports top pages for a site
+ * @param {object} context - Context object containing site, finalUrl, and log
+ * @returns {Promise<object>} - Promise that resolves to object with type, siteId,
+ *   auditResult, fullAuditRef, and finalUrl
+ */
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
 
@@ -78,10 +82,16 @@ export async function submitForScraping(context) {
   // Combine includedURLs and topPages URLs to scrape
   const includedURLs = (await site?.getConfig())?.getIncludedURLs('soft-404s') || [];
 
-  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+  // Filter out non-HTML files from both top pages and included URLs
+  const filteredTopPagesUrls = topPagesUrls.filter((url) => !isNonHtmlFile(url));
+  const filteredIncludedUrls = includedURLs.filter((url) => !isNonHtmlFile(url));
+
+  const finalUrls = [...new Set([...filteredTopPagesUrls, ...filteredIncludedUrls])];
 
   log.info(
-    `Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`,
+    `Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, `
+    + `Filtered top pages: ${filteredTopPagesUrls.length}, Filtered included URLs: ${filteredIncludedUrls.length}, `
+    + `Final URLs to scrape after removing duplicates: ${finalUrls.length}`,
   );
 
   return {
@@ -133,8 +143,6 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
     log,
   );
 
-  log.info(`Scraped object keys: ${scrapedObjectKeys}`);
-
   const pageMetadataResults = await Promise.all(
     scrapedObjectKeys
       .filter((key) => pagesSet.has(key))
@@ -152,8 +160,6 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
       const pageUrl = Object.keys(pageMetadata)[0];
       const pageData = pageMetadata[pageUrl];
 
-      log.info(`Page ${pageUrl} has ${pageData.rawBody} raw body`);
-
       if (pageData.rawBody && pageData.finalUrl) {
         // Extract text content and count words
         const { textContent, wordCount } = extractTextAndCountWords(pageData.rawBody);
@@ -165,9 +171,6 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
         const hasSoft404Indicators = matchedIndicators.length > 0;
         const hasLowWordCount = wordCount < 500;
         const hasVeryLowWordCount = wordCount < 100;
-
-        log.info(`Page ${pageUrl} has ${wordCount} words and ${matchedIndicators.length} soft 404 indicators`);
-        log.info(`Text content: ${textContent}`);
 
         if ((hasSoft404Indicators && hasLowWordCount) || hasVeryLowWordCount) {
           // Add to URL status check queue
@@ -233,8 +236,6 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
 
   const detectedCount = Object.keys(soft404Results).length;
   log.info(`Detected ${detectedCount} soft 404 pages out of ${pageMetadataResults.length} total pages`);
-
-  log.info(`Soft 404 results: ${JSON.stringify(soft404Results)}`);
 
   return soft404Results;
 }

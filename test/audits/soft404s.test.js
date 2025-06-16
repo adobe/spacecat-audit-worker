@@ -898,4 +898,70 @@ describe('Soft404s Tests', () => {
       expect(result.textContent).to.not.include('Footer');
     });
   });
+
+  describe('isNonHtmlFile', () => {
+    let isNonHtmlFile;
+
+    beforeEach(async () => {
+      const utils = await import('../../src/soft404s/utils.js');
+      isNonHtmlFile = utils.isNonHtmlFile;
+    });
+
+    it('should identify PDF files as non-HTML', () => {
+      expect(isNonHtmlFile('https://example.com/document.pdf')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/path/to/file.PDF')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/path/to/file.pdf?param=value')).to.be.true;
+    });
+
+    it('should identify Microsoft Office files as non-HTML', () => {
+      expect(isNonHtmlFile('https://example.com/document.docx')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/spreadsheet.xlsx')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/presentation.pptx')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/document.doc')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/spreadsheet.xls')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/presentation.ppt')).to.be.true;
+    });
+
+    it('should identify archive files as non-HTML', () => {
+      expect(isNonHtmlFile('https://example.com/archive.zip')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/archive.rar')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/archive.7z')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/archive.tar')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/archive.gz')).to.be.true;
+    });
+
+    it('should identify text files as non-HTML', () => {
+      expect(isNonHtmlFile('https://example.com/document.txt')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/data.csv')).to.be.true;
+    });
+
+    it('should identify HTML files as HTML', () => {
+      expect(isNonHtmlFile('https://example.com/page.html')).to.be.false;
+      expect(isNonHtmlFile('https://example.com/page.HTML')).to.be.false;
+      expect(isNonHtmlFile('https://example.com/page.htm')).to.be.false;
+    });
+
+    it('should identify URLs without extensions as HTML', () => {
+      expect(isNonHtmlFile('https://example.com/page')).to.be.false;
+      expect(isNonHtmlFile('https://example.com/path/to/page')).to.be.false;
+      expect(isNonHtmlFile('https://example.com/')).to.be.false;
+    });
+
+    it('should handle invalid URLs gracefully', () => {
+      expect(isNonHtmlFile('not-a-url')).to.be.false;
+      expect(isNonHtmlFile('')).to.be.false;
+      expect(isNonHtmlFile(null)).to.be.false;
+      expect(isNonHtmlFile(undefined)).to.be.false;
+    });
+
+    it('should handle URLs with query parameters', () => {
+      expect(isNonHtmlFile('https://example.com/page?param=value')).to.be.false;
+      expect(isNonHtmlFile('https://example.com/document.pdf?param=value')).to.be.true;
+    });
+
+    it('should handle URLs with hash fragments', () => {
+      expect(isNonHtmlFile('https://example.com/page#section')).to.be.false;
+      expect(isNonHtmlFile('https://example.com/document.pdf#page=1')).to.be.true;
+    });
+  });
 });

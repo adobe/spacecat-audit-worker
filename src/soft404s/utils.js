@@ -57,3 +57,19 @@ export const checkSoft404Indicators = (textContent) => {
 
   return matchedIndicators;
 };
+
+/**
+ * Checks if a URL points to a non-HTML file
+ * @param {string} url - URL to check
+ * @returns {boolean} - true if URL points to a non-HTML file
+ */
+export const isNonHtmlFile = (url) => {
+  const nonHtmlExtensions = ['.pdf', '.docx', '.doc', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.zip', '.rar', '.7z', '.tar', '.gz'];
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname.toLowerCase();
+    return nonHtmlExtensions.some((ext) => pathname.endsWith(ext));
+  } catch {
+    return false;
+  }
+};
