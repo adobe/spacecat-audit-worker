@@ -1,3 +1,31 @@
+## [1.102.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.4...v1.102.5) (2025-06-16)
+
+
+### Bug Fixes
+
+* allowing scraper cache for forms ([#966](https://github.com/adobe/spacecat-audit-worker/issues/966)) ([52bfd0d](https://github.com/adobe/spacecat-audit-worker/commit/52bfd0dcf1bbab8413d33f57b0ba1596195a549c))
+
+## [1.102.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.3...v1.102.4) (2025-06-16)
+
+
+### Bug Fixes
+
+* forms a11y code ([#965](https://github.com/adobe/spacecat-audit-worker/issues/965)) ([87c5e58](https://github.com/adobe/spacecat-audit-worker/commit/87c5e5884d46390f0f497d52755bb4fee9467d08))
+
+## [1.102.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.2...v1.102.3) (2025-06-14)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#963](https://github.com/adobe/spacecat-audit-worker/issues/963)) ([9211042](https://github.com/adobe/spacecat-audit-worker/commit/9211042478b8913ffcf53c89f01ccf7be96649e9))
+
+## [1.102.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.1...v1.102.2) (2025-06-14)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#962](https://github.com/adobe/spacecat-audit-worker/issues/962)) ([673b16f](https://github.com/adobe/spacecat-audit-worker/commit/673b16fa0117a834826e9b7bfe0c1ba218f4fa94))
+
 ## [1.102.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.0...v1.102.1) (2025-06-13)
 
 
