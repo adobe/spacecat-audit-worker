@@ -13,6 +13,7 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
+import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
 import { getExistingObjectKeysFromFailedAudits, getRemainingUrls, getExistingUrlsFromFailedAudits } from './utils/scrape-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -134,12 +135,29 @@ export async function processAccessibilityOpportunities(context) {
     };
   }
 
-  // Extract some key metrics for the audit result
+  // Step 2c: Create individual opportunities (URL-specific accessibility issues)
+  try {
+    await createAccessibilityIndividualOpportunities(
+      aggregationResult.finalResultFiles.current,
+      context,
+    );
+    log.debug('[A11yAudit] Individual opportunities created successfully');
+  } catch (error) {
+    log.error(`[A11yAudit] Error creating individual opportunities: ${error.message}`, error);
+    return {
+      status: 'PROCESSING_FAILED',
+      error: error.message,
+    };
+  }
+
+  // Extract key metrics for the audit result summary
   const totalIssues = aggregationResult.finalResultFiles.current.overall.violations.total;
-  // -1 for the overall key
+  // Subtract 1 for the 'overall' key to get actual URL count
   const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
 
-  // Return the final result
+  log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} URLs`);
+
+  // Return the final audit result with metrics and status
   return {
     status: totalIssues > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
     opportunitiesFound: totalIssues,
