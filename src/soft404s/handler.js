@@ -294,6 +294,8 @@ export async function soft404sAuditRunner(context) {
       success: true,
     };
 
+    const s3BucketPath = `scrapes/${site.getId()}/`;
+
     // save the soft404 audit result in db
     await AuditDataAccess.create({
       siteId: site.getId(),
@@ -301,14 +303,14 @@ export async function soft404sAuditRunner(context) {
       auditedAt: new Date().toISOString(),
       auditType: 'soft-404s',
       auditResult,
-      fullAuditRef: baseURL,
+      fullAuditRef: s3BucketPath,
     });
 
     log.info('Soft404s audit result successfully saved in the db');
 
     return {
       auditResult,
-      fullAuditRef: baseURL,
+      fullAuditRef: s3BucketPath,
     };
   } catch (error) {
     log.error(`Soft-404s audit failed for ${baseURL}`, error);
