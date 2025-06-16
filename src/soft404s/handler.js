@@ -179,7 +179,7 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
             finalUrl: pageData.finalUrl,
             matchedIndicators,
             wordCount,
-            textContent: textContent.substring(0, 200), // First 200 chars for context
+            textContent,
           });
         }
       } else {
