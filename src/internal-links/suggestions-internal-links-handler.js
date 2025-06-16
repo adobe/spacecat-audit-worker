@@ -40,12 +40,12 @@ export async function suggestionsInternalLinksHandler(message, context) {
       site,
     );
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}] [Site: ${message.siteId}] suggestion generation error: ${error.message}`);
   }
 
   // find opportunity by id
   const opportunity = await Opportunity.findById(opportunityId);
-  if (!opportunity || opportunity.getSiteId() !== site.getId()) {
+  if (!opportunity || opportunity.getSiteId() !== message.siteId) {
     throw new Error('Opportunity not found');
   }
 
