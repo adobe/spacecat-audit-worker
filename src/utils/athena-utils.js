@@ -110,9 +110,32 @@ export function parseAthenaResults(results) {
   }
 
   const rows = results.ResultSet.Rows;
-  const headers = rows[0].Data.map((col) => col.VarCharValue);
+  let headers;
+  let dataStartIndex = 0;
 
-  return rows.slice(1).map((row) => {
+  if (results.ResultSet.ResultSetMetadata && results.ResultSet.ResultSetMetadata.ColumnInfo) {
+    headers = results.ResultSet.ResultSetMetadata.ColumnInfo.map((col) => col.Name);
+
+    // For utility queries (SHOW TABLES, DESCRIBE, etc.), all rows contain data
+    // For regular SELECT queries, first row might be headers
+    const firstRowValues = rows[0].Data.map((col) => col.VarCharValue);
+    const isFirstRowHeaders = firstRowValues.every(
+      (value, index) => value === headers[index]
+      || (value && value.toLowerCase() === headers[index].toLowerCase()),
+    );
+
+    if (isFirstRowHeaders) {
+      dataStartIndex = 1;
+    } else {
+      dataStartIndex = 0;
+    }
+  } else {
+    headers = rows[0].Data.map((col) => col.VarCharValue);
+    dataStartIndex = 1;
+  }
+
+  // Parse data rows
+  return rows.slice(dataStartIndex).map((row) => {
     const record = {};
     row.Data.forEach((col, index) => {
       record[headers[index]] = col.VarCharValue;
