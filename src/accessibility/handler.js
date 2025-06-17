@@ -24,10 +24,23 @@ import { createAccessibilityIndividualOpportunities } from './utils/generate-ind
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
+export async function processImportStep(context) {
+  const { site, finalUrl } = context;
+
+  const s3BucketPath = `scrapes/${site.getId()}/`;
+
+  return {
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: s3BucketPath,
+    type: 'top-pages',
+    siteId: site.getId(),
+  };
+}
+
 // First step: sends a message to the content scraper to generate accessibility audits
 export async function scrapeAccessibilityData(context) {
   const {
-    site, log, finalUrl, env, s3Client,
+    site, log, finalUrl, env, s3Client, dataAccess,
   } = context;
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -40,6 +53,10 @@ export async function scrapeAccessibilityData(context) {
     };
   }
   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
+
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  log.info(`[A11yAudit] Found ${topPages.length} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages, null, 2)}`);
 
   const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
   const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
@@ -176,6 +193,7 @@ export async function processAccessibilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
+  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   // First step: Prepare and send data to CONTENT_SCRAPER
   .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   // Second step: Process the scraped data to find opportunities
