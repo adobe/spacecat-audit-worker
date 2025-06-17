@@ -28,8 +28,8 @@ export const extractTextAndCountWords = (html) => {
   // Remove nav, header, footer, and ad-related elements
   $('nav, header, footer, [class*="ad" i], [id*="ad" i]').remove();
 
-  // Extract text content from the remaining DOM
-  const textContent = $.root().text().replace(/\s+/g, ' ').trim();
+  // Extract all text from the remaining <body>
+  const textContent = $('body').text().replace(/\s+/g, ' ').trim();
 
   // Count words (split by whitespace and filter out empty strings)
   const words = textContent.split(/\s+/).filter((word) => word.length > 0);
@@ -64,7 +64,22 @@ export const checkSoft404Indicators = (textContent) => {
  * @returns {boolean} - true if URL points to a non-HTML file
  */
 export const isNonHtmlFile = (url) => {
-  const nonHtmlExtensions = ['.pdf', '.docx', '.doc', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.zip', '.rar', '.7z', '.tar', '.gz'];
+  const nonHtmlExtensions = [
+    '.pdf',
+    '.docx',
+    '.doc',
+    '.xls',
+    '.xlsx',
+    '.ppt',
+    '.pptx',
+    '.txt',
+    '.csv',
+    '.zip',
+    '.rar',
+    '.7z',
+    '.tar',
+    '.gz',
+  ];
   try {
     const urlObj = new URL(url);
     const pathname = urlObj.pathname.toLowerCase();

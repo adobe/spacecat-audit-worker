@@ -466,8 +466,10 @@ describe('Soft404s Tests', () => {
 
       s3ClientStub.send
         .withArgs(
-          sinon.match((command) => command.constructor.name === 'GetObjectCommand'
-            && command.input.Key === 'scrapes/test-site-id/page1/scrape.json'),
+          sinon.match(
+            (command) => command.constructor.name === 'GetObjectCommand'
+              && command.input.Key === 'scrapes/test-site-id/page1/scrape.json',
+          ),
         )
         .resolves({
           Body: { transformToString: () => JSON.stringify(page1Object) },
@@ -476,8 +478,10 @@ describe('Soft404s Tests', () => {
 
       s3ClientStub.send
         .withArgs(
-          sinon.match((command) => command.constructor.name === 'GetObjectCommand'
-            && command.input.Key === 'scrapes/test-site-id/page2/scrape.json'),
+          sinon.match(
+            (command) => command.constructor.name === 'GetObjectCommand'
+              && command.input.Key === 'scrapes/test-site-id/page2/scrape.json',
+          ),
         )
         .resolves({
           Body: { transformToString: () => JSON.stringify(page2Object) },
@@ -586,17 +590,22 @@ describe('Soft404s Tests', () => {
         ContentType: 'application/json',
       });
 
-      nock('https://example.com')
-        .head('/page1')
-        .reply(200);
+      nock('https://example.com').head('/page1').reply(200);
 
-      const result = await soft404sAutoDetect(site, new Set(['scrapes/test-site-id/page1/scrape.json']), context);
+      const result = await soft404sAutoDetect(
+        site,
+        new Set(['scrapes/test-site-id/page1/scrape.json']),
+        context,
+      );
       expect(result).to.have.property('/page1');
       expect(result['/page1']).to.deep.include({
         isSoft404: true,
         statusCode: 200,
       });
-      expect(result['/page1'].wordCount).to.be.a('number').and.to.be.above(100).and.to.be.below(500);
+      expect(result['/page1'].wordCount)
+        .to.be.a('number')
+        .and.to.be.above(100)
+        .and.to.be.below(500);
     });
 
     it('should detect soft 404 for page with very low word count (< 100) even without indicators', async () => {
@@ -604,7 +613,8 @@ describe('Soft404s Tests', () => {
         finalUrl: 'https://example.com/page1',
         scrapeResult: {
           tags: { title: 'Test Title' },
-          rawBody: '<html><body>This is a very short page with less than 100 words. It should be detected as a soft 404 because of its low word count, even though it has no soft 404 indicators.</body></html>',
+          rawBody:
+            '<html><body>This is a very short page with less than 100 words. It should be detected as a soft 404 because of its low word count, even though it has no soft 404 indicators.</body></html>',
         },
       };
 
@@ -613,11 +623,13 @@ describe('Soft404s Tests', () => {
         ContentType: 'application/json',
       });
 
-      nock('https://example.com')
-        .head('/page1')
-        .reply(200);
+      nock('https://example.com').head('/page1').reply(200);
 
-      const result = await soft404sAutoDetect(site, new Set(['scrapes/test-site-id/page1/scrape.json']), context);
+      const result = await soft404sAutoDetect(
+        site,
+        new Set(['scrapes/test-site-id/page1/scrape.json']),
+        context,
+      );
       expect(result).to.have.property('/page1');
       expect(result['/page1']).to.deep.include({
         isSoft404: true,
@@ -645,11 +657,13 @@ describe('Soft404s Tests', () => {
         ContentType: 'application/json',
       });
 
-      nock('https://example.com')
-        .head('/page1')
-        .reply(200);
+      nock('https://example.com').head('/page1').reply(200);
 
-      const result = await soft404sAutoDetect(site, new Set(['scrapes/test-site-id/page1/scrape.json']), context);
+      const result = await soft404sAutoDetect(
+        site,
+        new Set(['scrapes/test-site-id/page1/scrape.json']),
+        context,
+      );
       expect(result).to.be.empty;
     });
 
@@ -658,7 +672,8 @@ describe('Soft404s Tests', () => {
         finalUrl: 'https://example.com/page1',
         scrapeResult: {
           tags: { title: 'Test Title' },
-          rawBody: '<html><body>This is a very short page with less than 100 words. It should not be detected as a soft 404 because its status is not 200, even though it has a low word count.</body></html>',
+          rawBody:
+            '<html><body>This is a very short page with less than 100 words. It should not be detected as a soft 404 because its status is not 200, even though it has a low word count.</body></html>',
         },
       };
 
@@ -667,11 +682,13 @@ describe('Soft404s Tests', () => {
         ContentType: 'application/json',
       });
 
-      nock('https://example.com')
-        .head('/page1')
-        .reply(404);
+      nock('https://example.com').head('/page1').reply(404);
 
-      const result = await soft404sAutoDetect(site, new Set(['scrapes/test-site-id/page1/scrape.json']), context);
+      const result = await soft404sAutoDetect(
+        site,
+        new Set(['scrapes/test-site-id/page1/scrape.json']),
+        context,
+      );
       expect(result).to.be.empty;
     });
   });
@@ -680,9 +697,9 @@ describe('Soft404s Tests', () => {
     beforeEach(() => {
       context.dataAccess = {
         SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-            { getUrl: () => 'https://example.com/page1' },
-          ]),
+          allBySiteIdAndSourceAndGeo: sinon
+            .stub()
+            .resolves([{ getUrl: () => 'https://example.com/page1' }]),
         },
       };
     });
@@ -811,6 +828,7 @@ describe('Soft404s Tests', () => {
 
     it('should exclude navigation content from word count', () => {
       const html = `
+      <body>
         <nav>
           <ul>
             <li>Home</li>
@@ -822,6 +840,7 @@ describe('Soft404s Tests', () => {
           <p>This is the main content</p>
           <p>With multiple paragraphs</p>
         </main>
+      </body>
       `;
       const result = extractTextAndCountWords(html);
       expect(result.wordCount).to.equal(8); // Only counts words from main content
@@ -832,6 +851,7 @@ describe('Soft404s Tests', () => {
 
     it('should exclude header and footer content from word count', () => {
       const html = `
+      <body>
         <header>
           <h1>Welcome to our site</h1>
           <p>Header content</p>
@@ -843,8 +863,10 @@ describe('Soft404s Tests', () => {
           <p>Copyright 2024</p>
           <p>Footer links</p>
         </footer>
+      </body>
       `;
       const result = extractTextAndCountWords(html);
+      console.log(result);
       expect(result.wordCount).to.equal(3); // Only counts words from main content
       expect(result.textContent).to.not.include('Welcome');
       expect(result.textContent).to.not.include('Copyright');
@@ -853,6 +875,7 @@ describe('Soft404s Tests', () => {
 
     it('should exclude ad content from word count', () => {
       const html = `
+      <body>
         <div class="ad-container">
           <p>Buy our products</p>
           <p>Special offer</p>
@@ -863,6 +886,7 @@ describe('Soft404s Tests', () => {
         <main>
           <p>Actual content here</p>
         </main>
+      </body>
       `;
       const result = extractTextAndCountWords(html);
       expect(result.wordCount).to.equal(3); // Only counts words from main content
@@ -873,7 +897,8 @@ describe('Soft404s Tests', () => {
 
     it('should handle nested elements correctly', () => {
       const html = `
-        <header>
+      <body>
+          <header>
           <nav>
             <ul>
               <li>Menu item</li>
@@ -890,6 +915,7 @@ describe('Soft404s Tests', () => {
         <footer>
           <p>Footer text</p>
         </footer>
+      </body>
       `;
       const result = extractTextAndCountWords(html);
       expect(result.wordCount).to.equal(4); // Only counts "Main content More content"
@@ -910,7 +936,8 @@ describe('Soft404s Tests', () => {
     it('should identify PDF files as non-HTML', () => {
       expect(isNonHtmlFile('https://example.com/document.pdf')).to.be.true;
       expect(isNonHtmlFile('https://example.com/path/to/file.PDF')).to.be.true;
-      expect(isNonHtmlFile('https://example.com/path/to/file.pdf?param=value')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/path/to/file.pdf?param=value'))
+        .to.be.true;
     });
 
     it('should identify Microsoft Office files as non-HTML', () => {
@@ -956,12 +983,14 @@ describe('Soft404s Tests', () => {
 
     it('should handle URLs with query parameters', () => {
       expect(isNonHtmlFile('https://example.com/page?param=value')).to.be.false;
-      expect(isNonHtmlFile('https://example.com/document.pdf?param=value')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/document.pdf?param=value')).to
+        .be.true;
     });
 
     it('should handle URLs with hash fragments', () => {
       expect(isNonHtmlFile('https://example.com/page#section')).to.be.false;
-      expect(isNonHtmlFile('https://example.com/document.pdf#page=1')).to.be.true;
+      expect(isNonHtmlFile('https://example.com/document.pdf#page=1')).to.be
+        .true;
     });
   });
 });
