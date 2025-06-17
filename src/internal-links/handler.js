@@ -50,7 +50,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     const options = {
       domain: finalUrl,
       interval: INTERVAL,
-      granularity: 'daily',
+      granularity: 'hourly',
     };
 
     // 3. Query for 404 internal links
