@@ -49,6 +49,8 @@ export async function CWVRunner(auditUrl, context, site) {
 export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
   const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const kpiDeltas = calculateKpiDeltasForAudit(auditData, context, groupedURLs);
+  const { log } = context;
+  log.info(`[${auditType}] [Site: ${site.getId()}] Calculated KPI deltas:`, JSON.stringify(kpiDeltas, null, 2));
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
@@ -57,7 +59,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
     auditType,
     kpiDeltas,
   );
-  const { log } = context;
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
   const maxOrganicForUrls = Math.max(...auditData.auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews));
