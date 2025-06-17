@@ -14,17 +14,13 @@
 import { generatePageTypeCaseStatement } from '../utils/page-type-classifier.js';
 import { TABLE_NAMES, COLUMN_MAPPINGS } from '../constants/index.js';
 
-const buildDateFilter = (periods) => {
-  const { start, end } = periods.last30Days.dateRange;
-  return `CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) >= '${start}' 
-    AND CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) <= '${end}'`;
+const buildDateRangeFilter = (startDate, endDate) => `CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) >= '${startDate}' 
+    AND CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) <= '${endDate}'`;
+
+const buildLastWeekFilter = (periods) => {
+  const { dateRange } = periods.weeks[periods.weeks.length - 1];
+  return buildDateRangeFilter(dateRange.start, dateRange.end);
 };
-
-const buildProviderColumnFilter = (provider) => (provider ? `${provider}_requests > 0` : null);
-
-const buildAgenticTypeFilter = (provider) => (provider ? `agentic_type = '${provider}'` : null);
-
-const getCountColumn = (provider, tableType = 'URL_STATUS') => (provider ? `${provider}_requests` : COLUMN_MAPPINGS[tableType]);
 
 const buildWhereClause = (conditions) => {
   const validConditions = conditions.filter(Boolean);
@@ -32,41 +28,35 @@ const buildWhereClause = (conditions) => {
 };
 
 const buildWeekFilters = (periods, countColumn) => periods.weeks.map((week) => {
-  const startDate = week.startDate.toISOString().split('T')[0];
-  const endDate = week.endDate.toISOString().split('T')[0];
+  const { start, end } = week.dateRange;
   const weekKey = week.weekLabel.replace(' ', '_').toLowerCase();
 
   return `SUM(CASE 
-      WHEN CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) >= '${startDate}' 
-       AND CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) <= '${endDate}'
+      WHEN ${buildDateRangeFilter(start, end)}
       THEN ${countColumn} ELSE 0 
     END) as ${weekKey}`;
 }).join(',\n      ');
 
 function createCountryWeeklyBreakdownQuery(periods, databaseName, provider) {
-  const countColumn = getCountColumn(provider, 'COUNTRY');
+  const countColumn = provider ? `${provider}_requests` : COLUMN_MAPPINGS.COUNTRY;
   const weekFilters = buildWeekFilters(periods, countColumn);
-  const whereClause = buildWhereClause([buildProviderColumnFilter(provider)]);
+  const whereClause = buildWhereClause([provider ? `${provider}_requests > 0` : null]);
 
   return `
     SELECT 
       country_code,
-      ${weekFilters},
-      SUM(CASE 
-        WHEN ${buildDateFilter(periods)}
-        THEN ${countColumn} ELSE 0 
-      END) as last_30d
+      ${weekFilters}
     FROM ${databaseName}.${TABLE_NAMES.COUNTRY}
     ${whereClause}
     GROUP BY country_code
-    ORDER BY last_30d DESC
+    ORDER BY ${periods.weeks.map((week) => week.weekLabel.replace(' ', '_').toLowerCase()).join(' + ')} DESC
   `;
 }
 
 function createUserAgentWeeklyBreakdownQuery(periods, databaseName, provider) {
   const whereClause = buildWhereClause([
-    buildDateFilter(periods),
-    buildAgenticTypeFilter(provider),
+    buildLastWeekFilter(periods),
+    provider ? `agentic_type = '${provider}'` : null,
   ]);
 
   return `
@@ -87,30 +77,26 @@ function createUrlStatusWeeklyBreakdownQuery(
   provider,
   pageTypePatterns,
 ) {
-  const countColumn = getCountColumn(provider, 'URL_STATUS');
+  const countColumn = provider ? `${provider}_requests` : COLUMN_MAPPINGS.URL_STATUS;
   const weekFilters = buildWeekFilters(periods, countColumn);
-  const whereClause = buildWhereClause([buildProviderColumnFilter(provider)]);
+  const whereClause = buildWhereClause([provider ? `${provider}_requests > 0` : null]);
   const pageTypeCase = generatePageTypeCaseStatement(pageTypePatterns);
 
   return `
     SELECT 
       ${pageTypeCase} as page_type,
-      ${weekFilters},
-      SUM(CASE 
-        WHEN ${buildDateFilter(periods)}
-        THEN ${countColumn} ELSE 0 
-      END) as last_30d
+      ${weekFilters}
     FROM ${databaseName}.${TABLE_NAMES.URL_STATUS}
     ${whereClause}
     GROUP BY ${pageTypeCase}
-    ORDER BY last_30d DESC
+    ORDER BY ${periods.weeks.map((week) => week.weekLabel.replace(' ', '_').toLowerCase()).join(' + ')} DESC
   `;
 }
 
 function createUrlUserAgentStatusBreakdownQuery(periods, databaseName, provider) {
   const whereClause = buildWhereClause([
-    buildDateFilter(periods),
-    buildAgenticTypeFilter(provider),
+    buildLastWeekFilter(periods),
+    provider ? `agentic_type = '${provider}'` : null,
   ]);
 
   return `
@@ -127,10 +113,10 @@ function createUrlUserAgentStatusBreakdownQuery(periods, databaseName, provider)
 }
 
 function createTopBottomUrlsByStatusQuery(periods, databaseName, provider) {
-  const countColumn = getCountColumn(provider, 'URL_STATUS');
+  const countColumn = provider ? `${provider}_requests` : COLUMN_MAPPINGS.URL_STATUS;
   const whereClause = buildWhereClause([
-    buildDateFilter(periods),
-    buildProviderColumnFilter(provider),
+    buildLastWeekFilter(periods),
+    provider ? `${provider}_requests > 0` : null,
   ]);
 
   return `

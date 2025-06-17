@@ -66,14 +66,20 @@ async function uploadToSharePoint(buffer, filename, sharepointClient, log) {
   }
 }
 
-export async function saveExcelReport(workbook, bucket, key, s3Client, log, sharepointClient) {
+export async function saveExcelReport({
+  workbook,
+  bucket,
+  key,
+  s3Client,
+  log,
+  sharepointClient,
+  filename,
+}) {
   try {
     const buffer = await workbook.xlsx.writeBuffer();
     await saveExcelToS3(buffer, bucket, key, s3Client, log);
 
     if (sharepointClient) {
-      const provider = key.includes('chatgpt') ? 'chatgpt' : 'perplexity';
-      const filename = `agentic-traffic-${provider}-v2.xlsx`;
       await uploadToSharePoint(buffer, filename, sharepointClient, log);
       // TODO: Uncomment this when we have a proper api key and path to publish to admin.hlx.page
       // await publishToAdminHlx(filename, log);

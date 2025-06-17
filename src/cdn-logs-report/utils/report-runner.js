@@ -14,7 +14,6 @@
 import { executeAthenaQuery } from '../../utils/athena-utils.js';
 import { weeklyBreakdownQueries } from '../queries/weekly-breakdown-queries.js';
 import {
-  getWeekRange,
   createDateRange,
   generatePeriodIdentifier,
   generateReportingPeriods,
@@ -107,14 +106,19 @@ export async function runReport(athenaClient, databaseName, s3Config, s3Client, 
 
   let periodStart;
   let periodEnd;
+  let referenceDate;
+
   if (startDate && endDate) {
     const parsed = createDateRange(startDate, endDate);
     periodStart = parsed.startDate;
     periodEnd = parsed.endDate;
+    referenceDate = periodEnd;
   } else {
-    const { weekStart, weekEnd } = getWeekRange(-1);
-    periodStart = weekStart;
-    periodEnd = weekEnd;
+    referenceDate = new Date();
+    const periods = generateReportingPeriods(referenceDate);
+    const week = periods.weeks[0];
+    periodStart = week.startDate;
+    periodEnd = week.endDate;
   }
 
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
@@ -134,7 +138,7 @@ export async function runReport(athenaClient, databaseName, s3Config, s3Client, 
 
     const reportData = await collectReportData(
       athenaClient,
-      periodEnd,
+      referenceDate,
       databaseName,
       s3Config,
       log,
@@ -147,11 +151,19 @@ export async function runReport(athenaClient, databaseName, s3Config, s3Client, 
     const key = `${REPORTS_PATH}/${provider}/${filename}`;
 
     const workbook = await createCDNLogsExcelReport(reportData, {
-      customEndDate: periodEnd.toISOString().split('T')[0],
+      customEndDate: referenceDate.toISOString().split('T')[0],
       filename,
     });
 
-    await saveExcelReport(workbook, s3Config.bucket, key, s3Client, log, sharepointClient);
+    await saveExcelReport({
+      workbook,
+      bucket: s3Config.bucket,
+      key,
+      s3Client,
+      log,
+      sharepointClient,
+      filename,
+    });
   } catch (error) {
     log.error(`Report generation failed: ${error.message}`);
     throw error;

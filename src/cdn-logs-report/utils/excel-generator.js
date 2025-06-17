@@ -25,7 +25,6 @@ const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
     const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
     result.push(Number(row[weekKey]) || 0);
   });
-  result.push(Number(row.last_30d) || 0);
   return result;
 }) || [];
 
@@ -63,12 +62,15 @@ function analyzeTopBottomByStatus(data) {
 
 const SHEET_CONFIGS = {
   userAgents: {
-    getHeaders: (periods) => [
-      'Request User Agent',
-      'Status',
-      'Number of Hits',
-      `Interval: 30d (${periods.last30Days.dateRange.start} - ${periods.last30Days.dateRange.end})`,
-    ],
+    getHeaders: (periods) => {
+      const lastWeek = periods.weeks[periods.weeks.length - 1];
+      return [
+        'Request User Agent',
+        'Status',
+        'Number of Hits',
+        `Interval: Last Week (${lastWeek.dateRange.start} - ${lastWeek.dateRange.end})`,
+      ];
+    },
     headerColor: SHEET_COLORS.DEFAULT,
     numberColumns: [2],
     processData: (data) => data?.map((row) => [
@@ -100,7 +102,7 @@ const SHEET_CONFIGS = {
       if (data?.length > 0) {
         return processWeekData(data, reportPeriods, (row) => row.page_type || 'Other');
       }
-      return [['No data', ...reportPeriods.weeks.map(() => 0), 0]];
+      return [['No data', ...reportPeriods.weeks.map(() => 0)]];
     },
   },
 
@@ -159,10 +161,7 @@ const SHEET_CONFIGS = {
     processData: (data) => {
       const urls200 = filterByStatusCodes(data, STATUS_CODES.OK);
       const productsUrls = urls200.filter((row) => row.url && row.url.startsWith('/products/'));
-      if (productsUrls.length > 0) {
-        return productsUrls.map((row) => [row.url || 'Other', Number(row.total_requests) || 0]);
-      }
-      return [['No data', 0]];
+      return (productsUrls || []).map((row) => [row.url || 'Other', Number(row.total_requests) || 0]);
     },
   },
 };
