@@ -22,7 +22,6 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   const { FIREFALL_MODEL } = context.env;
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Generating suggestions for site ${finalUrl}`);
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Broken internal links: ${JSON.stringify(brokenInternalLinks, null, 2)}`);
 
   const firefallClient = FirefallClient.createFrom(context);
   const firefallOptions = { responseFormat: 'json_object', model: FIREFALL_MODEL };
@@ -146,7 +145,6 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     updatedInternalLinks.push(updatedLink);
   }
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete for batch ${brokenInternalLinks}.`);
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Updated internal links: ${JSON.stringify(updatedInternalLinks, null, 2)}`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete.`);
   return updatedInternalLinks;
 };

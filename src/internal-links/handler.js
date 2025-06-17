@@ -84,6 +84,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         fullAuditRef: auditUrl,
         finalUrl,
         auditContext: { interval: INTERVAL },
+        success: true,
       },
       fullAuditRef: auditUrl,
     };
