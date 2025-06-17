@@ -13,11 +13,10 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 
-async function createOpportunityData() {
+function createOpportunityData() {
   return {
     runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
     origin: 'AUTOMATION',
-    type: 'security-csp',
     title: 'The Content Security Policy configuration is ineffective against Cross Site Scripting (XSS) attacks',
     description: 'Content Security Policy can help protect applications from Cross Site Scripting (XSS) attacks, but in order for it to be effective one needs to define a secure policy. The recommended CSP setup is "Strict CSP with (cached) nonce + strict-dynamic".',
     data: {
@@ -48,25 +47,38 @@ function flattenCSP(csp) {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function cspOpportunityAndSuggestions(auditUrl, auditData, context, site) {
-  let { csp } = auditData;
+  const { log } = context;
+  log.debug(`Classifying CSP suggestions for ${JSON.stringify(auditData)}`);
+
+  // this opportunity is only relevant for aem_edge delivery type at the moment
+  if (site.getDeliveryType() !== 'aem_edge') {
+    log.debug(`Skipping CSP opportunity for ${site.getId()} as it is not aem_edge delivery type`);
+    return { ...auditData };
+  }
+
+  let { csp } = auditData.auditResult;
+
   // flatten the subitems
   csp = flattenCSP(csp);
+  log.debug(`CSP information from lighthouse report: ${JSON.stringify(csp)}`);
+
   /*
     all modern browsers support the `strict-dynamic` directive,
     so we don't need backward compatible suggestions
   */
-  csp = csp.filter((item) => !item.includes('backward compatible'));
+  csp = csp.filter((item) => !item.description?.includes('backward compatible'));
 
   if (!csp.length) {
+    log.debug(`No CSP information found for ${site.getId()}`);
     return { ...auditData };
   }
 
   const opportunity = await convertToOpportunity(
     auditUrl,
-    csp, // ??? not sure if this is correct, or if we should use the full auditData
+    { siteId: auditData.siteId, id: auditData.auditId },
     context,
     createOpportunityData,
-    Audit.AUDIT_TYPES.LHS_MOBILE,
+    Audit.AUDIT_TYPES.SECURITY_CSP,
   );
 
   const buildKey = (data) => data.description.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -74,8 +86,8 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   await syncSuggestions({
     opportunity,
     newData: csp,
-    buildKey,
     context,
+    buildKey,
     mapNewSuggestion: (data) => ({
       opportunityId: opportunity.getId(),
       type: 'CODE_CHANGE',
@@ -86,6 +98,7 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
         description: data.description,
       },
     }),
+    log,
   });
 
   return { ...auditData };
