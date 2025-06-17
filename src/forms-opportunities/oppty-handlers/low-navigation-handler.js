@@ -121,7 +121,6 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         data: {
           url: opportunityData.data.form,
           cr: opportunityData.data.trackedFormKPIValue,
-          screenshot: opportunityData.data.screenshot,
           cta_source: opportunityData.data.formNavigation.source,
           form_source: opportunityData.data.formsource || '',
         },

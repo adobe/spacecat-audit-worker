@@ -803,7 +803,7 @@ const testData = {
     data: {
       url: 'https://www.surest.com/newsletter',
       cr: 0.031,
-      screenshot: '',
+      form_source: '',
       metrics: [
         {
           type: 'conversionRate',
