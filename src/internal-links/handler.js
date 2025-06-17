@@ -55,6 +55,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
     // 3. Query for 404 internal links
     const internal404Links = await rumAPIClient.query('404-internal-links', options);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Found ${internal404Links.length} 404 internal links:`, JSON.stringify(internal404Links, null, 2));
 
     // 4. Check accessibility in parallel before transformation
     const accessibilityResults = await Promise.all(
@@ -63,6 +64,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         inaccessible: await isLinkInaccessible(link.url_to, log),
       })),
     );
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Accessibility check results:`, JSON.stringify(accessibilityResults, null, 2));
 
     // 5. Filter only inaccessible links and transform for further processing
     const inaccessibleLinks = accessibilityResults
@@ -72,9 +74,11 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         urlTo: result.link.url_to,
         trafficDomain: result.link.traffic_domain,
       }));
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Filtered ${inaccessibleLinks.length} inaccessible links:`, JSON.stringify(inaccessibleLinks, null, 2));
 
     // 6. Prioritize links
     const prioritizedLinks = calculatePriority(inaccessibleLinks);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Prioritized links:`, JSON.stringify(prioritizedLinks, null, 2));
 
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found: ${prioritizedLinks.length} broken internal links`);
 
@@ -171,7 +175,7 @@ export async function opportunityAndSuggestionsStep(context) {
             const data = await rumAPIClient.query('traffic-acquisition', {
               domain: url,
               interval: INTERVAL,
-              granularity: 'daily',
+              granularity: 'hourly',
             });
             // Find the entry for the URL and extract earned traffic
             const earned = Array.isArray(data) && data[0] && typeof data[0].earned === 'number' ? data[0].earned : 0;
