@@ -19,6 +19,7 @@ import { metatagsAutoDetect } from '../metatags/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
 import { runInternalLinkChecks } from './internal-links.js';
+import { runExternalLinkChecks } from './external-links.js';
 import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -120,7 +121,14 @@ export const preflightAudit = async (context) => {
     const result = normalizedUrls.map((url) => ({
       pageUrl: url,
       step: normalizedStep,
-      audits: [],
+      audits: [
+        { name: AUDIT_CANONICAL, type: 'seo', opportunities: [] },
+        { name: AUDIT_LINKS, type: 'seo', opportunities: [] },
+        { name: AUDIT_METATAGS, type: 'seo', opportunities: [] },
+        { name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] },
+        { name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] },
+        { name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] },
+      ],
     }));
     const resultMap = new Map(result.map((r) => [r.pageUrl, r]));
 
@@ -130,7 +138,12 @@ export const preflightAudit = async (context) => {
     // Create canonical audit entries for all pages
     normalizedUrls.forEach((url) => {
       const pageResult = resultMap.get(url);
-      pageResult.audits.push({ name: AUDIT_CANONICAL, type: 'seo', opportunities: [] });
+      pageResult.audits.find((a) => a.name === AUDIT_CANONICAL).opportunities.push({
+        check: 'canonical-check',
+        issue: 'Canonical check',
+        seoImpact: 'Moderate',
+        seoRecommendation: 'Ensure canonical URL is correct',
+      });
     });
 
     const canonicalResults = await Promise.all(
@@ -162,8 +175,6 @@ export const preflightAudit = async (context) => {
       }));
     });
 
-    await saveIntermediateResults(result, 'canonical audit');
-
     // Retrieve scraped pages
     const prefix = `scrapes/${site.getId()}/`;
     const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
@@ -176,20 +187,15 @@ export const preflightAudit = async (context) => {
         })),
     );
 
-    // Internal link checks
+    // Internal links checks
     const internalLinksStartTime = Date.now();
     const internalLinksStartTimestamp = new Date().toISOString();
-    // Create links audit entries for all pages
-    normalizedUrls.forEach((url) => {
-      const pageResult = resultMap.get(url);
-      pageResult.audits.push({ name: AUDIT_LINKS, type: 'seo', opportunities: [] });
+    const internalLinksResult = await runInternalLinkChecks(scrapedObjects, context, {
+      pageAuthToken,
     });
 
-    const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
-      pageAuthToken: `token ${pageAuthToken}`,
-    });
-    if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
-      auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
+    if (isNonEmptyArray(internalLinksResult.auditResult.brokenInternalLinks)) {
+      internalLinksResult.auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
         const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
         audit.opportunities.push({
           check: 'broken-internal-links',
@@ -202,6 +208,7 @@ export const preflightAudit = async (context) => {
         });
       });
     }
+
     const internalLinksEndTime = Date.now();
     const internalLinksEndTimestamp = new Date().toISOString();
     const internalLinksElapsed = ((internalLinksEndTime - internalLinksStartTime) / 1000)
@@ -210,13 +217,64 @@ export const preflightAudit = async (context) => {
 
     await saveIntermediateResults(result, 'internal links audit');
 
+    // External links checks
+    const externalLinksStartTime = Date.now();
+    const externalLinksResult = await runExternalLinkChecks(scrapedObjects, context);
+
+    if (isNonEmptyArray(externalLinksResult.auditResult.brokenExternalLinks)) {
+      externalLinksResult.auditResult.brokenExternalLinks.forEach(({ check, issue }) => {
+        // Find the page that contains this broken link
+        const pageWithBrokenLink = scrapedObjects.find(({ data }) => {
+          const html = data.scrapeResult.rawBody;
+          const dom = new JSDOM(html);
+          const doc = dom.window.document;
+          const anchors = Array.from(doc.querySelectorAll('a[href]'));
+          return anchors.some((a) => {
+            const abs = new URL(a.href, data.finalUrl).toString();
+            return issue.some((item) => item.url === abs);
+          });
+        });
+
+        if (pageWithBrokenLink) {
+          const audit = resultMap.get(pageWithBrokenLink.data.finalUrl)
+            .audits.find((a) => a.name === AUDIT_LINKS);
+          issue.forEach((item) => {
+            audit.opportunities.push({
+              check,
+              issue: {
+                url: item.url,
+                issue: item.issue,
+                seoImpact: item.seoImpact,
+                seoRecommendation: item.seoRecommendation,
+              },
+            });
+          });
+        }
+      });
+    }
+
+    const externalLinksEndTime = Date.now();
+    const externalLinksElapsed = ((externalLinksEndTime - externalLinksStartTime) / 1000)
+      .toFixed(2);
+    log.info(
+      `[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. `
+      + `External links audit completed in ${externalLinksElapsed} seconds`,
+    );
+
+    await saveIntermediateResults(result, 'external links audit');
+
     // Meta tags checks
     const metatagsStartTime = Date.now();
     const metatagsStartTimestamp = new Date().toISOString();
     // Create metatags audit entries for all pages
     normalizedUrls.forEach((url) => {
       const pageResult = resultMap.get(url);
-      pageResult.audits.push({ name: AUDIT_METATAGS, type: 'seo', opportunities: [] });
+      pageResult.audits.find((a) => a.name === AUDIT_METATAGS).opportunities.push({
+        check: 'metatags-check',
+        issue: 'Metatags check',
+        seoImpact: 'Moderate',
+        seoRecommendation: 'Ensure metatags are correctly implemented',
+      });
     });
 
     const {
@@ -252,9 +310,24 @@ export const preflightAudit = async (context) => {
     // Create DOM-based audit entries for all pages
     normalizedUrls.forEach((url) => {
       const pageResult = resultMap.get(url);
-      pageResult.audits.push({ name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] });
-      pageResult.audits.push({ name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] });
-      pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
+      pageResult.audits.find((a) => a.name === AUDIT_BODY_SIZE).opportunities.push({
+        check: 'body-size-check',
+        issue: 'Body size check',
+        seoImpact: 'Moderate',
+        seoRecommendation: 'Ensure body content is within recommended size',
+      });
+      pageResult.audits.find((a) => a.name === AUDIT_LOREM_IPSUM).opportunities.push({
+        check: 'lorem-ipsum-check',
+        issue: 'Lorem ipsum check',
+        seoImpact: 'High',
+        seoRecommendation: 'Replace Lorem ipsum with meaningful content',
+      });
+      pageResult.audits.find((a) => a.name === AUDIT_H1_COUNT).opportunities.push({
+        check: 'h1-count-check',
+        issue: 'H1 count check',
+        seoImpact: 'High',
+        seoRecommendation: 'Ensure exactly one H1 tag per page',
+      });
     });
 
     scrapedObjects.forEach(({ data }) => {
@@ -355,7 +428,7 @@ export const preflightAudit = async (context) => {
       },
     }));
 
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${JSON.stringify(resultWithProfiling)}`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Preflight audit completed in ${totalElapsed} seconds`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     jobEntity.setStatus(AsyncJob.Status.COMPLETED);
