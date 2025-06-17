@@ -55,7 +55,7 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks, rumTrafficData =
     projectedTrafficLost += linksToBeIncremented.reduce(
       (acc, link) => {
         const proposedUrl = link.urlsSuggested && link.urlsSuggested[0];
-        const trafficObj = rumTrafficData.find(t => t.url === proposedUrl);
+        const trafficObj = rumTrafficData.find((t) => t.url === proposedUrl);
         const earned = trafficObj ? trafficObj.earned : 0;
         return acc + earned * TRAFFIC_MULTIPLIER;
       },

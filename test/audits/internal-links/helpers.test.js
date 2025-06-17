@@ -18,12 +18,10 @@ import nock from 'nock';
 import {
   calculateKpiDeltasForAudit,
   resolveCpcValue,
-  MAX_LINKS_TO_CONSIDER,
   TRAFFIC_MULTIPLIER,
   CPC_DEFAULT_VALUE,
   isLinkInaccessible,
 } from '../../../src/internal-links/helpers.js';
-import { auditData } from '../../fixtures/internal-links-data.js';
 
 describe('calculateKpiDeltasForAudit', () => {
   it('should return zero values when no broken links exist', () => {
@@ -89,7 +87,8 @@ describe('calculateKpiDeltasForAudit', () => {
       earned: 100 * (i + 1),
     }));
     // Only top 10 links should be considered
-    const expectedTraffic = Array.from({ length: 10 }, (_, i) => 100 * (11 - i)).reduce((sum, earned) => sum + earned * TRAFFIC_MULTIPLIER, 0);
+    const expectedTraffic = Array.from({ length: 10 }, (_, i) => 100 * (11 - i))
+      .reduce((sum, earned) => sum + earned * TRAFFIC_MULTIPLIER, 0);
     const expectedTrafficValue = expectedTraffic * CPC_DEFAULT_VALUE;
     const result = calculateKpiDeltasForAudit(brokenLinks, rumTrafficData);
     expect(result).to.deep.equal({

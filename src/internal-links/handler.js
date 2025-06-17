@@ -156,8 +156,8 @@ export async function opportunityAndSuggestionsStep(context) {
   // Fetch RUM traffic for all proposed target URLs (urlsSuggested[0])
   const proposedUrls = Array.from(new Set(
     brokenInternalLinks
-      .map(link => link.urlsSuggested && link.urlsSuggested[0])
-      .filter(Boolean)
+      .map((link) => link.urlsSuggested && link.urlsSuggested[0])
+      .filter(Boolean),
   ));
 
   let rumTrafficData = [];
@@ -180,7 +180,7 @@ export async function opportunityAndSuggestionsStep(context) {
             log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to fetch RUM traffic for ${url}: ${e.message}`);
             return { url, earned: 0 };
           }
-        })
+        }),
       );
       rumTrafficData = trafficResults;
     }
