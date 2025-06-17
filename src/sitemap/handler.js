@@ -32,10 +32,11 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
 
-// Performance tuning constants
-const BATCH_SIZE = 10;
-const BATCH_DELAY_MS = 150; // Add delay between batches
-const REQUEST_TIMEOUT_MS = 8000; // 8 second timeout per request
+// Performance tuning constants - Optimized for 20K-30K URLs in 15min Lambda
+const BATCH_SIZE = 50; // Aggressive batching for high volume
+const BATCH_DELAY_MS = 50; // Minimal delay to prevent server overload
+const REQUEST_TIMEOUT_MS = 2000; // 2 second timeout for speed
+
 const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
 
 export const ERROR_CODES = Object.freeze({
@@ -165,6 +166,7 @@ export async function filterValidUrls(urls) {
     };
   }
 
+  const startTime = Date.now(); // Track start time for early termination
   const controller = new AbortController();
   const results = {
     ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
@@ -268,6 +270,13 @@ export async function filterValidUrls(urls) {
 
   // Process URLs in batches with rate limiting
   for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+    // Early termination for very large batches (stop after 12 minutes of URL checking)
+    const elapsedTime = (Date.now() - startTime) / 1000;
+    if (elapsedTime > 720) { // 12 minutes of URL checking
+      console.info(`Stopping URL validation after ${elapsedTime}s to prevent timeout. Processed ${results.ok.length + results.notOk.length + results.networkErrors.length} URLs.`);
+      break;
+    }
+
     const batch = urls.slice(i, i + BATCH_SIZE);
     const batchPromises = batch.map(checkUrl);
 
