@@ -14,10 +14,8 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
-// import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-// import { generateSuggestionData } from './suggestions-generator.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
   calculateKpiDeltasForAudit,
@@ -28,7 +26,7 @@ import {
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = 'broken-internal-links';
-const LINKS_CHUNK_SIZE = 3;
+const LINKS_CHUNK_SIZE = 40;
 
 /**
  * Perform an audit to check which internal links for domain are broken.
@@ -141,11 +139,6 @@ export async function opportunityAndSuggestionsStep(context) {
   } = context;
 
   const { brokenInternalLinks, success } = audit.getAuditResult();
-  // test code
-  // const { auditResult } = await internalLinksAuditRunner(
-  //   finalUrl,
-  //   context,
-  // );
 
   // const configuration = await Configuration.findLatest();
   // if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
@@ -153,7 +146,7 @@ export async function opportunityAndSuggestionsStep(context) {
   //   return brokenInternalLinks;
   // }
 
-  if (success === false) {
+  if (!success) {
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
     return {
       status: 'complete',
@@ -215,7 +208,7 @@ export async function opportunityAndSuggestionsStep(context) {
   );
 
   // Chunk the brokenInternalLinks array into pieces of LINKS_CHUNK_SIZE URLs each
-  // for further processing or batching.
+  // for further processing in batches. This is done to avoid aws lambda function timeout.
   const brokenInternalLinksChunks = [];
   for (let i = 0; i < brokenInternalLinks.length; i += LINKS_CHUNK_SIZE) {
     brokenInternalLinksChunks.push(brokenInternalLinks.slice(i, i + LINKS_CHUNK_SIZE));
@@ -235,14 +228,11 @@ export async function opportunityAndSuggestionsStep(context) {
       opportunityId: opportunity.getId(),
     },
   }));
-
-  for (const message of messages) {
-    // eslint-disable-next-line no-await-in-loop
+  // Send all messages in parallel using Promise.all to avoid sequential processing
+  await Promise.all(messages.map(async (message) => {
     await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, message);
     log.info(`Message sent to audit queue: ${JSON.stringify(message)}`);
-  }
-
-  // end test code
+  }));
   return {
     status: 'complete',
   };

@@ -23,19 +23,14 @@ export async function suggestionsInternalLinksHandler(message, context) {
 
   let { brokenInternalLinks } = message.data;
   const { opportunityId } = message.data;
-
   const { Opportunity, Site } = dataAccess;
 
   const site = await Site.findById(message.siteId);
   log.info(`Message received in suggestions-internal-links handler: site: ${JSON.stringify(site, null, 2)}`);
-  // const { auditId, siteId, data } = message;
-  // const { urls, msg } = data;
   log.info(`Message received in suggestions-internal-links handler brokenInternalLinks: ${JSON.stringify(message.data.brokenInternalLinks, null, 2)}`);
   log.info(`Message received in suggestions-internal-links handler: opportunityId: ${JSON.stringify(message.data.opportunityId, null, 2)}`);
-  // log.info(`Message received in suggestions-internal-links handler:
-  // context: ${JSON.stringify(context, null, 2)}`);
 
-  // generate suggestions
+  // generate suggestions for this set of broken internal links
   try {
     brokenInternalLinks = await generateSuggestionData(
       finalUrl,
@@ -47,12 +42,13 @@ export async function suggestionsInternalLinksHandler(message, context) {
     log.error(`[${AUDIT_TYPE}] [Site: ${message.siteId}] suggestion generation error: ${error.message}`);
   }
 
-  // find opportunity by id
+  // find opportunity by id and check if it belongs to the site
   const opportunity = await Opportunity.findById(opportunityId);
   if (!opportunity || opportunity.getSiteId() !== message.siteId) {
     throw new Error('Opportunity not found');
   }
 
+  // sync suggestions for this set of broken internal links
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
   await syncSuggestions({
     opportunity,
@@ -75,8 +71,3 @@ export async function suggestionsInternalLinksHandler(message, context) {
     log,
   });
 }
-
-// export default new AuditBuilder()
-//   .withUrlResolver(wwwUrlResolver)
-//   .addStep('suggestionsInternalLinks', suggestionsInternalLinksHandler)
-//   .build();
