@@ -11,221 +11,127 @@
  */
 
 /* c8 ignore start */
-import { StartQueryExecutionCommand, GetQueryExecutionCommand, GetQueryResultsCommand } from '@aws-sdk/client-athena';
+import {
+  StartQueryExecutionCommand,
+  GetQueryExecutionCommand,
+  GetQueryResultsCommand,
+} from '@aws-sdk/client-athena';
 
 /**
- * Retry configuration for Athena operations
+ * Polls Athena until the query finishes (SUCCEEDED, FAILED, or CANCELLED).
+ * @param {AthenaClient} client
+ * @param {string} queryExecutionId
+ * @param {number} [maxAttempts=60]
+ * @throws {Error} if the query fails or times out
  */
-const RETRY_CONFIG = {
-  maxAttempts: 3,
-  baseDelayMs: 1000,
-  maxDelayMs: 10000,
-  retryableErrors: [
-    'TooManyRequestsException',
-    'ThrottlingException',
-    'InternalServerException',
-    'ServiceUnavailableException',
-    'RequestTimeoutException',
-  ],
-};
+export async function waitForCompletion(client, queryExecutionId, maxAttempts = 60) {
+  let attempts = 0;
 
-/**
- * Sleep utility for retry delays
- */
-function sleep(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
+  // Poll every second until success or failure
+  // eslint-disable-next-line no-constant-condition
+  while (attempts < maxAttempts) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1000);
+    });
 
-/**
- * Check if error is retryable
- */
-function isRetryableError(error) {
-  if (!error) return false;
+    // eslint-disable-next-line no-await-in-loop
+    const { QueryExecution } = await client.send(
+      new GetQueryExecutionCommand({ QueryExecutionId: queryExecutionId }),
+    );
+    const { State, StateChangeReason } = QueryExecution.Status;
 
-  // Check AWS SDK error codes
-  if (error.name && RETRY_CONFIG.retryableErrors.includes(error.name)) {
-    return true;
-  }
-
-  // Check for throttling in message
-  if (error.message && error.message.toLowerCase().includes('throttl')) {
-    return true;
-  }
-
-  // Check for rate limit
-  if (error.message && error.message.toLowerCase().includes('rate limit')) {
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Execute function with exponential backoff retry
- */
-async function executeWithRetry(fn, operation, log) {
-  let lastError;
-
-  for (let attempt = 1; attempt <= RETRY_CONFIG.maxAttempts; attempt += 1) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      return await fn();
-    } catch (error) {
-      lastError = error;
-
-      if (attempt === RETRY_CONFIG.maxAttempts || !isRetryableError(error)) {
-        // Last attempt or non-retryable error
-        throw error;
-      }
-
-      // Calculate delay with exponential backoff
-      const delay = Math.min(
-        RETRY_CONFIG.baseDelayMs * 2 ** (attempt - 1),
-        RETRY_CONFIG.maxDelayMs,
-      );
-
-      log.warn(`${operation} attempt ${attempt} failed, retrying in ${delay}ms:`, {
-        error: error.message,
-        errorCode: error.name,
-        attempt,
-        maxAttempts: RETRY_CONFIG.maxAttempts,
-      });
-
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(delay);
+    if (State === 'SUCCEEDED') {
+      return;
     }
+
+    if (State === 'FAILED' || State === 'CANCELLED') {
+      throw new Error(StateChangeReason || `Athena query ${State}`);
+    }
+
+    attempts += 1;
   }
 
-  throw lastError;
+  throw new Error('Athena query polling timed out');
 }
 
 /**
- * Parse Athena results into usable format
+ * Flattens Athena GetQueryResultsCommand output into an array of objects.
+ * @param {object} result
+ * @returns {Array<Record<string, string>>}
  */
-export function parseAthenaResults(results) {
-  if (!results.ResultSet || !results.ResultSet.Rows || results.ResultSet.Rows.length === 0) {
+export function parseResults(result) {
+  const rows = result.ResultSet?.Rows ?? [];
+  if (rows.length === 0) {
     return [];
   }
 
-  const rows = results.ResultSet.Rows;
-  const headers = rows[0].Data.map((col) => col.VarCharValue);
+  const headers = rows[0].Data.map((col) => col.VarCharValue || '');
 
   return rows.slice(1).map((row) => {
     const record = {};
     row.Data.forEach((col, index) => {
-      record[headers[index]] = col.VarCharValue;
+      record[headers[index]] = col.VarCharValue || '';
     });
     return record;
   });
 }
 
 /**
- * Wait for Athena query execution to complete
+ * Executes a DDL or setup query (e.g., CREATE TABLE) in Athena.
+ * @param {AthenaClient} athenaClient
+ * @param {string} sql
+ * @param {string} description
+ * @param {{ getAthenaTempLocation: () => string }} s3Config
+ * @param {{ info: Function, warn: Function }} log
  */
-export async function waitForQueryExecution(athenaClient, queryExecutionId, maxAttempts = 60) {
-  let queryExecution;
-  let attempts = 0;
-
-  while (attempts < maxAttempts) {
-    // eslint-disable-next-line no-await-in-loop
-    await sleep(1000);
-    const getCommand = new GetQueryExecutionCommand({ QueryExecutionId: queryExecutionId });
-    // eslint-disable-next-line no-await-in-loop
-    queryExecution = await athenaClient.send(getCommand);
-    attempts += 1;
-
-    const state = queryExecution.QueryExecution.Status.State;
-    if (state !== 'RUNNING' && state !== 'QUEUED') {
-      break;
-    }
-  }
-
-  // If we've reached max attempts and query is still running, throw an error
-  const finalState = queryExecution.QueryExecution.Status.State;
-  if ((finalState === 'RUNNING' || finalState === 'QUEUED') && attempts >= maxAttempts) {
-    throw new Error(`Query execution timed out after ${maxAttempts} attempts. Current state: ${finalState}`);
-  }
-
-  return queryExecution;
-}
-
-/**
- * Execute a setup query and wait for completion
- */
-export async function executeAthenaSetupQuery(athenaClient, query, description, s3Config, log) {
+export async function executeAthenaSetupQuery(athenaClient, sql, description, s3Config, log) {
   try {
-    log.info(`🔧 Setting up ${description}...`);
+    log.info(`Setting up ${description}...`);
 
-    await executeWithRetry(async () => {
-      const startCommand = new StartQueryExecutionCommand({
-        QueryString: query,
+    const startResult = await athenaClient.send(
+      new StartQueryExecutionCommand({
+        QueryString: sql,
         QueryExecutionContext: { Database: 'default' },
-        ResultConfiguration: {
-          OutputLocation: s3Config.getAthenaTempLocation(),
-        },
-      });
+        ResultConfiguration: { OutputLocation: s3Config.getAthenaTempLocation() },
+      }),
+    );
 
-      const startResult = await athenaClient.send(startCommand);
-      const queryExecutionId = startResult.QueryExecutionId;
+    await waitForCompletion(athenaClient, startResult.QueryExecutionId);
 
-      // Wait for completion
-      const queryExecution = await waitForQueryExecution(athenaClient, queryExecutionId);
-
-      if (queryExecution.QueryExecution.Status.State === 'SUCCEEDED') {
-        log.info(`✅ ${description} setup completed`);
-      } else {
-        const error = queryExecution.QueryExecution.Status.StateChangeReason || 'Unknown error';
-        log.warn(`⚠️ ${description} setup issue: ${error}`);
-        // Don't throw for table creation issues - might already exist
-      }
-    }, `${description} setup`, log);
+    log.info(`${description} setup completed`);
   } catch (error) {
-    log.warn(`⚠️ ${description} setup warning:`, error.message);
-    // Don't throw - continue with analysis even if setup has issues
+    log.warn(`${description} setup warning: ${error.message}`);
+    // Continue even if setup had issues (e.g., table already exists)
   }
 }
 
 /**
- * Execute Athena query and return results
+ * Executes a query in Athena and returns parsed results.
+ * @param {AthenaClient} athenaClient
+ * @param {string} sql
+ * @param {{ getAthenaTempLocation: () => string }} s3Config
+ * @param {{ info: Function }} log
+ * @param {string} [database='cdn_logs']
+ * @returns {Promise<Array<Record<string, string>>>}
  */
-export async function executeAthenaQuery(athenaClient, query, s3Config, log, database = 'cdn_logs') {
-  return executeWithRetry(async () => {
-    // Start query execution with retry
-    const startCommand = new StartQueryExecutionCommand({
-      QueryString: query,
+export async function executeAthenaQuery(athenaClient, sql, s3Config, log, database = 'cdn_logs') {
+  log.info('Executing Athena query');
+
+  const startResult = await athenaClient.send(
+    new StartQueryExecutionCommand({
+      QueryString: sql,
       QueryExecutionContext: { Database: database },
-      ResultConfiguration: {
-        OutputLocation: s3Config.getAthenaTempLocation(),
-      },
-    });
+      ResultConfiguration: { OutputLocation: s3Config.getAthenaTempLocation() },
+    }),
+  );
 
-    const startResult = await athenaClient.send(startCommand);
-    const queryExecutionId = startResult.QueryExecutionId;
+  await waitForCompletion(athenaClient, startResult.QueryExecutionId);
 
-    // Wait for query completion (this includes its own retry logic)
-    const queryExecution = await waitForQueryExecution(athenaClient, queryExecutionId);
+  const results = await athenaClient.send(
+    new GetQueryResultsCommand({ QueryExecutionId: startResult.QueryExecutionId }),
+  );
 
-    if (queryExecution.QueryExecution.Status.State !== 'SUCCEEDED') {
-      const errorMessage = queryExecution.QueryExecution.Status.StateChangeReason || 'Unknown query failure';
-      const error = new Error(`Query failed: ${errorMessage}`);
-
-      // Mark certain query failures as retryable
-      if (errorMessage.toLowerCase().includes('resource')
-        || errorMessage.toLowerCase().includes('capacity')
-        || errorMessage.toLowerCase().includes('limit')) {
-        error.name = 'ThrottlingException';
-      }
-
-      throw error;
-    }
-
-    // Get query results with retry
-    const resultsCommand = new GetQueryResultsCommand({ QueryExecutionId: queryExecutionId });
-    const results = await athenaClient.send(resultsCommand);
-
-    return parseAthenaResults(results);
-  }, 'Athena query execution', log);
+  return parseResults(results);
 }
 /* c8 ignore stop */

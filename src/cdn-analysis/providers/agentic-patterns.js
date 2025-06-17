@@ -20,17 +20,6 @@ export const AGENTIC_TECH_MAPPING = [
 ];
 
 /**
- * Builds the CASE expression for classifying user‐agent strings.
- * @param {string} field – the column to inspect, e.g. 'ua' or 'request_user_agent'
- */
-export function buildTypeClassification(field) {
-  const cases = AGENTIC_TECH_MAPPING
-    .map(({ name, pattern }) => `WHEN ${field} LIKE '%${pattern}%' THEN '${name}'`)
-    .join('\n    ');
-  return `CASE\n    ${cases}\n    ELSE 'Other'\nEND`;
-}
-
-/**
  * Builds the WHERE clause that detects any of the mapped agentic patterns.
  * @param {string} userAgentField – the column to inspect
  */

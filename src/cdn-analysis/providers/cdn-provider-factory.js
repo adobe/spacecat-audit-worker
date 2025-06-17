@@ -11,44 +11,70 @@
  */
 
 /* c8 ignore start */
-import { FastlyProvider } from './fastly-provider.js';
-import { AkamaiProvider } from './akamai-provider.js';
+// providers/cdn-provider-factory.js
+import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import zlib from 'zlib';
+import * as akamai from './akamai-config.js';
+import * as fastly from './fastly-config.js';
 
-const CDN_PROVIDER_MAP = {
-  fastly: FastlyProvider,
-  akamai: AkamaiProvider,
-};
-
-function determineCdnType(site, context) {
-  const { log } = context;
-  if (!site) {
-    log.warn('No site provided, defaulting to Fastly CDN');
-    return 'fastly';
+/**
+ * Reads a Node.js Readable stream into a Buffer.
+ * @param {import('stream').Readable} stream
+ * @returns {Promise<Buffer>}
+ */
+async function bufferFromStream(stream) {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
   }
-  const baseURL = typeof site.getBaseURL === 'function'
-    ? site.getBaseURL()
-    : site.baseURL;
-  if (baseURL) {
-    const host = new URL(baseURL).hostname.toLowerCase();
-    if (host.includes('adobe.com')) {
-      log.info(`Detected Adobe domain (${host}), using Akamai CDN`);
-      return 'akamai';
-    }
-    if (host.includes('bulk.com')) {
-      log.info(`Detected Bulk domain (${host}), using Fastly CDN`);
-      return 'fastly';
-    }
-  }
-  log.info('No specific CDN type detected, defaulting to Fastly CDN');
-  return 'fastly';
+  return Buffer.concat(chunks);
 }
 
-export function getCdnProvider(site, context) {
-  const { log } = context;
-  const cdnType = determineCdnType(site, context);
-  const CDNProvider = CDN_PROVIDER_MAP[cdnType] || FastlyProvider;
-  log.info(`Using ${cdnType.toUpperCase()} CDN provider`);
-  return new CDNProvider(context, site);
+/**
+ * Samples a raw log file to detect the proper CDN provider.
+ * If the file ends with .gz, fetches the full object to decompress.
+ * Otherwise, fetches only a byte range for inspection.
+ *
+ * @param {S3Client} s3Client
+ * @param {string} bucket
+ * @param {string} prefix
+ * @returns {Promise<typeof akamai|typeof fastly>}
+ */
+export async function determineCdnProvider(s3Client, bucket, prefix) {
+  const listResult = await s3Client.send(
+    new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, MaxKeys: 1 }),
+  );
+  const key = listResult.Contents?.[0]?.Key;
+  if (!key) {
+    return fastly;
+  }
+
+  let content;
+  if (key.endsWith('.gz')) {
+    // fetch entire gzipped file for correct decompression
+    const obj = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const buf = await bufferFromStream(obj.Body);
+    content = zlib.gunzipSync(buf).toString('utf8');
+  } else {
+    // fetch just the first 64KB for inspection
+    const obj = await s3Client.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key, Range: 'bytes=0-65535' }),
+    );
+    const buf = await bufferFromStream(obj.Body);
+    content = buf.toString('utf8');
+  }
+
+  const firstLine = content.split('\n').find((line) => line.trim());
+  try {
+    const record = JSON.parse(firstLine);
+    if (record.reqTimeSec !== undefined) {
+      return akamai;
+    }
+  } catch {
+    // not JSON or missing field — fall back
+  }
+
+  return fastly;
 }
 
 /* c8 ignore stop */

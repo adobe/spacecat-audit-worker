@@ -12,53 +12,71 @@
 
 /* c8 ignore start */
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getCdnProvider } from './providers/cdn-provider-factory.js';
-import { runAllAnalysis } from './utils/analysis-runners.js';
+import { determineCdnProvider } from './providers/cdn-provider-factory.js';
+import { getPreviousHour, getHourParts, formatS3Prefix } from './utils/date-utils.js';
+import {
+  extractCustomerDomain,
+  getRawLogsBucket,
+  createDatabaseDDL,
+  createRawTableDDL,
+  createAggregatedUnloadQuery,
+} from './utils/pipeline-utils.js';
+import { executeAthenaSetupQuery, executeAthenaQuery } from './utils/athena-client.js';
 
 async function runCdnAnalysis(auditUrl, context, site) {
-  const { log, athenaClient } = context;
-  const provider = getCdnProvider(site, context);
-  const hourToProcess = new Date(Date.now() - 60 * 60 * 1000);
+  const { log, athenaClient, s3Client } = context;
 
-  log.info(`Starting CDN Analysis for ${auditUrl} using ${provider.constructor.config.cdnType.toUpperCase()} provider`);
+  const customerDomain = extractCustomerDomain(site);
+  const rawLogsBucket = getRawLogsBucket(customerDomain);
 
-  // make sure athena tables exist
-  await provider.ensureTablesExist(athenaClient, log);
+  const hour = getPreviousHour();
+  const parts = getHourParts(hour);
+  const prefix = formatS3Prefix('raw', parts);
 
-  // filter agentic logs
-  log.info(`Filtering agentic logs for ${hourToProcess.toISOString()}`);
-  const agenticLogCount = await provider.filterAndStoreAgenticLogs(
+  const provider = await determineCdnProvider(s3Client, rawLogsBucket, prefix);
+  const { config, mappingExpressions } = provider;
+  log.info(`Using ${config.cdnType.toUpperCase()} provider`);
+
+  const database = `cdn_logs_${customerDomain}`;
+  const rawTable = `raw_logs_${customerDomain}`;
+  const rawLocation = `s3://${rawLogsBucket}/raw/`;
+  const s3Config = { getAthenaTempLocation: () => `s3://${rawLogsBucket}/temp/athena-results/` };
+
+  await executeAthenaSetupQuery(athenaClient, createDatabaseDDL(database), 'database', s3Config, log);
+  await executeAthenaSetupQuery(
     athenaClient,
-    hourToProcess,
+    createRawTableDDL({
+      database,
+      table: rawTable,
+      location: rawLocation,
+      schema: config.rawLogsSchema,
+      tableProperties: config.tableProperties,
+    }),
+    'raw logs table',
+    s3Config,
     log,
   );
-  log.info(`Filtered ${agenticLogCount} agentic logs`);
 
-  // create filtered logs table
-  log.info(`Creating filtered logs table for ${hourToProcess.toISOString()}`);
-  await provider.createFilteredLogsTable(athenaClient, log);
+  const unloadSql = createAggregatedUnloadQuery({
+    database,
+    rawTable,
+    mappingExpressions,
+    defaultFilterClause: config.defaultFilterClause,
+    bucket: rawLogsBucket,
+    parts,
+    userAgentField: config.userAgentField,
+  });
+  await executeAthenaQuery(athenaClient, unloadSql, s3Config, log, database);
 
-  // run all analyses
-  log.info(`Running analysis for ${hourToProcess.toISOString()}`);
-  const executionResults = await runAllAnalysis(
-    athenaClient,
-    hourToProcess,
-    provider,
-    log,
-  );
-  log.info(`CDN log analysis execution completed: ${executionResults.completed}/${executionResults.total} succeeded`);
+  log.info(`Wrote aggregated hour to s3://${rawLogsBucket}/aggregated/${parts.year}/${parts.month}/${parts.day}/${parts.hour}/`);
 
   return {
     auditResult: {
-      hourProcessed: hourToProcess.toISOString(),
-      agenticLogCount,
-      executionResults,
-      cdnType: provider.constructor.config.cdnType,
-      databaseName: provider.databaseName,
-      customerDomain: provider.customerDomain,
-      environment: provider.environment,
-      sourceTable: provider.rawTableName,
-      filteredTable: provider.filteredTableName,
+      hourProcessed: hour.toISOString(),
+      cdnType: config.cdnType,
+      database,
+      rawTable,
+      outputLocation: `s3://${rawLogsBucket}/aggregated/${parts.year}/${parts.month}/${parts.day}/${parts.hour}/`,
       completedAt: new Date().toISOString(),
     },
     fullAuditRef: auditUrl,

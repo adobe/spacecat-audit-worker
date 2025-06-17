@@ -11,15 +11,10 @@
  */
 
 /* c8 ignore start */
-import { BaseProvider } from './base-provider.js';
-import { buildTypeClassification } from './agentic-patterns.js';
-
-const FASTLY_CONFIG = {
+export const config = {
   cdnType: 'fastly',
-  databaseName: 'cdn_logs',
   userAgentField: 'request_user_agent',
   defaultFilterClause: "(response_content_type LIKE 'text/html%' OR url LIKE '%robots%' OR url LIKE '%sitemap%')",
-
   rawLogsSchema: {
     timestamp: 'string',
     geo_country: 'string',
@@ -34,54 +29,17 @@ const FASTLY_CONFIG = {
     request_referer: 'string',
     response_content_type: 'string',
   },
-
-  filteredLogsSchema: {
-    timestamp: 'string',
-    geo_country: 'string',
-    host: 'string',
-    url: 'string',
-    request_method: 'string',
-    request_protocol: 'string',
-    request_user_agent: 'string',
-    response_state: 'string',
-    response_status: 'int',
-    response_reason: 'string',
-    request_referer: 'string',
-    response_content_type: 'string',
-    agentic_type: 'string',
-  },
-
   tableProperties: {
     serdeLibrary: 'org.apache.hive.hcatalog.data.JsonSerDe',
     storageFormat: 'ROW FORMAT SERDE',
-    filteredStorageFormat: 'STORED AS PARQUET',
   },
 };
 
-function mapFastlyFieldsForUnload() {
-  return {
-    selectFields: [
-      'timestamp',
-      'geo_country',
-      'host',
-      'url',
-      'request_method',
-      'request_protocol',
-      'request_user_agent',
-      'response_state',
-      'response_status',
-      'response_reason',
-      'request_referer',
-      'response_content_type',
-      `${buildTypeClassification('request_user_agent')} AS agentic_type`,
-    ].join(',\n          '),
-  };
-}
-
-export class FastlyProvider extends BaseProvider {
-  static config = FASTLY_CONFIG;
-
-  static mapFieldsForUnload = mapFastlyFieldsForUnload;
-}
+export const mappingExpressions = {
+  url: 'url',
+  user_agent: 'request_user_agent',
+  status: 'response_status',
+  referer: 'request_referer',
+};
 
 /* c8 ignore stop */
