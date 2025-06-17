@@ -17,16 +17,13 @@ export const extractTextAndCountWords = (html) => {
     return { textContent: '', wordCount: 0 };
   }
 
-  // Remove script and style elements using regex (before parsing)
-  const cleanHtml = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
-
   // Use cheerio to parse and manipulate DOM
-  const $ = load(cleanHtml);
+  const $ = load(html, {
+    scriptingEnabled: false, // https://cheerio.js.org/docs/api/interfaces/CheerioOptions#scriptingenabled
+  });
 
   // Remove nav, header, footer, and ad-related elements
-  $('nav, header, footer, [class*="ad" i], [id*="ad" i]').remove();
+  $('nav, header, style, script, footer, [class*="ad" i], [id*="ad" i]').remove();
 
   // Extract all text from the remaining <body>
   const textContent = $('body').text().replace(/\s+/g, ' ').trim();
