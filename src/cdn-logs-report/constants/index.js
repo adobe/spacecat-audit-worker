@@ -34,14 +34,12 @@ export const TABLE_NAMES = {
   COUNTRY: 'aggregated_logs_analysis_type_reqcountbycountry',
   USER_AGENT: 'aggregated_logs_analysis_type_reqcountbyuseragent',
   URL_STATUS: 'aggregated_logs_analysis_type_reqcountbyurlstatus',
-  URL_USER_AGENT_STATUS: 'aggregated_logs_analysis_type_reqcountbyurluseragentstatus',
 };
 
 export const COLUMN_MAPPINGS = {
   COUNTRY: 'request_count',
   USER_AGENT: 'count',
   URL_STATUS: 'count',
-  URL_USER_AGENT_STATUS: 'count',
 };
 
 export const TABLE_PREFIX = 'aggregated_logs_';

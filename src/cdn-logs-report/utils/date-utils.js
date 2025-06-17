@@ -13,7 +13,9 @@
 /* c8 ignore start */
 import { TIME_CONSTANTS, ERROR_MESSAGES } from '../constants/index.js';
 
-const getDateOnly = (date) => date.toISOString().split('T')[0];
+export function formatDateString(date) {
+  return date.toISOString().split('T')[0];
+}
 
 function getWeekNumber(date) {
   const d = new Date(date);
@@ -60,8 +62,8 @@ export function createDateRange(startInput, endInput) {
 }
 
 export function generatePeriodIdentifier(startDate, endDate) {
-  const start = getDateOnly(startDate);
-  const end = getDateOnly(endDate);
+  const start = formatDateString(startDate);
+  const end = formatDateString(endDate);
 
   // Check if it's a 7-day week period
   const diffDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));
@@ -87,8 +89,8 @@ export function generateReportingPeriods(referenceDate = new Date()) {
     startDate: weekStart,
     endDate: weekEnd,
     dateRange: {
-      start: getDateOnly(weekStart),
-      end: getDateOnly(weekEnd),
+      start: formatDateString(weekStart),
+      end: formatDateString(weekEnd),
     },
   }];
 

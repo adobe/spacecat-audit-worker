@@ -28,14 +28,19 @@ import {
 } from '../constants/index.js';
 
 async function getAvailableAnalysisTypes(athenaClient, databaseName, s3Config, log) {
-  const query = `SHOW TABLES IN ${databaseName}`;
-  const results = await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
-  const tableNames = results.flatMap((row) => Object.values(row));
+  try {
+    const query = `SHOW TABLES IN ${databaseName}`;
+    const results = await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
 
-  return tableNames
-    .filter((tableName) => tableName.startsWith('aggregated_logs_analysis_type_'))
-    .map((tableName) => tableName.replace('aggregated_logs_analysis_type_', ''))
-    .filter((analysisType) => analysisType.length > 0);
+    const tableNames = results.flatMap((row) => Object.values(row));
+    return tableNames
+      .filter((tableName) => tableName.startsWith('aggregated_logs_analysis_type_'))
+      .map((tableName) => tableName.replace('aggregated_logs_analysis_type_', ''))
+      .filter((analysisType) => analysisType.length > 0);
+  } catch (error) {
+    log.error(`Failed to get analysis types: ${error.message}`);
+    throw new Error(`Failed to get analysis types: ${error.message}`);
+  }
 }
 
 async function collectReportData(
@@ -67,11 +72,6 @@ async function collectReportData(
       databaseName,
       provider,
       pageTypePatterns,
-    ),
-    reqcountbyurluseragentstatus: weeklyBreakdownQueries.createUrlUserAgentStatusBreakdown(
-      periods,
-      databaseName,
-      provider,
     ),
     individual_urls_by_status: weeklyBreakdownQueries.createTopBottomUrlsByStatus(
       periods,
