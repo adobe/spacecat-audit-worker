@@ -11,11 +11,7 @@
  */
 
 /* c8 ignore start */
-import { RequestAnalysisQuery } from '../queries/request-analysis.js';
-import { UrlTrafficAnalysisQuery } from '../queries/url-traffic-analysis.js';
 import { UserAgentRequestAnalysisQuery } from '../queries/user-agent-request-analysis.js';
-import { QuerySourceAnalysisQuery } from '../queries/query-source-analysis.js';
-import { UrlUserAgentStatusAnalysisQuery } from '../queries/url-user-agent-status-analysis.js';
 import { UrlStatusAnalysisQuery } from '../queries/url-status-analysis.js';
 import { GeographicAnalysisQuery } from '../queries/geographic-analysis.js';
 
@@ -25,11 +21,7 @@ import { GeographicAnalysisQuery } from '../queries/geographic-analysis.js';
 export async function runAllAnalysis(athenaClient, hour, s3Config, tableName, cdnProvider, log) {
   const databaseName = cdnProvider.getDatabaseName();
   const queries = [
-    new RequestAnalysisQuery(hour, tableName, s3Config),
-    new UrlTrafficAnalysisQuery(hour, tableName, s3Config),
     new UserAgentRequestAnalysisQuery(hour, tableName, s3Config),
-    new QuerySourceAnalysisQuery(hour, tableName, s3Config),
-    new UrlUserAgentStatusAnalysisQuery(hour, tableName, s3Config),
     new UrlStatusAnalysisQuery(hour, tableName, s3Config),
     new GeographicAnalysisQuery(hour, tableName, s3Config),
   ];
