@@ -18,6 +18,7 @@ const AKAMAI_CONFIG = {
   cdnType: 'akamai',
   databaseName: 'cdn_logs_',
   userAgentField: 'ua',
+  defaultFilterClause: null,
 
   rawLogsSchema: {
     reqTimeSec: 'string',

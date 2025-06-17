@@ -18,6 +18,7 @@ const FASTLY_CONFIG = {
   cdnType: 'fastly',
   databaseName: 'cdn_logs',
   userAgentField: 'request_user_agent',
+  defaultFilterClause: "response_content_type LIKE 'text/html%'", // filters out non-html content
 
   rawLogsSchema: {
     timestamp: 'string',
@@ -31,6 +32,7 @@ const FASTLY_CONFIG = {
     response_status: 'int',
     response_reason: 'string',
     request_referer: 'string',
+    response_content_type: 'string',
   },
 
   filteredLogsSchema: {
@@ -45,6 +47,7 @@ const FASTLY_CONFIG = {
     response_status: 'int',
     response_reason: 'string',
     request_referer: 'string',
+    response_content_type: 'string',
     agentic_type: 'string',
   },
 
@@ -69,6 +72,7 @@ function mapFastlyFieldsForUnload() {
       'response_status',
       'response_reason',
       'request_referer',
+      'response_content_type',
       `${buildTypeClassification('request_user_agent')} AS agentic_type`,
     ].join(',\n          '),
   };

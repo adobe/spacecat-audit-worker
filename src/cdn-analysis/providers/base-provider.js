@@ -211,7 +211,10 @@ export class BaseProvider {
     const outputPath = `${this.getFilteredLogsLocation()}year=${year}/month=${month}/day=${day}/hour=${hour}/`;
     const { selectFields } = this.constructor.mapFieldsForUnload();
     const db = this.databaseName;
-    const detection = buildDetectionClause(this.constructor.config.userAgentField);
+
+    const detectionClause = buildDetectionClause(this.constructor.config.userAgentField);
+    const extraFilter = this.constructor.config.defaultFilterClause;
+    const filterClause = extraFilter ? `${detectionClause} AND ${extraFilter}` : detectionClause;
 
     const unloadQuery = `
       UNLOAD (
@@ -219,7 +222,7 @@ export class BaseProvider {
           ${selectFields}
         FROM ${db}.${this.rawTableName}
         ${whereClause}
-          AND ${detection}
+          AND ${filterClause}
       ) TO '${outputPath}'
       WITH (format = 'PARQUET')
     `;
@@ -231,7 +234,7 @@ export class BaseProvider {
       SELECT COUNT(*) AS agentic_count
       FROM ${db}.${this.rawTableName}
       ${whereClause}
-        AND ${detection}
+        AND ${filterClause}
       `,
       this.s3Config,
       log,
