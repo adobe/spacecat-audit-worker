@@ -223,7 +223,7 @@ export async function opportunityAndSuggestionsStep(context) {
         urlsSuggested: entry.urlsSuggested || [],
         aiRationale: entry.aiRationale || '',
         trafficDomain: entry.trafficDomain,
-        priority: entry.priority,
+        // priority: entry.priority,
       },
     }),
     log,
