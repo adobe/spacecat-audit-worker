@@ -31,6 +31,7 @@ const AKAMAI_CONFIG = {
     UA: 'string',
     statusCode: 'string',
     referer: 'string',
+    rspContentType: 'string',
   },
 
   filteredLogsSchema: {
