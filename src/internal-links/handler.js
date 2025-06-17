@@ -113,6 +113,7 @@ export async function runAuditAndImportTopPagesStep(context) {
     context,
   );
 
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit completed, returning result for next step`);
   return {
     auditResult: internalLinksAuditRunnerResult.auditResult,
     fullAuditRef: finalUrl,
@@ -125,6 +126,7 @@ export async function prepareScrapingStep(context) {
   const {
     log, site, dataAccess,
   } = context;
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting prepareScrapingStep`);
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
@@ -142,17 +144,22 @@ export async function opportunityAndSuggestionsStep(context) {
   const {
     log, site, finalUrl, audit, dataAccess,
   } = context;
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting opportunityAndSuggestionsStep`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit result:`, JSON.stringify(audit.getAuditResult(), null, 2));
 
   let { brokenInternalLinks } = audit.getAuditResult();
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Initial brokenInternalLinks:`, JSON.stringify(brokenInternalLinks, null, 2));
 
   // generate suggestions
   try {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Starting to generate suggestions`);
     brokenInternalLinks = await generateSuggestionData(
       finalUrl,
       audit,
       context,
       site,
     );
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Generated suggestions:`, JSON.stringify(brokenInternalLinks, null, 2));
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
   }
@@ -163,10 +170,12 @@ export async function opportunityAndSuggestionsStep(context) {
       .map((link) => link.urlsSuggested && link.urlsSuggested[0])
       .filter(Boolean),
   ));
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Proposed URLs for traffic check:`, JSON.stringify(proposedUrls, null, 2));
 
   let rumTrafficData = [];
   try {
     if (proposedUrls.length > 0) {
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Fetching traffic data for ${proposedUrls.length} URLs`);
       const rumAPIClient = RUMAPIClient.createFrom(context);
       // Query RUM for traffic data using the base URL
       const trafficData = await rumAPIClient.query('traffic-acquisition', {
@@ -174,6 +183,7 @@ export async function opportunityAndSuggestionsStep(context) {
         interval: INTERVAL,
         granularity: 'hourly',
       });
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Raw traffic data:`, JSON.stringify(trafficData, null, 2));
       rumTrafficData = proposedUrls.map((url) => {
         const urlData = trafficData.find((data) => data.url === url);
         return {
@@ -181,7 +191,7 @@ export async function opportunityAndSuggestionsStep(context) {
           earned: urlData ? urlData.earned : 0,
         };
       });
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Traffic data for proposed URLs:`, JSON.stringify(rumTrafficData, null, 2));
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Processed traffic data:`, JSON.stringify(rumTrafficData, null, 2));
     }
   } catch (e) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Error fetching RUM traffic data: ${e.message}`);
@@ -189,8 +199,10 @@ export async function opportunityAndSuggestionsStep(context) {
 
   // Pass rumTrafficData to KPI calculation
   const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks, rumTrafficData);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Calculated KPI deltas:`, JSON.stringify(kpiDeltas, null, 2));
 
   if (!isNonEmptyArray(brokenInternalLinks)) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No broken internal links found, checking for existing opportunities`);
     // no broken internal links found
     // fetch opportunity
     const { Opportunity } = dataAccess;
@@ -199,6 +211,7 @@ export async function opportunityAndSuggestionsStep(context) {
       const opportunities = await Opportunity
         .allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
       opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Found existing opportunity:`, opportunity ? 'yes' : 'no');
     } catch (e) {
       log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
       throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
@@ -214,20 +227,24 @@ export async function opportunityAndSuggestionsStep(context) {
       // We also need to update all suggestions inside this opportunity
       // Get all suggestions for this opportunity
       const suggestions = await opportunity.getSuggestions();
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Found ${suggestions.length} suggestions to update`);
 
       // If there are suggestions, update their status to outdated
       if (isNonEmptyArray(suggestions)) {
         const { Suggestion } = dataAccess;
         await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
+        log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Updated suggestions to OUTDATED status`);
       }
       opportunity.setUpdatedBy('system');
       await opportunity.save();
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Saved updated opportunity`);
     }
     return {
       status: 'complete',
     };
   }
 
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Creating new opportunity with ${brokenInternalLinks.length} broken links`);
   const opportunity = await convertToOpportunity(
     finalUrl,
     { siteId: site.getId(), id: audit.getId() },
@@ -238,8 +255,10 @@ export async function opportunityAndSuggestionsStep(context) {
       kpiDeltas,
     },
   );
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Created opportunity with ID: ${opportunity.getId()}`);
 
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Starting to sync suggestions`);
   await syncSuggestions({
     opportunity,
     newData: brokenInternalLinks,
@@ -260,6 +279,7 @@ export async function opportunityAndSuggestionsStep(context) {
     }),
     log,
   });
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Completed syncing suggestions`);
   return {
     status: 'complete',
   };
