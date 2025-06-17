@@ -11,21 +11,15 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter, createUnloadQuery } from './query-helpers.js';
+import { BaseQuery } from './base-query.js';
+import { getHourlyPartitionFilter } from './query-helpers.js';
 
-/**
- * URL-Status Analysis Athena Queries
- * Simplified analysis of URL and StatusCode breakdown for agentic traffic
- */
+export class UrlStatusAnalysisQuery extends BaseQuery {
+  static analysisType = 'reqCountByUrlStatus';
 
-export const urlStatusAnalysisQueries = {
-  /**
-   * Hourly URL-Status analysis for agentic traffic
-   */
-  hourlyUrlStatus: (hourToProcess, tableName, s3Config) => {
-    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
-
-    const selectQuery = `
+  getSelectQuery() {
+    const { whereClause } = getHourlyPartitionFilter(this.hourToProcess);
+    return `
       SELECT 
         url,
         response_status as status_code,
@@ -33,14 +27,13 @@ export const urlStatusAnalysisQueries = {
         COUNT(CASE WHEN agentic_type = 'chatgpt' THEN 1 END) as chatgpt_requests,
         COUNT(CASE WHEN agentic_type = 'perplexity' THEN 1 END) as perplexity_requests,
         COUNT(CASE WHEN agentic_type = 'claude' THEN 1 END) as claude_requests
-      FROM cdn_logs_${s3Config.customerDomain}.${tableName} 
+      FROM ${this.getFullTableName()}
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       GROUP BY url, response_status
       ORDER BY count DESC
     `;
+  }
+}
 
-    return createUnloadQuery(selectQuery, 'reqCountByUrlStatus', hourToProcess, s3Config);
-  },
-};
 /* c8 ignore stop */

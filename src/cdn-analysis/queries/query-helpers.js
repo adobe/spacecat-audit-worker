@@ -18,27 +18,10 @@ export function getHourlyPartitionFilter(hourToProcess) {
   const hour = String(hourToProcess.getUTCHours()).padStart(2, '0');
 
   return {
-    year,
-    month,
-    day,
-    hour,
     whereClause: `WHERE year = '${year}' AND month = '${month}' AND day = '${day}' AND hour = '${hour}'`,
   };
 }
 
-export const AGENTIC_PATTERNS = {
-  TYPE_CLASSIFICATION: 'agentic_type',
-  DETECTION_CLAUSE: `(request_user_agent LIKE '%ChatGPT%' OR 
-                     request_user_agent LIKE '%Perplexity%' OR 
-                     request_user_agent LIKE '%Claude%' OR
-                     request_user_agent LIKE '%GPTBot%' OR
-                     request_user_agent LIKE '%Anthropic%')`,
-  COUNT_AGENTIC: 'COUNT(*)',
-};
-
-/**
- * Creates an UNLOAD query wrapper with standardized S3 path structure
- */
 export function createUnloadQuery(selectQuery, analysisType, hourToProcess, s3Config) {
   // Get partition values for S3 path
   const year = hourToProcess.getUTCFullYear();

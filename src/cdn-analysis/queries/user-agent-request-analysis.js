@@ -11,34 +11,26 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter, createUnloadQuery } from './query-helpers.js';
+import { BaseQuery } from './base-query.js';
+import { getHourlyPartitionFilter } from './query-helpers.js';
 
-/**
- * User-Agent Request Analysis Athena Queries
- * Analysis of user agent strings for agentic traffic only
- */
+export class UserAgentRequestAnalysisQuery extends BaseQuery {
+  static analysisType = 'reqCountByUserAgent';
 
-export const userAgentRequestAnalysisQueries = {
-  /**
-   * Hourly user agent analysis for agentic traffic
-   */
-  hourlyUserAgentRequests: (hourToProcess, tableName, s3Config) => {
-    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
-
-    const selectQuery = `
+  getSelectQuery() {
+    const { whereClause } = getHourlyPartitionFilter(this.hourToProcess);
+    return `
       SELECT 
         request_user_agent as user_agent,
         response_status as status_code,
         COUNT(*) as count,
         agentic_type
-      FROM cdn_logs_${s3Config.customerDomain}.${tableName} 
+      FROM ${this.getFullTableName()}
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       GROUP BY request_user_agent, response_status, agentic_type
       ORDER BY count DESC
     `;
-
-    return createUnloadQuery(selectQuery, 'reqCountByUserAgent', hourToProcess, s3Config);
-  },
-};
+  }
+}
 /* c8 ignore stop */

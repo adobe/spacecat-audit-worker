@@ -13,7 +13,7 @@
 /* c8 ignore start */
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getCdnProvider } from './providers/cdn-provider-factory.js';
-import { runAllAnalysis, createAnalysisExecutionSummary } from './utils/analysis-runners.js';
+import { runAllAnalysis } from './utils/analysis-runners.js';
 
 async function runCdnAnalysis(auditUrl, context, site) {
   const { log, athenaClient } = context;
@@ -48,30 +48,17 @@ async function runCdnAnalysis(auditUrl, context, site) {
     provider,
     log,
   );
-  log.info(
-    `Analysis execution completed: ${executionResults.completed}/${executionResults.total} succeeded`,
-  );
-
-  // build summary
-  const summary = createAnalysisExecutionSummary(
-    executionResults,
-    hourToProcess,
-    provider.s3Config,
-  );
-
-  log.info(`CDN Analysis completed for ${auditUrl}`);
+  log.info(`CDN log analysis execution completed: ${executionResults.completed}/${executionResults.total} succeeded`);
 
   return {
     auditResult: {
       hourProcessed: hourToProcess.toISOString(),
       agenticLogCount,
-      cdnAgenticAnalysis: summary,
+      executionResults,
       cdnType: provider.constructor.config.cdnType,
       databaseName: provider.databaseName,
       customerDomain: provider.customerDomain,
       environment: provider.environment,
-      analysisTypes: summary.analysisTypes,
-      s3OutputLocation: summary.s3OutputLocation,
       sourceTable: provider.rawTableName,
       filteredTable: provider.filteredTableName,
       completedAt: new Date().toISOString(),

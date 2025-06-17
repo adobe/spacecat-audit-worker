@@ -11,35 +11,27 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter, createUnloadQuery } from './query-helpers.js';
+import { BaseQuery } from './base-query.js';
+import { getHourlyPartitionFilter } from './query-helpers.js';
 
-/**
- * URL-User-Agent-Status Analysis Athena Queries
- * Combined analysis of URL, User-Agent, and StatusCode for agentic traffic
- */
+export class UrlUserAgentStatusAnalysisQuery extends BaseQuery {
+  static analysisType = 'reqCountByUrlUserAgentStatus';
 
-export const urlUserAgentStatusAnalysisQueries = {
-  /**
-   * Hourly URL-User-Agent-Status analysis for agentic traffic
-   */
-  hourlyUrlUserAgentStatus: (hourToProcess, tableName, s3Config) => {
-    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
-
-    const selectQuery = `
+  getSelectQuery() {
+    const { whereClause } = getHourlyPartitionFilter(this.hourToProcess);
+    return `
       SELECT 
         url,
         request_user_agent as user_agent,
         response_status as status_code,
         COUNT(*) as count,
         agentic_type
-      FROM cdn_logs_${s3Config.customerDomain}.${tableName}
+      FROM ${this.getFullTableName()}
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       GROUP BY url, request_user_agent, response_status, agentic_type
       ORDER BY count DESC
     `;
-
-    return createUnloadQuery(selectQuery, 'reqCountByUrlUserAgentStatus', hourToProcess, s3Config);
-  },
-};
+  }
+}
 /* c8 ignore stop */

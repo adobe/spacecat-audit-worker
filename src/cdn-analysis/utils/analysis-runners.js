@@ -11,228 +11,58 @@
  */
 
 /* c8 ignore start */
-import { executeAthenaQuery } from './athena-client.js';
-import { requestAnalysisQueries } from '../queries/request-analysis.js';
-import { urlTrafficAnalysisQueries } from '../queries/url-traffic-analysis.js';
-import { userAgentRequestAnalysisQueries } from '../queries/user-agent-request-analysis.js';
-import { querySourceAnalysisQueries } from '../queries/query-source-analysis.js';
-import { urlUserAgentStatusAnalysisQueries } from '../queries/url-user-agent-status-analysis.js';
-import { urlStatusAnalysisQueries } from '../queries/url-status-analysis.js';
-import { geographicAnalysisQueries } from '../queries/geographic-analysis.js';
+import { RequestAnalysisQuery } from '../queries/request-analysis.js';
+import { UrlTrafficAnalysisQuery } from '../queries/url-traffic-analysis.js';
+import { UserAgentRequestAnalysisQuery } from '../queries/user-agent-request-analysis.js';
+import { QuerySourceAnalysisQuery } from '../queries/query-source-analysis.js';
+import { UrlUserAgentStatusAnalysisQuery } from '../queries/url-user-agent-status-analysis.js';
+import { UrlStatusAnalysisQuery } from '../queries/url-status-analysis.js';
+import { GeographicAnalysisQuery } from '../queries/geographic-analysis.js';
 
 /**
- * 1. Run request analysis - UNLOAD to S3
+ * Run all 7 agentic analyses in parallel and summarize results
  */
-export async function runRequestAnalysis(
-  athenaClient,
-  hourToProcess,
-  s3Config,
-  customerTableName,
-  cdnProvider,
-  log,
-) {
-  const query = requestAnalysisQueries.hourlyRequests(hourToProcess, customerTableName, s3Config);
+export async function runAllAnalysis(athenaClient, hour, s3Config, tableName, cdnProvider, log) {
   const databaseName = cdnProvider.getDatabaseName();
-  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
-  log.info('Request analysis UNLOAD completed');
-}
-
-/**
- * 2. Run URL-level traffic breakdown analysis - UNLOAD to S3
- */
-export async function runUrlTrafficAnalysis(
-  athenaClient,
-  hourToProcess,
-  s3Config,
-  customerTableName,
-  cdnProvider,
-  log,
-) {
-  const query = urlTrafficAnalysisQueries.hourlyUrlTraffic(
-    hourToProcess,
-    customerTableName,
-    s3Config,
-  );
-  const databaseName = cdnProvider.getDatabaseName();
-  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
-  log.info('URL traffic analysis UNLOAD completed');
-}
-
-/**
- * 3. Run user agent request analysis (agentic traffic only) - UNLOAD to S3
- */
-export async function runUserAgentRequestAnalysis(
-  athenaClient,
-  hourToProcess,
-  s3Config,
-  customerTableName,
-  cdnProvider,
-  log,
-) {
-  const query = userAgentRequestAnalysisQueries.hourlyUserAgentRequests(
-    hourToProcess,
-    customerTableName,
-    s3Config,
-  );
-  const databaseName = cdnProvider.getDatabaseName();
-  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
-  log.info('User agent request analysis UNLOAD completed');
-}
-
-/**
- * 4. Run query source analysis (UTM parameters) - UNLOAD to S3
- */
-export async function runQuerySourceAnalysis(
-  athenaClient,
-  hourToProcess,
-  s3Config,
-  customerTableName,
-  cdnProvider,
-  log,
-) {
-  const query = querySourceAnalysisQueries.hourlyQuerySource(
-    hourToProcess,
-    customerTableName,
-    s3Config,
-  );
-  const databaseName = cdnProvider.getDatabaseName();
-  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
-  log.info('Query source analysis UNLOAD completed');
-}
-
-/**
- * 5. Run URL-User-Agent-Status analysis - UNLOAD to S3
- */
-export async function runUrlUAStatusAnalysis(
-  athenaClient,
-  hourToProcess,
-  s3Config,
-  customerTableName,
-  cdnProvider,
-  log,
-) {
-  const query = urlUserAgentStatusAnalysisQueries.hourlyUrlUserAgentStatus(
-    hourToProcess,
-    customerTableName,
-    s3Config,
-  );
-  const databaseName = cdnProvider.getDatabaseName();
-  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
-  log.info('URL-User-Agent-Status analysis UNLOAD completed');
-}
-
-/**
- * 6. Run URL-Status analysis - UNLOAD to S3
- */
-export async function runUrlStatusAnalysis(
-  athenaClient,
-  hourToProcess,
-  s3Config,
-  customerTableName,
-  cdnProvider,
-  log,
-) {
-  const query = urlStatusAnalysisQueries.hourlyUrlStatus(
-    hourToProcess,
-    customerTableName,
-    s3Config,
-  );
-  const databaseName = cdnProvider.getDatabaseName();
-  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
-  log.info('URL-Status analysis UNLOAD completed');
-}
-
-/**
- * 7. Run geographic analysis (hits by country) - UNLOAD to S3
- */
-export async function runGeographicAnalysis(
-  athenaClient,
-  hourToProcess,
-  s3Config,
-  customerTableName,
-  cdnProvider,
-  log,
-) {
-  const query = geographicAnalysisQueries.hourlyHitsByCountry(
-    hourToProcess,
-    customerTableName,
-    s3Config,
-  );
-  const databaseName = cdnProvider.getDatabaseName();
-  await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
-  log.info('Geographic analysis UNLOAD completed');
-}
-
-/**
- * Run all 7 agentic analysis types in parallel - All UNLOAD to S3
- */
-export async function runAllAnalysis(
-  athenaClient,
-  hourToProcess,
-  s3Config,
-  tableName,
-  cdnProvider,
-  log,
-) {
-  const analysisPromises = [
-    runRequestAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
-    runUrlTrafficAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
-    runUserAgentRequestAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
-    runQuerySourceAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
-    runUrlUAStatusAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
-    runUrlStatusAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
-    runGeographicAnalysis(athenaClient, hourToProcess, s3Config, tableName, cdnProvider, log),
+  const queries = [
+    new RequestAnalysisQuery(hour, tableName, s3Config),
+    new UrlTrafficAnalysisQuery(hour, tableName, s3Config),
+    new UserAgentRequestAnalysisQuery(hour, tableName, s3Config),
+    new QuerySourceAnalysisQuery(hour, tableName, s3Config),
+    new UrlUserAgentStatusAnalysisQuery(hour, tableName, s3Config),
+    new UrlStatusAnalysisQuery(hour, tableName, s3Config),
+    new GeographicAnalysisQuery(hour, tableName, s3Config),
   ];
 
-  const results = await Promise.allSettled(analysisPromises);
+  const analysisTypes = queries.map((q) => q.constructor.analysisType);
 
-  const failures = results.filter((result) => result.status === 'rejected');
-  const successes = results.filter((result) => result.status === 'fulfilled');
+  const results = await Promise.allSettled(
+    queries.map((q) => q.run(athenaClient, log, databaseName)),
+  );
+
+  const failures = results.filter((r) => r.status === 'rejected');
+  const successes = results.filter((r) => r.status === 'fulfilled');
 
   if (failures.length > 0) {
     log.error(`${failures.length} analysis UNLOAD operations failed:`, {
-      failures: failures.map((failure, index) => ({
-        analysisIndex: index,
-        error: failure.reason?.message || failure.reason,
+      failures: failures.map((f, i) => ({
+        analysisIndex: i,
+        error: f.reason?.message || f.reason,
       })),
     });
 
     if (failures.length > successes.length) {
-      throw new Error(
-        `Critical failure: ${failures.length}/${results.length} analysis UNLOADs failed`,
-      );
+      throw new Error(`Critical failure: ${failures.length}/${results.length} analysis UNLOADs failed`);
     }
   }
 
   log.info(`All analysis UNLOAD operations completed: ${successes.length} succeeded, ${failures.length} failed`);
 
   return {
+    analysisTypes,
     completed: successes.length,
     failed: failures.length,
     total: results.length,
-  };
-}
-
-/**
- * Create summary of analysis execution (no data processing needed)
- */
-export function createAnalysisExecutionSummary(executionResults, hourProcessed, s3Config) {
-  return {
-    timestamp: new Date().toISOString(),
-    hourProcessed: hourProcessed.toISOString(),
-    customerDomain: s3Config.customerDomain,
-    environment: s3Config.environment,
-    executionResults,
-    analysisTypes: [
-      'request',
-      'urlTraffic',
-      'userAgentRequest',
-      'querySource',
-      'urlUserAgentStatus',
-      'urlStatus',
-      'geographic',
-    ],
-    s3OutputLocation: `s3://${s3Config.analysisBucket}/aggregated/`,
   };
 }
 /* c8 ignore stop */

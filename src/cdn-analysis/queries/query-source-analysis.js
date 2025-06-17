@@ -11,37 +11,26 @@
  */
 
 /* c8 ignore start */
-import { getHourlyPartitionFilter, createUnloadQuery } from './query-helpers.js';
+import { BaseQuery } from './base-query.js';
+import { getHourlyPartitionFilter } from './query-helpers.js';
 
-/**
- * Query Source Analysis Athena Queries
- * Analysis of UTM source parameters in URLs for agentic traffic
- */
+export class QuerySourceAnalysisQuery extends BaseQuery {
+  static analysisType = 'reqCountByReferrer';
 
-export const querySourceAnalysisQueries = {
-  /**
-   * Hourly query source analysis for agentic traffic
-   * Extracts utm_source parameter from URLs
-   */
-  hourlyQuerySource: (hourToProcess, tableName, s3Config) => {
-    const { whereClause } = getHourlyPartitionFilter(hourToProcess);
-
-    const selectQuery = `
+  getSelectQuery() {
+    const { whereClause } = getHourlyPartitionFilter(this.hourToProcess);
+    return `
       SELECT 
         url,
-        -- Extract utm_source parameter using URL parsing
         CASE 
-          WHEN url LIKE '%utm_source=%' THEN 
-            REGEXP_EXTRACT(url, 'utm_source=([^&]+)', 1)
+          WHEN url LIKE '%utm_source=%' THEN REGEXP_EXTRACT(url, 'utm_source=([^&]+)', 1)
           ELSE NULL 
         END as query_source,
         COUNT(*) as agentic_traffic_count,
-        -- Platform breakdown
         agentic_type,
-        -- Status breakdown
         COUNT(CASE WHEN response_status BETWEEN 200 AND 299 THEN 1 END) as successful_requests,
         COUNT(CASE WHEN response_status >= 400 THEN 1 END) as error_requests
-      FROM cdn_logs_${s3Config.customerDomain}.${tableName}
+      FROM ${this.getFullTableName()}
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       AND (
@@ -50,17 +39,11 @@ export const querySourceAnalysisQueries = {
         request_referer = 'https://chatgpt.com' OR 
         request_referer = 'https://perplexity.ai'
       )
-      GROUP BY url, 
-               CASE 
-                 WHEN url LIKE '%utm_source=%' THEN 
-                   REGEXP_EXTRACT(url, 'utm_source=([^&]+)', 1)
-                 ELSE NULL 
-               END,
+      GROUP BY url,
+               CASE WHEN url LIKE '%utm_source=%' THEN REGEXP_EXTRACT(url, 'utm_source=([^&]+)', 1) ELSE NULL END,
                agentic_type
       ORDER BY agentic_traffic_count DESC
     `;
-
-    return createUnloadQuery(selectQuery, 'reqCountByReferrer', hourToProcess, s3Config);
-  },
-};
+  }
+}
 /* c8 ignore stop */
