@@ -27,7 +27,7 @@ import { auditData } from '../../fixtures/internal-links-data.js';
 
 describe('calculateKpiDeltasForAudit', () => {
   it('should return zero values when no broken links exist', () => {
-    const result = calculateKpiDeltasForAudit([]);
+    const result = calculateKpiDeltasForAudit([], []);
     expect(result).to.deep.equal({
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
@@ -35,25 +35,44 @@ describe('calculateKpiDeltasForAudit', () => {
   });
 
   it('should calculate KPIs correctly for a single broken link', () => {
-    const
-      brokenInternalLinks = [{
-        urlFrom: 'https://example.com/source',
-        urlTo: 'https://example.com/broken',
-        trafficDomain: 1000,
-      }];
-
-    const result = calculateKpiDeltasForAudit(brokenInternalLinks);
+    const brokenInternalLinks = [{
+      urlFrom: 'https://example.com/source',
+      urlTo: 'https://example.com/broken',
+      trafficDomain: 1000,
+      urlsSuggested: ['https://example.com/fixed'],
+    }];
+    const rumTrafficData = [
+      { url: 'https://example.com/fixed', earned: 500 },
+    ];
+    const result = calculateKpiDeltasForAudit(brokenInternalLinks, rumTrafficData);
     expect(result).to.deep.equal({
-      projectedTrafficLost: 10, // 1000 * 0.01
-      projectedTrafficValue: 10, // 10 * 1 (DEFAULT_CPC_VALUE)
+      projectedTrafficLost: 5, // 500 * 0.01
+      projectedTrafficValue: 5, // 5 * 1 (DEFAULT_CPC_VALUE)
     });
   });
 
   it('should handle multiple broken links to the same target', () => {
-    const result = calculateKpiDeltasForAudit(auditData.auditResult.brokenInternalLinks);
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/source1',
+        urlTo: 'https://example.com/broken',
+        trafficDomain: 1000,
+        urlsSuggested: ['https://example.com/fixed'],
+      },
+      {
+        urlFrom: 'https://example.com/source2',
+        urlTo: 'https://example.com/broken',
+        trafficDomain: 2000,
+        urlsSuggested: ['https://example.com/fixed'],
+      },
+    ];
+    const rumTrafficData = [
+      { url: 'https://example.com/fixed', earned: 800 },
+    ];
+    const result = calculateKpiDeltasForAudit(brokenInternalLinks, rumTrafficData);
     expect(result).to.deep.equal({
-      projectedTrafficLost: 83,
-      projectedTrafficValue: 83,
+      projectedTrafficLost: 8, // 800 * 0.01
+      projectedTrafficValue: 8, // 8 * 1
     });
   });
 
@@ -62,17 +81,17 @@ describe('calculateKpiDeltasForAudit', () => {
     const brokenLinks = Array.from({ length: 11 }, (_, i) => ({
       urlFrom: `https://example.com/source${i}`,
       urlTo: 'https://example.com/broken',
-      trafficDomain: 1000 * (i + 1), // Increasing traffic values
+      trafficDomain: 1000 * (i + 1),
+      urlsSuggested: [`https://example.com/fixed${i}`],
     }));
-
-    const result = calculateKpiDeltasForAudit(brokenLinks);
-
-    // Should only consider top 10 traffic sources
-    // Sum of top 10 traffic values: (11000 + 10000 + ... + 2000) * 0.01
-    const expectedTraffic = Array.from({ length: MAX_LINKS_TO_CONSIDER }, (_, i) => (11 - i) * 1000)
-      .reduce((sum, traffic) => sum + traffic * TRAFFIC_MULTIPLIER, 0);
+    const rumTrafficData = Array.from({ length: 11 }, (_, i) => ({
+      url: `https://example.com/fixed${i}`,
+      earned: 100 * (i + 1),
+    }));
+    // Only top 10 links should be considered
+    const expectedTraffic = Array.from({ length: 10 }, (_, i) => 100 * (11 - i)).reduce((sum, earned) => sum + earned * TRAFFIC_MULTIPLIER, 0);
     const expectedTrafficValue = expectedTraffic * CPC_DEFAULT_VALUE;
-
+    const result = calculateKpiDeltasForAudit(brokenLinks, rumTrafficData);
     expect(result).to.deep.equal({
       projectedTrafficLost: Math.round(expectedTraffic),
       projectedTrafficValue: Math.round(expectedTrafficValue),

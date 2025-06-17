@@ -25,10 +25,11 @@ export const resolveCpcValue = () => CPC_DEFAULT_VALUE;
 
 /**
  * Calculates KPI deltas based on broken internal links audit data
- * @param {Object} auditData - The audit data containing results
+ * @param {Object} brokenInternalLinks - The audit data containing results
+ * @param {Array} rumTrafficData - Array of { url, earned } for proposed target URLs
  * @returns {Object} KPI delta calculations
  */
-export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
+export const calculateKpiDeltasForAudit = (brokenInternalLinks, rumTrafficData = []) => {
   const cpcValue = resolveCpcValue();
 
   const linksMap = {};
@@ -52,7 +53,12 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
     }
 
     projectedTrafficLost += linksToBeIncremented.reduce(
-      (acc, link) => acc + link.trafficDomain * TRAFFIC_MULTIPLIER,
+      (acc, link) => {
+        const proposedUrl = link.urlsSuggested && link.urlsSuggested[0];
+        const trafficObj = rumTrafficData.find(t => t.url === proposedUrl);
+        const earned = trafficObj ? trafficObj.earned : 0;
+        return acc + earned * TRAFFIC_MULTIPLIER;
+      },
       0,
     );
   });

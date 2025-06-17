@@ -153,8 +153,43 @@ export async function opportunityAndSuggestionsStep(context) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
   }
 
-  // TODO: skip opportunity creation if no internal link items are found in the audit data
-  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
+  // Fetch RUM traffic for all proposed target URLs (urlsSuggested[0])
+  const proposedUrls = Array.from(new Set(
+    brokenInternalLinks
+      .map(link => link.urlsSuggested && link.urlsSuggested[0])
+      .filter(Boolean)
+  ));
+
+  let rumTrafficData = [];
+  try {
+    if (proposedUrls.length > 0) {
+      const rumAPIClient = RUMAPIClient.createFrom(context);
+      // Query RUM for each proposed URL and collect earned traffic
+      const trafficResults = await Promise.all(
+        proposedUrls.map(async (url) => {
+          try {
+            const data = await rumAPIClient.query('traffic-acquisition', {
+              domain: url,
+              interval: INTERVAL,
+              granularity: 'daily',
+            });
+            // Find the entry for the URL and extract earned traffic
+            const earned = Array.isArray(data) && data[0] && typeof data[0].earned === 'number' ? data[0].earned : 0;
+            return { url, earned };
+          } catch (e) {
+            log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to fetch RUM traffic for ${url}: ${e.message}`);
+            return { url, earned: 0 };
+          }
+        })
+      );
+      rumTrafficData = trafficResults;
+    }
+  } catch (e) {
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Error fetching RUM traffic for proposed URLs: ${e.message}`);
+  }
+
+  // Pass rumTrafficData to KPI calculation
+  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks, rumTrafficData);
 
   if (!isNonEmptyArray(brokenInternalLinks)) {
     // no broken internal links found
