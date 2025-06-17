@@ -160,6 +160,18 @@ export async function processAltTextAuditStep(context) {
 
   await convertToOpportunity(auditUrl, auditResult, context);
 
+  // Get the opportunity to log the projected traffic values
+  const { Opportunity } = context.dataAccess;
+  const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+  const altTextOppty = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+  if (altTextOppty) {
+    const data = altTextOppty.getData();
+    log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] Projected traffic values:`, {
+      projectedTrafficLost: data.projectedTrafficLost,
+      projectedTrafficValue: data.projectedTrafficValue,
+    });
+  }
+
   return {
     status: 'complete',
   };
