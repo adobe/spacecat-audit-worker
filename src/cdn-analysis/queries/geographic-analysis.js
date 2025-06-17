@@ -43,7 +43,6 @@ export class GeographicAnalysisQuery extends BaseQuery {
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
       GROUP BY ${countryExtractionSQL}
-      HAVING country_code != 'UNKNOWN'
       ORDER BY request_count DESC
     `;
   }

@@ -33,8 +33,7 @@ export function buildCountryExtractionSQL() {
   return `
         CASE 
           ${cases}
-          WHEN geo_country IS NOT NULL THEN UPPER(geo_country)
-          ELSE 'UNKNOWN'
+          ELSE 'GLOBAL'
         END`;
 }
 
