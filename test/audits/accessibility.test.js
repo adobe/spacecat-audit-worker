@@ -57,6 +57,11 @@ describe('Accessibility Audit Handler', () => {
         env: {
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         },
+        dataAccess: {
+          Opportunity: {
+            allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          },
+        },
       })
       .build();
 

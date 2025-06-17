@@ -1,3 +1,10 @@
+# [1.103.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.6...v1.103.0) (2025-06-17)
+
+
+### Features
+
+* Add logic to mark older accessibility opportunities as IGNORED ([#959](https://github.com/adobe/spacecat-audit-worker/issues/959)) ([4d21053](https://github.com/adobe/spacecat-audit-worker/commit/4d2105357d5d96e58d5245f53f6a0790cefa65e1))
+
 ## [1.102.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.5...v1.102.6) (2025-06-17)
 
 
