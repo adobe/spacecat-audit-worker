@@ -24,8 +24,6 @@ import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
-const CONVERSION_BOOST = 0.2;
-const DEFAULT_CONVERSION_RATE = 0.04;
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -433,17 +431,8 @@ export function getSuccessCriteriaDetails(criteria) {
 }
 
 // eslint-disable-next-line no-shadow
-function getCostSaved(originalTraffic, conversionRate, cpc, conversionBoost) {
-  if (conversionRate === 0) {
-    // assuming 4 percent conversion rate if it's not available - which is industry average
-    return DEFAULT_CONVERSION_RATE;
-  }
-  const originalConversions = originalTraffic * conversionRate;
-  const newConversionRate = conversionRate * (1 + conversionBoost);
-  const newTrafficNeeded = originalConversions / newConversionRate;
-  const trafficDelta = originalTraffic - newTrafficNeeded;
-  const costSaved = trafficDelta * cpc;
-
+function getCostSaved(originalTraffic, cpc) {
+  const costSaved = 0.2 * originalTraffic * cpc;
   return parseFloat(costSaved.toFixed(2));
 }
 
@@ -462,17 +451,11 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
     log.info(`Calculated CPC value: ${cpcValue} for site: ${siteId}`);
 
     const originalTraffic = opportunityData.pageViews;
-    const conversionRate = opportunityData?.metrics?.find(
-      (m) => m?.type === 'conversionRate' && m?.device === '*',
-    )?.value?.page ?? 0;
-
     // traffic is calculated for 15 days - extrapolating for a year
     const trafficPerYear = Math.floor((originalTraffic / FORMS_AUDIT_INTERVAL)) * 365;
     const projectedConversionValue = getCostSaved(
       trafficPerYear,
-      conversionRate,
       cpcValue,
-      CONVERSION_BOOST,
     );
 
     return {
