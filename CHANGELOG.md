@@ -1,3 +1,24 @@
+## [1.103.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.0...v1.103.1) (2025-06-17)
+
+
+### Bug Fixes
+
+* update conversion value calculation for forms ([#964](https://github.com/adobe/spacecat-audit-worker/issues/964)) ([3f479e3](https://github.com/adobe/spacecat-audit-worker/commit/3f479e34292507d73de66a4fe4ebf55a1e7c1e06))
+
+# [1.103.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.6...v1.103.0) (2025-06-17)
+
+
+### Features
+
+* Add logic to mark older accessibility opportunities as IGNORED ([#959](https://github.com/adobe/spacecat-audit-worker/issues/959)) ([4d21053](https://github.com/adobe/spacecat-audit-worker/commit/4d2105357d5d96e58d5245f53f6a0790cefa65e1))
+
+## [1.102.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.5...v1.102.6) (2025-06-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.14.2 ([#967](https://github.com/adobe/spacecat-audit-worker/issues/967)) ([f310831](https://github.com/adobe/spacecat-audit-worker/commit/f310831487a56fdee88c74cc3fcdac7357412324))
+
 ## [1.102.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.4...v1.102.5) (2025-06-16)
 
 
