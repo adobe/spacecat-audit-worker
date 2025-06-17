@@ -60,8 +60,9 @@ const VALID_MIME_TYPES = Object.freeze([
  * Utility function to add delay between batch processing
  */
 function delay(ms) {
-  // eslint-disable-next-line max-statements-per-line
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 /**
@@ -290,7 +291,6 @@ export async function filterValidUrls(urls) {
             type, url, statusCode, urlsSuggested, error,
           } = result.value;
 
-          // eslint-disable-next-line default-case
           switch (type) {
             case 'ok':
               results.ok.push(url);
@@ -303,6 +303,8 @@ export async function filterValidUrls(urls) {
               break;
             case 'otherStatus':
               results.otherStatusCodes.push({ url, statusCode });
+              break;
+            default:
               break;
           }
         }
