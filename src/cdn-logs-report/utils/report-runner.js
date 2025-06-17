@@ -19,58 +19,24 @@ import {
   generatePeriodIdentifier,
   generateReportingPeriods,
 } from './date-utils.js';
-import { createCDNLogsExcelReport, saveExcelReport } from './excel-generator.js';
+import { createCDNLogsExcelReport } from './excel-generator.js';
+import { saveExcelReport } from './report-uploader.js';
 import { getPageTypePatterns } from './page-type-classifier.js';
 import {
   REPORTS_PATH,
   SUPPORTED_PROVIDERS,
-  LOG_MESSAGES,
   ERROR_MESSAGES,
 } from '../constants/index.js';
 
-const QUERY_MAPPINGS = [
-  {
-    key: 'reqcountbycountry',
-    queryFunc: weeklyBreakdownQueries.createCountryWeeklyBreakdown,
-  },
-  {
-    key: 'reqcountbyuseragent',
-    queryFunc: weeklyBreakdownQueries.createUserAgentWeeklyBreakdown,
-  },
-  {
-    key: 'reqcountbyurlstatus',
-    queryFunc: (periods, databaseName, provider, pageTypePatterns) => (
-      weeklyBreakdownQueries.createUrlStatusWeeklyBreakdown(
-        periods,
-        databaseName,
-        provider,
-        pageTypePatterns,
-      )
-    ),
-  },
-  {
-    key: 'reqcountbyurluseragentstatus',
-    queryFunc: weeklyBreakdownQueries.createUrlUserAgentStatusBreakdown,
-  },
-  {
-    key: 'individual_urls_by_status',
-    queryFunc: weeklyBreakdownQueries.createTopBottomUrlsByStatus,
-  },
-];
-
 async function getAvailableAnalysisTypes(athenaClient, databaseName, s3Config, log) {
-  const ANALYSIS_TYPE_PREFIX = 'aggregated_logs_analysis_type_';
   const query = `SHOW TABLES IN ${databaseName}`;
   const results = await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
   const tableNames = results.flatMap((row) => Object.values(row));
 
-  const analysisTypes = tableNames
-    .filter((tableName) => tableName.startsWith(ANALYSIS_TYPE_PREFIX))
-    .map((tableName) => tableName.replace(ANALYSIS_TYPE_PREFIX, ''))
+  return tableNames
+    .filter((tableName) => tableName.startsWith('aggregated_logs_analysis_type_'))
+    .map((tableName) => tableName.replace('aggregated_logs_analysis_type_', ''))
     .filter((analysisType) => analysisType.length > 0);
-
-  log.info(`Found ${analysisTypes.length} analysis types: ${analysisTypes.join(', ')}`);
-  return analysisTypes;
 }
 
 async function collectReportData(
@@ -82,28 +48,47 @@ async function collectReportData(
   provider,
   site,
 ) {
-  const reportData = {};
   const periods = generateReportingPeriods(endDate);
   const pageTypePatterns = site ? getPageTypePatterns(site) : null;
-  const logSuffix = provider ? ` for ${provider}` : '';
+  const reportData = {};
 
-  for (const { key, queryFunc } of QUERY_MAPPINGS) {
+  const queries = {
+    reqcountbycountry: weeklyBreakdownQueries.createCountryWeeklyBreakdown(
+      periods,
+      databaseName,
+      provider,
+    ),
+    reqcountbyuseragent: weeklyBreakdownQueries.createUserAgentWeeklyBreakdown(
+      periods,
+      databaseName,
+      provider,
+    ),
+    reqcountbyurlstatus: weeklyBreakdownQueries.createUrlStatusWeeklyBreakdown(
+      periods,
+      databaseName,
+      provider,
+      pageTypePatterns,
+    ),
+    reqcountbyurluseragentstatus: weeklyBreakdownQueries.createUrlUserAgentStatusBreakdown(
+      periods,
+      databaseName,
+      provider,
+    ),
+    individual_urls_by_status: weeklyBreakdownQueries.createTopBottomUrlsByStatus(
+      periods,
+      databaseName,
+      provider,
+    ),
+  };
+
+  for (const [key, query] of Object.entries(queries)) {
     try {
-      log.info(`Collecting data for ${key}${logSuffix}...`);
-
-      const query = queryFunc(periods, databaseName, provider, pageTypePatterns);
       // eslint-disable-next-line no-await-in-loop
-      const results = await executeAthenaQuery(
-        athenaClient,
-        query,
-        s3Config,
-        log,
-        databaseName,
-      );
+      const results = await executeAthenaQuery(athenaClient, query, s3Config, log, databaseName);
       reportData[key] = results || [];
-      log.info(`Collected ${results?.length || 0} rows for ${key}${logSuffix}`);
     } catch (error) {
-      log.error(`Failed to collect data for ${key}${logSuffix}: ${error.message}`);
+      const providerMsg = provider ? ` for ${provider}` : '';
+      log.error(`Failed to collect data for ${key}${providerMsg}: ${error.message}`);
       reportData[key] = [];
     }
   }
@@ -111,40 +96,30 @@ async function collectReportData(
   return reportData;
 }
 
-export async function runReport(
-  athenaClient,
-  databaseName,
-  s3Config,
-  s3Client,
-  log,
-  options = {},
-) {
+export async function runReport(athenaClient, databaseName, s3Config, s3Client, log, options = {}) {
   const {
-    startDate, endDate, reportType = 'period', provider, site,
+    startDate,
+    endDate,
+    provider,
+    site,
+    sharepointClient,
   } = options;
 
   let periodStart;
   let periodEnd;
-
   if (startDate && endDate) {
     const parsed = createDateRange(startDate, endDate);
     periodStart = parsed.startDate;
     periodEnd = parsed.endDate;
   } else {
-    // For Monday audit jobs, get previous week (Monday to Sunday that just ended)
     const { weekStart, weekEnd } = getWeekRange(-1);
     periodStart = weekStart;
     periodEnd = weekEnd;
   }
 
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
-  const providerSuffix = provider ? `-${provider}` : '';
-  const logSuffix = provider ? ` for ${provider}` : '';
-  const reportOutputLocation = `s3://${s3Config.bucket}/${REPORTS_PATH}/`;
-
-  log.info(
-    `Running ${reportType} report${logSuffix} for ${periodStart.toISOString()} to ${periodEnd.toISOString()} (${periodIdentifier})`,
-  );
+  const providerMsg = provider ? ` for ${provider}` : '';
+  log.info(`Running report${providerMsg} for ${periodIdentifier}`);
 
   try {
     const analysisTypes = await getAvailableAnalysisTypes(
@@ -153,7 +128,6 @@ export async function runReport(
       s3Config,
       log,
     );
-
     if (analysisTypes.length === 0) {
       throw new Error(ERROR_MESSAGES.NO_ANALYSIS_TYPES);
     }
@@ -168,82 +142,45 @@ export async function runReport(
       site,
     );
 
+    const providerSuffix = provider ? `-${provider}` : '';
     const filename = `agentic-traffic${providerSuffix}-${periodIdentifier}.xlsx`;
     const key = `${REPORTS_PATH}/${provider}/${filename}`;
 
-    log.info(`Generating Excel report${logSuffix}...`);
     const workbook = await createCDNLogsExcelReport(reportData, {
       customEndDate: periodEnd.toISOString().split('T')[0],
       filename,
     });
-    const saveResult = await saveExcelReport(workbook, s3Config.bucket, key, s3Client, log);
 
-    const excelReport = {
-      filename,
-      outputPath: `s3://${s3Config.bucket}/${key}`,
-      saveResult,
-      dataRows: Object.values(reportData).reduce(
-        (total, data) => total + data.length,
-        0,
-      ),
-    };
-
-    log.info(`Excel report generated successfully: ${excelReport.filename}`);
-
-    return {
-      periodStart: periodStart.toISOString(),
-      periodEnd: periodEnd.toISOString(),
-      periodIdentifier,
-      reportType,
-      reportOutputLocation,
-      totalAnalysisTypes: analysisTypes.length,
-      excelReport,
-      analysisTypes,
-    };
+    await saveExcelReport(workbook, s3Config.bucket, key, s3Client, log, sharepointClient);
   } catch (error) {
     log.error(`Report generation failed: ${error.message}`);
     throw error;
   }
 }
 
-async function runProviderSpecificReports({
+export async function runReportsForAllProviders(
   athenaClient,
   databaseName,
   s3Config,
   s3Client,
   log,
   options = {},
-}) {
-  const providers = SUPPORTED_PROVIDERS;
-  const results = [];
+) {
+  log.info(`Generating reports for providers: ${SUPPORTED_PROVIDERS.join(', ')}`);
 
-  log.info(`Generating provider-specific reports for: ${providers.join(', ')}`);
-
-  for (const provider of providers) {
+  for (const provider of SUPPORTED_PROVIDERS) {
     try {
       log.info(`Starting report generation for ${provider}...`);
       // eslint-disable-next-line no-await-in-loop
-      const result = await runReport(
-        athenaClient,
-        databaseName,
-        s3Config,
-        s3Client,
-        log,
-        {
-          ...options,
-          provider,
-          reportType: 'provider-specific',
-        },
-      );
-      results.push({ provider, ...result });
+      await runReport(athenaClient, databaseName, s3Config, s3Client, log, {
+        ...options,
+        provider,
+      });
       log.info(`Successfully generated ${provider} report`);
     } catch (error) {
       log.error(`Failed to generate ${provider} report: ${error.message}`);
-      results.push({ provider, error: error.message });
     }
   }
-
-  return results;
 }
 
 export async function runWeeklyReport({
@@ -253,21 +190,12 @@ export async function runWeeklyReport({
   s3Client,
   log,
   site,
+  sharepointClient,
 }) {
-  const providerReports = await runProviderSpecificReports({
-    athenaClient,
-    databaseName,
-    s3Config,
-    s3Client,
-    log,
-    options: { reportType: 'weekly', site },
+  await runReportsForAllProviders(athenaClient, databaseName, s3Config, s3Client, log, {
+    site,
+    sharepointClient,
   });
-
-  return {
-    providerReports,
-    totalReports: providerReports.length,
-    message: LOG_MESSAGES.PROVIDER_REPORTS,
-  };
 }
 
 export async function runCustomDateRangeReport({
@@ -279,26 +207,14 @@ export async function runCustomDateRangeReport({
   s3Client,
   log,
   site,
+  sharepointClient,
 }) {
-  const providerReports = await runProviderSpecificReports({
-    athenaClient,
-    databaseName,
-    s3Config,
-    s3Client,
-    log,
-    options: {
-      startDate: startDateStr,
-      endDate: endDateStr,
-      reportType: 'custom',
-      site,
-    },
+  await runReportsForAllProviders(athenaClient, databaseName, s3Config, s3Client, log, {
+    startDate: startDateStr,
+    endDate: endDateStr,
+    site,
+    sharepointClient,
   });
-
-  return {
-    providerReports,
-    totalReports: providerReports.length,
-    message: `${LOG_MESSAGES.PROVIDER_REPORTS} only`,
-  };
 }
 
 /* c8 ignore end */

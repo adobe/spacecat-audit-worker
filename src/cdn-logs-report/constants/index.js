@@ -25,6 +25,9 @@ export const MESSAGE_TYPES = {
 
 export const REPORTS_PATH = 'reports';
 
+export const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:f:/r/sites/HelixProjects/Shared%20Documents/sites/spacecat-test';
+export const SHAREPOINT_PATH = 'https://adobe.sharepoint.com/:f:/r/sites/HelixProjects/Shared%20Documents/sites/spacecat-test/test/';
+
 // ===== DATABASE & AWS CONSTANTS =====
 
 export const TABLE_NAMES = {

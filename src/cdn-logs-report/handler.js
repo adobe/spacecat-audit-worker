@@ -11,10 +11,13 @@
  */
 
 /* c8 ignore start */
+import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureDatabaseExists, setupCrawlerBasedDiscovery } from './utils/aws-utils.js';
 import { runWeeklyReport, runCustomDateRangeReport } from './utils/report-runner.js';
-import { AUDIT_TYPES, MESSAGE_TYPES, ERROR_MESSAGES } from './constants/index.js';
+import {
+  AUDIT_TYPES, MESSAGE_TYPES, ERROR_MESSAGES, SHAREPOINT_URL,
+} from './constants/index.js';
 
 async function createAuditResult(reportType, result, additionalData = {}, auditUrl = '') {
   return {
@@ -37,6 +40,12 @@ async function runCdnLogsReport(url, context, site) {
 
   const s3Config = getS3Config(site, context);
   const databaseName = `cdn_logs_${s3Config.customerDomain}`;
+  const sharepointClient = await createFrom({
+    clientId: process.env.SHAREPOINT_CLIENT_ID,
+    clientSecret: process.env.SHAREPOINT_CLIENT_SECRET,
+    authority: process.env.SHAREPOINT_AUTHORITY,
+    domainId: process.env.SHAREPOINT_DOMAIN_ID,
+  }, { url: SHAREPOINT_URL, type: 'onedrive' });
 
   await ensureDatabaseExists(glueClient, databaseName, log);
   await setupCrawlerBasedDiscovery(glueClient, databaseName, s3Config, log);
@@ -49,7 +58,7 @@ async function runCdnLogsReport(url, context, site) {
     }
 
     log.info(`Running custom date range report: ${startDate} to ${endDate}`);
-    const result = await runCustomDateRangeReport({
+    await runCustomDateRangeReport({
       athenaClient,
       startDateStr: startDate,
       endDateStr: endDate,
@@ -58,24 +67,26 @@ async function runCdnLogsReport(url, context, site) {
       s3Client,
       log,
       site,
+      sharepointClient,
     });
 
-    return createAuditResult(AUDIT_TYPES.CUSTOM, result, {
+    return createAuditResult(AUDIT_TYPES.CUSTOM, {}, {
       dateRange: { startDate, endDate },
     }, url);
   }
 
   log.info('Running weekly report...');
-  const result = await runWeeklyReport({
+  await runWeeklyReport({
     athenaClient,
     databaseName,
     s3Config,
     s3Client,
     log,
     site,
+    sharepointClient,
   });
 
-  return createAuditResult(AUDIT_TYPES.WEEKLY, result, {}, url);
+  return createAuditResult(AUDIT_TYPES.WEEKLY, {}, {}, url);
 }
 
 export default new AuditBuilder()

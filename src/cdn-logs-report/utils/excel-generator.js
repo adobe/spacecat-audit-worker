@@ -12,7 +12,6 @@
 
 /* c8 ignore start */
 import ExcelJS from 'exceljs';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { generateReportingPeriods } from './date-utils.js';
 import {
   SHEET_COLORS, STATUS_CODES, EXCEL_CONFIG, ERROR_MESSAGES,
@@ -159,8 +158,9 @@ const SHEET_CONFIGS = {
     numberColumns: [1],
     processData: (data) => {
       const urls200 = filterByStatusCodes(data, STATUS_CODES.OK);
-      if (urls200.length > 0) {
-        return urls200.map((row) => [row.url || 'Other', Number(row.total_requests) || 0]);
+      const productsUrls = urls200.filter((row) => row.url && row.url.startsWith('/products/'));
+      if (productsUrls.length > 0) {
+        return productsUrls.map((row) => [row.url || 'Other', Number(row.total_requests) || 0]);
       }
       return [['No data', 0]];
     },
@@ -247,34 +247,6 @@ export async function createCDNLogsExcelReport(reportData, options = {}) {
   }
 
   return workbook;
-}
-
-export async function saveExcelReport(workbook, bucket, key, s3Client, log) {
-  try {
-    log.info(`Saving Excel report to S3: s3://${bucket}/${key}`);
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    await s3Client.send(new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: buffer,
-      ContentType: EXCEL_CONFIG.CONTENT_TYPE,
-      ContentDisposition: `attachment; filename="${key.split('/').pop()}"`,
-    }));
-
-    const outputPath = `s3://${bucket}/${key}`;
-    log.info(`Excel report successfully uploaded to S3: ${outputPath}`);
-    return {
-      success: true,
-      path: outputPath,
-      size: buffer.length,
-      bucket,
-      key,
-    };
-  } catch (error) {
-    log.error(`Failed to save Excel report: ${error.message}`);
-    throw error;
-  }
 }
 
 /* c8 ignore end */
