@@ -76,6 +76,8 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     // 6. Prioritize links
     const prioritizedLinks = calculatePriority(inaccessibleLinks);
 
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found: ${prioritizedLinks.length} broken internal links`);
+
     // 7. Build and return audit result
     return {
       auditResult: {
