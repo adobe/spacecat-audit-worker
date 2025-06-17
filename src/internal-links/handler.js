@@ -55,6 +55,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
     // 3. Query for 404 internal links
     const internal404Links = await rumAPIClient.query('404-internal-links', options);
+    log.info(`[${AUDIT_TYPE}] log-dump 1 [Site: ${site.getId()}] found: ${JSON.stringify(internal404Links, null, 2)} broken internal links`);
 
     // 4. Check accessibility in parallel before transformation
     const accessibilityResults = await Promise.all(
@@ -76,7 +77,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     // 6. Prioritize links
     const prioritizedLinks = calculatePriority(inaccessibleLinks);
 
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found: ${prioritizedLinks.length} broken internal links`);
+    log.info(`[${AUDIT_TYPE}] log-dump 2 [Site: ${site.getId()}] found: ${JSON.stringify(prioritizedLinks, null, 2)} broken internal links`);
 
     // 7. Build and return audit result
     return {
