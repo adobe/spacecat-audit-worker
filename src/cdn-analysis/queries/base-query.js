@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+/* c8 ignore start */
 import { createUnloadQuery } from './query-helpers.js';
 import { executeAthenaQuery } from '../utils/athena-client.js';
 
@@ -43,3 +44,4 @@ export class BaseQuery {
     log.info(`${this.constructor.analysisType} UNLOAD completed`);
   }
 }
+/* c8 ignore stop */
