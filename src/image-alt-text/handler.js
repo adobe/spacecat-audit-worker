@@ -56,6 +56,7 @@ export async function prepareScrapingStep(context) {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
     type: 'alt-text',
+    allowCache: true,
   };
 }
 
@@ -180,5 +181,6 @@ export async function processAltTextAuditStep(context) {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('prepareScraping', prepareScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processAltTextAudit', processAltTextAuditStep)
   .build();
