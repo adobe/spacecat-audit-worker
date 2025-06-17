@@ -181,7 +181,7 @@ export async function opportunityAndSuggestionsStep(context) {
       const trafficData = await rumAPIClient.query('traffic-acquisition', {
         domain: finalUrl,
         interval: INTERVAL,
-        granularity: 'hourly',
+        granularity: 'daily',
       });
       log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Raw traffic data:`, JSON.stringify(trafficData, null, 2));
       rumTrafficData = proposedUrls.map((url) => {
