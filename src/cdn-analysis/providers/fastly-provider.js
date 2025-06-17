@@ -18,7 +18,7 @@ const FASTLY_CONFIG = {
   cdnType: 'fastly',
   databaseName: 'cdn_logs',
   userAgentField: 'request_user_agent',
-  defaultFilterClause: "response_content_type LIKE 'text/html%'", // filters out non-html content
+  defaultFilterClause: "(response_content_type LIKE 'text/html%' OR url LIKE '%robots%' OR url LIKE '%sitemap%')",
 
   rawLogsSchema: {
     timestamp: 'string',

@@ -18,7 +18,7 @@ const AKAMAI_CONFIG = {
   cdnType: 'akamai',
   databaseName: 'cdn_logs_',
   userAgentField: 'ua',
-  defaultFilterClause: "rspContentType LIKE 'text/html%'", // filters out non-html content
+  defaultFilterClause: "(rspContentType LIKE 'text/html%' OR url LIKE '%robots%' OR url LIKE '%sitemap%')",
 
   rawLogsSchema: {
     reqTimeSec: 'string',
@@ -46,6 +46,7 @@ const AKAMAI_CONFIG = {
     response_status: 'int',
     response_reason: 'string',
     request_referer: 'string',
+    response_content_type: 'string',
     agentic_type: 'string',
   },
 
@@ -81,6 +82,7 @@ function mapAkamaiFieldsForUnload() {
          WHEN statusCode >= '500' THEN 'Server Error'
          ELSE 'Other'
        END AS response_reason`,
+      'rspContentType AS response_content_type',
       'referer AS request_referer',
       `${buildTypeClassification('ua')} AS agentic_type`,
     ].join(',\n          '),
