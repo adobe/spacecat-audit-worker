@@ -56,7 +56,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
     totals.pageview = calculateSums(pageview, totals.pageview);
     totals.formsubmit = calculateSums(formsubmit, totals.formsubmit);
     totals.trafficacquisition = trafficacquisition;
-    totals.formsource = formsource;
+    totals.formsource = formsource.startsWith('dialog') ? formsource.replace('dialog ', '') : formsource;
     if (iframeSrc) {
       totals.iframeSrc = iframeSrc;
     }
@@ -71,7 +71,7 @@ function hasHighViews(views) {
 }
 
 function hasLowerConversionRate(formSubmit, formViews, formEngagement) {
-  return formSubmit / formViews < CR_THRESHOLD_RATIO && formEngagement > 0;
+  return (formViews > 0 && formSubmit / formViews < CR_THRESHOLD_RATIO) && formEngagement > 0;
 }
 
 function hasLowFormViews(pageViews, formViews, formEngagement) {

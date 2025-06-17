@@ -17,6 +17,7 @@ export async function getObjectKeysUsingPrefix(
   prefix,
   log,
   maxKeys = 1000,
+  keyEndsWith = 'scrape.json',
 ) {
   const objectKeys = [];
   let continuationToken = null;
@@ -41,7 +42,7 @@ export async function getObjectKeysUsingPrefix(
       // eslint-disable-next-line no-await-in-loop
       const data = await s3Client.send(new ListObjectsV2Command(params));
       data?.Contents?.forEach((obj) => {
-        if (obj.Key?.endsWith('scrape.json')) {
+        if (obj.Key?.endsWith(keyEndsWith)) {
           objectKeys.push(obj.Key);
         }
       });

@@ -15,11 +15,12 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { generateOpptyData } from './utils.js';
+import { generateOpptyData, getUrlsDataForAccessibilityAudit } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
+import { createAccessibilityOpportunity } from './oppty-handlers/accessibility-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -65,17 +66,63 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     uniqueUrls.add(opportunity.form);
   }
 
+  if (uniqueUrls.size < 10) {
+    // Create a copy of formVitals to sort without modifying the original array
+    const sortedFormVitals = [...formVitals].sort((a, b) => {
+      const totalPageViewsA = Object.values(a.pageview).reduce((acc, curr) => acc + curr, 0);
+      const totalPageViewsB = Object.values(b.pageview).reduce((acc, curr) => acc + curr, 0);
+      return totalPageViewsB - totalPageViewsA;
+    });
+    for (const fv of sortedFormVitals) {
+      uniqueUrls.add(fv.url);
+      if (uniqueUrls.size >= 10) {
+        break;
+      }
+    }
+  }
+
+  const urlsData = Array.from(uniqueUrls).map((url) => {
+    const formSources = formVitals.filter((fv) => fv.url === url).map((fv) => fv.formsource)
+      .filter((source) => !!source);
+    return {
+      url,
+      ...(formSources.length > 0 && { formSources }),
+    };
+  });
+
   const result = {
     processingType: 'form',
-    allowCache: false,
+    allowCache: true,
     jobId: site.getId(),
-    urls: Array.from(uniqueUrls).map((url) => ({ url })),
+    urls: urlsData,
     siteId: site.getId(),
     auditResult: formsAuditRunnerResult.auditResult,
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping`);
+  return result;
+}
+
+export async function sendA11yUrlsForScrapingStep(context) {
+  const {
+    log, site,
+  } = context;
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
+  const scrapedData = await getScrapedDataForSiteId(site, context);
+  const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
+  const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+  const result = {
+    auditResult: latestAudit.auditResult,
+    fullAuditRef: latestAudit.fullAuditRef,
+    processingType: 'form-accessibility',
+    jobId: site.getId(),
+    urls: urlsData,
+    siteId: site.getId(),
+  };
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit`);
   return result;
 }
 
@@ -91,6 +138,7 @@ export async function processOpportunityStep(context) {
   await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  await createAccessibilityOpportunity(latestAudit, context);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',
@@ -100,5 +148,6 @@ export async function processOpportunityStep(context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('runAuditAndSendUrlsForScraping', runAuditAndSendUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('sendA11yUrlsForScrapingStep', sendA11yUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processOpportunity', processOpportunityStep)
   .build();

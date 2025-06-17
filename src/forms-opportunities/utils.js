@@ -11,6 +11,7 @@
  */
 
 import {
+  FORMS_AUDIT_INTERVAL,
   isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
@@ -19,9 +20,11 @@ import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
-import { FORM_OPPORTUNITY_TYPES } from './constants.js';
+import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
+import { calculateCPCValue } from '../support/utils.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
+const CONVERSION_BOOST = 0.2;
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -49,6 +52,13 @@ async function getPresignedUrl(fileName, context, url, site) {
     });
 }
 
+function calculateRate(numerator, denominator) {
+  if (denominator === 0 || Number.isNaN(numerator) || Number.isNaN(denominator)) {
+    return null; // Return null if the calculation is invalid
+  }
+  return Number((numerator / denominator).toFixed(3));
+}
+
 function getFormMetrics(metricObject) {
   const { formview, formengagement, formsubmit } = metricObject;
 
@@ -59,11 +69,11 @@ function getFormMetrics(metricObject) {
     let dropoffRate = null;
 
     if (_formViews > 0) {
-      conversionRate = _formSubmit / _formViews;
-      bounceRate = 1 - (_formEngagement / _formViews);
+      conversionRate = calculateRate(_formSubmit, _formViews);
+      bounceRate = 1 - calculateRate(_formEngagement, _formViews);
     }
     if (_formEngagement > 0) {
-      dropoffRate = 1 - (_formSubmit / _formEngagement);
+      dropoffRate = 1 - calculateRate(_formSubmit, _formEngagement);
     }
 
     return {
@@ -99,27 +109,27 @@ function convertToLowViewOpptyData(metricObject) {
   } = metricObject;
   return {
     trackedFormKPIName: 'Form View Rate',
-    trackedFormKPIValue: Number((formViews / pageViews).toFixed(3)),
+    trackedFormKPIValue: calculateRate(formViews, pageViews),
     metrics: [
       {
         type: 'formViewRate',
         device: '*',
         value: {
-          page: Number((formViews / pageViews).toFixed(3)),
+          page: calculateRate(formViews, pageViews),
         },
       },
       {
         type: 'formViewRate',
         device: 'mobile',
         value: {
-          page: Number((formViewsMobile / pageViewsMobile).toFixed(3)),
+          page: calculateRate(formViewsMobile, pageViewsMobile),
         },
       },
       {
         type: 'formViewRate',
         device: 'desktop',
         value: {
-          page: Number((formViewsDesktop / pageViewsDesktop).toFixed(3)),
+          page: calculateRate(formViewsDesktop, pageViewsDesktop),
         },
       },
       {
@@ -152,6 +162,7 @@ function convertToLowNavOpptyData(metricObject) {
 function convertToLowConversionOpptyData(metricObject) {
   const {
     pageview: { mobile: pageViewsMobile, desktop: pageViewsDesktop },
+    trafficacquisition: { sources: trafficAcquisitionSources },
   } = metricObject;
 
   const deviceWiseMetrics = getFormMetrics(metricObject);
@@ -169,7 +180,7 @@ function convertToLowConversionOpptyData(metricObject) {
     }
     const metricsConfig = [
       { type: 'conversionRate', value: conversionRate },
-      { type: 'bounceRate', value: bounceRate },
+      { type: 'formBounceRate', value: bounceRate },
       { type: 'dropoffRate', value: dropoffRate },
     ];
     metricsConfig.forEach(({ type, value }) => {
@@ -198,6 +209,16 @@ function convertToLowConversionOpptyData(metricObject) {
       page: pageViewsMobile,
     },
   });
+
+  if (Array.isArray(trafficAcquisitionSources) && trafficAcquisitionSources.length > 0) {
+    metrics.push({
+      type: 'trafficAcquisitionSource',
+      device: '*',
+      value: {
+        page: trafficAcquisitionSources,
+      },
+    });
+  }
 
   return {
     trackedFormKPIName: 'Conversion Rate',
@@ -276,12 +297,15 @@ export function shouldExcludeForm(scrapedFormData) {
 
   const containsNoInputField = scrapedFormData?.formFields?.filter((field) => field.tagName === 'input').length === 0;
 
+  const doesNotHaveButton = scrapedFormData?.formFields?.filter((field) => field.tagName === 'button').length === 0;
+
   return scrapedFormData?.formType === 'search'
     || scrapedFormData?.formType === 'login'
     || scrapedFormData?.classList?.includes('unsubscribe')
     || scrapedFormData?.fieldCount === 0
     || containsOnlyNumericInputField
-    || containsNoInputField;
+    || containsNoInputField
+    || doesNotHaveButton;
 }
 
 /**
@@ -317,4 +341,144 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
     opportunity.scrapedStatus = urlMatches;
     return true;
   });
+}
+
+/**
+ * Get the urls and form sources for accessibility audit
+ * @param scrapedData
+ * @param context
+ * @returns {Array} array of objects with url and formsources
+ */
+export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
+  const { log } = context;
+  const urlsData = [];
+  const addedFormSources = new Set();
+  if (isNonEmptyArray(scrapedData.formData)) {
+    for (const form of scrapedData.formData) {
+      const formSources = [];
+      const scrapeResultArray = Array.isArray(form.scrapeResult) ? form.scrapeResult : [];
+      const validForms = scrapeResultArray.filter((sr) => !shouldExcludeForm(sr));
+      if (form.finalUrl.includes('search') || validForms.length === 0) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // 1. get formSources from scraped data if available
+      let isFormSourceAlreadyAdded = false;
+      validForms.forEach((sr) => {
+        if (!sr.formSource) {
+          return;
+        }
+        if (!addedFormSources.has(sr.formSource)) {
+          formSources.push(sr.formSource);
+          if (!['dialog form', 'form'].includes(sr.formSource)) {
+            addedFormSources.add(sr.formSource);
+          }
+        } else {
+          isFormSourceAlreadyAdded = true;
+        }
+      });
+      // eslint-disable-next-line max-len
+      // 2. If no unique formSource found in current page, then use id or classList to identify the form
+      if (formSources.length === 0) {
+        log.debug(`[Form Opportunity] No formSource found in scraped data for form: ${form.finalUrl}`);
+        validForms.forEach((sr) => {
+          if (sr.formSource) {
+            return;
+          }
+          if (sr.id) {
+            formSources.push(`form#${sr.id}`);
+          } else if (sr.classList) {
+            formSources.push(`form.${sr.classList.split(' ').join('.')}`);
+          }
+        });
+      }
+      // 3. Fallback to "form" element. If any formSource of current page is already added
+      // in previous pages, then don't add "form" element.
+      if (!isFormSourceAlreadyAdded && formSources.length === 0) {
+        formSources.push('form');
+      }
+      log.debug(`[Form Opportunity] Form sources for page: ${form.finalUrl} are ${formSources.join(', ')}`);
+      if (formSources.length > 0) {
+        urlsData.push({
+          url: form.finalUrl,
+          formSources,
+        });
+      }
+    }
+  }
+  return urlsData;
+}
+
+export function getSuccessCriteriaDetails(criteria) {
+  let cNumber;
+
+  if (criteria.match(/\b\d+\.\d+\.\d+\b/)) {
+    // Format: "1.2.1 Audio-only and Video-only"
+    cNumber = criteria.match(/\b\d+\.\d+\.\d+\b/)[0].replaceAll('.', '');
+  } else if (criteria.match(/^wcag\d+$/i)) {
+    // Format: "wcag121"
+    cNumber = criteria.replace(/^wcag/i, '');
+  } else {
+    throw new Error(`Invalid criteria format: ${criteria}`);
+  }
+
+  const successCriteriaDetails = successCriteriaLinks[cNumber];
+  const successCriteriaNumber = cNumber.replace(/(\d)(\d)(\d)/, '$1.$2.$3');
+
+  return {
+    name: successCriteriaDetails.name,
+    criteriaNumber: successCriteriaNumber,
+    understandingUrl: successCriteriaDetails.understandingUrl,
+  };
+}
+
+// eslint-disable-next-line no-shadow
+function getCostSaved(originalTraffic, conversionRate, cpc, conversionBoost) {
+  if (conversionRate === 0) {
+    return 0;
+  }
+  const originalConversions = originalTraffic * conversionRate;
+  const newConversionRate = conversionRate * (1 + conversionBoost);
+  const newTrafficNeeded = originalConversions / newConversionRate;
+  const trafficDelta = originalTraffic - newTrafficNeeded;
+  const costSaved = trafficDelta * cpc;
+
+  return parseFloat(costSaved.toFixed(2));
+}
+
+/**
+ * Calculates the projected conversion value for a form based on its views and CPC
+ * @param {Object} context - The context object containing necessary dependencies
+ * @param {string} siteId - The site ID
+ * @param {Object} formMetrics - The form metrics object containing traffic data
+ * @returns {Promise<Object>} Object containing cpcValue and projectedConversionValue
+ */
+export async function calculateProjectedConversionValue(context, siteId, opportunityData) {
+  const { log } = context;
+
+  try {
+    const cpcValue = await calculateCPCValue(context, siteId);
+    log.info(`Calculated CPC value: ${cpcValue} for site: ${siteId}`);
+
+    const originalTraffic = opportunityData.pageViews;
+    const conversionRate = opportunityData?.metrics?.find(
+      (m) => m?.type === 'conversionRate' && m?.device === '*',
+    )?.value?.page ?? 0;
+
+    // traffic is calculated for 15 days - extrapolating for a year
+    const trafficPerYear = Math.floor((originalTraffic / FORMS_AUDIT_INTERVAL)) * 365;
+    const projectedConversionValue = getCostSaved(
+      trafficPerYear,
+      conversionRate,
+      cpcValue,
+      CONVERSION_BOOST,
+    );
+
+    return {
+      projectedConversionValue,
+    };
+  } catch (error) {
+    log.error(`Error calculating projected conversion value for site ${siteId}:`, error);
+    return null;
+  }
 }

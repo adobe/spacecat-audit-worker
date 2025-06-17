@@ -141,14 +141,15 @@
               }
             ]
           }
-        ]
+        ],
+        "formsource": "#container-1 form.newsletter"
       }
     ],
     "auditContext": {
       "interval": 15
     }
   },
-  "allowCache": false,
+  "allowCache": true,
   "fullAuditRef": "www.example.com",
   "processingType": "form",
   "jobId": "test-site-id",
@@ -163,7 +164,11 @@
       "url": "https://business.adobe.com/jp/resources/guides/leading-generative-ai-deployment-for-marketing.html"
     },
     {
-      "url": "https://www.business.adobe.com/newsletter"
+      "url": "https://www.business.adobe.com/newsletter",
+      "formSources": ["#container-1 form.newsletter"]
+    },
+    {
+      "url": "https://business.adobe.com/jp/products/magento/magento-commerce.html"
     }
   ],
   "siteId": "test-site-id"
