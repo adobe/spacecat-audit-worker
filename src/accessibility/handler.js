@@ -34,6 +34,7 @@ export async function processImportStep(context) {
     fullAuditRef: s3BucketPath,
     type: 'top-pages',
     siteId: site.getId(),
+    allowCache: true,
   };
 }
 

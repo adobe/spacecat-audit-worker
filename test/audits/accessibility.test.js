@@ -448,6 +448,7 @@ describe('Accessibility Audit Handler', () => {
         fullAuditRef: 'scrapes/test-site-id/',
         type: 'top-pages',
         siteId: 'test-site-id',
+        allowCache: true,
       });
 
       expect(mockSite.getId).to.have.been.calledTwice;
