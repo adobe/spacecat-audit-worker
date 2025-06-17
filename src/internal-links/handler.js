@@ -168,28 +168,23 @@ export async function opportunityAndSuggestionsStep(context) {
   try {
     if (proposedUrls.length > 0) {
       const rumAPIClient = RUMAPIClient.createFrom(context);
-      // Query RUM for each proposed URL and collect earned traffic
-      const trafficResults = await Promise.all(
-        proposedUrls.map(async (url) => {
-          try {
-            const data = await rumAPIClient.query('traffic-acquisition', {
-              domain: url,
-              interval: INTERVAL,
-              granularity: 'hourly',
-            });
-            // Find the entry for the URL and extract earned traffic
-            const earned = Array.isArray(data) && data[0] && typeof data[0].earned === 'number' ? data[0].earned : 0;
-            return { url, earned };
-          } catch (e) {
-            log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to fetch RUM traffic for ${url}: ${e.message}`);
-            return { url, earned: 0 };
-          }
-        }),
-      );
-      rumTrafficData = trafficResults;
+      // Query RUM for traffic data using the base URL
+      const trafficData = await rumAPIClient.query('traffic-acquisition', {
+        domain: finalUrl,
+        interval: INTERVAL,
+        granularity: 'hourly',
+      });
+      rumTrafficData = proposedUrls.map((url) => {
+        const urlData = trafficData.find((data) => data.url === url);
+        return {
+          url,
+          earned: urlData ? urlData.earned : 0,
+        };
+      });
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Traffic data for proposed URLs:`, JSON.stringify(rumTrafficData, null, 2));
     }
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Error fetching RUM traffic for proposed URLs: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Error fetching RUM traffic data: ${e.message}`);
   }
 
   // Pass rumTrafficData to KPI calculation
