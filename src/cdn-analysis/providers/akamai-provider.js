@@ -18,7 +18,7 @@ const AKAMAI_CONFIG = {
   cdnType: 'akamai',
   databaseName: 'cdn_logs_',
   userAgentField: 'ua',
-  defaultFilterClause: null,
+  defaultFilterClause: "rspContentType LIKE 'text/html%'", // filters out non-html content
 
   rawLogsSchema: {
     reqTimeSec: 'string',
