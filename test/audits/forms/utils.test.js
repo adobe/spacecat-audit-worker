@@ -162,6 +162,18 @@ describe('getUrlsDataForAccessibilityAudit', () => {
     ]);
   });
 
+  it('should return empty', () => {
+    const scrapedData = {
+      formData: [
+        {
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+        },
+      ],
+    };
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    expect(urlsData).to.deep.equal([]);
+  });
+
   it('should return unique form sources', () => {
     const scrapedData = {
       formData: [
