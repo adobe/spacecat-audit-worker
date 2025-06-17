@@ -14,16 +14,19 @@
 import { UserAgentRequestAnalysisQuery } from '../queries/user-agent-request-analysis.js';
 import { UrlStatusAnalysisQuery } from '../queries/url-status-analysis.js';
 import { GeographicAnalysisQuery } from '../queries/geographic-analysis.js';
+import { PageTypeAnalysisQuery } from '../queries/page-type-analysis.js';
 
 /**
  * Run all 7 agentic analyses in parallel and summarize results
  */
-export async function runAllAnalysis(athenaClient, hour, s3Config, tableName, cdnProvider, log) {
+export async function runAllAnalysis(athenaClient, hour, cdnProvider, log) {
   const databaseName = cdnProvider.getDatabaseName();
+  const { s3Config, filteredTableName: tableName, site } = cdnProvider;
   const queries = [
     new UserAgentRequestAnalysisQuery(hour, tableName, s3Config),
     new UrlStatusAnalysisQuery(hour, tableName, s3Config),
     new GeographicAnalysisQuery(hour, tableName, s3Config),
+    new PageTypeAnalysisQuery(hour, tableName, s3Config, site),
   ];
 
   const analysisTypes = queries.map((q) => q.constructor.analysisType);

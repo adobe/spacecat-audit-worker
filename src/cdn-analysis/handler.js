@@ -43,8 +43,6 @@ async function runCdnAnalysis(auditUrl, context, site) {
   const executionResults = await runAllAnalysis(
     athenaClient,
     hourToProcess,
-    provider.s3Config,
-    provider.filteredTableName,
     provider,
     log,
   );

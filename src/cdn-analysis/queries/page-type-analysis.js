@@ -13,37 +13,33 @@
 /* c8 ignore start */
 import { BaseQuery } from './base-query.js';
 import { getHourlyPartitionFilter } from './query-helpers.js';
-import { buildCountryExtractionSQL } from '../utils/country-extraction.js';
+import { getPageTypePatterns, generatePageTypeCaseStatement } from '../utils/page-type-utils.js';
 
-export class GeographicAnalysisQuery extends BaseQuery {
-  static analysisType = 'reqCountByCountry';
+export class PageTypeAnalysisQuery extends BaseQuery {
+  static analysisType = 'reqCountByPageType';
+
+  constructor(hourToProcess, tableName, s3Config, site) {
+    super(hourToProcess, tableName, s3Config);
+    this.site = site;
+  }
 
   getSelectQuery() {
     const { whereClause } = getHourlyPartitionFilter(this.hourToProcess);
-
-    const countryExtractionSQL = buildCountryExtractionSQL();
+    const patterns = getPageTypePatterns(this.site);
+    const pageTypeCaseStatement = generatePageTypeCaseStatement(patterns);
 
     return `
       SELECT 
-        ${countryExtractionSQL} as country_code,
+        ${pageTypeCaseStatement} as page_type,
         COUNT(*) as request_count,
         COUNT(CASE WHEN agentic_type = 'chatgpt' THEN 1 END) as chatgpt_requests,
         COUNT(CASE WHEN agentic_type = 'perplexity' THEN 1 END) as perplexity_requests,
-        COUNT(CASE WHEN agentic_type = 'claude' THEN 1 END) as claude_requests,
-        COUNT(CASE WHEN response_status BETWEEN 200 AND 299 THEN 1 END) as status_2xx,
-        COUNT(CASE WHEN response_status BETWEEN 300 AND 399 THEN 1 END) as status_3xx,
-        COUNT(CASE WHEN response_status = 401 THEN 1 END) as status_401,
-        COUNT(CASE WHEN response_status = 403 THEN 1 END) as status_403,
-        COUNT(CASE WHEN response_status = 404 THEN 1 END) as status_404,
-        COUNT(CASE WHEN response_status BETWEEN 500 AND 599 THEN 1 END) as status_5xx,
-        ROUND(
-          COUNT(CASE WHEN response_status BETWEEN 200 AND 299 THEN 1 END) * 100.0 / COUNT(*)
-        , 2) as success_rate_percent
+        COUNT(CASE WHEN agentic_type = 'claude' THEN 1 END) as claude_requests
       FROM ${this.getFullTableName()}
       ${whereClause}
       AND agentic_type IN ('chatgpt', 'perplexity', 'claude')
-      GROUP BY ${countryExtractionSQL}
-      HAVING country_code != 'UNKNOWN'
+      AND url IS NOT NULL
+      GROUP BY ${pageTypeCaseStatement}
       ORDER BY request_count DESC
     `;
   }
