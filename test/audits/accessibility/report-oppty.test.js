@@ -20,6 +20,7 @@ import {
   createFixedVsNewReportOpportunity,
   createBaseReportOpportunity,
   createReportOpportunitySuggestionInstance,
+  createAccessibilityAssistiveOpportunity,
 } from '../../../src/accessibility/utils/report-oppty.js';
 
 describe('Accessibility Report Opportunity Utils', () => {
@@ -155,6 +156,70 @@ describe('Accessibility Report Opportunity Utils', () => {
     });
   });
 
+  describe('createAccessibilityAssistiveOpportunity', () => {
+    it('should create correct assistive opportunity structure', () => {
+      const opportunity = createAccessibilityAssistiveOpportunity();
+
+      expect(opportunity).to.deep.equal({
+        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
+        origin: 'AUTOMATION',
+        type: 'a11y-assistive',
+        title: 'Accessibility - Assistive technology is incompatible on site',
+        description: 'This report provides a structured overview of all detected accessibility issues across your website, organized by severity and page. Each issue includes WCAG guidelines, impact assessment, and actionable recommendations for improvement.',
+        tags: ['a11y'],
+        status: 'NEW',
+        data: {
+          dataSources: ['axe-core'],
+        },
+      });
+    });
+
+    it('should have consistent structure with other opportunity types', () => {
+      const assistive = createAccessibilityAssistiveOpportunity();
+      const base = createBaseReportOpportunity(1, 2024);
+
+      // Should have same basic structure
+      expect(assistive).to.have.property('runbook');
+      expect(assistive).to.have.property('origin', 'AUTOMATION');
+      expect(assistive).to.have.property('type');
+      expect(assistive).to.have.property('title');
+      expect(assistive).to.have.property('description');
+      expect(assistive).to.have.property('tags');
+      expect(assistive).to.have.property('status');
+
+      // Should have same runbook and tags as other opportunities
+      expect(assistive.runbook).to.equal(base.runbook);
+      expect(assistive.tags).to.deep.equal(base.tags);
+      expect(assistive.origin).to.equal(base.origin);
+    });
+
+    it('should have unique type and status compared to report opportunities', () => {
+      const assistive = createAccessibilityAssistiveOpportunity();
+      const base = createBaseReportOpportunity(1, 2024);
+
+      // Should have different type and status
+      expect(assistive.type).to.equal('a11y-assistive');
+      expect(base.type).to.equal('generic-opportunity');
+      expect(assistive.status).to.equal('NEW');
+      expect(base.status).to.equal('IGNORED');
+    });
+
+    it('should include data sources information', () => {
+      const opportunity = createAccessibilityAssistiveOpportunity();
+
+      expect(opportunity.data).to.be.an('object');
+      expect(opportunity.data.dataSources).to.be.an('array');
+      expect(opportunity.data.dataSources).to.include('axe-core');
+    });
+
+    it('should be callable multiple times with consistent results', () => {
+      const opportunity1 = createAccessibilityAssistiveOpportunity();
+      const opportunity2 = createAccessibilityAssistiveOpportunity();
+
+      expect(opportunity1).to.deep.equal(opportunity2);
+    });
+  });
+
   describe('all opportunity types', () => {
     it('should have consistent structure across all opportunity types', () => {
       const week = 20;
@@ -164,16 +229,17 @@ describe('Accessibility Report Opportunity Utils', () => {
       const enhanced = createEnhancedReportOpportunity(week, year);
       const fixedVsNew = createFixedVsNewReportOpportunity(week, year);
       const base = createBaseReportOpportunity(week, year);
+      const assistive = createAccessibilityAssistiveOpportunity();
 
       // All should have these common properties
-      [inDepth, enhanced, fixedVsNew, base].forEach((opportunity) => {
+      [inDepth, enhanced, fixedVsNew, base, assistive].forEach((opportunity) => {
         expect(opportunity).to.have.property('runbook');
         expect(opportunity).to.have.property('origin', 'AUTOMATION');
-        expect(opportunity).to.have.property('type', 'generic-opportunity');
+        expect(opportunity).to.have.property('type');
         expect(opportunity).to.have.property('title');
         expect(opportunity).to.have.property('description');
         expect(opportunity).to.have.property('tags');
-        expect(opportunity).to.have.property('status', 'IGNORED');
+        expect(opportunity).to.have.property('status');
 
         expect(opportunity.tags).to.deep.equal(['a11y']);
         expect(opportunity.runbook).to.be.a('string').and.to.include('adobe.sharepoint.com');
@@ -188,18 +254,45 @@ describe('Accessibility Report Opportunity Utils', () => {
       const enhanced = createEnhancedReportOpportunity(week, year);
       const fixedVsNew = createFixedVsNewReportOpportunity(week, year);
       const base = createBaseReportOpportunity(week, year);
+      const assistive = createAccessibilityAssistiveOpportunity();
 
-      const titles = [inDepth.title, enhanced.title, fixedVsNew.title, base.title];
+      const titles = [inDepth.title, enhanced.title, fixedVsNew.title, base.title, assistive.title];
 
       // All titles should be unique
-      expect(new Set(titles).size).to.equal(4);
+      expect(new Set(titles).size).to.equal(5);
 
-      // All should contain week and year
-      titles.forEach((title) => {
+      // Report opportunities should contain week and year
+      [inDepth.title, enhanced.title, fixedVsNew.title, base.title].forEach((title) => {
         expect(title).to.include('Week 10');
         expect(title).to.include('2024');
         expect(title).to.include('Desktop');
       });
+
+      // Assistive opportunity should not contain week/year/desktop
+      expect(assistive.title).to.not.include('Week');
+      expect(assistive.title).to.not.include('2024');
+      expect(assistive.title).to.not.include('Desktop');
+    });
+
+    it('should have different types and statuses', () => {
+      const week = 10;
+      const year = 2024;
+
+      const inDepth = createInDepthReportOpportunity(week, year);
+      const enhanced = createEnhancedReportOpportunity(week, year);
+      const fixedVsNew = createFixedVsNewReportOpportunity(week, year);
+      const base = createBaseReportOpportunity(week, year);
+      const assistive = createAccessibilityAssistiveOpportunity();
+
+      // Report opportunities should have same type and status
+      [inDepth, enhanced, fixedVsNew, base].forEach((opportunity) => {
+        expect(opportunity.type).to.equal('generic-opportunity');
+        expect(opportunity.status).to.equal('IGNORED');
+      });
+
+      // Assistive opportunity should have different type and status
+      expect(assistive.type).to.equal('a11y-assistive');
+      expect(assistive.status).to.equal('NEW');
     });
 
     it('should handle edge case week and year values', () => {
@@ -216,6 +309,9 @@ describe('Accessibility Report Opportunity Utils', () => {
         expect(() => createFixedVsNewReportOpportunity(week, year)).to.not.throw();
         expect(() => createBaseReportOpportunity(week, year)).to.not.throw();
       });
+
+      // Assistive opportunity doesn't take parameters
+      expect(() => createAccessibilityAssistiveOpportunity()).to.not.throw();
     });
   });
 });

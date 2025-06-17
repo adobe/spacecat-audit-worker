@@ -31,6 +31,9 @@ describe('Accessibility Audit Handler', () => {
   let getUrlsForAuditStub;
   let aggregateAccessibilityDataStub;
   let generateReportOpportunitiesStub;
+  let createAccessibilityIndividualOpportunitiesStub;
+  let getExistingObjectKeysFromFailedAuditsStub;
+  let getExistingUrlsFromFailedAuditsStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -54,6 +57,11 @@ describe('Accessibility Audit Handler', () => {
         env: {
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         },
+        dataAccess: {
+          Opportunity: {
+            allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          },
+        },
       })
       .build();
 
@@ -61,12 +69,22 @@ describe('Accessibility Audit Handler', () => {
     getUrlsForAuditStub = sandbox.stub();
     aggregateAccessibilityDataStub = sandbox.stub();
     generateReportOpportunitiesStub = sandbox.stub();
+    createAccessibilityIndividualOpportunitiesStub = sandbox.stub();
+    getExistingObjectKeysFromFailedAuditsStub = sandbox.stub().resolves([]);
+    getExistingUrlsFromFailedAuditsStub = sandbox.stub().resolves([]);
 
     const accessibilityModule = await esmock('../../src/accessibility/handler.js', {
       '../../src/accessibility/utils/data-processing.js': {
         getUrlsForAudit: getUrlsForAuditStub,
         aggregateAccessibilityData: aggregateAccessibilityDataStub,
         generateReportOpportunities: generateReportOpportunitiesStub,
+      },
+      '../../src/accessibility/utils/generate-individual-opportunities.js': {
+        createAccessibilityIndividualOpportunities: createAccessibilityIndividualOpportunitiesStub,
+      },
+      '../../src/accessibility/utils/scrape-utils.js': {
+        getExistingObjectKeysFromFailedAudits: getExistingObjectKeysFromFailedAuditsStub,
+        getExistingUrlsFromFailedAudits: getExistingUrlsFromFailedAuditsStub,
       },
     });
 
@@ -97,6 +115,15 @@ describe('Accessibility Audit Handler', () => {
         'test-site-id',
         mockContext.log,
       );
+
+      expect(getExistingObjectKeysFromFailedAuditsStub).to.have.been.calledOnceWith(
+        mockS3Client,
+        'test-bucket',
+        'test-site-id',
+        mockContext.log,
+      );
+
+      expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledOnce;
 
       expect(mockContext.log.info).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for accessibility audit for https://example.com with siteId test-site-id',
@@ -267,6 +294,34 @@ describe('Accessibility Audit Handler', () => {
       await expect(scrapeAccessibilityData(mockContext))
         .to.be.rejectedWith('Invalid input parameters');
     });
+
+    it('filters out urls that have existing failed audits', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1' },
+        { url: 'https://example.com/page2' },
+        { url: 'https://example.com/page3' },
+      ];
+      const mockObjectKeys = ['key1', 'key2'];
+      const existingUrls = ['https://example.com/page1', 'https://example.com/page2'];
+
+      getUrlsForAuditStub.resolves(mockUrls);
+      getExistingObjectKeysFromFailedAuditsStub.resolves(mockObjectKeys);
+      getExistingUrlsFromFailedAuditsStub.resolves(existingUrls);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledWith(
+        mockS3Client,
+        'test-bucket',
+        mockContext.log,
+        mockObjectKeys,
+      );
+
+      expect(result.urls).to.deep.equal([{ url: 'https://example.com/page3' }]);
+    });
   });
 
   describe('processAccessibilityOpportunities', () => {
@@ -304,6 +359,7 @@ describe('Accessibility Audit Handler', () => {
       };
       aggregateAccessibilityDataStub.resolves(mockAggregationResult);
       generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
 
       // Act
       const result = await processAccessibilityOpportunities(mockContext);
@@ -325,6 +381,11 @@ describe('Accessibility Audit Handler', () => {
         'accessibility',
       );
 
+      expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.calledOnceWith(
+        mockAggregationResult.finalResultFiles.current,
+        mockContext,
+      );
+
       expect(mockContext.log.info).to.have.been.calledWith(
         '[A11yAudit] Step 2: Processing scraped data for https://example.com',
       );
@@ -334,6 +395,52 @@ describe('Accessibility Audit Handler', () => {
       expect(result.urlsProcessed).to.equal(2);
       expect(result.summary).to.equal('Found 5 accessibility issues across 2 URLs');
       expect(result.fullReportUrl).to.match(/accessibility\/test-site-id\/\d{4}-\d{2}-\d{2}-final-result\.json/);
+    });
+
+    it('should handle error from createAccessibilityIndividualOpportunities', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 3,
+                critical: { items: { 'some-id': { count: 3 } } },
+              },
+            },
+            'https://example.com/page1': {
+              violations: {
+                total: 3,
+                critical: { items: { 'some-id': { count: 3 } } },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+      const error = new Error('Failed to create individual opportunities');
+      createAccessibilityIndividualOpportunitiesStub.rejects(error);
+
+      // Act
+      const result = await processAccessibilityOpportunities(mockContext);
+
+      // Assert
+      expect(mockContext.log.error).to.have.been.calledWith(
+        '[A11yAudit] Error creating individual opportunities: Failed to create individual opportunities',
+        error,
+      );
+
+      expect(result).to.deep.equal({
+        status: 'PROCESSING_FAILED',
+        error: 'Failed to create individual opportunities',
+      });
+
+      // Should have called aggregateAccessibilityData and generateReportOpportunities successfully
+      expect(aggregateAccessibilityDataStub).to.have.been.called;
+      expect(generateReportOpportunitiesStub).to.have.been.called;
+      expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.called;
     });
 
     it('should return NO_OPPORTUNITIES when no issues are found', async () => {
@@ -359,6 +466,7 @@ describe('Accessibility Audit Handler', () => {
       };
       aggregateAccessibilityDataStub.resolves(mockAggregationResult);
       generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
 
       // Act
       const result = await processAccessibilityOpportunities(mockContext);
@@ -507,6 +615,7 @@ describe('Accessibility Audit Handler', () => {
       };
       aggregateAccessibilityDataStub.resolves(mockAggregationResult);
       generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
 
       // Act
       await processAccessibilityOpportunities(mockContext);
@@ -548,6 +657,7 @@ describe('Accessibility Audit Handler', () => {
       };
       aggregateAccessibilityDataStub.resolves(mockAggregationResult);
       generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
 
       // Act
       await processAccessibilityOpportunities(mockContext);
@@ -588,6 +698,7 @@ describe('Accessibility Audit Handler', () => {
       };
       aggregateAccessibilityDataStub.resolves(mockAggregationResult);
       generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
 
       // Act
       await processAccessibilityOpportunities(mockContext);

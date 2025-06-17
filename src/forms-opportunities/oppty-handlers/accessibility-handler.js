@@ -64,10 +64,11 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
 
     // Update existing opportunity
     if (opportunity) {
-      const existingData = opportunity.data.accessibility;
+      const data = opportunity.getData();
+      const existingA11yData = data.accessibility;
 
       // Merge new data with existing data
-      const mergedData = [...existingData];
+      const mergedData = [...existingA11yData];
       a11yOpptyData.forEach((newForm) => {
         const existingFormIndex = mergedData.findIndex(
           (form) => form.form === newForm.form && form.formSource === newForm.formSource,
@@ -89,7 +90,10 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
         }
       });
 
-      opportunity.data.accessibility = mergedData;
+      opportunity.setData({
+        ...data,
+        accessibility: mergedData,
+      });
       opportunity = await opportunity.save();
       log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated existing a11y opportunity`);
     }
