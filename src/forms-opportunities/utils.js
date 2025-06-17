@@ -356,7 +356,8 @@ export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
   if (isNonEmptyArray(scrapedData.formData)) {
     for (const form of scrapedData.formData) {
       const formSources = [];
-      const validForms = form.scrapeResult.filter((sr) => !shouldExcludeForm(sr));
+      const scrapeResultArray = Array.isArray(form.scrapeResult) ? form.scrapeResult : [];
+      const validForms = scrapeResultArray.filter((sr) => !shouldExcludeForm(sr));
       if (form.finalUrl.includes('search') || validForms.length === 0) {
         // eslint-disable-next-line no-continue
         continue;
