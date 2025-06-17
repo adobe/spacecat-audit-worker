@@ -38,11 +38,11 @@ export const DOMAIN_SPECIFIC_PATTERNS = {
       name: 'The Core Blog',
       pattern: '.*/the-core/.*',
     },
+    ...DEFAULT_PATTERNS,
     {
       name: 'Product Listing Page',
       pattern: '.*/.*',
     },
-    ...DEFAULT_PATTERNS,
   ],
 };
 
