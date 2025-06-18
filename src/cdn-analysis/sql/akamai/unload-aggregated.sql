@@ -12,12 +12,12 @@ UNLOAD (
     try(url_extract_host(referer)) AS referer,
     COUNT(*) AS count
 
-  FROM ${database}.${rawTable}
+  FROM {{database}}.{{rawTable}}
 
-  WHERE year  = '${year}'
-    AND month = '${month}'
-    AND day   = '${day}'
-    AND hour  = '${hour}'
+  WHERE year  = '{{year}}'
+    AND month = '{{month}}'
+    AND day   = '{{day}}'
+    AND hour  = '{{hour}}'
 
     -- agentic and LLM-attributed traffic filter based on user-agent, referer and utm tag
     AND (
@@ -39,7 +39,7 @@ UNLOAD (
     )
 
     -- agentic and LLM-attributed traffic never has self-referer
-    AND NOT REGEXP_LIKE(COALESCE(referer, ''), '${host}')
+    AND NOT REGEXP_LIKE(COALESCE(referer, ''), '{{host}}')
 
   GROUP BY
     CASE
@@ -51,5 +51,5 @@ UNLOAD (
     statusCode,
     try(url_extract_host(referer))
 
-) TO 's3://${bucket}/aggregated/${year}/${month}/${day}/${hour}/'
+) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
 WITH (format = 'PARQUET');

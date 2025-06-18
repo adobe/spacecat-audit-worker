@@ -37,7 +37,7 @@ export class AWSAthenaClient {
       backoffMs = 100,
       maxRetries = 3,
       pollIntervalMs = 1000,
-      maxPollAttempts = 60,
+      maxPollAttempts = 120,
     } = opts;
 
     if (!hasText(tempLocation)) {

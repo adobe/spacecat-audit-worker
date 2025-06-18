@@ -9,27 +9,50 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+/* eslint-disable object-curly-newline */
 
 /* c8 ignore start */
+import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { determineCdnProvider } from './utils/cdn-utils.js';
-import { getPreviousHour, getHourParts, formatS3Prefix } from './utils/date-utils.js';
-import { extractCustomerDomain, getRawLogsBucket } from './utils/pipeline-utils.js';
-import { loadSql } from './utils/sql-loader.js';
 import { AWSAthenaClient } from './utils/athena-client.js';
+
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+function extractCustomerDomain(site) {
+  const { host } = new URL(site.getBaseURL());
+  return {
+    host,
+    hostEscaped: host.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
+  };
+}
+
+function getHourParts() {
+  const previousHour = new Date(Date.now() - ONE_HOUR_MS);
+
+  const year = previousHour.getUTCFullYear().toString();
+  const month = String(previousHour.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(previousHour.getUTCDate()).padStart(2, '0');
+  const hour = String(previousHour.getUTCHours()).padStart(2, '0');
+
+  return { year, month, day, hour };
+}
+
+async function loadSql(provider, filename, variables) {
+  return getStaticContent(variables, `./src/cdn-analysis/sql/${provider}/${filename}.sql`);
+}
 
 export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   const { log, s3Client } = context;
 
   // derive customer & time
   const { host, hostEscaped } = extractCustomerDomain(site);
-  const bucket = getRawLogsBucket(hostEscaped);
-  const hourDate = getPreviousHour();
-  const parts = getHourParts(hourDate);
-  const prefix = formatS3Prefix('raw', parts);
+  const bucket = `cdn-logs-${hostEscaped.replace(/[._]/g, '-')}`;
+  const { year, month, day, hour } = getHourParts();
+  const rawLogsPrefix = `raw/${year}/${month}/${day}/${hour}/`;
 
   // detect CDN provider
-  const cdnType = await determineCdnProvider(s3Client, bucket, prefix);
+  const cdnType = await determineCdnProvider(s3Client, bucket, rawLogsPrefix);
   log.info(`Using ${cdnType.toUpperCase()} provider`);
 
   // names & locations
@@ -57,26 +80,23 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   const sqlUnload = await loadSql(cdnType, 'unload-aggregated', {
     database,
     rawTable,
-    year: parts.year,
-    month: parts.month,
-    day: parts.day,
-    hour: parts.hour,
+    year,
+    month,
+    day,
+    hour,
     bucket,
     host,
   });
-  const sqlUnloadDescription = '[Athena Query] Filter the raw logs and unload to ';
+  const output = `s3://${bucket}/aggregated/${year}/${month}/${day}/${hour}/`;
+  const sqlUnloadDescription = `[Athena Query] Filter the raw logs and unload to ${output}`;
   await athenaClient.execute(sqlUnload, database, sqlUnloadDescription);
-
-  const output = `s3://${bucket}/aggregated/${parts.year}/${parts.month}/${parts.day}/${parts.hour}/`;
-  log.info(`Wrote aggregated hour to ${output}`);
 
   return {
     auditResult: {
-      hourProcessed: hourDate.toISOString(),
       cdnType,
       database,
       rawTable,
-      outputLocation: output,
+      output,
       completedAt: new Date().toISOString(),
     },
     fullAuditRef: output,

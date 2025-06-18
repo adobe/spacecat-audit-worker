@@ -1,4 +1,4 @@
-CREATE EXTERNAL TABLE IF NOT EXISTS ${database}.${rawTable} (
+CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   timestamp             string,
   geo_country           string,
   host                  string,
@@ -19,10 +19,10 @@ PARTITIONED BY (
   hour  string
 )
 ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe'
-LOCATION '${rawLocation}'
+LOCATION '{{rawLocation}}'
 TBLPROPERTIES (
   'projection.enabled'        = 'true',
-  'storage.location.template' = '${rawLocation}\${year}/\${month}/\${day}/\${hour}/',
+  'storage.location.template' = '{{rawLocation}}${year}/${month}/${day}/${hour}/',
   'projection.year.type'      = 'integer',
   'projection.year.range'     = '2024,2030',
   'projection.month.type'     = 'integer',
