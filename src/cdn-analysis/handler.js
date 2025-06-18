@@ -12,78 +12,78 @@
 
 /* c8 ignore start */
 import { AuditBuilder } from '../common/audit-builder.js';
-import { determineCdnProvider } from './providers/cdn-provider-factory.js';
+import { determineCdnProvider } from './utils/cdn-utils.js';
 import { getPreviousHour, getHourParts, formatS3Prefix } from './utils/date-utils.js';
-import {
-  extractCustomerDomain,
-  getRawLogsBucket,
-  createDatabaseDDL,
-  createRawTableDDL,
-  createAggregatedUnloadQuery,
-} from './utils/pipeline-utils.js';
-import { executeAthenaSetupQuery, executeAthenaQuery } from './utils/athena-client.js';
+import { extractCustomerDomain, getRawLogsBucket } from './utils/pipeline-utils.js';
+import { loadSql } from './utils/sql-loader.js';
+import { AWSAthenaClient } from './utils/athena-client.js';
 
-async function runCdnAnalysis(auditUrl, context, site) {
-  const { log, athenaClient, s3Client } = context;
+export async function cdnLogAnalysisRunner(auditUrl, context, site) {
+  const { log, s3Client } = context;
 
-  const customerDomain = extractCustomerDomain(site);
-  const rawLogsBucket = getRawLogsBucket(customerDomain);
-
-  const hour = getPreviousHour();
-  const parts = getHourParts(hour);
+  // derive customer & time
+  const { host, hostEscaped } = extractCustomerDomain(site);
+  const bucket = getRawLogsBucket(hostEscaped);
+  const hourDate = getPreviousHour();
+  const parts = getHourParts(hourDate);
   const prefix = formatS3Prefix('raw', parts);
 
-  const provider = await determineCdnProvider(s3Client, rawLogsBucket, prefix);
-  const { config, mappingExpressions } = provider;
-  log.info(`Using ${config.cdnType.toUpperCase()} provider`);
+  // detect CDN provider
+  const cdnType = await determineCdnProvider(s3Client, bucket, prefix);
+  log.info(`Using ${cdnType.toUpperCase()} provider`);
 
-  const database = `cdn_logs_${customerDomain}`;
-  const rawTable = `raw_logs_${customerDomain}`;
-  const rawLocation = `s3://${rawLogsBucket}/raw/`;
-  const s3Config = { getAthenaTempLocation: () => `s3://${rawLogsBucket}/temp/athena-results/` };
+  // names & locations
+  const database = `cdn_logs_${hostEscaped}`;
+  const rawTable = `raw_logs_${hostEscaped}`;
+  const rawLocation = `s3://${bucket}/raw/`;
+  const tempLocation = `s3://${bucket}/temp/athena-results/`;
+  const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
 
-  await executeAthenaSetupQuery(athenaClient, createDatabaseDDL(database), 'database', s3Config, log);
-  await executeAthenaSetupQuery(
-    athenaClient,
-    createRawTableDDL({
-      database,
-      table: rawTable,
-      location: rawLocation,
-      schema: config.rawLogsSchema,
-      tableProperties: config.tableProperties,
-    }),
-    'raw logs table',
-    s3Config,
-    log,
-  );
+  // create database
+  const sqlDb = await loadSql(cdnType, 'create-database', { database });
+  const sqlDbDescription = `[Athena Query] Create database ${database}`;
+  await athenaClient.execute(sqlDb, database, sqlDbDescription);
 
-  const unloadSql = createAggregatedUnloadQuery({
+  // create raw table
+  const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
     database,
     rawTable,
-    mappingExpressions,
-    defaultFilterClause: config.defaultFilterClause,
-    bucket: rawLogsBucket,
-    parts,
-    userAgentField: config.userAgentField,
+    rawLocation,
   });
-  await executeAthenaQuery(athenaClient, unloadSql, s3Config, log, database);
+  const sqlRawDescription = `[Athena Query] Create raw logs table ${database}.${rawTable} from ${rawLocation}`;
+  await athenaClient.execute(sqlRaw, database, sqlRawDescription);
 
-  log.info(`Wrote aggregated hour to s3://${rawLogsBucket}/aggregated/${parts.year}/${parts.month}/${parts.day}/${parts.hour}/`);
+  // unload aggregated hour
+  const sqlUnload = await loadSql(cdnType, 'unload-aggregated', {
+    database,
+    rawTable,
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour,
+    bucket,
+    host,
+  });
+  const sqlUnloadDescription = '[Athena Query] Filter the raw logs and unload to ';
+  await athenaClient.execute(sqlUnload, database, sqlUnloadDescription);
+
+  const output = `s3://${bucket}/aggregated/${parts.year}/${parts.month}/${parts.day}/${parts.hour}/`;
+  log.info(`Wrote aggregated hour to ${output}`);
 
   return {
     auditResult: {
-      hourProcessed: hour.toISOString(),
-      cdnType: config.cdnType,
+      hourProcessed: hourDate.toISOString(),
+      cdnType,
       database,
       rawTable,
-      outputLocation: `s3://${rawLogsBucket}/aggregated/${parts.year}/${parts.month}/${parts.day}/${parts.hour}/`,
+      outputLocation: output,
       completedAt: new Date().toISOString(),
     },
-    fullAuditRef: auditUrl,
+    fullAuditRef: output,
   };
 }
 
 export default new AuditBuilder()
-  .withRunner(runCdnAnalysis)
+  .withRunner(cdnLogAnalysisRunner)
   .build();
 /* c8 ignore stop */

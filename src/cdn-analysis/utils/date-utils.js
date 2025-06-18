@@ -10,19 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-/**
- * returns the Date object for the previous full hour
- * @param {Date} [now] - reference date; defaults to current time
- */
+/* c8 ignore start */
 export function getPreviousHour(now = new Date()) {
   return new Date(now.getTime() - 60 * 60 * 1000);
 }
 
-/**
- * extracts padded UTC year, month, day, hour strings from a Date
- * @param {Date} date
- * @returns {{year:string,month:string,day:string,hour:string}}
- */
 export function getHourParts(date) {
   const year = date.getUTCFullYear().toString();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
@@ -33,25 +25,7 @@ export function getHourParts(date) {
   };
 }
 
-/**
- * builds Athena WHERE clause for year/month/day/hour partitions
- * @param {{year:string,month:string,day:string,hour:string}} parts
- */
-export function buildPartitionFilter(parts) {
-  const {
-    year, month, day, hour,
-  } = parts;
-  return `WHERE year='${year}' AND month='${month}' AND day='${day}' AND hour='${hour}'`;
+export function formatS3Prefix(base, dates) {
+  return `${base}/${dates.year}/${dates.month}/${dates.day}/${dates.hour}/`;
 }
-
-/**
- * formats an S3 prefix path for a given base and hour parts
- * @param {string} base - e.g., 'raw' or 'aggregated'
- * @param {{year:string,month:string,day:string,hour:string}} parts
- */
-export function formatS3Prefix(base, parts) {
-  const {
-    year, month, day, hour,
-  } = parts;
-  return `${base}/${year}/${month}/${day}/${hour}/`;
-}
+/* c8 ignore stop */
