@@ -1,3 +1,10 @@
+# [1.104.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.3...v1.104.0) (2025-06-18)
+
+
+### Features
+
+* accepting a subset of checks to run ([#972](https://github.com/adobe/spacecat-audit-worker/issues/972)) ([c6bb225](https://github.com/adobe/spacecat-audit-worker/commit/c6bb225eae8430abe20904c6044f00c2aa043e58))
+
 ## [1.103.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.2...v1.103.3) (2025-06-18)
 
 
