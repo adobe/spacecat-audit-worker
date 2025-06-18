@@ -13,18 +13,19 @@
 /* c8 ignore start */
 import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getS3Config, ensureDatabaseExists, setupCrawlerBasedDiscovery } from './utils/aws-utils.js';
+import { getS3Config, ensureTableExists } from './utils/aws-utils.js';
 import { runWeeklyReport, runCustomDateRangeReport } from './utils/report-runner.js';
 import {
   AUDIT_TYPES, MESSAGE_TYPES, ERROR_MESSAGES, SHAREPOINT_URL,
-} from './constants/index.js';
+} from './constants/core.js';
 
-async function createAuditResult(reportType, result, additionalData = {}, auditUrl = '') {
+async function createAuditResult(reportType, auditUrl, additionalData = {}) {
   return {
     auditResult: {
+      success: true,
       reportType,
+      timestamp: new Date().toISOString(),
       ...additionalData,
-      ...result,
     },
     fullAuditRef: auditUrl,
   };
@@ -32,14 +33,13 @@ async function createAuditResult(reportType, result, additionalData = {}, auditU
 
 async function runCdnLogsReport(url, context, site) {
   const {
-    log, glueClient, athenaClient, s3Client,
+    log, athenaClient,
   } = context;
   const message = context.message || {};
 
   log.info(`Starting CDN logs report audit for ${url}`);
 
   const s3Config = getS3Config(site, context);
-  const databaseName = `cdn_logs_${s3Config.customerDomain}`;
   const sharepointClient = await createFrom({
     clientId: process.env.SHAREPOINT_CLIENT_ID,
     clientSecret: process.env.SHAREPOINT_CLIENT_SECRET,
@@ -47,8 +47,7 @@ async function runCdnLogsReport(url, context, site) {
     domainId: process.env.SHAREPOINT_DOMAIN_ID,
   }, { url: SHAREPOINT_URL, type: 'onedrive' });
 
-  await ensureDatabaseExists(glueClient, databaseName, log);
-  await setupCrawlerBasedDiscovery(glueClient, databaseName, s3Config, log);
+  await ensureTableExists(athenaClient, s3Config, log);
 
   if (message.type === MESSAGE_TYPES.CUSTOM_DATE_RANGE) {
     const { startDate, endDate } = message;
@@ -62,31 +61,27 @@ async function runCdnLogsReport(url, context, site) {
       athenaClient,
       startDateStr: startDate,
       endDateStr: endDate,
-      databaseName,
       s3Config,
-      s3Client,
       log,
       site,
       sharepointClient,
     });
 
-    return createAuditResult(AUDIT_TYPES.CUSTOM, {}, {
+    return createAuditResult(AUDIT_TYPES.CUSTOM, url, {
       dateRange: { startDate, endDate },
-    }, url);
+    });
   }
 
   log.info('Running weekly report...');
   await runWeeklyReport({
     athenaClient,
-    databaseName,
     s3Config,
-    s3Client,
     log,
     site,
     sharepointClient,
   });
 
-  return createAuditResult(AUDIT_TYPES.WEEKLY, {}, {}, url);
+  return createAuditResult(AUDIT_TYPES.WEEKLY, url);
 }
 
 export default new AuditBuilder()

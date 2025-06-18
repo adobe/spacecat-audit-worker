@@ -14,10 +14,25 @@
 import ExcelJS from 'exceljs';
 import { generateReportingPeriods } from './date-utils.js';
 import {
-  SHEET_COLORS, STATUS_CODES, EXCEL_CONFIG, ERROR_MESSAGES,
-} from '../constants/index.js';
+  STATUS_CODES, ERROR_MESSAGES,
+} from '../constants/core.js';
 
 const WEEK_KEY_TRANSFORMER = (weekLabel) => weekLabel.replace(' ', '_').toLowerCase();
+const SHEET_COLORS = {
+  DEFAULT: 'FFE6E6FA',
+  ERROR: 'FFFFE6E6',
+  SUCCESS: 'FFE6F6E6',
+};
+const EXCEL_CONFIG = {
+  DEFAULT_COLUMN_WIDTH: 15,
+  NUMBER_FORMAT: '#,##0',
+  FONT: {
+    bold: true,
+    size: 11,
+    color: { argb: 'FF000000' },
+  },
+  CONTENT_TYPE: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
 
 const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
   const result = [valueExtractor(row)];
@@ -29,7 +44,7 @@ const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
 }) || [];
 
 const filterByStatusCodes = (data, statusCodes) => (
-  data?.filter((row) => statusCodes.includes(row.status_code)) || []
+  data?.filter((row) => statusCodes.includes(row.status)) || []
 );
 
 function analyzeTopBottomByStatus(data) {
@@ -38,7 +53,7 @@ function analyzeTopBottomByStatus(data) {
   const statusAnalysis = {};
 
   data.forEach((row) => {
-    const status = row.status_code || 'Unknown';
+    const status = row.status || 'Unknown';
     if (!statusAnalysis[status]) {
       statusAnalysis[status] = { urls: [] };
     }
@@ -75,7 +90,7 @@ const SHEET_CONFIGS = {
     numberColumns: [2],
     processData: (data) => data?.map((row) => [
       row.user_agent || 'Unknown',
-      Number(row.status_code) || 'All',
+      Number(row.status) || 'All',
       Number(row.total_requests) || 0,
       '',
     ]) || [],
@@ -160,8 +175,21 @@ const SHEET_CONFIGS = {
     numberColumns: [1],
     processData: (data) => {
       const urls200 = filterByStatusCodes(data, STATUS_CODES.OK);
-      const productsUrls = urls200.filter((row) => row.url && row.url.startsWith('/products/'));
-      return (productsUrls || []).map((row) => [row.url || 'Other', Number(row.total_requests) || 0]);
+      const productsUrls = urls200.filter((row) => row.url && row.url.includes('/products'));
+      return (productsUrls || []).map((row) => {
+        const url = row.url || '';
+        const productsIndex = url.indexOf('/products');
+        let extractedUrl = productsIndex !== -1 ? url.slice(productsIndex) : url;
+
+        // Remove SKU (last segment) from product URLs: /products/name/sku -> /products/name/
+        // works for bulk
+        const parts = extractedUrl.split('/');
+        if (parts.length > 3 && parts[1] === 'products') {
+          extractedUrl = parts.slice(0, 3).join('/');
+        }
+
+        return [extractedUrl || 'Other', Number(row.total_requests) || 0];
+      });
     },
   },
 };

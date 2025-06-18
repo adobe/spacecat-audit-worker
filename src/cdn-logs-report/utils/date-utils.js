@@ -11,7 +11,13 @@
  */
 
 /* c8 ignore start */
-import { TIME_CONSTANTS, ERROR_MESSAGES } from '../constants/index.js';
+import { ERROR_MESSAGES } from '../constants/core.js';
+
+const TIME_CONSTANTS = {
+  ISO_MONDAY: 1,
+  ISO_SUNDAY: 0,
+  DAYS_PER_WEEK: 7,
+};
 
 export function formatDateString(date) {
   return date.toISOString().split('T')[0];
@@ -70,7 +76,7 @@ export function generatePeriodIdentifier(startDate, endDate) {
   if (diffDays === 7) {
     const year = startDate.getUTCFullYear();
     const weekNum = getWeekNumber(startDate);
-    return `${year}W${String(weekNum).padStart(2, '0')}`;
+    return `w${String(weekNum).padStart(2, '0')}-${year}`;
   }
 
   return `${start}_to_${end}`;

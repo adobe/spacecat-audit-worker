@@ -12,7 +12,7 @@
 
 /* c8 ignore start */
 import { extractCustomerDomain } from './aws-utils.js';
-import { DEFAULT_PATTERNS, DOMAIN_SPECIFIC_PATTERNS, FALLBACK_CASE_STATEMENT } from '../constants/index.js';
+import { DEFAULT_PATTERNS, DOMAIN_SPECIFIC_PATTERNS, FALLBACK_CASE_STATEMENT } from '../constants/page-patterns.js';
 
 function getPatterns(domain) {
   return DOMAIN_SPECIFIC_PATTERNS[domain] || DEFAULT_PATTERNS;

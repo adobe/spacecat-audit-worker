@@ -12,12 +12,26 @@
 
 /* c8 ignore start */
 import { generatePageTypeCaseStatement } from '../utils/page-type-classifier.js';
-import { TABLE_NAMES, COLUMN_MAPPINGS } from '../constants/index.js';
-import { formatDateString } from '../utils/date-utils.js';
+import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
 
 function getDateFilter(startDate, endDate) {
-  return `CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) 
-    BETWEEN '${formatDateString(startDate)}' AND '${formatDateString(endDate)}'`;
+  const startYear = startDate.getUTCFullYear().toString();
+  const startMonth = (startDate.getUTCMonth() + 1).toString().padStart(2, '0');
+  const startDay = startDate.getUTCDate().toString().padStart(2, '0');
+
+  const endYear = endDate.getUTCFullYear().toString();
+  const endMonth = (endDate.getUTCMonth() + 1).toString().padStart(2, '0');
+  const endDay = endDate.getUTCDate().toString().padStart(2, '0');
+
+  if (startYear === endYear && startMonth === endMonth) {
+    return `(year = '${startYear}' AND month = '${startMonth}' AND day >= '${startDay}' AND day <= '${endDay}')`;
+  }
+
+  return `(
+    (year = '${startYear}' AND month = '${startMonth}' AND day >= '${startDay}')
+    AND
+    (year = '${endYear}' AND month = '${endMonth}' AND day <= '${endDay}')
+  )`;
 }
 
 function getLastWeekFilter(periods) {
@@ -25,15 +39,44 @@ function getLastWeekFilter(periods) {
   return getDateFilter(lastWeek.startDate, lastWeek.endDate);
 }
 
-function createCountryWeeklyBreakdownQuery(periods, databaseName, provider) {
-  const countColumn = provider ? `${provider}_requests` : COLUMN_MAPPINGS.COUNTRY;
-  const whereClause = provider ? `WHERE ${provider}_requests > 0` : '';
+function getFullDateRangeFilter(periods) {
+  const firstWeek = periods.weeks[0];
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  return getDateFilter(firstWeek.startDate, lastWeek.endDate);
+}
+
+function buildWhereClause(baseConditions = [], provider = null) {
+  const conditions = [...baseConditions];
+
+  if (provider) {
+    conditions.push(`LOWER(user_agent) LIKE '%${provider.toLowerCase()}%'`);
+  }
+
+  return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+}
+
+function buildCountryExtractionSQL() {
+  const cases = DEFAULT_COUNTRY_PATTERNS
+    .map(({ regex }) => `WHEN REGEXP_EXTRACT(url, '${regex}', 1) != '' THEN UPPER(REGEXP_EXTRACT(url, '${regex}', 1))`)
+    .join('\n          ');
+
+  return `
+        CASE 
+          ${cases}
+          ELSE 'GLOBAL'
+        END`;
+}
+
+function createCountryWeeklyBreakdownQuery(periods, databaseName, tableName, provider) {
+  const dateRangeFilter = getFullDateRangeFilter(periods);
+  const whereClause = buildWhereClause([dateRangeFilter], provider);
+  const countryExtraction = buildCountryExtractionSQL();
 
   const weekColumns = periods.weeks.map((week) => {
     const weekKey = week.weekLabel.replace(' ', '_').toLowerCase();
     const dateFilter = getDateFilter(week.startDate, week.endDate);
 
-    return `SUM(CASE WHEN ${dateFilter} THEN ${countColumn} ELSE 0 END) as ${weekKey}`;
+    return `SUM(CASE WHEN ${dateFilter} THEN count ELSE 0 END) as ${weekKey}`;
   }).join(',\n      ');
 
   const orderBy = periods.weeks
@@ -42,41 +85,47 @@ function createCountryWeeklyBreakdownQuery(periods, databaseName, provider) {
 
   return `
     SELECT 
-      country_code,
+      ${countryExtraction} as country_code,
       ${weekColumns}
-    FROM ${databaseName}.${TABLE_NAMES.COUNTRY}
+    FROM ${databaseName}.${tableName}
     ${whereClause}
-    GROUP BY country_code
+    GROUP BY ${countryExtraction}
     ORDER BY ${orderBy} DESC
   `;
 }
 
-function createUserAgentWeeklyBreakdownQuery(periods, databaseName, provider) {
-  const lastWeekFilter = getLastWeekFilter(periods);
-  const providerFilter = provider ? `AND agentic_type = '${provider}'` : '';
+function createUserAgentWeeklyBreakdownQuery(periods, databaseName, tableName, provider) {
+  const dateRangeFilter = getLastWeekFilter(periods);
+  const whereClause = buildWhereClause([dateRangeFilter], provider);
 
   return `
     SELECT 
       user_agent,
-      status_code,
-      SUM(${COLUMN_MAPPINGS.USER_AGENT}) as total_requests
-    FROM ${databaseName}.${TABLE_NAMES.USER_AGENT}
-    WHERE ${lastWeekFilter} ${providerFilter}
-    GROUP BY user_agent, status_code
+      status,
+      SUM(count) as total_requests
+    FROM ${databaseName}.${tableName}
+    ${whereClause}
+    GROUP BY user_agent, status
     ORDER BY total_requests DESC
   `;
 }
 
-function createUrlStatusWeeklyBreakdownQuery(periods, databaseName, provider, pageTypePatterns) {
-  const countColumn = provider ? `${provider}_requests` : COLUMN_MAPPINGS.URL_STATUS;
-  const whereClause = provider ? `WHERE ${provider}_requests > 0` : '';
+function createUrlStatusWeeklyBreakdownQuery(
+  periods,
+  databaseName,
+  tableName,
+  provider,
+  pageTypePatterns,
+) {
+  const dateRangeFilter = getFullDateRangeFilter(periods);
+  const whereClause = buildWhereClause([dateRangeFilter], provider);
   const pageTypeCase = generatePageTypeCaseStatement(pageTypePatterns);
 
   const weekColumns = periods.weeks.map((week) => {
     const weekKey = week.weekLabel.replace(' ', '_').toLowerCase();
     const dateFilter = getDateFilter(week.startDate, week.endDate);
 
-    return `SUM(CASE WHEN ${dateFilter} THEN ${countColumn} ELSE 0 END) as ${weekKey}`;
+    return `SUM(CASE WHEN ${dateFilter} THEN count ELSE 0 END) as ${weekKey}`;
   }).join(',\n      ');
 
   const orderBy = periods.weeks
@@ -87,27 +136,26 @@ function createUrlStatusWeeklyBreakdownQuery(periods, databaseName, provider, pa
     SELECT 
       ${pageTypeCase} as page_type,
       ${weekColumns}
-    FROM ${databaseName}.${TABLE_NAMES.URL_STATUS}
+    FROM ${databaseName}.${tableName}
     ${whereClause}
     GROUP BY ${pageTypeCase}
     ORDER BY ${orderBy} DESC
   `;
 }
 
-function createTopBottomUrlsByStatusQuery(periods, databaseName, provider) {
-  const countColumn = provider ? `${provider}_requests` : COLUMN_MAPPINGS.URL_STATUS;
-  const lastWeekFilter = getLastWeekFilter(periods);
-  const providerFilter = provider ? `AND ${provider}_requests > 0` : '';
+function createTopBottomUrlsByStatusQuery(periods, databaseName, tableName, provider) {
+  const dateRangeFilter = getLastWeekFilter(periods);
+  const whereClause = buildWhereClause([dateRangeFilter], provider);
 
   return `
     SELECT 
       url,
-      status_code,
-      SUM(${countColumn}) as total_requests
-    FROM ${databaseName}.${TABLE_NAMES.URL_STATUS}
-    WHERE ${lastWeekFilter} ${providerFilter}
-    GROUP BY url, status_code
-    ORDER BY status_code, total_requests DESC
+      status,
+      SUM(count) as total_requests
+    FROM ${databaseName}.${tableName}
+    ${whereClause}
+    GROUP BY url, status
+    ORDER BY status, total_requests DESC
   `;
 }
 

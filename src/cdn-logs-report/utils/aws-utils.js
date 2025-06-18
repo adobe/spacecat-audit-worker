@@ -12,265 +12,87 @@
 
 /* c8 ignore start */
 import {
-  CreateDatabaseCommand,
-  GetDatabaseCommand,
-  CreateCrawlerCommand,
-  GetCrawlerCommand,
-  StartCrawlerCommand,
-  GetTablesCommand,
-} from '@aws-sdk/client-glue';
-import {
   REGEX_PATTERNS,
-  TABLE_PREFIX,
-  CRAWLER_PREFIX,
   CDN_LOGS_PREFIX,
-  DATABASE_CONFIG,
-  CRAWLER_CONFIG,
-} from '../constants/index.js';
-
-const PARTITION_PROJECTIONS = {
-  'projection.enabled': 'true',
-  'projection.year.type': 'integer',
-  'projection.year.range': '2024,2030',
-  'projection.month.type': 'integer',
-  'projection.month.range': '1,12',
-  'projection.month.digits': '2',
-  'projection.day.type': 'integer',
-  'projection.day.range': '1,31',
-  'projection.day.digits': '2',
-  'projection.hour.type': 'integer',
-  'projection.hour.range': '0,23',
-  'projection.hour.digits': '2',
-  has_encrypted_data: 'false',
-};
-
-const sanitizeForDomain = (text) => text.replace(REGEX_PATTERNS.URL_SANITIZATION, '_').toLowerCase();
-const sanitizeForBucket = (text) => text.replace(REGEX_PATTERNS.BUCKET_SANITIZATION, '-');
+} from '../constants/core.js';
+import { executeAthenaQuery } from '../../utils/athena-utils.js';
 
 export function extractCustomerDomain(site) {
-  return sanitizeForDomain(new URL(site.getBaseURL()).host);
+  return new URL(site.getBaseURL()).host
+    .replace(REGEX_PATTERNS.URL_SANITIZATION, '_')
+    .toLowerCase();
 }
 
 export function getAnalysisBucket(customerDomain) {
-  const bucketCustomer = sanitizeForBucket(customerDomain);
+  const bucketCustomer = customerDomain.replace(REGEX_PATTERNS.BUCKET_SANITIZATION, '-');
   return `${CDN_LOGS_PREFIX}${bucketCustomer}`;
 }
 
 export function getS3Config(site) {
   const customerDomain = extractCustomerDomain(site);
+  const customerName = customerDomain.split(/[._]/)[0];
   const bucket = getAnalysisBucket(customerDomain);
 
   return {
     bucket,
+    customerName,
     customerDomain,
     aggregatedLocation: `s3://${bucket}/aggregated/`,
     databaseName: `cdn_logs_${customerDomain}`,
+    tableName: `aggregated_logs_${customerDomain}`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
 }
 
-async function handleGlueCommand(command, operation, log) {
-  try {
-    return await command;
-  } catch (error) {
-    log.error(`${operation} failed: ${error.message}`);
-    throw error;
-  }
+export function createTableDDL(s3Config) {
+  const { databaseName, tableName, aggregatedLocation } = s3Config;
+
+  return `
+    CREATE EXTERNAL TABLE IF NOT EXISTS ${databaseName}.${tableName} (
+      url string,
+      user_agent string,
+      status int,
+      referer string,
+      count bigint
+    )
+    PARTITIONED BY (
+      year string,
+      month string,
+      day string,
+      hour string
+    )
+    STORED AS PARQUET
+    LOCATION '${aggregatedLocation}'
+    TBLPROPERTIES (
+      'projection.enabled' = 'true',
+      'projection.year.type' = 'integer',
+      'projection.year.range' = '2024,2030',
+      'projection.month.type' = 'integer',
+      'projection.month.range' = '1,12',
+      'projection.month.digits' = '2',
+      'projection.day.type' = 'integer',
+      'projection.day.range' = '1,31',
+      'projection.day.digits' = '2',
+      'projection.hour.type' = 'integer',
+      'projection.hour.range' = '0,23',
+      'projection.hour.digits' = '2',
+      'storage.location.template' = '${aggregatedLocation}\${year}/\${month}/\${day}/\${hour}/',
+      'has_encrypted_data' = 'false'
+    )
+  `;
 }
 
-export async function ensureDatabaseExists(glueClient, databaseName, log) {
-  try {
-    await glueClient.send(new GetDatabaseCommand({ Name: databaseName }));
-    log.info(`Database ${databaseName} already exists`);
-    return true;
-  } catch (error) {
-    if (error.name === 'EntityNotFoundException') {
-      log.info(`Creating database ${databaseName}`);
-      await handleGlueCommand(
-        glueClient.send(new CreateDatabaseCommand({
-          DatabaseInput: {
-            Name: databaseName,
-            Description: DATABASE_CONFIG.DESCRIPTION,
-          },
-        })),
-        'Database creation',
-        log,
-      );
-      log.info(`Database ${databaseName} created successfully`);
-      return true;
-    }
-    throw error;
-  }
-}
-
-function buildCrawlerConfiguration(crawlerName, databaseName, s3Location) {
-  const locationTemplate = `${s3Location}aggregated/analysis_type=\${analysis_type}/year=\${year}/month=\${month}/day=\${day}/hour=\${hour}/`;
-  const roleArn = `${CRAWLER_CONFIG.ROLE_PREFIX}${process.env.AWS_ACCOUNT_ID}${CRAWLER_CONFIG.ROLE_SUFFIX}`;
-
-  return {
-    Name: crawlerName,
-    Description: CRAWLER_CONFIG.DESCRIPTION,
-    Role: roleArn,
-    DatabaseName: databaseName,
-    Targets: {
-      S3Targets: [{ Path: s3Location }],
-    },
-    TablePrefix: TABLE_PREFIX,
-    SchemaChangePolicy: CRAWLER_CONFIG.SCHEMA_CHANGE_POLICY,
-    RecrawlPolicy: CRAWLER_CONFIG.RECRAWL_POLICY,
-    Configuration: JSON.stringify({
-      Version: CRAWLER_CONFIG.CONFIG_VERSION,
-      CrawlerOutput: {
-        Partitions: { AddOrUpdateBehavior: 'InheritFromTable' },
-        Tables: { AddOrUpdateBehavior: 'MergeNewColumns' },
-      },
-      Grouping: { TableGroupingPolicy: 'CombineCompatibleSchemas' },
-    }),
-    TableLevelConfiguration: {
-      '*': {
-        Parameters: {
-          'storage.location.template': locationTemplate,
-          ...PARTITION_PROJECTIONS,
-        },
-      },
-    },
-  };
-}
-
-async function ensureCrawlerExists(glueClient, crawlerName, databaseName, s3Location, log) {
-  const crawlerInput = buildCrawlerConfiguration(crawlerName, databaseName, s3Location);
+export async function ensureTableExists(athenaClient, s3Config, log) {
+  const { tableName } = s3Config;
 
   try {
-    await glueClient.send(new GetCrawlerCommand({ Name: crawlerName }));
-    log.info(`Crawler ${crawlerName} already exists`);
+    const createTableQuery = createTableDDL(s3Config);
+    log.info(`Creating or checking table: ${tableName}`);
+    await executeAthenaQuery(athenaClient, createTableQuery, s3Config, log);
+
+    log.info(`Table ${tableName} is ready`);
   } catch (error) {
-    if (error.name === 'EntityNotFoundException') {
-      log.info(`Creating crawler ${crawlerName}`);
-      await handleGlueCommand(
-        glueClient.send(new CreateCrawlerCommand(crawlerInput)),
-        'Crawler creation',
-        log,
-      );
-      log.info(`Crawler ${crawlerName} created successfully`);
-    } else {
-      throw error;
-    }
-  }
-
-  return crawlerName;
-}
-
-async function waitForCrawlerToComplete(glueClient, crawlerName, log) {
-  const maxWaitTime = 5 * 60 * 1000; // 5 minutes max wait
-  const pollInterval = 10 * 1000; // Poll every 10 seconds
-  const startTime = Date.now();
-
-  log.info(`Waiting for crawler ${crawlerName} to complete...`);
-
-  while (Date.now() - startTime < maxWaitTime) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const response = await glueClient.send(new GetCrawlerCommand({ Name: crawlerName }));
-      const state = response.Crawler.State;
-
-      log.info(`Crawler ${crawlerName} state: ${state}`);
-
-      if (state === 'READY') {
-        const lastRun = response.Crawler.LastCrawl;
-        if (lastRun) {
-          if (lastRun.Status === 'SUCCEEDED') {
-            log.info(`Crawler ${crawlerName} completed successfully`);
-            return;
-          } else if (lastRun.Status === 'FAILED') {
-            throw new Error(`Crawler ${crawlerName} failed: ${lastRun.ErrorMessage || 'Unknown error'}`);
-          }
-        }
-        log.info(`Crawler ${crawlerName} is ready but no recent run info available`);
-        return;
-      } else {
-        log.warn(`Crawler ${crawlerName} in still running: ${state}`);
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((resolve) => {
-          setTimeout(resolve, pollInterval);
-        });
-      }
-    } catch (error) {
-      log.error(`Error checking crawler status: ${error.message}`);
-      throw error;
-    }
-  }
-
-  throw new Error(`Crawler ${crawlerName} did not complete within ${maxWaitTime / 1000} seconds`);
-}
-
-async function runCrawler(glueClient, crawlerName, log) {
-  log.info(`Starting crawler ${crawlerName}`);
-
-  try {
-    await glueClient.send(new StartCrawlerCommand({ Name: crawlerName }));
-    log.info(`Crawler ${crawlerName} started successfully`);
-
-    await waitForCrawlerToComplete(glueClient, crawlerName, log);
-    return {
-      status: 'completed',
-      message: 'Crawler completed successfully',
-    };
-  } catch (error) {
-    if (error.name === 'CrawlerRunningException') {
-      log.info(`Crawler ${crawlerName} is already running`);
-      return {
-        status: 'already_running',
-        message: 'Crawler is already running',
-      };
-    }
-    throw error;
-  }
-}
-
-async function checkExistingAggregatedTables(glueClient, databaseName, log) {
-  try {
-    const response = await glueClient.send(new GetTablesCommand({
-      DatabaseName: databaseName,
-    }));
-
-    const aggregatedTables = response.TableList
-      ?.filter((table) => table.Name.startsWith(TABLE_PREFIX)) || [];
-
-    log.info(`Found ${aggregatedTables.length} existing aggregated tables in database ${databaseName}`);
-    return aggregatedTables.length > 0;
-  } catch (error) {
-    if (error.name === 'EntityNotFoundException') {
-      log.info(`Database ${databaseName} not found, no existing tables`);
-      return false;
-    }
-    log.warn(`Error checking existing tables: ${error.message}`);
-    return false;
-  }
-}
-
-export async function setupCrawlerBasedDiscovery(glueClient, databaseName, s3Config, log) {
-  const crawlerName = `${CRAWLER_PREFIX}${s3Config.customerDomain}`;
-
-  log.info(`Setting up crawler-based discovery for ${s3Config.aggregatedLocation}`);
-
-  try {
-    const hasExistingTables = await checkExistingAggregatedTables(glueClient, databaseName, log);
-    if (hasExistingTables) {
-      log.info(`Aggregated tables already exist in database ${databaseName}, skipping crawler run`);
-    } else {
-      await ensureCrawlerExists(
-        glueClient,
-        crawlerName,
-        databaseName,
-        s3Config.aggregatedLocation,
-        log,
-      );
-      await runCrawler(glueClient, crawlerName, log);
-    }
-
-    log.info(`Crawler setup completed for ${s3Config.customerDomain}`);
-  } catch (error) {
-    log.error(`Failed to setup crawler: ${error.message}`);
+    log.error(`Failed to ensure table exists: ${error.message}`);
     throw error;
   }
 }
