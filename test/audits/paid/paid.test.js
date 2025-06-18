@@ -263,8 +263,8 @@ describe('Paid Audit', () => {
   it('should submit expected result to mistique', async () => {
     const auditData = {
       fullAuditRef: 'https://example.com',
+      id: 'test-audit-id',
       auditResult: {
-        auditId: 'test-audit-id',
         urls: [
           'https://example.com/page1',
           'https://example.com/page2',
@@ -295,8 +295,8 @@ describe('Paid Audit', () => {
   it('should throw exception if no urls to analyse', async () => {
     const auditData = {
       fullAuditRef: 'https://example.com',
+      id: 'test-audit-id',
       auditResult: {
-        auditId: 'test-audit-id',
         urls: [
         ],
       },

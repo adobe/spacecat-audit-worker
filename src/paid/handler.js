@@ -244,7 +244,7 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
     log, sqs, env,
   } = context;
 
-  const { auditResult } = auditData;
+  const { auditResult, id } = auditData;
   if (!auditResult?.urls || !Array.isArray(auditResult.urls) || auditResult.urls.length === 0) {
     throw new Error(`Failed to send page to mystique auditUrl ${auditUrl}`);
   }
@@ -252,7 +252,7 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
   // Logic for which url to pick will be improved
   const selectedPage = auditResult.urls[0];
 
-  const mystiqueMessage = buildMystiqueMessage(site, auditResult.auditId, selectedPage);
+  const mystiqueMessage = buildMystiqueMessage(site, id, selectedPage);
 
   log.info(`[paid-audit] [Site: ${auditUrl}] Sending page ${selectedPage} evaluation to mystique`);
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
