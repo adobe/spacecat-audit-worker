@@ -176,8 +176,9 @@ describe('LHS Audit', () => {
     };
 
     let auditData;
-    let dataAccessStub;
+    let opportunityStub;
     let cspOpportunity;
+    let configuration;
 
     beforeEach(async () => {
       nock('https://psi-audit-service.com')
@@ -196,13 +197,16 @@ describe('LHS Audit', () => {
       auditData.siteId = 'test-site-id';
       auditData.auditId = 'test-audit-id';
 
-      dataAccessStub = {
-        Opportunity: {
-          allBySiteIdAndStatus: sinon.stub().resolves([]),
-          create: sinon.stub(),
-        },
+      opportunityStub = {
+        allBySiteIdAndStatus: sinon.stub().resolves([]),
+        create: sinon.stub(),
       };
-      context.dataAccess = dataAccessStub;
+      context.dataAccess.Opportunity = opportunityStub;
+
+      configuration = {
+        isHandlerEnabledForSite: sandbox.stub(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
 
       cspOpportunity = {
         getId: () => 'opportunity-id',
@@ -217,20 +221,22 @@ describe('LHS Audit', () => {
         getSiteId: () => 'test-site-id',
         setUpdatedBy: sinon.stub(),
       };
-      dataAccessStub.Opportunity.create.resolves(cspOpportunity);
+      opportunityStub.create.resolves(cspOpportunity);
     });
 
     it('should not create opportunity if no CSP findings in lighthouse report', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
       auditData.auditResult.csp = [];
 
       const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
       assertAuditData(cspAuditData);
 
-      expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
+      expect(opportunityStub.create).to.not.have.been.called;
       expect(cspOpportunity.addSuggestions).to.not.have.been.called;
     });
 
     it('should not create suggestion for backwards-compatible finding', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
       auditData.auditResult.csp = [
         {
           directive: 'script-src',
@@ -242,11 +248,12 @@ describe('LHS Audit', () => {
       const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
       assertAuditData(cspAuditData);
 
-      expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
+      expect(opportunityStub.create).to.not.have.been.called;
       expect(cspOpportunity.addSuggestions).to.not.have.been.called;
     });
 
     it('should extract CSP opportunity', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
       auditData.auditResult.csp = [
         {
           severity: 'High',
@@ -257,7 +264,7 @@ describe('LHS Audit', () => {
       const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
       assertAuditData(cspAuditData);
 
-      expect(dataAccessStub.Opportunity.create).to.have.been.calledWith(sinon.match({
+      expect(opportunityStub.create).to.have.been.calledWith(sinon.match({
         siteId: 'test-site-id',
         auditId: 'test-audit-id',
         runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
@@ -297,6 +304,7 @@ describe('LHS Audit', () => {
     });
 
     it('should extract multiple suggestions with subitems', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
       auditData.auditResult.csp = [
         {
           severity: 'Syntax',
@@ -333,7 +341,7 @@ describe('LHS Audit', () => {
       const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
       assertAuditData(cspAuditData);
 
-      expect(dataAccessStub.Opportunity.create).to.have.been.calledWith(sinon.match({
+      expect(opportunityStub.create).to.have.been.calledWith(sinon.match({
         siteId: 'test-site-id',
         auditId: 'test-audit-id',
         runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
@@ -399,7 +407,24 @@ describe('LHS Audit', () => {
       ));
     });
 
+    it('should not extract opportunity if audit is disabled', async () => {
+      configuration.isHandlerEnabledForSite.returns(false);
+      auditData.auditResult.csp = [
+        {
+          severity: 'High',
+          description: 'No CSP found in enforcement mode',
+        },
+      ];
+
+      const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+      assertAuditData(cspAuditData);
+
+      expect(opportunityStub.create).to.not.have.been.called;
+      expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+    });
+
     it('should not extract opportunity for other delivery types', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
       auditData.auditResult.csp = [
         {
           severity: 'High',
@@ -411,7 +436,7 @@ describe('LHS Audit', () => {
       const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
       assertAuditData(cspAuditData);
 
-      expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
+      expect(opportunityStub.create).to.not.have.been.called;
       expect(cspOpportunity.addSuggestions).to.not.have.been.called;
     });
   });

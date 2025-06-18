@@ -13,6 +13,8 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 
+const auditType = Audit.AUDIT_TYPES.SECURITY_CSP;
+
 function createOpportunityData() {
   return {
     runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
@@ -47,12 +49,20 @@ function flattenCSP(csp) {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function cspOpportunityAndSuggestions(auditUrl, auditData, context, site) {
-  const { log } = context;
+  const { dataAccess, log } = context;
   log.debug(`Classifying CSP suggestions for ${JSON.stringify(auditData)}`);
 
   // this opportunity is only relevant for aem_edge delivery type at the moment
   if (site.getDeliveryType() !== 'aem_edge') {
     log.debug(`Skipping CSP opportunity for ${site.getId()} as it is not aem_edge delivery type`);
+    return { ...auditData };
+  }
+
+  // Check whether the audit is enabled for the site
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('security-csp', site)) {
+    log.info(`[${auditType}] [Site: ${site.getId()}] audit is disabled for site`);
     return { ...auditData };
   }
 
@@ -78,7 +88,7 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
     { siteId: auditData.siteId, id: auditData.auditId },
     context,
     createOpportunityData,
-    Audit.AUDIT_TYPES.SECURITY_CSP,
+    auditType,
   );
 
   const buildKey = (data) => data.description.toLowerCase().replace(/[^a-z0-9]/g, '');
