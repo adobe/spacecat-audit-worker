@@ -59,6 +59,8 @@ export async function scrapeAccessibilityData(context) {
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
   log.info(`[A11yAudit] Remaining URLs to scrape: ${JSON.stringify(remainingUrls, null, 2)}`);
 
+  log.info(`Accessibility urls to scrape: ${urlsToScrape}`);
+
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
   return {
@@ -73,6 +75,7 @@ export async function scrapeAccessibilityData(context) {
     siteId,
     jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
+    allowCache: true,
   };
 }
 
@@ -177,7 +180,7 @@ export async function processAccessibilityOpportunities(context) {
 
 export default new AuditBuilder()
   // First step: Prepare and send data to CONTENT_SCRAPER
-  .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   // Second step: Process the scraped data to find opportunities
+  .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();

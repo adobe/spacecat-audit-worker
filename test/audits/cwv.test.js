@@ -35,8 +35,8 @@ const baseURL = 'https://spacecat.com';
 const auditUrl = 'www.spacecat.com';
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   domain: auditUrl,
-  interval: 7,
-  granularity: 'hourly',
+  interval: 120,
+  granularity: 'daily',
 };
 
 describe('CWVRunner Tests', () => {
@@ -80,9 +80,9 @@ describe('CWVRunner Tests', () => {
 
     expect(result).to.deep.equal({
       auditResult: {
-        cwv: rumData.filter((data) => data.pageviews >= 7000),
+        cwv: rumData.filter((data) => data.pageviews >= 120000),
         auditContext: {
-          interval: 7,
+          interval: 120,
         },
       },
       fullAuditRef: auditUrl,
@@ -135,9 +135,9 @@ describe('CWVRunner Tests', () => {
         auditedAt: new Date().toISOString(),
         auditType,
         auditResult: {
-          cwv: rumData.filter((data) => data.pageviews >= 7000),
+          cwv: rumData.filter((data) => data.pageviews >= 120000),
           auditContext: {
-            interval: 7,
+            interval: 120,
           },
         },
         fullAuditRef: auditUrl,

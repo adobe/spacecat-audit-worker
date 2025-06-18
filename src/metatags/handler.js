@@ -272,6 +272,11 @@ export async function runAuditAndGenerateSuggestions(context) {
     log,
   );
 
+  log.info(`[${auditType}] [Site Id: ${site.getId()}] Projected traffic values:`, {
+    projectedTrafficLost,
+    projectedTrafficValue,
+  });
+
   // Generate AI suggestions for detected tags if auto-suggest enabled for site
   const allTags = {
     detectedTags: seoChecks.getDetectedTags(),
@@ -334,6 +339,7 @@ export async function submitForScraping(context) {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'meta-tags',
+    allowCache: true,
   };
 }
 
