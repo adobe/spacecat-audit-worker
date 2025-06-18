@@ -1,3 +1,10 @@
+## [1.103.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.2...v1.103.3) (2025-06-18)
+
+
+### Bug Fixes
+
+* avoid overwriting forms guidances ([#976](https://github.com/adobe/spacecat-audit-worker/issues/976)) ([f63c095](https://github.com/adobe/spacecat-audit-worker/commit/f63c095c62aaa81fd0110c418fec066270bac588))
+
 ## [1.103.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.1...v1.103.2) (2025-06-18)
 
 
