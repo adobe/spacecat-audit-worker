@@ -1,3 +1,10 @@
+# [1.105.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.104.0...v1.105.0) (2025-06-18)
+
+
+### Features
+
+* add cdn analysis audit handler PoC ([#945](https://github.com/adobe/spacecat-audit-worker/issues/945)) ([6918a87](https://github.com/adobe/spacecat-audit-worker/commit/6918a878512913a23531ba6f98828f9c8796f14f))
+
 # [1.104.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.3...v1.104.0) (2025-06-18)
 
 
