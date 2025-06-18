@@ -29,7 +29,7 @@ function getDateFilter(startDate, endDate) {
 
   return `(
     (year = '${startYear}' AND month = '${startMonth}' AND day >= '${startDay}')
-    AND
+    OR
     (year = '${endYear}' AND month = '${endMonth}' AND day <= '${endDay}')
   )`;
 }
@@ -70,8 +70,10 @@ function buildCountryExtractionSQL() {
 function createCountryWeeklyBreakdownQuery(periods, databaseName, tableName, provider) {
   const dateRangeFilter = getFullDateRangeFilter(periods);
   const excludeRobotsAndSitemaps = [
-    'url NOT LIKE "%robots.txt"',
-    'url NOT LIKE "%sitemap%"',
+    // eslint-disable-next-line quotes
+    `url NOT LIKE '%robots.txt'`,
+    // eslint-disable-next-line quotes
+    `url NOT LIKE '%sitemap%'`,
   ];
   const whereClause = buildWhereClause([dateRangeFilter, ...excludeRobotsAndSitemaps], provider);
   const countryExtraction = buildCountryExtractionSQL();

@@ -176,7 +176,9 @@ const SHEET_CONFIGS = {
     processData: (data) => {
       const urls200 = filterByStatusCodes(data, STATUS_CODES.OK);
       const productsUrls = urls200.filter((row) => row.url && row.url.includes('/products'));
-      return (productsUrls || []).map((row) => {
+      const urlCountMap = new Map();
+
+      (productsUrls || []).forEach((row) => {
         const url = row.url || '';
         const productsIndex = url.indexOf('/products');
         let extractedUrl = productsIndex !== -1 ? url.slice(productsIndex) : url;
@@ -188,8 +190,15 @@ const SHEET_CONFIGS = {
           extractedUrl = parts.slice(0, 3).join('/');
         }
 
-        return [extractedUrl || 'Other', Number(row.total_requests) || 0];
+        const finalUrl = extractedUrl || 'Other';
+        const count = Number(row.total_requests) || 0;
+
+        urlCountMap.set(finalUrl, (urlCountMap.get(finalUrl) || 0) + count);
       });
+
+      return Array.from(urlCountMap.entries())
+        .map(([url, count]) => [url, count])
+        .sort((a, b) => b[1] - a[1]);
     },
   },
 };
