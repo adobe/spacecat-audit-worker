@@ -92,10 +92,7 @@ export const preflightAudit = async (context) => {
   const {
     urls,
     step = AUDIT_STEP_IDENTIFY,
-    checks = [
-      AUDIT_CANONICAL, AUDIT_LINKS, AUDIT_METATAGS,
-      AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
-    ],
+    checks,
   } = jobMetadata.payload;
   const normalizedStep = step.toLowerCase();
   const normalizedUrls = urls.map((url) => {
@@ -141,7 +138,7 @@ export const preflightAudit = async (context) => {
     }));
     const resultMap = new Map(result.map((r) => [r.pageUrl, r]));
 
-    if (checks.includes(AUDIT_CANONICAL)) {
+    if (!checks || checks.includes(AUDIT_CANONICAL)) {
       // Canonical checks
       const canonicalStartTime = Date.now();
       const canonicalStartTimestamp = new Date().toISOString();
@@ -202,7 +199,7 @@ export const preflightAudit = async (context) => {
         })),
     );
 
-    if (checks.includes(AUDIT_LINKS)) {
+    if (!checks || checks.includes(AUDIT_LINKS)) {
       // Internal link checks
       const internalLinksStartTime = Date.now();
       const internalLinksStartTimestamp = new Date().toISOString();
@@ -245,7 +242,7 @@ export const preflightAudit = async (context) => {
       await saveIntermediateResults(result, 'internal links audit');
     }
 
-    if (checks.includes(AUDIT_LINKS)) {
+    if (!checks || checks.includes(AUDIT_LINKS)) {
       // Check for insecure links in each scraped page
       scrapedObjects.forEach(({ data }) => {
         const { finalUrl, scrapeResult: { rawBody } } = data;
@@ -267,7 +264,7 @@ export const preflightAudit = async (context) => {
       });
     }
 
-    if (checks.includes(AUDIT_METATAGS)) {
+    if (!checks || checks.includes(AUDIT_METATAGS)) {
       // Meta tags checks
       const metatagsStartTime = Date.now();
       const metatagsStartTimestamp = new Date().toISOString();
@@ -313,20 +310,20 @@ export const preflightAudit = async (context) => {
     }
 
     // DOM-based checks: body size, lorem ipsum, h1 count
-    if (checks.includes(AUDIT_BODY_SIZE) || checks.includes(AUDIT_LOREM_IPSUM)
+    if (!checks || checks.includes(AUDIT_BODY_SIZE) || checks.includes(AUDIT_LOREM_IPSUM)
         || checks.includes(AUDIT_H1_COUNT)) {
       const domStartTime = Date.now();
       const domStartTimestamp = new Date().toISOString();
       // Create DOM-based audit entries for all pages
       normalizedUrls.forEach((url) => {
         const pageResult = resultMap.get(url);
-        if (checks.includes(AUDIT_BODY_SIZE)) {
+        if (!checks || checks.includes(AUDIT_BODY_SIZE)) {
           pageResult.audits.push({ name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] });
         }
-        if (checks.includes(AUDIT_LOREM_IPSUM)) {
+        if (!checks || checks.includes(AUDIT_LOREM_IPSUM)) {
           pageResult.audits.push({ name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] });
         }
-        if (checks.includes(AUDIT_H1_COUNT)) {
+        if (!checks || checks.includes(AUDIT_H1_COUNT)) {
           pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
         }
       });
@@ -341,7 +338,7 @@ export const preflightAudit = async (context) => {
 
         const textContent = doc.body.textContent.replace(/\n/g, '').trim();
 
-        if (checks.includes(AUDIT_BODY_SIZE)) {
+        if (!checks || checks.includes(AUDIT_BODY_SIZE)) {
           if (textContent.length > 0 && textContent.length <= 100) {
             auditsByName[AUDIT_BODY_SIZE].opportunities.push({
               check: 'content-length',
@@ -352,7 +349,7 @@ export const preflightAudit = async (context) => {
           }
         }
 
-        if (checks.includes(AUDIT_LOREM_IPSUM) && /lorem ipsum/i.test(textContent)) {
+        if ((!checks || checks.includes(AUDIT_LOREM_IPSUM)) && /lorem ipsum/i.test(textContent)) {
           auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
             check: 'placeholder-text',
             issue: 'Found Lorem ipsum placeholder text in the page content',
@@ -361,7 +358,7 @@ export const preflightAudit = async (context) => {
           });
         }
 
-        if (checks.includes(AUDIT_H1_COUNT)) {
+        if (!checks || checks.includes(AUDIT_H1_COUNT)) {
           const headingCount = doc.querySelectorAll('h1').length;
           if (headingCount !== 1) {
             auditsByName[AUDIT_H1_COUNT].opportunities.push({
