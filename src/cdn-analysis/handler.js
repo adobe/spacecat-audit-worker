@@ -47,20 +47,20 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
 
   // derive customer & time
   const { host, hostEscaped } = extractCustomerDomain(site);
-  const bucket = `cdn-logs-${hostEscaped.replace(/[._]/g, '-')}`;
   const { year, month, day, hour } = getHourParts();
-  const rawLogsPrefix = `raw/${year}/${month}/${day}/${hour}/`;
-
-  // detect CDN provider
-  const cdnType = await determineCdnProvider(s3Client, bucket, rawLogsPrefix);
-  log.info(`Using ${cdnType.toUpperCase()} provider`);
 
   // names & locations
+  const bucket = `cdn-logs-${hostEscaped.replace(/[._]/g, '-')}`;
+  const rawLogsPrefix = `raw/${year}/${month}/${day}/${hour}/`;
   const database = `cdn_logs_${hostEscaped}`;
   const rawTable = `raw_logs_${hostEscaped}`;
   const rawLocation = `s3://${bucket}/raw/`;
   const tempLocation = `s3://${bucket}/temp/athena-results/`;
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
+
+  // detect CDN provider
+  const cdnType = await determineCdnProvider(s3Client, bucket, rawLogsPrefix);
+  log.info(`Using ${cdnType.toUpperCase()} provider`);
 
   // create database
   const sqlDb = await loadSql(cdnType, 'create-database', { database });
