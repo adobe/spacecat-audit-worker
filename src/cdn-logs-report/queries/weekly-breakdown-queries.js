@@ -69,7 +69,11 @@ function buildCountryExtractionSQL() {
 
 function createCountryWeeklyBreakdownQuery(periods, databaseName, tableName, provider) {
   const dateRangeFilter = getFullDateRangeFilter(periods);
-  const whereClause = buildWhereClause([dateRangeFilter], provider);
+  const excludeRobotsAndSitemaps = [
+    'url NOT LIKE "%robots.txt"',
+    'url NOT LIKE "%sitemap%"',
+  ];
+  const whereClause = buildWhereClause([dateRangeFilter, ...excludeRobotsAndSitemaps], provider);
   const countryExtraction = buildCountryExtractionSQL();
 
   const weekColumns = periods.weeks.map((week) => {
