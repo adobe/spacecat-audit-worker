@@ -13,7 +13,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 
-const auditType = Audit.AUDIT_TYPES.SECURITY_CSP;
+const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_CSP;
 
 function createOpportunityData() {
   return {
@@ -50,11 +50,11 @@ function flattenCSP(csp) {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function cspOpportunityAndSuggestions(auditUrl, auditData, context, site) {
   const { dataAccess, log } = context;
-  log.debug(`Classifying CSP suggestions for ${JSON.stringify(auditData)}`);
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Classifying CSP suggestions for ${JSON.stringify(auditData)}`);
 
   // this opportunity is only relevant for aem_edge delivery type at the moment
   if (site.getDeliveryType() !== 'aem_edge') {
-    log.debug(`Skipping CSP opportunity for ${site.getId()} as it is not aem_edge delivery type`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping CSP opportunity as it is of delivery type ${site.getDeliveryType()}`);
     return { ...auditData };
   }
 
@@ -62,7 +62,7 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('security-csp', site)) {
-    log.info(`[${auditType}] [Site: ${site.getId()}] audit is disabled for site`);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
     return { ...auditData };
   }
 
@@ -70,7 +70,7 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
 
   // flatten the subitems
   csp = flattenCSP(csp);
-  log.debug(`CSP information from lighthouse report: ${JSON.stringify(csp)}`);
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] CSP information from lighthouse report: ${JSON.stringify(csp)}`);
 
   /*
     all modern browsers support the `strict-dynamic` directive,
@@ -79,7 +79,7 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   csp = csp.filter((item) => !item.description?.includes('backward compatible'));
 
   if (!csp.length) {
-    log.debug(`No CSP information found for ${site.getId()}`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No CSP information found for ${site.getId()}`);
     return { ...auditData };
   }
 
@@ -88,7 +88,7 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
     { siteId: auditData.siteId, id: auditData.auditId },
     context,
     createOpportunityData,
-    auditType,
+    AUDIT_TYPE,
   );
 
   const buildKey = (data) => data.description.toLowerCase().replace(/[^a-z0-9]/g, '');
