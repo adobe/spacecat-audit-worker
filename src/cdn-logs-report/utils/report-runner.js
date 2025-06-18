@@ -122,7 +122,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
     );
 
     const providerSuffix = provider ? `-${provider}` : '';
-    const filename = `agentic-traffic${providerSuffix}-${periodIdentifier}.xlsx`;
+    const filename = `agentictraffic${providerSuffix}-${periodIdentifier}.xlsx`;
 
     const workbook = await createCDNLogsExcelReport(reportData, {
       customEndDate: referenceDate.toISOString().split('T')[0],
