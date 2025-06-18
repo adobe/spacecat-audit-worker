@@ -303,9 +303,21 @@ describe('Accessibility Audit Handler', () => {
     it('should fetch and log top pages information', async () => {
       // Arrange
       const mockTopPages = [
-        { url: 'https://example.com/top1', traffic: 1000 },
-        { url: 'https://example.com/top2', traffic: 800 },
-        { url: 'https://example.com/top3', traffic: 600 },
+        {
+          getUrl: () => 'https://example.com/top1',
+          getTraffic: () => 1000,
+          getId: () => 'id1',
+        },
+        {
+          getUrl: () => 'https://example.com/top2',
+          getTraffic: () => 800,
+          getId: () => 'id2',
+        },
+        {
+          getUrl: () => 'https://example.com/top3',
+          getTraffic: () => 600,
+          getId: () => 'id3',
+        },
       ];
       const mockUrls = [
         { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
@@ -381,7 +393,11 @@ describe('Accessibility Audit Handler', () => {
     it('should use correct parameters for SiteTopPage query', async () => {
       // Arrange
       const mockTopPages = [
-        { url: 'https://example.com/popular', traffic: 2000 },
+        {
+          getUrl: () => 'https://example.com/popular',
+          getTraffic: () => 2000,
+          getId: () => 'popular-id',
+        },
       ];
       const mockUrls = [
         { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
@@ -433,9 +449,21 @@ describe('Accessibility Audit Handler', () => {
     it('should process top pages and log top 100 when pages exist', async () => {
       // Arrange
       const mockTopPages = [
-        { url: 'https://example.com/page1', traffic: 1000, siteTopPageId: 'id1' },
-        { url: 'https://example.com/page2', traffic: 2000, siteTopPageId: 'id2' },
-        { url: 'https://example.com/page3', traffic: 500, siteTopPageId: 'id3' },
+        {
+          getUrl: () => 'https://example.com/page1',
+          getTraffic: () => 1000,
+          getId: () => 'id1',
+        },
+        {
+          getUrl: () => 'https://example.com/page2',
+          getTraffic: () => 2000,
+          getId: () => 'id2',
+        },
+        {
+          getUrl: () => 'https://example.com/page3',
+          getTraffic: () => 500,
+          getId: () => 'id3',
+        },
       ];
       const mockUrls = [{ url: 'https://example.com/test' }];
 
@@ -455,9 +483,9 @@ describe('Accessibility Audit Handler', () => {
       // Arrange
       const mockTopPages = [
         {
-          url: 'https://example.com/test-page',
-          traffic: 1500,
-          siteTopPageId: 'unique-id-123',
+          getUrl: () => 'https://example.com/test-page',
+          getTraffic: () => 1500,
+          getId: () => 'unique-id-123',
           extraProperty: 'should-be-ignored',
         },
       ];
@@ -476,7 +504,7 @@ describe('Accessibility Audit Handler', () => {
       expect(top100LogCall).to.exist;
 
       const logMessage = top100LogCall.args[0];
-      // Verify correct mapping: siteTopPageId -> urlId
+      // Verify correct mapping: getId() -> urlId
       expect(logMessage).to.include('"urlId": "unique-id-123"');
       expect(logMessage).to.include('"url": "https://example.com/test-page"');
       expect(logMessage).to.include('"traffic": 1500');
@@ -487,9 +515,21 @@ describe('Accessibility Audit Handler', () => {
     it('should sort pages by traffic in descending order for top 100', async () => {
       // Arrange
       const mockTopPages = [
-        { url: 'https://example.com/low', traffic: 100, siteTopPageId: 'low' },
-        { url: 'https://example.com/high', traffic: 5000, siteTopPageId: 'high' },
-        { url: 'https://example.com/medium', traffic: 1500, siteTopPageId: 'medium' },
+        {
+          getUrl: () => 'https://example.com/low',
+          getTraffic: () => 100,
+          getId: () => 'low',
+        },
+        {
+          getUrl: () => 'https://example.com/high',
+          getTraffic: () => 5000,
+          getId: () => 'high',
+        },
+        {
+          getUrl: () => 'https://example.com/medium',
+          getTraffic: () => 1500,
+          getId: () => 'medium',
+        },
       ];
       const mockUrls = [{ url: 'https://example.com/test' }];
 
@@ -508,9 +548,9 @@ describe('Accessibility Audit Handler', () => {
     it('should limit to 100 pages when more pages exist', async () => {
       // Arrange
       const mockTopPages = Array.from({ length: 150 }, (_, i) => ({
-        url: `https://example.com/page${i}`,
-        traffic: 1000 - i,
-        siteTopPageId: `id${i}`,
+        getUrl: () => `https://example.com/page${i}`,
+        getTraffic: () => 1000 - i,
+        getId: () => `id${i}`,
       }));
       const mockUrls = [{ url: 'https://example.com/test' }];
 

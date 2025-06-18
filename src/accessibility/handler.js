@@ -60,7 +60,7 @@ export async function scrapeAccessibilityData(context) {
   log.info(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
   if (topPages && topPages.length > 0) {
     const top100Pages = topPages
-      .map((page) => ({ url: page.url, traffic: page.traffic, urlId: page.siteTopPageId }))
+      .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
       .sort((a, b) => b.traffic - a.traffic)
       .slice(0, 100);
     log.info(`[A11yAudit] Top 100 pages: ${JSON.stringify(top100Pages, null, 2)}`);
