@@ -24,6 +24,14 @@ import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/hand
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const AUDIT_STEP_IDENTIFY = 'identify';
 export const AUDIT_STEP_SUGGEST = 'suggest';
+
+/**
+ * NOTE: When adding a new audit check:
+ * 1. Define the constant here.
+ * 2. Update the AVAILABLE_CHECKS array defined in:
+ *    https://github.com/adobe/spacecat-api-service/blob/main/src/controllers/preflight.js
+ *    for the POST /preflight/jobs API endpoint.
+ */
 export const AUDIT_CANONICAL = 'canonical';
 export const AUDIT_LINKS = 'links';
 export const AUDIT_METATAGS = 'metatags';
