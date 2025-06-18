@@ -1,3 +1,10 @@
+## [1.103.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.0...v1.103.1) (2025-06-17)
+
+
+### Bug Fixes
+
+* update conversion value calculation for forms ([#964](https://github.com/adobe/spacecat-audit-worker/issues/964)) ([3f479e3](https://github.com/adobe/spacecat-audit-worker/commit/3f479e34292507d73de66a4fe4ebf55a1e7c1e06))
+
 # [1.103.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.6...v1.103.0) (2025-06-17)
 
 
