@@ -55,18 +55,28 @@ export async function scrapeAccessibilityData(context) {
   }
   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
-  const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  log.info(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
-  if (topPages && topPages.length > 0) {
-    const top100Pages = topPages
+  let urlsToScrape = [];
+  urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
+
+  if (urlsToScrape.length === 0) {
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    log.info(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
+    if (!topPages || topPages.length === 0) {
+      log.info('[A11yAudit] No top pages found, skipping audit');
+      return {
+        status: 'NO_OPPORTUNITIES',
+        message: 'No top pages found, skipping audit',
+      };
+    }
+
+    urlsToScrape = topPages
       .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
       .sort((a, b) => b.traffic - a.traffic)
       .slice(0, 100);
-    log.info(`[A11yAudit] Top 100 pages: ${JSON.stringify(top100Pages, null, 2)}`);
+    log.info(`[A11yAudit] Top 100 pages: ${JSON.stringify(urlsToScrape, null, 2)}`);
   }
 
-  const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
   const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
     s3Client,
     bucketName,

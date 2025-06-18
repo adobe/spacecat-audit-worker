@@ -195,16 +195,8 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(result).to.deep.equal({
-        auditResult: {
-          status: 'SCRAPING_REQUESTED',
-          message: 'Content scraping for accessibility audit initiated.',
-          scrapedUrls: [],
-        },
-        fullAuditRef: 'https://example.com',
-        urls: [],
-        siteId: 'test-site-id',
-        jobId: 'test-site-id',
-        processingType: 'accessibility',
+        status: 'NO_OPPORTUNITIES',
+        message: 'No top pages found, skipping audit',
       });
     });
 
@@ -254,7 +246,7 @@ describe('Accessibility Audit Handler', () => {
       // Assert
       expect(result.siteId).to.equal('test-site-id');
       expect(result.jobId).to.equal('test-site-id');
-      expect(mockSite.getId).to.have.been.calledTwice;
+      expect(mockSite.getId).to.have.been.calledOnce;
     });
 
     it('should return fullAuditRef as finalUrl from context', async () => {
@@ -319,12 +311,9 @@ describe('Accessibility Audit Handler', () => {
           getId: () => 'id3',
         },
       ];
-      const mockUrls = [
-        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
-      ];
 
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
-      getUrlsForAuditStub.resolves(mockUrls);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
 
       // Act
       await scrapeAccessibilityData(mockContext);
@@ -345,12 +334,9 @@ describe('Accessibility Audit Handler', () => {
     it('should handle empty top pages array', async () => {
       // Arrange
       const mockTopPages = [];
-      const mockUrls = [
-        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
-      ];
 
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
-      getUrlsForAuditStub.resolves(mockUrls);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
 
       // Act
       await scrapeAccessibilityData(mockContext);
@@ -371,12 +357,9 @@ describe('Accessibility Audit Handler', () => {
     it('should handle SiteTopPage fetch error gracefully', async () => {
       // Arrange
       const topPageError = new Error('Failed to fetch top pages');
-      const mockUrls = [
-        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
-      ];
 
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(topPageError);
-      getUrlsForAuditStub.resolves(mockUrls);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
 
       // Act & Assert
       await expect(scrapeAccessibilityData(mockContext))
@@ -399,12 +382,9 @@ describe('Accessibility Audit Handler', () => {
           getId: () => 'popular-id',
         },
       ];
-      const mockUrls = [
-        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
-      ];
 
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
-      getUrlsForAuditStub.resolves(mockUrls);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
 
       // Act
       await scrapeAccessibilityData(mockContext);
@@ -465,10 +445,9 @@ describe('Accessibility Audit Handler', () => {
           getId: () => 'id3',
         },
       ];
-      const mockUrls = [{ url: 'https://example.com/test' }];
 
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
-      getUrlsForAuditStub.resolves(mockUrls);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
 
       // Act
       await scrapeAccessibilityData(mockContext);
@@ -489,10 +468,9 @@ describe('Accessibility Audit Handler', () => {
           extraProperty: 'should-be-ignored',
         },
       ];
-      const mockUrls = [{ url: 'https://example.com/test' }];
 
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
-      getUrlsForAuditStub.resolves(mockUrls);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
 
       // Act
       await scrapeAccessibilityData(mockContext);
@@ -531,10 +509,9 @@ describe('Accessibility Audit Handler', () => {
           getId: () => 'medium',
         },
       ];
-      const mockUrls = [{ url: 'https://example.com/test' }];
 
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
-      getUrlsForAuditStub.resolves(mockUrls);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
 
       // Act
       await scrapeAccessibilityData(mockContext);
@@ -552,10 +529,9 @@ describe('Accessibility Audit Handler', () => {
         getTraffic: () => 1000 - i,
         getId: () => `id${i}`,
       }));
-      const mockUrls = [{ url: 'https://example.com/test' }];
 
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
-      getUrlsForAuditStub.resolves(mockUrls);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
 
       // Act
       await scrapeAccessibilityData(mockContext);
@@ -576,10 +552,9 @@ describe('Accessibility Audit Handler', () => {
     it('should not process top 100 when topPages is empty', async () => {
       // Arrange
       const mockTopPages = [];
-      const mockUrls = [{ url: 'https://example.com/test' }];
 
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
-      getUrlsForAuditStub.resolves(mockUrls);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
 
       // Act
       await scrapeAccessibilityData(mockContext);
@@ -592,10 +567,8 @@ describe('Accessibility Audit Handler', () => {
 
     it('should not process top 100 when topPages is null', async () => {
       // Arrange
-      const mockUrls = [{ url: 'https://example.com/test' }];
-
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(null);
-      getUrlsForAuditStub.resolves(mockUrls);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
 
       // Act
       await scrapeAccessibilityData(mockContext);
