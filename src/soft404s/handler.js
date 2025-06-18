@@ -14,8 +14,15 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
-import { checkSoft404Indicators, extractTextAndCountWords, isNonHtmlFile } from './utils.js';
+import {
+  getObjectFromKey,
+  getObjectKeysUsingPrefix,
+} from '../utils/s3-utils.js';
+import {
+  checkSoft404Indicators,
+  extractTextAndCountWords,
+  isNonHtmlFile,
+} from './utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -73,7 +80,11 @@ export async function importTopPages(context) {
 export async function submitForScraping(context) {
   const { site, dataAccess, log } = context;
   const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(
+    site.getId(),
+    'ahrefs',
+    'global',
+  );
 
   if (topPages.length === 0) {
     throw new Error('No top pages found for site');
@@ -83,15 +94,21 @@ export async function submitForScraping(context) {
   const includedURLs = (await site?.getConfig())?.getIncludedURLs('soft-404s') || [];
 
   // Filter out non-HTML files from both top pages and included URLs
-  const filteredTopPagesUrls = topPagesUrls.filter((url) => !isNonHtmlFile(url));
-  const filteredIncludedUrls = includedURLs.filter((url) => !isNonHtmlFile(url));
+  const filteredTopPagesUrls = topPagesUrls.filter(
+    (url) => !isNonHtmlFile(url),
+  );
+  const filteredIncludedUrls = includedURLs.filter(
+    (url) => !isNonHtmlFile(url),
+  );
 
-  const finalUrls = [...new Set([...filteredTopPagesUrls, ...filteredIncludedUrls])];
+  const finalUrls = [
+    ...new Set([...filteredTopPagesUrls, ...filteredIncludedUrls]),
+  ];
 
   log.info(
     `Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, `
-    + `Filtered top pages: ${filteredTopPagesUrls.length}, Filtered included URLs: ${filteredIncludedUrls.length}, `
-    + `Final URLs to scrape after removing duplicates: ${finalUrls.length}`,
+      + `Filtered top pages: ${filteredTopPagesUrls.length}, Filtered included URLs: ${filteredIncludedUrls.length}, `
+      + `Final URLs to scrape after removing duplicates: ${finalUrls.length}`,
   );
 
   return {
@@ -149,7 +166,9 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
       .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)),
   );
 
-  log.info(`Page metadata results: ${pageMetadataResults.length} pages processed`);
+  log.info(
+    `Page metadata results: ${pageMetadataResults.length} pages processed`,
+  );
 
   const soft404Results = {};
   const urlStatusChecks = [];
@@ -162,33 +181,52 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
 
       if (pageData.rawBody && pageData.finalUrl) {
         // Extract text content and count words
-        const { textContent, wordCount } = extractTextAndCountWords(pageData.rawBody);
+        const { textContent, wordCount } = extractTextAndCountWords(
+          pageData.rawBody,
+        );
+
+        // Count images in the page
+        const imageCount = (pageData.rawBody.match(/<img[^>]+>/g) || []).length;
 
         // Check for soft 404 indicators
         const matchedIndicators = checkSoft404Indicators(textContent);
 
-        // Check if this might be a soft 404 based on content analysis
+        // Determine if this might be a soft 404 based on content analysis
         const hasSoft404Indicators = matchedIndicators.length > 0;
         const hasLowWordCount = wordCount < 500;
         const hasVeryLowWordCount = wordCount < 100;
+        const hasFewImages = imageCount < 2;
 
-        if ((hasSoft404Indicators && hasLowWordCount) || hasVeryLowWordCount) {
+        // A page is considered a potential soft 404 if:
+        // 1. It has soft 404 indicators AND low word count (< 500 words), OR
+        // 2. It has very low word count (< 100 words) AND few images (< 2)
+        const isPotentialSoft404 = (hasSoft404Indicators && hasLowWordCount)
+          || (hasVeryLowWordCount && hasFewImages);
+
+        if (isPotentialSoft404) {
           // Add to URL status check queue
           urlStatusChecks.push({
             pageUrl,
             finalUrl: pageData.finalUrl,
             matchedIndicators,
             wordCount,
+            imageCount,
             textContent,
           });
         }
       } else {
-        log.warn(`Missing rawBody or finalUrl for page: ${Object.keys(pageMetadata)[0]}`);
+        log.warn(
+          `Missing rawBody or finalUrl for page: ${
+            Object.keys(pageMetadata)[0]
+          }`,
+        );
       }
     }
   }
 
-  log.info(`Found ${urlStatusChecks.length} potential soft 404 pages to verify`);
+  log.info(
+    `Found ${urlStatusChecks.length} potential soft 404 pages to verify`,
+  );
 
   // Check current HTTP status for potential soft 404 pages using Promise.allSettled
   // This ensures all requests complete even if some individual requests fail
@@ -208,6 +246,7 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
         statusCode: statusResult.statusCode,
         matchedIndicators: page.matchedIndicators,
         wordCount: page.wordCount,
+        imageCount: page.imageCount,
         textPreview: page.textContent,
       };
     }
@@ -230,12 +269,15 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
       statusCode: result.statusCode,
       matchedIndicators: result.matchedIndicators,
       wordCount: result.wordCount,
+      imageCount: result.imageCount,
       textPreview: result.textPreview,
     };
   });
 
   const detectedCount = Object.keys(soft404Results).length;
-  log.info(`Detected ${detectedCount} soft 404 pages out of ${pageMetadataResults.length} total pages`);
+  log.info(
+    `Detected ${detectedCount} soft 404 pages out of ${pageMetadataResults.length} total pages`,
+  );
 
   return soft404Results;
 }
@@ -253,10 +295,7 @@ function getScrapeJsonPath(url, siteId) {
 
 export async function soft404sAuditRunner(context) {
   const {
-    site,
-    log,
-    dataAccess,
-    baseURL,
+    site, log, dataAccess, baseURL,
   } = context;
 
   const siteId = site.getId();
@@ -282,7 +321,11 @@ export async function soft404sAuditRunner(context) {
       `Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`,
     );
 
-    const soft404Results = await soft404sAutoDetect(site, totalPagesSet, context);
+    const soft404Results = await soft404sAutoDetect(
+      site,
+      totalPagesSet,
+      context,
+    );
 
     /** store the soft404 audit result in dynamo db */
 

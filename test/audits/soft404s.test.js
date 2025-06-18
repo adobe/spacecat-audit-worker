@@ -691,6 +691,112 @@ describe('Soft404s Tests', () => {
       );
       expect(result).to.be.empty;
     });
+
+    it('should not detect soft 404 for page with very low word count but multiple images', async () => {
+      const mockObject = {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: {
+          tags: { title: 'Test Title' },
+          rawBody: `
+            <html>
+              <body>
+                <p>This is a very short page with less than 100 words.</p>
+                <img src="image1.jpg" alt="Image 1">
+                <img src="image2.jpg" alt="Image 2">
+                <img src="image3.jpg" alt="Image 3">
+              </body>
+            </html>
+          `,
+        },
+      };
+
+      s3ClientStub.send.resolves({
+        Body: { transformToString: () => JSON.stringify(mockObject) },
+        ContentType: 'application/json',
+      });
+
+      nock('https://example.com').head('/page1').reply(200);
+
+      const result = await soft404sAutoDetect(
+        site,
+        new Set(['scrapes/test-site-id/page1/scrape.json']),
+        context,
+      );
+      expect(result).to.be.empty;
+    });
+
+    it('should detect soft 404 for page with very low word count and no images', async () => {
+      const mockObject = {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: {
+          tags: { title: 'Test Title' },
+          rawBody: `
+            <html>
+              <body>
+                <p>This is a very short page with less than 100 words and no images.</p>
+              </body>
+            </html>
+          `,
+        },
+      };
+
+      s3ClientStub.send.resolves({
+        Body: { transformToString: () => JSON.stringify(mockObject) },
+        ContentType: 'application/json',
+      });
+
+      nock('https://example.com').head('/page1').reply(200);
+
+      const result = await soft404sAutoDetect(
+        site,
+        new Set(['scrapes/test-site-id/page1/scrape.json']),
+        context,
+      );
+      expect(result).to.have.property('/page1');
+      expect(result['/page1']).to.deep.include({
+        isSoft404: true,
+        statusCode: 200,
+        imageCount: 0,
+      });
+      expect(result['/page1'].wordCount).to.be.a('number').and.to.be.below(100);
+    });
+
+    it('should detect soft 404 for page with very low word count and single image', async () => {
+      const mockObject = {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: {
+          tags: { title: 'Test Title' },
+          rawBody: `
+            <html>
+              <body>
+                <p>This is a very short page with less than 100 words.</p>
+                <img src="image1.jpg" alt="Image 1">
+              </body>
+            </html>
+          `,
+        },
+      };
+
+      s3ClientStub.send.resolves({
+        Body: { transformToString: () => JSON.stringify(mockObject) },
+        ContentType: 'application/json',
+      });
+
+      nock('https://example.com').head('/page1').reply(200);
+
+      const result = await soft404sAutoDetect(
+        site,
+        new Set(['scrapes/test-site-id/page1/scrape.json']),
+        context,
+      );
+      expect(result).to.have.property('/page1');
+      expect(result['/page1']).to.deep.include({
+        isSoft404: true,
+        statusCode: 200,
+        imageCount: 1,
+      });
+      expect(result['/page1'].wordCount).to.be.a('number').and.to.be.below(100);
+    });
   });
 
   describe('soft404sAuditRunner', () => {
