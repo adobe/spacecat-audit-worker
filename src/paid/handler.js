@@ -205,7 +205,7 @@ function buildMystiqueMessage(site, auditId, url) {
 
 export async function paidAuditRunner(auditUrl, context, site) {
   const {
-    log, sqs, env,
+    log,
   } = context;
   const rumAPIClient = RUMAPIClient.createFrom(context, auditUrl, site);
   const classifier = fetchPageTypeClassifier(site, log);
@@ -233,31 +233,34 @@ export async function paidAuditRunner(auditUrl, context, site) {
 
   const auditResult = getUniqueUrls(segment);
 
-  if (!auditResult?.urls || !Array.isArray(auditResult.urls) || auditResult.urls.length === 0) {
-    return {
-      auditResult,
-      fullAuditRef: auditUrl,
-    };
-  }
-
-  // Logic for which url to pick will be improved
-  const selectedPage = auditResult.urls[0];
-
-  // using siteId for now until we have a way to save and know the auditId;
-  const mystiqueMessage = buildMystiqueMessage(site, site.getId(), selectedPage);
-
-  log.info(`[paid-audit] [Site: ${auditUrl}] Sending page ${selectedPage} evaluation to mystique`);
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  log.info(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
-
-  log.info(`[paid-audit] [Site: ${auditUrl}] Completed traffic metrics (segments: ${auditResult?.length})`);
   return {
     auditResult,
     fullAuditRef: auditUrl,
   };
 }
 
+export async function paidConsentBannerCheck(auditUrl, auditData, context, site) {
+  const {
+    log, sqs, env,
+  } = context;
+
+  const { auditResult } = auditData;
+  if (!auditResult?.urls || !Array.isArray(auditResult.urls) || auditResult.urls.length === 0) {
+    throw new Error(`Failed to send page to mystique auditUrl ${auditUrl}`);
+  }
+
+  // Logic for which url to pick will be improved
+  const selectedPage = auditResult.urls[0];
+
+  const mystiqueMessage = buildMystiqueMessage(site, auditResult.auditId, selectedPage);
+
+  log.info(`[paid-audit] [Site: ${auditUrl}] Sending page ${selectedPage} evaluation to mystique`);
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  log.info(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
+}
+
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(paidAuditRunner)
+  .withPostProcessors([paidConsentBannerCheck])
   .build();

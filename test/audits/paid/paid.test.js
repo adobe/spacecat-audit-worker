@@ -18,7 +18,7 @@ import nock from 'nock';
 import { describe } from 'mocha';
 import rumData from '../../fixtures/paid/mock-segments-data.json' with { type: 'json' };
 import expectedSubmitted from '../../fixtures/paid/expected-submitted-audit.json' with {type: 'json'};
-import { paidAuditRunner } from '../../../src/paid/handler.js';
+import { paidAuditRunner, paidConsentBannerCheck } from '../../../src/paid/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -258,5 +258,53 @@ describe('Paid Audit', () => {
       .find((valueItem) => !valueItem.url);
 
     expect(missingUrl.pageType).to.eq('other | Other Pages');
+  });
+
+  it('should submit expected result to mistique', async () => {
+    const auditData = {
+      fullAuditRef: 'https://example.com',
+      auditResult: {
+        auditId: 'test-audit-id',
+        urls: [
+          'https://example.com/page1',
+          'https://example.com/page2',
+          'https://example.com',
+        ],
+      },
+    };
+
+    const expectedSubmitedMsg = {
+      type: 'guidance:paid-cookie-consent',
+      observation: 'Landing page should not have a blocking cookie concent banner',
+      siteId: 'test-site-id',
+      url: 'https://example.com/page1',
+      auditId: 'test-audit-id',
+      deliveryType: 'aem-edge',
+      data: {
+        url: 'https://example.com/page1',
+      },
+    };
+
+    await paidConsentBannerCheck(auditUrl, auditData, context, site);
+
+    expect(context.sqs.sendMessage.called).to.be.true;
+    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+    expect(sentMessage).to.deep.include(expectedSubmitedMsg);
+  });
+
+  it('should throw exception if no urls to analyse', async () => {
+    const auditData = {
+      fullAuditRef: 'https://example.com',
+      auditResult: {
+        auditId: 'test-audit-id',
+        urls: [
+        ],
+      },
+    };
+
+    await expect(paidConsentBannerCheck(auditUrl, auditData, context, site))
+      .to.be.rejectedWith(Error, `Failed to send page to mystique auditUrl ${auditUrl}`);
+
+    expect(context.sqs.sendMessage.called).to.be.false;
   });
 });
