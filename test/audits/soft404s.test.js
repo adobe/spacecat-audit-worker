@@ -972,7 +972,6 @@ describe('Soft404s Tests', () => {
       </body>
       `;
       const result = extractTextAndCountWords(html);
-      console.log(result);
       expect(result.wordCount).to.equal(3); // Only counts words from main content
       expect(result.textContent).to.not.include('Welcome');
       expect(result.textContent).to.not.include('Copyright');

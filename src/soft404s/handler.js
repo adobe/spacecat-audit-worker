@@ -181,12 +181,12 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
 
       if (pageData.rawBody && pageData.finalUrl) {
         // Extract text content and count words
-        const { textContent, wordCount } = extractTextAndCountWords(
+        const { textContent, wordCount, cleanHTML } = extractTextAndCountWords(
           pageData.rawBody,
         );
 
         // Count images in the page
-        const imageCount = (pageData.rawBody.match(/<img[^>]+>/g) || []).length;
+        const imageCount = (cleanHTML.match(/<img[^>]+>/g) || []).length;
 
         // Check for soft 404 indicators
         const matchedIndicators = checkSoft404Indicators(textContent);

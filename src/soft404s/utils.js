@@ -32,7 +32,7 @@ export const extractTextAndCountWords = (html) => {
   const words = textContent.split(/\s+/).filter((word) => word.length > 0);
   const wordCount = words.length;
 
-  return { textContent, wordCount };
+  return { textContent, wordCount, cleanHTML: $('body').html() };
 };
 
 /**
