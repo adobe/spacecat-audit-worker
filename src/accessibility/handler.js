@@ -57,7 +57,14 @@ export async function scrapeAccessibilityData(context) {
 
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  log.info(`[A11yAudit] Found ${topPages.length} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages, null, 2)}`);
+  log.info(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
+  if (topPages && topPages.length > 0) {
+    const top100Pages = topPages
+      .map((page) => ({ url: page.url, traffic: page.traffic, urlId: page.siteTopPageId }))
+      .sort((a, b) => b.traffic - a.traffic)
+      .slice(0, 100);
+    log.info(`[A11yAudit] Top 100 pages: ${JSON.stringify(top100Pages, null, 2)}`);
+  }
 
   const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
   const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
