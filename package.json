@@ -44,7 +44,8 @@
       "static/prompts/broken-backlinks.prompt",
       "static/prompts/broken-backlinks-followup.prompt",
       "static/prompts/structured-data-suggest.prompt",
-      "static/prompts/image-alt-text.prompt"
+      "static/prompts/image-alt-text.prompt",
+      "src/cdn-analysis/sql"
     ]
   },
   "repository": {
@@ -77,7 +78,8 @@
     "@adobe/spacecat-shared-http-utils": "1.14.2",
     "@adobe/spacecat-shared-rum-api-client": "2.28.1",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
-    "@adobe/spacecat-shared-utils": "1.39.1",
+    "@adobe/spacecat-shared-utils": "1.40.0",
+    "@aws-sdk/client-athena": "3.830.0",
     "@aws-sdk/client-lambda": "3.828.0",
     "@aws-sdk/client-s3": "3.828.0",
     "@aws-sdk/client-sqs": "3.828.0",
