@@ -47,10 +47,8 @@ export function isValidUrls(urls) {
 }
 
 export async function scrapePages(context) {
-  const { site, job, log } = context;
+  const { site, job } = context;
   const siteId = site.getId();
-
-  log.info(`[preflight-audit] site: ${siteId}. Promise token added to step context: ${context.promiseToken}`);
 
   const jobMetadata = job.getMetadata();
   const { urls } = jobMetadata.payload;

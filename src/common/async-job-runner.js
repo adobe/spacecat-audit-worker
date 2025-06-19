@@ -64,8 +64,6 @@ export class AsyncJobRunner extends StepAudit {
     const {
       type, jobId, auditContext = {},
     } = message;
-    log.info(`inside async runner Message: ${JSON.stringify(message)}, stepNames: ${JSON.stringify(stepNames)}`);
-
     try {
       const job = await this.jobProvider(auditContext.jobId || jobId, context);
 
@@ -97,7 +95,6 @@ export class AsyncJobRunner extends StepAudit {
       };
 
       updatedStepContext.finalUrl = await this.urlResolver(site, context);
-      log.info(`site: ${siteId}. Final URL: ${updatedStepContext.finalUrl} and delivery type: ${site.getDeliveryType()} and promiseToken: ${message.promiseToken}`);
       if (site.getDeliveryType() === SiteModel.DELIVERY_TYPES.AEM_CS && message.promiseToken) {
         updatedStepContext.promiseToken = message.promiseToken;
         log.info(`site: ${siteId}. Promise token added to step context`);
