@@ -496,7 +496,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['canonical', 'links', 'metatags', 'dom'];
+        const expectedChecks = ['canonical', 'metatags', 'dom', 'links'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
