@@ -321,14 +321,15 @@ export const preflightAudit = async (context) => {
     }
 
     if (!checks || checks.includes(AUDIT_LINKS)) {
-      // Internal link checks
-      const internalLinksStartTime = Date.now();
-      const internalLinksStartTimestamp = new Date().toISOString();
       // Create links audit entries for all pages
       normalizedUrls.forEach((url) => {
         const pageResult = resultMap.get(url);
         pageResult.audits.push({ name: AUDIT_LINKS, type: 'seo', opportunities: [] });
       });
+
+      // Internal link checks
+      const internalLinksStartTime = Date.now();
+      const internalLinksStartTimestamp = new Date().toISOString();
 
       const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
         pageAuthToken: `token ${pageAuthToken}`,
@@ -360,10 +361,6 @@ export const preflightAudit = async (context) => {
         endTime: internalLinksEndTimestamp,
       });
 
-      await saveIntermediateResults(result, 'internal links audit');
-    }
-
-    if (!checks || checks.includes(AUDIT_LINKS)) {
       // Check for insecure links in each scraped page
       scrapedObjects.forEach(({ data }) => {
         const { finalUrl, scrapeResult: { rawBody } } = data;
@@ -383,6 +380,8 @@ export const preflightAudit = async (context) => {
           audit.opportunities.push({ check: 'bad-links', issue: insecureLinks });
         }
       });
+
+      await saveIntermediateResults(result, 'internal links audit');
     }
 
     const endTime = Date.now();
