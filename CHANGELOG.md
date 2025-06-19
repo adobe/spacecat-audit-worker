@@ -1,3 +1,10 @@
+# [1.106.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.105.0...v1.106.0) (2025-06-19)
+
+
+### Features
+
+* add onboarding for a11y audit ([#975](https://github.com/adobe/spacecat-audit-worker/issues/975)) ([7102559](https://github.com/adobe/spacecat-audit-worker/commit/710255962f41e40df86ce1a7e6a3dbec784ab2d8))
+
 # [1.105.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.104.0...v1.105.0) (2025-06-18)
 
 
