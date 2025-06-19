@@ -1,3 +1,10 @@
+# [1.109.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.108.1...v1.109.0) (2025-06-19)
+
+
+### Features
+
+* Improve Preflight Audit response time ([#978](https://github.com/adobe/spacecat-audit-worker/issues/978)) ([dee912e](https://github.com/adobe/spacecat-audit-worker/commit/dee912ef129ef8f15e2554d62f92fb53d7a23220))
+
 ## [1.108.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.108.0...v1.108.1) (2025-06-19)
 
 
