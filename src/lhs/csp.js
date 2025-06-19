@@ -22,7 +22,7 @@ function createOpportunityData() {
     title: 'The Content Security Policy configuration is ineffective against Cross Site Scripting (XSS) attacks',
     description: 'Content Security Policy can help protect applications from Cross Site Scripting (XSS) attacks, but in order for it to be effective one needs to define a secure policy. The recommended CSP setup is "Strict CSP with (cached) nonce + strict-dynamic".',
     data: {
-      howToFix: '**Warning:** This solution requires testing before deployment. Customer code and configurations vary, so please validate in a test environment first.  \nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
+      howToFix: '**Warning:** This solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.  \nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
       dataSources: [
         'Page',
       ],
