@@ -64,6 +64,7 @@ export class AsyncJobRunner extends StepAudit {
     const {
       type, jobId, auditContext = {},
     } = message;
+    log.info(`inside async runner Message: ${JSON.stringify(message)}, stepNames: ${JSON.stringify(stepNames)}`);
 
     try {
       const job = await this.jobProvider(auditContext.jobId || jobId, context);
