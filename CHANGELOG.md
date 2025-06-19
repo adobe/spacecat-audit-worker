@@ -1,3 +1,45 @@
+# [1.106.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.105.0...v1.106.0) (2025-06-19)
+
+
+### Features
+
+* add onboarding for a11y audit ([#975](https://github.com/adobe/spacecat-audit-worker/issues/975)) ([7102559](https://github.com/adobe/spacecat-audit-worker/commit/710255962f41e40df86ce1a7e6a3dbec784ab2d8))
+
+# [1.105.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.104.0...v1.105.0) (2025-06-18)
+
+
+### Features
+
+* add cdn analysis audit handler PoC ([#945](https://github.com/adobe/spacecat-audit-worker/issues/945)) ([6918a87](https://github.com/adobe/spacecat-audit-worker/commit/6918a878512913a23531ba6f98828f9c8796f14f))
+
+# [1.104.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.3...v1.104.0) (2025-06-18)
+
+
+### Features
+
+* accepting a subset of checks to run ([#972](https://github.com/adobe/spacecat-audit-worker/issues/972)) ([c6bb225](https://github.com/adobe/spacecat-audit-worker/commit/c6bb225eae8430abe20904c6044f00c2aa043e58))
+
+## [1.103.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.2...v1.103.3) (2025-06-18)
+
+
+### Bug Fixes
+
+* avoid overwriting forms guidances ([#976](https://github.com/adobe/spacecat-audit-worker/issues/976)) ([f63c095](https://github.com/adobe/spacecat-audit-worker/commit/f63c095c62aaa81fd0110c418fec066270bac588))
+
+## [1.103.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.1...v1.103.2) (2025-06-18)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#974](https://github.com/adobe/spacecat-audit-worker/issues/974)) ([b42dd91](https://github.com/adobe/spacecat-audit-worker/commit/b42dd91232716020452fb69c8b73fb8c8eabdc5d))
+
+## [1.103.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.103.0...v1.103.1) (2025-06-17)
+
+
+### Bug Fixes
+
+* update conversion value calculation for forms ([#964](https://github.com/adobe/spacecat-audit-worker/issues/964)) ([3f479e3](https://github.com/adobe/spacecat-audit-worker/commit/3f479e34292507d73de66a4fe4ebf55a1e7c1e06))
+
 # [1.103.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.102.6...v1.103.0) (2025-06-17)
 
 

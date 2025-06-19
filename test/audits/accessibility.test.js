@@ -28,6 +28,7 @@ describe('Accessibility Audit Handler', () => {
   let mockS3Client;
   let scrapeAccessibilityData;
   let processAccessibilityOpportunities;
+  let processImportStep;
   let getUrlsForAuditStub;
   let aggregateAccessibilityDataStub;
   let generateReportOpportunitiesStub;
@@ -61,6 +62,9 @@ describe('Accessibility Audit Handler', () => {
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
           },
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+          },
         },
       })
       .build();
@@ -90,6 +94,7 @@ describe('Accessibility Audit Handler', () => {
 
     scrapeAccessibilityData = accessibilityModule.scrapeAccessibilityData;
     processAccessibilityOpportunities = accessibilityModule.processAccessibilityOpportunities;
+    processImportStep = accessibilityModule.processImportStep;
   });
 
   afterEach(() => {
@@ -190,16 +195,8 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(result).to.deep.equal({
-        auditResult: {
-          status: 'SCRAPING_REQUESTED',
-          message: 'Content scraping for accessibility audit initiated.',
-          scrapedUrls: [],
-        },
-        fullAuditRef: 'https://example.com',
-        urls: [],
-        siteId: 'test-site-id',
-        jobId: 'test-site-id',
-        processingType: 'accessibility',
+        status: 'NO_OPPORTUNITIES',
+        message: 'No top pages found, skipping audit',
       });
     });
 
@@ -295,6 +292,112 @@ describe('Accessibility Audit Handler', () => {
         .to.be.rejectedWith('Invalid input parameters');
     });
 
+    it('should fetch and log top pages information', async () => {
+      // Arrange
+      const mockTopPages = [
+        {
+          getUrl: () => 'https://example.com/top1',
+          getTraffic: () => 1000,
+          getId: () => 'id1',
+        },
+        {
+          getUrl: () => 'https://example.com/top2',
+          getTraffic: () => 800,
+          getId: () => 'id2',
+        },
+        {
+          getUrl: () => 'https://example.com/top3',
+          getTraffic: () => 600,
+          getId: () => 'id3',
+        },
+      ];
+
+      mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
+
+      // Act
+      await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
+        .to.have.been.calledWith(
+          'test-site-id', // siteId from site.getId()
+          'ahrefs', // source
+          'global', // geo
+        );
+
+      expect(mockContext.log.info).to.have.been.calledWith(
+        `[A11yAudit] Found ${mockTopPages.length} top pages for site https://example.com: ${JSON.stringify(mockTopPages, null, 2)}`,
+      );
+    });
+
+    it('should handle empty top pages array', async () => {
+      // Arrange
+      const mockTopPages = [];
+
+      mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
+
+      // Act
+      await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
+        .to.have.been.calledWith(
+          'test-site-id', // siteId from site.getId()
+          'ahrefs', // source
+          'global', // geo
+        );
+
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Found 0 top pages for site https://example.com: []',
+      );
+    });
+
+    it('should handle SiteTopPage fetch error gracefully', async () => {
+      // Arrange
+      const topPageError = new Error('Failed to fetch top pages');
+
+      mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(topPageError);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
+
+      // Act & Assert
+      await expect(scrapeAccessibilityData(mockContext))
+        .to.be.rejectedWith('Failed to fetch top pages');
+
+      expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
+        .to.have.been.calledWith(
+          'test-site-id', // siteId from site.getId()
+          'ahrefs', // source
+          'global', // geo
+        );
+    });
+
+    it('should use correct parameters for SiteTopPage query', async () => {
+      // Arrange
+      const mockTopPages = [
+        {
+          getUrl: () => 'https://example.com/popular',
+          getTraffic: () => 2000,
+          getId: () => 'popular-id',
+        },
+      ];
+
+      mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
+
+      // Act
+      await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
+        .to.have.been.calledWith(
+          'test-site-id', // siteId from site.getId()
+          'ahrefs', // source
+          'global', // geo
+        );
+    });
+
     it('filters out urls that have existing failed audits', async () => {
       // Arrange
       const mockUrls = [
@@ -321,6 +424,311 @@ describe('Accessibility Audit Handler', () => {
       );
 
       expect(result.urls).to.deep.equal([{ url: 'https://example.com/page3' }]);
+    });
+
+    it('should process top pages and log top 100 when pages exist', async () => {
+      // Arrange
+      const mockTopPages = [
+        {
+          getUrl: () => 'https://example.com/page1',
+          getTraffic: () => 1000,
+          getId: () => 'id1',
+        },
+        {
+          getUrl: () => 'https://example.com/page2',
+          getTraffic: () => 2000,
+          getId: () => 'id2',
+        },
+        {
+          getUrl: () => 'https://example.com/page3',
+          getTraffic: () => 500,
+          getId: () => 'id3',
+        },
+      ];
+
+      mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
+
+      // Act
+      await scrapeAccessibilityData(mockContext);
+
+      // Assert - Check that top 100 pages are logged in correct order
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/Top 100 pages:.*page2.*page1.*page3/s),
+      );
+    });
+
+    it('should map page properties correctly for top 100 processing', async () => {
+      // Arrange
+      const mockTopPages = [
+        {
+          getUrl: () => 'https://example.com/test-page',
+          getTraffic: () => 1500,
+          getId: () => 'unique-id-123',
+          extraProperty: 'should-be-ignored',
+        },
+      ];
+
+      mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
+
+      // Act
+      await scrapeAccessibilityData(mockContext);
+
+      // Assert - Find the specific "Top 100 pages" log call
+      const logCalls = mockContext.log.info.getCalls();
+      const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages:'));
+
+      expect(top100LogCall).to.exist;
+
+      const logMessage = top100LogCall.args[0];
+      // Verify correct mapping: getId() -> urlId
+      expect(logMessage).to.include('"urlId": "unique-id-123"');
+      expect(logMessage).to.include('"url": "https://example.com/test-page"');
+      expect(logMessage).to.include('"traffic": 1500');
+      // Verify extraProperty is not included in the mapped result
+      expect(logMessage).to.not.include('extraProperty');
+    });
+
+    it('should sort pages by traffic in descending order for top 100', async () => {
+      // Arrange
+      const mockTopPages = [
+        {
+          getUrl: () => 'https://example.com/low',
+          getTraffic: () => 100,
+          getId: () => 'low',
+        },
+        {
+          getUrl: () => 'https://example.com/high',
+          getTraffic: () => 5000,
+          getId: () => 'high',
+        },
+        {
+          getUrl: () => 'https://example.com/medium',
+          getTraffic: () => 1500,
+          getId: () => 'medium',
+        },
+      ];
+
+      mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
+
+      // Act
+      await scrapeAccessibilityData(mockContext);
+
+      // Assert - Check order: high (5000) -> medium (1500) -> low (100)
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/high.*medium.*low/s),
+      );
+    });
+
+    it('should limit to 100 pages when more pages exist', async () => {
+      // Arrange
+      const mockTopPages = Array.from({ length: 150 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i}`,
+        getTraffic: () => 1000 - i,
+        getId: () => `id${i}`,
+      }));
+
+      mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
+
+      // Act
+      await scrapeAccessibilityData(mockContext);
+
+      // Assert - Verify only 100 pages are processed
+      const logCalls = mockContext.log.info.getCalls();
+      const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages:'));
+
+      const loggedData = top100LogCall.args[0];
+      const jsonStart = loggedData.indexOf('Top 100 pages: ') + 'Top 100 pages: '.length;
+      const parsedPages = JSON.parse(loggedData.substring(jsonStart));
+
+      expect(parsedPages).to.have.lengthOf(100);
+      expect(parsedPages[0].traffic).to.equal(1000); // Highest traffic
+      expect(parsedPages[99].traffic).to.equal(901); // 100th page
+    });
+
+    it('should not process top 100 when topPages is empty', async () => {
+      // Arrange
+      const mockTopPages = [];
+
+      mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
+
+      // Act
+      await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockContext.log.info).to.not.have.been.calledWith(
+        sinon.match(/Top 100 pages:/),
+      );
+    });
+
+    it('should not process top 100 when topPages is null', async () => {
+      // Arrange
+      mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(null);
+      getUrlsForAuditStub.resolves([]); // Return empty array to trigger top pages logic
+
+      // Act
+      await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockContext.log.info).to.not.have.been.calledWith(
+        sinon.match(/Top 100 pages:/),
+      );
+    });
+  });
+
+  describe('processImportStep', () => {
+    it('should successfully process import step with valid context', async () => {
+      // Arrange
+      const context = {
+        site: mockSite,
+        finalUrl: 'https://example.com',
+      };
+
+      // Act
+      const result = await processImportStep(context);
+
+      // Assert
+      expect(result).to.deep.equal({
+        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+        fullAuditRef: 'scrapes/test-site-id/',
+        type: 'top-pages',
+        siteId: 'test-site-id',
+        allowCache: true,
+      });
+
+      expect(mockSite.getId).to.have.been.calledTwice;
+    });
+
+    it('should construct correct S3 bucket path using site ID', async () => {
+      // Arrange
+      const customSiteId = 'custom-site-123';
+      mockSite.getId.returns(customSiteId);
+      const context = {
+        site: mockSite,
+        finalUrl: 'https://custom.example.com',
+      };
+
+      // Act
+      const result = await processImportStep(context);
+
+      // Assert
+      expect(result.fullAuditRef).to.equal(`scrapes/${customSiteId}/`);
+      expect(result.siteId).to.equal(customSiteId);
+    });
+
+    it('should handle different finalUrl values', async () => {
+      // Arrange
+      const customFinalUrl = 'https://different.site.com/path';
+      const context = {
+        site: mockSite,
+        finalUrl: customFinalUrl,
+      };
+
+      // Act
+      const result = await processImportStep(context);
+
+      // Assert
+      expect(result.auditResult.finalUrl).to.equal(customFinalUrl);
+      expect(result.auditResult.status).to.equal('preparing');
+    });
+
+    it('should always return type as top-pages', async () => {
+      // Arrange
+      const context = {
+        site: mockSite,
+        finalUrl: 'https://example.com',
+      };
+
+      // Act
+      const result = await processImportStep(context);
+
+      // Assert
+      expect(result.type).to.equal('top-pages');
+    });
+
+    it('should always return audit status as preparing', async () => {
+      // Arrange
+      const context = {
+        site: mockSite,
+        finalUrl: 'https://example.com',
+      };
+
+      // Act
+      const result = await processImportStep(context);
+
+      // Assert
+      expect(result.auditResult.status).to.equal('preparing');
+    });
+
+    it('should handle undefined finalUrl', async () => {
+      // Arrange
+      const context = {
+        site: mockSite,
+        finalUrl: undefined,
+      };
+
+      // Act
+      const result = await processImportStep(context);
+
+      // Assert
+      expect(result.auditResult.finalUrl).to.be.undefined;
+      expect(result.auditResult.status).to.equal('preparing');
+      expect(result.fullAuditRef).to.equal('scrapes/test-site-id/');
+      expect(result.type).to.equal('top-pages');
+      expect(result.siteId).to.equal('test-site-id');
+    });
+
+    it('should handle null finalUrl', async () => {
+      // Arrange
+      const context = {
+        site: mockSite,
+        finalUrl: null,
+      };
+
+      // Act
+      const result = await processImportStep(context);
+
+      // Assert
+      expect(result.auditResult.finalUrl).to.be.null;
+      expect(result.auditResult.status).to.equal('preparing');
+    });
+
+    it('should call site.getId() for both fullAuditRef and siteId', async () => {
+      // Arrange
+      const context = {
+        site: mockSite,
+        finalUrl: 'https://example.com',
+      };
+
+      // Act
+      await processImportStep(context);
+
+      // Assert
+      expect(mockSite.getId).to.have.been.calledTwice;
+    });
+
+    it('should return all required properties in correct structure', async () => {
+      // Arrange
+      const context = {
+        site: mockSite,
+        finalUrl: 'https://example.com',
+      };
+
+      // Act
+      const result = await processImportStep(context);
+
+      // Assert
+      expect(result).to.have.property('auditResult');
+      expect(result).to.have.property('fullAuditRef');
+      expect(result).to.have.property('type');
+      expect(result).to.have.property('siteId');
+
+      expect(result.auditResult).to.have.property('status');
+      expect(result.auditResult).to.have.property('finalUrl');
     });
   });
 
