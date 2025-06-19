@@ -1,3 +1,10 @@
+# [1.108.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.107.0...v1.108.0) (2025-06-19)
+
+
+### Features
+
+* add security-csp audit ([#944](https://github.com/adobe/spacecat-audit-worker/issues/944)) ([5121481](https://github.com/adobe/spacecat-audit-worker/commit/5121481f4cf519089d1b8cb4181a87bc05c3f9d7))
+
 # [1.107.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.106.1...v1.107.0) (2025-06-19)
 
 
