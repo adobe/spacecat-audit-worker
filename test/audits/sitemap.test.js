@@ -1148,6 +1148,16 @@ describe('filterValidUrls with redirect handling', () => {
     nock.cleanAll();
   });
 
+  it('should return empty arrays when given no URLs', async () => {
+    const result = await filterValidUrls([]);
+    expect(result).to.deep.equal({
+      ok: [],
+      notOk: [],
+      networkErrors: [],
+      otherStatusCodes: [],
+    });
+  });
+
   it('should capture final redirect URLs for 301/302 responses', async () => {
     const urls = [
       'https://example.com/ok',
@@ -1433,6 +1443,28 @@ describe('filterValidUrls with redirect handling', () => {
       statusCode: 302,
       urlsSuggested: 'https://example.com/some-page',
     });
+  });
+
+  it('should place untracked status codes in otherStatusCodes array', async () => {
+    const urls = [
+      'https://example.com/server-error',
+      'https://example.com/forbidden',
+    ];
+
+    // Mock responses for untracked status codes
+    nock('https://example.com').head('/server-error').reply(500);
+    nock('https://example.com').head('/forbidden').reply(403);
+
+    const result = await filterValidUrls(urls);
+
+    // notOk array should be empty as 500 and 403 are not tracked
+    expect(result.notOk).to.deep.equal([]);
+
+    // otherStatusCodes should contain the untracked status responses
+    expect(result.otherStatusCodes).to.deep.equal([
+      { url: 'https://example.com/server-error', statusCode: 500 },
+      { url: 'https://example.com/forbidden', statusCode: 403 },
+    ]);
   });
 });
 

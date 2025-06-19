@@ -39,6 +39,11 @@ const REQUEST_TIMEOUT_MS = 2000; // 2 second timeout for speed
 
 const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
 
+export function isTimeout(startTime, timeoutInSeconds = 720) {
+  const elapsedTime = (Date.now() - startTime) / 1000;
+  return elapsedTime > timeoutInSeconds;
+}
+
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
   NO_SITEMAP_IN_ROBOTS: 'NO SITEMAP FOUND IN ROBOTS',
@@ -272,46 +277,38 @@ export async function filterValidUrls(urls) {
   // Process URLs in batches with rate limiting
   for (let i = 0; i < urls.length; i += BATCH_SIZE) {
     // Early termination for very large batches (stop after 12 minutes of URL checking)
-    const elapsedTime = (Date.now() - startTime) / 1000;
-    if (elapsedTime > 720) { // 12 minutes of URL checking
-      console.info(`Stopping URL validation after ${elapsedTime}s to prevent timeout. Processed ${results.ok.length + results.notOk.length + results.networkErrors.length} URLs.`);
+    if (isTimeout(startTime)) { // 12 minutes of URL checking
       break;
     }
 
     const batch = urls.slice(i, i + BATCH_SIZE);
     const batchPromises = batch.map(checkUrl);
 
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const batchResults = await Promise.allSettled(batchPromises);
+    // eslint-disable-next-line no-await-in-loop
+    const batchResults = await Promise.allSettled(batchPromises);
 
-      for (const result of batchResults) {
-        if (result.status === 'fulfilled' && result.value) {
-          const {
-            type, url, statusCode, urlsSuggested, error,
-          } = result.value;
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled' && result.value) {
+        const {
+          type, url, statusCode, urlsSuggested, error,
+        } = result.value;
 
-          switch (type) {
-            case 'ok':
-              results.ok.push(url);
-              break;
-            case 'notOk':
-              results.notOk.push({ url, statusCode, ...(urlsSuggested && { urlsSuggested }) });
-              break;
-            case 'networkError':
-              results.networkErrors.push({ url, error });
-              break;
-            case 'otherStatus':
-              results.otherStatusCodes.push({ url, statusCode });
-              break;
-            default:
-              break;
-          }
+        // eslint-disable-next-line default-case
+        switch (type) {
+          case 'ok':
+            results.ok.push(url);
+            break;
+          case 'notOk':
+            results.notOk.push({ url, statusCode, ...(urlsSuggested && { urlsSuggested }) });
+            break;
+          case 'networkError':
+            results.networkErrors.push({ url, error });
+            break;
+          case 'otherStatus':
+            results.otherStatusCodes.push({ url, statusCode });
+            break;
         }
       }
-    } catch (error) {
-      // Log batch error but continue processing
-      console.info(`Batch processing error for URLs ${i}-${i + BATCH_SIZE - 1}:`, error.message);
     }
 
     // Add delay between batches to avoid overwhelming servers
@@ -333,14 +330,10 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
 
   // Check all sitemap URLs concurrently
   const checkPromises = urls.map(async (url) => {
-    try {
-      const urlData = await checkSitemap(url);
-      contentsCache[url] = urlData;
-      return { url, urlData };
-    } catch (error) {
-      console.info(`Failed to check sitemap ${url}:`, error.message);
-      return { url, urlData: { existsAndIsValid: false, reasons: [ERROR_CODES.FETCH_ERROR] } };
-    }
+    // checkSitemap handles its own errors and does not throw
+    const urlData = await checkSitemap(url);
+    contentsCache[url] = urlData;
+    return { url, urlData };
   });
 
   const results = await Promise.all(checkPromises);
@@ -363,30 +356,33 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   }
 
   // Extract pages from matching URLs
-  const response = {};
   const pagesPromises = matchingUrls.map(async (matchingUrl) => {
-    try {
-      if (!contentsCache[matchingUrl]) {
-        contentsCache[matchingUrl] = await checkSitemap(matchingUrl);
-      }
-
-      if (contentsCache[matchingUrl].existsAndIsValid) {
-        const pages = getBaseUrlPagesFromSitemapContents(
-          baseUrl,
-          contentsCache[matchingUrl].details,
-        );
-
-        if (pages.length > 0) {
-          response[matchingUrl] = pages;
-        }
-      }
-    } catch (error) {
-      console.info(`Failed to extract pages from ${matchingUrl}:`, error.message);
+    if (!contentsCache[matchingUrl]) {
+      contentsCache[matchingUrl] = await checkSitemap(matchingUrl);
     }
+
+    if (contentsCache[matchingUrl].existsAndIsValid) {
+      const pages = getBaseUrlPagesFromSitemapContents(
+        baseUrl,
+        contentsCache[matchingUrl].details,
+      );
+
+      if (pages.length > 0) {
+        return { [matchingUrl]: pages };
+      }
+    }
+
+    return null;
   });
 
-  await Promise.all(pagesPromises);
-  return response;
+  const pageResults = await Promise.allSettled(pagesPromises);
+
+  return pageResults.reduce((acc, result) => {
+    if (result.status === 'fulfilled' && result.value) {
+      Object.assign(acc, result.value);
+    }
+    return acc;
+  }, {});
 }
 
 /**
@@ -508,30 +504,19 @@ export async function sitemapAuditRunner(baseURL, context) {
 
   log.info(`Starting sitemap audit for ${baseURL}`);
 
-  try {
-    const auditResult = await findSitemap(baseURL);
-    const endTime = process.hrtime(startTime);
-    const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
-    const formattedElapsed = elapsedSeconds.toFixed(2);
+  const auditResult = await findSitemap(baseURL);
 
-    log.info(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
+  const endTime = process.hrtime(startTime);
+  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+  const formattedElapsed = elapsedSeconds.toFixed(2);
 
-    return {
-      fullAuditRef: baseURL,
-      auditResult,
-      url: baseURL,
-    };
-  } catch (error) {
-    log.error(`Sitemap audit failed for ${baseURL}:`, error);
-    return {
-      fullAuditRef: baseURL,
-      auditResult: {
-        success: false,
-        reasons: [{ value: error.message, error: ERROR_CODES.FETCH_ERROR }],
-      },
-      url: baseURL,
-    };
-  }
+  log.info(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
+
+  return {
+    fullAuditRef: baseURL,
+    auditResult,
+    url: baseURL,
+  };
 }
 
 export function getSitemapsWithIssues(auditData) {
