@@ -1,3 +1,10 @@
+## [1.109.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.109.0...v1.109.1) (2025-06-19)
+
+
+### Bug Fixes
+
+* adding promisetoken handling in preflight worker ([#950](https://github.com/adobe/spacecat-audit-worker/issues/950)) ([27ca425](https://github.com/adobe/spacecat-audit-worker/commit/27ca4251195cf2cb5fecc883a8c468fa95193f54))
+
 # [1.109.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.108.1...v1.109.0) (2025-06-19)
 
 
