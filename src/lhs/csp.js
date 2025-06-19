@@ -15,13 +15,14 @@ import { syncSuggestions } from '../utils/data-access.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_CSP;
 
-function createOpportunityData() {
+function createOpportunityData(props) {
   return {
     runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
     origin: 'AUTOMATION',
     title: 'The Content Security Policy configuration is ineffective against Cross Site Scripting (XSS) attacks',
     description: 'Content Security Policy can help protect applications from Cross Site Scripting (XSS) attacks, but in order for it to be effective one needs to define a secure policy. The recommended CSP setup is "Strict CSP with (cached) nonce + strict-dynamic".',
     data: {
+      securityScoreImpact: 10,
       howToFix: '**Warning:** This solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.  \nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
       dataSources: [
         'Page',
@@ -30,6 +31,7 @@ function createOpportunityData() {
       mainMetric: {
         name: null,
       },
+      ...props,
     },
     tags: [
       'CSP',
@@ -83,12 +85,21 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
     return { ...auditData };
   }
 
+  // determine opportunity properties, these will be used when creating and updating the opportunity
+  const props = {
+    mainMetric: {
+      name: csp.length === 1 ? 'Issue' : 'Issues',
+      value: csp.length,
+    },
+  };
+
   const opportunity = await convertToOpportunity(
     auditUrl,
     { siteId: auditData.siteId, id: auditData.auditId },
     context,
     createOpportunityData,
     AUDIT_TYPE,
+    props,
   );
 
   const buildKey = (data) => data.description.toLowerCase().replace(/[^a-z0-9]/g, '');
