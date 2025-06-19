@@ -85,7 +85,7 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
     return { ...auditData };
   }
 
-  // determine opportunity properties, these will be used when creating and updating the opportunity
+  // determine dynamic opportunity properties, used when creating + updating the opportunity
   const props = {
     mainMetric: {
       name: csp.length === 1 ? 'Issue' : 'Issues',
