@@ -14,6 +14,7 @@
 import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
 import { extractCustomerDomain, loadSql } from './report-utils.js';
 import { DEFAULT_PATTERNS, DOMAIN_SPECIFIC_PATTERNS, FALLBACK_CASE_STATEMENT } from '../constants/page-patterns.js';
+import { getProviderPattern } from '../constants/user-agent-patterns.js';
 
 function buildDateFilter(startDate, endDate) {
   const formatPart = (date) => ({
@@ -33,7 +34,8 @@ function buildDateFilter(startDate, endDate) {
 
 function buildWhereClause(conditions = [], provider = null) {
   if (provider) {
-    conditions.push(`LOWER(user_agent) LIKE '%${provider.toLowerCase()}%'`);
+    const pattern = getProviderPattern(provider);
+    conditions.push(`REGEXP_LIKE(user_agent, '${pattern}')`);
   }
   return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 }
