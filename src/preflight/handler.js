@@ -50,9 +50,7 @@ export async function scrapePages(context) {
   const { site, job, log } = context;
   const siteId = site.getId();
 
-  if (context.promiseToken) {
-    log.info(`[preflight-audit] site: ${siteId}. Promise token added to step context`);
-  }
+  log.info(`[preflight-audit] site: ${siteId}. Promise token added to step context: ${context.promiseToken}`);
 
   const jobMetadata = job.getMetadata();
   const { urls } = jobMetadata.payload;
