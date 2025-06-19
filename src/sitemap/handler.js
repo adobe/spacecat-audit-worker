@@ -391,7 +391,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, context) {
  */
 export async function findSitemap(inputUrl, context) {
   const { log } = context;
-  
+
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
     return {
@@ -401,7 +401,7 @@ export async function findSitemap(inputUrl, context) {
   }
 
   const { protocol, domain } = parsedUrl;
-  
+
   let sitemapUrls = { ok: [], notOk: [] };
   try {
     const robotsResult = await checkRobotsForSitemap(protocol, domain);
@@ -438,11 +438,11 @@ export async function findSitemap(inputUrl, context) {
   }
 
   const inputUrlToggledWww = toggleWWW(inputUrl);
-  
+
   const filteredSitemapUrls = sitemapUrls.ok.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
-  
+
   const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, context);
   const notOkPagesFromSitemap = {};
 
