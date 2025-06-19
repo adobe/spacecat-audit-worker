@@ -200,11 +200,12 @@ export const preflightAudit = async (context) => {
         const brokenInternalLinks = await
         generateSuggestionData(baseURL, brokenLinks, context, site);
         log.debug(`[preflight-audit] Generated suggestions for broken internal links: ${JSON.stringify(brokenInternalLinks)}`);
+        const baseURLOrigin = new URL(baseURL).origin;
         brokenInternalLinks.forEach(({
           urlTo, href, status, urlsSuggested, aiRationale,
         }) => {
           const audit = resultMap.get(href).audits.find((a) => a.name === AUDIT_LINKS);
-          const aiUrls = urlsSuggested?.map((url) => (new URL(baseURL).origin + new URL(url).pathname.replace(/\/$/, '')));
+          const aiUrls = urlsSuggested?.map((url) => (baseURLOrigin + new URL(url).pathname.replace(/\/$/, '')));
           audit.opportunities.push({
             check: 'broken-internal-links',
             issue: {
