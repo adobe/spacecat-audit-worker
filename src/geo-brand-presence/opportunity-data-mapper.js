@@ -12,12 +12,13 @@
 
 import { DATA_SOURCES } from '../common/constants.js';
 
+const RUNBOOK_URL = 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/Doc.aspx?sourcedoc=%7B19613D9B-93D4-4112-B7C8-DBE0D9DCC55B%7D&file=Experience_Success_Studio_High_Organic_Traffic_Low_CTR_Runbook.docx&action=default&mobileredirect=true';
+
 export function convertToOpportunityEntity(siteId, auditId) {
   return {
     siteId,
     auditId,
-    runbook:
-      'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/Doc.aspx?sourcedoc=%7B19613D9B-93D4-4112-B7C8-DBE0D9DCC55B%7D&file=Experience_Success_Studio_High_Organic_Traffic_Low_CTR_Runbook.docx&action=default&mobileredirect=true',
+    runbook: RUNBOOK_URL,
     type: 'generic-opportunity',
     origin: 'AUTOMATION',
     title: 'GEO Brand Improvement Opportunity detected',

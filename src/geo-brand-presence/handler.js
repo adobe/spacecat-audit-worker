@@ -17,7 +17,6 @@ import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE = 'organic-keywords-questions';
-// const ORGANIC_KEYWORDS_NONBRANDED_IMPORT_TYPE = 'organic-keywords-nonbranded';
 const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'guidance:geo-brand-presence';
 
 export async function sendToMystique(context) {
