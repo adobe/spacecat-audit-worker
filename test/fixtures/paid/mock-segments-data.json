@@ -3230,6 +3230,17 @@
         "key": "pageType",
         "value": [
             {
+                "ctr": 0.2,
+                "clickedSessions": 400,
+                "totalSessions": 2000,
+                "sessionsWithEnter": 100,
+                "clicksOverViews": 0.2,
+                "bounceRate": 0.8,
+                "totalNumClicks": 900,
+                "avgClicksPerSession": 2.25,
+                "type": "Developer"
+            },
+            {
                 "ctr": 0.2027468663384768,
                 "clickedSessions": 4901,
                 "totalSessions": 24173,
@@ -3239,6 +3250,39 @@
                 "totalNumClicks": 11003,
                 "avgClicksPerSession": 2.2450520301979187,
                 "type": "uncategorized"
+            },
+            {
+                "ctr": 0.2027468663384768,
+                "clickedSessions": 4901,
+                "totalSessions": 24173,
+                "sessionsWithEnter": 5603,
+                "clicksOverViews": 0.2027468663384768,
+                "bounceRate": 0.7972531336615232,
+                "totalNumClicks": 11003,
+                "avgClicksPerSession": 2.2450520301979187,
+                "type": "Tools"
+            },
+            {
+                "ctr": 0.2027468663384768,
+                "clickedSessions": 4901,
+                "totalSessions": 24173,
+                "sessionsWithEnter": 5603,
+                "clicksOverViews": 0.2027468663384768,
+                "bounceRate": 0.7972531336615232,
+                "totalNumClicks": 11003,
+                "avgClicksPerSession": 2.2450520301979187,
+                "type": "Documentation"
+            },
+            {
+                "ctr": 0.2027468663384768,
+                "clickedSessions": 4901,
+                "totalSessions": 24173,
+                "sessionsWithEnter": 5603,
+                "clicksOverViews": 0.2027468663384768,
+                "bounceRate": 0.7972531336615232,
+                "totalNumClicks": 11003,
+                "avgClicksPerSession": 2.2450520301979187,
+                "type": "Homepage"
             }
         ]
     },
