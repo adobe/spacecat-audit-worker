@@ -39,11 +39,6 @@ const REQUEST_TIMEOUT_MS = 2000; // 2 second timeout for speed
 
 const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
 
-export function isTimeout(startTime, timeoutInSeconds = 720) {
-  const elapsedTime = (Date.now() - startTime) / 1000;
-  return elapsedTime > timeoutInSeconds;
-}
-
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
   NO_SITEMAP_IN_ROBOTS: 'NO SITEMAP FOUND IN ROBOTS',
@@ -172,7 +167,6 @@ export async function filterValidUrls(urls) {
     };
   }
 
-  const startTime = Date.now(); // Track start time for early termination
   const controller = new AbortController();
   const results = {
     ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
@@ -276,11 +270,6 @@ export async function filterValidUrls(urls) {
 
   // Process URLs in batches with rate limiting
   for (let i = 0; i < urls.length; i += BATCH_SIZE) {
-    // Early termination for very large batches (stop after 12 minutes of URL checking)
-    if (isTimeout(startTime)) { // 12 minutes of URL checking
-      break;
-    }
-
     const batch = urls.slice(i, i + BATCH_SIZE);
     const batchPromises = batch.map(checkUrl);
 
