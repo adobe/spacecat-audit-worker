@@ -1273,7 +1273,7 @@ describe('filterValidUrls with redirect handling', () => {
 
     // Second request fails with network error
     nock('https://example.com')
-      .get('/broken-redirect')
+      .head('/error')
       .replyWithError('Network error');
 
     const result = await filterValidUrls(urls);
@@ -1443,6 +1443,21 @@ describe('filterValidUrls with redirect handling', () => {
       statusCode: 302,
       urlsSuggested: 'https://example.com/some-page',
     });
+  });
+
+  it('should suggest homepage for redirects with no location header', async () => {
+    const urls = ['https://example.com/redirect-no-location'];
+    nock('https://example.com')
+      .head('/redirect-no-location')
+      .reply(301, ''); // No location header
+    const result = await filterValidUrls(urls);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect-no-location',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com',
+      },
+    ]);
   });
 });
 

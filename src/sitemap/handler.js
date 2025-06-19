@@ -201,6 +201,7 @@ export async function filterValidUrls(urls) {
 
         // Try to check the final destination
         if (finalUrl) {
+          let is404 = false;
           try {
             const redirectTimeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
             const redirectResponse = await fetch(finalUrl, {
@@ -208,40 +209,29 @@ export async function filterValidUrls(urls) {
               redirect: 'follow',
               signal: controller.signal,
             });
-
             clearTimeout(redirectTimeoutId);
-
-            // If the redirect destination returns a 404 or has 404 patterns, suggest homepage
-            const is404 = redirectResponse.status === 404
-              || finalUrl.includes('/404/')
-              || finalUrl.includes('404.html')
-              || finalUrl.includes('/errors/404/');
-
-            const originalUrl = new URL(url);
-            const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
-
-            return {
-              type: 'notOk',
-              url,
-              statusCode: response.status,
-              urlsSuggested: is404 ? homepageUrl : finalUrl,
-            };
+            is404 = redirectResponse.status === 404;
           } catch {
-            // If redirect check fails, also check for 404 patterns in the redirect URL
-            const is404 = finalUrl.includes('/404/')
+            // the fetch for the redirect URL can fail for various reasons (e.g. network error).
+            // intentionally ignore the error and proceed to check for 404 patterns in the URL
+          }
+
+          // Also check for 404 patterns in the URL itself, as a fallback or additional signal
+          if (!is404) {
+            is404 = finalUrl.includes('/404/')
               || finalUrl.includes('404.html')
               || finalUrl.includes('/errors/404/');
-
-            const originalUrl = new URL(url);
-            const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
-
-            return {
-              type: 'notOk',
-              url,
-              statusCode: response.status,
-              urlsSuggested: is404 ? homepageUrl : finalUrl,
-            };
           }
+
+          const originalUrl = new URL(url);
+          const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
+
+          return {
+            type: 'notOk',
+            url,
+            statusCode: response.status,
+            urlsSuggested: is404 ? homepageUrl : finalUrl,
+          };
         }
 
         // If no redirect URL, suggest homepage
@@ -262,8 +252,8 @@ export async function filterValidUrls(urls) {
       }
 
       return { type: 'otherStatus', url, statusCode: response.status };
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (error) {
+    } catch {
+      // exception during the fetch (network error, timeout, etc.) is considered a network error
       return { type: 'networkError', url, error: 'NETWORK_ERROR' };
     }
   };
