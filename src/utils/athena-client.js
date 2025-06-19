@@ -235,7 +235,7 @@ export class AWSAthenaClient {
    * @param {object} [opts] - same opts as execute()
    * @returns {Promise<Array>} - parsed results
    */
-  async executeAndGetResults(sql, database, description = 'Athena query', opts = {}) {
+  async query(sql, database, description = 'Athena query', opts = {}) {
     const queryExecutionId = await this.execute(sql, database, description, opts);
 
     // Get query results

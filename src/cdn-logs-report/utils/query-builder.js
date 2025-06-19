@@ -12,8 +12,8 @@
 
 /* c8 ignore start */
 import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
-import { extractCustomerDomain, loadSql } from './report-utils.js';
-import { DEFAULT_PATTERNS, DOMAIN_SPECIFIC_PATTERNS, FALLBACK_CASE_STATEMENT } from '../constants/page-patterns.js';
+import { loadSql } from './report-utils.js';
+import { DEFAULT_PATTERNS } from '../constants/page-patterns.js';
 import { getProviderPattern } from '../constants/user-agent-patterns.js';
 
 function buildDateFilter(startDate, endDate) {
@@ -56,12 +56,7 @@ function buildOrderBy(periods) {
 
 // Page Type Classification
 function generatePageTypeClassification(site) {
-  const domain = site ? extractCustomerDomain(site) : 'default';
-  const patterns = DOMAIN_SPECIFIC_PATTERNS[domain] || DEFAULT_PATTERNS;
-
-  if (!patterns?.length) {
-    return FALLBACK_CASE_STATEMENT;
-  }
+  const patterns = site?.getConfig()?.getGroupedURLs('cdn-analysis') || DEFAULT_PATTERNS;
 
   const caseConditions = patterns
     .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.pattern}') THEN '${pattern.name}'`)
@@ -152,10 +147,59 @@ async function createTopBottomUrlsByStatusQuery(periods, databaseName, tableName
   });
 }
 
+async function createError404UrlsQuery(periods, databaseName, tableName, provider) {
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate), 'status = 404'],
+    provider,
+  );
+
+  return loadSql('individual-urls-by-status', {
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
+async function createError503UrlsQuery(periods, databaseName, tableName, provider) {
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate), 'status = 503'],
+    provider,
+  );
+
+  return loadSql('individual-urls-by-status', {
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
+async function createSuccessUrlsByCategoryQuery(periods, databaseName, tableName, provider, site) {
+  if (!site || !site.getBaseURL().includes('bulk.com')) {
+    return null;
+  }
+
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate), 'status = 200', "url LIKE '%/products%'"],
+    provider,
+  );
+
+  return loadSql('individual-urls-by-status', {
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
 export const weeklyBreakdownQueries = {
   createCountryWeeklyBreakdown: createCountryWeeklyBreakdownQuery,
   createUserAgentWeeklyBreakdown: createUserAgentWeeklyBreakdownQuery,
   createUrlStatusWeeklyBreakdown: createUrlStatusWeeklyBreakdownQuery,
   createTopBottomUrlsByStatus: createTopBottomUrlsByStatusQuery,
+  createError404Urls: createError404UrlsQuery,
+  createError503Urls: createError503UrlsQuery,
+  createSuccessUrlsByCategory: createSuccessUrlsByCategoryQuery,
 };
 /* c8 ignore end */

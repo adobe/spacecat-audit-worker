@@ -10,54 +10,41 @@
  * governing permissions and limitations under the License.
  */
 /* c8 ignore start */
+import { sleep } from '../../support/utils.js';
 
 async function publishToAdminHlx(filename, customerName, log) {
   try {
     const org = 'adobe';
     const site = 'project-elmo-ui-data';
     const ref = 'main';
-
     const jsonFilename = `${filename.replace(/\.[^/.]+$/, '')}.json`;
     const path = `${customerName}/${jsonFilename}`;
+    const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}` };
 
-    const headers = {
-      Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}`,
-    };
+    const baseUrl = 'https://admin.hlx.page';
+    const endpoints = [
+      { name: 'preview', url: `${baseUrl}/preview/${org}/${site}/${ref}/${path}` },
+      { name: 'live', url: `${baseUrl}/live/${org}/${site}/${ref}/${path}` },
+    ];
 
-    const publishPreview = async () => {
-      const previewUrl = `https://admin.hlx.page/preview/${org}/${site}/${ref}/${path}`;
-      log.info(`Publishing Excel report via admin API (preview): ${previewUrl}`);
+    for (const [index, endpoint] of endpoints.entries()) {
+      log.info(`Publishing Excel report via admin API (${endpoint.name}): ${endpoint.url}`);
 
-      const response = await fetch(previewUrl, {
-        method: 'POST',
-        headers,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Preview failed: ${response.status} ${response.statusText}`);
-      }
-
-      log.info('Excel report successfully published to preview');
-    };
-
-    const publishLive = async () => {
-      const publishUrl = `https://admin.hlx.page/live/${org}/${site}/${ref}/${path}`;
-      log.info(`Publishing Excel report via admin API (live): ${publishUrl}`);
-
-      const response = await fetch(publishUrl, {
-        method: 'POST',
-        headers,
-      });
+      // eslint-disable-next-line no-await-in-loop
+      const response = await fetch(endpoint.url, { method: 'POST', headers });
 
       if (!response.ok) {
-        throw new Error(`Live publish failed: ${response.status} ${response.statusText}`);
+        throw new Error(`${endpoint.name} failed: ${response.status} ${response.statusText}`);
       }
 
-      log.info('Excel report successfully published to admin.hlx.page');
-    };
+      log.info(`Excel report successfully published to ${endpoint.name}`);
 
-    await publishPreview();
-    await publishLive();
+      if (index === 0) {
+        log.info('Waiting 2 seconds before publishing to live...');
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(2000);
+      }
+    }
   } catch (publishError) {
     log.error(`Failed to publish via admin.hlx.page: ${publishError.message}`);
   }

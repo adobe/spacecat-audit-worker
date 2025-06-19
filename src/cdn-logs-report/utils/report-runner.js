@@ -54,19 +54,44 @@ async function collectReportData(
       provider,
       site,
     ),
-    individual_urls_by_status: await weeklyBreakdownQueries.createTopBottomUrlsByStatus(
+    top_bottom_urls_by_status: await weeklyBreakdownQueries.createTopBottomUrlsByStatus(
       periods,
       databaseName,
       tableName,
       provider,
     ),
+    error_404_urls: await weeklyBreakdownQueries.createError404Urls(
+      periods,
+      databaseName,
+      tableName,
+      provider,
+    ),
+    error_503_urls: await weeklyBreakdownQueries.createError503Urls(
+      periods,
+      databaseName,
+      tableName,
+      provider,
+    ),
+    success_urls_by_category: await weeklyBreakdownQueries.createSuccessUrlsByCategory(
+      periods,
+      databaseName,
+      tableName,
+      provider,
+      site,
+    ),
   };
 
   for (const [key, query] of Object.entries(queries)) {
     try {
+      if (query === null) {
+        reportData[key] = [];
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
       const sqlQueryDescription = `[Athena Query] ${key} for ${provider}`;
       // eslint-disable-next-line no-await-in-loop
-      const results = await athenaClient.executeAndGetResults(
+      const results = await athenaClient.query(
         query,
         s3Config.databaseName,
         sqlQueryDescription,
@@ -128,6 +153,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
     const workbook = await createCDNLogsExcelReport(reportData, {
       customEndDate: referenceDate.toISOString().split('T')[0],
       filename,
+      site,
     });
 
     await saveExcelReport({

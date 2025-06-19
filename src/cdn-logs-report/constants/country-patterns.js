@@ -11,18 +11,14 @@
  */
 
 export const DEFAULT_COUNTRY_PATTERNS = [
-  { name: 'path_2letter', regex: '^/?([a-z]{2})(?:/|$)' },
-  { name: 'path_3letter', regex: '^/?([a-z]{3})(?:/|$)' },
-  { name: 'locale_dash', regex: '^/?([a-z]{2})-[a-z]{2}(?:/|$)' },
-  { name: 'locale_underscore', regex: '^/?([a-z]{2})_[a-z]{2}(?:/|$)' },
-  { name: 'subdomain', regex: '^https?://([a-z]{2})\\.' },
-  { name: 'path_3letter_full', regex: '^[^/]+//[^/]+/?([a-z]{3})(?:/|$)' },
-  { name: 'path_2letter_full', regex: '^[^/]+//[^/]+/?([a-z]{2})(?:/|$)' },
-  { name: 'locale_dash_full', regex: '^[^/]+//[^/]+/?[a-z]{2}-([a-z]{2})(?:/|$)' },
-  { name: 'locale_underscore_full', regex: '^[^/]+//[^/]+/?([a-z]{2})_[a-z]{2}(?:/|$)' },
-  { name: 'global_prefix', regex: '^[^/]+//[^/]+/?(?:global|international)/([a-z]{2})(?:/|$)' },
-  { name: 'countries_prefix', regex: '^[^/]+//[^/]+/?(?:countries?|regions?)/([a-z]{2})(?:/|$)' },
-  { name: 'lang_country', regex: '^[^/]+//[^/]+/?[a-z]{2}/([a-z]{2})(?:/|$)' },
+  { name: 'subdomain', regex: '^(?:https?:\\/\\/|\\/\\/)?([a-z]{2})\\.' },
+  { name: 'path_3letter_full', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)([a-z]{3})(?:/|$)' },
+  { name: 'path_2letter_full', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)([a-z]{2})(?:/|$)' },
+  { name: 'locale_dash_full', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)[a-z]{2}-([a-z]{2})(?:/|$)' },
+  { name: 'locale_underscore_full', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)([a-z]{2})_[a-z]{2}(?:/|$)' },
+  { name: 'global_prefix', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)(?:global|international)/([a-z]{2})(?:/|$)' },
+  { name: 'countries_prefix', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)(?:countries?|regions?)/([a-z]{2})(?:/|$)' },
+  { name: 'lang_country', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)[a-z]{2}/([a-z]{2})(?:/|$)' },
   { name: 'query_country', regex: '[?&]country=([a-z]{2,3})(?:&|$)' },
   { name: 'query_locale', regex: '[?&]locale=[a-z]{2}-([a-z]{2})(?:&|$)' },
 ];

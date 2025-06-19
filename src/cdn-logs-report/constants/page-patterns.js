@@ -20,32 +20,3 @@ export const DEFAULT_PATTERNS = [
     pattern: '.*/sitemap.*\\.xml$',
   },
 ];
-
-export const DOMAIN_SPECIFIC_PATTERNS = {
-  bulk_com: [
-    {
-      name: 'Homepage',
-      pattern: '.*/[a-z]{2}/$',
-    },
-    {
-      name: 'Product Detail Page',
-      pattern: '.*/products/.*',
-    },
-    {
-      name: 'The Core Blog',
-      pattern: '.*/the-core/.*',
-    },
-    ...DEFAULT_PATTERNS,
-    {
-      name: 'Product Listing Page',
-      pattern: '.*/.*',
-    },
-  ],
-};
-
-export const FALLBACK_CASE_STATEMENT = `
-  CASE 
-    WHEN url LIKE '%robots%' THEN 'Robots'
-    WHEN url LIKE '%sitemap%' THEN 'Sitemap'
-    ELSE 'Uncategorized'
-  END`;

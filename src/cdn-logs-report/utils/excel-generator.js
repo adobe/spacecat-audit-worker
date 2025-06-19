@@ -40,10 +40,6 @@ const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
   return result;
 }) || [];
 
-const filterByStatusCodes = (data, statusCodes) => (
-  data?.filter((row) => statusCodes.includes(row.status)) || []
-);
-
 function analyzeTopBottomByStatus(data) {
   if (!data?.length) return {};
 
@@ -128,8 +124,7 @@ const SHEET_CONFIGS = {
 
       Object.entries(statusAnalysis).forEach(([status, analysis]) => {
         rows.push([status, '', '', '', '', '']);
-        const maxRows = Math.max(analysis.top.length, analysis.bottom.length);
-        for (let i = 0; i < Math.min(maxRows, 5); i += 1) {
+        for (let i = 0; i < 5; i += 1) {
           const topUrl = analysis.top[i];
           const bottomUrl = analysis.bottom[i];
           rows.push([
@@ -150,52 +145,33 @@ const SHEET_CONFIGS = {
     getHeaders: () => ['URL', 'Number of 404s'],
     headerColor: SHEET_COLORS.ERROR,
     numberColumns: [1],
-    processData: (data) => {
-      const urls404 = filterByStatusCodes(data, [404]);
-      return urls404.map((row) => [row.url || '', Number(row.total_requests) || 0]);
-    },
+    processData: (data) => data?.map((row) => [row.url || '', Number(row.total_requests) || 0]) || [],
   },
-
   error503: {
     getHeaders: () => ['URL', 'Number of 503s'],
     headerColor: SHEET_COLORS.ERROR,
     numberColumns: [1],
-    processData: (data) => {
-      const urls503 = filterByStatusCodes(data, [503]);
-      return urls503.map((row) => [row.url || '', Number(row.total_requests) || 0]);
-    },
+    processData: (data) => data?.map((row) => [row.url || '', Number(row.total_requests) || 0]) || [],
   },
-
   category: {
     getHeaders: () => ['Category', 'Number of Hits'],
     headerColor: SHEET_COLORS.SUCCESS,
     numberColumns: [1],
     processData: (data) => {
-      const urls200 = filterByStatusCodes(data, [200]);
-      const productsUrls = urls200.filter((row) => row.url && row.url.includes('/products'));
       const urlCountMap = new Map();
 
-      (productsUrls || []).forEach((row) => {
+      (data || []).forEach((row) => {
         const url = row.url || '';
-        const productsIndex = url.indexOf('/products');
-        let extractedUrl = productsIndex !== -1 ? url.slice(productsIndex) : url;
+        const match = url.match(/\/[a-z]{2}\/products\/([^/]+)/);
+        const categoryUrl = match ? `products/${match[1]}` : 'Other';
 
-        // Remove SKU (last segment) from product URLs: /products/name/sku -> /products/name/
-        // works for bulk
-        const parts = extractedUrl.split('/');
-        if (parts.length > 3 && parts[1] === 'products') {
-          extractedUrl = parts.slice(0, 3).join('/');
-        }
-
-        const finalUrl = extractedUrl || 'Other';
-        const count = Number(row.total_requests) || 0;
-
-        urlCountMap.set(finalUrl, (urlCountMap.get(finalUrl) || 0) + count);
+        urlCountMap.set(
+          categoryUrl,
+          (urlCountMap.get(categoryUrl) || 0) + (Number(row.total_requests) || 0),
+        );
       });
 
-      return Array.from(urlCountMap.entries())
-        .map(([url, count]) => [url, count])
-        .sort((a, b) => b[1] - a[1]);
+      return Array.from(urlCountMap.entries()).sort((a, b) => b[1] - a[1]);
     },
   },
 };
@@ -255,7 +231,7 @@ function createSheet(workbook, name, data, type, periods) {
 }
 
 export async function createCDNLogsExcelReport(reportData, options = {}) {
-  const { referenceDate, customEndDate } = options;
+  const { referenceDate, customEndDate, site } = options;
 
   const periods = customEndDate
     ? generateReportingPeriods(new Date(customEndDate))
@@ -265,15 +241,20 @@ export async function createCDNLogsExcelReport(reportData, options = {}) {
   workbook.creator = 'Spacecat CDN Logs Report';
   workbook.created = new Date();
 
+  const isBulkCom = site && site.getBaseURL().includes('bulk.com');
+
   const sheets = [
     { name: 'shared-hits_by_user_agents', data: reportData.reqcountbyuseragent, type: 'userAgents' },
     { name: 'shared-hits_by_country', data: reportData.reqcountbycountry, type: 'country' },
     { name: 'shared-hits_by_page_type', data: reportData.reqcountbyurlstatus, type: 'pageType' },
-    { name: 'shared-top_bottom_5_by_status', data: reportData.individual_urls_by_status, type: 'topBottom' },
-    { name: 'shared-404_all_urls', data: reportData.individual_urls_by_status, type: 'error404' },
-    { name: 'shared-503_all_urls', data: reportData.individual_urls_by_status, type: 'error503' },
-    { name: 'shared-200s_by_category', data: reportData.individual_urls_by_status, type: 'category' },
+    { name: 'shared-top_bottom_5_by_status', data: reportData.top_bottom_urls_by_status, type: 'topBottom' },
+    { name: 'shared-404_all_urls', data: reportData.error_404_urls, type: 'error404' },
+    { name: 'shared-503_all_urls', data: reportData.error_503_urls, type: 'error503' },
   ];
+
+  if (isBulkCom) {
+    sheets.push({ name: 'shared-200s_by_category', data: reportData.success_urls_by_category, type: 'category' });
+  }
 
   for (const sheet of sheets) {
     createSheet(workbook, sheet.name, sheet.data, sheet.type, periods);
