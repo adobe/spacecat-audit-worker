@@ -608,13 +608,12 @@ describe('Soft404s Tests', () => {
         .and.to.be.below(500);
     });
 
-    it('should detect soft 404 for page with very low word count (< 100) even without indicators', async () => {
+    it('should detect soft 404 for completely empty page (0 words)', async () => {
       const mockObject = {
         finalUrl: 'https://example.com/page1',
         scrapeResult: {
           tags: { title: 'Test Title' },
-          rawBody:
-            '<html><body>This is a very short page with less than 100 words. It should be detected as a soft 404 because of its low word count, even though it has no soft 404 indicators.</body></html>',
+          rawBody: '<html><body></body></html>',
         },
       };
 
@@ -635,7 +634,7 @@ describe('Soft404s Tests', () => {
         isSoft404: true,
         statusCode: 200,
       });
-      expect(result['/page1'].wordCount).to.be.a('number').and.to.be.below(100);
+      expect(result['/page1'].wordCount).to.equal(0);
     });
 
     it('should not detect soft 404 for page with word count between 100 and 500 without indicators', async () => {
@@ -692,40 +691,7 @@ describe('Soft404s Tests', () => {
       expect(result).to.be.empty;
     });
 
-    it('should not detect soft 404 for page with very low word count but multiple images', async () => {
-      const mockObject = {
-        finalUrl: 'https://example.com/page1',
-        scrapeResult: {
-          tags: { title: 'Test Title' },
-          rawBody: `
-            <html>
-              <body>
-                <p>This is a very short page with less than 100 words.</p>
-                <img src="image1.jpg" alt="Image 1">
-                <img src="image2.jpg" alt="Image 2">
-                <img src="image3.jpg" alt="Image 3">
-              </body>
-            </html>
-          `,
-        },
-      };
-
-      s3ClientStub.send.resolves({
-        Body: { transformToString: () => JSON.stringify(mockObject) },
-        ContentType: 'application/json',
-      });
-
-      nock('https://example.com').head('/page1').reply(200);
-
-      const result = await soft404sAutoDetect(
-        site,
-        new Set(['scrapes/test-site-id/page1/scrape.json']),
-        context,
-      );
-      expect(result).to.be.empty;
-    });
-
-    it('should detect soft 404 for page with very low word count and no images', async () => {
+    it('should not detect soft 404 for page with low word count without indicators', async () => {
       const mockObject = {
         finalUrl: 'https://example.com/page1',
         scrapeResult: {
@@ -752,16 +718,10 @@ describe('Soft404s Tests', () => {
         new Set(['scrapes/test-site-id/page1/scrape.json']),
         context,
       );
-      expect(result).to.have.property('/page1');
-      expect(result['/page1']).to.deep.include({
-        isSoft404: true,
-        statusCode: 200,
-        imageCount: 0,
-      });
-      expect(result['/page1'].wordCount).to.be.a('number').and.to.be.below(100);
+      expect(result).to.be.empty;
     });
 
-    it('should detect soft 404 for page with very low word count and single image', async () => {
+    it('should detect soft 404 for page with low word count AND soft 404 indicators', async () => {
       const mockObject = {
         finalUrl: 'https://example.com/page1',
         scrapeResult: {
@@ -769,8 +729,8 @@ describe('Soft404s Tests', () => {
           rawBody: `
             <html>
               <body>
-                <p>This is a very short page with less than 100 words.</p>
-                <img src="image1.jpg" alt="Image 1">
+                <h1>Page Not Found</h1>
+                <p>This is a very short page with less than 100 words but it has soft 404 indicators.</p>
               </body>
             </html>
           `,
@@ -793,9 +753,8 @@ describe('Soft404s Tests', () => {
       expect(result['/page1']).to.deep.include({
         isSoft404: true,
         statusCode: 200,
-        imageCount: 1,
       });
-      expect(result['/page1'].wordCount).to.be.a('number').and.to.be.below(100);
+      expect(result['/page1'].wordCount).to.be.a('number').and.to.be.below(500);
     });
   });
 

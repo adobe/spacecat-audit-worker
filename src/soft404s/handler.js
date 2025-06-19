@@ -194,14 +194,14 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
         // Determine if this might be a soft 404 based on content analysis
         const hasSoft404Indicators = matchedIndicators.length > 0;
         const hasLowWordCount = wordCount < 500;
-        const hasVeryLowWordCount = wordCount < 100;
-        const hasFewImages = imageCount < 2;
+        const isEmptyPage = wordCount === 0;
 
         // A page is considered a potential soft 404 if:
-        // 1. It has soft 404 indicators AND low word count (< 500 words), OR
-        // 2. It has very low word count (< 100 words) AND few images (< 2)
-        const isPotentialSoft404 = (hasSoft404Indicators && hasLowWordCount)
-          || (hasVeryLowWordCount && hasFewImages);
+        // 1. It's completely empty (0 words), OR
+        // 2. It has soft 404 indicators AND low word count (< 500 words)
+        // This prevents false positives for legitimate pages like login screens
+        const isPotentialSoft404 = isEmptyPage
+          || (hasSoft404Indicators && hasLowWordCount);
 
         if (isPotentialSoft404) {
           // Add to URL status check queue
@@ -236,8 +236,8 @@ export async function soft404sAutoDetect(site, pagesSet, context) {
     // A page is considered a soft 404 if:
     // 1. HTTP status is 200 (OK)
     // 2. AND either:
-    //    a. Has soft 404 indicators AND low word count (< 500 words)
-    //    b. OR has very low word count (< 100 words)
+    //    a. It's completely empty (0 words), OR
+    //    b. Has soft 404 indicators AND low word count (< 500 words)
     if (statusResult.statusCode === 200) {
       return {
         pageUrl: page.pageUrl,
