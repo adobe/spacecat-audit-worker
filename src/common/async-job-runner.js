@@ -11,7 +11,7 @@
  */
 
 import { isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
-import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { Audit as AuditModel, Site as SiteModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
 import { sendContinuationMessage, isAuditEnabledForSite } from './audit-utils.js';
@@ -96,6 +96,9 @@ export class AsyncJobRunner extends StepAudit {
       };
 
       updatedStepContext.finalUrl = await this.urlResolver(site, context);
+      if (site.getDeliveryType() === SiteModel.DELIVERY_TYPES.AEM_CS && message.promiseToken) {
+        updatedStepContext.promiseToken = message.promiseToken;
+      }
 
       const stepResult = await step.handler(updatedStepContext);
       let response = ok();
