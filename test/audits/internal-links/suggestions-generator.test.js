@@ -39,6 +39,7 @@ describe('generateSuggestionData', async function test() {
   this.timeout(10000);
 
   let auditData;
+  let brokenInternalLinksData;
   let configuration;
   let firefallClient;
 
@@ -88,6 +89,10 @@ describe('generateSuggestionData', async function test() {
   };
 
   beforeEach(() => {
+    brokenInternalLinksData = [
+      { urlTo: 'https://example.com/broken1' },
+      { urlTo: 'https://example.com/broken2' },
+    ];
     auditData = {
       getAuditResult: () => ({
         success: true,
@@ -190,7 +195,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
 
     expect(firefallClient.fetchChatCompletion).to.have.been.callCount(4);
     expect(result).to.deep.equal([
@@ -259,7 +264,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
 
     expect(firefallClient.fetchChatCompletion).to.have.been.callCount(8);
     expect(result).to.deep.equal([
@@ -308,7 +313,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
 
     expect(result).to.deep.equal([
       {
