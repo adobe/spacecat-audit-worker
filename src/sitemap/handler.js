@@ -177,10 +177,7 @@ export async function checkSitemap(sitemapUrl) {
  * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
  * Array<{url: string, statusCode: number}>}>} - A Promise that resolves to an object containing
  */
-export async function filterValidUrls(urls, context) {
-  const { log } = context;
-  log.info(`Sitemap audit: Validating URLs ${JSON.stringify(urls)}`);
-
+export async function filterValidUrls(urls) {
   const OK = 0;
   const NOT_OK = 1;
   const NETWORK_ERROR = 2;
@@ -420,7 +417,7 @@ export async function findSitemap(inputUrl, context) {
       `${protocol}://${domain}/sitemap.xml`,
       `${protocol}://${domain}/sitemap_index.xml`,
     ];
-    sitemapUrls = await filterValidUrls(commonSitemapUrls, context);
+    sitemapUrls = await filterValidUrls(commonSitemapUrls);
     if (!sitemapUrls.ok || !sitemapUrls.ok.length) {
       return {
         success: false,
