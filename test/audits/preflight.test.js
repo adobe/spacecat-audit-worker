@@ -176,6 +176,25 @@ describe('Preflight Audit', () => {
       });
     });
 
+    it('includes promiseToken in options if context.promiseToken exists', async () => {
+      const context = {
+        site: { getId: () => 'site-123' },
+        job: {
+          getMetadata: () => ({
+            payload: {
+              step: AUDIT_STEP_IDENTIFY,
+              urls: [
+                'https://main--example--page.aem.page',
+              ],
+            },
+          }),
+        },
+        promiseToken: 'test-token',
+      };
+      const result = await scrapePages(context);
+      expect(result.options.promiseToken).to.equal('test-token');
+    });
+
     it('throws an error if urls are invalid', async () => {
       const context = {
         site: { getId: () => 'site-123' },

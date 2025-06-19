@@ -70,6 +70,7 @@ export async function scrapePages(context) {
     options: {
       enableAuthentication: true,
       screenshotTypes: [],
+      ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
     },
   };
 }
