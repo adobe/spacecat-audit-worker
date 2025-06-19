@@ -200,71 +200,6 @@ export const preflightAudit = async (context) => {
         })),
     );
 
-    if (!checks || checks.includes(AUDIT_LINKS)) {
-      // Internal link checks
-      const internalLinksStartTime = Date.now();
-      const internalLinksStartTimestamp = new Date().toISOString();
-      // Create links audit entries for all pages
-      normalizedUrls.forEach((url) => {
-        const pageResult = resultMap.get(url);
-        pageResult.audits.push({ name: AUDIT_LINKS, type: 'seo', opportunities: [] });
-      });
-
-      const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
-        pageAuthToken: `token ${pageAuthToken}`,
-      });
-      if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
-        auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
-          const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
-          audit.opportunities.push({
-            check: 'broken-internal-links',
-            issue: {
-              url: href,
-              issue: `Status ${status}`,
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-            },
-          });
-        });
-      }
-      const internalLinksEndTime = Date.now();
-      const internalLinksEndTimestamp = new Date().toISOString();
-      const internalLinksElapsed = ((internalLinksEndTime - internalLinksStartTime) / 1000)
-        .toFixed(2);
-      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Internal links audit completed in ${internalLinksElapsed} seconds`);
-
-      timeExecutionBreakdown.push({
-        name: 'links',
-        duration: `${internalLinksElapsed} seconds`,
-        startTime: internalLinksStartTimestamp,
-        endTime: internalLinksEndTimestamp,
-      });
-
-      await saveIntermediateResults(result, 'internal links audit');
-    }
-
-    if (!checks || checks.includes(AUDIT_LINKS)) {
-      // Check for insecure links in each scraped page
-      scrapedObjects.forEach(({ data }) => {
-        const { finalUrl, scrapeResult: { rawBody } } = data;
-        const doc = new JSDOM(rawBody).window.document;
-        const audit = resultMap.get(finalUrl).audits.find((a) => a.name === AUDIT_LINKS);
-
-        const insecureLinks = Array.from(doc.querySelectorAll('a'))
-          .filter((anchor) => anchor.href.startsWith('http://'))
-          .map((anchor) => ({
-            url: anchor.href,
-            issue: 'Link using HTTP instead of HTTPS',
-            seoImpact: 'High',
-            seoRecommendation: 'Update all links to use HTTPS protocol',
-          }));
-
-        if (insecureLinks.length > 0) {
-          audit.opportunities.push({ check: 'bad-links', issue: insecureLinks });
-        }
-      });
-    }
-
     if (!checks || checks.includes(AUDIT_METATAGS)) {
       // Meta tags checks
       const metatagsStartTime = Date.now();
@@ -384,6 +319,70 @@ export const preflightAudit = async (context) => {
       });
 
       await saveIntermediateResults(result, 'DOM-based audit');
+    }
+
+    if (!checks || checks.includes(AUDIT_LINKS)) {
+      // Create links audit entries for all pages
+      normalizedUrls.forEach((url) => {
+        const pageResult = resultMap.get(url);
+        pageResult.audits.push({ name: AUDIT_LINKS, type: 'seo', opportunities: [] });
+      });
+
+      // Internal link checks
+      const internalLinksStartTime = Date.now();
+      const internalLinksStartTimestamp = new Date().toISOString();
+
+      const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
+        pageAuthToken: `token ${pageAuthToken}`,
+      });
+      if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
+        auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
+          const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
+          audit.opportunities.push({
+            check: 'broken-internal-links',
+            issue: {
+              url: href,
+              issue: `Status ${status}`,
+              seoImpact: 'High',
+              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+            },
+          });
+        });
+      }
+      const internalLinksEndTime = Date.now();
+      const internalLinksEndTimestamp = new Date().toISOString();
+      const internalLinksElapsed = ((internalLinksEndTime - internalLinksStartTime) / 1000)
+        .toFixed(2);
+      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Internal links audit completed in ${internalLinksElapsed} seconds`);
+
+      timeExecutionBreakdown.push({
+        name: 'links',
+        duration: `${internalLinksElapsed} seconds`,
+        startTime: internalLinksStartTimestamp,
+        endTime: internalLinksEndTimestamp,
+      });
+
+      // Check for insecure links in each scraped page
+      scrapedObjects.forEach(({ data }) => {
+        const { finalUrl, scrapeResult: { rawBody } } = data;
+        const doc = new JSDOM(rawBody).window.document;
+        const audit = resultMap.get(finalUrl).audits.find((a) => a.name === AUDIT_LINKS);
+
+        const insecureLinks = Array.from(doc.querySelectorAll('a'))
+          .filter((anchor) => anchor.href.startsWith('http://'))
+          .map((anchor) => ({
+            url: anchor.href,
+            issue: 'Link using HTTP instead of HTTPS',
+            seoImpact: 'High',
+            seoRecommendation: 'Update all links to use HTTPS protocol',
+          }));
+
+        if (insecureLinks.length > 0) {
+          audit.opportunities.push({ check: 'bad-links', issue: insecureLinks });
+        }
+      });
+
+      await saveIntermediateResults(result, 'internal links audit');
     }
 
     const endTime = Date.now();

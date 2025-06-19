@@ -16,32 +16,6 @@
         ]
       },
       {
-        "name": "links",
-        "type": "seo",
-        "opportunities": [
-          {
-            "check": "broken-internal-links",
-            "issue": {
-              "url": "https://main--example--page.aem.page/broken",
-              "issue": "Status 404",
-              "seoImpact": "High",
-              "seoRecommendation": "Fix or remove broken links to improve user experience and SEO"
-            }
-          },
-          {
-            "check": "bad-links",
-            "issue": [
-              {
-                "url": "http://test.com/",
-                "issue": "Link using HTTP instead of HTTPS",
-                "seoImpact": "High",
-                "seoRecommendation": "Update all links to use HTTPS protocol"
-              }
-            ]
-          }
-        ]
-      },
-      {
         "name": "metatags",
         "type": "seo",
         "opportunities": [
@@ -98,6 +72,32 @@
             "issue": "Found 2 H1 tags",
             "seoImpact": "High",
             "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
+          }
+        ]
+      },
+      {
+        "name": "links",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "broken-internal-links",
+            "issue": {
+              "url": "https://main--example--page.aem.page/broken",
+              "issue": "Status 404",
+              "seoImpact": "High",
+              "seoRecommendation": "Fix or remove broken links to improve user experience and SEO"
+            }
+          },
+          {
+            "check": "bad-links",
+            "issue": [
+              {
+                "url": "http://test.com/",
+                "issue": "Link using HTTP instead of HTTPS",
+                "seoImpact": "High",
+                "seoRecommendation": "Update all links to use HTTPS protocol"
+              }
+            ]
           }
         ]
       }
