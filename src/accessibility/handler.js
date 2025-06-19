@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
@@ -62,7 +63,7 @@ export async function scrapeAccessibilityData(context) {
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
     log.info(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
-    if (!topPages || topPages.length === 0) {
+    if (!isNonEmptyArray(topPages)) {
       log.info('[A11yAudit] No top pages found, skipping audit');
       return {
         status: 'NO_OPPORTUNITIES',
