@@ -1,3 +1,32 @@
+# [1.108.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.107.0...v1.108.0) (2025-06-19)
+
+
+### Features
+
+* add security-csp audit ([#944](https://github.com/adobe/spacecat-audit-worker/issues/944)) ([5121481](https://github.com/adobe/spacecat-audit-worker/commit/5121481f4cf519089d1b8cb4181a87bc05c3f9d7))
+
+# [1.107.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.106.1...v1.107.0) (2025-06-19)
+
+
+### Features
+
+* add weekly cdn report audit ([#961](https://github.com/adobe/spacecat-audit-worker/issues/961)) ([336b08f](https://github.com/adobe/spacecat-audit-worker/commit/336b08f426c5a7ae4a47128070e46e9d7fea9c73))
+* paid-audit-worker add scrape and mystique steps ([#951](https://github.com/adobe/spacecat-audit-worker/issues/951)) ([e0542d4](https://github.com/adobe/spacecat-audit-worker/commit/e0542d478492ad0da33d8c8c18af9ca7add48200))
+
+## [1.106.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.106.0...v1.106.1) (2025-06-19)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-gpt-client to v1.5.15 ([#977](https://github.com/adobe/spacecat-audit-worker/issues/977)) ([8bf0bdf](https://github.com/adobe/spacecat-audit-worker/commit/8bf0bdfb80dc74e46d7238e029ff13c6e10ecca4))
+
+# [1.106.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.105.0...v1.106.0) (2025-06-19)
+
+
+### Features
+
+* add onboarding for a11y audit ([#975](https://github.com/adobe/spacecat-audit-worker/issues/975)) ([7102559](https://github.com/adobe/spacecat-audit-worker/commit/710255962f41e40df86ce1a7e6a3dbec784ab2d8))
+
 # [1.105.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.104.0...v1.105.0) (2025-06-18)
 
 

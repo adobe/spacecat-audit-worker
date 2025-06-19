@@ -10,14 +10,21 @@
  * governing permissions and limitations under the License.
  */
 
-import { AuditBuilder } from '../common/audit-builder.js';
-import { PSI_STRATEGY_MOBILE } from '../support/psi-client.js';
-import createLHSAuditRunner from './lib.js';
-import { cspOpportunityAndSuggestions } from './csp.js';
+import { AthenaClient } from '@aws-sdk/client-athena';
+import { instrumentAWSClient } from '@adobe/spacecat-shared-utils';
 
-export default new AuditBuilder()
-  .withRunner(createLHSAuditRunner(PSI_STRATEGY_MOBILE))
-  // default impl strips slash, which is incorrect
-  .withUrlResolver((site) => site.getBaseURL())
-  .withPostProcessors([cspOpportunityAndSuggestions])
-  .build();
+/**
+ * Adds an AthenaClient instance to the context.
+ *
+ * @returns {function(object, UniversalContext): Promise<Response>}
+ */
+export default function athenaClient(fn) {
+  return async (request, context) => {
+    if (!context.athenaClient) {
+      const region = context.env?.AWS_REGION || 'us-east-1';
+      const options = { region };
+      context.athenaClient = instrumentAWSClient(new AthenaClient(options));
+    }
+    return fn(request, context);
+  };
+}
