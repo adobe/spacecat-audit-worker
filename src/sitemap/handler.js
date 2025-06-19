@@ -173,6 +173,7 @@ export async function checkSitemap(sitemapUrl) {
  *
  * @async
  * @param {string[]} urls - An array of URLs to check.
+ * @param {Object} context - The context object containing the logger.
  * @returns {Promise<{ok: string[], notOk: string[], networkErrors: string[], otherStatusCodes:
  * Array<{url: string, statusCode: number}>}>} - A Promise that resolves to an object containing
  */
@@ -311,9 +312,11 @@ export async function filterValidUrls(urls) {
  * @async
  * @param {string} baseUrl - The base URL to find pages for.
  * @param {string[]} urls - The list of sitemap URLs to check.
+ * @param {Object} context - The context object containing the logger.
  * @returns {Promise<Object>} - Resolves to an object mapping sitemap URLs to arrays of page URLs.
  */
-export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
+export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, context) {
+  const { log } = context;
   const baseUrlVariant = toggleWWW(baseUrl);
   const contentsCache = {};
 
@@ -345,6 +348,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
     }
   });
 
+  log.info(`Sitemap audit: Matching URLs: ${JSON.stringify(matchingUrls)}`);
   // Further process matching URLs if necessary
   const response = {};
   const pagesPromises = matchingUrls.map(async (matchingUrl) => {
@@ -365,6 +369,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
   // Wait for all pages promises to resolve
   await Promise.all(pagesPromises);
 
+  log.info(`Sitemap audit: Final response with pages: ${JSON.stringify(response)}`);
   return response;
 }
 /**
@@ -378,9 +383,12 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
  * The extracted paths response length < 0, log messages and returns the failure status and reasons.
  *
  * @param {string} inputUrl - The URL for which to find and validate the sitemap
+ * @param {Object} context - The context object containing the logger.
  * @returns {Promise<{success: boolean, reasons: Array<{value}>, paths?: any}>} result of sitemap
  */
-export async function findSitemap(inputUrl) {
+export async function findSitemap(inputUrl, context) {
+  const { log } = context;
+
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
     return {
@@ -390,6 +398,7 @@ export async function findSitemap(inputUrl) {
   }
 
   const { protocol, domain } = parsedUrl;
+
   let sitemapUrls = { ok: [], notOk: [] };
   try {
     const robotsResult = await checkRobotsForSitemap(protocol, domain);
@@ -426,10 +435,12 @@ export async function findSitemap(inputUrl) {
   }
 
   const inputUrlToggledWww = toggleWWW(inputUrl);
+
   const filteredSitemapUrls = sitemapUrls.ok.filter(
     (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
   );
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
+
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, context);
   const notOkPagesFromSitemap = {};
 
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
@@ -438,7 +449,7 @@ export async function findSitemap(inputUrl) {
       const urlsToCheck = extractedPaths[s];
       if (urlsToCheck && urlsToCheck.length) {
         // eslint-disable-next-line no-await-in-loop
-        const existingPages = await filterValidUrls(urlsToCheck);
+        const existingPages = await filterValidUrls(urlsToCheck, context);
 
         // Only collect tracked status codes in issues
         if (existingPages.notOk && existingPages.notOk.length > 0) {
@@ -461,6 +472,7 @@ export async function findSitemap(inputUrl) {
     }
   }
 
+  log.info(`Sitemap audit: Extracted paths: ${JSON.stringify(extractedPaths)}`);
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
     return {
       success: true,
@@ -494,7 +506,7 @@ export async function findSitemap(inputUrl) {
 export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
   const startTime = process.hrtime();
-  const auditResult = await findSitemap(baseURL);
+  const auditResult = await findSitemap(baseURL, context);
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
