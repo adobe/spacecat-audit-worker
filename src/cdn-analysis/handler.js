@@ -15,7 +15,7 @@
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { determineCdnProvider } from './utils/cdn-utils.js';
-import { AWSAthenaClient } from './utils/athena-client.js';
+import { AWSAthenaClient } from '../utils/athena-client.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 

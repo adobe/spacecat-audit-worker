@@ -45,7 +45,8 @@
       "static/prompts/broken-backlinks-followup.prompt",
       "static/prompts/structured-data-suggest.prompt",
       "static/prompts/image-alt-text.prompt",
-      "src/cdn-analysis/sql"
+      "src/cdn-analysis/sql",
+      "src/cdn-logs-report/sql"
     ]
   },
   "repository": {

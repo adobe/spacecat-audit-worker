@@ -16,10 +16,11 @@ import {
   AthenaClient,
   StartQueryExecutionCommand,
   GetQueryExecutionCommand,
+  GetQueryResultsCommand,
   QueryExecutionState,
 } from '@aws-sdk/client-athena';
 import { hasText, instrumentAWSClient } from '@adobe/spacecat-shared-utils';
-import { sleep } from '../../support/utils.js';
+import { sleep } from '../support/utils.js';
 
 export class AWSAthenaClient {
   /**
@@ -135,6 +136,50 @@ export class AWSAthenaClient {
   }
 
   /**
+   * @private
+   * Parse Athena results into usable format
+   */
+  static #parseAthenaResults(results) {
+    if (!results.ResultSet || !results.ResultSet.Rows || results.ResultSet.Rows.length === 0) {
+      return [];
+    }
+
+    const rows = results.ResultSet.Rows;
+    let headers;
+    let dataStartIndex = 0;
+
+    if (results.ResultSet.ResultSetMetadata && results.ResultSet.ResultSetMetadata.ColumnInfo) {
+      headers = results.ResultSet.ResultSetMetadata.ColumnInfo.map((col) => col.Name);
+
+      // For utility queries (SHOW TABLES, DESCRIBE, etc.), all rows contain data
+      // For regular SELECT queries, first row might be headers
+      const firstRowValues = rows[0].Data.map((col) => col.VarCharValue);
+      const isFirstRowHeaders = firstRowValues.every(
+        (value, index) => value === headers[index]
+          || (value && value.toLowerCase() === headers[index].toLowerCase()),
+      );
+
+      if (isFirstRowHeaders) {
+        dataStartIndex = 1;
+      } else {
+        dataStartIndex = 0;
+      }
+    } else {
+      headers = rows[0].Data.map((col) => col.VarCharValue);
+      dataStartIndex = 1;
+    }
+
+    // Parse data rows
+    return rows.slice(dataStartIndex).map((row) => {
+      const record = {};
+      row.Data.forEach((col, index) => {
+        record[headers[index]] = col.VarCharValue;
+      });
+      return record;
+    });
+  }
+
+  /**
    * Execute an Athena SQL query with retry + polling.
    *
    * @param {string} sql - sql query to run
@@ -179,6 +224,25 @@ export class AWSAthenaClient {
     this.log.info(`[Athena Client] ${description} finished in ${durationMs}ms`);
 
     return queryExecutionId;
+  }
+
+  /**
+   * Execute an Athena SQL query and return parsed results.
+   *
+   * @param {string} sql - sql query to run
+   * @param {string} database - database to run against
+   * @param {string} [description='Athena query'] – human-readable for logs
+   * @param {object} [opts] - same opts as execute()
+   * @returns {Promise<Array>} - parsed results
+   */
+  async executeAndGetResults(sql, database, description = 'Athena query', opts = {}) {
+    const queryExecutionId = await this.execute(sql, database, description, opts);
+
+    // Get query results
+    const resultsCommand = new GetQueryResultsCommand({ QueryExecutionId: queryExecutionId });
+    const results = await this.client.send(resultsCommand);
+
+    return AWSAthenaClient.#parseAthenaResults(results);
   }
 }
 /* c8 ignore stop */

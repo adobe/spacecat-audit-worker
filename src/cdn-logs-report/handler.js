@@ -13,33 +13,18 @@
 /* c8 ignore start */
 import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getS3Config, ensureTableExists } from './utils/aws-utils.js';
+import { getS3Config, ensureTableExists } from './utils/report-utils.js';
 import { runWeeklyReport, runCustomDateRangeReport } from './utils/report-runner.js';
-import {
-  AUDIT_TYPES, MESSAGE_TYPES, ERROR_MESSAGES, SHAREPOINT_URL,
-} from './constants/core.js';
-
-async function createAuditResult(reportType, auditUrl, additionalData = {}) {
-  return {
-    auditResult: {
-      success: true,
-      reportType,
-      timestamp: new Date().toISOString(),
-      ...additionalData,
-    },
-    fullAuditRef: auditUrl,
-  };
-}
+import { AWSAthenaClient } from '../utils/athena-client.js';
 
 async function runCdnLogsReport(url, context, site) {
-  const {
-    log, athenaClient,
-  } = context;
-  const message = context.message || {};
+  const { log, message = {} } = context;
+  const s3Config = getS3Config(site, context);
 
   log.info(`Starting CDN logs report audit for ${url}`);
 
-  const s3Config = getS3Config(site, context);
+  const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
+
   const sharepointClient = await createFrom({
     clientId: process.env.SHAREPOINT_CLIENT_ID,
     clientSecret: process.env.SHAREPOINT_CLIENT_SECRET,
@@ -47,16 +32,22 @@ async function runCdnLogsReport(url, context, site) {
     domainId: process.env.SHAREPOINT_DOMAIN_ID,
   }, { url: SHAREPOINT_URL, type: 'onedrive' });
 
+  const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
   await ensureTableExists(athenaClient, s3Config, log);
 
-  if (message.type === MESSAGE_TYPES.CUSTOM_DATE_RANGE) {
-    const { startDate, endDate } = message;
+  const auditResultBase = {
+    success: true,
+    timestamp: new Date().toISOString(),
+  };
 
+  if (message.type === 'runCustomDateRange') {
+    const { startDate, endDate } = message;
     if (!startDate || !endDate) {
-      throw new Error(ERROR_MESSAGES.MISSING_DATE_RANGE);
+      throw new Error('Custom date range requires startDate and endDate in message');
     }
 
-    log.info(`Running custom date range report: ${startDate} to ${endDate}`);
+    log.info(`Running custom report: ${startDate} to ${endDate}`);
+
     await runCustomDateRangeReport({
       athenaClient,
       startDateStr: startDate,
@@ -67,25 +58,24 @@ async function runCdnLogsReport(url, context, site) {
       sharepointClient,
     });
 
-    return createAuditResult(AUDIT_TYPES.CUSTOM, url, {
-      dateRange: { startDate, endDate },
-    });
+    return {
+      auditResult: { ...auditResultBase, reportType: 'custom', dateRange: { startDate, endDate } },
+      fullAuditRef: url,
+    };
   }
 
   log.info('Running weekly report...');
   await runWeeklyReport({
-    athenaClient,
-    s3Config,
-    log,
-    site,
-    sharepointClient,
+    athenaClient, s3Config, log, site, sharepointClient,
   });
 
-  return createAuditResult(AUDIT_TYPES.WEEKLY, url);
+  return {
+    auditResult: { ...auditResultBase, reportType: 'cdn-report-weekly' },
+    fullAuditRef: url,
+  };
 }
 
 export default new AuditBuilder()
   .withRunner(runCdnLogsReport)
   .build();
-
 /* c8 ignore end */

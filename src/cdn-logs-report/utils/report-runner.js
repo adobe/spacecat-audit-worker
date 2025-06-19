@@ -11,19 +11,16 @@
  */
 
 /* c8 ignore start */
-import { executeAthenaQuery } from '../../utils/athena-utils.js';
-import { weeklyBreakdownQueries } from '../queries/weekly-breakdown-queries.js';
+import { weeklyBreakdownQueries } from './query-builder.js';
 import {
   createDateRange,
   generatePeriodIdentifier,
   generateReportingPeriods,
-} from './date-utils.js';
+} from './report-utils.js';
 import { createCDNLogsExcelReport } from './excel-generator.js';
 import { saveExcelReport } from './report-uploader.js';
-import { getPageTypePatterns } from './page-type-classifier.js';
-import {
-  SUPPORTED_PROVIDERS,
-} from '../constants/core.js';
+
+const SUPPORTED_PROVIDERS = ['chatgpt', 'perplexity'];
 
 async function collectReportData(
   athenaClient,
@@ -35,30 +32,29 @@ async function collectReportData(
 ) {
   const { databaseName, tableName } = s3Config;
   const periods = generateReportingPeriods(endDate);
-  const pageTypePatterns = site ? getPageTypePatterns(site) : null;
   const reportData = {};
 
   const queries = {
-    reqcountbycountry: weeklyBreakdownQueries.createCountryWeeklyBreakdown(
+    reqcountbycountry: await weeklyBreakdownQueries.createCountryWeeklyBreakdown(
       periods,
       databaseName,
       tableName,
       provider,
     ),
-    reqcountbyuseragent: weeklyBreakdownQueries.createUserAgentWeeklyBreakdown(
+    reqcountbyuseragent: await weeklyBreakdownQueries.createUserAgentWeeklyBreakdown(
       periods,
       databaseName,
       tableName,
       provider,
     ),
-    reqcountbyurlstatus: weeklyBreakdownQueries.createUrlStatusWeeklyBreakdown(
+    reqcountbyurlstatus: await weeklyBreakdownQueries.createUrlStatusWeeklyBreakdown(
       periods,
       databaseName,
       tableName,
       provider,
-      pageTypePatterns,
+      site,
     ),
-    individual_urls_by_status: weeklyBreakdownQueries.createTopBottomUrlsByStatus(
+    individual_urls_by_status: await weeklyBreakdownQueries.createTopBottomUrlsByStatus(
       periods,
       databaseName,
       tableName,
@@ -68,8 +64,13 @@ async function collectReportData(
 
   for (const [key, query] of Object.entries(queries)) {
     try {
+      const sqlQueryDescription = `[Athena Query] ${key} for ${provider}`;
       // eslint-disable-next-line no-await-in-loop
-      const results = await executeAthenaQuery(athenaClient, query, s3Config, log);
+      const results = await athenaClient.executeAndGetResults(
+        query,
+        s3Config.databaseName,
+        sqlQueryDescription,
+      );
       reportData[key] = results || [];
     } catch (error) {
       const providerMsg = provider ? ` for ${provider}` : '';

@@ -12,10 +12,7 @@
 
 /* c8 ignore start */
 import ExcelJS from 'exceljs';
-import { generateReportingPeriods } from './date-utils.js';
-import {
-  STATUS_CODES, ERROR_MESSAGES,
-} from '../constants/core.js';
+import { generateReportingPeriods } from './report-utils.js';
 
 const WEEK_KEY_TRANSFORMER = (weekLabel) => weekLabel.replace(' ', '_').toLowerCase();
 const SHEET_COLORS = {
@@ -154,7 +151,7 @@ const SHEET_CONFIGS = {
     headerColor: SHEET_COLORS.ERROR,
     numberColumns: [1],
     processData: (data) => {
-      const urls404 = filterByStatusCodes(data, STATUS_CODES.NOT_FOUND);
+      const urls404 = filterByStatusCodes(data, [404]);
       return urls404.map((row) => [row.url || '', Number(row.total_requests) || 0]);
     },
   },
@@ -164,7 +161,7 @@ const SHEET_CONFIGS = {
     headerColor: SHEET_COLORS.ERROR,
     numberColumns: [1],
     processData: (data) => {
-      const urls503 = filterByStatusCodes(data, STATUS_CODES.SERVER_ERROR);
+      const urls503 = filterByStatusCodes(data, [503]);
       return urls503.map((row) => [row.url || '', Number(row.total_requests) || 0]);
     },
   },
@@ -174,7 +171,7 @@ const SHEET_CONFIGS = {
     headerColor: SHEET_COLORS.SUCCESS,
     numberColumns: [1],
     processData: (data) => {
-      const urls200 = filterByStatusCodes(data, STATUS_CODES.OK);
+      const urls200 = filterByStatusCodes(data, [200]);
       const productsUrls = urls200.filter((row) => row.url && row.url.includes('/products'));
       const urlCountMap = new Map();
 
@@ -206,7 +203,7 @@ const SHEET_CONFIGS = {
 function getSheetConfig(type, periods) {
   const config = SHEET_CONFIGS[type];
   if (!config) {
-    throw new Error(`${ERROR_MESSAGES.UNKNOWN_SHEET_TYPE}: ${type}`);
+    throw new Error(`Unknown sheet type: ${type}`);
   }
 
   return {

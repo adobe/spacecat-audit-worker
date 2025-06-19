@@ -11,13 +11,72 @@
  */
 
 /* c8 ignore start */
-import { ERROR_MESSAGES } from '../constants/core.js';
+import { getStaticContent } from '@adobe/spacecat-shared-utils';
 
 const TIME_CONSTANTS = {
   ISO_MONDAY: 1,
   ISO_SUNDAY: 0,
   DAYS_PER_WEEK: 7,
 };
+
+const REGEX_PATTERNS = {
+  URL_SANITIZATION: /[^a-zA-Z0-9]/g,
+  BUCKET_SANITIZATION: /[._]/g,
+};
+
+const CDN_LOGS_PREFIX = 'cdn-logs-';
+
+export function extractCustomerDomain(site) {
+  return new URL(site.getBaseURL()).host
+    .replace(REGEX_PATTERNS.URL_SANITIZATION, '_')
+    .toLowerCase();
+}
+
+export function getAnalysisBucket(customerDomain) {
+  const bucketCustomer = customerDomain.replace(REGEX_PATTERNS.BUCKET_SANITIZATION, '-');
+  return `${CDN_LOGS_PREFIX}${bucketCustomer}`;
+}
+
+export function getS3Config(site) {
+  const customerDomain = extractCustomerDomain(site);
+  const customerName = customerDomain.split(/[._]/)[0];
+  const bucket = getAnalysisBucket(customerDomain);
+
+  return {
+    bucket,
+    customerName,
+    customerDomain,
+    aggregatedLocation: `s3://${bucket}/aggregated/`,
+    databaseName: `cdn_logs_${customerDomain}`,
+    tableName: `aggregated_logs_${customerDomain}`,
+    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
+  };
+}
+
+export async function loadSql(filename, variables) {
+  return getStaticContent(variables, `./src/cdn-logs-report/sql/${filename}.sql`);
+}
+
+export async function ensureTableExists(athenaClient, s3Config, log) {
+  const { tableName, databaseName, aggregatedLocation } = s3Config;
+
+  try {
+    const createTableQuery = await loadSql('create-aggregated-table', {
+      databaseName,
+      tableName,
+      aggregatedLocation,
+    });
+
+    log.info(`Creating or checking table: ${tableName}`);
+    const sqlCreateTableDescription = `[Athena Query] Create table ${databaseName}.${tableName}`;
+    await athenaClient.execute(createTableQuery, databaseName, sqlCreateTableDescription);
+
+    log.info(`Table ${tableName} is ready`);
+  } catch (error) {
+    log.error(`Failed to ensure table exists: ${error.message}`);
+    throw error;
+  }
+}
 
 export function formatDateString(date) {
   return date.toISOString().split('T')[0];
@@ -53,14 +112,13 @@ export function createDateRange(startInput, endInput) {
   const endDate = new Date(endInput);
 
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-    throw new Error(ERROR_MESSAGES.DATE_FORMAT_ERROR);
+    throw new Error('Invalid date format provided');
   }
 
   if (startDate >= endDate) {
-    throw new Error(ERROR_MESSAGES.START_BEFORE_END);
+    throw new Error('Start date must be before end date');
   }
 
-  // Set proper times
   startDate.setUTCHours(0, 0, 0, 0);
   endDate.setUTCHours(23, 59, 59, 999);
 
@@ -71,7 +129,6 @@ export function generatePeriodIdentifier(startDate, endDate) {
   const start = formatDateString(startDate);
   const end = formatDateString(endDate);
 
-  // Check if it's a 7-day week period
   const diffDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));
   if (diffDays === 7) {
     const year = startDate.getUTCFullYear();
@@ -106,5 +163,4 @@ export function generateReportingPeriods(referenceDate = new Date()) {
     columns: [`Week ${weekNumber}`],
   };
 }
-
-/* c8 ignore end */
+/* c8 ignore stop */
