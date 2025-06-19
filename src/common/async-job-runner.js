@@ -98,6 +98,7 @@ export class AsyncJobRunner extends StepAudit {
       updatedStepContext.finalUrl = await this.urlResolver(site, context);
       if (site.getDeliveryType() === SiteModel.DELIVERY_TYPES.AEM_CS && message.promiseToken) {
         updatedStepContext.promiseToken = message.promiseToken;
+        log.info(`site: ${siteId}. Promise token added to step context`);
       }
 
       const stepResult = await step.handler(updatedStepContext);
