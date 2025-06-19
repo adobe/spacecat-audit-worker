@@ -47,6 +47,7 @@ import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
+import cdnAnalysis from './cdn-analysis/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -78,6 +79,7 @@ const HANDLERS = {
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   preflight,
+  'cdn-analysis': cdnAnalysis,
   dummy: (message) => ok(message),
 };
 
