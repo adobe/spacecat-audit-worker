@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { calculateProjectedConversionValue, filterForms, generateOpptyData } from '../utils.js';
 import { DATA_SOURCES } from '../../common/constants.js';
@@ -104,7 +105,9 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
           ...highPageViewsLowFormNavOppty.getData(),
           ...opportunityData.data,
         });
-        highPageViewsLowFormNavOppty.setGuidance(opportunityData.guidance);
+        if (!isNonEmptyObject(highPageViewsLowFormNavOppty.guidance)) {
+          highPageViewsLowFormNavOppty.setGuidance(opportunityData.guidance);
+        }
 
         highPageViewsLowFormNavOppty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop

@@ -21,6 +21,7 @@ import AWSXray from 'aws-xray-sdk';
 import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import {
   isValidUrls, preflightAudit, scrapePages, AUDIT_STEP_SUGGEST, AUDIT_STEP_IDENTIFY,
+  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
 } from '../../src/preflight/handler.js';
 import { runInternalLinkChecks } from '../../src/preflight/internal-links.js';
 import { MockContextBuilder } from '../shared.js';
@@ -173,6 +174,25 @@ describe('Preflight Audit', () => {
           screenshotTypes: [],
         },
       });
+    });
+
+    it('includes promiseToken in options if context.promiseToken exists', async () => {
+      const context = {
+        site: { getId: () => 'site-123' },
+        job: {
+          getMetadata: () => ({
+            payload: {
+              step: AUDIT_STEP_IDENTIFY,
+              urls: [
+                'https://main--example--page.aem.page',
+              ],
+            },
+          }),
+        },
+        promiseToken: 'test-token',
+      };
+      const result = await scrapePages(context);
+      expect(result.options.promiseToken).to.equal('test-token');
     });
 
     it('throws an error if urls are invalid', async () => {
@@ -495,7 +515,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['canonical', 'links', 'metatags', 'dom'];
+        const expectedChecks = ['canonical', 'metatags', 'dom', 'links'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -551,6 +571,135 @@ describe('Preflight Audit', () => {
       // Verify that the audit completed successfully despite intermediate save failures
       // The final save should have been successful (call #5)
       expect(context.dataAccess.AsyncJob.findById.callCount).to.be.greaterThan(4);
+    });
+
+    it('handles individual AUDIT_BODY_SIZE check', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: AUDIT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/page1'],
+          checks: [AUDIT_BODY_SIZE], // Only test body size check
+        },
+      });
+
+      // Mock S3 response with content that would trigger body size check
+      s3Client.send.onCall(1).resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              rawBody: '<body>Short content</body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          })),
+        },
+      });
+
+      await preflightAudit(context);
+
+      // Get the final result
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      const result = finalJobEntity.setResult.getCall(0).args[0];
+
+      // Verify that only body size check was performed
+      const { audits } = result[0];
+
+      // Check body size audit
+      const bodySizeAudit = audits.find((a) => a.name === AUDIT_BODY_SIZE);
+      expect(bodySizeAudit).to.exist;
+      expect(bodySizeAudit.opportunities).to.have.lengthOf(1);
+      expect(bodySizeAudit.opportunities[0].check).to.equal('content-length');
+
+      // Verify other checks were not performed
+      expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
+      expect(audits.find((a) => a.name === AUDIT_H1_COUNT)).to.not.exist;
+    });
+
+    it('handles individual AUDIT_LOREM_IPSUM check', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: AUDIT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/page1'],
+          checks: [AUDIT_LOREM_IPSUM], // Only test lorem ipsum check
+        },
+      });
+
+      // Mock S3 response with content that would trigger lorem ipsum check
+      s3Client.send.onCall(1).resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              rawBody: '<body>Some lorem ipsum text here</body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          })),
+        },
+      });
+
+      await preflightAudit(context);
+
+      // Get the final result
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      const result = finalJobEntity.setResult.getCall(0).args[0];
+
+      // Verify that only lorem ipsum check was performed
+      const { audits } = result[0];
+
+      // Check lorem ipsum audit
+      const loremIpsumAudit = audits.find((a) => a.name === AUDIT_LOREM_IPSUM);
+      expect(loremIpsumAudit).to.exist;
+      expect(loremIpsumAudit.opportunities).to.have.lengthOf(1);
+      expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
+
+      // Verify other checks were not performed
+      expect(audits.find((a) => a.name === AUDIT_BODY_SIZE)).to.not.exist;
+      expect(audits.find((a) => a.name === AUDIT_H1_COUNT)).to.not.exist;
+    });
+
+    it('handles individual AUDIT_H1_COUNT check', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: AUDIT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/page1'],
+          checks: [AUDIT_H1_COUNT], // Only test h1 count check
+        },
+      });
+
+      // Mock S3 response with content that would trigger h1 count check
+      s3Client.send.onCall(1).resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              rawBody: '<body><h1>First H1</h1><h1>Second H1</h1></body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          })),
+        },
+      });
+
+      await preflightAudit(context);
+
+      // Get the final result
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      const result = finalJobEntity.setResult.getCall(0).args[0];
+
+      // Verify that only h1 count check was performed
+      const { audits } = result[0];
+
+      // Check h1 count audit
+      const h1CountAudit = audits.find((a) => a.name === AUDIT_H1_COUNT);
+      expect(h1CountAudit).to.exist;
+      expect(h1CountAudit.opportunities).to.have.lengthOf(1);
+      expect(h1CountAudit.opportunities[0].check).to.equal('multiple-h1');
+
+      // Verify other checks were not performed
+      expect(audits.find((a) => a.name === AUDIT_BODY_SIZE)).to.not.exist;
+      expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
     });
   });
 });
