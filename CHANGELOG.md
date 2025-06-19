@@ -1,3 +1,11 @@
+# [1.107.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.106.1...v1.107.0) (2025-06-19)
+
+
+### Features
+
+* add weekly cdn report audit ([#961](https://github.com/adobe/spacecat-audit-worker/issues/961)) ([336b08f](https://github.com/adobe/spacecat-audit-worker/commit/336b08f426c5a7ae4a47128070e46e9d7fea9c73))
+* paid-audit-worker add scrape and mystique steps ([#951](https://github.com/adobe/spacecat-audit-worker/issues/951)) ([e0542d4](https://github.com/adobe/spacecat-audit-worker/commit/e0542d478492ad0da33d8c8c18af9ca7add48200))
+
 ## [1.106.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.106.0...v1.106.1) (2025-06-19)
 
 
