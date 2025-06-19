@@ -38,6 +38,9 @@ async function runCdnLogsReport(url, context, site) {
   const auditResultBase = {
     success: true,
     timestamp: new Date().toISOString(),
+    database: s3Config.databaseName,
+    table: s3Config.tableName,
+    customer: s3Config.customerName,
   };
 
   if (message.type === 'runCustomDateRange') {
@@ -59,8 +62,13 @@ async function runCdnLogsReport(url, context, site) {
     });
 
     return {
-      auditResult: { ...auditResultBase, reportType: 'custom', dateRange: { startDate, endDate } },
-      fullAuditRef: url,
+      auditResult: {
+        ...auditResultBase,
+        reportType: 'custom',
+        dateRange: { startDate, endDate },
+        sharePointPath: `/sites/elmo-ui-data/${s3Config.customerName}/`,
+      },
+      fullAuditRef: `${SHAREPOINT_URL}/${s3Config.customerName}/`,
     };
   }
 
@@ -70,8 +78,12 @@ async function runCdnLogsReport(url, context, site) {
   });
 
   return {
-    auditResult: { ...auditResultBase, reportType: 'cdn-report-weekly' },
-    fullAuditRef: url,
+    auditResult: {
+      ...auditResultBase,
+      reportType: 'cdn-report-weekly',
+      sharePointPath: `/sites/elmo-ui-data/${s3Config.customerName}/`,
+    },
+    fullAuditRef: `${SHAREPOINT_URL}/${s3Config.customerName}/`,
   };
 }
 

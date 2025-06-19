@@ -4,4 +4,4 @@ SELECT
 FROM {{databaseName}}.{{tableName}}
 {{whereClause}}
 GROUP BY {{pageTypeCase}}
-ORDER BY {{orderBy}} DESC 
+ORDER BY {{orderBy}} DESC

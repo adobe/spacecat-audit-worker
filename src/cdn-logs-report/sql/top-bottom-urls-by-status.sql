@@ -5,4 +5,4 @@ SELECT
 FROM {{databaseName}}.{{tableName}}
 {{whereClause}}
 GROUP BY url, status
-ORDER BY status, total_requests DESC 
+ORDER BY status, total_requests DESC
