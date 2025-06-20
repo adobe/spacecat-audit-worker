@@ -20,6 +20,13 @@
         "type": "seo",
         "opportunities": [
           {
+            "seoImpact": "High",
+            "issue": "Missing H1",
+            "issueDetails": "H1 tag is missing",
+            "seoRecommendation": "Should be present",
+            "tagName": "h1"
+          },
+          {
             "seoImpact": "Moderate",
             "issue": "Title too short",
             "issueDetails": "28 chars below limit",
@@ -40,12 +47,26 @@
       {
         "name": "body-size",
         "type": "seo",
-        "opportunities": []
+        "opportunities": [
+          {
+            "check": "content-length",
+            "issue": "Body content length is below 100 characters",
+            "seoImpact": "Moderate",
+            "seoRecommendation": "Add more meaningful content to the page"
+          }
+        ]
       },
       {
         "name": "lorem-ipsum",
         "type": "seo",
-        "opportunities": []
+        "opportunities": [
+          {
+            "check": "placeholder-text",
+            "issue": "Found Lorem ipsum placeholder text in the page content",
+            "seoImpact": "High",
+            "seoRecommendation": "Replace placeholder text with meaningful content"
+          }
+        ]
       },
       {
         "name": "h1-count",
@@ -62,7 +83,28 @@
       {
         "name": "links",
         "type": "seo",
-        "opportunities": []
+        "opportunities": [
+          {
+            "check": "broken-internal-links",
+            "issue": {
+              "url": "https://main--example--page.aem.page/broken",
+              "issue": "Status 404",
+              "seoImpact": "High",
+              "seoRecommendation": "Fix or remove broken links to improve user experience and SEO"
+            }
+          },
+          {
+            "check": "bad-links",
+            "issue": [
+              {
+                "url": "http://test.com/",
+                "issue": "Link using HTTP instead of HTTPS",
+                "seoImpact": "High",
+                "seoRecommendation": "Update all links to use HTTPS protocol"
+              }
+            ]
+          }
+        ]
       }
     ]
   }
