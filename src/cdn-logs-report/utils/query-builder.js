@@ -193,6 +193,20 @@ async function createSuccessUrlsByCategoryQuery(periods, databaseName, tableName
   });
 }
 
+async function createTopUrlsQuery(periods, databaseName, tableName, provider) {
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate), 'url NOT LIKE \'%robots.txt\'', 'url NOT LIKE \'%sitemap%\''],
+    provider,
+  );
+
+  return loadSql('individual-urls-by-status', {
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
 export const weeklyBreakdownQueries = {
   createCountryWeeklyBreakdown: createCountryWeeklyBreakdownQuery,
   createUserAgentWeeklyBreakdown: createUserAgentWeeklyBreakdownQuery,
@@ -201,5 +215,6 @@ export const weeklyBreakdownQueries = {
   createError404Urls: createError404UrlsQuery,
   createError503Urls: createError503UrlsQuery,
   createSuccessUrlsByCategory: createSuccessUrlsByCategoryQuery,
+  createTopUrls: createTopUrlsQuery,
 };
 /* c8 ignore end */
