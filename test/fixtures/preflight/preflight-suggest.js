@@ -27,38 +27,6 @@ export const suggestionData = [
         ],
       },
       {
-        name: 'links',
-        type: 'seo',
-        opportunities: [
-          {
-            check: 'broken-internal-links',
-            issue: {
-              url: 'https://example.com/broken',
-              issue: 'Status 404',
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-              urlsSuggested: [
-                'https://main--example--page.aem.page/fix',
-              ],
-              aiRationale: 'Rationale',
-            },
-          },
-          {
-            check: 'broken-internal-links',
-            issue: {
-              url: 'https://example.com/another-broken-url',
-              issue: 'Status 404',
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-              urlsSuggested: [
-                'https://main--example--page.aem.page/fix',
-              ],
-              aiRationale: 'Rationale',
-            },
-          },
-        ],
-      },
-      {
         name: 'metatags',
         type: 'seo',
         opportunities: [
@@ -108,6 +76,38 @@ export const suggestionData = [
             issue: 'Found 2 H1 tags',
             seoImpact: 'High',
             seoRecommendation: 'Use exactly one H1 tag per page for better SEO structure',
+          },
+        ],
+      },
+      {
+        name: 'links',
+        type: 'seo',
+        opportunities: [
+          {
+            check: 'broken-internal-links',
+            issue: {
+              url: 'https://example.com/broken',
+              issue: 'Status 404',
+              seoImpact: 'High',
+              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+              urlsSuggested: [
+                'https://main--example--page.aem.page/fix',
+              ],
+              aiRationale: 'Rationale',
+            },
+          },
+          {
+            check: 'broken-internal-links',
+            issue: {
+              url: 'https://example.com/another-broken-url',
+              issue: 'Status 404',
+              seoImpact: 'High',
+              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+              urlsSuggested: [
+                'https://main--example--page.aem.page/fix',
+              ],
+              aiRationale: 'Rationale',
+            },
           },
         ],
       },
