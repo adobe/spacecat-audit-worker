@@ -123,7 +123,7 @@ async function createUrlStatusWeeklyBreakdownQuery(
   );
   const whereClause = buildWhereClause([dateFilter], provider);
 
-  return loadSql('url-status-weekly-breakdown', {
+  return loadSql('page-type-weekly-breakdown', {
     pageTypeCase: generatePageTypeClassification(site),
     weekColumns: buildWeeklyColumns(periods),
     databaseName,
@@ -200,7 +200,7 @@ async function createTopUrlsQuery(periods, databaseName, tableName, provider) {
     provider,
   );
 
-  return loadSql('individual-urls-by-status', {
+  return loadSql('top-urls-by-traffic', {
     databaseName,
     tableName,
     whereClause,
