@@ -258,6 +258,62 @@ export async function createIndividualOpportunitySuggestions(
       }),
       log,
     });
+
+    // Fetch the latest suggestions to send to Mistique
+    const suggestions = await opportunity.getSuggestions();
+    const { sqs, env } = context;
+    const siteId = opportunity.getSiteId
+      ? opportunity.getSiteId()
+      : (context.site && context.site.getId && context.site.getId());
+    const auditId = opportunity.getAuditId
+      ? opportunity.getAuditId()
+      : (context.auditId || (context.audit && context.audit.getId && context.audit.getId()));
+    const deliveryType = (context.site && context.site.getDeliveryType && context.site.getDeliveryType()) || 'aem_edge';
+
+    // Send SQS messages one by one for each issue in each suggestion
+    for (const suggestion of suggestions) {
+      const suggestionData = suggestion.getData();
+      if (suggestionData.issues && Array.isArray(suggestionData.issues)) {
+        for (const issue of suggestionData.issues) {
+          const faultyLine = Array.isArray(issue.htmlWithIssues) && issue.htmlWithIssues.length > 0
+            ? issue.htmlWithIssues[0]
+            : '';
+          const targetSelector = issue.targetSelector || '';
+          const message = {
+            type: 'guidance:accessibility-remediation',
+            siteId: siteId || '',
+            auditId: auditId || '',
+            deliveryType,
+            time: new Date().toISOString(),
+            data: {
+              url: suggestionData.url,
+              opportunityId: opportunity.getId(),
+              suggestionId: suggestion.getId ? suggestion.getId() : undefined,
+              issue_name: issue.type || '',
+              faulty_line: faultyLine,
+              target_selector: targetSelector,
+            },
+          };
+
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+            log.info(
+              `[A11yIndividual] Sent message to Mistique for suggestion ${
+                suggestion.getId ? suggestion.getId() : ''
+              } and issue ${issue.type || ''}`,
+            );
+          } catch (error) {
+            log.error(
+              `[A11yIndividual] Failed to send message to Mistique for suggestion ${
+                suggestion.getId ? suggestion.getId() : ''
+              } and issue ${issue.type || ''}: ${error.message}`,
+            );
+          }
+        }
+      }
+    }
+
     return { success: true };
   } catch (e) {
     log.error(`Failed to create suggestions for opportunity ${opportunity.getId()}: ${e.message}`);
@@ -473,5 +529,65 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
       status: 'OPPORTUNITIES_FAILED',
       error: error.message,
     };
+  }
+}
+
+/**
+ * Handles Mistique response for accessibility remediation guidance
+ *
+ * This function processes responses from Mistique containing guidance for
+ * accessibility issues. It updates the existing opportunity with the guidance
+ * provided by Mistique.
+ *
+ * @param {Object} message - The message from Mistique containing guidance
+ * @param {Object} context - Audit context containing dataAccess and logging
+ * @returns {Object} Success status object
+ */
+export async function handleAccessibilityRemediationGuidance(message, context) {
+  const { log, dataAccess } = context;
+  const { auditId, data } = message;
+  const { opportunityId, suggestionId, guidance } = data;
+
+  log.info(`[A11yIndividual] Received accessibility remediation guidance for opportunity ${opportunityId}, suggestion ${suggestionId}`);
+
+  try {
+    const { Opportunity } = dataAccess;
+    const opportunity = await Opportunity.findById(opportunityId);
+
+    if (!opportunity) {
+      log.error(`[A11yIndividual] Opportunity not found for ID: ${opportunityId}`);
+      return { success: false, error: 'Opportunity not found' };
+    }
+
+    // Get the current suggestions
+    const suggestions = await opportunity.getSuggestions();
+    const targetSuggestion = suggestions.find((suggestion) => suggestion.getId() === suggestionId);
+
+    if (!targetSuggestion) {
+      log.error(`[A11yIndividual] Suggestion not found for ID: ${suggestionId}`);
+      return { success: false, error: 'Suggestion not found' };
+    }
+
+    // Update the suggestion with guidance from Mistique
+    const suggestionData = targetSuggestion.getData();
+    const updatedSuggestionData = {
+      ...suggestionData,
+      guidance: guidance || {},
+    };
+
+    // Update the suggestion
+    targetSuggestion.setData(updatedSuggestionData);
+    await targetSuggestion.save();
+
+    // Update the opportunity with new audit ID
+    opportunity.setAuditId(auditId);
+    opportunity.setUpdatedBy('system');
+    await opportunity.save();
+
+    log.info(`[A11yIndividual] Successfully updated suggestion ${suggestionId} with guidance for opportunity ${opportunityId}`);
+    return { success: true };
+  } catch (error) {
+    log.error(`[A11yIndividual] Failed to process accessibility remediation guidance: ${error.message}`);
+    return { success: false, error: error.message };
   }
 }
