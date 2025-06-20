@@ -50,30 +50,41 @@ export async function internalLinksAuditRunner(auditUrl, context) {
   const finalUrl = await wwwUrlResolver(site, context);
 
   try {
-    /* ------------------------------------------------------------------ */
-    /* --------- 1.  Collect broken links from RUM 404 data --------------*/
-    /* ------------------------------------------------------------------ */
+    // 1. Create RUM API client
     const rumAPIClient = RUMAPIClient.createFrom(context);
+
+    // 2. Prepare query options
     const options = {
       domain: finalUrl,
       interval: INTERVAL,
       granularity: 'hourly',
     };
 
-    const internal404Links = await rumAPIClient.query(
-      '404-internal-links',
-      options,
+    // 3. Query for 404 internal links
+    const internal404Links = await rumAPIClient.query('404-internal-links', options);
+    const rumLinksCount = internal404Links.length;
+
+    // 4. Check accessibility in parallel before transformation
+    const accessibilityResults = await Promise.all(
+      internal404Links.map(async (link) => ({
+        link,
+        inaccessible: await isLinkInaccessible(link.url_to, log),
+      })),
     );
 
-    const transformedLinks = internal404Links.map((link) => ({
-      urlFrom: link.url_from,
-      urlTo: link.url_to,
-      trafficDomain: link.traffic_domain,
-    }));
-    const rumLinksCount = transformedLinks.length;
+    /* ------------------------------------------------------------------ */
+    /* 5. Transform accessible results into base list                     */
+    /* ------------------------------------------------------------------ */
+    const transformedLinks = accessibilityResults
+      .filter((result) => result.inaccessible)
+      .map((result) => ({
+        urlFrom: result.link.url_from,
+        urlTo: result.link.url_to,
+        trafficDomain: result.link.traffic_domain,
+      }));
 
     /* ------------------------------------------------------------------ */
-    /* --------- 2.  Extract broken links from HTML comments -------------*/
+    /* 6.  Extract broken links from HTML comments (AEM-CS/AMS only)      */
     /* ------------------------------------------------------------------ */
     const { dataAccess } = context;
     const { Configuration } = dataAccess;
@@ -132,37 +143,22 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       }
     });
 
-    let finalLinks = calculatePriority([...dedupedMap.values()]);
+    const finalLinks = calculatePriority([...dedupedMap.values()]);
 
-    /* ------------------------------------------------------------------ */
-    /* Validate that each urlTo is still inaccessible                      */
-    /* ------------------------------------------------------------------ */
-    const accessibilityChecks = await Promise.all(
-      finalLinks.map(async (l) => ({
-        link: l,
-        inaccessible: await isLinkInaccessible(l.urlTo, log),
-      })),
-    );
-
-    finalLinks = accessibilityChecks
-      .filter(({ inaccessible }) => inaccessible)
-      .map(({ link }) => link);
-
-    const auditResult = {
-      brokenInternalLinks: finalLinks,
-      fullAuditRef: auditUrl,
-      finalUrl,
-      auditContext: {
-        interval: INTERVAL,
-        sources: {
-          rumDataCount: rumLinksCount,
-          htmlCommentCount: htmlBrokenLinks.length,
+    // 7. Build and return audit result
+    return {
+      auditResult: {
+        brokenInternalLinks: finalLinks,
+        fullAuditRef: auditUrl,
+        finalUrl,
+        auditContext: {
+          interval: INTERVAL,
+          sources: {
+            rumDataCount: rumLinksCount,
+            htmlCommentCount: htmlBrokenLinks.length,
+          },
         },
       },
-    };
-
-    return {
-      auditResult,
       fullAuditRef: auditUrl,
     };
   } catch (error) {
@@ -196,10 +192,12 @@ export async function runAuditAndImportTopPagesStep(context) {
 
 export async function prepareScrapingStep(context) {
   const {
-    site, dataAccess,
+    log, site, dataAccess,
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages`);
 
   const urls = topPages.map((page) => ({ url: page.getUrl() }));
   return {
@@ -297,6 +295,7 @@ export async function opportunityAndSuggestionsStep(context) {
         urlsSuggested: entry.urlsSuggested || [],
         aiRationale: entry.aiRationale || '',
         trafficDomain: entry.trafficDomain,
+        priority: entry.priority,
       },
     }),
     log,

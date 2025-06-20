@@ -10,17 +10,39 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
+import {
+  getExistingObjectKeysFromFailedAudits,
+  getRemainingUrls,
+  getExistingUrlsFromFailedAudits,
+  updateStatusToIgnored,
+} from './utils/scrape-utils.js';
+import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
+export async function processImportStep(context) {
+  const { site, finalUrl } = context;
+
+  const s3BucketPath = `scrapes/${site.getId()}/`;
+
+  return {
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: s3BucketPath,
+    type: 'top-pages',
+    siteId: site.getId(),
+    allowCache: true,
+  };
+}
+
 // First step: sends a message to the content scraper to generate accessibility audits
 export async function scrapeAccessibilityData(context) {
   const {
-    site, log, finalUrl, env, s3Client,
+    site, log, finalUrl, env, s3Client, dataAccess,
   } = context;
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -34,7 +56,44 @@ export async function scrapeAccessibilityData(context) {
   }
   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
-  const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
+  let urlsToScrape = [];
+  urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
+
+  if (urlsToScrape.length === 0) {
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    log.info(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
+    if (!isNonEmptyArray(topPages)) {
+      log.info('[A11yAudit] No top pages found, skipping audit');
+      return {
+        status: 'NO_OPPORTUNITIES',
+        message: 'No top pages found, skipping audit',
+      };
+    }
+
+    urlsToScrape = topPages
+      .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
+      .sort((a, b) => b.traffic - a.traffic)
+      .slice(0, 100);
+    log.info(`[A11yAudit] Top 100 pages: ${JSON.stringify(urlsToScrape, null, 2)}`);
+  }
+
+  const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
+    s3Client,
+    bucketName,
+    siteId,
+    log,
+  );
+  log.info(`[A11yAudit] Found existing files from failed audits: ${existingObjectKeys}`);
+  const existingUrls = await getExistingUrlsFromFailedAudits(
+    s3Client,
+    bucketName,
+    log,
+    existingObjectKeys,
+  );
+  log.info(`[A11yAudit] Found existing URLs from failed audits: ${existingUrls}`);
+  const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
+  log.info(`[A11yAudit] Remaining URLs to scrape: ${JSON.stringify(remainingUrls, null, 2)}`);
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
@@ -42,11 +101,11 @@ export async function scrapeAccessibilityData(context) {
     auditResult: {
       status: 'SCRAPING_REQUESTED',
       message: 'Content scraping for accessibility audit initiated.',
-      scrapedUrls: urlsToScrape,
+      scrapedUrls: remainingUrls,
     },
     fullAuditRef: finalUrl,
     // Data for the CONTENT_SCRAPER
-    urls: urlsToScrape,
+    urls: remainingUrls,
     siteId,
     jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
@@ -56,7 +115,7 @@ export async function scrapeAccessibilityData(context) {
 // Second step: gets data from the first step and processes it to create new opportunities
 export async function processAccessibilityOpportunities(context) {
   const {
-    site, log, s3Client, env,
+    site, log, s3Client, env, dataAccess,
   } = context;
   const siteId = site.getId();
   const version = new Date().toISOString().split('T')[0];
@@ -102,6 +161,9 @@ export async function processAccessibilityOpportunities(context) {
     };
   }
 
+  // change status to IGNORED for older opportunities
+  await updateStatusToIgnored(dataAccess, siteId, log);
+
   try {
     await generateReportOpportunities(
       site,
@@ -117,12 +179,29 @@ export async function processAccessibilityOpportunities(context) {
     };
   }
 
-  // Extract some key metrics for the audit result
+  // Step 2c: Create individual opportunities (URL-specific accessibility issues)
+  try {
+    await createAccessibilityIndividualOpportunities(
+      aggregationResult.finalResultFiles.current,
+      context,
+    );
+    log.debug('[A11yAudit] Individual opportunities created successfully');
+  } catch (error) {
+    log.error(`[A11yAudit] Error creating individual opportunities: ${error.message}`, error);
+    return {
+      status: 'PROCESSING_FAILED',
+      error: error.message,
+    };
+  }
+
+  // Extract key metrics for the audit result summary
   const totalIssues = aggregationResult.finalResultFiles.current.overall.violations.total;
-  // -1 for the overall key
+  // Subtract 1 for the 'overall' key to get actual URL count
   const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
 
-  // Return the final result
+  log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} URLs`);
+
+  // Return the final audit result with metrics and status
   return {
     status: totalIssues > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
     opportunitiesFound: totalIssues,
@@ -133,6 +212,7 @@ export async function processAccessibilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
+  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   // First step: Prepare and send data to CONTENT_SCRAPER
   .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   // Second step: Process the scraped data to find opportunities

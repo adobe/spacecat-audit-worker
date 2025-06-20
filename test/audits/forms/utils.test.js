@@ -162,6 +162,18 @@ describe('getUrlsDataForAccessibilityAudit', () => {
     ]);
   });
 
+  it('should return empty', () => {
+    const scrapedData = {
+      formData: [
+        {
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+        },
+      ],
+    };
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    expect(urlsData).to.deep.equal([]);
+  });
+
   it('should return unique form sources', () => {
     const scrapedData = {
       formData: [
@@ -286,35 +298,6 @@ describe('calculateProjectedConversionValue', () => {
     };
 
     const result = await calculateProjectedConversionValue(context, siteId, opportunityData);
-    expect(result.projectedConversionValue).to.equal(10800.35);
-  });
-
-  it('should calculate projected conversion value with conversion rate 0', async () => {
-    const siteId = 'test-site-id';
-    const opportunityData = {
-      pageViews: 1000,
-      metrics: [
-        {
-          type: 'conversionRate',
-          device: '*',
-          value: {
-            page: 0.00,
-          },
-        },
-      ],
-    };
-
-    const result = await calculateProjectedConversionValue(context, siteId, opportunityData);
-    expect(result.projectedConversionValue).to.equal(0);
-  });
-
-  it('should calculate projected conversion value with conversion rate undefined', async () => {
-    const siteId = 'test-site-id';
-    const opportunityData = {
-      pageViews: 1000,
-    };
-
-    const result = await calculateProjectedConversionValue(context, siteId, opportunityData);
-    expect(result.projectedConversionValue).to.equal(0);
+    expect(result.projectedConversionValue).to.equal(12960.42);
   });
 });
