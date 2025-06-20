@@ -170,11 +170,8 @@ describe('LHS Audit', () => {
 
   describe('CSP post-processor', () => {
     const siteUrl = 'https://adobe.com/';
-    const cspSite = {
-      ...site,
-      getDeliveryType: () => 'aem_edge',
-    };
 
+    let cspSite;
     let auditData;
     let opportunityStub;
     let cspOpportunity;
@@ -185,17 +182,28 @@ describe('LHS Audit', () => {
         .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile&serviceId=some-site-id')
         .reply(200, psiResult);
 
+      cspSite = {
+        ...site,
+        getDeliveryType: () => 'aem_edge',
+      };
+
       auditData = await mobileAuditRunner(siteUrl, context, cspSite);
       assertAuditData(auditData);
 
-      auditData.auditResult.csp = [
-        {
-          severity: 'High',
-          description: 'No CSP found in enforcement mode',
+      auditData = {
+        ...auditData,
+        siteId: 'test-site-id',
+        auditId: 'test-audit-id',
+        auditResult: {
+          ...auditData.auditResult,
+          csp: [
+            {
+              severity: 'High',
+              description: 'No CSP found in enforcement mode',
+            },
+          ],
         },
-      ];
-      auditData.siteId = 'test-site-id';
-      auditData.auditId = 'test-audit-id';
+      };
 
       opportunityStub = {
         allBySiteIdAndStatus: sinon.stub().resolves([]),
@@ -436,6 +444,23 @@ describe('LHS Audit', () => {
         },
       ];
       cspSite.getDeliveryType = () => 'other';
+
+      const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+      assertAuditData(cspAuditData);
+
+      expect(opportunityStub.create).to.not.have.been.called;
+      expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+    });
+
+    it('should not extract opportunity if audit failed', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      auditData.auditResult.csp = [
+        {
+          severity: 'High',
+          description: 'No CSP found in enforcement mode',
+        },
+      ];
+      auditData.auditResult.success = false;
 
       const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
       assertAuditData(cspAuditData);

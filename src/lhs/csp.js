@@ -54,6 +54,11 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   const { dataAccess, log } = context;
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Classifying CSP suggestions for ${JSON.stringify(auditData)}`);
 
+  if (auditData.auditResult.success === false) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
+    return { ...auditData };
+  }
+
   // this opportunity is only relevant for aem_edge delivery type at the moment
   if (site.getDeliveryType() !== 'aem_edge') {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping CSP opportunity as it is of delivery type ${site.getDeliveryType()}`);
