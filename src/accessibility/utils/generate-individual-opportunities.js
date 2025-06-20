@@ -258,6 +258,62 @@ export async function createIndividualOpportunitySuggestions(
       }),
       log,
     });
+
+    // Fetch the latest suggestions to send to Mistique
+    const suggestions = await opportunity.getSuggestions();
+    const { sqs, env } = context;
+    const siteId = opportunity.getSiteId
+      ? opportunity.getSiteId()
+      : (context.site && context.site.getId && context.site.getId());
+    const auditId = opportunity.getAuditId
+      ? opportunity.getAuditId()
+      : (context.auditId || (context.audit && context.audit.getId && context.audit.getId()));
+    const deliveryType = (context.site && context.site.getDeliveryType && context.site.getDeliveryType()) || 'aem_edge';
+
+    // Send SQS messages one by one for each issue in each suggestion
+    for (const suggestion of suggestions) {
+      const suggestionData = suggestion.getData();
+      if (suggestionData.issues && Array.isArray(suggestionData.issues)) {
+        for (const issue of suggestionData.issues) {
+          const faultyLine = Array.isArray(issue.htmlWithIssues) && issue.htmlWithIssues.length > 0
+            ? issue.htmlWithIssues[0]
+            : '';
+          const targetSelector = issue.targetSelector || '';
+          const message = {
+            type: 'guidance:accessibility-remediation',
+            siteId: siteId || '',
+            auditId: auditId || '',
+            deliveryType,
+            time: new Date().toISOString(),
+            data: {
+              url: suggestionData.url,
+              opportunityId: opportunity.getId(),
+              suggestionId: suggestion.getId ? suggestion.getId() : undefined,
+              issue_name: issue.type || '',
+              faulty_line: faultyLine,
+              target_selector: targetSelector,
+            },
+          };
+
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+            log.info(
+              `[A11yIndividual] Sent message to Mistique for suggestion ${
+                suggestion.getId ? suggestion.getId() : ''
+              } and issue ${issue.type || ''}`,
+            );
+          } catch (error) {
+            log.error(
+              `[A11yIndividual] Failed to send message to Mistique for suggestion ${
+                suggestion.getId ? suggestion.getId() : ''
+              } and issue ${issue.type || ''}: ${error.message}`,
+            );
+          }
+        }
+      }
+    }
+
     return { success: true };
   } catch (e) {
     log.error(`Failed to create suggestions for opportunity ${opportunity.getId()}: ${e.message}`);
