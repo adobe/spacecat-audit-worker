@@ -1,3 +1,24 @@
+# [1.111.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.110.3...v1.111.0) (2025-06-20)
+
+
+### Features
+
+* add shared hits by page sheet ([#989](https://github.com/adobe/spacecat-audit-worker/issues/989)) ([85af260](https://github.com/adobe/spacecat-audit-worker/commit/85af260cc524724829cd1a4a94b8aa4bb1cda2d7))
+
+## [1.110.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.110.2...v1.110.3) (2025-06-20)
+
+
+### Bug Fixes
+
+* enhance sitemap batching performance ([#973](https://github.com/adobe/spacecat-audit-worker/issues/973)) ([c371069](https://github.com/adobe/spacecat-audit-worker/commit/c3710691cd2db5bd4b6c20cd4ad55e10c755fbe4))
+
+## [1.110.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.110.1...v1.110.2) (2025-06-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.28.0 ([#983](https://github.com/adobe/spacecat-audit-worker/issues/983)) ([65397ab](https://github.com/adobe/spacecat-audit-worker/commit/65397ab63928d4f9d089243e4bb7c57750e69938))
+
 ## [1.110.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.110.0...v1.110.1) (2025-06-19)
 
 
