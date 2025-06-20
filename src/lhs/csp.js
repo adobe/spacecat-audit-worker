@@ -85,6 +85,13 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   */
   csp = csp.filter((item) => !item.description?.includes('backward compatible'));
 
+  csp.forEach((item) => {
+    if (item.description && item.description.includes('nonces or hashes')) {
+      // eslint-disable-next-line no-param-reassign
+      item.description = item.description.replace(/nonces or hashes/g, 'nonces').trim();
+    }
+  });
+
   if (!csp.length) {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No CSP information found for ${site.getId()}`);
     return { ...auditData };
