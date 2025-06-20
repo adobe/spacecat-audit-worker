@@ -327,27 +327,22 @@ describe('Scrape Utils', () => {
       const opportunities = [
         {
           getType: () => 'generic-opportunity',
-          getTags: () => ['a11y'],
           getTitle: () => 'Accessibility report - Desktop',
         },
         {
-          getType: () => 'generic-opportunity',
-          getTags: () => ['a11y'],
+          getType: () => 'generic-opportunity2',
           getTitle: () => 'Accessibility report - Desktop',
         },
         {
           getType: () => 'other-type',
-          getTags: () => ['a11y'],
           getTitle: () => 'Accessibility report - Desktop',
         },
         {
           getType: () => 'generic-opportunity',
-          getTags: () => ['other-tag'],
           getTitle: () => 'Accessibility report - Desktop',
         },
         {
           getType: () => 'generic-opportunity',
-          getTags: () => ['a11y'],
           getTitle: () => 'Other title',
         },
       ];
@@ -356,7 +351,6 @@ describe('Scrape Utils', () => {
 
       expect(filtered).to.have.lengthOf(2);
       expect(filtered[0].getType()).to.equal('generic-opportunity');
-      expect(filtered[0].getTags()).to.include('a11y');
       expect(filtered[0].getTitle()).to.include('Accessibility report - Desktop');
     });
 
@@ -364,12 +358,10 @@ describe('Scrape Utils', () => {
       const opportunities = [
         {
           getType: () => 'other-type',
-          getTags: () => ['a11y'],
           getTitle: () => 'Accessibility report - Desktop',
         },
         {
-          getType: () => 'generic-opportunity',
-          getTags: () => ['a11y-other-tag'],
+          getType: () => 'generic-opportuni',
           getTitle: () => 'Accessibility report - Desktop',
         },
       ];
@@ -396,7 +388,6 @@ describe('Scrape Utils', () => {
 
       mockOpportunity = {
         getType: sandbox.stub().returns('generic-opportunity'),
-        getTags: sandbox.stub().returns(['a11y']),
         getTitle: sandbox.stub().returns('Accessibility report - Desktop'),
         setStatus: sandbox.stub(),
         save: sandbox.stub().resolves(),
@@ -444,7 +435,6 @@ describe('Scrape Utils', () => {
       // Create a mock opportunity that doesn't match the filtering criteria
       const nonMatchingOpportunity = {
         getType: sandbox.stub().returns('other-type'), // Different type
-        getTags: sandbox.stub().returns(['a11y']),
         getTitle: sandbox.stub().returns('Accessibility report - Desktop'),
         setStatus: sandbox.stub(),
         save: sandbox.stub().resolves(),

@@ -16,11 +16,6 @@
         ]
       },
       {
-        "name": "links",
-        "type": "seo",
-        "opportunities": []
-      },
-      {
         "name": "metatags",
         "type": "seo",
         "opportunities": [
@@ -63,6 +58,11 @@
             "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
           }
         ]
+      },
+      {
+        "name": "links",
+        "type": "seo",
+        "opportunities": []
       }
     ]
   }

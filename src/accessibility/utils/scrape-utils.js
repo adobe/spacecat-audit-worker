@@ -106,7 +106,6 @@ export function getRemainingUrls(urlsToScrape, existingUrls) {
  */
 export function filterAccessibilityOpportunities(opportunities) {
   return opportunities.filter((oppty) => oppty.getType() === 'generic-opportunity'
-    && oppty.getTags().includes('a11y')
     && oppty.getTitle().includes('Accessibility report - Desktop'));
 }
 
