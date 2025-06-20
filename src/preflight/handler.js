@@ -329,6 +329,18 @@ export const preflightAudit = async (context) => {
         pageResult.audits.push({ name: AUDIT_LINKS, type: 'seo', opportunities: [] });
       });
 
+      // Pre-index AUDIT_LINKS audits for O(1) lookups
+      const linksAuditMap = new Map();
+      normalizedUrls.forEach((url) => {
+        const pageResult = resultMap.get(url);
+        if (pageResult) {
+          const linksAudit = pageResult.audits.find((a) => a.name === AUDIT_LINKS);
+          if (linksAudit) {
+            linksAuditMap.set(url, linksAudit);
+          }
+        }
+      });
+
       // Internal link checks
       const internalLinksStartTime = Date.now();
       const internalLinksStartTimestamp = new Date().toISOString();
@@ -351,7 +363,7 @@ export const preflightAudit = async (context) => {
           brokenInternalLinks.forEach(({
             urlTo, href, status, urlsSuggested, aiRationale,
           }) => {
-            const audit = resultMap.get(href).audits.find((a) => a.name === AUDIT_LINKS);
+            const audit = linksAuditMap.get(href);
             const aiUrls = urlsSuggested?.map((url) => (baseURLOrigin + new URL(url).pathname.replace(/\/$/, '')));
             audit.opportunities.push({
               check: 'broken-internal-links',
@@ -367,7 +379,7 @@ export const preflightAudit = async (context) => {
           });
         } else {
           auditResult.brokenInternalLinks.forEach(({ urlTo, href, status }) => {
-            const audit = resultMap.get(href).audits.find((a) => a.name === AUDIT_LINKS);
+            const audit = linksAuditMap.get(href);
             audit.opportunities.push({
               check: 'broken-internal-links',
               issue: {
@@ -397,8 +409,7 @@ export const preflightAudit = async (context) => {
       scrapedObjects.forEach(({ data }) => {
         const { finalUrl, scrapeResult: { rawBody } } = data;
         const doc = new JSDOM(rawBody).window.document;
-        const audit = resultMap.get(finalUrl).audits.find((a) => a.name === AUDIT_LINKS);
-
+        const audit = linksAuditMap.get(finalUrl);
         const insecureLinks = Array.from(doc.querySelectorAll('a'))
           .filter((anchor) => anchor.href.startsWith('http://'))
           .map((anchor) => ({
