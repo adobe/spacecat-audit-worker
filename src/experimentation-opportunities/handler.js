@@ -17,7 +17,7 @@ import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-const DAYS = 7;
+const DAYS = 120;
 
 const HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE = 'high-organic-low-ctr';
 const RAGECLICK_OPPTY_TYPE = 'rageclick';
