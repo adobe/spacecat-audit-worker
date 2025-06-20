@@ -1,3 +1,10 @@
+## [1.110.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.110.2...v1.110.3) (2025-06-20)
+
+
+### Bug Fixes
+
+* enhance sitemap batching performance ([#973](https://github.com/adobe/spacecat-audit-worker/issues/973)) ([c371069](https://github.com/adobe/spacecat-audit-worker/commit/c3710691cd2db5bd4b6c20cd4ad55e10c755fbe4))
+
 ## [1.110.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.110.1...v1.110.2) (2025-06-20)
 
 
