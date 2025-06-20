@@ -1,3 +1,10 @@
+# [1.111.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.110.3...v1.111.0) (2025-06-20)
+
+
+### Features
+
+* add shared hits by page sheet ([#989](https://github.com/adobe/spacecat-audit-worker/issues/989)) ([85af260](https://github.com/adobe/spacecat-audit-worker/commit/85af260cc524724829cd1a4a94b8aa4bb1cda2d7))
+
 ## [1.110.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.110.2...v1.110.3) (2025-06-20)
 
 
