@@ -79,6 +79,12 @@ async function collectReportData(
       provider,
       site,
     ),
+    top_urls: await weeklyBreakdownQueries.createTopUrls(
+      periods,
+      databaseName,
+      tableName,
+      provider,
+    ),
   };
 
   for (const [key, query] of Object.entries(queries)) {

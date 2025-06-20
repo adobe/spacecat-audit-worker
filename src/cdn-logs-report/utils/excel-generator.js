@@ -174,6 +174,15 @@ const SHEET_CONFIGS = {
       return Array.from(urlCountMap.entries()).sort((a, b) => b[1] - a[1]);
     },
   },
+  topUrls: {
+    getHeaders: (periods) => ['URL', ...periods.columns],
+    headerColor: SHEET_COLORS.DEFAULT,
+    numberColumns: [2],
+    processData: (data) => data?.map((row) => [
+      row.url || '',
+      Number(row.total_requests) || 0,
+    ]) || [],
+  },
 };
 
 function getSheetConfig(type, periods) {
@@ -250,6 +259,7 @@ export async function createCDNLogsExcelReport(reportData, options = {}) {
     { name: 'shared-top_bottom_5_by_status', data: reportData.top_bottom_urls_by_status, type: 'topBottom' },
     { name: 'shared-404_all_urls', data: reportData.error_404_urls, type: 'error404' },
     { name: 'shared-503_all_urls', data: reportData.error_503_urls, type: 'error503' },
+    { name: 'shared-hits_by_page', data: reportData.top_urls, type: 'topUrls' },
   ];
 
   if (isBulkCom) {
