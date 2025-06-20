@@ -1,3 +1,10 @@
+# [1.112.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.111.1...v1.112.0) (2025-06-20)
+
+
+### Features
+
+* introduce auto-suggest for preflight internal links ([#936](https://github.com/adobe/spacecat-audit-worker/issues/936)) ([63b4cd5](https://github.com/adobe/spacecat-audit-worker/commit/63b4cd5da3c5ddb656cb74476c57d6bd6e65e797))
+
 ## [1.111.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.111.0...v1.111.1) (2025-06-20)
 
 
