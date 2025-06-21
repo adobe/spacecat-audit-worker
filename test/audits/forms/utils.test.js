@@ -227,6 +227,12 @@ describe('getUrlsDataForAccessibilityAudit', () => {
           classList: 'test-class-2 test-class-3',
         }],
       }, {
+        finalUrl: 'https://www.business.adobe.com/c',
+        scrapeResult: [{
+          id: 'test-id',
+          classList: 'test-class',
+        }],
+      }, {
         finalUrl: 'https://www.business.adobe.com/b',
         scrapeResult: [{
           id: '',

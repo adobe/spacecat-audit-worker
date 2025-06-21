@@ -404,6 +404,8 @@ export function getUrlsDataForAccessibilityAudit(scrapedData, formVitals, contex
             if (!addedFormSources.has(`form#${sr.id}`)) {
               formSources.push(`form#${sr.id}`);
               addedFormSources.add(`form#${sr.id}`);
+            } else {
+              isFormSourceAlreadyAdded = true;
             }
           } else if (sr.classList) {
             formSources.push(`form.${sr.classList.split(' ').join('.')}`);
