@@ -140,6 +140,20 @@ describe('isSearchForm', () => {
 
 describe('getUrlsDataForAccessibilityAudit', () => {
   const context = { log: { debug: () => {} } };
+  const formVitals = [
+    {
+      url: 'https://www.business.adobe.com/newsletter',
+      pageview: { desktop: 100, mobile: 100 },
+    },
+    {
+      url: 'https://www.business.adobe.com/search',
+      pageview: { desktop: 200, mobile: 200 },
+    },
+    {
+      url: 'https://www.business.adobe.com/subscribe',
+      pageview: { desktop: 300, mobile: 300 },
+    },
+  ];
   it('should return urls for accessibility audit', () => {
     const scrapedData = {
       formData: [
@@ -153,7 +167,7 @@ describe('getUrlsDataForAccessibilityAudit', () => {
         },
       ],
     };
-    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context);
     expect(urlsData).to.deep.equal([
       {
         url: 'https://www.business.adobe.com/newsletter',
@@ -170,7 +184,7 @@ describe('getUrlsDataForAccessibilityAudit', () => {
         },
       ],
     };
-    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context);
     expect(urlsData).to.deep.equal([]);
   });
 
@@ -192,10 +206,10 @@ describe('getUrlsDataForAccessibilityAudit', () => {
         },
       ],
     };
-    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context);
     expect(urlsData).to.deep.equal([
       {
-        url: 'https://www.business.adobe.com/newsletter',
+        url: 'https://www.business.adobe.com/subscribe',
         formSources: ['#container-1 form#newsletter'],
       },
     ]);
@@ -220,7 +234,7 @@ describe('getUrlsDataForAccessibilityAudit', () => {
         }],
       }],
     };
-    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context);
     expect(urlsData).to.deep.equal([
       {
         url: 'https://www.business.adobe.com/a',
