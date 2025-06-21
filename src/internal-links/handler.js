@@ -11,19 +11,26 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import {
+  Audit,
+  Site,
+  Opportunity as Oppty,
+  Suggestion as SuggestionDataAccess,
+} from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { generateSuggestionData } from './suggestions-generator.js';
+import { parseBrokenLinkComments } from './html-comment-parser.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
   calculateKpiDeltasForAudit,
   isLinkInaccessible,
   calculatePriority,
 } from './helpers.js';
+import { getScrapedDataForSiteId } from '../support/utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
@@ -55,6 +62,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
     // 3. Query for 404 internal links
     const internal404Links = await rumAPIClient.query('404-internal-links', options);
+    const rumLinksCount = internal404Links.length;
 
     // 4. Check accessibility in parallel before transformation
     const accessibilityResults = await Promise.all(
@@ -64,8 +72,10 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       })),
     );
 
-    // 5. Filter only inaccessible links and transform for further processing
-    const inaccessibleLinks = accessibilityResults
+    /* ------------------------------------------------------------------ */
+    /* 5. Transform accessible results into base list                     */
+    /* ------------------------------------------------------------------ */
+    const transformedLinks = accessibilityResults
       .filter((result) => result.inaccessible)
       .map((result) => ({
         urlFrom: result.link.url_from,
@@ -73,18 +83,81 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         trafficDomain: result.link.traffic_domain,
       }));
 
-    // 6. Prioritize links
-    const prioritizedLinks = calculatePriority(inaccessibleLinks);
+    /* ------------------------------------------------------------------ */
+    /* 6.  Extract broken links from HTML comments (AEM-CS/AMS only)      */
+    /* ------------------------------------------------------------------ */
+    const { dataAccess } = context;
+    const { Configuration } = dataAccess;
+    const configuration = await Configuration.findLatest();
 
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found: ${prioritizedLinks.length} broken internal links`);
+    const htmlBrokenLinks = [];
+    /*
+     * ------------------------------------------------------------
+     *  WHY WE SCAN HTML COMMENTS (in addition to RUM data)
+     * ------------------------------------------------------------
+     * Not every broken-internal-link ends up in the RUM 404 dataset,
+     * therefore we complement the RUM source with the specialised
+     * HTML comments that authors on AEM-CS / AMS publish, e.g.
+     *
+     *   <!-- BROKEN_INTERNAL_LINK: url="/content/wknd/…1.html" … -->
+     *
+     * During the audit we therefore:
+     *   1. Fetch the stored raw HTML from the scraper (S3).
+     *   2. Parse the comments and build the broken-link list.
+     *
+     * Edge Delivery (EDS) sites do not embed these comments, so we
+     * disable this logic when the delivery type is AEM_EDGE.
+     */
+    // Only run for AEM-CS or AMS – skip Edge Delivery sites
+    const isEdge = site.getDeliveryType() === Site.DELIVERY_TYPES.AEM_EDGE;
+    if (
+      !isEdge
+      && configuration.isHandlerEnabledForSite('broken-internal-links-html-scan', site)
+    ) {
+      const scrapedData = await getScrapedDataForSiteId(site, context);
+      const { siteData } = scrapedData;
+
+      for (const page of siteData) {
+        const rawHtml = page?.scrapeResult?.rawBody;
+        const pageUrl = page?.finalUrl || page?.url;
+        if (rawHtml && pageUrl) {
+          htmlBrokenLinks.push(
+            ...parseBrokenLinkComments(rawHtml, pageUrl, log),
+          );
+        }
+      }
+    } else {
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] HTML comment scanning disabled for site`);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* ---------------- De-duplicate HTML comment links ------------------*/
+    /* ------------------------------------------------------------------ */
+    const allLinks = [...transformedLinks, ...htmlBrokenLinks];
+
+    const dedupedMap = new Map();
+    allLinks.forEach((l) => {
+      const key = `${l.urlFrom}|${l.urlTo}`;
+      if (!dedupedMap.has(key)) {
+        dedupedMap.set(key, l);
+      }
+    });
+
+    const finalLinks = calculatePriority([...dedupedMap.values()]);
 
     // 7. Build and return audit result
     return {
       auditResult: {
-        brokenInternalLinks: prioritizedLinks,
+        brokenInternalLinks: finalLinks,
         fullAuditRef: auditUrl,
         finalUrl,
-        auditContext: { interval: INTERVAL },
+        auditContext: {
+          interval: INTERVAL,
+          sources: {
+            rumDataCount: rumLinksCount,
+            htmlCommentCount: htmlBrokenLinks.length,
+          },
+        },
       },
       fullAuditRef: auditUrl,
     };
