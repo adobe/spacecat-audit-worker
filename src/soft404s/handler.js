@@ -330,6 +330,7 @@ export async function soft404sAuditRunner(context) {
     // const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
 
     log.info('audit context', audit);
+    log.info('audit.auditResult', audit.getAuditResult());
     const { urls } = audit.getAuditResult();
 
     log.info('job', job);
