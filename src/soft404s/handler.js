@@ -307,7 +307,7 @@ function getScrapeJsonPath(url, siteId) {
 
 export async function soft404sAuditRunner(context) {
   const {
-    site, log, dataAccess, baseURL, job,
+    site, log, dataAccess, baseURL, job, audit,
   } = context;
 
   const siteId = site.getId();
@@ -329,9 +329,8 @@ export async function soft404sAuditRunner(context) {
     // const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
     // const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
 
-    log.info('audit context', context);
-    const jobMetadata = job.getMetadata();
-    const { urls } = jobMetadata.payload;
+    log.info('audit context', audit);
+    const { urls } = audit.getAuditResult();
 
     log.info('job', job);
     log.info('finalUrlsToScrape', urls);

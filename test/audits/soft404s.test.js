@@ -821,13 +821,11 @@ describe('Soft404s Tests', () => {
         },
       };
 
-      // Add job context with urls that the function now expects
-      context.job = {
-        getMetadata: () => ({
-          payload: {
-            urls: ['https://example.com/page1'],
-          },
-        }),
+      // Add audit context with urls that the function expects
+      context.audit = {
+        auditResult: {
+          urls: ['https://example.com/page1'],
+        },
       };
     });
 
