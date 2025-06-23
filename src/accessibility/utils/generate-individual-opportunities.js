@@ -12,7 +12,7 @@
 
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
-import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
+import { successCriteriaLinks, accessibilityOpportunitiesMap, ISSUE_TYPES_FOR_MYSTIQUE } from './constants.js';
 import { getAuditData } from './data-processing.js';
 
 /**
@@ -270,44 +270,65 @@ export async function createIndividualOpportunitySuggestions(
       : (context.auditId || (context.audit && context.audit.getId && context.audit.getId()));
     const deliveryType = (context.site && context.site.getDeliveryType && context.site.getDeliveryType()) || 'aem_edge';
 
-    // Send SQS messages one by one for each issue in each suggestion
+    // Group issues by type for each suggestion and send one message per issue type
     for (const suggestion of suggestions) {
       const suggestionData = suggestion.getData();
       if (suggestionData.issues && Array.isArray(suggestionData.issues)) {
+        // Group issues by type
+        const issuesByType = {};
+
         for (const issue of suggestionData.issues) {
+          if (!issuesByType[issue.type]) {
+            issuesByType[issue.type] = [];
+          }
+
           const faultyLine = Array.isArray(issue.htmlWithIssues) && issue.htmlWithIssues.length > 0
             ? issue.htmlWithIssues[0]
             : '';
           const targetSelector = issue.targetSelector || '';
-          const message = {
-            type: 'guidance:accessibility-remediation',
-            siteId: siteId || '',
-            auditId: auditId || '',
-            deliveryType,
-            time: new Date().toISOString(),
-            data: {
-              url: suggestionData.url,
-              opportunityId: opportunity.getId(),
-              suggestionId: suggestion.getId ? suggestion.getId() : undefined,
-              issue_name: issue.type || '',
-              faulty_line: faultyLine,
-              target_selector: targetSelector,
-            },
-          };
 
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-            log.info(
-              `[A11yIndividual] Sent message to Mistique for suggestion ${
-                suggestion.getId ? suggestion.getId() : ''
-              } and issue ${issue.type || ''}`,
-            );
-          } catch (error) {
-            log.error(
-              `[A11yIndividual] Failed to send message to Mistique for suggestion ${
-                suggestion.getId ? suggestion.getId() : ''
-              } and issue ${issue.type || ''}: ${error.message}`,
+          issuesByType[issue.type].push({
+            issue_name: issue.type,
+            faulty_line: faultyLine,
+            target_selector: targetSelector,
+          });
+        }
+
+        // Send one message per issue type
+        for (const [issueType, issuesList] of Object.entries(issuesByType)) {
+          if (ISSUE_TYPES_FOR_MYSTIQUE.includes(issueType)) {
+            const message = {
+              type: 'guidance:accessibility-remediation',
+              siteId: siteId || '',
+              auditId: auditId || '',
+              deliveryType,
+              time: new Date().toISOString(),
+              data: {
+                url: suggestionData.url,
+                opportunity_id: opportunity.getId(),
+                suggestion_id: suggestion.getId ? suggestion.getId() : undefined,
+                issues_list: issuesList,
+              },
+            };
+
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+              log.info(
+                `[A11yIndividual] Sent message to Mistique for suggestion ${
+                  suggestion.getId ? suggestion.getId() : ''
+                } and issue type ${issueType} with ${issuesList.length} issues`,
+              );
+            } catch (error) {
+              log.error(
+                `[A11yIndividual] Failed to send message to Mistique for suggestion ${
+                  suggestion.getId ? suggestion.getId() : ''
+                } and issue type ${issueType}: ${error.message}`,
+              );
+            }
+          } else {
+            log.debug(
+              `[A11yIndividual] Skipping message for issue type ${issueType} as it's not in ISSUE_TYPES_FOR_MYSTIQUE: ${ISSUE_TYPES_FOR_MYSTIQUE.join(', ')}`,
             );
           }
         }

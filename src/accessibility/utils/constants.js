@@ -721,3 +721,10 @@ export const accessibilityOpportunitiesMap = {
     'aria-required-parent',
   ],
 };
+
+/**
+ * Accessibility issue types that should be sent to Mistique for remediation guidance
+ */
+export const ISSUE_TYPES_FOR_MYSTIQUE = [
+  'aria-allowed-attr',
+];
