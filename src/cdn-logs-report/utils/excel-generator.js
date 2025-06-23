@@ -12,7 +12,7 @@
 
 /* c8 ignore start */
 import ExcelJS from 'exceljs';
-import { generateReportingPeriods } from './report-utils.js';
+import { generateReportingPeriods, validateCountryCode } from './report-utils.js';
 
 const WEEK_KEY_TRANSFORMER = (weekLabel) => weekLabel.replace(' ', '_').toLowerCase();
 const SHEET_COLORS = {
@@ -95,9 +95,36 @@ const SHEET_CONFIGS = {
     getNumberColumns: (periods) => (
       Array.from({ length: periods.columns.length - 1 }, (_, i) => i + 1)
     ),
-    processData: (data, reportPeriods) => (
-      processWeekData(data, reportPeriods, (row) => row.country_code || 'Unknown')
-    ),
+    processData: (data, reportPeriods) => {
+      if (!data?.length) return [];
+
+      const countryMap = data.reduce((map, row) => {
+        const validatedCode = validateCountryCode(row.country_code || '');
+
+        if (!map.has(validatedCode)) {
+          const newRow = { country_code: validatedCode };
+          reportPeriods.weeks.forEach((week) => {
+            const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
+            newRow[weekKey] = 0;
+          });
+          map.set(validatedCode, newRow);
+        }
+
+        const aggregatedRow = map.get(validatedCode);
+        reportPeriods.weeks.forEach((week) => {
+          const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
+          aggregatedRow[weekKey] += Number(row[weekKey]) || 0;
+        });
+
+        return map;
+      }, new Map());
+
+      return processWeekData(
+        Array.from(countryMap.values()),
+        reportPeriods,
+        (row) => row.country_code,
+      );
+    },
   },
 
   pageType: {
