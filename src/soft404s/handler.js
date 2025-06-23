@@ -12,7 +12,6 @@
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { findSitemap } from '../sitemap/handler.js';
 import {
@@ -81,6 +80,7 @@ export async function importTopPages(context) {
 export async function submitForScraping(context) {
   const { site, log } = context;
 
+  log.info(`Submitting for scraping for site ${site.getId()}`);
   // Get the base URL for the site
   const baseURL = site.getBaseURL();
 
@@ -118,12 +118,14 @@ export async function submitForScraping(context) {
       + `Final URLs to scrape after removing duplicates: ${finalUrls.length}`,
   );
 
+  log.info(`Final URLs to scrape: ${finalUrls}`);
+
   return {
-    urls: finalUrls.map((url) => ({ url })),
+    urls: finalUrls.map((url) => ({ url })).slice(0, 2000),
     siteId: site.getId(),
     type: 'soft-404s',
     fullAuditRef: baseURL,
-    auditResult: { finalUrlsToScrape: finalUrls },
+    auditResult: { status: 'preparing', finalUrlsToScrape: finalUrls },
     url: baseURL,
   };
 }
@@ -305,7 +307,7 @@ function getScrapeJsonPath(url, siteId) {
 
 export async function soft404sAuditRunner(context) {
   const {
-    site, log, dataAccess, baseURL,
+    site, log, dataAccess, baseURL, audit,
   } = context;
 
   const siteId = site.getId();
@@ -314,21 +316,25 @@ export async function soft404sAuditRunner(context) {
 
   try {
     // Get top pages for a site
-    const topPages = await getTopPagesForSiteId(
-      dataAccess,
-      siteId,
-      context,
-      log,
-    );
-    const includedURLs = (await site?.getConfig())?.getIncludedURLs('soft-404s') || [];
+    // const topPages = await getTopPagesForSiteId(
+    //   dataAccess,
+    //   siteId,
+    //   context,
+    //   log,
+    // );
+    // const includedURLs = (await site?.getConfig())?.getIncludedURLs('soft-404s') || [];
 
-    // Transform URLs into scrape.json paths and combine them into a Set
-    const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, siteId));
-    const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
-    const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
+    // // Transform URLs into scrape.json paths and combine them into a Set
+    // const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, siteId));
+    // const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
+    // const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
+
+    const { finalUrlsToScrape } = audit.auditResult;
+
+    const totalPagesSet = new Set(finalUrlsToScrape.map((url) => getScrapeJsonPath(url, siteId)));
 
     log.info(
-      `Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`,
+      `Received finalUrlsToScrape: ${finalUrlsToScrape.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`,
     );
 
     const soft404Results = await soft404sAutoDetect(
