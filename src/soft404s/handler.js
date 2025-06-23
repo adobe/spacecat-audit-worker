@@ -121,7 +121,7 @@ export async function submitForScraping(context) {
   log.info(`Final URLs to scrape: ${finalUrls}`);
 
   return {
-    urls: finalUrls.map((url) => ({ url })).slice(0, 200),
+    urls: finalUrls.map((url) => ({ url })).slice(0, 20),
     siteId: site.getId(),
     type: 'soft-404s',
     fullAuditRef: baseURL,
@@ -307,7 +307,7 @@ function getScrapeJsonPath(url, siteId) {
 
 export async function soft404sAuditRunner(context) {
   const {
-    site, log, dataAccess, baseURL, audit,
+    site, log, dataAccess, baseURL, job,
   } = context;
 
   const siteId = site.getId();
@@ -329,12 +329,17 @@ export async function soft404sAuditRunner(context) {
     // const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
     // const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
 
-    const { finalUrlsToScrape } = audit.auditResult;
+    log.info('audit context', context);
+    const jobMetadata = job.getMetadata();
+    const { urls } = jobMetadata.payload;
 
-    const totalPagesSet = new Set(finalUrlsToScrape.map((url) => getScrapeJsonPath(url, siteId)));
+    log.info('job', job);
+    log.info('finalUrlsToScrape', urls);
+
+    const totalPagesSet = new Set(urls.map((url) => getScrapeJsonPath(url, siteId)));
 
     log.info(
-      `Received finalUrlsToScrape: ${finalUrlsToScrape.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`,
+      `Received finalUrlsToScrape: ${urls.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`,
     );
 
     const soft404Results = await soft404sAutoDetect(
