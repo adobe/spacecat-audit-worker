@@ -820,14 +820,15 @@ describe('Soft404s Tests', () => {
             .resolves([{ getUrl: () => 'https://example.com/page1' }]),
         },
       };
+      // Add audit context with finalUrlsToScrape that the function now expects
+      context.audit = {
+        auditResult: {
+          finalUrlsToScrape: ['https://example.com/page1'],
+        },
+      };
     });
 
     it('should run audit successfully', async () => {
-      // Set up the data access for getTopPagesForSiteId (mocking the import from canonical handler)
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
-        { getUrl: () => 'https://example.com/page1' },
-      ]);
-
       // Mock AuditDataAccess.create
       context.dataAccess.Audit = {
         create: sinon.stub().resolves(),
@@ -845,9 +846,8 @@ describe('Soft404s Tests', () => {
     });
 
     it('should handle audit errors gracefully', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(
-        new Error('Database error'),
-      );
+      // Mock S3 error to trigger the catch block
+      s3ClientStub.send.rejects(new Error('Database error'));
 
       const result = await soft404sAuditRunner(context);
 
@@ -857,10 +857,6 @@ describe('Soft404s Tests', () => {
     });
 
     it('should handle S3 connection errors', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
-        { getUrl: () => 'https://example.com/page1' },
-      ]);
-
       // Mock S3 error
       s3ClientStub.send.rejects(new Error('S3 connection failed'));
 
@@ -871,10 +867,6 @@ describe('Soft404s Tests', () => {
     });
 
     it('should handle site with no getConfig method', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
-        { getUrl: () => 'https://example.com/page1' },
-      ]);
-
       // Override site to have getConfig method that returns null
       site.getConfig = sinon.stub().resolves(null);
 
