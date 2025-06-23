@@ -26,6 +26,7 @@ import {
   calculateAccessibilityMetrics,
 } from '../../../src/accessibility/utils/generate-individual-opportunities.js';
 import * as constants from '../../../src/accessibility/utils/constants.js';
+import * as generateIndividualOpportunitiesModule from '../../../src/accessibility/utils/generate-individual-opportunities.js';
 
 const { expect } = chai;
 
@@ -482,6 +483,8 @@ describe('createIndividualOpportunity', () => {
     sandbox = sinon.createSandbox();
     mockOpportunity = {
       getId: sandbox.stub().returns('test-id'),
+      getSiteId: sandbox.stub().returns('test-site'),
+      getAuditId: sandbox.stub().returns('test-audit'),
     };
     mockContext = {
       log: {
@@ -565,11 +568,18 @@ describe('createIndividualOpportunitySuggestions', () => {
     sandbox = sinon.createSandbox();
     mockOpportunity = {
       getId: sandbox.stub().returns('test-id'),
+      getSiteId: sandbox.stub().returns('test-site'),
+      getAuditId: sandbox.stub().returns('test-audit'),
       getSuggestions: sandbox.stub().resolves([]),
-      addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
     };
     mockContext = {
+      site: {
+        getId: sandbox.stub().returns('test-site'),
+        getDeliveryType: sandbox.stub().returns('aem_edge'),
+      },
+      auditId: 'test-audit',
       log: {
+        info: sandbox.stub(),
         debug: sandbox.stub(),
         error: sandbox.stub(),
       },
@@ -577,6 +587,12 @@ describe('createIndividualOpportunitySuggestions', () => {
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
         },
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
 
@@ -586,6 +602,28 @@ describe('createIndividualOpportunitySuggestions', () => {
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/utils/data-access.js': {
         syncSuggestions: mockSyncSuggestions,
+      },
+      '../../../src/accessibility/guidance-utils/mistique-data-processing.js': {
+        processSuggestionsForMistique: sandbox.stub().returns([
+          {
+            suggestion: {},
+            suggestionData: {},
+            issueType: 'type1',
+            issuesList: [1],
+          },
+          {
+            suggestion: {},
+            suggestionData: {},
+            issueType: 'type2',
+            issuesList: [2],
+          },
+          {
+            suggestion: {},
+            suggestionData: {},
+            issueType: 'type3',
+            issuesList: [3],
+          },
+        ]),
       },
     });
     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
@@ -881,6 +919,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
     };
     mockOpportunity = {
       getId: sandbox.stub().returns('test-id'),
+      getSiteId: sandbox.stub().returns('test-site'),
+      getAuditId: sandbox.stub().returns('test-audit'),
+      getSuggestions: sandbox.stub().resolves([]),
     };
     mockContext = {
       site: mockSite,
@@ -894,6 +935,12 @@ describe('createAccessibilityIndividualOpportunities', () => {
           create: sandbox.stub().resolves(mockOpportunity),
           allBySiteId: sandbox.stub().resolves([]),
         },
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
 
@@ -937,6 +984,28 @@ describe('createAccessibilityIndividualOpportunities', () => {
       '../../../src/utils/data-access.js': {
         syncSuggestions: mockSyncSuggestions,
       },
+      '../../../src/accessibility/guidance-utils/mistique-data-processing.js': {
+        processSuggestionsForMistique: sandbox.stub().returns([
+          {
+            suggestion: {},
+            suggestionData: {},
+            issueType: 'type1',
+            issuesList: [1],
+          },
+          {
+            suggestion: {},
+            suggestionData: {},
+            issueType: 'type2',
+            issuesList: [2],
+          },
+          {
+            suggestion: {},
+            suggestionData: {},
+            issueType: 'type3',
+            issuesList: [3],
+          },
+        ]),
+      },
     });
     createAccessibilityIndividualOpportunities = module.createAccessibilityIndividualOpportunities;
   });
@@ -967,7 +1036,10 @@ describe('createAccessibilityIndividualOpportunities', () => {
       mockContext,
     );
 
-    expect(result.opportunities).to.exist;
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
     expect(result.opportunities).to.have.lengthOf(1);
     expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
     expect(result.opportunities[0].opportunityType).to.equal('a11y-assistive');
@@ -1118,6 +1190,10 @@ describe('createAccessibilityIndividualOpportunities', () => {
       mockContext,
     );
 
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
     expect(result.opportunities).to.have.lengthOf(1);
     expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
     expect(result.opportunities[0].suggestionsCount).to.equal(2);
@@ -1313,6 +1389,10 @@ describe('createAccessibilityIndividualOpportunities', () => {
       mockContext,
     );
 
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
     expect(result.opportunities).to.have.lengthOf(1);
     expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
     expect(result.opportunities[0].suggestionsCount).to.equal(1);
@@ -1341,6 +1421,10 @@ describe('createAccessibilityIndividualOpportunities', () => {
       mockContext,
     );
 
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
     expect(result.opportunities).to.have.lengthOf(1);
     expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
   });
@@ -1367,6 +1451,10 @@ describe('createAccessibilityIndividualOpportunities', () => {
       mockContext,
     );
 
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
     expect(result.opportunities).to.have.lengthOf(1);
     expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
   });
@@ -1393,6 +1481,10 @@ describe('createAccessibilityIndividualOpportunities', () => {
       mockContext,
     );
 
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
     expect(result.opportunities).to.have.lengthOf(1);
     expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
   });
@@ -1418,6 +1510,10 @@ describe('createAccessibilityIndividualOpportunities', () => {
       mockContext,
     );
 
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
     expect(result.opportunities).to.have.lengthOf(1);
     expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
   });
@@ -1443,6 +1539,10 @@ describe('createAccessibilityIndividualOpportunities', () => {
       mockContext,
     );
 
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
     expect(result.opportunities).to.have.lengthOf(1);
     expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
   });
@@ -1496,6 +1596,341 @@ describe('createAccessibilityIndividualOpportunities', () => {
     expect(result.error).to.include('No opportunity creator found for type: a11y-unknown');
     expect(mockContext.log.error).to.have.been.calledWith(
       sinon.match.string,
+    );
+  });
+});
+
+describe('createMistiqueMessage', () => {
+  it('should create a message object with all required fields', () => {
+    const fakeOpportunity = { getId: () => 'oppty-123' };
+    const suggestionData = { url: 'https://example.com', suggestionId: 'sugg-456' };
+    const issuesList = [{ type: 'color-contrast', description: 'desc' }];
+    const siteId = 'site-789';
+    const auditId = 'audit-101';
+    const deliveryType = 'aem_edge';
+    const result = generateIndividualOpportunitiesModule.createMistiqueMessage({
+      suggestionData,
+      issuesList,
+      opportunity: fakeOpportunity,
+      siteId,
+      auditId,
+      deliveryType,
+    });
+    expect(result).to.include({
+      type: 'guidance:accessibility-remediation',
+      siteId,
+      auditId,
+      deliveryType,
+    });
+    expect(result.data).to.deep.equal({
+      url: 'https://example.com',
+      opportunity_id: 'oppty-123',
+      suggestion_id: 'sugg-456',
+      issues_list: issuesList,
+    });
+    expect(result.time).to.be.a('string');
+  });
+
+  it('should default siteId and auditId to empty string if not provided', () => {
+    const fakeOpportunity = { getId: () => 'oppty-123' };
+    const suggestionData = { url: 'https://example.com', suggestionId: 'sugg-456' };
+    const issuesList = [];
+    const result = generateIndividualOpportunitiesModule.createMistiqueMessage({
+      suggestionData,
+      issuesList,
+      opportunity: fakeOpportunity,
+      siteId: undefined,
+      auditId: undefined,
+      deliveryType: 'aem_edge',
+    });
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
+  });
+});
+
+describe('sendMistiqueMessage', () => {
+  let sandbox;
+  let fakeSqs;
+  let fakeEnv;
+  let fakeLog;
+  let fakeSuggestion;
+  let fakeOpportunity;
+  let fakeSuggestionData;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    fakeSqs = { sendMessage: sandbox.stub().resolves() };
+    fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+    fakeLog = { info: sandbox.stub(), error: sandbox.stub() };
+    fakeSuggestion = { getId: () => 'sugg-1' };
+    fakeOpportunity = { getId: () => 'oppty-1' };
+    fakeSuggestionData = { url: 'https://example.com', suggestionId: 'sugg-1' };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should send a message and log info on success', async () => {
+    const result = await generateIndividualOpportunitiesModule.sendMistiqueMessage({
+      suggestion: fakeSuggestion,
+      suggestionData: fakeSuggestionData,
+      issueType: 'color-contrast',
+      issuesList: [{ type: 'color-contrast' }],
+      opportunity: fakeOpportunity,
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      deliveryType: 'aem_edge',
+      sqs: fakeSqs,
+      env: fakeEnv,
+      log: fakeLog,
+    });
+    expect(fakeSqs.sendMessage).to.have.been.calledOnce;
+    expect(fakeLog.info).to.have.been.calledWithMatch('[A11yIndividual] Sent message to Mistique');
+    expect(result).to.deep.include({ success: true, issueType: 'color-contrast', suggestionId: 'sugg-1' });
+  });
+
+  it('should log error and return failure object on error', async () => {
+    fakeSqs.sendMessage.rejects(new Error('SQS error'));
+    const result = await generateIndividualOpportunitiesModule.sendMistiqueMessage({
+      suggestion: fakeSuggestion,
+      suggestionData: fakeSuggestionData,
+      issueType: 'color-contrast',
+      issuesList: [{ type: 'color-contrast' }],
+      opportunity: fakeOpportunity,
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      deliveryType: 'aem_edge',
+      sqs: fakeSqs,
+      env: fakeEnv,
+      log: fakeLog,
+    });
+    expect(fakeSqs.sendMessage).to.have.been.calledOnce;
+    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual] Failed to send message to Mistique');
+    expect(result).to.deep.include({ success: false, issueType: 'color-contrast', suggestionId: 'sugg-1' });
+    expect(result.error).to.equal('SQS error');
+  });
+});
+
+describe('sendMistiqueMessage error path (coverage)', () => {
+  it('should return failure object and log error if sqs.sendMessage rejects', async () => {
+    const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Simulated SQS failure')) };
+    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+    const fakeLog = { info: sinon.stub(), error: sinon.stub() };
+    const fakeSuggestion = { getId: () => 'sugg-err' };
+    const fakeOpportunity = { getId: () => 'oppty-err' };
+    const fakeSuggestionData = { url: 'https://err.com', suggestionId: 'sugg-err' };
+    const result = await generateIndividualOpportunitiesModule.sendMistiqueMessage({
+      suggestion: fakeSuggestion,
+      suggestionData: fakeSuggestionData,
+      issueType: 'error-type',
+      issuesList: [{ type: 'error-type' }],
+      opportunity: fakeOpportunity,
+      siteId: 'site-err',
+      auditId: 'audit-err',
+      deliveryType: 'aem_edge',
+      sqs: fakeSqs,
+      env: fakeEnv,
+      log: fakeLog,
+    });
+    expect(result.success).to.be.false;
+    expect(result.issueType).to.equal('error-type');
+    expect(result.suggestionId).to.equal('sugg-err');
+    expect(result.error).to.equal('Simulated SQS failure');
+    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual] Failed to send message to Mistique');
+  });
+});
+
+describe('createIndividualOpportunitySuggestions (Promise.allSettled coverage)', () => {
+  let sandbox;
+  let mockOpportunity;
+  let mockContext;
+  let mockLog;
+  let mockProcessSuggestionsForMistique;
+  let createIndividualOpportunitySuggestions;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    mockOpportunity = {
+      getId: sandbox.stub().returns('oppty-1'),
+      getSiteId: sandbox.stub().returns('site-1'),
+      getAuditId: sandbox.stub().returns('audit-1'),
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+    mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+    mockContext = {
+      site: {
+        getId: sandbox.stub().returns('site-1'),
+        getDeliveryType: sandbox.stub().returns('aem_edge'),
+      },
+      auditId: 'audit-1',
+      log: mockLog,
+      dataAccess: {
+        Opportunity: {
+          create: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+      sqs: {},
+      env: {},
+    };
+    // Simulate processSuggestionsForMistique returning 3 items
+    mockProcessSuggestionsForMistique = sandbox.stub().returns([
+      {
+        suggestion: {},
+        suggestionData: {},
+        issueType: 'type1',
+        issuesList: [1],
+      },
+      {
+        suggestion: {},
+        suggestionData: {},
+        issueType: 'type2',
+        issuesList: [2],
+      },
+      {
+        suggestion: {},
+        suggestionData: {},
+        issueType: 'type3',
+        issuesList: [3],
+      },
+    ]);
+    // Patch the module
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/utils/data-access.js': {
+        syncSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/accessibility/guidance-utils/mistique-data-processing.js': {
+        processSuggestionsForMistique: mockProcessSuggestionsForMistique,
+      },
+    });
+    createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should log correct summary for allSettled results', async () => {
+    const aggregatedData = {
+      data: [
+        { url: 'https://example.com', type: 'url', issues: [] },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    // Should log info with the correct summary
+    expect(mockLog.info).to.have.been.calledWithMatch(
+      /Message sending completed:/,
+    );
+  });
+});
+
+describe('sendMistiqueMessage edge cases (branch coverage)', () => {
+  it('should handle suggestion without getId method', async () => {
+    const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('SQS error')) };
+    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+    const fakeLog = { info: sinon.stub(), error: sinon.stub() };
+    const fakeSuggestion = { /* no getId method */ };
+    const fakeOpportunity = { getId: () => 'oppty-1' };
+    const fakeSuggestionData = { url: 'https://example.com', suggestionId: 'sugg-1' };
+    const result = await generateIndividualOpportunitiesModule.sendMistiqueMessage({
+      suggestion: fakeSuggestion,
+      suggestionData: fakeSuggestionData,
+      issueType: 'color-contrast',
+      issuesList: [{ type: 'color-contrast' }],
+      opportunity: fakeOpportunity,
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      deliveryType: 'aem_edge',
+      sqs: fakeSqs,
+      env: fakeEnv,
+      log: fakeLog,
+    });
+    expect(result.success).to.be.false;
+    expect(result.suggestionId).to.equal('');
+    expect(result.error).to.equal('SQS error');
+  });
+});
+
+describe('createIndividualOpportunitySuggestions fallback logic (branch coverage)', () => {
+  let sandbox;
+  let mockOpportunity;
+  let mockContext;
+  let mockLog;
+  let createIndividualOpportunitySuggestions;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    mockOpportunity = {
+      getId: sandbox.stub().returns('oppty-1'),
+      // No getSiteId method - this will trigger fallback
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+    mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+    mockContext = {
+      site: {
+        getId: sandbox.stub().returns('site-1'),
+        getDeliveryType: sandbox.stub().returns('aem_edge'),
+      },
+      auditId: undefined, // This will trigger fallback
+      audit: {
+        getId: sandbox.stub().returns('audit-1'),
+      },
+      log: mockLog,
+      dataAccess: {
+        Opportunity: {
+          create: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+      sqs: {},
+      env: {},
+    };
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/utils/data-access.js': {
+        syncSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/accessibility/guidance-utils/mistique-data-processing.js': {
+        processSuggestionsForMistique: sandbox.stub().returns([]),
+      },
+    });
+    createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should use fallback logic for siteId and auditId', async () => {
+    const aggregatedData = {
+      data: [
+        { url: 'https://example.com', type: 'url', issues: [] },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    // Should not throw and should use fallback values
+    expect(mockLog.info).to.have.been.calledWithMatch(
+      /Message sending completed:/,
     );
   });
 });

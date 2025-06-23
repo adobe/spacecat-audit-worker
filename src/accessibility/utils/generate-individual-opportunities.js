@@ -12,8 +12,110 @@
 
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
-import { successCriteriaLinks, accessibilityOpportunitiesMap, ISSUE_TYPES_FOR_MYSTIQUE } from './constants.js';
+import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
 import { getAuditData } from './data-processing.js';
+import { processSuggestionsForMistique } from '../guidance-utils/mistique-data-processing.js';
+
+/**
+ * Creates a Mistique message object
+ *
+ * @param {Object} params - Parameters for creating the message
+ * @param {Object} params.suggestionData - The suggestion data
+ * @param {Array} params.issuesList - List of issues for this type
+ * @param {Object} params.opportunity - The opportunity object
+ * @param {string} params.siteId - Site identifier
+ * @param {string} params.auditId - Audit identifier
+ * @param {string} params.deliveryType - Delivery type
+ * @returns {Object} The message object ready for SQS
+ */
+function createMistiqueMessage({
+  suggestionData,
+  issuesList,
+  opportunity,
+  siteId,
+  auditId,
+  deliveryType,
+}) {
+  return {
+    type: 'guidance:accessibility-remediation',
+    siteId: siteId || '',
+    auditId: auditId || '',
+    deliveryType,
+    time: new Date().toISOString(),
+    data: {
+      url: suggestionData.url,
+      opportunity_id: opportunity.getId(),
+      suggestion_id: suggestionData.suggestionId,
+      issues_list: issuesList,
+    },
+  };
+}
+
+/**
+ * Sends a single message to Mistique for a specific issue type
+ *
+ * @param {Object} params - Parameters for sending the message
+ * @param {Object} params.suggestion - The suggestion object
+ * @param {Object} params.suggestionData - The suggestion data
+ * @param {string} params.issueType - The type of accessibility issue
+ * @param {Array} params.issuesList - List of issues for this type
+ * @param {Object} params.opportunity - The opportunity object
+ * @param {string} params.siteId - Site identifier
+ * @param {string} params.auditId - Audit identifier
+ * @param {string} params.deliveryType - Delivery type
+ * @param {Object} params.sqs - SQS client
+ * @param {Object} params.env - Environment variables
+ * @param {Object} params.log - Logger instance
+ * @returns {Promise<Object>} Result object with success status and details
+ */
+async function sendMistiqueMessage({
+  suggestion,
+  suggestionData,
+  issueType,
+  issuesList,
+  opportunity,
+  siteId,
+  auditId,
+  deliveryType,
+  sqs,
+  env,
+  log,
+}) {
+  const message = createMistiqueMessage({
+    suggestionData,
+    issuesList,
+    opportunity,
+    siteId,
+    auditId,
+    deliveryType,
+  });
+
+  try {
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(
+      `[A11yIndividual] Sent message to Mistique for suggestion ${
+        suggestion.getId ? suggestion.getId() : ''
+      } and issue type ${issueType} with ${issuesList.length} issues`,
+    );
+    return {
+      success: true,
+      issueType,
+      suggestionId: suggestion.getId ? suggestion.getId() : '',
+    };
+  } catch (error) {
+    log.error(
+      `[A11yIndividual] Failed to send message to Mistique for suggestion ${
+        suggestion.getId ? suggestion.getId() : ''
+      } and issue type ${issueType}: ${error.message}`,
+    );
+    return {
+      success: false,
+      issueType,
+      suggestionId: suggestion.getId ? suggestion.getId() : '',
+      error: error.message,
+    };
+  }
+}
 
 /**
  * Helper function to format WCAG rule from internal format to human-readable format
@@ -259,7 +361,7 @@ export async function createIndividualOpportunitySuggestions(
       log,
     });
 
-    // Fetch the latest suggestions to send to Mistique
+    // Get the suggestions that were just created/updated
     const suggestions = await opportunity.getSuggestions();
     const { sqs, env } = context;
     const siteId = opportunity.getSiteId
@@ -270,70 +372,35 @@ export async function createIndividualOpportunitySuggestions(
       : (context.auditId || (context.audit && context.audit.getId && context.audit.getId()));
     const deliveryType = (context.site && context.site.getDeliveryType && context.site.getDeliveryType()) || 'aem_edge';
 
-    // Group issues by type for each suggestion and send one message per issue type
-    for (const suggestion of suggestions) {
-      const suggestionData = suggestion.getData();
-      if (suggestionData.issues && Array.isArray(suggestionData.issues)) {
-        // Group issues by type
-        const issuesByType = {};
+    // Process the suggestions directly to create Mistique messages
+    const mistiqueData = processSuggestionsForMistique(suggestions);
+    const messagePromises = mistiqueData.map(({
+      suggestion, suggestionData, issueType, issuesList,
+    }) => sendMistiqueMessage({
+      suggestion,
+      suggestionData,
+      issueType,
+      issuesList,
+      opportunity,
+      siteId,
+      auditId,
+      deliveryType,
+      sqs,
+      env,
+      log,
+    }));
 
-        for (const issue of suggestionData.issues) {
-          if (!issuesByType[issue.type]) {
-            issuesByType[issue.type] = [];
-          }
+    // Wait for all messages to be sent (successfully or with errors)
+    const results = await Promise.allSettled(messagePromises);
 
-          const faultyLine = Array.isArray(issue.htmlWithIssues) && issue.htmlWithIssues.length > 0
-            ? issue.htmlWithIssues[0]
-            : '';
-          const targetSelector = issue.targetSelector || '';
+    // Log summary of results
+    const successfulMessages = results.filter((result) => result.status === 'fulfilled' && result.value.success).length;
+    const failedMessages = results.filter((result) => result.status === 'fulfilled' && !result.value.success).length;
+    const rejectedPromises = results.filter((result) => result.status === 'rejected').length;
 
-          issuesByType[issue.type].push({
-            issue_name: issue.type,
-            faulty_line: faultyLine,
-            target_selector: targetSelector,
-          });
-        }
-
-        // Send one message per issue type
-        for (const [issueType, issuesList] of Object.entries(issuesByType)) {
-          if (ISSUE_TYPES_FOR_MYSTIQUE.includes(issueType)) {
-            const message = {
-              type: 'guidance:accessibility-remediation',
-              siteId: siteId || '',
-              auditId: auditId || '',
-              deliveryType,
-              time: new Date().toISOString(),
-              data: {
-                url: suggestionData.url,
-                opportunity_id: opportunity.getId(),
-                suggestion_id: suggestion.getId ? suggestion.getId() : undefined,
-                issues_list: issuesList,
-              },
-            };
-
-            try {
-              // eslint-disable-next-line no-await-in-loop
-              await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-              log.info(
-                `[A11yIndividual] Sent message to Mistique for suggestion ${
-                  suggestion.getId ? suggestion.getId() : ''
-                } and issue type ${issueType} with ${issuesList.length} issues`,
-              );
-            } catch (error) {
-              log.error(
-                `[A11yIndividual] Failed to send message to Mistique for suggestion ${
-                  suggestion.getId ? suggestion.getId() : ''
-                } and issue type ${issueType}: ${error.message}`,
-              );
-            }
-          } else {
-            log.debug(
-              `[A11yIndividual] Skipping message for issue type ${issueType} as it's not in ISSUE_TYPES_FOR_MYSTIQUE: ${ISSUE_TYPES_FOR_MYSTIQUE.join(', ')}`,
-            );
-          }
-        }
-      }
-    }
+    log.info(
+      `[A11yIndividual] Message sending completed: ${successfulMessages} successful, ${failedMessages} failed, ${rejectedPromises} rejected`,
+    );
 
     return { success: true };
   } catch (e) {
@@ -552,3 +619,6 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     };
   }
 }
+
+// Export these for testing
+export { createMistiqueMessage, sendMistiqueMessage };
