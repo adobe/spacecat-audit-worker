@@ -122,6 +122,9 @@ export async function submitForScraping(context) {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'soft-404s',
+    fullAuditRef: baseURL,
+    auditResult: { finalUrlsToScrape: finalUrls },
+    url: baseURL,
   };
 }
 
