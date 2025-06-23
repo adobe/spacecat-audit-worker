@@ -27,7 +27,7 @@ import {
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = 'broken-internal-links';
-const LINKS_CHUNK_SIZE = 40;
+const LINKS_CHUNK_SIZE = 10;
 
 /**
  * Perform an audit to check which internal links for domain are broken.
