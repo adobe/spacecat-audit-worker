@@ -57,6 +57,28 @@ export async function loadSql(filename, variables) {
   return getStaticContent(variables, `./src/cdn-logs-report/sql/${filename}.sql`);
 }
 
+export function validateCountryCode(code) {
+  const DEFAULT_COUNTRY_CODE = 'GLOBAL';
+  if (!code) return DEFAULT_COUNTRY_CODE;
+
+  const upperCode = code.toUpperCase();
+
+  if (upperCode === DEFAULT_COUNTRY_CODE) return DEFAULT_COUNTRY_CODE;
+
+  try {
+    const displayNames = new Intl.DisplayNames(['en'], { type: 'region' });
+    const countryName = displayNames.of(upperCode);
+
+    if (countryName && countryName !== upperCode) {
+      return upperCode;
+    }
+  } catch {
+    // Invalid country code
+  }
+
+  return DEFAULT_COUNTRY_CODE;
+}
+
 export async function ensureTableExists(athenaClient, s3Config, log) {
   const { tableName, databaseName, aggregatedLocation } = s3Config;
 
