@@ -117,32 +117,6 @@ describe('generateSuggestionData', async function test() {
     sandbox.restore();
   });
 
-  // it('returns original auditData if audit result is unsuccessful', async () => {
-  //   const FailureAuditData = {
-  //     ...auditData,
-  //     getAuditResult: () => ({
-  //       ...auditData.getAuditResult(),
-  //       success: false,
-  //     }),
-  //   };
-
-  //   const result = await generateSuggestionData('https://example.com', FailureAuditData, context, site);
-
-  //   expect(result).to.deep.equal(auditData.getAuditResult().brokenInternalLinks);
-  //   expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}]
-  // [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
-  // });
-
-  // it('returns original auditData if auto-suggest is disabled for the site', async () => {
-  //   configuration.isHandlerEnabledForSite.returns(false);
-
-  //   const result = await generateSuggestionData('https://example.com', auditData, context, site);
-
-  //   expect(result).to.deep.equal(auditData.getAuditResult().brokenInternalLinks);
-  //   expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}]
-  // [Site: ${site.getId()}] Auto-suggest is disabled for site`);
-  // });
-
   it('if sitedata is not found, return audit object as is', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [

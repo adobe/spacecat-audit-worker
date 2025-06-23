@@ -260,6 +260,24 @@ describe('Broken internal links audit suggestions handler', () => {
       handler.suggestionsInternalLinksHandler(message, context),
     ).to.be.rejectedWith('read error happened');
   }).timeout(5000);
+ 
+  it('fetching existing opportunity object suceeds but no opportunity found', async () => {
+    // context.dataAccess.Opportunity.findById.resolves(null);
+    opportunity.getId = () => 'oppty-id-2';
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    handler = await esmock('../../../src/internal-links/suggestions-internal-links-handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+      },
+    });
+
+    await expect(
+      handler.suggestionsInternalLinksHandler(message, context),
+    ).to.be.rejectedWith('Opportunity not found');
+  }).timeout(5000);
+
+  
 
   it('Updating an opportunity object suceeds even if suggestion generation error occurs', async () => {
     context.dataAccess.Opportunity.findById.resolves(opportunity);

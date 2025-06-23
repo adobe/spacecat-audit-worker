@@ -17,6 +17,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { syncBrokenInternalLinksSuggestions } from './suggestions-internal-links-handler.js';
 import {
   calculateKpiDeltasForAudit,
   isLinkInaccessible,
@@ -141,12 +142,6 @@ export async function opportunityAndSuggestionsStep(context) {
 
   const { brokenInternalLinks, success } = audit.getAuditResult();
 
-  // const configuration = await Configuration.findLatest();
-  // if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
-  //   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Auto-suggest is disabled for site`);
-  //   return brokenInternalLinks;
-  // }
-
   if (!success) {
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
     return {
@@ -164,8 +159,7 @@ export async function opportunityAndSuggestionsStep(context) {
         .allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
       opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
     } catch (e) {
-      log.error(`Fetching opportunities for siteId
-  ${site.getId()} failed with error: ${e.message}`);
+      log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
       throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
     }
 
@@ -207,6 +201,22 @@ export async function opportunityAndSuggestionsStep(context) {
       kpiDeltas,
     },
   );
+
+  // if auto-suggest is disabled, sync suggestions and return
+  const configuration = await dataAccess.Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Auto-suggest is disabled for site`);
+    await syncBrokenInternalLinksSuggestions({
+      opportunity,
+      brokenInternalLinks,
+      context,
+      opportunityId: opportunity.getId(),
+      log,
+    });
+    return {
+      status: 'complete',
+    };
+  }
 
   // Chunk the brokenInternalLinks array into pieces of LINKS_CHUNK_SIZE URLs each
   // for further processing in batches. This is done to avoid aws lambda function timeout.

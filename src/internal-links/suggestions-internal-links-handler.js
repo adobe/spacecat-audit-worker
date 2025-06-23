@@ -16,6 +16,37 @@ import { generateSuggestionData } from './suggestions-generator.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
+// Sync suggestions for broken internal links
+export async function syncBrokenInternalLinksSuggestions({
+  opportunity,
+  brokenInternalLinks,
+  context,
+  opportunityId,
+  log,
+}) {
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  await syncSuggestions({
+    opportunity,
+    newData: brokenInternalLinks,
+    context,
+    buildKey,
+    mapNewSuggestion: (entry) => ({
+      opportunityId,
+      type: 'CONTENT_UPDATE',
+      rank: entry.trafficDomain,
+      data: {
+        title: entry.title,
+        urlFrom: entry.urlFrom,
+        urlTo: entry.urlTo,
+        urlsSuggested: entry.urlsSuggested || [],
+        aiRationale: entry.aiRationale || '',
+        trafficDomain: entry.trafficDomain,
+      },
+    }),
+    log,
+  });
+}
+
 export async function suggestionsInternalLinksHandler(message, context) {
   const {
     log, finalUrl, dataAccess,
@@ -49,25 +80,11 @@ export async function suggestionsInternalLinksHandler(message, context) {
   }
 
   // sync suggestions for this set of broken internal links
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
-  await syncSuggestions({
+  await syncBrokenInternalLinksSuggestions({
     opportunity,
-    newData: brokenInternalLinks,
+    brokenInternalLinks,
     context,
-    buildKey,
-    mapNewSuggestion: (entry) => ({
-      opportunityId,
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
-        trafficDomain: entry.trafficDomain,
-      },
-    }),
+    opportunityId,
     log,
   });
 }
