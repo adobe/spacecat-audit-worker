@@ -42,6 +42,9 @@ describe('CDN logs report utils', () => {
       expect(validateCountryCode(extractCC('/fr/search'))).to.equal('FR');
       expect(validateCountryCode(extractCC('/ie/products/creatine-monohydrate/bpb-cmon-0000'))).to.equal('IE');
       expect(validateCountryCode(extractCC('/sendfriend/'))).to.equal('GLOBAL');
+      expect(validateCountryCode(extractCC('/en-us/'))).to.equal('US');
+      expect(validateCountryCode(extractCC('/en-us/sportswear/women/new-arrivals'))).to.equal('US');
+      expect(validateCountryCode(extractCC('/en-gb/'))).to.equal('GB');
     });
   });
 });
