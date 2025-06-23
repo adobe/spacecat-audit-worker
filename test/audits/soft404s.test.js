@@ -12,6 +12,7 @@
 
 /* eslint-env mocha */
 
+import esmock from 'esmock';
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -20,7 +21,6 @@ import nock from 'nock';
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import {
   importTopPages,
-  submitForScraping,
   fetchAndProcessPageObject,
   soft404sAutoDetect,
   soft404sAuditRunner,
@@ -100,67 +100,120 @@ describe('Soft404s Tests', () => {
   });
 
   describe('submitForScraping', () => {
-    it('should return URLs for scraping when top pages exist', async () => {
-      const topPages = [
-        { getUrl: () => 'https://example.com/page1' },
-        { getUrl: () => 'https://example.com/page2' },
-      ];
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
-
+    it('should return URLs for scraping when sitemap exists', async () => {
+      const mockFindSitemap = sinon.stub().resolves({
+        success: true,
+        extractedPaths: {
+          'http://example.com/sitemap.xml': [
+            'http://example.com/page1',
+            'http://example.com/page2',
+          ],
+        },
+      });
+      const { submitForScraping } = await esmock('../../src/soft404s/handler.js', {
+        '../../src/sitemap/handler.js': { findSitemap: mockFindSitemap },
+      });
       const result = await submitForScraping(context);
-
       expect(result.urls).to.have.lengthOf(2);
       expect(result.urls).to.deep.equal([
-        { url: 'https://example.com/page1' },
-        { url: 'https://example.com/page2' },
+        { url: 'http://example.com/page1' },
+        { url: 'http://example.com/page2' },
       ]);
       expect(result.siteId).to.equal('test-site-id');
       expect(result.type).to.equal('soft-404s');
+      expect(mockFindSitemap).to.have.been.calledWith('http://example.com');
     });
 
-    it('should throw error when no top pages found', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
-
+    it('should throw error when sitemap not found', async () => {
+      const mockFindSitemap = sinon.stub().resolves({
+        success: false,
+        reasons: [{ value: 'http://example.com/robots.txt', error: 'NO SITEMAP FOUND IN ROBOTS' }],
+      });
+      const { submitForScraping } = await esmock('../../src/soft404s/handler.js', {
+        '../../src/sitemap/handler.js': { findSitemap: mockFindSitemap },
+      });
       await expect(submitForScraping(context)).to.be.rejectedWith(
-        'No top pages found for site',
+        'Failed to find sitemap for http://example.com: NO SITEMAP FOUND IN ROBOTS',
+      );
+    });
+
+    it('should throw error when no URLs found in sitemap', async () => {
+      const mockFindSitemap = sinon.stub().resolves({
+        success: true,
+        extractedPaths: {},
+      });
+      const { submitForScraping } = await esmock('../../src/soft404s/handler.js', {
+        '../../src/sitemap/handler.js': { findSitemap: mockFindSitemap },
+      });
+      await expect(submitForScraping(context)).to.be.rejectedWith(
+        'No URLs found in sitemaps',
       );
     });
 
     it('should handle site config without included URLs', async () => {
-      const topPages = [{ getUrl: () => 'https://example.com/page1' }];
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
-
-      // Override the config to return null for includedURLs
+      const mockFindSitemap = sinon.stub().resolves({
+        success: true,
+        extractedPaths: {
+          'http://example.com/sitemap.xml': [
+            'http://example.com/page1',
+          ],
+        },
+      });
+      const { submitForScraping } = await esmock('../../src/soft404s/handler.js', {
+        '../../src/sitemap/handler.js': { findSitemap: mockFindSitemap },
+      });
       const mockConfigWithNull = {
         getIncludedURLs: sinon.stub().returns(null),
       };
       site.getConfig.resolves(mockConfigWithNull);
-
       const result = await submitForScraping(context);
-
-      expect(result.urls).to.deep.equal([{ url: 'https://example.com/page1' }]);
+      expect(result.urls).to.deep.equal([{ url: 'http://example.com/page1' }]);
     });
 
     it('should remove duplicate URLs', async () => {
-      const topPages = [
-        { getUrl: () => 'https://example.com/page1' },
-        { getUrl: () => 'https://example.com/included' },
-      ];
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
-
-      // Set up the included URLs mock to include a duplicate
+      const mockFindSitemap = sinon.stub().resolves({
+        success: true,
+        extractedPaths: {
+          'http://example.com/sitemap.xml': [
+            'http://example.com/page1',
+            'http://example.com/included',
+          ],
+        },
+      });
+      const { submitForScraping } = await esmock('../../src/soft404s/handler.js', {
+        '../../src/sitemap/handler.js': { findSitemap: mockFindSitemap },
+      });
       const mockConfigWithDuplicate = {
-        getIncludedURLs: sinon.stub().withArgs('soft404s').returns(['https://example.com/included']),
+        getIncludedURLs: sinon.stub().withArgs('soft-404s').returns(['http://example.com/included']),
       };
       site.getConfig.resolves(mockConfigWithDuplicate);
-
       const result = await submitForScraping(context);
-
       expect(result.urls).to.have.lengthOf(2);
       expect(result.urls).to.deep.equal([
-        { url: 'https://example.com/page1' },
-        { url: 'https://example.com/included' },
+        { url: 'http://example.com/page1' },
+        { url: 'http://example.com/included' },
       ]);
+    });
+
+    it('should log sitemap URL counts', async () => {
+      const mockFindSitemap = sinon.stub().resolves({
+        success: true,
+        extractedPaths: {
+          'http://example.com/sitemap.xml': [
+            'http://example.com/page1',
+            'http://example.com/page2',
+          ],
+        },
+      });
+      const { submitForScraping } = await esmock('../../src/soft404s/handler.js', {
+        '../../src/sitemap/handler.js': { findSitemap: mockFindSitemap },
+      });
+      await submitForScraping(context);
+      expect(logStub.info).to.have.been.calledWith(
+        'Total sitemap URLs: 2, Total included URLs: 0, '
+          + 'Filtered sitemap URLs: 2, Filtered included URLs: 0, '
+          + 'Final URLs to scrape after removing duplicates: 2',
+      );
     });
   });
 

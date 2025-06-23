@@ -84,7 +84,6 @@ export async function submitForScraping(context) {
   // Get the base URL for the site
   const baseURL = site.getBaseURL();
 
-  // Use findSitemap to get URLs from sitemaps instead of top pages
   const sitemapResult = await findSitemap(baseURL);
 
   if (!sitemapResult.success) {
