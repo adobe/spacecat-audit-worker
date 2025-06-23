@@ -823,9 +823,9 @@ describe('Soft404s Tests', () => {
 
       // Add audit context with urls that the function expects
       context.audit = {
-        auditResult: {
+        getAuditResult: () => ({
           urls: ['https://example.com/page1'],
-        },
+        }),
       };
     });
 
