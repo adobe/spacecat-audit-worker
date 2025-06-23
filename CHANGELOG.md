@@ -1,3 +1,10 @@
+## [1.112.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.112.3...v1.112.4) (2025-06-23)
+
+
+### Bug Fixes
+
+* add validation to country code and remove three letter path ([#997](https://github.com/adobe/spacecat-audit-worker/issues/997)) ([3f37c60](https://github.com/adobe/spacecat-audit-worker/commit/3f37c60e49867a4a40a3c37b8546201936dce504))
+
 ## [1.112.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.112.2...v1.112.3) (2025-06-22)
 
 
