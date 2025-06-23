@@ -12,7 +12,13 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { getSuccessCriteriaDetails, getUrlsDataForAccessibilityAudit, shouldExcludeForm } from '../../../src/forms-opportunities/utils.js';
+import sinon from 'sinon';
+import {
+  getSuccessCriteriaDetails,
+  getUrlsDataForAccessibilityAudit,
+  shouldExcludeForm,
+  calculateProjectedConversionValue,
+} from '../../../src/forms-opportunities/utils.js';
 
 describe('isSearchForm', () => {
   it('should return true for search form type', () => {
@@ -156,6 +162,18 @@ describe('getUrlsDataForAccessibilityAudit', () => {
     ]);
   });
 
+  it('should return empty', () => {
+    const scrapedData = {
+      formData: [
+        {
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+        },
+      ],
+    };
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+    expect(urlsData).to.deep.equal([]);
+  });
+
   it('should return unique form sources', () => {
     const scrapedData = {
       formData: [
@@ -236,5 +254,50 @@ describe('getSuccessCriteriaDetails', () => {
 
   it('should throw error for invalid criteria', () => {
     expect(() => getSuccessCriteriaDetails('invalid')).to.throw('Invalid criteria format: invalid');
+  });
+});
+
+describe('calculateProjectedConversionValue', () => {
+  let context;
+  let calculateCPCValueStub;
+  const sandbox = sinon.createSandbox();
+
+  beforeEach(() => {
+    context = {
+      env: {
+        AHREFS_API_BASE_URL: 'https://ahrefs.com',
+        AHREFS_API_KEY: 'ahrefs-api',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        S3_IMPORTER_BUCKET_NAME: 'test-import-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub(),
+      },
+      log: {
+        info: () => {},
+        error: () => {},
+      },
+    };
+    calculateCPCValueStub = sinon.stub().resolves(2.69);
+    context.calculateCPCValue = calculateCPCValueStub;
+  });
+
+  it('should calculate projected conversion value with valid inputs', async () => {
+    const siteId = 'test-site-id';
+    const opportunityData = {
+      pageViews: 1000,
+      metrics: [
+        {
+          type: 'conversionRate',
+          device: '*',
+          value: {
+            page: 0.05,
+          },
+        },
+      ],
+    };
+
+    const result = await calculateProjectedConversionValue(context, siteId, opportunityData);
+    expect(result.projectedConversionValue).to.equal(12960.42);
   });
 });

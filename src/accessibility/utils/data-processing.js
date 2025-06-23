@@ -98,10 +98,11 @@ export async function getSubfoldersUsingPrefixAndDelimiter(
       Delimiter: delimiter,
     };
     const data = await s3Client.send(new ListObjectsV2Command(params));
+    const commonPrefixes = data.CommonPrefixes || [];
     log.info(
-      `Fetched ${data.CommonPrefixes.length} keys from S3 for bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
+      `Fetched ${commonPrefixes.length} keys from S3 for bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
     );
-    return data.CommonPrefixes.map((subfolder) => subfolder.Prefix);
+    return commonPrefixes.map((subfolder) => subfolder.Prefix);
   } catch (err) {
     log.error(
       `Error while fetching S3 object keys using bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
@@ -142,14 +143,21 @@ export function updateViolationData(aggregatedData, violations, level) {
  * Gets object keys from subfolders for a specific site and version
  * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
  * @param {string} bucketName - the name of the S3 bucket
+ * @param {string} storagePrefix - the prefix of the S3 storage
  * @param {string} siteId - the site ID to look for
  * @param {string} version - the version/date to filter by
  * @param {import('@azure/logger').Logger} log - a logger instance
  * @returns {Promise<{success: boolean, objectKeys: string[], message: string}>} - result
  */
-export async function getObjectKeysFromSubfolders(s3Client, bucketName, siteId, version, log) {
-  // Prefix for accessibility data for this site in S3
-  const prefix = `accessibility/${siteId}/`;
+export async function getObjectKeysFromSubfolders(
+  s3Client,
+  bucketName,
+  storagePrefix,
+  siteId,
+  version,
+  log,
+) {
+  const prefix = `${storagePrefix}/${siteId}/`;
   const delimiter = '/';
   log.info(`Fetching accessibility data for site ${siteId} from bucket ${bucketName}`);
 
@@ -338,6 +346,7 @@ export async function aggregateAccessibilityData(
     const objectKeysResult = await getObjectKeysFromSubfolders(
       s3Client,
       bucketName,
+      'accessibility',
       siteId,
       version,
       log,
@@ -478,16 +487,17 @@ export async function createReportOpportunitySuggestion(
  */
 export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
   let finalResultFiles;
+  const urlsToScrape = [];
   try {
     finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
     if (finalResultFiles.length === 0) {
       const errorMessage = `[A11yAudit] No final result files found for ${siteId}`;
       log.error(errorMessage);
-      throw new Error(errorMessage);
+      return urlsToScrape;
     }
   } catch (error) {
     log.error(`[A11yAudit] Error getting final result files for ${siteId}: ${error.message}`);
-    throw error;
+    return urlsToScrape;
   }
 
   const latestFinalResultFileKey = finalResultFiles[finalResultFiles.length - 1];
@@ -498,15 +508,14 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
     if (!latestFinalResultFile) {
       const errorMessage = `[A11yAudit] No latest final result file found for ${siteId}`;
       log.error(errorMessage);
-      throw new Error(errorMessage);
+      return urlsToScrape;
     }
   } catch (error) {
     log.error(`[A11yAudit] Error getting latest final result file for ${siteId}: ${error.message}`);
-    throw error;
+    return urlsToScrape;
   }
 
   delete latestFinalResultFile.overall;
-  const urlsToScrape = [];
   for (const [key, value] of Object.entries(latestFinalResultFile)) {
     if (key.includes('https://')) {
       urlsToScrape.push({
@@ -520,7 +529,7 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
   if (urlsToScrape.length === 0) {
     const errorMessage = `[A11yAudit] No URLs found for ${siteId}`;
     log.error(errorMessage);
-    throw new Error(errorMessage);
+    return urlsToScrape;
   }
 
   return urlsToScrape;

@@ -43,8 +43,15 @@ import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
+import paidConsentGuidance from './paid/guidance-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import geoBrandPresence from './geo-brand-presence/handler.js';
+import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
+import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
+import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
+import cdnAnalysis from './cdn-analysis/handler.js';
+import cdnLogsReport from './cdn-logs-report/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -73,7 +80,14 @@ const HANDLERS = {
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
+  'geo-brand-presence': geoBrandPresence,
+  'guidance:geo-brand-presence': guidanceGeoBrandPresence,
+  'guidance:forms-a11y': formAccessibilityGuidance,
+  'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
+  'guidance:paid-cookie-consent': paidConsentGuidance,
   preflight,
+  'cdn-analysis': cdnAnalysis,
+  'cdn-logs-report': cdnLogsReport,
   dummy: (message) => ok(message),
 };
 

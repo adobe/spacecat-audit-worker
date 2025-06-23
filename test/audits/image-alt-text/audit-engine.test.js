@@ -15,7 +15,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { JSDOM } from 'jsdom';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import AuditEngine, { getPageLanguage, detectLanguageFromText } from '../../../src/image-alt-text/auditEngine.js';
+import AuditEngine, { getPageLanguage, detectLanguageFromText, convertImagesToBase64 } from '../../../src/image-alt-text/auditEngine.js';
 
 describe('AuditEngine', () => {
   let auditEngine;
@@ -42,7 +42,7 @@ describe('AuditEngine', () => {
       const auditedImages = auditEngine.getAuditedTags();
       expect(auditedImages).to.deep.equal({
         imagesWithoutAltText: [],
-        presentationalImagesCount: 0,
+        decorativeImagesCount: 0,
       });
     });
   });
@@ -53,14 +53,16 @@ describe('AuditEngine', () => {
       const pageTags = {
         images: [
           {
-            src: 'image1.jpg', alt: '', isPresentational: false, xpath: '/html/body/img[1]',
-          },
-          { src: 'image2.jpg', isPresentational: false, xpath: '/html/body/img[2]' },
-          {
-            src: 'image3.jpg', alt: null, isPresentational: false, xpath: '/html/body/img[3]',
+            src: 'image1.jpg', alt: '', isDecorative: true, hasEmptyAlt: true, shouldShowAsSuggestion: true, xpath: '/html/body/img[1]',
           },
           {
-            src: 'image4.jpg', alt: null, isPresentational: true, xpath: '/html/body/img[4]',
+            src: 'image2.jpg', isDecorative: false, hasEmptyAlt: false, shouldShowAsSuggestion: true, xpath: '/html/body/img[2]',
+          },
+          {
+            src: 'image3.jpg', alt: null, isDecorative: false, hasEmptyAlt: false, shouldShowAsSuggestion: true, xpath: '/html/body/img[3]',
+          },
+          {
+            src: 'image4.jpg', alt: null, isDecorative: true, hasEmptyAlt: false, shouldShowAsSuggestion: true, xpath: '/html/body/img[4]',
           },
         ],
       };
@@ -69,7 +71,7 @@ describe('AuditEngine', () => {
       const auditedImages = auditEngine.getAuditedTags();
 
       expect(auditedImages.imagesWithoutAltText).to.have.lengthOf(4);
-      expect(auditedImages.presentationalImagesCount).to.equal(1);
+      expect(auditedImages.decorativeImagesCount).to.equal(2);
       expect(auditedImages.imagesWithoutAltText[0]).to.deep.equal({
         pageUrl,
         src: 'image1.jpg',
@@ -97,8 +99,12 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '   ', xpath: '/html/body/img[1]' },
-          { src: 'image2.jpg', alt: '\n\t', xpath: '/html/body/img[2]' },
+          {
+            src: 'image1.jpg', alt: '   ', shouldShowAsSuggestion: true, xpath: '/html/body/img[1]',
+          },
+          {
+            src: 'image2.jpg', alt: '\n\t', shouldShowAsSuggestion: true, xpath: '/html/body/img[2]',
+          },
         ],
       };
 
@@ -169,9 +175,9 @@ describe('AuditEngine', () => {
     it('should log summary of images without alt text', () => {
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '' },
+          { src: 'image1.jpg', alt: '', shouldShowAsSuggestion: true },
           { src: 'image2.jpg', alt: 'Valid alt' },
-          { src: 'image3.jpg' },
+          { src: 'image3.jpg', shouldShowAsSuggestion: true },
         ],
       };
 
@@ -202,11 +208,11 @@ describe('AuditEngine', () => {
   describe('getAuditedTags', () => {
     it('should return accumulated results from all audited pages', () => {
       auditEngine.performPageAudit('/page1', {
-        images: [{ src: 'image1.jpg' }],
+        images: [{ src: 'image1.jpg', shouldShowAsSuggestion: true }],
       });
 
       auditEngine.performPageAudit('/page2', {
-        images: [{ src: 'image2.jpg', alt: '' }],
+        images: [{ src: 'image2.jpg', alt: '', shouldShowAsSuggestion: true }],
       });
 
       const auditedImages = auditEngine.getAuditedTags();
@@ -236,9 +242,9 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.jpg', alt: '' },
-          { src: 'image2.png', alt: '' },
-          { src: 'image3.gif', alt: '' },
+          { src: 'image1.jpg', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image2.png', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image3.gif', alt: '', shouldShowAsSuggestion: true },
         ],
       };
 
@@ -253,9 +259,9 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.tiff', alt: '' },
-          { src: 'image2.bmp', alt: '' },
-          { src: 'image3.svg', alt: '' }],
+          { src: 'image1.tiff', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image2.bmp', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image3.svg', alt: '', shouldShowAsSuggestion: true }],
       };
 
       function createRandomArrayBuffer(size) {
@@ -286,8 +292,8 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.svg', alt: '' },
-          { src: 'image2.svg', alt: '' },
+          { src: 'image1.svg', alt: '', shouldShowAsSuggestion: true },
+          { src: 'image2.svg', alt: '', shouldShowAsSuggestion: true },
         ],
       };
 
@@ -358,7 +364,7 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.svg', alt: '' },
+          { src: 'image1.svg', alt: '', shouldShowAsSuggestion: true },
         ],
       };
 
@@ -379,7 +385,7 @@ describe('AuditEngine', () => {
       const pageUrl = '/test-page';
       const pageTags = {
         images: [
-          { src: 'image1.svg', alt: '' },
+          { src: 'image1.svg', alt: '', shouldShowAsSuggestion: true },
         ],
       };
 
@@ -431,12 +437,6 @@ describe('AuditEngine', () => {
 
   describe('Language Detection', () => {
     describe('getPageLanguage', () => {
-      it('should return the language from the lang attribute', () => {
-        const dom = new JSDOM('<html lang="en"><body></body></html>').window.document;
-        const lang = getPageLanguage({ document: dom });
-        expect(lang).to.equal('en');
-      });
-
       it('should return the language from meta tags', () => {
         const dom = new JSDOM('<html><head><meta http-equiv="Content-Language" content="fr"></head><body></body></html>').window.document;
         const lang = getPageLanguage({ document: dom });
@@ -468,6 +468,127 @@ describe('AuditEngine', () => {
         const lang = detectLanguageFromText(text);
         expect(lang).to.equal('unknown');
       });
+    });
+
+    describe('detectCountryFromUrl', () => {
+      it('should detect language from URL country code - jp', () => {
+        const dom = new JSDOM('<html><body></body></html>').window.document;
+        const lang = getPageLanguage({ document: dom, pageUrl: 'https://www.example.com/jp/about/global-network' });
+        expect(lang).to.equal('jp');
+      });
+      it('should return unknown when URL contains unrecognized country codes', () => {
+        const dom = new JSDOM('<html><body></body></html>').window.document;
+        const lang = getPageLanguage({ document: dom, pageUrl: 'https://www.example.com/hk/jp' });
+        expect(lang).to.equal('unknown');
+      });
+      it('should fall back to DOM detection when no country code in URL', () => {
+        const dom = new JSDOM('<html><body>Ceci est une phrase française simple.</body></html>').window.document;
+        const lang = getPageLanguage({ document: dom, pageUrl: 'https://example.com/products' });
+        expect(lang).to.equal('fra');
+      });
+    });
+  });
+
+  describe('convertImagesToBase64', () => {
+    let fetchStub;
+
+    beforeEach(() => {
+      logStub = {
+        info: sinon.stub(),
+        error: sinon.stub(),
+      };
+      fetchStub = sinon.stub();
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should skip images that exceed size limit based on Content-Length header', async () => {
+      const imageUrls = ['test.svg'];
+      const auditUrl = 'https://example.com';
+
+      // Mock response with Content-Length exceeding 120KB
+      fetchStub.resolves({
+        ok: true,
+        headers: {
+          get: sinon.stub().withArgs('Content-Length').returns('130000'), // 130KB > 120KB limit
+        },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      });
+
+      const result = await convertImagesToBase64(imageUrls, auditUrl, logStub, fetchStub);
+
+      expect(result).to.be.an('array').that.is.empty;
+      expect(logStub.info).to.have.been.calledWith(
+        '[alt-text]: Skipping image test.svg as it exceeds 120KB',
+      );
+    });
+
+    it('should skip images where base64 blob exceeds size limit', async () => {
+      const imageUrls = ['test.svg'];
+      const auditUrl = 'https://example.com';
+
+      // Create a large array buffer that will result in a base64 string > 120KB
+      const largeArrayBuffer = new ArrayBuffer(130000); // 130KB
+
+      fetchStub.resolves({
+        ok: true,
+        headers: {
+          get: sinon.stub().withArgs('Content-Length').returns('1000'), // Small Content-Length
+        },
+        arrayBuffer: async () => largeArrayBuffer,
+      });
+
+      const result = await convertImagesToBase64(imageUrls, auditUrl, logStub, fetchStub);
+
+      expect(result).to.be.an('array').that.is.empty;
+      expect(logStub.info).to.have.been.calledWith(
+        '[alt-text]: Skipping base64 image test.svg as it exceeds 120KB',
+      );
+    });
+
+    it('should successfully convert images within size limits', async () => {
+      const imageUrls = ['test.svg'];
+      const auditUrl = 'https://example.com';
+
+      const smallArrayBuffer = new ArrayBuffer(100); // Small buffer
+
+      fetchStub.resolves({
+        ok: true,
+        headers: {
+          get: sinon.stub().withArgs('Content-Length').returns('100'),
+        },
+        arrayBuffer: async () => smallArrayBuffer,
+      });
+
+      const result = await convertImagesToBase64(imageUrls, auditUrl, logStub, fetchStub);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.have.property('url', 'test.svg');
+      expect(result[0]).to.have.property('blob');
+      expect(result[0].blob).to.match(/^data:image\/svg\+xml;base64,/);
+    });
+
+    it('should handle missing Content-Length header', async () => {
+      const imageUrls = ['test.svg'];
+      const auditUrl = 'https://example.com';
+
+      const smallArrayBuffer = new ArrayBuffer(100);
+
+      fetchStub.resolves({
+        ok: true,
+        headers: {
+          get: sinon.stub().withArgs('Content-Length').returns(null), // No Content-Length
+        },
+        arrayBuffer: async () => smallArrayBuffer,
+      });
+
+      const result = await convertImagesToBase64(imageUrls, auditUrl, logStub, fetchStub);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.have.property('url', 'test.svg');
+      expect(result[0]).to.have.property('blob');
     });
   });
 });

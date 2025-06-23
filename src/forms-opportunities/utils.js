@@ -11,6 +11,7 @@
  */
 
 import {
+  FORMS_AUDIT_INTERVAL,
   isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
@@ -20,6 +21,7 @@ import {
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
+import { calculateCPCValue } from '../support/utils.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
 
@@ -49,6 +51,13 @@ async function getPresignedUrl(fileName, context, url, site) {
     });
 }
 
+function calculateRate(numerator, denominator) {
+  if (denominator === 0 || Number.isNaN(numerator) || Number.isNaN(denominator)) {
+    return null; // Return null if the calculation is invalid
+  }
+  return Number((numerator / denominator).toFixed(3));
+}
+
 function getFormMetrics(metricObject) {
   const { formview, formengagement, formsubmit } = metricObject;
 
@@ -59,11 +68,11 @@ function getFormMetrics(metricObject) {
     let dropoffRate = null;
 
     if (_formViews > 0) {
-      conversionRate = _formSubmit / _formViews;
-      bounceRate = 1 - (_formEngagement / _formViews);
+      conversionRate = calculateRate(_formSubmit, _formViews);
+      bounceRate = 1 - calculateRate(_formEngagement, _formViews);
     }
     if (_formEngagement > 0) {
-      dropoffRate = 1 - (_formSubmit / _formEngagement);
+      dropoffRate = 1 - calculateRate(_formSubmit, _formEngagement);
     }
 
     return {
@@ -99,27 +108,27 @@ function convertToLowViewOpptyData(metricObject) {
   } = metricObject;
   return {
     trackedFormKPIName: 'Form View Rate',
-    trackedFormKPIValue: Number((formViews / pageViews).toFixed(3)),
+    trackedFormKPIValue: calculateRate(formViews, pageViews),
     metrics: [
       {
         type: 'formViewRate',
         device: '*',
         value: {
-          page: Number((formViews / pageViews).toFixed(3)),
+          page: calculateRate(formViews, pageViews),
         },
       },
       {
         type: 'formViewRate',
         device: 'mobile',
         value: {
-          page: Number((formViewsMobile / pageViewsMobile).toFixed(3)),
+          page: calculateRate(formViewsMobile, pageViewsMobile),
         },
       },
       {
         type: 'formViewRate',
         device: 'desktop',
         value: {
-          page: Number((formViewsDesktop / pageViewsDesktop).toFixed(3)),
+          page: calculateRate(formViewsDesktop, pageViewsDesktop),
         },
       },
       {
@@ -346,7 +355,8 @@ export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
   if (isNonEmptyArray(scrapedData.formData)) {
     for (const form of scrapedData.formData) {
       const formSources = [];
-      const validForms = form.scrapeResult.filter((sr) => !shouldExcludeForm(sr));
+      const scrapeResultArray = Array.isArray(form.scrapeResult) ? form.scrapeResult : [];
+      const validForms = scrapeResultArray.filter((sr) => !shouldExcludeForm(sr));
       if (form.finalUrl.includes('search') || validForms.length === 0) {
         // eslint-disable-next-line no-continue
         continue;
@@ -419,4 +429,41 @@ export function getSuccessCriteriaDetails(criteria) {
     criteriaNumber: successCriteriaNumber,
     understandingUrl: successCriteriaDetails.understandingUrl,
   };
+}
+
+// eslint-disable-next-line no-shadow
+function getCostSaved(originalTraffic, cpc) {
+  const costSaved = 0.2 * originalTraffic * cpc;
+  return parseFloat(costSaved.toFixed(2));
+}
+
+/**
+ * Calculates the projected conversion value for a form based on its views and CPC
+ * @param {Object} context - The context object containing necessary dependencies
+ * @param {string} siteId - The site ID
+ * @param {Object} formMetrics - The form metrics object containing traffic data
+ * @returns {Promise<Object>} Object containing cpcValue and projectedConversionValue
+ */
+export async function calculateProjectedConversionValue(context, siteId, opportunityData) {
+  const { log } = context;
+
+  try {
+    const cpcValue = await calculateCPCValue(context, siteId);
+    log.info(`Calculated CPC value: ${cpcValue} for site: ${siteId}`);
+
+    const originalTraffic = opportunityData.pageViews;
+    // traffic is calculated for 15 days - extrapolating for a year
+    const trafficPerYear = Math.floor((originalTraffic / FORMS_AUDIT_INTERVAL)) * 365;
+    const projectedConversionValue = getCostSaved(
+      trafficPerYear,
+      cpcValue,
+    );
+
+    return {
+      projectedConversionValue,
+    };
+  } catch (error) {
+    log.error(`Error calculating projected conversion value for site ${siteId}:`, error);
+    return null;
+  }
 }

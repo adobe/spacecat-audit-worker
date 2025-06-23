@@ -538,6 +538,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -563,6 +564,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -595,6 +597,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -633,6 +636,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         targetDate,
         mockLog,
@@ -661,6 +665,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -693,6 +698,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -720,6 +726,7 @@ describe('data-processing utility functions', () => {
       await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -757,6 +764,7 @@ describe('data-processing utility functions', () => {
       const result = await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -784,6 +792,7 @@ describe('data-processing utility functions', () => {
       await getObjectKeysFromSubfolders(
         mockS3Client,
         'test-bucket',
+        'accessibility',
         'site123',
         '2024-01-15',
         mockLog,
@@ -2630,7 +2639,7 @@ describe('data-processing utility functions', () => {
     });
 
     describe('error scenarios', () => {
-      it('should throw error when no final result files found', async () => {
+      it('should return empty array when no final result files found', async () => {
         // Arrange
         const bucketName = 'test-bucket';
         const siteId = 'no-files-site';
@@ -2646,24 +2655,23 @@ describe('data-processing utility functions', () => {
           )
           .resolves([]);
 
-        // Act & Assert
-        try {
-          await getUrlsForAuditMocked(
-            mockS3ClientForAudit,
-            bucketName,
-            siteId,
-            mockLogForAudit,
-          );
-          expect.fail('Should have thrown an error');
-        } catch (error) {
-          expect(error.message).to.equal('[A11yAudit] No final result files found for no-files-site');
-          expect(mockLogForAudit.error.calledWith(
-            '[A11yAudit] No final result files found for no-files-site',
-          )).to.be.true;
-        }
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.be.an('array');
+        expect(result).to.have.length(0);
+        expect(mockLogForAudit.error.calledWith(
+          '[A11yAudit] No final result files found for no-files-site',
+        )).to.be.true;
       });
 
-      it('should throw error when getObjectKeysUsingPrefix fails', async () => {
+      it('should return empty array when getObjectKeysUsingPrefix fails', async () => {
         // Arrange
         const bucketName = 'test-bucket';
         const siteId = 'error-site';
@@ -2680,24 +2688,23 @@ describe('data-processing utility functions', () => {
           )
           .rejects(s3Error);
 
-        // Act & Assert
-        try {
-          await getUrlsForAuditMocked(
-            mockS3ClientForAudit,
-            bucketName,
-            siteId,
-            mockLogForAudit,
-          );
-          expect.fail('Should have thrown an error');
-        } catch (error) {
-          expect(error.message).to.equal('S3 access denied');
-          expect(mockLogForAudit.error.calledWith(
-            '[A11yAudit] Error getting final result files for error-site: S3 access denied',
-          )).to.be.true;
-        }
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.be.an('array');
+        expect(result).to.have.length(0);
+        expect(mockLogForAudit.error.calledWith(
+          '[A11yAudit] Error getting final result files for error-site: S3 access denied',
+        )).to.be.true;
       });
 
-      it('should throw error when latest final result file is null', async () => {
+      it('should return empty array when latest final result file is null', async () => {
         // Arrange
         const bucketName = 'test-bucket';
         const siteId = 'null-file-site';
@@ -2713,24 +2720,23 @@ describe('data-processing utility functions', () => {
           )
           .resolves(null);
 
-        // Act & Assert
-        try {
-          await getUrlsForAuditMocked(
-            mockS3ClientForAudit,
-            bucketName,
-            siteId,
-            mockLogForAudit,
-          );
-          expect.fail('Should have thrown an error');
-        } catch (error) {
-          expect(error.message).to.equal('[A11yAudit] No latest final result file found for null-file-site');
-          expect(mockLogForAudit.error.calledWith(
-            '[A11yAudit] No latest final result file found for null-file-site',
-          )).to.be.true;
-        }
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.be.an('array');
+        expect(result).to.have.length(0);
+        expect(mockLogForAudit.error.calledWith(
+          '[A11yAudit] No latest final result file found for null-file-site',
+        )).to.be.true;
       });
 
-      it('should throw error when getObjectFromKey fails', async () => {
+      it('should return empty array when getObjectFromKey fails', async () => {
         // Arrange
         const bucketName = 'test-bucket';
         const siteId = 'get-object-error-site';
@@ -2747,24 +2753,23 @@ describe('data-processing utility functions', () => {
           )
           .rejects(getObjectError);
 
-        // Act & Assert
-        try {
-          await getUrlsForAuditMocked(
-            mockS3ClientForAudit,
-            bucketName,
-            siteId,
-            mockLogForAudit,
-          );
-          expect.fail('Should have thrown an error');
-        } catch (error) {
-          expect(error.message).to.equal('Failed to get object from S3');
-          expect(mockLogForAudit.error.calledWith(
-            '[A11yAudit] Error getting latest final result file for get-object-error-site: Failed to get object from S3',
-          )).to.be.true;
-        }
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.be.an('array');
+        expect(result).to.have.length(0);
+        expect(mockLogForAudit.error.calledWith(
+          '[A11yAudit] Error getting latest final result file for get-object-error-site: Failed to get object from S3',
+        )).to.be.true;
       });
 
-      it('should throw error when no HTTPS URLs found in final result file', async () => {
+      it('should return empty array when no HTTPS URLs found in final result file', async () => {
         // Arrange
         const bucketName = 'test-bucket';
         const siteId = 'no-urls-site';
@@ -2786,24 +2791,23 @@ describe('data-processing utility functions', () => {
         mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
         mockGetObjectFromKey.resolves(latestFinalResultFile);
 
-        // Act & Assert
-        try {
-          await getUrlsForAuditMocked(
-            mockS3ClientForAudit,
-            bucketName,
-            siteId,
-            mockLogForAudit,
-          );
-          expect.fail('Should have thrown an error');
-        } catch (error) {
-          expect(error.message).to.equal('[A11yAudit] No URLs found for no-urls-site');
-          expect(mockLogForAudit.error.calledWith(
-            '[A11yAudit] No URLs found for no-urls-site',
-          )).to.be.true;
-        }
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.be.an('array');
+        expect(result).to.have.length(0);
+        expect(mockLogForAudit.error.calledWith(
+          '[A11yAudit] No URLs found for no-urls-site',
+        )).to.be.true;
       });
 
-      it('should throw error when final result file contains only overall data', async () => {
+      it('should return empty array when final result file contains only overall data', async () => {
         // Arrange
         const bucketName = 'test-bucket';
         const siteId = 'only-overall-site';
@@ -2817,21 +2821,20 @@ describe('data-processing utility functions', () => {
         mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
         mockGetObjectFromKey.resolves(latestFinalResultFile);
 
-        // Act & Assert
-        try {
-          await getUrlsForAuditMocked(
-            mockS3ClientForAudit,
-            bucketName,
-            siteId,
-            mockLogForAudit,
-          );
-          expect.fail('Should have thrown an error');
-        } catch (error) {
-          expect(error.message).to.equal('[A11yAudit] No URLs found for only-overall-site');
-          expect(mockLogForAudit.error.calledWith(
-            '[A11yAudit] No URLs found for only-overall-site',
-          )).to.be.true;
-        }
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.be.an('array');
+        expect(result).to.have.length(0);
+        expect(mockLogForAudit.error.calledWith(
+          '[A11yAudit] No URLs found for only-overall-site',
+        )).to.be.true;
       });
     });
 
@@ -2846,18 +2849,20 @@ describe('data-processing utility functions', () => {
         mockGetObjectKeysUsingPrefix.resolves(finalResultFiles);
         mockGetObjectFromKey.resolves(latestFinalResultFile);
 
-        // Act & Assert
-        try {
-          await getUrlsForAuditMocked(
-            mockS3ClientForAudit,
-            bucketName,
-            siteId,
-            mockLogForAudit,
-          );
-          expect.fail('Should have thrown an error');
-        } catch (error) {
-          expect(error.message).to.equal('[A11yAudit] No URLs found for empty-file-site');
-        }
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+        );
+
+        // Assert
+        expect(result).to.be.an('array');
+        expect(result).to.have.length(0);
+        expect(mockLogForAudit.error.calledWith(
+          '[A11yAudit] No URLs found for empty-file-site',
+        )).to.be.true;
       });
 
       it('should handle final result file with undefined traffic values', async () => {
