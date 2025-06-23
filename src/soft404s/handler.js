@@ -14,6 +14,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { findSitemap } from '../sitemap/handler.js';
 import {
   getObjectFromKey,
   getObjectKeysUsingPrefix,
@@ -78,23 +79,30 @@ export async function importTopPages(context) {
 }
 
 export async function submitForScraping(context) {
-  const { site, dataAccess, log } = context;
-  const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(
-    site.getId(),
-    'ahrefs',
-    'global',
-  );
+  const { site, log } = context;
 
-  if (topPages.length === 0) {
-    throw new Error('No top pages found for site');
+  // Get the base URL for the site
+  const baseURL = site.getBaseURL();
+
+  // Use findSitemap to get URLs from sitemaps instead of top pages
+  const sitemapResult = await findSitemap(baseURL);
+
+  if (!sitemapResult.success) {
+    throw new Error(`Failed to find sitemap for ${baseURL}: ${sitemapResult.reasons.map((r) => r.error || r.value).join(', ')}`);
   }
-  const topPagesUrls = topPages.map((page) => page.getUrl());
-  // Combine includedURLs and topPages URLs to scrape
+
+  // Extract all URLs from sitemaps using Object.values().flat()
+  const sitemapUrls = Object.values(sitemapResult.extractedPaths || {}).flat();
+
+  if (sitemapUrls.length === 0) {
+    throw new Error('No URLs found in sitemaps');
+  }
+
+  // Combine sitemap URLs and included URLs to scrape
   const includedURLs = (await site?.getConfig())?.getIncludedURLs('soft-404s') || [];
 
-  // Filter out non-HTML files from both top pages and included URLs
-  const filteredTopPagesUrls = topPagesUrls.filter(
+  // Filter out non-HTML files from both sitemap URLs and included URLs
+  const filteredSitemapUrls = sitemapUrls.filter(
     (url) => !isNonHtmlFile(url),
   );
   const filteredIncludedUrls = includedURLs.filter(
@@ -102,12 +110,12 @@ export async function submitForScraping(context) {
   );
 
   const finalUrls = [
-    ...new Set([...filteredTopPagesUrls, ...filteredIncludedUrls]),
+    ...new Set([...filteredSitemapUrls, ...filteredIncludedUrls]),
   ];
 
   log.info(
-    `Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, `
-      + `Filtered top pages: ${filteredTopPagesUrls.length}, Filtered included URLs: ${filteredIncludedUrls.length}, `
+    `Total sitemap URLs: ${sitemapUrls.length}, Total included URLs: ${includedURLs.length}, `
+      + `Filtered sitemap URLs: ${filteredSitemapUrls.length}, Filtered included URLs: ${filteredIncludedUrls.length}, `
       + `Final URLs to scrape after removing duplicates: ${finalUrls.length}`,
   );
 
@@ -370,7 +378,6 @@ export async function soft404sAuditRunner(context) {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('soft404s-audit-runner', soft404sAuditRunner)
   .build();
