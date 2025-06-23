@@ -9,7 +9,40 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { mapToPaidOpportunity } from './guidance-opportunity-mapper.js';
+
 export default async function handler(message, context) {
-  const { log } = context;
-  log.info(`Message received for guidance:paid-cookie-consent handler: ${JSON.stringify(message)}`);
+  const { log, dataAccess } = context;
+  const { Audit, Opportunity } = dataAccess;
+  const { auditId, siteId, data } = message;
+  const { url, guidance } = data;
+
+  log.info(`Message received for guidance:paid-cookie-consent handler site: ${siteId} url: ${url} message: ${JSON.stringify(message)}`);
+
+  const audit = await Audit.findById(auditId);
+  if (!audit) {
+    log.warn(`No audit found for auditId: ${auditId}`);
+    return notFound();
+  }
+
+  const existingOpportunities = await Opportunity.allBySiteId(siteId);
+  let opportunity = existingOpportunities
+    .filter((oppty) => oppty.getType() === audit.auditType)
+    .find((oppty) => oppty.page === url);
+
+  if (!opportunity) {
+    log.info(`No existing Opportunity found for ${siteId} page: ${url}. Creating a new one.`);
+    const entity = mapToPaidOpportunity(siteId, auditId, audit, guidance);
+    opportunity = await Opportunity.create(entity);
+  } else {
+    log.info(`Found existing paid Opportunity for page ${url}. Updating it with new data`);
+    opportunity.setAuditId(auditId);
+    // TODO: figure out how to update existing
+  }
+
+  // await opportunity.save();
+  log.info(`paid guidance would have saved opportunity : ${JSON.stringify(opportunity, null, 2)}`);
+
+  return ok();
 }
