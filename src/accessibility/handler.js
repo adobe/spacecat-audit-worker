@@ -10,19 +10,39 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
+import {
+  getExistingObjectKeysFromFailedAudits,
+  getRemainingUrls,
+  getExistingUrlsFromFailedAudits,
+  updateStatusToIgnored,
+} from './utils/scrape-utils.js';
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
-import { getExistingObjectKeysFromFailedAudits, getRemainingUrls, getExistingUrlsFromFailedAudits } from './utils/scrape-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
+export async function processImportStep(context) {
+  const { site, finalUrl } = context;
+
+  const s3BucketPath = `scrapes/${site.getId()}/`;
+
+  return {
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: s3BucketPath,
+    type: 'top-pages',
+    siteId: site.getId(),
+    allowCache: true,
+  };
+}
+
 // First step: sends a message to the content scraper to generate accessibility audits
 export async function scrapeAccessibilityData(context) {
   const {
-    site, log, finalUrl, env, s3Client,
+    site, log, finalUrl, env, s3Client, dataAccess,
   } = context;
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -36,7 +56,28 @@ export async function scrapeAccessibilityData(context) {
   }
   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
-  const urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
+  let urlsToScrape = [];
+  urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
+
+  if (urlsToScrape.length === 0) {
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    log.info(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
+    if (!isNonEmptyArray(topPages)) {
+      log.info('[A11yAudit] No top pages found, skipping audit');
+      return {
+        status: 'NO_OPPORTUNITIES',
+        message: 'No top pages found, skipping audit',
+      };
+    }
+
+    urlsToScrape = topPages
+      .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
+      .sort((a, b) => b.traffic - a.traffic)
+      .slice(0, 100);
+    log.info(`[A11yAudit] Top 100 pages: ${JSON.stringify(urlsToScrape, null, 2)}`);
+  }
+
   const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
     s3Client,
     bucketName,
@@ -74,7 +115,7 @@ export async function scrapeAccessibilityData(context) {
 // Second step: gets data from the first step and processes it to create new opportunities
 export async function processAccessibilityOpportunities(context) {
   const {
-    site, log, s3Client, env,
+    site, log, s3Client, env, dataAccess,
   } = context;
   const siteId = site.getId();
   const version = new Date().toISOString().split('T')[0];
@@ -119,6 +160,9 @@ export async function processAccessibilityOpportunities(context) {
       error: error.message,
     };
   }
+
+  // change status to IGNORED for older opportunities
+  await updateStatusToIgnored(dataAccess, siteId, log);
 
   try {
     await generateReportOpportunities(
@@ -168,6 +212,7 @@ export async function processAccessibilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
+  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   // First step: Prepare and send data to CONTENT_SCRAPER
   .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   // Second step: Process the scraped data to find opportunities

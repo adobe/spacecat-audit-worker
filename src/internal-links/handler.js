@@ -143,12 +143,16 @@ export async function opportunityAndSuggestionsStep(context) {
 
   // generate suggestions
   try {
-    brokenInternalLinks = await generateSuggestionData(
-      finalUrl,
-      audit,
-      context,
-      site,
-    );
+    if (audit.getAuditResult().success) {
+      brokenInternalLinks = await generateSuggestionData(
+        finalUrl,
+        audit.getAuditResult().brokenInternalLinks,
+        context,
+        site,
+      );
+    } else {
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
+    }
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
   }
@@ -222,6 +226,7 @@ export async function opportunityAndSuggestionsStep(context) {
         urlsSuggested: entry.urlsSuggested || [],
         aiRationale: entry.aiRationale || '',
         trafficDomain: entry.trafficDomain,
+        priority: entry.priority,
       },
     }),
     log,

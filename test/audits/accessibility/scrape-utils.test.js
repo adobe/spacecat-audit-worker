@@ -19,6 +19,8 @@ import sinonChai from 'sinon-chai';
 import {
   getRemainingUrls,
   extractUrlsFromSettledResults,
+  filterAccessibilityOpportunities,
+  updateStatusToIgnored,
 } from '../../../src/accessibility/utils/scrape-utils.js';
 
 use(sinonChai);
@@ -317,6 +319,162 @@ describe('Scrape Utils', () => {
       const keys = await getKeys(mockS3Client, 'test-bucket', 'site1', mockLog);
 
       expect(keys).to.deep.equal(objectKeys);
+    });
+  });
+
+  describe('filterAccessibilityOpportunities', () => {
+    it('filters opportunities correctly based on criteria', () => {
+      const opportunities = [
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+        {
+          getType: () => 'generic-opportunity2',
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+        {
+          getType: () => 'other-type',
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Other title',
+        },
+      ];
+
+      const filtered = filterAccessibilityOpportunities(opportunities);
+
+      expect(filtered).to.have.lengthOf(2);
+      expect(filtered[0].getType()).to.equal('generic-opportunity');
+      expect(filtered[0].getTitle()).to.include('Accessibility report - Desktop');
+    });
+
+    it('returns empty array when no opportunities match criteria', () => {
+      const opportunities = [
+        {
+          getType: () => 'other-type',
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+        {
+          getType: () => 'generic-opportuni',
+          getTitle: () => 'Accessibility report - Desktop',
+        },
+      ];
+
+      const filtered = filterAccessibilityOpportunities(opportunities);
+
+      expect(filtered).to.be.an('array').that.is.empty;
+    });
+  });
+
+  describe('updateStatusToIgnored', () => {
+    let mockDataAccess;
+    let mockLog;
+    let sandbox;
+    let mockOpportunity;
+    let mockOpportunities;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+      mockLog = {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+      };
+
+      mockOpportunity = {
+        getType: sandbox.stub().returns('generic-opportunity'),
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop'),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockOpportunities = [mockOpportunity];
+      mockDataAccess = {
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves(mockOpportunities),
+        },
+      };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('successfully updates opportunities to IGNORED status', async () => {
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+
+      expect(result).to.deep.equal({
+        success: true,
+        updatedCount: 1,
+        error: undefined,
+      });
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] Found 1 opportunities for site site1');
+      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] Found 1 opportunities to update to IGNORED for site site1');
+    });
+
+    it('handles case when no opportunities are found', async () => {
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+
+      expect(result).to.deep.equal({
+        success: true,
+        updatedCount: 0,
+      });
+      expect(mockOpportunity.setStatus).to.not.have.been.called;
+      expect(mockOpportunity.save).to.not.have.been.called;
+    });
+
+    it('handles case when no accessibility opportunities match criteria', async () => {
+      // Create a mock opportunity that doesn't match the filtering criteria
+      const nonMatchingOpportunity = {
+        getType: sandbox.stub().returns('other-type'), // Different type
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop'),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([nonMatchingOpportunity]);
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+
+      expect(result).to.deep.equal({
+        success: true,
+        updatedCount: 0,
+      });
+      expect(nonMatchingOpportunity.setStatus).to.not.have.been.called;
+      expect(nonMatchingOpportunity.save).to.not.have.been.called;
+    });
+
+    it('handles errors during opportunity update', async () => {
+      mockOpportunity.save.rejects(new Error('Save failed'));
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+
+      expect(result).to.deep.equal({
+        success: false,
+        updatedCount: 0,
+        error: 'Some updates failed',
+      });
+      expect(mockLog.error).to.have.been.calledWith(
+        '[A11yAudit] Failed to update 1 opportunities: [{"status":"rejected","reason":{}}]',
+      );
+    });
+
+    it('handles errors during opportunity fetch', async () => {
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('Fetch failed'));
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+
+      expect(result).to.deep.equal({
+        success: false,
+        updatedCount: 0,
+        error: 'Fetch failed',
+      });
+      expect(mockLog.error).to.have.been.calledWith('[A11yAudit] Error updating opportunities to IGNORED: Fetch failed');
     });
   });
 });
