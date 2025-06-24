@@ -361,18 +361,21 @@ export async function createIndividualOpportunitySuggestions(
       log,
     });
 
+    // Get fresh opportunity data to ensure we have the latest suggestions
+    const { Opportunity } = context.dataAccess;
+    const refreshedOpportunity = await Opportunity.findById(opportunity.getId());
     // Get the suggestions that were just created/updated
-    const suggestions = await opportunity.getSuggestions();
+    const suggestions = await refreshedOpportunity.getSuggestions();
     log.debug(`[A11yIndividual] Retrieved ${suggestions.length} suggestions from opportunity ${opportunity.getId()}`);
 
     // Debug: Log the opportunity object details
-    log.debug(`[A11yIndividual] Opportunity details - ID: ${opportunity.getId()}, Type: ${opportunity.getType ? opportunity.getType() : 'N/A'}`);
+    log.debug(`[A11yIndividual] Opportunity details - ID: ${refreshedOpportunity.getId()}, Type: ${refreshedOpportunity.getType ? refreshedOpportunity.getType() : 'N/A'}`);
     const { sqs, env } = context;
-    const siteId = opportunity.getSiteId
-      ? opportunity.getSiteId()
+    const siteId = refreshedOpportunity.getSiteId
+      ? refreshedOpportunity.getSiteId()
       : (context.site && context.site.getId && context.site.getId());
-    const auditId = opportunity.getAuditId
-      ? opportunity.getAuditId()
+    const auditId = refreshedOpportunity.getAuditId
+      ? refreshedOpportunity.getAuditId()
       : (context.auditId || (context.audit && context.audit.getId && context.audit.getId()));
     const deliveryType = (context.site && context.site.getDeliveryType && context.site.getDeliveryType()) || 'aem_edge';
 
@@ -411,7 +414,7 @@ export async function createIndividualOpportunitySuggestions(
       suggestionData,
       issueType,
       issuesList,
-      opportunity,
+      opportunity: refreshedOpportunity,
       siteId,
       auditId,
       deliveryType,
