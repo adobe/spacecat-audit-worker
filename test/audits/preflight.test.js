@@ -503,6 +503,7 @@ describe('Preflight Audit', () => {
         isHandlerEnabledForSite: sinon.stub(),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
+      context.promiseToken = 'mock-promise-token';
 
       nock('https://main--example--page.aem.page')
         .get('/page1')
