@@ -23,6 +23,7 @@ import {
   extractTextAndCountWords,
   isNonHtmlFile,
 } from './utils.js';
+import { noopPersister } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -121,11 +122,14 @@ export async function submitForScraping(context) {
   log.info(`Final URLs to scrape: ${finalUrls}`);
 
   return {
-    urls: finalUrls.map((url) => ({ url })).slice(0, 20),
+    urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'soft-404s',
     fullAuditRef: baseURL,
-    auditResult: { status: 'preparing', finalUrlsToScrape: finalUrls.length },
+    auditResult: {
+      status: 'preparing',
+      urls: finalUrls, // Store URLs in auditResult so next step can access them
+    },
     url: baseURL,
   };
 }
@@ -307,7 +311,7 @@ function getScrapeJsonPath(url, siteId) {
 
 export async function soft404sAuditRunner(context) {
   const {
-    site, log, dataAccess, baseURL, job, audit,
+    site, log, dataAccess, baseURL, audit,
   } = context;
 
   const siteId = site.getId();
@@ -315,26 +319,12 @@ export async function soft404sAuditRunner(context) {
   log.info(`Starting Soft404s Audit with siteId: ${JSON.stringify(siteId)}`);
 
   try {
-    // Get top pages for a site
-    // const topPages = await getTopPagesForSiteId(
-    //   dataAccess,
-    //   siteId,
-    //   context,
-    //   log,
-    // );
-    // const includedURLs = (await site?.getConfig())?.getIncludedURLs('soft-404s') || [];
-
-    // // Transform URLs into scrape.json paths and combine them into a Set
-    // const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, siteId));
-    // const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
-    // const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
-
+    // Get the URLs from the previous step's audit result
     log.info('audit context', audit);
     log.info('audit.auditResult', audit.getAuditResult());
     const { urls } = audit.getAuditResult();
 
-    log.info('job', job);
-    log.info('finalUrlsToScrape', urls);
+    log.info('URLs from previous step:', urls);
 
     const totalPagesSet = new Set(urls.map((url) => getScrapeJsonPath(url, siteId)));
 
@@ -391,6 +381,7 @@ export async function soft404sAuditRunner(context) {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
+  .withPersister(noopPersister)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('soft404s-audit-runner', soft404sAuditRunner)
   .build();
