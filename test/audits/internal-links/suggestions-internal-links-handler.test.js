@@ -15,16 +15,10 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import nock from 'nock';
 import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 import {
-  suggestionsInternalLinksHandler,
-} from '../../../src/internal-links/suggestions-internal-links-handler.js';
-import {
-  expectedOpportunity,
   expectedSuggestions,
 } from '../../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../../shared.js';
@@ -221,29 +215,6 @@ describe('Broken internal links audit suggestions handler', () => {
     expect(suggestionsArg[0].data.aiRationale).to.equal('Some Rationale');
   }).timeout(10000);
 
-  //NA
-  // it('creating a new opportunity object fails', async () => {
-  //   context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-  //   context.dataAccess.Opportunity.create.rejects(
-  //     new Error('big error happened'),
-  //   );
-  //   sandbox.stub(GoogleClient, 'createFrom').resolves({});
-
-  //   await expect(
-  //     handler.suggestionsInternalLinksHandler(message, context),
-  //   ).to.be.rejectedWith('big error happened');
-
-  //   expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
-  //     expectedOpportunity,
-  //   );
-  //   expect(context.log.error).to.have.been.calledOnceWith(
-  //     'Failed to create new opportunity for siteId site-id-1 and auditId audit-id-1: big error happened',
-  //   );
-
-  //   // make sure that no new suggestions are added
-  //   expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
-  // }).timeout(5000);
-
   it('fetching existing opportunity object fails', async () => {
     context.dataAccess.Opportunity.findById.rejects(
       new Error('read error happened'),
@@ -304,88 +275,7 @@ describe('Broken internal links audit suggestions handler', () => {
     expect(suggestionsArg[0].data.aiRationale).to.equal('');
   }).timeout(5000);
 
-  // not applicable for suggestions handler
-  // it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
-  //   // Create mock suggestions
-  //   const mockSuggestions = [{}];
-
-  //   const existingOpportunity = {
-  //     setStatus: sandbox.spy(sandbox.stub().resolves()),
-  //     setAuditId: sandbox.stub(),
-  //     save: sandbox.spy(sandbox.stub().resolves()),
-  //     getType: () => 'broken-internal-links',
-  //     getSuggestions: sandbox.stub().resolves(mockSuggestions),
-  //     setUpdatedBy: sandbox.stub().returnsThis(),
-  //   };
-
-  //   context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
-
-  //   //return empty array of broken internal links
-  //   auditData.auditResult.brokenInternalLinks = [];
-
-  //   // Mock Suggestion.bulkUpdateStatus
-  //   context.dataAccess.Suggestion = {
-  //     bulkUpdateStatus: sandbox.spy(sandbox.stub().resolves()),
-  //   };
-
-  //   // Mock statuses
-  //   sandbox.stub(Oppty, 'STATUSES').value({ RESOLVED: 'RESOLVED', NEW: 'NEW' });
-  //   sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW' });
-  //   sandbox.stub(GoogleClient, 'createFrom').resolves({});
-  //   context.site.getLatestAuditByAuditType = () => auditData;
-
-  //   handler = await esmock('../../../src/internal-links/suggestions-internal-links-handler.js', {
-  //     '../../../src/internal-links/suggestions-generator.js': {
-  //       generateSuggestionData: () => [],
-  //     },
-  //   });
-
-  //   const result = await handler.suggestionsInternalLinksHandler(message, context);
-
-  //   // Verify opportunity was updated
-  //   expect(existingOpportunity.setStatus).to.have.been.calledOnceWith('RESOLVED');
-
-  //   // Verify suggestions were retrieved
-  //   expect(existingOpportunity.getSuggestions).to.have.been.calledOnce;
-
-  //   // Verify suggestions statuses were updated
-  //   expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
-  //     mockSuggestions,
-  //     'OUTDATED',
-  //   );
-  //   expect(existingOpportunity.save).to.have.been.calledOnce;
-
-  //   expect(result.status).to.equal('complete');
-  // }).timeout(5000);
-
-  //already covered
-  // it('allBySiteIdAndStatus method fails', async () => {
-  //   context.dataAccess.Opportunity.findById.rejects(
-  //     new Error('some-error'),
-  //   );
-  //   context.dataAccess.Opportunity.create.resolves(opportunity);
-  //   try {
-  //     await handler.suggestionsInternalLinksHandler(message, context);
-  //   } catch (err) {
-  //     expect(err.message).to.equal(
-  //       'Failed to fetch opportunities for siteId site-id-1: some-error',
-  //     );
-  //   }
-
-  //   expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
-  //   expect(context.log.error).to.have.been.calledOnceWith(
-  //     'Fetching opportunities for siteId site-id-1 failed with error: some-error',
-  //   );
-
-  //   // make sure that no new suggestions are added
-  //   expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
-  // }).timeout(5000);
-
   it('updates the existing opportunity object with new suggestions', async () => {
-
-    // auditData.auditResult.brokenInternalLinks = [];
-    // context.site.getLatestAuditByAuditType = () => auditData;
-  
     context.dataAccess.Opportunity.findById.resolves(opportunity);
     const existingSuggestions = expectedSuggestions.map((suggestion) => ({
       ...suggestion,
@@ -400,10 +290,6 @@ describe('Broken internal links audit suggestions handler', () => {
     opportunity.getSuggestions.resolves(existingSuggestions);
 
     await handler.suggestionsInternalLinksHandler(message, context);
-
-    // expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
-    // expect(opportunity.setAuditId).to.have.been.calledOnceWith('audit-id-1');
-    // expect(opportunity.save).to.have.been.calledOnce;
 
     expect(
       context.dataAccess.Suggestion.bulkUpdateStatus,

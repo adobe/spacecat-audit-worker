@@ -228,10 +228,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       error: sandbox.stub(),
     };
     context.sqs.sendMessage.resolves();
-    // configuration = {
-    //   isHandlerEnabledForSite: sandbox.stub(),
-    // };
-    // context.dataAccess.Configuration.findLatest.resolves(configuration);
 
     context.dataAccess.Configuration = {
       findLatest: () => ({
@@ -305,17 +301,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     expect(result.status).to.equal('complete');
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
-    // expect(opportunity.addSuggestions).to.have.been.calledOnce;
-    // const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
-    // expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
-    // expect(suggestionsArg[0].data.urlTo).to.equal(
-    //   'https://www.petplace.com/a01',
-    // );
-    // expect(suggestionsArg[0].data.urlsSuggested).to.deep.equal([
-    //   'https://petplace.com/suggestion1',
-    //   'https://petplace.com/suggestion12',
-    // ]);
-    // expect(suggestionsArg[0].data.aiRationale).to.equal('Some Rationale');
   }).timeout(10000);
 
   it('does not create new suggestions if the audit result was not successful', async () => {
@@ -377,34 +362,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       handler.opportunityAndSuggestionsStep(context),
     ).to.be.rejectedWith('read error happened');
   }).timeout(5000);
-
-  
-
-  // it('creating a new opportunity object suceeds even if suggestion generation error occurs', async () => {
-  //   context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-  //   context.dataAccess.Opportunity.create.resolves(opportunity);
-  //   sandbox.stub(GoogleClient, 'createFrom').resolves({});
-
-  //   context.site.getLatestAuditByAuditType = () => auditData;
-
-  //   handler = await esmock('../../../src/internal-links/handler.js', {
-  //     '../../../src/internal-links/suggestions-generator.js': {
-  //       generateSuggestionData: () => { throw new Error('error'); },
-  //     },
-  //   });
-
-  //   const result = await handler.opportunityAndSuggestionsStep(context);
-
-  //   expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
-  //     expectedOpportunity,
-  // //   );
-
-  //   expect(result.status).to.equal('complete');
-
-  //   expect(context.log.error).to.have.been.calledOnceWith(
-  //     `[broken-internal-links] [Site: ${site.getId()}] suggestion generation error: error`,
-  //   );
-  // }).timeout(5000);
 
   it('no new opportunity created if no broken internal links found', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
@@ -550,19 +507,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(opportunity.setAuditId).to.have.been.calledOnceWith('audit-id-1');
     expect(opportunity.save).to.have.been.calledOnce;
-
-    // expect(
-    //   context.dataAccess.Suggestion.bulkUpdateStatus,
-    // ).to.have.been.calledOnceWith([existingSuggestions[1]], 'OUTDATED');
-
-    // // make sure that 1 existing suggestion is updated
-    // expect(existingSuggestions[0].setData).to.have.been.calledOnce;
-    // expect(existingSuggestions[0].save).to.have.been.calledOnce;
-
-    // // make sure that 3 new suggestions are created
-    // expect(opportunity.addSuggestions).to.have.been.calledOnce;
-    // const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
-    // expect(suggestionsArg).to.be.an('array').with.lengthOf(1);
   }).timeout(5000);
 
    it('returns original auditData if audit result is unsuccessful', async () => {
