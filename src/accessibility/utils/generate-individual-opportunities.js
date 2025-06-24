@@ -363,6 +363,10 @@ export async function createIndividualOpportunitySuggestions(
 
     // Get the suggestions that were just created/updated
     const suggestions = await opportunity.getSuggestions();
+    log.debug(`[A11yIndividual] Retrieved ${suggestions.length} suggestions from opportunity ${opportunity.getId()}`);
+
+    // Debug: Log the opportunity object details
+    log.debug(`[A11yIndividual] Opportunity details - ID: ${opportunity.getId()}, Type: ${opportunity.getType ? opportunity.getType() : 'N/A'}`);
     const { sqs, env } = context;
     const siteId = opportunity.getSiteId
       ? opportunity.getSiteId()
