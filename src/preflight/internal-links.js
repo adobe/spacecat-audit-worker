@@ -11,6 +11,11 @@
  */
 
 import { JSDOM } from 'jsdom';
+import http from 'http';
+import https from 'https';
+
+const httpAgent = new http.Agent({ keepAlive: true });
+const httpsAgent = new https.Agent({ keepAlive: true });
 
 /**
  * Preflight check for internal links
@@ -63,6 +68,7 @@ export async function runInternalLinkChecks(urls, scrapedObjects, context, optio
                 headers: {
                   Authorization: options.pageAuthToken,
                 },
+                agent: href.startsWith('https') ? httpsAgent : httpAgent,
               });
               if (res.status >= 400) {
                 log.debug(`[preflight-audit] url ${href} returned with status code: %s`, res.status, res.statusText);
