@@ -18,6 +18,8 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import nock from 'nock';
 import AWSXray from 'aws-xray-sdk';
+import http from 'http';
+import https from 'https';
 import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { Site } from '@adobe/spacecat-shared-data-access';
 import {
@@ -43,6 +45,8 @@ describe('Preflight Audit', () => {
 
   describe('runLinksChecks', () => {
     let context;
+    let httpAgentStub;
+    let httpsAgentStub;
 
     beforeEach(() => {
       context = {
@@ -53,10 +57,22 @@ describe('Preflight Audit', () => {
           debug: sinon.stub(),
         },
       };
+
+      // Stub the HTTP and HTTPS agents
+      httpAgentStub = sinon.stub(http, 'Agent');
+      httpsAgentStub = sinon.stub(https, 'Agent');
+
+      // Create mock agent instances
+      const mockHttpAgent = { keepAlive: true };
+      const mockHttpsAgent = { keepAlive: true };
+
+      httpAgentStub.returns(mockHttpAgent);
+      httpsAgentStub.returns(mockHttpsAgent);
     });
 
     afterEach(() => {
       nock.cleanAll();
+      sinon.restore();
     });
 
     it('returns no broken links when all internal links are valid', async () => {
@@ -321,6 +337,33 @@ describe('Preflight Audit', () => {
       expect(result.auditResult.brokenExternalLinks).to.deep.equal([
         { urlTo: 'https://external-site.com/external-broken', href: 'https://main--example--page.aem.page/page1', status: 500 },
       ]);
+    });
+
+    it('uses HTTP agent for HTTP URLs and HTTPS agent for HTTPS URLs', async () => {
+      const urls = ['http://example.com/page1'];
+      nock('http://example.com')
+        .head('/http-link')
+        .reply(200);
+      nock('https://example.com')
+        .head('/https-link')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: {
+            rawBody: '<a href="http://example.com/http-link">http link</a><a href="https://example.com/https-link">https link</a>',
+          },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+      expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
+
+      // Verify that both HTTP and HTTPS agents were used
+      expect(httpAgentStub).to.have.been.called;
+      expect(httpsAgentStub).to.have.been.called;
     });
   });
 
