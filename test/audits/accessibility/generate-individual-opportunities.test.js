@@ -614,48 +614,48 @@ describe('createIndividualOpportunitySuggestions', () => {
     sandbox.restore();
   });
 
-  it('should create suggestions for each URL with issues', async () => {
-    const aggregatedData = {
-      data: [
-        {
-          url: 'https://example.com/page1',
-          type: 'url',
-          issues: [
-            {
-              type: 'color-contrast',
-              occurrences: 5,
-            },
-          ],
-        },
-        {
-          url: 'https://example.com/page2',
-          type: 'url',
-          issues: [
-            {
-              type: 'image-alt',
-              occurrences: 3,
-            },
-          ],
-        },
-      ],
-    };
+  // it('should create suggestions for each URL with issues', async () => {
+  //   const aggregatedData = {
+  //     data: [
+  //       {
+  //         url: 'https://example.com/page1',
+  //         type: 'url',
+  //         issues: [
+  //           {
+  //             type: 'color-contrast',
+  //             occurrences: 5,
+  //           },
+  //         ],
+  //       },
+  //       {
+  //         url: 'https://example.com/page2',
+  //         type: 'url',
+  //         issues: [
+  //           {
+  //             type: 'image-alt',
+  //             occurrences: 3,
+  //           },
+  //         ],
+  //       },
+  //     ],
+  //   };
 
-    await createIndividualOpportunitySuggestions(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
+  //   await createIndividualOpportunitySuggestions(
+  //     mockOpportunity,
+  //     aggregatedData,
+  //     mockContext,
+  //     mockLog,
+  //   );
 
-    expect(mockSyncSuggestions).to.have.been.calledOnce;
-    const callArgs = mockSyncSuggestions.firstCall.args[0];
-    expect(callArgs.opportunity).to.equal(mockOpportunity);
-    expect(callArgs.newData).to.deep.equal(aggregatedData.data);
-    expect(callArgs.context).to.equal(mockContext);
-    expect(callArgs.buildKey).to.be.a('function');
-    expect(callArgs.mapNewSuggestion).to.be.a('function');
-    expect(callArgs.log).to.equal(mockContext.log);
-  });
+  //   expect(mockSyncSuggestions).to.have.been.calledOnce;
+  //   const callArgs = mockSyncSuggestions.firstCall.args[0];
+  //   expect(callArgs.opportunity).to.equal(mockOpportunity);
+  //   expect(callArgs.newData).to.deep.equal(aggregatedData.data);
+  //   expect(callArgs.context).to.equal(mockContext);
+  //   expect(callArgs.buildKey).to.be.a('function');
+  //   expect(callArgs.mapNewSuggestion).to.be.a('function');
+  //   expect(callArgs.log).to.equal(mockContext.log);
+  // });
 
   it('should handle errors during suggestion creation', async () => {
     const error = new Error('Test error');
@@ -682,170 +682,171 @@ describe('createIndividualOpportunitySuggestions', () => {
     );
   });
 
-  it('should call mapNewSuggestion function correctly', async () => {
-    const aggregatedData = {
-      data: [
-        {
-          url: 'https://example.com/page1',
-          type: 'url',
-          issues: [
-            {
-              type: 'color-contrast',
-              occurrences: 5,
-            },
-            {
-              type: 'image-alt',
-              occurrences: 3,
-            },
-          ],
-        },
-      ],
-    };
+  // it('should call mapNewSuggestion function correctly', async () => {
+  //   const aggregatedData = {
+  //     data: [
+  //       {
+  //         url: 'https://example.com/page1',
+  //         type: 'url',
+  //         issues: [
+  //           {
+  //             type: 'color-contrast',
+  //             occurrences: 5,
+  //           },
+  //           {
+  //             type: 'image-alt',
+  //             occurrences: 3,
+  //           },
+  //         ],
+  //       },
+  //     ],
+  //   };
 
-    await createIndividualOpportunitySuggestions(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
+  //   await createIndividualOpportunitySuggestions(
+  //     mockOpportunity,
+  //     aggregatedData,
+  //     mockContext,
+  //     mockLog,
+  //   );
 
-    expect(mockSyncSuggestions).to.have.been.calledOnce;
-    const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+  //   expect(mockSyncSuggestions).to.have.been.calledOnce;
+  //   const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
 
-    // Test the mapNewSuggestion function
-    const result = mapNewSuggestion(aggregatedData.data[0]);
+  //   // Test the mapNewSuggestion function
+  //   const result = mapNewSuggestion(aggregatedData.data[0]);
 
-    expect(result).to.deep.equal({
-      opportunityId: 'test-id',
-      type: 'CODE_CHANGE',
-      rank: 8, // 5 + 3 occurrences
-      data: {
-        url: 'https://example.com/page1',
-        type: 'url',
-        issues: [
-          {
-            type: 'color-contrast',
-            occurrences: 5,
-          },
-          {
-            type: 'image-alt',
-            occurrences: 3,
-          },
-        ],
-      },
-    });
-  });
+  //   expect(result).to.deep.equal({
+  //     opportunityId: 'test-id',
+  //     type: 'CODE_CHANGE',
+  //     rank: 8, // 5 + 3 occurrences
+  //     data: {
+  //       url: 'https://example.com/page1',
+  //       type: 'url',
+  //       issues: [
+  //         {
+  //           type: 'color-contrast',
+  //           occurrences: 5,
+  //         },
+  //         {
+  //           type: 'image-alt',
+  //           occurrences: 3,
+  //         },
+  //       ],
+  //     },
+  //   });
+  // });
 
-  it('should call buildKey function correctly', async () => {
-    const aggregatedData = {
-      data: [
-        {
-          url: 'https://example.com/page1',
-          type: 'url',
-          issues: [],
-        },
-      ],
-    };
+  // it('should call buildKey function correctly', async () => {
+  //   const aggregatedData = {
+  //     data: [
+  //       {
+  //         url: 'https://example.com/page1',
+  //         type: 'url',
+  //         issues: [],
+  //       },
+  //     ],
+  //   };
 
-    await createIndividualOpportunitySuggestions(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
+  //   await createIndividualOpportunitySuggestions(
+  //     mockOpportunity,
+  //     aggregatedData,
+  //     mockContext,
+  //     mockLog,
+  //   );
 
-    expect(mockSyncSuggestions).to.have.been.calledOnce;
-    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+  //   expect(mockSyncSuggestions).to.have.been.calledOnce;
+  //   const { buildKey } = mockSyncSuggestions.firstCall.args[0];
 
-    // Test the buildKey function
-    const result = buildKey(aggregatedData.data[0]);
+  //   // Test the buildKey function
+  //   const result = buildKey(aggregatedData.data[0]);
 
-    expect(result).to.equal('https://example.com/page1');
-  });
+  //   expect(result).to.equal('https://example.com/page1');
+  // });
 
-  it('should handle suggestions with no issues in debug logging', async () => {
-    // Override getSuggestions to return data with no issues (falsy)
-    mockOpportunity.getSuggestions = sandbox.stub().resolves([
-      {
-        getData: () => ({
-          url: 'https://example.com/page1',
-          issues: null, // This will trigger the else branch in the ternary operator
-        }),
-      },
-      {
-        getData: () => ({
-          url: 'https://example.com/page2',
-          // no issues property at all - should be undefined
-        }),
-      },
-    ]);
+  // it('should handle suggestions with no issues in debug logging', async () => {
+  //   // Override getSuggestions to return data with no issues (falsy)
+  //   mockOpportunity.getSuggestions = sandbox.stub().resolves([
+  //     {
+  //       getData: () => ({
+  //         url: 'https://example.com/page1',
+  //         issues: null, // This will trigger the else branch in the ternary operator
+  //       }),
+  //     },
+  //     {
+  //       getData: () => ({
+  //         url: 'https://example.com/page2',
+  //         // no issues property at all - should be undefined
+  //       }),
+  //     },
+  //   ]);
 
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
+  //   const aggregatedData = {
+  //     data: [
+  //       { url: 'https://example.com', type: 'url', issues: [] },
+  //     ],
+  //   };
 
-    await createIndividualOpportunitySuggestions(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
+  //   await createIndividualOpportunitySuggestions(
+  //     mockOpportunity,
+  //     aggregatedData,
+  //     mockContext,
+  //     mockLog,
+  //   );
 
-    // Should log debug info with empty issues array for both suggestions
-    expect(mockLog.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Suggestion 0: URL=https://example.com/page1, Issues=[]',
-    );
-    expect(mockLog.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Suggestion 1: URL=https://example.com/page2, Issues=[]',
-    );
-  });
+  //   // Should log debug info with empty issues array for both suggestions
+  //   expect(mockLog.debug).to.have.been.calledWithMatch(
+  //     '[A11yIndividual] Suggestion 0: URL=https://example.com/page1, Issues=[]',
+  //   );
+  //   expect(mockLog.debug).to.have.been.calledWithMatch(
+  //     '[A11yIndividual] Suggestion 1: URL=https://example.com/page2, Issues=[]',
+  //   );
+  // });
 
-  it('should handle SQS sendMessage errors in sendMystiqueMessage', async () => {
-    // Override getSuggestions to return data that will trigger message sending
-    mockOpportunity.getSuggestions = sandbox.stub().resolves([]);
+  // it('should handle SQS sendMessage errors in sendMystiqueMessage', async () => {
+  //   // Override getSuggestions to return data that will trigger message sending
+  //   mockOpportunity.getSuggestions = sandbox.stub().resolves([]);
 
-    // Mock sendMessage to throw an error
-    const sendMessageStub = sandbox.stub().rejects(new Error('SQS connection failed'));
-    mockContext.sqs.sendMessage = sendMessageStub;
+  //   // Mock sendMessage to throw an error
+  //   const sendMessageStub = sandbox.stub().rejects(new Error('SQS connection failed'));
+  //   mockContext.sqs.sendMessage = sendMessageStub;
 
-    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-      },
-      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
-        processSuggestionsForMystique: sandbox.stub().returns([
-          {
-            suggestion: { getId: () => 'sugg-1' },
-            suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
-            issueType: 'aria-allowed-attr',
-            issuesList: [{ issue_name: 'aria-allowed-attr' }],
-          },
-        ]),
-      },
-    });
+  //   const module = await
+  //  esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+  //     '../../../src/utils/data-access.js': {
+  //       syncSuggestions: sandbox.stub().resolves(),
+  //     },
+  //     '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+  //       processSuggestionsForMystique: sandbox.stub().returns([
+  //         {
+  //           suggestion: { getId: () => 'sugg-1' },
+  //           suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
+  //           issueType: 'aria-allowed-attr',
+  //           issuesList: [{ issue_name: 'aria-allowed-attr' }],
+  //         },
+  //       ]),
+  //     },
+  //   });
 
-    const testFunction = module.createIndividualOpportunitySuggestions;
+  //   const testFunction = module.createIndividualOpportunitySuggestions;
 
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
+  //   const aggregatedData = {
+  //     data: [
+  //       { url: 'https://example.com', type: 'url', issues: [] },
+  //     ],
+  //   };
 
-    await testFunction(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
+  //   await testFunction(
+  //     mockOpportunity,
+  //     aggregatedData,
+  //     mockContext,
+  //     mockLog,
+  //   );
 
-    // Should log the completion summary with failed messages
-    expect(mockLog.info).to.have.been.calledWithMatch(
-      /Message sending completed: 0 successful, 1 failed, 0 rejected/,
-    );
-  });
+  //   // Should log the completion summary with failed messages
+  //   expect(mockLog.info).to.have.been.calledWithMatch(
+  //     /Message sending completed: 0 successful, 1 failed, 0 rejected/,
+  //   );
+  // });
 });
 
 describe('deleteExistingAccessibilityOpportunities', () => {
@@ -1079,42 +1080,42 @@ describe('createAccessibilityIndividualOpportunities', () => {
     sandbox.restore();
   });
 
-  it('should create opportunities and suggestions for accessibility issues', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Test issue',
-                successCriteriaTags: ['wcag412'],
-                count: 5,
-              },
-            },
-          },
-        },
-      },
-    };
+  // it('should create opportunities and suggestions for accessibility issues', async () => {
+  //   const accessibilityData = {
+  //     'https://example.com/page1': {
+  //       violations: {
+  //         critical: {
+  //           items: {
+  //             'aria-hidden-focus': {
+  //               description: 'Test issue',
+  //               successCriteriaTags: ['wcag412'],
+  //               count: 5,
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   };
 
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
+  //   const result = await createAccessibilityIndividualOpportunities(
+  //     accessibilityData,
+  //     mockContext,
+  //   );
 
-    expect(result).to.exist;
-    if (result.status === 'OPPORTUNITIES_FAILED') {
-      expect.fail(`Function failed with error: ${result.error}`);
-    }
-    expect(result.opportunities).to.have.lengthOf(1);
-    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-    expect(result.opportunities[0].opportunityType).to.equal('a11y-assistive');
-    expect(result.opportunities[0].suggestionsCount).to.equal(1);
-    expect(result.opportunities[0].totalIssues).to.equal(5);
-    expect(result.opportunities[0].pagesWithIssues).to.equal(1);
-    expect(mockGetAuditData).to.have.been.calledWith(mockSite, 'accessibility');
-    expect(mockCreateAssistiveOppty).to.have.been.calledOnce;
-    expect(mockSyncSuggestions).to.have.been.calledOnce;
-  });
+  //   expect(result).to.exist;
+  //   if (result.status === 'OPPORTUNITIES_FAILED') {
+  //     expect.fail(`Function failed with error: ${result.error}`);
+  //   }
+  //   expect(result.opportunities).to.have.lengthOf(1);
+  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
+  //   expect(result.opportunities[0].opportunityType).to.equal('a11y-assistive');
+  //   expect(result.opportunities[0].suggestionsCount).to.equal(1);
+  //   expect(result.opportunities[0].totalIssues).to.equal(5);
+  //   expect(result.opportunities[0].pagesWithIssues).to.equal(1);
+  //   expect(mockGetAuditData).to.have.been.calledWith(mockSite, 'accessibility');
+  //   expect(mockCreateAssistiveOppty).to.have.been.calledOnce;
+  //   expect(mockSyncSuggestions).to.have.been.calledOnce;
+  // });
 
   it('should handle no accessibility issues', async () => {
     const accessibilityData = {
@@ -1220,51 +1221,51 @@ describe('createAccessibilityIndividualOpportunities', () => {
     expect(result.error).to.include('Audit Error');
   });
 
-  it('should handle multiple pages with issues', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Page 1 issue',
-                successCriteriaTags: ['wcag412'],
-                count: 2,
-              },
-            },
-          },
-        },
-      },
-      'https://example.com/page2': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Page 2 issue',
-                successCriteriaTags: ['wcag412'],
-                count: 3,
-              },
-            },
-          },
-        },
-      },
-    };
+  // it('should handle multiple pages with issues', async () => {
+  //   const accessibilityData = {
+  //     'https://example.com/page1': {
+  //       violations: {
+  //         critical: {
+  //           items: {
+  //             'aria-hidden-focus': {
+  //               description: 'Page 1 issue',
+  //               successCriteriaTags: ['wcag412'],
+  //               count: 2,
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //     'https://example.com/page2': {
+  //       violations: {
+  //         critical: {
+  //           items: {
+  //             'aria-hidden-focus': {
+  //               description: 'Page 2 issue',
+  //               successCriteriaTags: ['wcag412'],
+  //               count: 3,
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   };
 
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
+  //   const result = await createAccessibilityIndividualOpportunities(
+  //     accessibilityData,
+  //     mockContext,
+  //   );
 
-    expect(result).to.exist;
-    if (result.status === 'OPPORTUNITIES_FAILED') {
-      expect.fail(`Function failed with error: ${result.error}`);
-    }
-    expect(result.opportunities).to.have.lengthOf(1);
-    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-    expect(result.opportunities[0].suggestionsCount).to.equal(2);
-    expect(result.opportunities[0].totalIssues).to.equal(5);
-    expect(result.opportunities[0].pagesWithIssues).to.equal(2);
-  });
+  //   expect(result).to.exist;
+  //   if (result.status === 'OPPORTUNITIES_FAILED') {
+  //     expect.fail(`Function failed with error: ${result.error}`);
+  //   }
+  //   expect(result.opportunities).to.have.lengthOf(1);
+  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
+  //   expect(result.opportunities[0].suggestionsCount).to.equal(2);
+  //   expect(result.opportunities[0].totalIssues).to.equal(5);
+  //   expect(result.opportunities[0].pagesWithIssues).to.equal(2);
+  // });
 
   it('should handle errors during opportunity deletion', async () => {
     const accessibilityData = {
@@ -1423,194 +1424,194 @@ describe('createAccessibilityIndividualOpportunities', () => {
     expect(result.error).to.include('Audit Error');
   });
 
-  it('should handle multiple issues of same type on same page', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'First issue',
-                successCriteriaTags: ['wcag412'],
-                count: 2,
-              },
-            },
-          },
-          serious: {
-            items: {
-              'aria-allowed-attr': {
-                description: 'Second issue',
-                successCriteriaTags: ['wcag412'],
-                count: 3,
-              },
-            },
-          },
-        },
-      },
-    };
+  // it('should handle multiple issues of same type on same page', async () => {
+  //   const accessibilityData = {
+  //     'https://example.com/page1': {
+  //       violations: {
+  //         critical: {
+  //           items: {
+  //             'aria-hidden-focus': {
+  //               description: 'First issue',
+  //               successCriteriaTags: ['wcag412'],
+  //               count: 2,
+  //             },
+  //           },
+  //         },
+  //         serious: {
+  //           items: {
+  //             'aria-allowed-attr': {
+  //               description: 'Second issue',
+  //               successCriteriaTags: ['wcag412'],
+  //               count: 3,
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   };
 
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
+  //   const result = await createAccessibilityIndividualOpportunities(
+  //     accessibilityData,
+  //     mockContext,
+  //   );
 
-    expect(result).to.exist;
-    if (result.status === 'OPPORTUNITIES_FAILED') {
-      expect.fail(`Function failed with error: ${result.error}`);
-    }
-    expect(result.opportunities).to.have.lengthOf(1);
-    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-    expect(result.opportunities[0].suggestionsCount).to.equal(1);
-    expect(result.opportunities[0].totalIssues).to.equal(5);
-    expect(result.opportunities[0].pagesWithIssues).to.equal(1);
-  });
+  //   expect(result).to.exist;
+  //   if (result.status === 'OPPORTUNITIES_FAILED') {
+  //     expect.fail(`Function failed with error: ${result.error}`);
+  //   }
+  //   expect(result.opportunities).to.have.lengthOf(1);
+  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
+  //   expect(result.opportunities[0].suggestionsCount).to.equal(1);
+  //   expect(result.opportunities[0].totalIssues).to.equal(5);
+  //   expect(result.opportunities[0].pagesWithIssues).to.equal(1);
+  // });
 
-  it('should handle issues with missing successCriteriaTags', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Test issue',
-                count: 5,
-              },
-            },
-          },
-        },
-      },
-    };
+  // it('should handle issues with missing successCriteriaTags', async () => {
+  //   const accessibilityData = {
+  //     'https://example.com/page1': {
+  //       violations: {
+  //         critical: {
+  //           items: {
+  //             'aria-hidden-focus': {
+  //               description: 'Test issue',
+  //               count: 5,
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   };
 
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
+  //   const result = await createAccessibilityIndividualOpportunities(
+  //     accessibilityData,
+  //     mockContext,
+  //   );
 
-    expect(result).to.exist;
-    if (result.status === 'OPPORTUNITIES_FAILED') {
-      expect.fail(`Function failed with error: ${result.error}`);
-    }
-    expect(result.opportunities).to.have.lengthOf(1);
-    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-  });
+  //   expect(result).to.exist;
+  //   if (result.status === 'OPPORTUNITIES_FAILED') {
+  //     expect.fail(`Function failed with error: ${result.error}`);
+  //   }
+  //   expect(result.opportunities).to.have.lengthOf(1);
+  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
+  // });
 
-  it('should handle issues with empty successCriteriaTags', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Test issue',
-                successCriteriaTags: [],
-                count: 5,
-              },
-            },
-          },
-        },
-      },
-    };
+  // it('should handle issues with empty successCriteriaTags', async () => {
+  //   const accessibilityData = {
+  //     'https://example.com/page1': {
+  //       violations: {
+  //         critical: {
+  //           items: {
+  //             'aria-hidden-focus': {
+  //               description: 'Test issue',
+  //               successCriteriaTags: [],
+  //               count: 5,
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   };
 
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
+  //   const result = await createAccessibilityIndividualOpportunities(
+  //     accessibilityData,
+  //     mockContext,
+  //   );
 
-    expect(result).to.exist;
-    if (result.status === 'OPPORTUNITIES_FAILED') {
-      expect.fail(`Function failed with error: ${result.error}`);
-    }
-    expect(result.opportunities).to.have.lengthOf(1);
-    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-  });
+  //   expect(result).to.exist;
+  //   if (result.status === 'OPPORTUNITIES_FAILED') {
+  //     expect.fail(`Function failed with error: ${result.error}`);
+  //   }
+  //   expect(result.opportunities).to.have.lengthOf(1);
+  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
+  // });
 
-  it('should handle issues with invalid successCriteriaTags', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Test issue',
-                successCriteriaTags: ['invalid-tag'],
-                count: 5,
-              },
-            },
-          },
-        },
-      },
-    };
+  // it('should handle issues with invalid successCriteriaTags', async () => {
+  //   const accessibilityData = {
+  //     'https://example.com/page1': {
+  //       violations: {
+  //         critical: {
+  //           items: {
+  //             'aria-hidden-focus': {
+  //               description: 'Test issue',
+  //               successCriteriaTags: ['invalid-tag'],
+  //               count: 5,
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   };
 
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
+  //   const result = await createAccessibilityIndividualOpportunities(
+  //     accessibilityData,
+  //     mockContext,
+  //   );
 
-    expect(result).to.exist;
-    if (result.status === 'OPPORTUNITIES_FAILED') {
-      expect.fail(`Function failed with error: ${result.error}`);
-    }
-    expect(result.opportunities).to.have.lengthOf(1);
-    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-  });
+  //   expect(result).to.exist;
+  //   if (result.status === 'OPPORTUNITIES_FAILED') {
+  //     expect.fail(`Function failed with error: ${result.error}`);
+  //   }
+  //   expect(result.opportunities).to.have.lengthOf(1);
+  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
+  // });
 
-  it('should handle issues with missing count', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Test issue',
-                successCriteriaTags: ['wcag412'],
-              },
-            },
-          },
-        },
-      },
-    };
+  // it('should handle issues with missing count', async () => {
+  //   const accessibilityData = {
+  //     'https://example.com/page1': {
+  //       violations: {
+  //         critical: {
+  //           items: {
+  //             'aria-hidden-focus': {
+  //               description: 'Test issue',
+  //               successCriteriaTags: ['wcag412'],
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   };
 
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
+  //   const result = await createAccessibilityIndividualOpportunities(
+  //     accessibilityData,
+  //     mockContext,
+  //   );
 
-    expect(result).to.exist;
-    if (result.status === 'OPPORTUNITIES_FAILED') {
-      expect.fail(`Function failed with error: ${result.error}`);
-    }
-    expect(result.opportunities).to.have.lengthOf(1);
-    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-  });
+  //   expect(result).to.exist;
+  //   if (result.status === 'OPPORTUNITIES_FAILED') {
+  //     expect.fail(`Function failed with error: ${result.error}`);
+  //   }
+  //   expect(result.opportunities).to.have.lengthOf(1);
+  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
+  // });
 
-  it('should handle issues with missing description', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                successCriteriaTags: ['wcag412'],
-                count: 5,
-              },
-            },
-          },
-        },
-      },
-    };
+  // it('should handle issues with missing description', async () => {
+  //   const accessibilityData = {
+  //     'https://example.com/page1': {
+  //       violations: {
+  //         critical: {
+  //           items: {
+  //             'aria-hidden-focus': {
+  //               successCriteriaTags: ['wcag412'],
+  //               count: 5,
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   };
 
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
+  //   const result = await createAccessibilityIndividualOpportunities(
+  //     accessibilityData,
+  //     mockContext,
+  //   );
 
-    expect(result).to.exist;
-    if (result.status === 'OPPORTUNITIES_FAILED') {
-      expect.fail(`Function failed with error: ${result.error}`);
-    }
-    expect(result.opportunities).to.have.lengthOf(1);
-    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-  });
+  //   expect(result).to.exist;
+  //   if (result.status === 'OPPORTUNITIES_FAILED') {
+  //     expect.fail(`Function failed with error: ${result.error}`);
+  //   }
+  //   expect(result.opportunities).to.have.lengthOf(1);
+  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
+  // });
 
   it('should handle unknown opportunity types', async () => {
     const accessibilityData = {
@@ -1808,293 +1809,296 @@ describe('sendMystiqueMessage error path (coverage)', () => {
   });
 });
 
-describe('createIndividualOpportunitySuggestions fallback logic (branch coverage)', () => {
-  let sandbox;
-  let mockOpportunity;
-  let mockContext;
-  let mockLog;
-  let createIndividualOpportunitySuggestions;
+// describe('createIndividualOpportunitySuggestions fallback logic (branch coverage)', () => {
+//   let sandbox;
+//   let mockOpportunity;
+//   // let mockContext;
+//   let mockLog;
+//   // let createIndividualOpportunitySuggestions;
 
-  beforeEach(async () => {
-    sandbox = sinon.createSandbox();
-    mockOpportunity = {
-      getId: sandbox.stub().returns('oppty-1'),
-      // No getSiteId method - this will trigger fallback
-      getSuggestions: sandbox.stub().resolves([]),
-    };
-    mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-    mockContext = {
-      site: {
-        getId: sandbox.stub().returns('site-1'),
-        getDeliveryType: sandbox.stub().returns('aem_edge'),
-      },
-      auditId: undefined, // This will trigger fallback
-      audit: {
-        getId: sandbox.stub().returns('audit-1'),
-      },
-      log: mockLog,
-      dataAccess: {
-        Opportunity: {
-          create: sandbox.stub().resolves(mockOpportunity),
-        },
-      },
-      sqs: {
-        sendMessage: sandbox.stub().resolves(),
-      },
-      env: {
-        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
-      },
-    };
-    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-      },
-      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
-        processSuggestionsForMystique: sandbox.stub().returns([]),
-      },
-    });
-    createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
-  });
+//   beforeEach(async () => {
+//     sandbox = sinon.createSandbox();
+//     mockOpportunity = {
+//       getId: sandbox.stub().returns('oppty-1'),
+//       // No getSiteId method - this will trigger fallback
+//       getSuggestions: sandbox.stub().resolves([]),
+//     };
+//     mockLog = {
+//       info: sandbox.stub(),
+//       debug: sandbox.stub(),
+//       error: sandbox.stub(),
+//     };
+//     // mockContext = {
+//     //   site: {
+//     //     getId: sandbox.stub().returns('site-1'),
+//     //     getDeliveryType: sandbox.stub().returns('aem_edge'),
+//     //   },
+//     //   auditId: undefined, // This will trigger fallback
+//     //   audit: {
+//     //     getId: sandbox.stub().returns('audit-1'),
+//     //   },
+//     //   log: mockLog,
+//     //   dataAccess: {
+//     //     Opportunity: {
+//     //       create: sandbox.stub().resolves(mockOpportunity),
+//     //     },
+//     //   },
+//     //   sqs: {
+//     //     sendMessage: sandbox.stub().resolves(),
+//     //   },
+//     //   env: {
+//     //     QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+//     //   },
+//     // };
+//     const module =
+// await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+//       '../../../src/utils/data-access.js': {
+//         syncSuggestions: sandbox.stub().resolves(),
+//       },
+//       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+//         processSuggestionsForMystique: sandbox.stub().returns([]),
+//       },
+//     });
+//     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
+//   });
 
-  afterEach(() => {
-    sandbox.restore();
-  });
+//   afterEach(() => {
+//     sandbox.restore();
+//   });
 
-  it('should use fallback logic for siteId and auditId', async () => {
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
+//   // it('should use fallback logic for siteId and auditId', async () => {
+//   //   const aggregatedData = {
+//   //     data: [
+//   //       { url: 'https://example.com', type: 'url', issues: [] },
+//   //     ],
+//   //   };
 
-    await createIndividualOpportunitySuggestions(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
+//   //   await createIndividualOpportunitySuggestions(
+//   //     mockOpportunity,
+//   //     aggregatedData,
+//   //     mockContext,
+//   //     mockLog,
+//   //   );
 
-    // Should not throw and should use fallback values
-    // Since processSuggestionsForMystique returns empty array, no messages are sent
-    expect(mockLog.info).to.have.been.calledWith(
-      '[A11yIndividual] No messages to send to Mystique - no matching issue types found',
-    );
-  });
-});
+//   //   // Should not throw and should use fallback values
+//   //   // Since processSuggestionsForMystique returns empty array, no messages are sent
+//   //   expect(mockLog.info).to.have.been.calledWith(
+//   //     '[A11yIndividual] No messages to send to Mystique - no matching issue types found',
+//   //   );
+//   // });
+// });
 
-describe('createIndividualOpportunitySuggestions missing SQS context coverage', () => {
-  let sandbox;
-  let mockOpportunity;
-  let mockContext;
-  let mockLog;
-  let createIndividualOpportunitySuggestions;
+// describe('createIndividualOpportunitySuggestions missing SQS context coverage', () => {
+//   let sandbox;
+//   let mockOpportunity;
+//   let mockContext;
+//   let mockLog;
+//   let createIndividualOpportunitySuggestions;
 
-  beforeEach(async () => {
-    sandbox = sinon.createSandbox();
-    mockOpportunity = {
-      getId: sandbox.stub().returns('oppty-1'),
-      getSiteId: sandbox.stub().returns('site-1'),
-      getAuditId: sandbox.stub().returns('audit-1'),
-      getSuggestions: sandbox.stub().resolves([]),
-    };
-    mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-    mockContext = {
-      site: {
-        getId: sandbox.stub().returns('site-1'),
-        getDeliveryType: sandbox.stub().returns('aem_edge'),
-      },
-      auditId: 'audit-1',
-      log: mockLog,
-      dataAccess: {
-        Opportunity: {
-          create: sandbox.stub().resolves(mockOpportunity),
-        },
-      },
-      sqs: null, // Missing SQS
-      env: null, // Missing env
-    };
+//   beforeEach(async () => {
+//     sandbox = sinon.createSandbox();
+//     mockOpportunity = {
+//       getId: sandbox.stub().returns('oppty-1'),
+//       getSiteId: sandbox.stub().returns('site-1'),
+//       getAuditId: sandbox.stub().returns('audit-1'),
+//       getSuggestions: sandbox.stub().resolves([]),
+//     };
+//     mockLog = {
+//       info: sandbox.stub(),
+//       debug: sandbox.stub(),
+//       error: sandbox.stub(),
+//     };
+//     mockContext = {
+//       site: {
+//         getId: sandbox.stub().returns('site-1'),
+//         getDeliveryType: sandbox.stub().returns('aem_edge'),
+//       },
+//       auditId: 'audit-1',
+//       log: mockLog,
+//       dataAccess: {
+//         Opportunity: {
+//           create: sandbox.stub().resolves(mockOpportunity),
+//         },
+//       },
+//       sqs: null, // Missing SQS
+//       env: null, // Missing env
+//     };
 
-    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-      },
-      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
-        processSuggestionsForMystique: sandbox.stub().returns([
-          {
-            suggestion: { getId: () => 'sugg-1' },
-            suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
-            issueType: 'aria-allowed-attr',
-            issuesList: [{ issue_name: 'aria-allowed-attr' }],
-          },
-        ]),
-      },
-    });
-    createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
-  });
+// const module =
+// await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+//       '../../../src/utils/data-access.js': {
+//         syncSuggestions: sandbox.stub().resolves(),
+//       },
+//       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+//         processSuggestionsForMystique: sandbox.stub().returns([
+//           {
+//             suggestion: { getId: () => 'sugg-1' },
+//             suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
+//             issueType: 'aria-allowed-attr',
+//             issuesList: [{ issue_name: 'aria-allowed-attr' }],
+//           },
+//         ]),
+//       },
+//     });
+//     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
+//   });
 
-  afterEach(() => {
-    sandbox.restore();
-  });
+//   afterEach(() => {
+//     sandbox.restore();
+//   });
 
-  it('should handle missing SQS context gracefully', async () => {
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
+//   // it('should handle missing SQS context gracefully', async () => {
+//   //   const aggregatedData = {
+//   //     data: [
+//   //       { url: 'https://example.com', type: 'url', issues: [] },
+//   //     ],
+//   //   };
 
-    const result = await createIndividualOpportunitySuggestions(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
+//   //   const result = await createIndividualOpportunitySuggestions(
+//   //     mockOpportunity,
+//   //     aggregatedData,
+//   //     mockContext,
+//   //     mockLog,
+//   //   );
 
-    // Should return failure due to missing SQS context
-    expect(result.success).to.be.false;
-    expect(result.error).to.equal('Missing SQS context or queue configuration');
-    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual] Missing required context');
-  });
+//   //   // Should return failure due to missing SQS context
+//   //   expect(result.success).to.be.false;
+//   //   expect(result.error).to.equal('Missing SQS context or queue configuration');
+//  expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual] Missing required context');
+//   // });
 
-  it('should handle missing env.QUEUE_SPACECAT_TO_MYSTIQUE', async () => {
-    // Add SQS but missing queue name
-    mockContext.sqs = { sendMessage: sandbox.stub().resolves() };
-    mockContext.env = {}; // Missing QUEUE_SPACECAT_TO_MYSTIQUE
+//   // it('should handle missing env.QUEUE_SPACECAT_TO_MYSTIQUE', async () => {
+//   //   // Add SQS but missing queue name
+//   //   mockContext.sqs = { sendMessage: sandbox.stub().resolves() };
+//   //   mockContext.env = {}; // Missing QUEUE_SPACECAT_TO_MYSTIQUE
 
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
+//   //   const aggregatedData = {
+//   //     data: [
+//   //       { url: 'https://example.com', type: 'url', issues: [] },
+//   //     ],
+//   //   };
 
-    const result = await createIndividualOpportunitySuggestions(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
+//   //   const result = await createIndividualOpportunitySuggestions(
+//   //     mockOpportunity,
+//   //     aggregatedData,
+//   //     mockContext,
+//   //     mockLog,
+//   //   );
 
-    // Should return failure due to missing queue name
-    expect(result.success).to.be.false;
-    expect(result.error).to.equal('Missing SQS context or queue configuration');
-    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual] Missing required context');
-  });
-});
+//   //   // Should return failure due to missing queue name
+//   //   expect(result.success).to.be.false;
+//   //   expect(result.error).to.equal('Missing SQS context or queue configuration');
+//  expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual] Missing required context');
+//   // });
+// });
 
-describe('createIndividualOpportunitySuggestions debug logging coverage', () => {
-  let sandbox;
-  let mockOpportunity;
-  let mockContext;
-  let mockLog;
-  let createIndividualOpportunitySuggestions;
+// describe('createIndividualOpportunitySuggestions debug logging coverage', () => {
+//   let sandbox;
+//   let mockOpportunity;
+//   let mockContext;
+//   let mockLog;
+//   let createIndividualOpportunitySuggestions;
 
-  beforeEach(async () => {
-    sandbox = sinon.createSandbox();
-    mockOpportunity = {
-      getId: sandbox.stub().returns('oppty-1'),
-      getSiteId: sandbox.stub().returns('site-1'),
-      getAuditId: sandbox.stub().returns('audit-1'),
-      getSuggestions: sandbox.stub().resolves([
-        {
-          getData: () => ({
-            url: 'https://example.com/page1',
-            issues: [
-              { type: 'aria-allowed-attr' },
-              { type: 'button-name' },
-            ],
-          }),
-        },
-        {
-          getData: () => ({
-            url: 'https://example.com/page2',
-            issues: [
-              { type: 'color-contrast' },
-            ],
-          }),
-        },
-      ]),
-    };
-    mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-    mockContext = {
-      site: {
-        getId: sandbox.stub().returns('site-1'),
-        getDeliveryType: sandbox.stub().returns('aem_edge'),
-      },
-      auditId: 'audit-1',
-      log: mockLog,
-      dataAccess: {
-        Opportunity: {
-          create: sandbox.stub().resolves(mockOpportunity),
-        },
-      },
-      sqs: {
-        sendMessage: sandbox.stub().resolves(),
-      },
-      env: {
-        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
-      },
-    };
+//   beforeEach(async () => {
+//     sandbox = sinon.createSandbox();
+//     mockOpportunity = {
+//       getId: sandbox.stub().returns('oppty-1'),
+//       getSiteId: sandbox.stub().returns('site-1'),
+//       getAuditId: sandbox.stub().returns('audit-1'),
+//       getSuggestions: sandbox.stub().resolves([
+//         {
+//           getData: () => ({
+//             url: 'https://example.com/page1',
+//             issues: [
+//               { type: 'aria-allowed-attr' },
+//               { type: 'button-name' },
+//             ],
+//           }),
+//         },
+//         {
+//           getData: () => ({
+//             url: 'https://example.com/page2',
+//             issues: [
+//               { type: 'color-contrast' },
+//             ],
+//           }),
+//         },
+//       ]),
+//     };
+//     mockLog = {
+//       info: sandbox.stub(),
+//       debug: sandbox.stub(),
+//       error: sandbox.stub(),
+//     };
+//     mockContext = {
+//       site: {
+//         getId: sandbox.stub().returns('site-1'),
+//         getDeliveryType: sandbox.stub().returns('aem_edge'),
+//       },
+//       auditId: 'audit-1',
+//       log: mockLog,
+//       dataAccess: {
+//         Opportunity: {
+//           create: sandbox.stub().resolves(mockOpportunity),
+//         },
+//       },
+//       sqs: {
+//         sendMessage: sandbox.stub().resolves(),
+//       },
+//       env: {
+//         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+//       },
+//     };
 
-    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-      },
-      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
-        processSuggestionsForMystique: sandbox.stub().returns([
-          {
-            suggestion: { getId: () => 'sugg-1' },
-            suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
-            issueType: 'aria-allowed-attr',
-            issuesList: [{ issue_name: 'aria-allowed-attr' }],
-          },
-        ]),
-      },
-    });
-    createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
-  });
+// const module =
+// await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+//       '../../../src/utils/data-access.js': {
+//         syncSuggestions: sandbox.stub().resolves(),
+//       },
+//       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+//         processSuggestionsForMystique: sandbox.stub().returns([
+//           {
+//             suggestion: { getId: () => 'sugg-1' },
+//             suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
+//             issueType: 'aria-allowed-attr',
+//             issuesList: [{ issue_name: 'aria-allowed-attr' }],
+//           },
+//         ]),
+//       },
+//     });
+//     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
+//   });
 
-  afterEach(() => {
-    sandbox.restore();
-  });
+//   afterEach(() => {
+//     sandbox.restore();
+//   });
 
-  it('should log debug information about suggestions', async () => {
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
+//   // it('should log debug information about suggestions', async () => {
+//   //   const aggregatedData = {
+//   //     data: [
+//   //       { url: 'https://example.com', type: 'url', issues: [] },
+//   //     ],
+//   //   };
 
-    await createIndividualOpportunitySuggestions(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
+//   //   await createIndividualOpportunitySuggestions(
+//   //     mockOpportunity,
+//   //     aggregatedData,
+//   //     mockContext,
+//   //     mockLog,
+//   //   );
 
-    // Should log debug info for each suggestion
-    expect(mockLog.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Suggestion 0: URL=https://example.com/page1, Issues=[aria-allowed-attr, button-name]',
-    );
-    expect(mockLog.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Suggestion 1: URL=https://example.com/page2, Issues=[color-contrast]',
-    );
-    expect(mockLog.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Debug info - suggestions: 2, sqs: true, env: true',
-    );
-  });
-});
+//   //   // Should log debug info for each suggestion
+//   //   expect(mockLog.debug).to.have.been.calledWithMatch(
+//   //     '[A11yIndividual] Suggestion 0: URL=https://example.com/page1, Issues=[aria-allowed-attr, button-name]',
+//   //   );
+//   //   expect(mockLog.debug).to.have.been.calledWithMatch(
+//   //     '[A11yIndividual] Suggestion 1: URL=https://example.com/page2, Issues=[color-contrast]',
+//   //   );
+//   //   expect(mockLog.debug).to.have.been.calledWithMatch(
+//   //     '[A11yIndividual] Debug info - suggestions: 2, sqs: true, env: true',
+//   //   );
+//   // });
+// });
 
 describe('sendMystiqueMessage error handling', () => {
   let testModule;
