@@ -62,6 +62,7 @@ export async function runInternalLinkChecks(urls, scrapedObjects, context, optio
 
         await Promise.all(
           Array.from(internalSet).map(async (href) => {
+            const startTime = Date.now();
             try {
               const res = await fetch(href, {
                 method: 'HEAD',
@@ -70,11 +71,16 @@ export async function runInternalLinkChecks(urls, scrapedObjects, context, optio
                 },
                 agent: href.startsWith('https') ? httpsAgent : httpAgent,
               });
+              const endTime = Date.now();
+              log.debug(`[preflight-audit] Internal link check completed in ${endTime - startTime}ms: ${href} (status: ${res.status})`);
+
               if (res.status >= 400) {
                 log.debug(`[preflight-audit] url ${href} returned with status code: %s`, res.status, res.statusText);
                 brokenInternalLinks.push({ urlTo: href, href: pageUrl, status: res.status });
               }
             } catch (err) {
+              const endTime = Date.now();
+              log.debug(`[preflight-audit] Internal link check failed in ${endTime - startTime}ms: ${href} (error: ${err.message})`);
               log.error(`[preflight-audit] Error checking internal link ${href} from ${pageUrl}:`, err.message);
             }
           }),
