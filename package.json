@@ -77,7 +77,7 @@
     "@adobe/spacecat-shared-data-access": "2.29.1",
     "@adobe/spacecat-shared-google-client": "1.4.34",
     "@adobe/spacecat-shared-gpt-client": "1.5.15",
-    "@adobe/spacecat-shared-http-utils": "1.14.2",
+    "@adobe/spacecat-shared-http-utils": "1.14.3",
     "@adobe/spacecat-shared-rum-api-client": "2.29.0",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.41.3",
