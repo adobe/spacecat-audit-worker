@@ -372,8 +372,34 @@ export async function createIndividualOpportunitySuggestions(
       : (context.auditId || (context.audit && context.audit.getId && context.audit.getId()));
     const deliveryType = (context.site && context.site.getDeliveryType && context.site.getDeliveryType()) || 'aem_edge';
 
+    log.debug(`[A11yIndividual] Debug info - suggestions: ${suggestions.length}, sqs: ${!!sqs}, env: ${!!env}, siteId: ${siteId}, auditId: ${auditId}`);
+
+    // Log details about each suggestion for debugging
+    suggestions.forEach((suggestion, index) => {
+      const suggestionData = suggestion.getData();
+      const issueTypes = suggestionData.issues
+        ? suggestionData.issues.map((issue) => issue.type) : [];
+      log.debug(`[A11yIndividual] Suggestion ${index}: URL=${suggestionData.url}, Issues=[${issueTypes.join(', ')}]`);
+    });
+
     // Process the suggestions directly to create Mistique messages
     const mistiqueData = processSuggestionsForMistique(suggestions);
+
+    log.debug(`[A11yIndividual] Mistique data processed: ${mistiqueData.length} messages to send`);
+
+    if (mistiqueData.length === 0) {
+      log.info('[A11yIndividual] No messages to send to Mistique - no matching issue types found');
+      return { success: true };
+    }
+
+    // Validate required context objects before proceeding
+    if (!sqs || !env || !env.QUEUE_SPACECAT_TO_MYSTIQUE) {
+      log.error(`[A11yIndividual] Missing required context - sqs: ${!!sqs}, env: ${!!env}, queue: ${env?.QUEUE_SPACECAT_TO_MYSTIQUE || 'undefined'}`);
+      return { success: false, error: 'Missing SQS context or queue configuration' };
+    }
+
+    log.info(`[A11yIndividual] Sending ${mistiqueData.length} messages to Mistique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+
     const messagePromises = mistiqueData.map(({
       suggestion, suggestionData, issueType, issuesList,
     }) => sendMistiqueMessage({
