@@ -241,7 +241,7 @@ function getScrapeJsonPath(url, siteId) {
 
 export async function runAuditAndGenerateSuggestions(context) {
   const {
-    site, audit, finalUrl, log, dataAccess,
+    site, finalUrl, log, dataAccess,
   } = context;
   // Get top pages for a site
   const siteId = site.getId();
@@ -290,7 +290,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   };
   await opportunityAndSuggestions(finalUrl, {
     siteId: site.getId(),
-    auditId: audit.getId(),
+    auditId: site.getId(),
     auditResult,
   }, context);
 
