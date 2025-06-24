@@ -70,6 +70,7 @@ export async function runInternalLinkChecks(urls, scrapedObjects, context, optio
                   Authorization: options.pageAuthToken,
                 },
                 agent: href.startsWith('https') ? httpsAgent : httpAgent,
+                redirect: 'follow',
               });
               const endTime = Date.now();
               log.debug(`[preflight-audit] Internal link check completed in ${endTime - startTime}ms: ${href} (status: ${res.status})`);
