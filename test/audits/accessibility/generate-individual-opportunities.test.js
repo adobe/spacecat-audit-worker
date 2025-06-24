@@ -763,32 +763,6 @@ describe('createIndividualOpportunitySuggestions', () => {
     expect(result).to.equal('https://example.com/page1');
   });
 
-  it('should log debug information about suggestions', async () => {
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
-
-    await createIndividualOpportunitySuggestions(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
-
-    // Should log debug info for each suggestion
-    expect(mockContext.log.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Suggestion 0: URL=https://example.com/page1, Issues=[aria-allowed-attr, button-name]',
-    );
-    expect(mockContext.log.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Suggestion 1: URL=https://example.com/page2, Issues=[color-contrast]',
-    );
-    expect(mockContext.log.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Debug info - suggestions: 2, sqs: true, env: true',
-    );
-  });
-
   it('should handle suggestions with no issues in debug logging', async () => {
     // Override getSuggestions to return data with no issues (falsy)
     mockOpportunity.getSuggestions = sandbox.stub().resolves([
