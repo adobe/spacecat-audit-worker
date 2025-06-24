@@ -225,8 +225,6 @@ export async function opportunityAndSuggestionsStep(context) {
     brokenInternalLinksChunks.push(brokenInternalLinks.slice(i, i + LINKS_CHUNK_SIZE));
   }
   // brokenInternalLinksChunks is an array of arrays, each containing up to LINKS_CHUNK_SIZE items.
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] brokenInternalLinksChunks: ${JSON.stringify(brokenInternalLinksChunks)}`);
-
   const messages = brokenInternalLinksChunks.map((brokenInternalLinksChunk) => ({
     type: 'suggestions:internal-links',
     siteId: site.getId(),

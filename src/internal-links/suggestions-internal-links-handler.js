@@ -57,9 +57,7 @@ export async function suggestionsInternalLinksHandler(message, context) {
   const { Opportunity, Site } = dataAccess;
 
   const site = await Site.findById(message.siteId);
-  log.info(`Message received in suggestions-internal-links handler: site: ${JSON.stringify(site, null, 2)}`);
-  log.info(`Message received in suggestions-internal-links handler brokenInternalLinks: ${JSON.stringify(message.data.brokenInternalLinks, null, 2)}`);
-  log.info(`Message received in suggestions-internal-links handler: opportunityId: ${JSON.stringify(message.data.opportunityId, null, 2)}`);
+  log.info(`Message received in suggestions-internal-links handler: site id: ${message.siteId}, opportunityId: ${message.data.opportunityId} for audit type: ${AUDIT_TYPE}`);
 
   // generate suggestions for this set of broken internal links
   try {
