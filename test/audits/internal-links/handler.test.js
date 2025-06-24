@@ -318,6 +318,27 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // expect(suggestionsArg[0].data.aiRationale).to.equal('Some Rationale');
   }).timeout(10000);
 
+  it('does not create new suggestions if the audit result was not successful', async () => {
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: false,
+        auditContext: {
+          interval: 30,
+        },
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    context.site.getLatestAuditByAuditType = () => context.audit;
+
+    await handler.opportunityAndSuggestionsStep(context);
+    expect(context.log.info).to.have.been.calledWith(
+      `[broken-internal-links] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`,
+    );
+  });
+
   it('creating a new opportunity object fails', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.rejects(

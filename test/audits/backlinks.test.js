@@ -49,6 +49,10 @@ describe('Backlinks Tests', function () {
   this.timeout(10000);
   let message;
   let context;
+  const topPages = [
+    { getUrl: () => 'https://example.com/blog/page1' },
+    { getUrl: () => 'https://example.com/blog/page2' },
+  ];
   const auditUrl = 'https://audit.url';
   const audit = {
     getId: () => auditDataMock.id,
@@ -87,6 +91,9 @@ describe('Backlinks Tests', function () {
         finalUrl: auditUrl,
       })
       .build(message);
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
 
     nock('https://foo.com')
       .get('/returns-404')
@@ -158,10 +165,6 @@ describe('Backlinks Tests', function () {
   });
 
   it('should submit urls for scraping step', async () => {
-    const topPages = [{ getUrl: () => 'https://example.com/blog/page1' }, { getUrl: () => 'https://example.com/blog/page2' }];
-    context.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-    };
     const result = await submitForScraping(context);
 
     expect(result).to.deep.equal({
@@ -171,12 +174,19 @@ describe('Backlinks Tests', function () {
     });
   });
 
-  it('throws error if top pages cannot be fetched', async () => {
+  it('throws error if top pages cannot be fetched during suggestions generation', async () => {
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
     };
+    context.dataAccess.Configuration.findLatest.resolves({
+      isHandlerEnabledForSite: sandbox.stub().returns(true),
+    });
+    context.audit.getAuditResult.returns({
+      success: true,
+      brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+    });
 
-    await expect(submitForScraping(context)).to.be.rejectedWith('No top pages found for site');
+    await expect(generateSuggestionData(context)).to.be.rejectedWith('No top pages found for site, will not be able to generate suggestions');
   });
 
   it('should filter out broken backlinks that return ok (even with redirection)', async () => {
@@ -263,6 +273,9 @@ describe('Backlinks Tests', function () {
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([brokenBacklinksOpportunity]);
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+      };
 
       firefallClient = {
         fetchChatCompletion: sandbox.stub(),

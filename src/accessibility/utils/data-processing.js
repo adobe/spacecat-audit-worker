@@ -487,16 +487,17 @@ export async function createReportOpportunitySuggestion(
  */
 export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
   let finalResultFiles;
+  const urlsToScrape = [];
   try {
     finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
     if (finalResultFiles.length === 0) {
       const errorMessage = `[A11yAudit] No final result files found for ${siteId}`;
       log.error(errorMessage);
-      throw new Error(errorMessage);
+      return urlsToScrape;
     }
   } catch (error) {
     log.error(`[A11yAudit] Error getting final result files for ${siteId}: ${error.message}`);
-    throw error;
+    return urlsToScrape;
   }
 
   const latestFinalResultFileKey = finalResultFiles[finalResultFiles.length - 1];
@@ -507,15 +508,14 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
     if (!latestFinalResultFile) {
       const errorMessage = `[A11yAudit] No latest final result file found for ${siteId}`;
       log.error(errorMessage);
-      throw new Error(errorMessage);
+      return urlsToScrape;
     }
   } catch (error) {
     log.error(`[A11yAudit] Error getting latest final result file for ${siteId}: ${error.message}`);
-    throw error;
+    return urlsToScrape;
   }
 
   delete latestFinalResultFile.overall;
-  const urlsToScrape = [];
   for (const [key, value] of Object.entries(latestFinalResultFile)) {
     if (key.includes('https://')) {
       urlsToScrape.push({
@@ -529,7 +529,7 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
   if (urlsToScrape.length === 0) {
     const errorMessage = `[A11yAudit] No URLs found for ${siteId}`;
     log.error(errorMessage);
-    throw new Error(errorMessage);
+    return urlsToScrape;
   }
 
   return urlsToScrape;
