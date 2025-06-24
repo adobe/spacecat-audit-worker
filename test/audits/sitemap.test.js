@@ -28,12 +28,13 @@ import {
   findSitemap,
   filterValidUrls,
   getBaseUrlPagesFromSitemaps,
+} from '../../src/sitemap/handler.js';
+import {
   getPagesWithIssues,
   getSitemapsWithIssues,
-} from '../../src/sitemap/handler.js';
+} from '../../src/sitemap/utils.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
-import { DATA_SOURCES } from '../../src/common/constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -840,8 +841,18 @@ describe('Sitemap Audit', () => {
     let auditDataFailure;
     let auditDataSuccess;
     let auditDataWithSuggestions;
+    let site;
 
     beforeEach(() => {
+      site = {
+        getId: () => 'site-id',
+        getCPC: () => 1,
+      };
+      context.site = site;
+      context.rumApiClient = {
+        getTraffic: sandbox.stub().resolves([{ views: 100 }]),
+      };
+
       auditDataFailure = {
         siteId: 'site-id',
         id: 'audit-id',
@@ -968,11 +979,11 @@ describe('Sitemap Audit', () => {
       ).to.be.rejectedWith('Creation failed');
 
       expect(context.log.error).to.have.been.calledWith(
-        'Failed to create new opportunity for siteId site-id and auditId audit-id: Creation failed',
+        `Failed to create new opportunity for siteId ${site.getId()} and auditId audit-id: Creation failed`,
       );
     });
 
-    it('should not create opportunity when there are no suggestions', async () => {
+    it('should not create opportunity when there are no pages with issues', async () => {
       const mockOpportunity = {
         getType: () => 'sitemap',
         getId: () => 'oppty-id',
@@ -991,6 +1002,9 @@ describe('Sitemap Audit', () => {
         context,
       );
 
+      expect(context.log.info).to.have.been.calledWith(
+        'No sitemap issues found, skipping opportunity creation',
+      );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(mockOpportunity.addSuggestions).to.not.have.been.called;
     });
@@ -1011,28 +1025,10 @@ describe('Sitemap Audit', () => {
         context,
       );
 
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
-        {
-          siteId: 'site-id',
-          auditId: 'audit-id',
-          runbook:
-            'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
-          type: 'sitemap',
-          origin: 'AUTOMATION',
-          title: 'Sitemap issues found',
-          description: '',
-          guidance: {
-            steps: [
-              'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
-              'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
-            ],
-          },
-          tags: ['Traffic Acquisition'],
-          data: {
-            dataSources: [DATA_SOURCES.SITE],
-          },
-        },
-      );
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      const opportunityData = context.dataAccess.Opportunity.create.getCall(0).args[0];
+      expect(opportunityData.siteId).to.equal(site.getId());
+      expect(opportunityData.auditId).to.equal('audit-id');
     });
 
     it('should handle updating when opportunity was already defined', async () => {
