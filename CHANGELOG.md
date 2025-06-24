@@ -1,3 +1,17 @@
+## [1.113.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.113.0...v1.113.1) (2025-06-24)
+
+
+### Bug Fixes
+
+* adding promise token handling ([#1003](https://github.com/adobe/spacecat-audit-worker/issues/1003)) ([b26ca01](https://github.com/adobe/spacecat-audit-worker/commit/b26ca01725f3638f38fe8388511d79d5295ebcc4))
+
+# [1.113.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.112.4...v1.113.0) (2025-06-24)
+
+
+### Features
+
+* broken external links check in preflight. ([#1001](https://github.com/adobe/spacecat-audit-worker/issues/1001)) ([8b09fa4](https://github.com/adobe/spacecat-audit-worker/commit/8b09fa4572b56173b29c6bdfaa5204b6dada6371))
+
 ## [1.112.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.112.3...v1.112.4) (2025-06-23)
 
 
