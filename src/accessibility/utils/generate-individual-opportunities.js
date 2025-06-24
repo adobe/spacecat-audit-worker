@@ -477,30 +477,65 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
 }
 
 /**
- * Handles Mistique response for accessibility remediation guidance
+ * Handles Mystique response for accessibility remediation guidance
  *
- * This function processes responses from Mistique containing guidance for
- * accessibility issues. It updates the existing opportunity with the guidance
- * provided by Mistique.
+ * This function processes responses from Mystique containing detailed guidance for
+ * accessibility issues. It updates the existing opportunity with the comprehensive
+ * remediation data provided by Mystique, including specific HTML fixes and user impact.
  *
- * @param {Object} message - The message from Mistique containing guidance
+ * The function enhances the htmlWithIssues structure from a simple array of HTML strings
+ * to an array of objects containing both the original HTML and specific remediation details:
+ *
+ * BEFORE: htmlWithIssues: ['<div aria-label="test">...', '<span aria-invalid="true">...']
+ * AFTER:  htmlWithIssues: [
+ *   {
+ *     originalHtml: '<div aria-label="test">...',
+ *     remediation: {
+ *       generalSuggestion: 'Remove disallowed ARIA attributes...',
+ *       updateFrom: '<div aria-label="test">...',
+ *       updateTo: '<div>...',
+ *       userImpact: 'Screen readers may deliver incorrect information...'
+ *     }
+ *   }
+ * ]
+ *
+ * @param {Object} message - The message from Mystique containing detailed remediation guidance
+ * @param {Object} message.type - Message type (guidance:accessibility-remediation)
+ * @param {string} message.auditId - Audit ID
+ * @param {string} message.siteId - Site ID
+ * @param {Object} message.data - Remediation data
+ * @param {string} message.data.opportunityId - Target opportunity ID
+ * @param {string} message.data.suggestionId - Target suggestion ID
+ * @param {string} message.data.pageUrl - URL of the page being remediated
+ * @param {Array} message.data.remediations - Array of detailed remediation objects
+ * @param {number} message.data.totalIssues - Total number of issues addressed
  * @param {Object} context - Audit context containing dataAccess and logging
  * @returns {Object} Success status object
  */
 export async function handleAccessibilityRemediationGuidance(message, context) {
   const { log, dataAccess } = context;
-  const { auditId, data } = message;
-  const { opportunityId, suggestionId, guidance } = data;
+  const { auditId, siteId, data } = message;
+  const {
+    opportunityId, suggestionId, pageUrl, remediations, totalIssues,
+  } = data;
 
-  log.info(`[A11yIndividual] Received accessibility remediation guidance for opportunity ${opportunityId}, suggestion ${suggestionId}`);
+  log.info(`[A11yRemediationGuidance] Received accessibility remediation guidance for opportunity ${opportunityId}, suggestion ${suggestionId}`);
+  log.debug(`[A11yRemediationGuidance] Processing ${totalIssues} issues for page: ${pageUrl}`);
 
   try {
     const { Opportunity } = dataAccess;
     const opportunity = await Opportunity.findById(opportunityId);
 
     if (!opportunity) {
-      log.error(`[A11yIndividual] Opportunity not found for ID: ${opportunityId}`);
+      log.error(`[A11yRemediationGuidance] Opportunity not found for ID: ${opportunityId}`);
       return { success: false, error: 'Opportunity not found' };
+    }
+
+    // Verify the opportunity belongs to the correct site
+    if (opportunity.getSiteId() !== siteId) {
+      const errorMsg = `[A11yRemediationGuidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
+      log.error(errorMsg);
+      return { success: false, error: 'Site ID mismatch' };
     }
 
     // Get the current suggestions
@@ -508,15 +543,70 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
     const targetSuggestion = suggestions.find((suggestion) => suggestion.getId() === suggestionId);
 
     if (!targetSuggestion) {
-      log.error(`[A11yIndividual] Suggestion not found for ID: ${suggestionId}`);
+      log.error(`[A11yRemediationGuidance] Suggestion not found for ID: ${suggestionId}`);
       return { success: false, error: 'Suggestion not found' };
     }
 
-    // Update the suggestion with guidance from Mistique
+    // Process the remediations and match them to specific issues and HTML elements
     const suggestionData = targetSuggestion.getData();
+    const updatedIssues = suggestionData.issues.map((issue) => {
+      // Find all matching remediations for this issue type
+      const matchingRemediations = remediations.filter(
+        (remediation) => remediation.issue_name === issue.type,
+      );
+
+      if (matchingRemediations.length > 0) {
+        // Enhanced htmlWithIssues structure - match remediations to specific HTML elements
+        const enhancedHtmlWithIssues = issue.htmlWithIssues.map((originalHtml) => {
+          // Find the specific remediation that matches this HTML element
+          const specificRemediation = matchingRemediations.find((remediation) => {
+            // Match by comparing the HTML content (remove extra whitespace for better matching)
+            const normalizedOriginal = originalHtml.replace(/\s+/g, ' ').trim();
+            const normalizedUpdateFrom = remediation.update_from.replace(/\s+/g, ' ').trim();
+            return normalizedOriginal.includes(normalizedUpdateFrom.substring(0, 50))
+                   || normalizedUpdateFrom.includes(normalizedOriginal.substring(0, 50));
+          });
+
+          if (specificRemediation) {
+            // Return enhanced structure with specific remediation
+            return {
+              originalHtml,
+              remediation: {
+                generalSuggestion: specificRemediation.general_suggestion,
+                updateFrom: specificRemediation.update_from,
+                updateTo: specificRemediation.update_to,
+                userImpact: specificRemediation.user_impact,
+              },
+            };
+          }
+
+          // Return only originalHtml if no specific remediation found
+          return {
+            originalHtml,
+          };
+        });
+
+        // Return enhanced issue with improved htmlWithIssues structure
+        return {
+          ...issue,
+          htmlWithIssues: enhancedHtmlWithIssues,
+        };
+      }
+
+      // Return issue unchanged if no matching remediation found
+      return issue;
+    });
+
+    // Update the suggestion with enhanced issues containing remediation details
     const updatedSuggestionData = {
       ...suggestionData,
-      guidance: guidance || {},
+      issues: updatedIssues,
+      // Add metadata about the remediation processing
+      remediationMetadata: {
+        pageUrl,
+        totalIssues,
+        processedAt: new Date().toISOString(),
+      },
     };
 
     // Update the suggestion
@@ -528,10 +618,16 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
     opportunity.setUpdatedBy('system');
     await opportunity.save();
 
-    log.info(`[A11yIndividual] Successfully updated suggestion ${suggestionId} with guidance for opportunity ${opportunityId}`);
-    return { success: true };
+    const logMsg = `Successfully updated suggestion ${suggestionId} with remediations`;
+    log.info(`[A11yRemediationGuidance] ${logMsg} for opportunity ${opportunityId}`);
+
+    return {
+      success: true,
+      totalIssues,
+      pageUrl,
+    };
   } catch (error) {
-    log.error(`[A11yIndividual] Failed to process accessibility remediation guidance: ${error.message}`);
+    log.error(`[A11yRemediationGuidance] Failed to process accessibility remediation guidance: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
