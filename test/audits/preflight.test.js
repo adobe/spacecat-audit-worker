@@ -503,7 +503,6 @@ describe('Preflight Audit', () => {
         isHandlerEnabledForSite: sinon.stub(),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
-      context.promiseToken = 'mock-promise-token';
 
       nock('https://main--example--page.aem.page')
         .get('/page1')
@@ -525,6 +524,7 @@ describe('Preflight Audit', () => {
     });
 
     it('completes successfully on the happy path for the suggest step', async () => {
+      context.promiseToken = 'mock-promise-token';
       const head = '<head><a href="https://example.com/header-url"/></head>';
       const body = '<body><a href="https://example.com/broken"></a><a href="https://example.com/another-broken-url"></a><h1>Page 1 H1</h1><h1>Page 1 H1</h1></h1></body>';
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
