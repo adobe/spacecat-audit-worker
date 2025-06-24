@@ -14,8 +14,8 @@ import { JSDOM } from 'jsdom';
 import http from 'http';
 import https from 'https';
 
-const httpAgent = new http.Agent({ keepAlive: true });
-const httpsAgent = new https.Agent({ keepAlive: true });
+const httpAgent = new http.Agent({ keepAlive: true, timeout: 3000 });
+const httpsAgent = new https.Agent({ keepAlive: true, timeout: 3000 });
 
 /**
  * Preflight check for internal links

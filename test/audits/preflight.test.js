@@ -62,8 +62,8 @@ describe('Preflight Audit', () => {
       httpsAgentStub = sinon.stub(https, 'Agent');
 
       // Create mock agent instances
-      const mockHttpAgent = { keepAlive: true };
-      const mockHttpsAgent = { keepAlive: true };
+      const mockHttpAgent = { keepAlive: true, timeout: 3000 };
+      const mockHttpsAgent = { keepAlive: true, timeout: 3000 };
 
       httpAgentStub.returns(mockHttpAgent);
       httpsAgentStub.returns(mockHttpsAgent);
