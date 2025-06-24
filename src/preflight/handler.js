@@ -11,7 +11,7 @@
  */
 
 import { isNonEmptyArray, isValidUrl, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
-import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
+import { Audit, AsyncJob, Site } from '@adobe/spacecat-shared-data-access';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopPersister } from '../common/index.js';
@@ -128,9 +128,19 @@ export const preflightAudit = async (context) => {
   }
 
   try {
-    const pageAuthToken = await retrievePageAuthentication(site, context);
+    const options = {
+      ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
+    };
+    let pageAuthToken = await retrievePageAuthentication(site, context, options);
+    // if aem cs site, add bearer prefix to the token
+    if (site.getDeliveryType() === Site.DELIVERY_TYPES.AEM_CS && options.promiseToken) {
+      pageAuthToken = `Bearer ${pageAuthToken}`;
+    } else {
+      pageAuthToken = `token ${pageAuthToken}`;
+    }
+
     const baseURL = new URL(normalizedUrls[0]).origin;
-    const authHeader = { headers: { Authorization: `token ${pageAuthToken}` } };
+    const authHeader = { headers: { Authorization: pageAuthToken } };
 
     // Initialize results
     const result = normalizedUrls.map((url) => ({
@@ -346,7 +356,7 @@ export const preflightAudit = async (context) => {
       const internalLinksStartTimestamp = new Date().toISOString();
 
       const { auditResult } = await runInternalLinkChecks(urls, scrapedObjects, context, {
-        pageAuthToken: `token ${pageAuthToken}`,
+        pageAuthToken,
       });
       if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
         if (normalizedStep === AUDIT_STEP_SUGGEST) {

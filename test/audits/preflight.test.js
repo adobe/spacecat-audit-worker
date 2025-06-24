@@ -19,6 +19,7 @@ import sinon from 'sinon';
 import nock from 'nock';
 import AWSXray from 'aws-xray-sdk';
 import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
+import { Site } from '@adobe/spacecat-shared-data-access';
 import {
   isValidUrls, preflightAudit, scrapePages, AUDIT_STEP_SUGGEST, AUDIT_STEP_IDENTIFY,
   AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
@@ -266,7 +267,7 @@ describe('Preflight Audit', () => {
   describe('scrapePages', () => {
     it('returns the correct object for valid input', async () => {
       const context = {
-        site: { getId: () => 'site-123' },
+        site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
         job: {
           getMetadata: () => ({
             payload: {
@@ -297,7 +298,7 @@ describe('Preflight Audit', () => {
 
     it('includes promiseToken in options if context.promiseToken exists', async () => {
       const context = {
-        site: { getId: () => 'site-123' },
+        site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
         job: {
           getMetadata: () => ({
             payload: {
@@ -316,7 +317,7 @@ describe('Preflight Audit', () => {
 
     it('throws an error if urls are invalid', async () => {
       const context = {
-        site: { getId: () => 'site-123' },
+        site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
         job: {
           getMetadata: () => ({
             payload: {
@@ -349,6 +350,7 @@ describe('Preflight Audit', () => {
       site = {
         getId: () => 'site-123',
         getBaseURL: () => 'https://example.com',
+        getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
       };
       s3Client = {
         send: sinon.stub(),
