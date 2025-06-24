@@ -69,6 +69,7 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         // Check internal links
         await Promise.all(
           Array.from(internalSet).map(async (href) => {
+            const startTime = Date.now();
             try {
               const response = await fetch(href, {
                 method: 'HEAD',
@@ -79,12 +80,16 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
                 timeout: 3000,
               });
               const { status } = response;
+              const endTime = Date.now();
+              log.debug(`[preflight-audit] Internal link check completed in ${endTime - startTime}ms: ${href} (status: ${status})`);
 
               if (status >= 400) {
                 log.debug(`[preflight-audit] internal url ${href} returned with status code: %s`, status);
                 brokenInternalLinks.push({ urlTo: href, href: pageUrl, status });
               }
             } catch (err) {
+              const endTime = Date.now();
+              log.debug(`[preflight-audit] Internal link check failed in ${endTime - startTime}ms: ${href} (error: ${err.message})`);
               log.error(`[preflight-audit] Error checking internal link ${href} from ${pageUrl}:`, err.message);
             }
           }),
@@ -93,6 +98,7 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         // Check external links
         await Promise.all(
           Array.from(externalSet).map(async (href) => {
+            const startTime = Date.now();
             try {
               const response = await fetch(href, {
                 method: 'HEAD',
@@ -102,12 +108,16 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
                 timeout: 3000,
               });
               const { status } = response;
+              const endTime = Date.now();
+              log.debug(`[preflight-audit] External link check completed in ${endTime - startTime}ms: ${href} (status: ${status})`);
 
               if (status >= 400) {
                 log.debug(`[preflight-audit] external url ${href} returned with status code: %s`, status);
                 brokenExternalLinks.push({ urlTo: href, href: pageUrl, status });
               }
             } catch (err) {
+              const endTime = Date.now();
+              log.debug(`[preflight-audit] External link check failed in ${endTime - startTime}ms: ${href} (error: ${err.message})`);
               log.error(`[preflight-audit] Error checking external link ${href} from ${pageUrl}:`, err.message);
               brokenExternalLinks.push({
                 urlTo: href,
