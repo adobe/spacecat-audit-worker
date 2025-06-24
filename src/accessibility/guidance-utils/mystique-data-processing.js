@@ -10,15 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import { issueTypesForMistique } from '../utils/constants.js';
+import { issueTypesForMystique } from '../utils/constants.js';
 
 /**
- * Processes suggestions directly to create Mistique message data
+ * Processes suggestions directly to create Mystique message data
  *
  * @param {Array} suggestions - Array of suggestion objects from the opportunity
  * @returns {Array} Array of message data objects ready for SQS sending
  */
-export function processSuggestionsForMistique(suggestions) {
+export function processSuggestionsForMystique(suggestions) {
   // Handle null/undefined inputs safely
   if (!suggestions || !Array.isArray(suggestions)) {
     return [];
@@ -52,7 +52,7 @@ export function processSuggestionsForMistique(suggestions) {
 
       // Create message data for each issue type
       for (const [issueType, issuesList] of Object.entries(issuesByType)) {
-        if (issueTypesForMistique.includes(issueType)) {
+        if (issueTypesForMystique.includes(issueType)) {
           messageData.push({
             suggestion,
             suggestionData,

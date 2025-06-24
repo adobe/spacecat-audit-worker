@@ -723,8 +723,8 @@ export const accessibilityOpportunitiesMap = {
 };
 
 /**
- * Accessibility issue types that should be sent to Mistique for remediation guidance
+ * Accessibility issue types that should be sent to Mystique for remediation guidance
  */
-export const issueTypesForMistique = [
+export const issueTypesForMystique = [
   'aria-allowed-attr',
 ];

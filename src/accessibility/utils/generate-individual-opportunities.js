@@ -14,10 +14,10 @@ import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
 import { getAuditData } from './data-processing.js';
-import { processSuggestionsForMistique } from '../guidance-utils/mistique-data-processing.js';
+import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 
 /**
- * Creates a Mistique message object
+ * Creates a Mystique message object
  *
  * @param {Object} params - Parameters for creating the message
  * @param {Object} params.suggestionData - The suggestion data
@@ -28,7 +28,7 @@ import { processSuggestionsForMistique } from '../guidance-utils/mistique-data-p
  * @param {string} params.deliveryType - Delivery type
  * @returns {Object} The message object ready for SQS
  */
-function createMistiqueMessage({
+function createMystiqueMessage({
   suggestionData,
   issuesList,
   opportunity,
@@ -52,7 +52,7 @@ function createMistiqueMessage({
 }
 
 /**
- * Sends a single message to Mistique for a specific issue type
+ * Sends a single message to Mystique for a specific issue type
  *
  * @param {Object} params - Parameters for sending the message
  * @param {Object} params.suggestion - The suggestion object
@@ -68,7 +68,7 @@ function createMistiqueMessage({
  * @param {Object} params.log - Logger instance
  * @returns {Promise<Object>} Result object with success status and details
  */
-async function sendMistiqueMessage({
+async function sendMystiqueMessage({
   suggestion,
   suggestionData,
   issueType,
@@ -81,7 +81,7 @@ async function sendMistiqueMessage({
   env,
   log,
 }) {
-  const message = createMistiqueMessage({
+  const message = createMystiqueMessage({
     suggestionData,
     issuesList,
     opportunity,
@@ -93,7 +93,7 @@ async function sendMistiqueMessage({
   try {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(
-      `[A11yIndividual] Sent message to Mistique for suggestion ${
+      `[A11yIndividual] Sent message to Mystique for suggestion ${
         suggestion.getId ? suggestion.getId() : ''
       } and issue type ${issueType} with ${issuesList.length} issues`,
     );
@@ -104,7 +104,7 @@ async function sendMistiqueMessage({
     };
   } catch (error) {
     log.error(
-      `[A11yIndividual] Failed to send message to Mistique for suggestion ${
+      `[A11yIndividual] Failed to send message to Mystique for suggestion ${
         suggestion.getId ? suggestion.getId() : ''
       } and issue type ${issueType}: ${error.message}`,
     );
@@ -382,13 +382,13 @@ export async function createIndividualOpportunitySuggestions(
       log.debug(`[A11yIndividual] Suggestion ${index}: URL=${suggestionData.url}, Issues=[${issueTypes.join(', ')}]`);
     });
 
-    // Process the suggestions directly to create Mistique messages
-    const mistiqueData = processSuggestionsForMistique(suggestions);
+    // Process the suggestions directly to create Mystique messages
+    const mystiqueData = processSuggestionsForMystique(suggestions);
 
-    log.debug(`[A11yIndividual] Mistique data processed: ${mistiqueData.length} messages to send`);
+    log.debug(`[A11yIndividual] Mystique data processed: ${mystiqueData.length} messages to send`);
 
-    if (mistiqueData.length === 0) {
-      log.info('[A11yIndividual] No messages to send to Mistique - no matching issue types found');
+    if (mystiqueData.length === 0) {
+      log.info('[A11yIndividual] No messages to send to Mystique - no matching issue types found');
       return { success: true };
     }
 
@@ -398,11 +398,11 @@ export async function createIndividualOpportunitySuggestions(
       return { success: false, error: 'Missing SQS context or queue configuration' };
     }
 
-    log.info(`[A11yIndividual] Sending ${mistiqueData.length} messages to Mistique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+    log.info(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
 
-    const messagePromises = mistiqueData.map(({
+    const messagePromises = mystiqueData.map(({
       suggestion, suggestionData, issueType, issuesList,
-    }) => sendMistiqueMessage({
+    }) => sendMystiqueMessage({
       suggestion,
       suggestionData,
       issueType,
@@ -647,4 +647,4 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
 }
 
 // Export these for testing
-export { createMistiqueMessage, sendMistiqueMessage };
+export { createMystiqueMessage, sendMystiqueMessage };

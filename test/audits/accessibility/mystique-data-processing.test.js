@@ -15,7 +15,7 @@ import * as chai from 'chai';
 import sinon from 'sinon';
 import chaiAsPromised from 'chai-as-promised';
 import sinonChai from 'sinon-chai';
-import { processSuggestionsForMistique } from '../../../src/accessibility/guidance-utils/mistique-data-processing.js';
+import { processSuggestionsForMystique } from '../../../src/accessibility/guidance-utils/mystique-data-processing.js';
 
 const { expect } = chai;
 
@@ -23,7 +23,7 @@ const { expect } = chai;
 chai.use(chaiAsPromised);
 chai.use(sinonChai);
 
-describe('mistique-data-processing', () => {
+describe('mystique-data-processing', () => {
   let sandbox;
 
   beforeEach(() => {
@@ -34,24 +34,24 @@ describe('mistique-data-processing', () => {
     sandbox.restore();
   });
 
-  describe('processSuggestionsForMistique', () => {
+  describe('processSuggestionsForMystique', () => {
     it('should return empty array when no suggestions provided', () => {
-      const result = processSuggestionsForMistique([]);
+      const result = processSuggestionsForMystique([]);
       expect(result).to.deep.equal([]);
     });
 
     it('should return empty array when suggestions is null', () => {
-      const result = processSuggestionsForMistique(null);
+      const result = processSuggestionsForMystique(null);
       expect(result).to.be.an('array').that.is.empty;
     });
 
     it('should return empty array when suggestions is undefined', () => {
-      const result = processSuggestionsForMistique(undefined);
+      const result = processSuggestionsForMystique(undefined);
       expect(result).to.be.an('array').that.is.empty;
     });
 
     it('should return empty array when suggestions is not an array', () => {
-      const result = processSuggestionsForMistique('not an array');
+      const result = processSuggestionsForMystique('not an array');
       expect(result).to.be.an('array').that.is.empty;
     });
 
@@ -59,7 +59,7 @@ describe('mistique-data-processing', () => {
       const mockSuggestion = {
         getData: () => ({ issues: [] }),
       };
-      const result = processSuggestionsForMistique([mockSuggestion]);
+      const result = processSuggestionsForMystique([mockSuggestion]);
       expect(result).to.be.an('array').that.is.empty;
     });
 
@@ -70,7 +70,7 @@ describe('mistique-data-processing', () => {
         }),
       };
 
-      const result = processSuggestionsForMistique([mockSuggestion]);
+      const result = processSuggestionsForMystique([mockSuggestion]);
       expect(result).to.deep.equal([]);
     });
 
@@ -94,7 +94,7 @@ describe('mistique-data-processing', () => {
         }),
       };
 
-      const result = processSuggestionsForMistique([mockSuggestion]);
+      const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
       expect(result[0]).to.have.property('suggestion', mockSuggestion);
@@ -128,7 +128,7 @@ describe('mistique-data-processing', () => {
         }),
       };
 
-      const result = processSuggestionsForMistique([mockSuggestion]);
+      const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList).to.have.length(2);
@@ -149,7 +149,7 @@ describe('mistique-data-processing', () => {
         }),
       };
 
-      const result = processSuggestionsForMistique([mockSuggestion]);
+      const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
@@ -174,7 +174,7 @@ describe('mistique-data-processing', () => {
         }),
       };
 
-      const result = processSuggestionsForMistique([mockSuggestion]);
+      const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
@@ -198,7 +198,7 @@ describe('mistique-data-processing', () => {
         }),
       };
 
-      const result = processSuggestionsForMistique([mockSuggestion]);
+      const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
@@ -222,7 +222,7 @@ describe('mistique-data-processing', () => {
         }),
       };
 
-      const result = processSuggestionsForMistique([mockSuggestion]);
+      const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
@@ -233,7 +233,7 @@ describe('mistique-data-processing', () => {
       });
     });
 
-    it('should filter out issue types not in issueTypesForMistique', () => {
+    it('should filter out issue types not in issueTypesForMystique', () => {
       const mockSuggestion = {
         getData: () => ({
           issues: [
@@ -253,7 +253,7 @@ describe('mistique-data-processing', () => {
         }),
       };
 
-      const result = processSuggestionsForMistique([mockSuggestion]);
+      const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
       expect(result[0].issueType).to.equal('aria-allowed-attr');
@@ -288,7 +288,7 @@ describe('mistique-data-processing', () => {
         }),
       };
 
-      const result = processSuggestionsForMistique([mockSuggestion1, mockSuggestion2]);
+      const result = processSuggestionsForMystique([mockSuggestion1, mockSuggestion2]);
 
       expect(result).to.have.length(2);
       expect(result[0].suggestion).to.equal(mockSuggestion1);
@@ -337,7 +337,7 @@ describe('mistique-data-processing', () => {
         }),
       };
 
-      const result = processSuggestionsForMistique([
+      const result = processSuggestionsForMystique([
         mockSuggestion1,
         mockSuggestion2,
         mockSuggestion3,
