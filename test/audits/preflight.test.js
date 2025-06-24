@@ -248,6 +248,23 @@ describe('Preflight Audit', () => {
       const result = await runInternalLinkChecks(urls, scrapedObjects, context, { pageAuthToken: `token ${authToken}` });
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
     });
+
+    it('uses HTTP agent for HTTP URLs', async () => {
+      const urls = ['http://main--example--page.aem.page/page1'];
+      nock('http://main--example--page.aem.page')
+        .head('/insecure')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/insecure">insecure</a>' },
+          finalUrl: 'http://main--example--page.aem.page/page1',
+        },
+      }];
+
+      const result = await runInternalLinkChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+    });
   });
 
   describe('isValidUrls', () => {
