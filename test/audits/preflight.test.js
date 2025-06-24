@@ -338,6 +338,33 @@ describe('Preflight Audit', () => {
         { urlTo: 'https://external-site.com/external-broken', href: 'https://main--example--page.aem.page/page1', status: 500 },
       ]);
     });
+
+    it('uses HTTP agent for HTTP URLs and HTTPS agent for HTTPS URLs', async () => {
+      const urls = ['http://example.com/page1'];
+      nock('http://example.com')
+        .head('/http-link')
+        .reply(200);
+      nock('https://example.com')
+        .head('/https-link')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: {
+            rawBody: '<a href="http://example.com/http-link">http link</a><a href="https://example.com/https-link">https link</a>',
+          },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+      expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
+
+      // Verify that both HTTP and HTTPS agents were used
+      expect(httpAgentStub).to.have.been.called;
+      expect(httpsAgentStub).to.have.been.called;
+    });
   });
 
   describe('isValidUrls', () => {
