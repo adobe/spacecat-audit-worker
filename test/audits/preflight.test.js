@@ -18,6 +18,8 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import nock from 'nock';
 import AWSXray from 'aws-xray-sdk';
+import http from 'http';
+import https from 'https';
 import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import {
   isValidUrls, preflightAudit, scrapePages, AUDIT_STEP_SUGGEST, AUDIT_STEP_IDENTIFY,
@@ -42,6 +44,8 @@ describe('Preflight Audit', () => {
 
   describe('runInternalLinkChecks', () => {
     let context;
+    let httpAgentStub;
+    let httpsAgentStub;
 
     beforeEach(() => {
       context = {
@@ -52,10 +56,22 @@ describe('Preflight Audit', () => {
           debug: sinon.stub(),
         },
       };
+
+      // Stub the HTTP and HTTPS agents
+      httpAgentStub = sinon.stub(http, 'Agent');
+      httpsAgentStub = sinon.stub(https, 'Agent');
+
+      // Create mock agent instances
+      const mockHttpAgent = { keepAlive: true };
+      const mockHttpsAgent = { keepAlive: true };
+
+      httpAgentStub.returns(mockHttpAgent);
+      httpsAgentStub.returns(mockHttpsAgent);
     });
 
     afterEach(() => {
       nock.cleanAll();
+      sinon.restore();
     });
 
     it('returns no broken links when all internal links are valid', async () => {
@@ -231,6 +247,69 @@ describe('Preflight Audit', () => {
 
       const result = await runInternalLinkChecks(urls, scrapedObjects, context, { pageAuthToken: `token ${authToken}` });
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+    });
+
+    it('creates HTTPS agent for HTTPS URLs', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://main--example--page.aem.page')
+        .head('/secure')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/secure">secure</a>' },
+          finalUrl: 'https://main--example--page.aem.page/page1',
+        },
+      }];
+
+      await runInternalLinkChecks(urls, scrapedObjects, context);
+
+      // Verify that HTTPS agent was created with keepAlive: true
+      expect(httpsAgentStub).to.have.been.calledWith({ keepAlive: true });
+      expect(httpAgentStub).not.to.have.been.called;
+    });
+
+    it('creates HTTP agent for HTTP URLs', async () => {
+      const urls = ['http://example.com/page1'];
+      nock('http://example.com')
+        .head('/insecure')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/insecure">insecure</a>' },
+          finalUrl: 'http://example.com/page1',
+        },
+      }];
+
+      await runInternalLinkChecks(urls, scrapedObjects, context);
+
+      // Verify that HTTP agent was created with keepAlive: true
+      expect(httpAgentStub).to.have.been.calledWith({ keepAlive: true });
+      expect(httpsAgentStub).not.to.have.been.called;
+    });
+
+    it('creates new agent instances for each request', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://main--example--page.aem.page')
+        .head('/link1')
+        .reply(200)
+        .head('/link2')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/link1">link1</a><a href="/link2">link2</a>' },
+          finalUrl: 'https://main--example--page.aem.page/page1',
+        },
+      }];
+
+      await runInternalLinkChecks(urls, scrapedObjects, context);
+      // At least two calls with keepAlive: true
+      const keepAliveCalls = httpsAgentStub.getCalls().filter(
+        (call) => call.calledWithMatch({ keepAlive: true }),
+      );
+      expect(keepAliveCalls.length).to.be.at.least(2);
     });
   });
 
