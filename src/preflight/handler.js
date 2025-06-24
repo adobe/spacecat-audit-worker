@@ -47,6 +47,14 @@ export function isValidUrls(urls) {
   );
 }
 
+export function getPrefixedPageAuthToken(site, token, options) {
+  if (site.getDeliveryType() === Site.DELIVERY_TYPES.AEM_CS && options.promiseToken) {
+    return `Bearer ${token}`;
+  } else {
+    return `token ${token}`;
+  }
+}
+
 export async function scrapePages(context) {
   const { site, job } = context;
   const siteId = site.getId();
@@ -132,12 +140,7 @@ export const preflightAudit = async (context) => {
       ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
     };
     let pageAuthToken = await retrievePageAuthentication(site, context, options);
-    // if aem cs site, add bearer prefix to the token
-    if (site.getDeliveryType() === Site.DELIVERY_TYPES.AEM_CS && options.promiseToken) {
-      pageAuthToken = `Bearer ${pageAuthToken}`;
-    } else {
-      pageAuthToken = `token ${pageAuthToken}`;
-    }
+    pageAuthToken = getPrefixedPageAuthToken(site, pageAuthToken, options);
 
     const baseURL = new URL(normalizedUrls[0]).origin;
     const authHeader = { headers: { Authorization: pageAuthToken } };

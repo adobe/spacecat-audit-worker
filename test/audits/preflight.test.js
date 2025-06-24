@@ -22,9 +22,10 @@ import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client'
 import { Site } from '@adobe/spacecat-shared-data-access';
 import {
   isValidUrls, preflightAudit, scrapePages, AUDIT_STEP_SUGGEST, AUDIT_STEP_IDENTIFY,
-  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
+  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT, getPrefixedPageAuthToken,
 } from '../../src/preflight/handler.js';
 import { runInternalLinkChecks } from '../../src/preflight/internal-links.js';
+
 import { MockContextBuilder } from '../shared.js';
 import { suggestionData } from '../fixtures/preflight/preflight-suggest.js';
 import identifyData from '../fixtures/preflight/preflight-identify.json' with { type: 'json' };
@@ -878,6 +879,36 @@ describe('Preflight Audit', () => {
       // Verify other checks were not performed
       expect(audits.find((a) => a.name === AUDIT_BODY_SIZE)).to.not.exist;
       expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
+    });
+  });
+
+  describe('getPrefixedPageAuthToken', () => {
+    const token = 'my-token';
+    const optionsWithPromise = { promiseToken: 'some-promise-token' };
+    const optionsWithoutPromise = {};
+
+    it('returns Bearer <token> for AEM_CS site with promiseToken', () => {
+      const aemCsSite = { getDeliveryType: () => Site.DELIVERY_TYPES.AEM_CS };
+      const result = getPrefixedPageAuthToken(aemCsSite, token, optionsWithPromise);
+      expect(result).to.equal(`Bearer ${token}`);
+    });
+
+    it('returns token <token> for AEM_CS site without promiseToken', () => {
+      const aemCsSite = { getDeliveryType: () => Site.DELIVERY_TYPES.AEM_CS };
+      const result = getPrefixedPageAuthToken(aemCsSite, token, optionsWithoutPromise);
+      expect(result).to.equal(`token ${token}`);
+    });
+
+    it('returns token <token> for non-AEM_CS site with promiseToken', () => {
+      const edgeSite = { getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE };
+      const result = getPrefixedPageAuthToken(edgeSite, token, optionsWithPromise);
+      expect(result).to.equal(`token ${token}`);
+    });
+
+    it('returns token <token> for non-AEM_CS site without promiseToken', () => {
+      const edgeSite = { getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE };
+      const result = getPrefixedPageAuthToken(edgeSite, token, optionsWithoutPromise);
+      expect(result).to.equal(`token ${token}`);
     });
   });
 });
