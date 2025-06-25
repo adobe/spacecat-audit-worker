@@ -1,3 +1,10 @@
+# [1.114.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.113.2...v1.114.0) (2025-06-25)
+
+
+### Features
+
+* add new issues to existing opportunity ([#998](https://github.com/adobe/spacecat-audit-worker/issues/998)) ([b017b89](https://github.com/adobe/spacecat-audit-worker/commit/b017b8996b9bf577ac5cb23289508b7ab9620d24))
+
 ## [1.113.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.113.1...v1.113.2) (2025-06-24)
 
 
