@@ -368,8 +368,6 @@ export async function createIndividualOpportunitySuggestions(
     const suggestions = await refreshedOpportunity.getSuggestions();
     log.debug(`[A11yIndividual] Retrieved ${suggestions.length} suggestions from opportunity ${opportunity.getId()}`);
 
-    // Debug: Log the opportunity object details
-    log.debug(`[A11yIndividual] Opportunity details - ID: ${refreshedOpportunity.getId()}, Type: ${refreshedOpportunity.getType ? refreshedOpportunity.getType() : 'N/A'}`);
     const { sqs, env } = context;
     const siteId = refreshedOpportunity.getSiteId
       ? refreshedOpportunity.getSiteId()

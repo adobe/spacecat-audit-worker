@@ -12,7 +12,6 @@
     "src/**/*.js"
   ],
   "exclude": [
-    "src/index-local.js",
-    "src/accessibility/utils/generate-individual-opportunities.js"
+    "src/index-local.js"
   ]
 }
