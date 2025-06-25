@@ -29,6 +29,7 @@ import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-p
  * @returns {Object} The message object ready for SQS
  */
 function createMystiqueMessage({
+  suggestion,
   suggestionData,
   issuesList,
   opportunity,
@@ -45,7 +46,7 @@ function createMystiqueMessage({
     data: {
       url: suggestionData.url,
       opportunity_id: opportunity.getId(),
-      suggestion_id: suggestionData.suggestionId,
+      suggestion_id: suggestion.getId ? suggestion.getId() : '',
       issues_list: issuesList,
     },
   };
@@ -82,6 +83,7 @@ async function sendMystiqueMessage({
   log,
 }) {
   const message = createMystiqueMessage({
+    suggestion,
     suggestionData,
     issuesList,
     opportunity,
@@ -177,6 +179,12 @@ export function formatIssue(type, issueData, severity) {
   // Format the WCAG rule (e.g., "wcag412" -> "4.1.2 Name, Role, Value")
   const wcagRule = formatWcagRule(rawWcagRule);
 
+  // Extract target selector from the target field
+  let targetSelector = '';
+  if (issueData.target && Array.isArray(issueData.target) && issueData.target.length > 0) {
+    [targetSelector] = issueData.target;
+  }
+
   return {
     type,
     description: issueData.description || '',
@@ -186,6 +194,7 @@ export function formatIssue(type, issueData, severity) {
     occurrences: issueData.count || 0,
     htmlWithIssues: issueData.htmlWithIssues || [],
     failureSummary: issueData.failureSummary || '',
+    targetSelector,
   };
 }
 
