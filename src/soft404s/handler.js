@@ -128,7 +128,7 @@ export async function submitForScraping(context) {
     fullAuditRef: baseURL,
     auditResult: {
       status: 'preparing',
-      urls: finalUrls, // Store URLs in auditResult so next step can access them
+      urls: finalUrls.map((url) => ({ url })),
     },
     url: baseURL,
   };
@@ -384,4 +384,5 @@ export default new AuditBuilder()
   .withPersister(noopPersister)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('soft404s-audit-runner', soft404sAuditRunner)
+  .withAsyncJob()
   .build();
