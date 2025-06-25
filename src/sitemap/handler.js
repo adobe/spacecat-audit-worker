@@ -323,6 +323,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
     if (urlData.existsAndIsValid) {
       if (urlData.details?.isSitemapIndex) {
         const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
+        log.info(`[Sitemap] Index: ${url} → ${extractedSitemaps.length} child sitemaps`);
         extractedSitemaps.forEach((extractedSitemapUrl) => {
           if (!contentsCache[extractedSitemapUrl]) {
             matchingUrls.push(extractedSitemapUrl);
@@ -347,6 +348,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
       );
 
       if (pages.length > 0) {
+        log.info(`[Sitemap] Processed: ${matchingUrl} (${pages.length} URLs)`);
         return { [matchingUrl]: pages };
       }
     }
