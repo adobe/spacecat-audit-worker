@@ -101,6 +101,8 @@ describe('Preflight Audit', () => {
       const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://main--example--page.aem.page')
         .head('/fail')
+        .replyWithError('network fail')
+        .get('/fail')
         .replyWithError('network fail');
 
       const scrapedObjects = [{
@@ -112,7 +114,49 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
-      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking internal link https://main--example--page.aem.page/fail from https://main--example--page.aem.page/page1:', 'network fail');
+      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking internal link https://main--example--page.aem.page/fail from https://main--example--page.aem.page/page1 with GET fallback:', 'network fail');
+    });
+
+    it('handles HEAD failure with GET fallback success', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://main--example--page.aem.page')
+        .head('/head-fails-get-works')
+        .replyWithError('HEAD request failed')
+        .get('/head-fails-get-works')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/head-fails-get-works">link</a>' },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-works');
+    });
+
+    it('handles HEAD failure with GET fallback returning 404', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://main--example--page.aem.page')
+        .head('/head-fails-get-404')
+        .replyWithError('HEAD request failed')
+        .get('/head-fails-get-404')
+        .reply(404);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/head-fails-get-404">link</a>' },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([
+        { urlTo: 'https://main--example--page.aem.page/head-fails-get-404', href: 'https://main--example--page.aem.page/page1', status: 404 },
+      ]);
+      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-404');
     });
 
     it('filters out scrapedObjects not in the urls list', async () => {
@@ -139,8 +183,8 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      // Verify only one page was processed (now logs both internal and external links)
-      expect(context.log.info).to.have.been.calledTwice;
+      // Verify only one page was processed (now logs total links, internal and external links)
+      expect(context.log.info).to.have.been.calledThrice;
     });
 
     it('returns empty array when no scrapedObjects match urls', async () => {
@@ -190,8 +234,8 @@ describe('Preflight Audit', () => {
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
       // Verify only two pages were processed
-      // (now logs both internal and external links for each page)
-      expect(context.log.info.callCount).to.equal(4);
+      // (now logs total links, internal and external links for each page)
+      expect(context.log.info.callCount).to.equal(6);
     });
 
     it('skips invalid hrefs', async () => {
@@ -275,6 +319,8 @@ describe('Preflight Audit', () => {
       const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://external-site.com')
         .head('/fail')
+        .replyWithError('network fail')
+        .get('/fail')
         .replyWithError('network fail');
 
       const scrapedObjects = [{
@@ -285,15 +331,50 @@ describe('Preflight Audit', () => {
       }];
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
-      expect(result.auditResult.brokenExternalLinks).to.deep.equal([
-        {
-          urlTo: 'https://external-site.com/fail',
-          href: 'https://main--example--page.aem.page/page1',
-          status: 'error',
-          error: 'network fail',
+      expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
+      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking external link https://external-site.com/fail from https://main--example--page.aem.page/page1 with GET fallback:', 'network fail');
+    });
+
+    it('handles external HEAD failure with GET fallback success', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://external-site.com')
+        .head('/head-fails-get-works')
+        .replyWithError('HEAD request failed')
+        .get('/head-fails-get-works')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="https://external-site.com/head-fails-get-works">external link</a>' },
+          finalUrl: urls[0],
         },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
+      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-works');
+    });
+
+    it('handles external HEAD failure with GET fallback returning 404', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://external-site.com')
+        .head('/head-fails-get-404')
+        .replyWithError('HEAD request failed')
+        .get('/head-fails-get-404')
+        .reply(404);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="https://external-site.com/head-fails-get-404">external link</a>' },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenExternalLinks).to.deep.equal([
+        { urlTo: 'https://external-site.com/head-fails-get-404', href: 'https://main--example--page.aem.page/page1', status: 404 },
       ]);
-      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking external link https://external-site.com/fail from https://main--example--page.aem.page/page1:', 'network fail');
+      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-404');
     });
 
     it('processes both internal and external links correctly', async () => {
@@ -321,6 +402,35 @@ describe('Preflight Audit', () => {
       expect(result.auditResult.brokenExternalLinks).to.deep.equal([
         { urlTo: 'https://external-site.com/external-broken', href: 'https://main--example--page.aem.page/page1', status: 500 },
       ]);
+    });
+
+    it('skips links inside header and footer', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      // One link in header, one in footer, one in body
+      const html = `
+        <header><a href="/header-link">Header Link</a></header>
+        <footer><a href="/footer-link">Footer Link</a></footer>
+        <main><a href="/body-link">Body Link</a></main>
+      `;
+      nock('https://main--example--page.aem.page')
+        .head('/body-link')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: html },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      // Only the body link should be considered internal
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+      // Check that only the body link is logged as internal
+      expect(context.log.info).to.have.been.calledWith(
+        '[preflight-audit] Found internal links:',
+        new Set(['https://main--example--page.aem.page/body-link']),
+      );
     });
   });
 
@@ -512,10 +622,10 @@ describe('Preflight Audit', () => {
         .head('/broken')
         .reply(404);
 
-      // Mock the external link to throw an error (network error)
+      // Mock the external link to return 404
       nock('http://test.com')
         .head('/')
-        .replyWithError('Network error');
+        .reply(404);
     });
 
     afterEach(() => {
@@ -634,6 +744,11 @@ describe('Preflight Audit', () => {
       // Mock the broken internal link to return 404
       nock('https://main--example--page.aem.page')
         .head('/broken')
+        .reply(404);
+
+      // Mock the external link to return 404
+      nock('http://test.com')
+        .head('/')
         .reply(404);
 
       s3Client.send.callsFake((command) => {
