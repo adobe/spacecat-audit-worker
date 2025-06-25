@@ -104,7 +104,7 @@ describe('mystique-data-processing', () => {
         issue_name: 'aria-allowed-attr',
         faulty_line: '<dt aria-level="3">Term</dt>',
         target_selector: 'dt',
-        description: 'ARIA attribute not allowed on this element',
+        issue_description: 'ARIA attribute not allowed on this element',
       });
     });
 
@@ -156,7 +156,7 @@ describe('mystique-data-processing', () => {
         issue_name: 'aria-allowed-attr',
         faulty_line: '',
         target_selector: 'dt',
-        description: 'ARIA attribute not allowed on this element',
+        issue_description: 'ARIA attribute not allowed on this element',
       });
     });
 
@@ -181,7 +181,7 @@ describe('mystique-data-processing', () => {
         issue_name: 'aria-allowed-attr',
         faulty_line: '',
         target_selector: 'dt',
-        description: 'ARIA attribute not allowed on this element',
+        issue_description: 'ARIA attribute not allowed on this element',
       });
     });
 
@@ -205,7 +205,7 @@ describe('mystique-data-processing', () => {
         issue_name: 'aria-allowed-attr',
         faulty_line: '<dt aria-level="3">Term</dt>',
         target_selector: '',
-        description: 'ARIA attribute not allowed on this element',
+        issue_description: 'ARIA attribute not allowed on this element',
       });
     });
 
@@ -229,7 +229,7 @@ describe('mystique-data-processing', () => {
         issue_name: 'aria-allowed-attr',
         faulty_line: '<dt aria-level="3">Term</dt>',
         target_selector: 'dt',
-        description: '',
+        issue_description: '',
       });
     });
 

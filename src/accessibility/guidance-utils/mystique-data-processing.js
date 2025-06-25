@@ -46,7 +46,7 @@ export function processSuggestionsForMystique(suggestions) {
           issue_name: issue.type,
           faulty_line: faultyLine,
           target_selector: targetSelector,
-          description: issue.description || '',
+          issue_description: issue.description || '',
         });
       }
 
