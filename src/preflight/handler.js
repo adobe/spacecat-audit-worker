@@ -11,14 +11,15 @@
  */
 
 import { isNonEmptyArray, isValidUrl, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
-import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
+import { Audit, AsyncJob, Site } from '@adobe/spacecat-shared-data-access';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopPersister } from '../common/index.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
-import { runInternalLinkChecks } from './internal-links.js';
+import { runLinksChecks } from './links-checks.js';
+import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
 import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -44,6 +45,14 @@ export function isValidUrls(urls) {
     isNonEmptyArray(urls)
     && urls.every((url) => isValidUrl(url))
   );
+}
+
+export function getPrefixedPageAuthToken(site, token, options) {
+  if (site.getDeliveryType() === Site.DELIVERY_TYPES.AEM_CS && options.promiseToken) {
+    return `Bearer ${token}`;
+  } else {
+    return `token ${token}`;
+  }
 }
 
 export async function scrapePages(context) {
@@ -127,9 +136,14 @@ export const preflightAudit = async (context) => {
   }
 
   try {
-    const pageAuthToken = await retrievePageAuthentication(site, context);
+    const options = {
+      ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
+    };
+    let pageAuthToken = await retrievePageAuthentication(site, context, options);
+    pageAuthToken = getPrefixedPageAuthToken(site, pageAuthToken, options);
+
     const baseURL = new URL(normalizedUrls[0]).origin;
-    const authHeader = { headers: { Authorization: `token ${pageAuthToken}` } };
+    const authHeader = { headers: { Authorization: pageAuthToken } };
 
     // Initialize results
     const result = normalizedUrls.map((url) => ({
@@ -328,46 +342,105 @@ export const preflightAudit = async (context) => {
         pageResult.audits.push({ name: AUDIT_LINKS, type: 'seo', opportunities: [] });
       });
 
-      // Internal link checks
-      const internalLinksStartTime = Date.now();
-      const internalLinksStartTimestamp = new Date().toISOString();
-
-      const { auditResult } = await runInternalLinkChecks(scrapedObjects, context, {
-        pageAuthToken: `token ${pageAuthToken}`,
+      // Pre-index AUDIT_LINKS audits for O(1) lookups
+      const linksAuditMap = new Map();
+      normalizedUrls.forEach((url) => {
+        const pageResult = resultMap.get(url);
+        if (pageResult) {
+          const linksAudit = pageResult.audits.find((a) => a.name === AUDIT_LINKS);
+          if (linksAudit) {
+            linksAuditMap.set(url, linksAudit);
+          }
+        }
       });
+
+      // Link checks (both internal and external)
+      const linksStartTime = Date.now();
+      const linksStartTimestamp = new Date().toISOString();
+
+      const { auditResult } = await runLinksChecks(urls, scrapedObjects, context, {
+        pageAuthToken,
+      });
+
+      // Process internal links
       if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
-        auditResult.brokenInternalLinks.forEach(({ pageUrl, href, status }) => {
-          const audit = resultMap.get(pageUrl).audits.find((a) => a.name === AUDIT_LINKS);
+        if (normalizedStep === AUDIT_STEP_SUGGEST) {
+          const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
+            urlTo: new URL(site.getBaseURL()).origin + new URL(link.urlTo).pathname.replace(/\/$/, ''),
+            href: link.href,
+            status: link.status,
+          }));
+          log.debug(`[preflight-audit] Found ${JSON.stringify(brokenLinks)} broken internal links`);
+          const brokenInternalLinks = await
+          generateSuggestionData(baseURL, brokenLinks, context, site);
+          log.debug(`[preflight-audit] Generated suggestions for broken internal links: ${JSON.stringify(brokenInternalLinks)}`);
+          const baseURLOrigin = new URL(baseURL).origin;
+          brokenInternalLinks.forEach(({
+            urlTo, href, status, urlsSuggested, aiRationale,
+          }) => {
+            const audit = linksAuditMap.get(href);
+            const aiUrls = urlsSuggested?.map((url) => (baseURLOrigin + new URL(url).pathname.replace(/\/$/, '')));
+            audit.opportunities.push({
+              check: 'broken-internal-links',
+              issue: {
+                url: urlTo,
+                issue: `Status ${status}`,
+                seoImpact: 'High',
+                seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+                urlsSuggested: aiUrls,
+                aiRationale,
+              },
+            });
+          });
+        } else {
+          auditResult.brokenInternalLinks.forEach(({ urlTo, href, status }) => {
+            const audit = linksAuditMap.get(href);
+            audit.opportunities.push({
+              check: 'broken-internal-links',
+              issue: {
+                url: urlTo,
+                issue: `Status ${status}`,
+                seoImpact: 'High',
+                seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+              },
+            });
+          });
+        }
+      }
+
+      // Process external links from the same audit result
+      if (isNonEmptyArray(auditResult.brokenExternalLinks)) {
+        auditResult.brokenExternalLinks.forEach(({ urlTo, href, status }) => {
+          const audit = linksAuditMap.get(href);
           audit.opportunities.push({
-            check: 'broken-internal-links',
+            check: 'broken-external-links',
             issue: {
-              url: href,
+              url: urlTo,
               issue: `Status ${status}`,
               seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+              seoRecommendation: 'Fix or remove broken links to improve user experience',
             },
           });
         });
       }
-      const internalLinksEndTime = Date.now();
-      const internalLinksEndTimestamp = new Date().toISOString();
-      const internalLinksElapsed = ((internalLinksEndTime - internalLinksStartTime) / 1000)
-        .toFixed(2);
-      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Internal links audit completed in ${internalLinksElapsed} seconds`);
+
+      const linksEndTime = Date.now();
+      const linksEndTimestamp = new Date().toISOString();
+      const linksElapsed = ((linksEndTime - linksStartTime) / 1000).toFixed(2);
+      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Links audit completed in ${linksElapsed} seconds`);
 
       timeExecutionBreakdown.push({
         name: 'links',
-        duration: `${internalLinksElapsed} seconds`,
-        startTime: internalLinksStartTimestamp,
-        endTime: internalLinksEndTimestamp,
+        duration: `${linksElapsed} seconds`,
+        startTime: linksStartTimestamp,
+        endTime: linksEndTimestamp,
       });
 
       // Check for insecure links in each scraped page
       scrapedObjects.forEach(({ data }) => {
         const { finalUrl, scrapeResult: { rawBody } } = data;
         const doc = new JSDOM(rawBody).window.document;
-        const audit = resultMap.get(finalUrl).audits.find((a) => a.name === AUDIT_LINKS);
-
+        const audit = linksAuditMap.get(finalUrl);
         const insecureLinks = Array.from(doc.querySelectorAll('a'))
           .filter((anchor) => anchor.href.startsWith('http://'))
           .map((anchor) => ({
@@ -382,7 +455,7 @@ export const preflightAudit = async (context) => {
         }
       });
 
-      await saveIntermediateResults(result, 'internal links audit');
+      await saveIntermediateResults(result, 'links audit');
     }
 
     const endTime = Date.now();
@@ -412,7 +485,12 @@ export const preflightAudit = async (context) => {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Error during preflight audit.`, error);
     const jobEntity = await AsyncJobEntity.findById(jobId);
     jobEntity.setStatus(AsyncJob.Status.FAILED);
-    jobEntity.setError({ code: '', message: error.message });
+    jobEntity.setError({
+      code: 'EXCEPTION',
+      message: error.message,
+      details: error.stack,
+    });
+    jobEntity.setEndedAt(new Date().toISOString());
     await jobEntity.save();
     throw error;
   }
