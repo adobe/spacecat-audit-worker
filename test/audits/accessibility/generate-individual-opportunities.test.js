@@ -158,6 +158,7 @@ describe('formatIssue', () => {
       occurrences: 5,
       htmlWithIssues: ['<div>test</div>'],
       failureSummary: 'Test summary',
+      targetSelector: '',
     });
   });
 
@@ -256,6 +257,35 @@ describe('formatIssue', () => {
     }, 'critical');
 
     expect(result.wcagRule).to.equal('4.1.2 Name, Role, Value');
+  });
+
+  it('should extract targetSelector from target field', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div:nth-child(1) > .footer-menu-item'],
+    }, 'critical');
+
+    expect(result.targetSelector).to.equal('div:nth-child(1) > .footer-menu-item');
+  });
+
+  it('should handle missing target field', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+    }, 'critical');
+
+    expect(result.targetSelector).to.equal('');
+  });
+
+  it('should handle empty target array', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: [],
+    }, 'critical');
+
+    expect(result.targetSelector).to.equal('');
   });
 });
 
@@ -1666,6 +1696,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
 
 describe('createMystiqueMessage', () => {
   it('should create a message object with all required fields', () => {
+    const fakeSuggestion = { getId: () => 'sugg-456' };
     const fakeOpportunity = { getId: () => 'oppty-123' };
     const suggestionData = { url: 'https://example.com', suggestionId: 'sugg-456' };
     const issuesList = [{ type: 'color-contrast', description: 'desc' }];
@@ -1673,6 +1704,7 @@ describe('createMystiqueMessage', () => {
     const auditId = 'audit-101';
     const deliveryType = 'aem_edge';
     const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
+      suggestion: fakeSuggestion,
       suggestionData,
       issuesList,
       opportunity: fakeOpportunity,
@@ -1696,10 +1728,12 @@ describe('createMystiqueMessage', () => {
   });
 
   it('should default siteId and auditId to empty string if not provided', () => {
+    const fakeSuggestion = { getId: () => 'sugg-456' };
     const fakeOpportunity = { getId: () => 'oppty-123' };
     const suggestionData = { url: 'https://example.com', suggestionId: 'sugg-456' };
     const issuesList = [];
     const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
+      suggestion: fakeSuggestion,
       suggestionData,
       issuesList,
       opportunity: fakeOpportunity,
