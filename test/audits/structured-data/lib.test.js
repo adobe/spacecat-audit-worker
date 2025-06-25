@@ -32,6 +32,7 @@ import {
 import { MockContextBuilder } from '../../shared.js';
 
 import gscExample1 from '../../fixtures/structured-data/gsc-example1.json' with { type: 'json' };
+import gscExample2 from '../../fixtures/structured-data/gsc-example2.json' with { type: 'json' };
 import gscExample4 from '../../fixtures/structured-data/gsc-example4.json' with { type: 'json' };
 import gscExample5 from '../../fixtures/structured-data/gsc-example5.json' with { type: 'json' };
 import gscExample6 from '../../fixtures/structured-data/gsc-example6.json' with { type: 'json' };
@@ -149,6 +150,16 @@ describe('Structured Data Libs', () => {
       const result = await getIssuesFromGSC('https://example.com', context, [{ url: 'https://example.com' }]);
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.be.calledWith('SDA: Skipping GSC issue, because cannot map GSC type "Unsupported snippets" to schema.org type.');
+    });
+
+    it('skips issues with severity lower than ERROR', async () => {
+      const googleClientStub = {
+        urlInspect: sinon.stub().resolves(gscExample2),
+      };
+      sandbox.stub(GoogleClient, 'createFrom').returns(googleClientStub);
+
+      const result = await getIssuesFromGSC('https://example.com', context, [{ url: 'https://example.com' }]);
+      expect(result).to.deep.equal([]);
     });
 
     it('returns rich results issues', async () => {

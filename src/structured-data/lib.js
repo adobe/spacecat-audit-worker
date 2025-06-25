@@ -103,6 +103,11 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
               return;
             }
 
+            // For now, ignore issues with severity lower than ERROR
+            if (issue.severity !== 'ERROR') {
+              return;
+            }
+
             issues.push({
               pageUrl: page,
               rootType,
@@ -184,7 +189,9 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
     );
 
     const validator = new StructuredDataValidator(schemaOrgPath);
-    const validatorIssues = await validator.validate(waeResult);
+    const validatorIssues = (await validator.validate(waeResult))
+      // For now, ignore issues with severity lower than ERROR
+      .filter((issue) => issue.severity === 'ERROR');
     for (const issue of validatorIssues) {
       // Only add if same issue for the same source does not exist already.
       // This can happen e.g. if a field is missing for every item in a list.
