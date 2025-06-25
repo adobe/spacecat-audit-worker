@@ -303,7 +303,7 @@ export async function filterValidUrls(urls) {
 /**
  * Retrieves base URL pages from sitemaps with improved error handling
  */
-export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
+export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
   const baseUrlVariant = toggleWWW(baseUrl);
   const contentsCache = {};
 
@@ -369,7 +369,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
 /**
  * Main sitemap discovery and validation function
  */
-export async function findSitemap(inputUrl) {
+export async function findSitemap(inputUrl, log) {
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
     return {
@@ -422,7 +422,7 @@ export async function findSitemap(inputUrl) {
   );
 
   // Extract and validate pages from sitemaps
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, log);
   const notOkPagesFromSitemap = {};
 
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
@@ -485,7 +485,7 @@ export async function sitemapAuditRunner(baseURL, context) {
 
   log.info(`Starting sitemap audit for ${baseURL}`);
 
-  const auditResult = await findSitemap(baseURL);
+  const auditResult = await findSitemap(baseURL, log);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
