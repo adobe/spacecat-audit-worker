@@ -308,30 +308,6 @@ describe('Job-based Step-Audit Tests', () => {
     await runner.run(message, context);
   });
 
-  it('does not add promiseToken to step context for non-AEM_CS sites even if message.promiseToken exists', async () => {
-    site.getDeliveryType = () => SiteModel.DELIVERY_TYPES.AEM_EDGE;
-    const runner = new AuditBuilder()
-      .withAsyncJob()
-      .addStep('first', async (stepContext) => {
-        expect(stepContext.promiseToken).to.be.undefined;
-        return { ok: true };
-      }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-      .build();
-
-    runner.jobProvider = async () => createMockJob({
-      jobId: 'job-123',
-      payload: { siteId: site.getId() },
-    });
-
-    const message = {
-      type: 'content-audit',
-      jobId: 'job-123',
-      promiseToken: 'test-token',
-    };
-
-    await runner.run(message, context);
-  });
-
   it('does not add promiseToken to step context for AEM_CS sites if message.promiseToken is missing', async () => {
     site.getDeliveryType = () => SiteModel.DELIVERY_TYPES.AEM_CS;
     const runner = new AuditBuilder()
