@@ -368,9 +368,10 @@ describe('Sitemap Audit', () => {
 
     it('should return all pages from sitemap that have the same base url', async () => {
       nock(url).get('/sitemap.xml').reply(200, sampleSitemapMoreUrls);
+      const log = { info: () => {}, error: () => {} };
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
-      ]);
+      ], log);
       expect(result).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
@@ -380,9 +381,10 @@ describe('Sitemap Audit', () => {
       nock(`${protocol}://www.${domain}`)
         .get('/sitemap.xml')
         .reply(200, sampleSitemapMoreUrls);
+      const log = { info: () => {}, error: () => {} };
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${protocol}://www.${domain}/sitemap.xml`,
-      ]);
+      ], log);
       expect(result).to.deep.equal({
         [`${protocol}://www.${domain}/sitemap.xml`]: [
           `${url}/foo`,
@@ -393,9 +395,10 @@ describe('Sitemap Audit', () => {
 
     it('should return all pages from sitemap that include www', async () => {
       nock(`${url}`).get('/sitemap.xml').reply(200, sampleSitemapMoreUrlsWWW);
+      const log = { info: () => {}, error: () => {} };
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
-      ]);
+      ], log);
       expect(result).to.deep.equal({
         [`${url}/sitemap.xml`]: [
           `${protocol}://www.${domain}/foo`,
@@ -416,16 +419,18 @@ describe('Sitemap Audit', () => {
             + '</urlset>',
         );
 
+      const log = { info: () => {}, error: () => {} };
       const resp = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
-      ]);
+      ], log);
       expect(resp).to.deep.equal({});
     });
   });
 
   describe('findSitemap', () => {
     it('should return error when URL is invalid', async () => {
-      const result = await findSitemap('not a valid url');
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap('not a valid url', log);
       expect(result.success).to.equal(false);
       expect(result.reasons).to.deep.equal([
         {
@@ -441,7 +446,8 @@ describe('Sitemap Audit', () => {
       nock(url).head('/foo').reply(404);
       nock(url).head('/bar').reply(404);
 
-      const result = await findSitemap(url);
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap(url, log);
 
       expect(result.success).to.equal(false);
       expect(result.reasons).to.deep.equal([
@@ -459,7 +465,8 @@ describe('Sitemap Audit', () => {
       nock(url).head('/foo').reply(200);
       nock(url).head('/bar').reply(200);
 
-      const result = await findSitemap(url);
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap(url, log);
       expect(result.success).to.equal(true);
     });
 
@@ -476,14 +483,16 @@ describe('Sitemap Audit', () => {
             + '</urlset>',
         );
 
-      const result = await findSitemap(url);
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap(url, log);
       expect(result.success).to.equal(false);
     });
 
     it('should fail when robots points to an empty string instead of an actual URI', async () => {
       nock(url).get('/robots.txt').reply(200, 'Sitemap: ');
 
-      const result = await findSitemap(url);
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap(url, log);
       expect(result.success).to.equal(false);
     });
 
@@ -493,7 +502,8 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .reply(200, () => undefined);
 
-      const result = await findSitemap(url);
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap(url, log);
       expect(result.success).to.equal(false);
     });
 
@@ -521,9 +531,8 @@ describe('Sitemap Audit', () => {
         .head('/baz')
         .reply(301, '', { Location: `${url}/zzz` });
 
-      const result = await findSitemap('https://some-domain.adobe', {
-        info: () => {},
-      });
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap('https://some-domain.adobe', log);
       expect(result.success).to.equal(true);
     });
 
@@ -539,7 +548,8 @@ describe('Sitemap Audit', () => {
       nock(url).head('/baz').reply(200);
       nock(url).head('/cux').reply(200);
 
-      const result = await findSitemap(url);
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap(url, log);
       expect(result.success).to.equal(true);
     });
 
@@ -551,7 +561,8 @@ describe('Sitemap Audit', () => {
       nock(`${protocol}://www.${domain}`).head('/foo').reply(200);
       nock(`${protocol}://www.${domain}`).head('/bar').reply(200);
 
-      const result = await findSitemap(`${protocol}://www.${domain}`);
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap(`${protocol}://www.${domain}`, log);
       expect(result.success).to.equal(true);
     });
 
@@ -560,7 +571,8 @@ describe('Sitemap Audit', () => {
       nock(url).head('/sitemap.xml').reply(404);
       nock(url).head('/sitemap_index.xml').reply(404);
 
-      const result = await findSitemap(url);
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap(url, log);
       expect(result.success).to.equal(false);
     });
 
@@ -574,7 +586,8 @@ describe('Sitemap Audit', () => {
       nock(url).head('/sitemap_index.xml').reply(404);
       nock(url).get('/sitemap.xml').reply(200, sitemapInvalidPaths);
 
-      const result = await findSitemap(url);
+      const log = { info: () => {}, error: () => {} };
+      const result = await findSitemap(url, log);
       expect(result.success).to.equal(false);
     });
   });
