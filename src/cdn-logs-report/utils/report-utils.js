@@ -40,13 +40,13 @@ export function getAnalysisBucket(customerDomain) {
 export function getS3Config(site) {
   const customerDomain = extractCustomerDomain(site);
   const customerName = customerDomain.split(/[._]/)[0];
-  const bucket = getAnalysisBucket(customerDomain);
+  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig();
 
   return {
     bucket,
     customerName,
     customerDomain,
-    aggregatedLocation: `s3://${bucket}/aggregated/`,
+    aggregatedLocation: `s3://${bucket}/aggregated_${customerDomain}/`,
     databaseName: `cdn_logs_${customerDomain}`,
     tableName: `aggregated_logs_${customerDomain}`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,

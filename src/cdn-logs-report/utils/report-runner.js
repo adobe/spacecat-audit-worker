@@ -155,6 +155,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
 
     const providerSuffix = provider ? `-${provider}` : '';
     const filename = `agentictraffic${providerSuffix}-${periodIdentifier}.xlsx`;
+    const { outputLocation } = site.getConfig().getCdnLogsConfig();
 
     const workbook = await createCDNLogsExcelReport(reportData, {
       customEndDate: referenceDate.toISOString().split('T')[0],
@@ -164,7 +165,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
 
     await saveExcelReport({
       workbook,
-      customerName: s3Config.customerName,
+      outputLocation,
       log,
       sharepointClient,
       filename,

@@ -41,6 +41,11 @@ UNLOAD (
     -- agentic and LLM-attributed traffic never has self-referer
     AND NOT REGEXP_LIKE(COALESCE(referer, ''), '{{host}}')
 
+    -- filter based on site configuration
+    AND (
+      {{siteFilters}}
+    )
+
   GROUP BY
     CASE
       WHEN queryStr IS NOT NULL AND trim(queryStr) NOT IN ('', '-')
@@ -51,5 +56,5 @@ UNLOAD (
     statusCode,
     try(url_extract_host(referer))
 
-) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
+) TO 's3://{{bucket}}/aggregated_{{hostEscaped}}/{{year}}/{{month}}/{{day}}/{{hour}}/'
 WITH (format = 'PARQUET');
