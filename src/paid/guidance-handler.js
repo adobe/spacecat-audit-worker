@@ -25,7 +25,7 @@ export default async function handler(message, context) {
     log.warn(`No audit found for auditId: ${auditId}`);
     return notFound();
   }
-
+  log.info(`Fetched Audit ${JSON.stringify(message)}`);
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities
     .filter((oppty) => oppty.getType() === audit.auditType)
