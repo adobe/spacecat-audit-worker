@@ -1,3 +1,10 @@
+## [1.114.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.2...v1.114.3) (2025-06-26)
+
+
+### Bug Fixes
+
+* adding promise token handling for every step ([#1008](https://github.com/adobe/spacecat-audit-worker/issues/1008)) ([887dd96](https://github.com/adobe/spacecat-audit-worker/commit/887dd961b573028a3a40a7faf02eecf5a05207a0))
+
 ## [1.114.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.1...v1.114.2) (2025-06-26)
 
 
