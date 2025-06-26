@@ -80,11 +80,11 @@ function PSIClient(config, log = console) {
       const apiURL = getPSIApiUrl(baseURL, strategy, serviceId);
       const xSource = `spacecat-${environment}`;
       log.info(`[PSI] Performing PSI check on ${baseURL} with strategy ${strategy} and serviceId ${serviceId} and ${apiURL}`, new Date());
-      const response = await fetch(apiURL, { headers: { 'x-source': xSource }, timeout: 30000 });
+      const response = await fetch(apiURL, { headers: { 'x-source': xSource }, timeout: 60000 });
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
-
+      log.info(`[PSI] PSI check completed with status on ${apiURL} completed`);
       const { lighthouseResult } = await response.json();
 
       if (!isObject(lighthouseResult)) {
