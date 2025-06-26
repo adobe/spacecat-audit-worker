@@ -14,16 +14,29 @@ export function mapToPaidOpportunity(siteId, auditId, audit, guidance = []) {
   // TODO: check first that there is guidance
   // Add valid data
   // confirm what should be sent exactly
-
   const pageGuidance = guidance[0];
   return {
     siteId,
     auditId,
-    type: audit.auditType,
+    type: audit.getAuditType(),
     origin: 'AUTOMATION',
-    title: pageGuidance.insight,
+    title: 'Cookie Consent Banner',
     description: `Recommendation: ${pageGuidance.recommendation}. Rationale: ${pageGuidance.recommendation}}`,
-    guidance: pageGuidance.body,
+    guidance: {
+      recommendations: [
+        {
+          insight: pageGuidance.insight,
+          rationale: pageGuidance.rationale,
+          recommendation: pageGuidance.recommendation,
+          // TODO: fix required to ensure body is saved to shareport and we have a link to it
+          runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
+          type: 'guidance',
+        },
+      ],
+    },
     status: 'NEW',
+    tags: [
+      'Engagement',
+    ],
   };
 }
