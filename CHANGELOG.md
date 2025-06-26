@@ -1,3 +1,10 @@
+## [1.114.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.4...v1.114.5) (2025-06-26)
+
+
+### Bug Fixes
+
+* remove duplicates formSource for accessibility ([#994](https://github.com/adobe/spacecat-audit-worker/issues/994)) ([ac856a1](https://github.com/adobe/spacecat-audit-worker/commit/ac856a1a02dd6ed74481edfa97aa23468a3acb2d))
+
 ## [1.114.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.3...v1.114.4) (2025-06-26)
 
 
