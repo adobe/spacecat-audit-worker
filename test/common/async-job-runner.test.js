@@ -288,6 +288,10 @@ describe('Job-based Step-Audit Tests', () => {
         expect(stepContext.promiseToken).to.equal('test-token');
         return { ok: true };
       }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .addStep('second', async (stepContext) => {
+        expect(stepContext.promiseToken).to.equal('test-token');
+        return { ok: true };
+      }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
       .build();
 
     runner.jobProvider = async () => createMockJob({
