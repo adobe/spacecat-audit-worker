@@ -303,7 +303,7 @@ export async function filterValidUrls(urls) {
 /**
  * Retrieves base URL pages from sitemaps with improved error handling
  */
-export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
+export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
   const baseUrlVariant = toggleWWW(baseUrl);
   const contentsCache = {};
 
@@ -323,11 +323,14 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
     if (urlData.existsAndIsValid) {
       if (urlData.details?.isSitemapIndex) {
         const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
+        log.info(`[Sitemap] Index: ${url} → ${extractedSitemaps.length} child sitemaps`);
         extractedSitemaps.forEach((extractedSitemapUrl) => {
           if (!contentsCache[extractedSitemapUrl]) {
             matchingUrls.push(extractedSitemapUrl);
           }
         });
+        // Minimal log for when a sitemap is a sitemap index and not processed as a regular sitemap
+        log.info(`[Sitemap] Skipped processing as regular sitemap (is index): ${url}`);
       } else if (url.startsWith(baseUrl) || url.startsWith(baseUrlVariant)) {
         matchingUrls.push(url);
       }
@@ -347,8 +350,12 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
       );
 
       if (pages.length > 0) {
+        log.info(`[Sitemap] Processed: ${matchingUrl} (${pages.length} URLs)`);
         return { [matchingUrl]: pages };
       }
+      log.info(`[Sitemap] Skipped processing as no pages found: ${matchingUrl}`);
+    } else {
+      log.info(`[Sitemap] Skippd processing as regular sitemap (is index): ${matchingUrl}`);
     }
 
     return null;
@@ -367,7 +374,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
 /**
  * Main sitemap discovery and validation function
  */
-export async function findSitemap(inputUrl) {
+export async function findSitemap(inputUrl, log) {
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
     return {
@@ -420,7 +427,7 @@ export async function findSitemap(inputUrl) {
   );
 
   // Extract and validate pages from sitemaps
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls, log);
   const notOkPagesFromSitemap = {};
 
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
@@ -483,7 +490,7 @@ export async function sitemapAuditRunner(baseURL, context) {
 
   log.info(`Starting sitemap audit for ${baseURL}`);
 
-  const auditResult = await findSitemap(baseURL);
+  const auditResult = await findSitemap(baseURL, log);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
