@@ -353,6 +353,7 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
         log.info(`[Sitemap] Processed: ${matchingUrl} (${pages.length} URLs)`);
         return { [matchingUrl]: pages };
       }
+      log.info(`[Sitemap] Skipped processing as no pages found: ${matchingUrl}`);
     } else {
       log.info(`[Sitemap] Skippd processing as regular sitemap (is index): ${matchingUrl}`);
     }
