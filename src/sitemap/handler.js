@@ -329,6 +329,8 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
             matchingUrls.push(extractedSitemapUrl);
           }
         });
+        // Minimal log for when a sitemap is a sitemap index and not processed as a regular sitemap
+        log.info(`[Sitemap] Skipped processing as regular sitemap (is index): ${url}`);
       } else if (url.startsWith(baseUrl) || url.startsWith(baseUrlVariant)) {
         matchingUrls.push(url);
       }
@@ -351,6 +353,8 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, urls, log) {
         log.info(`[Sitemap] Processed: ${matchingUrl} (${pages.length} URLs)`);
         return { [matchingUrl]: pages };
       }
+    } else {
+      log.info(`[Sitemap] Skippd processing as regular sitemap (is index): ${matchingUrl}`);
     }
 
     return null;
