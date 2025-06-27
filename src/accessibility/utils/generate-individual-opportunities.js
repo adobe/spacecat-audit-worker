@@ -771,16 +771,11 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
     // Process the remediations and match them to specific issues and HTML elements
     const suggestionData = targetSuggestion.getData();
     const updatedIssues = suggestionData.issues.map((issue) => {
-      // Find all matching remediations for this issue type
-      const matchingRemediations = remediations.filter(
-        (remediation) => remediation.issue_name === issue.type,
-      );
-
-      if (isNonEmptyArray(matchingRemediations)) {
-        // Enhanced htmlWithIssues structure - match remediations to specific HTML elements
+      if (isNonEmptyArray(issue.htmlWithIssues)) {
+        // Enhanced htmlWithIssues structure - match remediations directly by issue_id
         const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => {
           // Find the specific remediation that matches this HTML element by issue_id
-          const specificRemediation = matchingRemediations.find(
+          const specificRemediation = remediations.find(
             (remediation) => remediation.issue_id === htmlIssueObj.issue_id,
           );
 
@@ -815,12 +810,6 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
     const updatedSuggestionData = {
       ...suggestionData,
       issues: updatedIssues,
-      // Add metadata about the remediation processing
-      remediationMetadata: {
-        pageUrl,
-        totalIssues,
-        processedAt: new Date().toISOString(),
-      },
     };
 
     // Update the suggestion

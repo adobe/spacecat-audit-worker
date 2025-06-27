@@ -145,7 +145,12 @@ describe('formatIssue', () => {
       description: 'Test description',
       level: 'AA',
       count: 5,
-      htmlWithIssues: ['<div>test</div>'],
+      nodes: [
+        {
+          html: '<div>test</div>',
+          target: ['div.test'],
+        },
+      ],
       failureSummary: 'Test summary',
     }, 'critical');
 
@@ -156,9 +161,15 @@ describe('formatIssue', () => {
       wcagLevel: 'AA',
       severity: 'critical',
       occurrences: 5,
-      htmlWithIssues: ['<div>test</div>'],
+      htmlWithIssues: [
+        {
+          update_from: '<div>test</div>',
+          target_selector: 'div.test',
+          issue_id: result.htmlWithIssues[0].issue_id, // Use the generated UUID
+        },
+      ],
       failureSummary: 'Test summary',
-      targetSelector: '',
+      targetSelector: 'div.test',
     });
   });
 
@@ -286,6 +297,99 @@ describe('formatIssue', () => {
     }, 'critical');
 
     expect(result.targetSelector).to.equal('');
+  });
+
+  it('should handle nodes with non-array target (fallback to string)', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      nodes: [
+        {
+          html: '<div>test</div>',
+          target: 'div.single-target', // String instead of array
+        },
+      ],
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'aria-allowed-attr',
+      description: 'Test description',
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: '',
+      severity: 'critical',
+      occurrences: 0,
+      htmlWithIssues: [
+        {
+          update_from: '<div>test</div>',
+          target_selector: 'div.single-target',
+          issue_id: result.htmlWithIssues[0].issue_id,
+        },
+      ],
+      failureSummary: '',
+      targetSelector: 'div.single-target',
+    });
+  });
+
+  it('should handle nodes with null target (fallback to empty string)', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      nodes: [
+        {
+          html: '<div>test</div>',
+          target: null, // null target
+        },
+      ],
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'aria-allowed-attr',
+      description: 'Test description',
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: '',
+      severity: 'critical',
+      occurrences: 0,
+      htmlWithIssues: [
+        {
+          update_from: '<div>test</div>',
+          target_selector: '',
+          issue_id: result.htmlWithIssues[0].issue_id,
+        },
+      ],
+      failureSummary: '',
+      targetSelector: '',
+    });
+  });
+
+  it('should handle nodes with missing html property', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      nodes: [
+        {
+          // Missing html property
+          target: ['div.test'],
+        },
+      ],
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'aria-allowed-attr',
+      description: 'Test description',
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: '',
+      severity: 'critical',
+      occurrences: 0,
+      htmlWithIssues: [
+        {
+          update_from: '',
+          target_selector: 'div.test',
+          issue_id: result.htmlWithIssues[0].issue_id,
+        },
+      ],
+      failureSummary: '',
+      targetSelector: 'div.test',
+    });
   });
 });
 
@@ -2205,6 +2309,539 @@ describe('sendMystiqueMessage error handling', () => {
     // Should log the error with empty suggestion ID
     expect(fakeLog.error).to.have.been.calledWithMatch(
       '[A11yIndividual] Failed to send message to Mystique for suggestion  and issue type color-contrast: Network error',
+    );
+  });
+});
+
+describe('handleAccessibilityRemediationGuidance', () => {
+  let testModule;
+  let sandbox;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    testModule = await import('../../../src/accessibility/utils/generate-individual-opportunities.js');
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should successfully process remediation guidance', async () => {
+    const mockOpportunity = {
+      getId: () => 'oppty-123',
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                    issue_id: 'issue-123',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-new-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        suggestionId: 'sugg-789',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            issue_id: 'issue-123',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 1,
+      pageUrl: 'https://example.com/page1',
+    });
+
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yRemediationGuidance] Received accessibility remediation guidance for opportunity oppty-123, suggestion sugg-789',
+    );
+    expect(mockLog.debug).to.have.been.calledWith(
+      '[A11yRemediationGuidance] Processing 1 issues for page: https://example.com/page1',
+    );
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yRemediationGuidance] Successfully updated suggestion sugg-789 with remediations for opportunity oppty-123',
+    );
+
+    expect(mockOpportunity.setAuditId).to.have.been.calledWith('audit-new-123');
+    expect(mockOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+    expect(mockOpportunity.save).to.have.been.called;
+  });
+
+  it('should return error when opportunity not found', async () => {
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(null),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-nonexistent',
+        suggestionId: 'sugg-789',
+        pageUrl: 'https://example.com/page1',
+        remediations: [],
+        totalIssues: 0,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: false,
+      error: 'Opportunity not found',
+    });
+
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance] Opportunity not found for ID: oppty-nonexistent',
+    );
+  });
+
+  it('should return error when site ID mismatch', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-different',
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        suggestionId: 'sugg-789',
+        pageUrl: 'https://example.com/page1',
+        remediations: [],
+        totalIssues: 0,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: false,
+      error: 'Site ID mismatch',
+    });
+
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance] Site ID mismatch. Expected: site-456, Found: site-different',
+    );
+  });
+
+  it('should return error when suggestion not found', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-different',
+        },
+      ]),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        suggestionId: 'sugg-789',
+        pageUrl: 'https://example.com/page1',
+        remediations: [],
+        totalIssues: 0,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: false,
+      error: 'Suggestion not found',
+    });
+
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance] Suggestion not found for ID: sugg-789',
+    );
+  });
+
+  it('should handle issues without matching remediations', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div>Content</div>',
+                    target_selector: 'div.test',
+                    issue_id: 'issue-123',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        suggestionId: 'sugg-789',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'different-issue-type',
+            issue_id: 'issue-different',
+            general_suggestion: 'Different suggestion',
+            update_to: '<span>Different</span>',
+            user_impact: 'Different impact',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 1,
+      pageUrl: 'https://example.com/page1',
+    });
+  });
+
+  it('should handle htmlWithIssues without matching issue_id', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div>Content</div>',
+                    target_selector: 'div.test',
+                    issue_id: 'issue-123',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        suggestionId: 'sugg-789',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            issue_id: 'issue-different',
+            general_suggestion: 'Different suggestion',
+            update_to: '<span>Different</span>',
+            user_impact: 'Different impact',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 1,
+      pageUrl: 'https://example.com/page1',
+    });
+  });
+
+  it('should handle issues without htmlWithIssues and return them unchanged', async () => {
+    const originalIssue1 = {
+      type: 'aria-allowed-attr',
+      description: 'Issue without htmlWithIssues',
+      // No htmlWithIssues property at all
+    };
+
+    const originalIssue2 = {
+      type: 'color-contrast',
+      description: 'Issue with null htmlWithIssues',
+      htmlWithIssues: null,
+    };
+
+    const originalIssue3 = {
+      type: 'image-alt',
+      description: 'Issue with empty htmlWithIssues',
+      htmlWithIssues: [],
+    };
+
+    const setDataSpy = sandbox.stub();
+
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [originalIssue1, originalIssue2, originalIssue3],
+          }),
+          setData: setDataSpy,
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        suggestionId: 'sugg-789',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'some-other-issue',
+            issue_id: 'issue-123',
+            general_suggestion: 'Some suggestion',
+            update_to: '<div>Fixed</div>',
+            user_impact: 'Some impact',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 1,
+      pageUrl: 'https://example.com/page1',
+    });
+
+    // Verify that setData was called with unchanged issues
+    expect(setDataSpy).to.have.been.calledOnce;
+    const updatedSuggestionData = setDataSpy.firstCall.args[0];
+
+    // All issues should be returned unchanged since they don't have valid htmlWithIssues
+    expect(updatedSuggestionData.issues).to.have.length(3);
+    expect(updatedSuggestionData.issues[0]).to.deep.equal(originalIssue1);
+    expect(updatedSuggestionData.issues[1]).to.deep.equal(originalIssue2);
+    expect(updatedSuggestionData.issues[2]).to.deep.equal(originalIssue3);
+  });
+
+  it('should handle function errors and return error object', async () => {
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().rejects(new Error('Database connection failed')),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        suggestionId: 'sugg-789',
+        pageUrl: 'https://example.com/page1',
+        remediations: [],
+        totalIssues: 0,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: false,
+      error: 'Database connection failed',
+    });
+
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance] Failed to process accessibility remediation guidance: Database connection failed',
     );
   });
 });
