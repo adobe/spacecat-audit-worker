@@ -201,9 +201,11 @@ export function formatIssue(type, issueData, severity) {
   if (isNonEmptyArray(issueData.htmlWithIssues)) {
     // Use existing htmlWithIssues and ensure each has issue_id
     htmlWithIssues = issueData.htmlWithIssues.map((item, index) => ({
-      update_from: issueData.htmlWithIssues[index]?.update_from || '',
+      update_from: (typeof item === 'string' ? item : item.update_from)
+                   || (typeof issueData.htmlWithIssues[index] === 'string' ? issueData.htmlWithIssues[index] : '')
+                   || '',
       target_selector: targetSelector,
-      issue_id: item.issue_id || generateUUID(),
+      issue_id: (typeof item === 'string' ? generateUUID() : item.issue_id) || generateUUID(),
     }));
   } else {
     // Create single entry if no htmlWithIssues but issue exists
