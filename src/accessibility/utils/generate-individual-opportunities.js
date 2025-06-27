@@ -189,7 +189,7 @@ export function formatIssue(type, issueData, severity) {
   // Format the WCAG rule (e.g., "wcag412" -> "4.1.2 Name, Role, Value")
   const wcagRule = formatWcagRule(rawWcagRule);
 
-  // Extract target selector from the target field first (same for all nodes of this issue type)
+  // Extract target selector - same for all instances of this issue type on this URL
   let targetSelector = '';
   if (isNonEmptyArray(issueData.target)) {
     [targetSelector] = issueData.target;
@@ -208,6 +208,7 @@ export function formatIssue(type, issueData, severity) {
     }
 
     // Create htmlWithIssues entries using the shared target selector
+    // All instances of the same issue type on the same URL share the same target selector
     htmlWithIssues = issueData.nodes.map((node) => ({
       update_from: node.html || '',
       target_selector: targetSelector,
