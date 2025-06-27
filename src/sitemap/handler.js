@@ -303,65 +303,51 @@ export async function filterValidUrls(urls) {
 /**
  * Retrieves base URL pages from sitemaps with improved error handling
  */
-export async function getBaseUrlPagesFromSitemaps(baseUrl, urls) {
+export async function getBaseUrlPagesFromSitemaps(baseUrl, initialUrls) {
   const baseUrlVariant = toggleWWW(baseUrl);
-  const contentsCache = {};
+  const pagesBySitemap = {};
+  let sitemapsToProcess = [...initialUrls];
+  const processedSitemaps = new Set();
 
-  // Check all sitemap URLs concurrently
-  const checkPromises = urls.map(async (url) => {
-    // checkSitemap handles its own errors and does not throw
-    const urlData = await checkSitemap(url);
-    contentsCache[url] = urlData;
-    return { url, urlData };
-  });
+  while (sitemapsToProcess.length > 0) {
+    const sitemapsFromIndexes = [];
 
-  const results = await Promise.all(checkPromises);
-  const matchingUrls = [];
-
-  // Process results and handle sitemap indices
-  for (const { url, urlData } of results) {
-    if (urlData.existsAndIsValid) {
-      if (urlData.details?.isSitemapIndex) {
-        const extractedSitemaps = getSitemapUrlsFromSitemapIndex(urlData.details.sitemapContent);
-        extractedSitemaps.forEach((extractedSitemapUrl) => {
-          if (!contentsCache[extractedSitemapUrl]) {
-            matchingUrls.push(extractedSitemapUrl);
-          }
-        });
-      } else if (url.startsWith(baseUrl) || url.startsWith(baseUrlVariant)) {
-        matchingUrls.push(url);
+    const processingPromises = sitemapsToProcess.map(async (sitemapUrl) => {
+      if (processedSitemaps.has(sitemapUrl)) {
+        return;
       }
-    }
+      processedSitemaps.add(sitemapUrl);
+
+      const sitemapData = await checkSitemap(sitemapUrl);
+
+      if (sitemapData.existsAndIsValid) {
+        if (sitemapData.details?.isSitemapIndex) {
+          const extractedSitemaps = getSitemapUrlsFromSitemapIndex(
+            sitemapData.details.sitemapContent,
+          );
+          sitemapsFromIndexes.push(...extractedSitemaps);
+        } else if (
+          sitemapUrl.startsWith(baseUrl)
+          || sitemapUrl.startsWith(baseUrlVariant)
+        ) {
+          const pages = getBaseUrlPagesFromSitemapContents(
+            baseUrl,
+            sitemapData.details,
+          );
+          if (pages.length > 0) {
+            pagesBySitemap[sitemapUrl] = pages;
+          }
+        }
+      }
+    });
+
+    // eslint-disable-next-line no-await-in-loop
+    await Promise.all(processingPromises);
+
+    sitemapsToProcess = sitemapsFromIndexes;
   }
 
-  // Extract pages from matching URLs
-  const pagesPromises = matchingUrls.map(async (matchingUrl) => {
-    if (!contentsCache[matchingUrl]) {
-      contentsCache[matchingUrl] = await checkSitemap(matchingUrl);
-    }
-
-    if (contentsCache[matchingUrl].existsAndIsValid) {
-      const pages = getBaseUrlPagesFromSitemapContents(
-        baseUrl,
-        contentsCache[matchingUrl].details,
-      );
-
-      if (pages.length > 0) {
-        return { [matchingUrl]: pages };
-      }
-    }
-
-    return null;
-  });
-
-  const pageResults = await Promise.allSettled(pagesPromises);
-
-  return pageResults.reduce((acc, result) => {
-    if (result.status === 'fulfilled' && result.value) {
-      Object.assign(acc, result.value);
-    }
-    return acc;
-  }, {});
+  return pagesBySitemap;
 }
 
 /**
