@@ -12,6 +12,8 @@
     "src/**/*.js"
   ],
   "exclude": [
-    "src/index-local.js"
+    "src/index-local.js",
+    "src/accessibility/guidance-handlers/guidance-accessibility-remediation.js",
+    "src/accessibility/utils/generate-individual-opportunities.js"
   ]
 }

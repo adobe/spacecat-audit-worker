@@ -189,11 +189,17 @@ export function formatIssue(type, issueData, severity) {
   // Format the WCAG rule (e.g., "wcag412" -> "4.1.2 Name, Role, Value")
   const wcagRule = formatWcagRule(rawWcagRule);
 
+  // Extract target selector from the target field first (same for all nodes of this issue type)
+  let targetSelector = '';
+  if (isNonEmptyArray(issueData.target)) {
+    [targetSelector] = issueData.target;
+  }
+
   // Transform htmlWithIssues using nodes data if available, otherwise fallback
   let htmlWithIssues = [];
 
   if (issueData.nodes && Array.isArray(issueData.nodes)) {
-    // Extract target selector once (same for all nodes of this issue type on this URL)
+    // If we don't have targetSelector yet, get it from the first node
     if (!targetSelector) {
       const firstNode = issueData.nodes[0];
       targetSelector = Array.isArray(firstNode?.target)
@@ -207,10 +213,6 @@ export function formatIssue(type, issueData, severity) {
       target_selector: targetSelector,
       issue_id: generateUUID(),
     }));
-  // Extract target selector from the target field
-  let targetSelector = '';
-  if (isNonEmptyArray(issueData.target)) {
-    [targetSelector] = issueData.target;
   }
 
   return {
@@ -849,4 +851,3 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
 
 // Export these for testing
 export { createMystiqueMessage, sendMystiqueMessage };
-
