@@ -90,7 +90,7 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
     siteFilters,
     hostEscaped,
   });
-  const output = `s3://${bucket}/aggregated/${year}/${month}/${day}/${hour}/`;
+  const output = `s3://${bucket}/aggregated_${hostEscaped}/${year}/${month}/${day}/${hour}/`;
   const sqlUnloadDescription = `[Athena Query] Filter the raw logs and unload to ${output}`;
   await athenaClient.execute(sqlUnload, database, sqlUnloadDescription);
 

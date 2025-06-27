@@ -30,9 +30,7 @@ UNLOAD (
     AND NOT REGEXP_LIKE(COALESCE(request_referer, ''), '{{host}}')
 
     -- filter based on site configuration
-    AND (
-      {{siteFilters}}
-    )
+    {{siteFilters}}
 
   GROUP BY
     url,
