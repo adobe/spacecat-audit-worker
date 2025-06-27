@@ -285,14 +285,7 @@ describe('Preflight Audit', () => {
       }];
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
-      expect(result.auditResult.brokenExternalLinks).to.deep.equal([
-        {
-          urlTo: 'https://external-site.com/fail',
-          href: 'https://main--example--page.aem.page/page1',
-          status: 'error',
-          error: 'network fail',
-        },
-      ]);
+      expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
       expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking external link https://external-site.com/fail from https://main--example--page.aem.page/page1:', 'network fail');
     });
 
@@ -512,10 +505,10 @@ describe('Preflight Audit', () => {
         .head('/broken')
         .reply(404);
 
-      // Mock the external link to throw an error (network error)
+      // Mock the external link to return 404
       nock('http://test.com')
         .head('/')
-        .replyWithError('Network error');
+        .reply(404);
     });
 
     afterEach(() => {
@@ -634,6 +627,11 @@ describe('Preflight Audit', () => {
       // Mock the broken internal link to return 404
       nock('https://main--example--page.aem.page')
         .head('/broken')
+        .reply(404);
+
+      // Mock the external link to return 404
+      nock('http://test.com')
+        .head('/')
         .reply(404);
 
       s3Client.send.callsFake((command) => {
