@@ -23,144 +23,26 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import {
+  ensureFullUrl,
+  is404page,
+} from './opportunity-utils.js';
 
 const auditType = 'redirect-chains';
 
 export const AUDIT_DISPLAY_NAME = 'Redirect Chains'; // used for logging, and in unit tests
 const USER_AGENT = 'Spacecat/1.0'; // identify ourselves in all HTTP requests
-const PATTERNS_FOR_404_PAGES = ['/404', '/404.html', '/404.htm']; // ex: https://github.com/adobe/aem-boilerplate/blob/main/404.html
 const KEY_SEPARATOR = '~|~'; // part of building a unique key for each entry in the suggestions
 const STOP_AFTER_N_REDIRECTS = 5; // per entry tested ... used to prevent infinite redirects
 const MAX_REDIRECTS_TO_TOLERATE = 1; // ex: only allow 1 redirect before we consider it a problem
-let logger = null; // will be set by the handler
 
-// ----- utils (stand-alone) -----------------------------------------------------------------------
-
-/**
- * Checks if a URL has a protocol.
- * Examples of protocols: {http, https, ftp, mailto, telnet, file, ...}
- *
- * @param {string} url - The URL to check
- * @returns {boolean} true if the URL has a protocol, false otherwise
- */
-export function hasProtocol(url) {
-  try {
-    return Boolean(new URL(url).protocol);
-  } catch {
-    return false;
-  }
-}
+// ----- support -----------------------------------------------------------------------------------
 
 /**
- * Returns true if the URL ends with any common 404-page patterns.
- * @param {string} url - The URL to check
- * @returns {boolean} true if the URL ends with a 404 pattern, false otherwise
- */
-export function is404page(url) {
-  return PATTERNS_FOR_404_PAGES.some((pattern) => url.endsWith(pattern));
-}
-
-/**
- * Adds 'www.' to the beginning of the hostname of a URL if it is not already present AND if
- * the hostname doesn't already have a subdomain.
- * Preserves any protocol that is present, but does not add 'http://' or 'https://' if missing.
+ * Returns a unique key for the result object.  The result object represents a specific
+ * "Source" and "Destination" URL pair.  The generated key handles any duplicates that were found.
+ * This key is used to uniquely identify the entry when we run the audit repeatedly.
  *
- * Examples:
- *    given:   adobe.com
- *    returns: www.adobe.com          // since no protocol was specified, none is returned
- *
- *    given:   https://adobe.com
- *    returns: https://www.adobe.com  // keeps the protocol
- *
- *    given:   foo.adobe.com
- *    returns: foo.adobe.com          // no 'www.' added because URL already has subdomain
- *
- *    given:   www.adobe.com
- *    returns: www.adobe.com          // no change needed
- *
- *    given:   https://www.adobe.com
- *    returns: https://www.adobe.com  // no change needed
- *
- * @param {string} url - The URL to modify, if needed
- * @returns {string} The modified URL
- */
-export function addWWW(url) {
-  try {
-    let theUrl = url;
-
-    let removeProtocol = false; // assume we do not need to remove the protocol
-    const keepTrailingSlash = theUrl.endsWith('/');
-
-    if (!hasProtocol(theUrl)) {
-      // if the URL does not have a protocol, we need to add it
-      theUrl = `https://${theUrl}`;
-      removeProtocol = true; // we will remove the protocol later
-    }
-
-    const urlObj = new URL(theUrl);
-    const hostnameParts = urlObj.hostname.split('.');
-
-    // Only add 'www.' if all the following are true:
-    // 1. Hostname does not already start with 'www.'
-    // 2. Hostname has exactly 2 parts (like: example.com)
-    if (!urlObj.hostname.startsWith('www.') && hostnameParts.length === 2) {
-      urlObj.hostname = `www.${urlObj.hostname}`;
-    }
-
-    theUrl = urlObj.toString(); // will be the original URL if no changes were made
-    if (removeProtocol) {
-      theUrl = theUrl.replace(/^https:\/\//, '');
-    }
-    if (!keepTrailingSlash) {
-      theUrl = theUrl.replace(/\/$/, '');
-    }
-    return theUrl;
-  } catch {
-    return url; // return the original URL if invalid
-  }
-}
-
-/**
- * Returns a reasonable URL.
- * * If missing a domain, add the given domain
- * * If missing a protocol, add 'https://'
- * * Ensure the URL's hostname starts with 'www.' as needed.
- *
- * Examples:
- *    url:     adobe.com
- *    domain:  (not specified)
- *    returns: https://www.adobe.com
- *  *
- *    url:    /patents
- *    domain: main--example--aemsites.hlx.page
- *    return: https://main--example--aemsites.hlx.page/patents
- *  *
- * @param {string} url - The URL to possibly transform
- * @param {string} domain - Optional. The domain to prepend if missing
- * @returns {string} A reasonable URL
- */
-export function ensureFullUrl(url, domain = '') {
-  let addWwwSubdomain = !domain; // if no domain is specified, we might need to add 'www.'
-  let reasonableUrl = url;
-  if (domain && !reasonableUrl.startsWith(domain) && !hasProtocol(reasonableUrl)) {
-    reasonableUrl = domain + reasonableUrl;
-    addWwwSubdomain = true; // add 'www.' if needed
-  }
-  if (hasProtocol(reasonableUrl)) {
-    addWwwSubdomain = false; // do not add 'www.' if the URL already has a protocol
-  } else {
-    reasonableUrl = `https://${reasonableUrl}`;
-  }
-  if (addWwwSubdomain) {
-    reasonableUrl = addWWW(reasonableUrl);
-  }
-  return reasonableUrl;
-}
-
-// ----- helpers -----------------------------------------------------------------------------------
-
-/**
- * Returns a unique key for the result object.
  * @param {Object} result - The result object.
  *                          See the structure returned by `followAnyRedirectForUrl`.
  * @returns {string} The unique key.
@@ -170,12 +52,12 @@ function buildUniqueKey(result) {
 }
 
 /**
- * Counts the number of redirects for a given URL.
+ * Counts the number of redirects starting at the given URL.
  * Does not throw any errors, but will include an error message if one occurs.
  *
- * @param {string} url - The full URL to count redirects for
+ * @param {string} url - The full URL to count redirects for.
  * @param {number} maxRedirects - The maximum number of redirects to count.
- *        Once this limit is reached, the function will stop counting and return the current count.
+ *        Once this limit is reached, the function will stop counting and return this max count.
  *
  * @returns {Object} An object containing the results of attempting to follow redirects:
  *   {
@@ -297,13 +179,15 @@ async function followAnyRedirectForUrl(urlStruct, domain = '') {
   let redirected = false;
   let redirectCount = 0;
   let fullFinalMatchesDestUrl = false; // technically: unknown
-  const { referencedBy } = urlStruct;
-  const { origSrc } = urlStruct;
-  const { origDest } = urlStruct;
-  const { isDuplicateSrc } = urlStruct;
-  const { ordinalDuplicate } = urlStruct; // 0 = unique, 1 = 1st duplicate, 2 = 2nd duplicate, etc.
-  const isTooQualified = urlStruct.tooQualified;
-  const { hasSameSrcDest } = urlStruct;
+  const {
+    referencedBy,
+    origSrc,
+    origDest,
+    isDuplicateSrc,
+    ordinalDuplicate, // 0 = unique, 1 = 1st duplicate, 2 = 2nd duplicate, etc.
+    tooQualified: isTooQualified,
+    hasSameSrcDest,
+  } = urlStruct;
   let redirectChain = '';
   let errorMsg = ''; // empty string means no error
 
@@ -429,15 +313,10 @@ async function followAnyRedirectForUrl(urlStruct, domain = '') {
  *
  * @param {string} url - The URL to fetch JSON data from.
  *                       Ex: https://www.example.com/redirects.json
- * @param {Object} log - Optional. The logger object to use for logging.
+ * @param {Object} log - The logger object to use for logging.
  * @returns {Promise<Object>} The retrieved JSON data, or an empty object
  */
-export async function getJsonData(url, log = null) {
-  // if applicable, set the logger
-  if (log) {
-    logger = log; // set the logger for this function
-  }
-
+export async function getJsonData(url, log) {
   try {
     const response = await fetch(url, {
       method: 'GET',
@@ -453,13 +332,13 @@ export async function getJsonData(url, log = null) {
       // ... which just means there is no /redirects.json file. That's A-OK.
       if (response.status !== 404) {
         // otherwise, this is an unexpected error code
-        logger?.error(`${AUDIT_DISPLAY_NAME} - Error trying to get ${url} ... HTTP code: ${response.status}`);
+        log.error(`${AUDIT_DISPLAY_NAME} - Error trying to get ${url} ... HTTP code: ${response.status}`);
       }
       return []; // return an empty array
     }
     return await response.json(); // return the data as JSON
   } catch (error) {
-    logger?.error(`${AUDIT_DISPLAY_NAME} - Error in method "getJsonData" for URL: ${url} ...`, error);
+    log.error(`${AUDIT_DISPLAY_NAME} - Error in method "getJsonData" for URL: ${url} ...`, error);
     return []; // return an empty array if the fetch fails
   }
 }
@@ -473,26 +352,21 @@ export async function getJsonData(url, log = null) {
  *
  * @param {string} baseUrl - The site's base URL for the /redirects.json file.
  *                           Ex: https://www.example.com
- * @param {Object} log - Optional. The logger object to use for logging.
+ * @param {Object} log - The logger object to use for logging.
  * @returns {Promise<Object[]>} An array of page URLs.  Might be empty.
  */
-export async function processRedirectsFile(baseUrl, log = null) {
-  // if applicable, set the logger
-  if (log) {
-    logger = log; // set the logger for this function
-  }
-
+export async function processRedirectsFile(baseUrl, log) {
   // create the URL for the /redirects.json file
   const redirectsUrl = `${baseUrl}/redirects.json`;
   // retrieve the entire /redirects.json file
-  let redirectsJson = await getJsonData(redirectsUrl);
+  let redirectsJson = await getJsonData(redirectsUrl, log);
   if (!redirectsJson || !redirectsJson.data || !redirectsJson.data.length) {
     return []; // no /redirects.json file found, or there are no entries in the file
   }
   // if we only received part of the entries that are available, then ask for the entire file
   const totalEntries = redirectsJson.total;
   if (redirectsJson.data.length < totalEntries) {
-    redirectsJson = await getJsonData(`${redirectsUrl}?limit=${totalEntries}`);
+    redirectsJson = await getJsonData(`${redirectsUrl}?limit=${totalEntries}`, log);
     if (!redirectsJson || !redirectsJson.data || !redirectsJson.data.length) {
       // not expected, since we previously got the file without a query parameter, but just in case.
       return []; // no /redirects.json file found, or there are no entries in the file
@@ -500,7 +374,7 @@ export async function processRedirectsFile(baseUrl, log = null) {
   }
   // sanity check: log if we do not have all the entries
   if (redirectsJson.data.length !== totalEntries) {
-    logger?.warn(`${AUDIT_DISPLAY_NAME} - Expected ${totalEntries} entries in ${redirectsUrl}, but found only ${redirectsJson.data.length}.`);
+    log.warn(`${AUDIT_DISPLAY_NAME} - Expected ${totalEntries} entries in ${redirectsUrl}, but found only ${redirectsJson.data.length}.`);
   }
 
   // Extract the page URLs from the 'data' property of the /redirects.json file.
@@ -568,7 +442,6 @@ export async function processRedirectsFile(baseUrl, log = null) {
  *  Each result object has the structure as returned by `followAnyRedirectForUrl`
  */
 export async function processEntriesInParallel(pageUrls, baseUrl, log, maxConcurrency = 1000) {
-  logger = log; // set the logger for this function
   const BATCH_SIZE = maxConcurrency; // processing takes about 0.015 seconds per entry
   const allResults = [];
 
@@ -584,7 +457,7 @@ export async function processEntriesInParallel(pageUrls, baseUrl, log, maxConcur
     allResults.push(...batchResults);
 
     // Log progress
-    logger.info(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(pageUrls.length / BATCH_SIZE)}`);
+    log.info(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(pageUrls.length / BATCH_SIZE)}`);
   }
 
   return allResults;
@@ -596,8 +469,6 @@ export async function processEntriesInParallel(pageUrls, baseUrl, log, maxConcur
  * @param {Object[]} results - THe results array from processing the page URLs.
  *                             Each row of this array is called an "entry".
  *                             See the structure returned by `followAnyRedirectForUrl`.
- * @param {Object} log - The logger object to use for logging.
- *
  * @returns {{
  *   counts: {
  *    countDuplicateSourceUrls: number,
@@ -611,8 +482,7 @@ export async function processEntriesInParallel(pageUrls, baseUrl, log, maxConcur
  *   entriesWithProblems: *[]               // the array of entries that have problems
  * }}
  */
-export function analyzeResults(results, log) {
-  logger = log; // set the logger for this function
+export function analyzeResults(results) {
   const counts = {
     countDuplicateSourceUrls: 0,
     countTooQualifiedUrls: 0,
@@ -684,10 +554,12 @@ async function processEntries(pageUrls, baseUrl, log) {
   const results = await processEntriesInParallel(pageUrls, baseUrl, log);
 
   // Step 2: Analyze results synchronously (the fast part)
-  const { counts, entriesWithProblems } = analyzeResults(results, log);
+  const { counts, entriesWithProblems } = analyzeResults(results);
 
   return { counts, entriesWithProblems };
 }
+
+// ----- audit runner  -----------------------------------------------------------------------------
 
 /**
  * Runs the audit for the /redirects.json file.
@@ -705,7 +577,8 @@ async function processEntries(pageUrls, baseUrl, log) {
  */
 export async function redirectsAuditRunner(baseUrl, context) {
   // setup
-  logger = context.log;
+  const { log } = context;
+  const startTime = process.hrtime(); // start timer
   const auditResult = {
     success: true, // default
     reasons: [{ value: 'File /redirects.json checked.' }],
@@ -713,7 +586,7 @@ export async function redirectsAuditRunner(baseUrl, context) {
   };
 
   // run the audit
-  logger.info(`${AUDIT_DISPLAY_NAME} - STARTED running audit for /redirects.json for ${baseUrl}`);
+  log.info(`${AUDIT_DISPLAY_NAME} - STARTED running audit for /redirects.json for ${baseUrl}`);
   if (!extractDomainAndProtocol(baseUrl)) {
     auditResult.success = false;
     auditResult.reasons = [{ value: baseUrl, error: 'INVALID URL' }];
@@ -722,29 +595,34 @@ export async function redirectsAuditRunner(baseUrl, context) {
   // get a pre-processed array of page URLs from the /redirects.json file
   let pageUrls = [];
   if (auditResult.success) {
-    logger.info(`${AUDIT_DISPLAY_NAME} - PROCESSING /redirects.json for ${baseUrl}`);
-    pageUrls = await processRedirectsFile(baseUrl, logger);
+    log.info(`${AUDIT_DISPLAY_NAME} - PROCESSING /redirects.json for ${baseUrl}`);
+    pageUrls = await processRedirectsFile(baseUrl, log);
   }
 
   // process the entries & remember the results
-  const { counts, entriesWithProblems } = await processEntries(pageUrls, baseUrl, logger);
+  const { counts, entriesWithProblems } = await processEntries(pageUrls, baseUrl, log);
   if (counts.countTotalEntriesWithProblems > 0) {
     auditResult.details.issues = entriesWithProblems;
   }
 
+  // end timer
+  const endTime = process.hrtime(startTime);
+  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+  const formattedElapsed = elapsedSeconds.toFixed(2);
+
   // echo the stats
-  logger.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json has total number of entries checked:       ${pageUrls.length}`);
-  logger.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json has total number of entries with problems: ${counts.countTotalEntriesWithProblems}`);
+  log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json has total number of entries checked:       ${pageUrls.length}`);
+  log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json has total number of entries with problems: ${counts.countTotalEntriesWithProblems}`);
   if (counts.countTotalEntriesWithProblems > 0) {
-    logger.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. duplicate Source URLs:        ${counts.countDuplicateSourceUrls}`);
-    logger.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. too qualified URLs:           ${counts.countTooQualifiedUrls}`);
-    logger.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. same Source and Dest URLs:    ${counts.countHasSameSrcDest}`);
-    logger.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. resulted in HTTP error:       ${counts.count400Errors}`);
-    logger.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. Final URL not match Dest URL: ${counts.countNotMatchDestinationUrl}`);
-    logger.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. with too many redirects:      ${counts.countTooManyRedirects}`);
+    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. duplicate Source URLs:        ${counts.countDuplicateSourceUrls}`);
+    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. too qualified URLs:           ${counts.countTooQualifiedUrls}`);
+    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. same Source and Dest URLs:    ${counts.countHasSameSrcDest}`);
+    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. resulted in HTTP error:       ${counts.count400Errors}`);
+    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. Final URL not match Dest URL: ${counts.countNotMatchDestinationUrl}`);
+    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. with too many redirects:      ${counts.countTooManyRedirects}`);
   }
 
-  logger.info(`${AUDIT_DISPLAY_NAME} - DONE running audit for /redirects.json for ${baseUrl}`);
+  log.info(`${AUDIT_DISPLAY_NAME} - DONE running audit for /redirects.json for ${baseUrl}. Completed in ${formattedElapsed} seconds.`);
   return {
     fullAuditRef: baseUrl,
     url: baseUrl,
@@ -820,7 +698,6 @@ export function getSuggestedFix(result) {
  */
 export function generateSuggestedFixes(auditUrl, auditData, context) {
   const { log } = context;
-  logger = log; // set the logger for use in the utils
 
   const suggestedFixes = []; // {key: '...', fix: '...'}
   const entriesWithIssues = auditData?.auditResult?.details?.issues ?? [];
@@ -849,14 +726,13 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
  * Synchronizes existing suggestions with new data by removing outdated suggestions and adding
  * new ones.
  *
- * @param auditUrl
- * @param auditData
- * @param context
+ * @param auditUrl - The URL of the audit
+ * @param auditData - The audit data containing the audit result and additional details
+ * @param context - The context object containing the logger
  * @returns {Promise<*>}
  */
 export async function generateOpportunities(auditUrl, auditData, context) {
   const { log } = context;
-  logger = log; // set the logger for use in the utils
 
   // check if audit itself ran successfully
   if (auditData.auditResult.success === false) {

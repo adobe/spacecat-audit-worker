@@ -19,10 +19,6 @@ import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import {
   redirectsAuditRunner,
-  ensureFullUrl,
-  hasProtocol,
-  is404page,
-  addWWW,
   getJsonData,
   processRedirectsFile,
   processEntriesInParallel,
@@ -32,6 +28,12 @@ import {
   generateOpportunities,
   AUDIT_DISPLAY_NAME,
 } from '../../src/redirect-chains/handler.js';
+import {
+  addWWW,
+  ensureFullUrl,
+  hasProtocol,
+  is404page,
+} from '../../src/redirect-chains/opportunity-utils.js';
 import { MockContextBuilder } from '../shared.js';
 import { createOpportunityData } from '../../src/redirect-chains/opportunity-data-mapper.js';
 import { DATA_SOURCES } from '../../src/common/constants.js';
@@ -168,7 +170,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, sampleRedirectsJson);
 
-        const result = await getJsonData(`${url}/redirects.json`);
+        const result = await getJsonData(`${url}/redirects.json`, context.log);
         expect(result).to.deep.equal(sampleRedirectsJson);
       });
 
@@ -177,7 +179,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(404);
 
-        const result = await getJsonData(`${url}/redirects.json`);
+        const result = await getJsonData(`${url}/redirects.json`, context.log);
         expect(result).to.deep.equal([]);
       });
 
@@ -199,7 +201,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .replyWithError('Network error');
 
-        const result = await getJsonData(`${url}/redirects.json`);
+        const result = await getJsonData(`${url}/redirects.json`, context.log);
         expect(result).to.deep.equal([]);
       });
     });
@@ -210,7 +212,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, sampleRedirectsJson);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result).to.be.an('array');
         expect(result).to.have.lengthOf(2);
         expect(result[1]).to.have.property('origSrc', '/old-page');
@@ -222,7 +224,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, { data: [], total: 0 });
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result).to.be.an('array');
         expect(result).to.have.lengthOf(0);
       });
@@ -241,7 +243,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithDuplicates);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result).to.be.an('array');
         expect(result).to.have.lengthOf(3);
         expect(result[0]).to.have.property('origSrc', '/a');
@@ -262,7 +264,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithDuplicates);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[0].isDuplicateSrc).to.be.true;
         expect(result[0].ordinalDuplicate).to.equal(1);
       });
@@ -279,7 +281,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithQualifiedUrls);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[0].tooQualified).to.be.true;
       });
 
@@ -295,7 +297,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithQualifiedUrls);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[0].origSrc).to.equal('/old-page');
         expect(result[0].origDest).to.equal('/new-page');
       });
@@ -312,7 +314,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithQualifiedUrls);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[0].origSrc).to.equal('/old-page');
         expect(result[0].origDest).to.equal('/new-page');
       });
@@ -329,7 +331,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithMissingSource);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[0].origSrc).to.equal('');
         expect(result[0].origDest).to.equal('/new-page');
       });
@@ -346,7 +348,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithMissingDestination);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[0].origSrc).to.equal('/old-page');
         expect(result[0].origDest).to.equal('');
       });
@@ -363,7 +365,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithMissingBoth);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[0].origSrc).to.equal('');
         expect(result[0].origDest).to.equal('');
       });
@@ -380,7 +382,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithSameUrls);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[0].hasSameSrcDest).to.be.true;
       });
 
@@ -422,7 +424,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithQualifiedLastEntry);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[1].tooQualified).to.be.true;
         expect(result[1].origSrc).to.equal(`${url}/page2`);
       });
@@ -441,7 +443,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithSameUrlsLastEntry);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[1].hasSameSrcDest).to.be.true;
         expect(result[1].origSrc).to.equal('/same');
         expect(result[1].origDest).to.equal('/same');
@@ -461,7 +463,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithBothIssuesLastEntry);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[1].tooQualified).to.be.true;
         expect(result[1].hasSameSrcDest).to.be.true;
         expect(result[1].origSrc).to.equal(`${url}/same`);
@@ -478,7 +480,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json?limit=2')
           .reply(200, undefined);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result).to.be.an('array').that.is.empty;
       });
 
@@ -492,7 +494,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json?limit=2')
           .reply(200, { notData: true });
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result).to.be.an('array').that.is.empty;
       });
 
@@ -506,7 +508,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json?limit=2')
           .reply(200, { data: [] });
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result).to.be.an('array').that.is.empty;
       });
 
@@ -526,7 +528,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, redirectsJson);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
         expect(result[0].tooQualified).to.be.false; // case 1: neither
         expect(result[0].hasSameSrcDest).to.be.false;
         expect(result[1].tooQualified).to.be.false; // case 2: hasSameSrcDest
@@ -569,7 +571,7 @@ describe('Redirect Chains Audit', () => {
           .get('/redirects.json')
           .reply(200, jsonWithMultipleEntries);
 
-        const result = await processRedirectsFile(url);
+        const result = await processRedirectsFile(url, context.log);
 
         // Verify the entries are processed correctly
         expect(result[0].referencedBy).to.equal(`${url}/redirects.json`);
@@ -1009,7 +1011,7 @@ describe('Redirect Chains Audit', () => {
           },
         ];
 
-        const { counts, entriesWithProblems } = analyzeResults(results, context.log);
+        const { counts, entriesWithProblems } = analyzeResults(results);
         expect(counts.countDuplicateSourceUrls).to.equal(2);
         expect(counts.countTooQualifiedUrls).to.equal(2);
         expect(entriesWithProblems).to.have.lengthOf(3);
@@ -1027,7 +1029,7 @@ describe('Redirect Chains Audit', () => {
           },
         ];
 
-        const { counts } = analyzeResults(results, context.log);
+        const { counts } = analyzeResults(results);
         expect(counts.countTooManyRedirects).to.equal(1);
       });
 
@@ -1043,7 +1045,7 @@ describe('Redirect Chains Audit', () => {
           },
         ];
 
-        const { counts } = analyzeResults(results, context.log);
+        const { counts } = analyzeResults(results);
         expect(counts.count400Errors).to.equal(1);
       });
 
@@ -1059,7 +1061,7 @@ describe('Redirect Chains Audit', () => {
           },
         ];
 
-        const { counts } = analyzeResults(results, context.log);
+        const { counts } = analyzeResults(results);
         expect(counts.countNotMatchDestinationUrl).to.equal(1);
       });
 
@@ -1082,7 +1084,7 @@ describe('Redirect Chains Audit', () => {
             fullFinalMatchesDestUrl: true,
           },
         ];
-        const { counts, entriesWithProblems } = analyzeResults(results, context.log);
+        const { counts, entriesWithProblems } = analyzeResults(results);
         expect(counts.countHasSameSrcDest).to.equal(1);
         expect(entriesWithProblems).to.have.lengthOf(1);
         expect(entriesWithProblems[0].hasSameSrcDest).to.be.true;
@@ -1472,7 +1474,7 @@ describe('Redirect Chains Audit', () => {
         expect(opportunityData.guidance.steps[0]).to.include('check if the redirect is valid');
 
         expect(opportunityData).to.have.property('tags');
-        expect(opportunityData.tags).to.deep.equal(['Engagement']);
+        expect(opportunityData.tags).to.deep.equal(['Traffic Acquisition']);
 
         expect(opportunityData).to.have.property('data');
         expect(opportunityData.data).to.have.property('dataSources');

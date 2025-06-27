@@ -23,7 +23,7 @@ export function createOpportunityData() {
         'For each affected entry in the /redirects.json file, check if the redirect is valid. See the suggestion provided for details on how to resolve.',
       ],
     },
-    tags: ['Engagement'],
+    tags: ['Traffic Acquisition'],
     data: {
       dataSources: [DATA_SOURCES.SITE],
     },
