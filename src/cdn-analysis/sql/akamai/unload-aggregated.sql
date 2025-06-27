@@ -42,9 +42,7 @@ UNLOAD (
     AND NOT REGEXP_LIKE(COALESCE(referer, ''), '{{host}}')
 
     -- filter based on site configuration
-    AND (
-      {{siteFilters}}
-    )
+    {{siteFilters}}
 
   GROUP BY
     CASE
