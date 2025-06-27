@@ -163,7 +163,11 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
 
   await Promise.all(pages.map(async ({ url: page }) => {
     let scrapeResult;
-    const { pathname } = new URL(page);
+    let { pathname } = new URL(page);
+    // If pathname ends with a slash, remove it
+    if (pathname.endsWith('/')) {
+      pathname = pathname.slice(0, -1);
+    }
     try {
       if (!scrapeCache.has(pathname)) {
         scrapeCache.set(pathname, getScrapeForPath(pathname, context, site));

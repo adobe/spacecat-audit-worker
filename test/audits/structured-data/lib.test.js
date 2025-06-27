@@ -416,6 +416,15 @@ describe('Structured Data Libs', () => {
 
       expect(result).to.have.lengthOf(1);
     });
+
+    it('strips trailing slash from URL', async () => {
+      const scrapeCache = new Map();
+      await getIssuesFromScraper(context, [{ url: 'https://example.com/product/1/' }], scrapeCache);
+      expect(s3ClientStub.send.calledOnce).to.be.true;
+      expect(s3ClientStub.send.args[0][0].input).to.deep.equal({
+        Bucket: 'test-bucket', Key: 'scrapes/123/product/1/scrape.json',
+      });
+    });
   });
 
   describe('getWrongMarkup', () => {

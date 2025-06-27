@@ -127,7 +127,11 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
     } else {
       let scrapeResult;
 
-      const { pathname } = new URL(issue.pageUrl);
+      let { pathname } = new URL(issue.pageUrl);
+      // If pathname ends with a slash, remove it
+      if (pathname.endsWith('/')) {
+        pathname = pathname.slice(0, -1);
+      }
       try {
         if (!scrapeCache.has(pathname)) {
           scrapeCache.set(pathname, getScrapeForPath(pathname, context, site));
