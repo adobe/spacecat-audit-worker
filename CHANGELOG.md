@@ -1,3 +1,10 @@
+# [1.117.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.116.0...v1.117.0) (2025-06-27)
+
+
+### Features
+
+* extend paid metrics on paid audit ([4a34c76](https://github.com/adobe/spacecat-audit-worker/commit/4a34c7604c8f495c85cc840fcf33a25a9199bb06))
+
 # [1.116.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.115.0...v1.116.0) (2025-06-27)
 
 
