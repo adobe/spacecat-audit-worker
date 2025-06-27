@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
@@ -181,7 +182,7 @@ export function formatIssue(type, issueData, severity) {
 
   // Extract target selector from the target field
   let targetSelector = '';
-  if (issueData.target && Array.isArray(issueData.target) && issueData.target.length > 0) {
+  if (isNonEmptyArray(issueData.target)) {
     [targetSelector] = issueData.target;
   }
 
