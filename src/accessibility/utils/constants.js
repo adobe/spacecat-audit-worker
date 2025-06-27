@@ -725,3 +725,10 @@ export const accessibilityOpportunitiesMap = {
     'select-name',
   ],
 };
+
+/**
+ * Accessibility issue types that should be sent to Mystique for remediation guidance
+ */
+export const issueTypesForMystique = [
+  'aria-allowed-attr',
+];

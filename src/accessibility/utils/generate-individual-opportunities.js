@@ -10,10 +10,115 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
 import { getAuditData } from './data-processing.js';
+import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
+
+/**
+ * Creates a Mystique message object
+ *
+ * @param {Object} params - Parameters for creating the message
+ * @param {Object} params.suggestionData - The suggestion data
+ * @param {Array} params.issuesList - List of issues for this type
+ * @param {Object} params.opportunity - The opportunity object
+ * @param {string} params.siteId - Site identifier
+ * @param {string} params.auditId - Audit identifier
+ * @param {string} params.deliveryType - Delivery type
+ * @returns {Object} The message object ready for SQS
+ */
+function createMystiqueMessage({
+  suggestion,
+  suggestionData,
+  issuesList,
+  opportunity,
+  siteId,
+  auditId,
+  deliveryType,
+}) {
+  return {
+    type: 'guidance:accessibility-remediation',
+    siteId: siteId || '',
+    auditId: auditId || '',
+    deliveryType,
+    time: new Date().toISOString(),
+    data: {
+      url: suggestionData.url,
+      opportunity_id: opportunity.getId(),
+      suggestion_id: suggestion.getId ? suggestion.getId() : '',
+      issues_list: issuesList,
+    },
+  };
+}
+
+/**
+ * Sends a single message to Mystique for a specific issue type
+ *
+ * @param {Object} params - Parameters for sending the message
+ * @param {Object} params.suggestion - The suggestion object
+ * @param {Object} params.suggestionData - The suggestion data
+ * @param {string} params.issueType - The type of accessibility issue
+ * @param {Array} params.issuesList - List of issues for this type
+ * @param {Object} params.opportunity - The opportunity object
+ * @param {string} params.siteId - Site identifier
+ * @param {string} params.auditId - Audit identifier
+ * @param {string} params.deliveryType - Delivery type
+ * @param {Object} params.sqs - SQS client
+ * @param {Object} params.env - Environment variables
+ * @param {Object} params.log - Logger instance
+ * @returns {Promise<Object>} Result object with success status and details
+ */
+async function sendMystiqueMessage({
+  suggestion,
+  suggestionData,
+  issueType,
+  issuesList,
+  opportunity,
+  siteId,
+  auditId,
+  deliveryType,
+  sqs,
+  env,
+  log,
+}) {
+  const message = createMystiqueMessage({
+    suggestion,
+    suggestionData,
+    issuesList,
+    opportunity,
+    siteId,
+    auditId,
+    deliveryType,
+  });
+
+  try {
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(
+      `[A11yIndividual] Sent message to Mystique for suggestion ${
+        suggestion.getId ? suggestion.getId() : ''
+      } and issue type ${issueType} with ${issuesList.length} issues`,
+    );
+    return {
+      success: true,
+      issueType,
+      suggestionId: suggestion.getId ? suggestion.getId() : '',
+    };
+  } catch (error) {
+    log.error(
+      `[A11yIndividual] Failed to send message to Mystique for suggestion ${
+        suggestion.getId ? suggestion.getId() : ''
+      } and issue type ${issueType}: ${error.message}`,
+    );
+    return {
+      success: false,
+      issueType,
+      suggestionId: suggestion.getId ? suggestion.getId() : '',
+      error: error.message,
+    };
+  }
+}
 
 /**
  * Helper function to format WCAG rule from internal format to human-readable format
@@ -75,6 +180,12 @@ export function formatIssue(type, issueData, severity) {
   // Format the WCAG rule (e.g., "wcag412" -> "4.1.2 Name, Role, Value")
   const wcagRule = formatWcagRule(rawWcagRule);
 
+  // Extract target selector from the target field
+  let targetSelector = '';
+  if (isNonEmptyArray(issueData.target)) {
+    [targetSelector] = issueData.target;
+  }
+
   return {
     type,
     description: issueData.description || '',
@@ -84,6 +195,7 @@ export function formatIssue(type, issueData, severity) {
     occurrences: issueData.count || 0,
     htmlWithIssues: issueData.htmlWithIssues || [],
     failureSummary: issueData.failureSummary || '',
+    targetSelector,
   };
 }
 
@@ -258,6 +370,79 @@ export async function createIndividualOpportunitySuggestions(
       }),
       log,
     });
+
+    // Get fresh opportunity data to ensure we have the latest suggestions
+    const { Opportunity } = context.dataAccess;
+    const refreshedOpportunity = await Opportunity.findById(opportunity.getId());
+    // Get the suggestions that were just created/updated
+    const suggestions = await refreshedOpportunity.getSuggestions();
+    log.debug(`[A11yIndividual] Retrieved ${suggestions.length} suggestions from opportunity ${opportunity.getId()}`);
+
+    const { sqs, env } = context;
+    const siteId = refreshedOpportunity.getSiteId
+      ? refreshedOpportunity.getSiteId()
+      : (context.site && context.site.getId && context.site.getId());
+    const auditId = refreshedOpportunity.getAuditId
+      ? refreshedOpportunity.getAuditId()
+      : (context.auditId || (context.audit && context.audit.getId && context.audit.getId()));
+    const deliveryType = (context.site && context.site.getDeliveryType && context.site.getDeliveryType()) || 'aem_edge';
+
+    log.debug(`[A11yIndividual] Debug info - suggestions: ${suggestions.length}, sqs: ${!!sqs}, env: ${!!env}, siteId: ${siteId}, auditId: ${auditId}`);
+
+    // Log details about each suggestion for debugging
+    suggestions.forEach((suggestion, index) => {
+      const suggestionData = suggestion.getData();
+      const issueTypes = suggestionData.issues
+        ? suggestionData.issues.map((issue) => issue.type) : [];
+      log.debug(`[A11yIndividual] Suggestion ${index}: URL=${suggestionData.url}, Issues=[${issueTypes.join(', ')}]`);
+    });
+
+    // Process the suggestions directly to create Mystique messages
+    const mystiqueData = processSuggestionsForMystique(suggestions);
+
+    log.debug(`[A11yIndividual] Mystique data processed: ${mystiqueData.length} messages to send`);
+
+    if (mystiqueData.length === 0) {
+      log.info('[A11yIndividual] No messages to send to Mystique - no matching issue types found');
+      return { success: true };
+    }
+
+    // Validate required context objects before proceeding
+    if (!sqs || !env || !env.QUEUE_SPACECAT_TO_MYSTIQUE) {
+      log.error(`[A11yIndividual] Missing required context - sqs: ${!!sqs}, env: ${!!env}, queue: ${env?.QUEUE_SPACECAT_TO_MYSTIQUE || 'undefined'}`);
+      return { success: false, error: 'Missing SQS context or queue configuration' };
+    }
+
+    log.info(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+
+    const messagePromises = mystiqueData.map(({
+      suggestion, suggestionData, issueType, issuesList,
+    }) => sendMystiqueMessage({
+      suggestion,
+      suggestionData,
+      issueType,
+      issuesList,
+      opportunity: refreshedOpportunity,
+      siteId,
+      auditId,
+      deliveryType,
+      sqs,
+      env,
+      log,
+    }));
+
+    // Wait for all messages to be sent (successfully or with errors)
+    const results = await Promise.allSettled(messagePromises);
+
+    // Log summary of results
+    const successfulMessages = results.filter((result) => result.status === 'fulfilled' && result.value.success).length;
+    const failedMessages = results.filter((result) => result.status === 'fulfilled' && !result.value.success).length;
+    const rejectedPromises = results.filter((result) => result.status === 'rejected').length;
+
+    log.info(
+      `[A11yIndividual] Message sending completed: ${successfulMessages} successful, ${failedMessages} failed, ${rejectedPromises} rejected`,
+    );
+
     return { success: true };
   } catch (e) {
     log.error(`Failed to create suggestions for opportunity ${opportunity.getId()}: ${e.message}`);
@@ -475,3 +660,6 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     };
   }
 }
+
+// Export these for testing
+export { createMystiqueMessage, sendMystiqueMessage };
