@@ -200,8 +200,8 @@ export function formatIssue(type, issueData, severity) {
 
   if (isNonEmptyArray(issueData.htmlWithIssues)) {
     // Use existing htmlWithIssues and ensure each has issue_id
-    htmlWithIssues = issueData.htmlWithIssues.map((item) => ({
-      update_from: item.update_from || '',
+    htmlWithIssues = issueData.htmlWithIssues.map((item, index) => ({
+      update_from: issueData.htmlWithIssues[index]?.update_from || '',
       target_selector: targetSelector,
       issue_id: item.issue_id || generateUUID(),
     }));
