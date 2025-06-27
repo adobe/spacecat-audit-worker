@@ -18,7 +18,7 @@ const MAX_PAGES_TO_AUDIT = 3;
 const INTERVAL_DAYS = 7;
 const UNCATEGORIZED = 'uncategorized';
 const TRAFFIC_TYPE = 'paid';
-const MIN_DAILY_PAGE_VIEWS = 1000;
+const MIN_DAILY_PAGE_VIEWS = 500;
 
 const ALLOWED_SEGMENTS = ['url', 'pageType', 'urlTrafficSource', 'pageTypeTrafficSource'];
 const SITE_CLASSIFIER = {};
