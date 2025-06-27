@@ -1,3 +1,10 @@
+# [1.115.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.6...v1.115.0) (2025-06-27)
+
+
+### Features
+
+* geo presence: only trigger detection ([#1011](https://github.com/adobe/spacecat-audit-worker/issues/1011)) ([4967b2a](https://github.com/adobe/spacecat-audit-worker/commit/4967b2af1dd0f82253563b4438b3500b45336e98))
+
 ## [1.114.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.5...v1.114.6) (2025-06-27)
 
 
