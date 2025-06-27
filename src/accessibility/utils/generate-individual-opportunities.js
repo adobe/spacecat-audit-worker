@@ -16,6 +16,14 @@ import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants
 import { getAuditData } from './data-processing.js';
 
 /**
+ * Generates a UUID for issue identification
+ * @returns {string} A unique identifier
+ */
+function generateUUID() {
+  return crypto.randomUUID();
+}
+
+/**
  * Helper function to format WCAG rule from internal format to human-readable format
  *
  * Converts WCAG rules from the internal "wcag412" format to the standard
@@ -62,6 +70,7 @@ export function formatWcagRule(wcagRule) {
  * Transforms raw accessibility issue data into a standardized format with:
  * - Formatted WCAG rule information
  * - Complete issue metadata for suggestions
+ * - Enhanced htmlWithIssues structure with metadata objects including target selectors
  *
  * @param {string} type - The type of accessibility issue (e.g., "color-contrast")
  * @param {Object} issueData - Raw issue data from accessibility scan
@@ -75,6 +84,24 @@ export function formatIssue(type, issueData, severity) {
   // Format the WCAG rule (e.g., "wcag412" -> "4.1.2 Name, Role, Value")
   const wcagRule = formatWcagRule(rawWcagRule);
 
+  // Transform htmlWithIssues using nodes data if available, otherwise fallback
+  let htmlWithIssues = [];
+
+  if (issueData.nodes && Array.isArray(issueData.nodes)) {
+    // Extract target selector once (same for all nodes of this issue type on this URL)
+    const firstNode = issueData.nodes[0];
+    const targetSelector = Array.isArray(firstNode?.target)
+      ? firstNode.target[0]
+      : (firstNode?.target || '');
+
+    // Create htmlWithIssues entries using the shared target selector
+    htmlWithIssues = issueData.nodes.map((node) => ({
+      update_from: node.html || '',
+      target_selector: targetSelector,
+      issue_id: generateUUID(),
+    }));
+  }
+
   return {
     type,
     description: issueData.description || '',
@@ -82,7 +109,7 @@ export function formatIssue(type, issueData, severity) {
     wcagLevel: issueData.level || '', // AA, AAA, etc.
     severity,
     occurrences: issueData.count || 0,
-    htmlWithIssues: issueData.htmlWithIssues || [],
+    htmlWithIssues,
     failureSummary: issueData.failureSummary || '',
   };
 }
@@ -483,18 +510,24 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
  * accessibility issues. It updates the existing opportunity with the comprehensive
  * remediation data provided by Mystique, including specific HTML fixes and user impact.
  *
- * The function enhances the htmlWithIssues structure from a simple array of HTML strings
- * to an array of objects containing both the original HTML and specific remediation details:
+ * The function enhances the htmlWithIssues structure by adding guidance to existing objects:
  *
- * BEFORE: htmlWithIssues: ['<div aria-label="test">...', '<span aria-invalid="true">...']
+ * BEFORE: htmlWithIssues: [
+ *   {
+ *     update_from: '<div aria-label="test">...',
+ *     target_selector: 'div.test',
+ *     issue_id: 'a1ec0c56-76c8-417d-9480-cfbfbdad85bd'
+ *   }
+ * ]
  * AFTER:  htmlWithIssues: [
  *   {
- *     originalHtml: '<div aria-label="test">...',
- *     remediation: {
- *       generalSuggestion: 'Remove disallowed ARIA attributes...',
- *       updateFrom: '<div aria-label="test">...',
- *       updateTo: '<div>...',
- *       userImpact: 'Screen readers may deliver incorrect information...'
+ *     update_from: '<div aria-label="test">...',
+ *     target_selector: 'div.test',
+ *     issue_id: 'a1ec0c56-76c8-417d-9480-cfbfbdad85bd',
+ *     guidance: {
+ *       general_suggestion: 'Remove disallowed ARIA attributes...',
+ *       update_to: '<div>...',
+ *       user_impact: 'Screen readers may deliver incorrect information...'
  *     }
  *   }
  * ]
@@ -557,33 +590,30 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
 
       if (matchingRemediations.length > 0) {
         // Enhanced htmlWithIssues structure - match remediations to specific HTML elements
-        const enhancedHtmlWithIssues = issue.htmlWithIssues.map((originalHtml) => {
+        const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => {
           // Find the specific remediation that matches this HTML element
           const specificRemediation = matchingRemediations.find((remediation) => {
             // Match by comparing the HTML content (remove extra whitespace for better matching)
-            const normalizedOriginal = originalHtml.replace(/\s+/g, ' ').trim();
+            const normalizedOriginal = htmlIssueObj.update_from.replace(/\s+/g, ' ').trim();
             const normalizedUpdateFrom = remediation.update_from.replace(/\s+/g, ' ').trim();
             return normalizedOriginal.includes(normalizedUpdateFrom.substring(0, 50))
                    || normalizedUpdateFrom.includes(normalizedOriginal.substring(0, 50));
           });
 
           if (specificRemediation) {
-            // Return enhanced structure with specific remediation
+            // Return enhanced structure with specific remediation guidance
             return {
-              originalHtml,
-              remediation: {
-                generalSuggestion: specificRemediation.general_suggestion,
-                updateFrom: specificRemediation.update_from,
-                updateTo: specificRemediation.update_to,
-                userImpact: specificRemediation.user_impact,
+              ...htmlIssueObj,
+              guidance: {
+                general_suggestion: specificRemediation.general_suggestion,
+                update_to: specificRemediation.update_to,
+                user_impact: specificRemediation.user_impact,
               },
             };
           }
 
-          // Return only originalHtml if no specific remediation found
-          return {
-            originalHtml,
-          };
+          // Return unchanged if no specific remediation found
+          return htmlIssueObj;
         });
 
         // Return enhanced issue with improved htmlWithIssues structure
