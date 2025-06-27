@@ -1,3 +1,15 @@
+# [1.116.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.115.0...v1.116.0) (2025-06-27)
+
+
+### Bug Fixes
+
+* preflight url resolver making unnecessary requests ([#1014](https://github.com/adobe/spacecat-audit-worker/issues/1014)) ([672cb7f](https://github.com/adobe/spacecat-audit-worker/commit/672cb7ffa956e7d3d445689ffeede33601cce640))
+
+
+### Features
+
+* add Mystique SQS Integration for Accessibility Remediation Guidance ([#985](https://github.com/adobe/spacecat-audit-worker/issues/985)) ([61c0652](https://github.com/adobe/spacecat-audit-worker/commit/61c0652d4d78753a75fe7db2fc2a4f559c51666d))
+
 # [1.115.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.6...v1.115.0) (2025-06-27)
 
 
