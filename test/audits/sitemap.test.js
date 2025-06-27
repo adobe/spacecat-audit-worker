@@ -421,6 +421,17 @@ describe('Sitemap Audit', () => {
       ]);
       expect(resp).to.deep.equal({});
     });
+
+    it('should skip already processed sitemap URLs', async () => {
+      const sitemapUrl = `${url}/sitemap.xml`;
+      nock(url).get('/sitemap.xml').reply(200, sampleSitemapMoreUrls);
+
+      // Pass the same sitemap URL twice
+      const result = await getBaseUrlPagesFromSitemaps(url, [sitemapUrl, sitemapUrl]);
+      expect(result).to.deep.equal({
+        [sitemapUrl]: [`${url}/foo`, `${url}/bar`],
+      });
+    });
   });
 
   describe('findSitemap', () => {
