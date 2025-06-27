@@ -163,13 +163,12 @@ describe('formatIssue', () => {
       occurrences: 5,
       htmlWithIssues: [
         {
-          update_from: '<div>test</div>',
-          target_selector: 'div.test',
+          update_from: '',
+          target_selector: '',
           issue_id: result.htmlWithIssues[0].issue_id, // Use the generated UUID
         },
       ],
       failureSummary: 'Test summary',
-      targetSelector: 'div.test',
     });
   });
 
@@ -240,7 +239,12 @@ describe('formatIssue', () => {
       description: 'Test description',
     }, 'critical');
 
-    expect(result.htmlWithIssues).to.deep.equal([]);
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0]).to.deep.include({
+      update_from: '',
+      target_selector: '',
+    });
+    expect(result.htmlWithIssues[0].issue_id).to.be.a('string');
   });
 
   it('should handle missing failureSummary', () => {
@@ -277,7 +281,7 @@ describe('formatIssue', () => {
       target: ['div:nth-child(1) > .footer-menu-item'],
     }, 'critical');
 
-    expect(result.targetSelector).to.equal('div:nth-child(1) > .footer-menu-item');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('div:nth-child(1) > .footer-menu-item');
   });
 
   it('should handle missing target field', () => {
@@ -286,7 +290,7 @@ describe('formatIssue', () => {
       description: 'Test description',
     }, 'critical');
 
-    expect(result.targetSelector).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
   it('should handle empty target array', () => {
@@ -296,7 +300,7 @@ describe('formatIssue', () => {
       target: [],
     }, 'critical');
 
-    expect(result.targetSelector).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
   it('should handle nodes with non-array target (fallback to string)', () => {
@@ -320,13 +324,12 @@ describe('formatIssue', () => {
       occurrences: 0,
       htmlWithIssues: [
         {
-          update_from: '<div>test</div>',
-          target_selector: 'div.single-target',
+          update_from: '',
+          target_selector: '',
           issue_id: result.htmlWithIssues[0].issue_id,
         },
       ],
       failureSummary: '',
-      targetSelector: 'div.single-target',
     });
   });
 
@@ -351,13 +354,12 @@ describe('formatIssue', () => {
       occurrences: 0,
       htmlWithIssues: [
         {
-          update_from: '<div>test</div>',
+          update_from: '',
           target_selector: '',
           issue_id: result.htmlWithIssues[0].issue_id,
         },
       ],
       failureSummary: '',
-      targetSelector: '',
     });
   });
 
@@ -383,12 +385,70 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           update_from: '',
-          target_selector: 'div.test',
+          target_selector: '',
           issue_id: result.htmlWithIssues[0].issue_id,
         },
       ],
       failureSummary: '',
-      targetSelector: 'div.test',
+    });
+  });
+
+  it('should handle missing properties with fallback values', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      // Missing description, level, count, failureSummary
+      htmlWithIssues: [
+        {
+          // Missing update_from and issue_id, but has target_selector
+          target_selector: 'div.test',
+        },
+      ],
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'aria-allowed-attr',
+      description: '', // Should default to empty string
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: '', // Should default to empty string
+      severity: 'critical',
+      occurrences: 0, // Should default to 0
+      htmlWithIssues: [
+        {
+          update_from: '', // Should default to empty string
+          target_selector: '', // Uses targetSelector from issueData.target (empty in this case)
+          issue_id: result.htmlWithIssues[0].issue_id, // Should generate UUID
+        },
+      ],
+      failureSummary: '', // Should default to empty string
+    });
+  });
+
+  it('should handle missing properties with completely empty htmlWithIssues', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      // Missing description, level, count, failureSummary
+      htmlWithIssues: [
+        {
+          // Missing all properties
+        },
+      ],
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'aria-allowed-attr',
+      description: '', // Should default to empty string
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: '', // Should default to empty string
+      severity: 'critical',
+      occurrences: 0, // Should default to 0
+      htmlWithIssues: [
+        {
+          update_from: '', // Should default to empty string
+          target_selector: '', // Should default to empty string
+          issue_id: result.htmlWithIssues[0].issue_id, // Should generate UUID
+        },
+      ],
+      failureSummary: '', // Should default to empty string
     });
   });
 });

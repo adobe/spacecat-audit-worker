@@ -195,25 +195,23 @@ export function formatIssue(type, issueData, severity) {
     [targetSelector] = issueData.target;
   }
 
-  // Transform htmlWithIssues using nodes data if available, otherwise fallback
+  // Use htmlWithIssues directly from issueData if available, otherwise create minimal structure
   let htmlWithIssues = [];
 
-  if (isNonEmptyArray(issueData.nodes)) {
-    // If we don't have targetSelector yet, get it from the first node
-    if (!targetSelector) {
-      const firstNode = issueData.nodes[0];
-      targetSelector = isNonEmptyArray(firstNode?.target)
-        ? firstNode.target[0]
-        : (firstNode?.target || '');
-    }
-
-    // Create htmlWithIssues entries using the shared target selector
-    // All instances of the same issue type on the same URL share the same target selector
-    htmlWithIssues = issueData.nodes.map((node) => ({
-      update_from: node.html || '',
+  if (isNonEmptyArray(issueData.htmlWithIssues)) {
+    // Use existing htmlWithIssues and ensure each has issue_id
+    htmlWithIssues = issueData.htmlWithIssues.map((item) => ({
+      update_from: item.update_from || '',
+      target_selector: targetSelector,
+      issue_id: item.issue_id || generateUUID(),
+    }));
+  } else {
+    // Create single entry if no htmlWithIssues but issue exists
+    htmlWithIssues = [{
+      update_from: '',
       target_selector: targetSelector,
       issue_id: generateUUID(),
-    }));
+    }];
   }
 
   return {
@@ -225,7 +223,6 @@ export function formatIssue(type, issueData, severity) {
     occurrences: issueData.count || 0,
     htmlWithIssues,
     failureSummary: issueData.failureSummary || '',
-    targetSelector,
   };
 }
 
