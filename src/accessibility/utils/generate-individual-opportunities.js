@@ -198,11 +198,11 @@ export function formatIssue(type, issueData, severity) {
   // Transform htmlWithIssues using nodes data if available, otherwise fallback
   let htmlWithIssues = [];
 
-  if (issueData.nodes && Array.isArray(issueData.nodes)) {
+  if (isNonEmptyArray(issueData.nodes)) {
     // If we don't have targetSelector yet, get it from the first node
     if (!targetSelector) {
       const firstNode = issueData.nodes[0];
-      targetSelector = Array.isArray(firstNode?.target)
+      targetSelector = isNonEmptyArray(firstNode?.target)
         ? firstNode.target[0]
         : (firstNode?.target || '');
     }
@@ -776,17 +776,13 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
         (remediation) => remediation.issue_name === issue.type,
       );
 
-      if (matchingRemediations.length > 0) {
+      if (isNonEmptyArray(matchingRemediations)) {
         // Enhanced htmlWithIssues structure - match remediations to specific HTML elements
         const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => {
-          // Find the specific remediation that matches this HTML element
-          const specificRemediation = matchingRemediations.find((remediation) => {
-            // Match by comparing the HTML content (remove extra whitespace for better matching)
-            const normalizedOriginal = htmlIssueObj.update_from.replace(/\s+/g, ' ').trim();
-            const normalizedUpdateFrom = remediation.update_from.replace(/\s+/g, ' ').trim();
-            return normalizedOriginal.includes(normalizedUpdateFrom.substring(0, 50))
-                   || normalizedUpdateFrom.includes(normalizedOriginal.substring(0, 50));
-          });
+          // Find the specific remediation that matches this HTML element by issue_id
+          const specificRemediation = matchingRemediations.find(
+            (remediation) => remediation.issue_id === htmlIssueObj.issue_id,
+          );
 
           if (specificRemediation) {
             // Return enhanced structure with specific remediation guidance
