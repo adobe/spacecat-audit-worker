@@ -11,7 +11,7 @@
  */
 
 import { isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
-import { AsyncJob, Audit as AuditModel, Site as SiteModel } from '@adobe/spacecat-shared-data-access';
+import { AsyncJob, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
 import { sendContinuationMessage, isAuditEnabledForSite } from './audit-utils.js';
@@ -36,17 +36,17 @@ export class AsyncJobRunner extends StepAudit {
 
   async chainStep(step, stepResult, context) {
     const {
-      type, job, urls, log,
+      type, job, urls, log, promiseToken,
     } = context;
 
     const destination = AUDIT_STEP_DESTINATION_CONFIGS[step.destination];
     const nextStepName = this.getNextStepName(step.name);
-
     const auditContext = {
       next: nextStepName,
       jobId: job.getId(),
       auditType: type,
       urls,
+      ...(promiseToken ? { promiseToken } : {}),
     };
 
     const queueUrl = destination.getQueueUrl(context);
@@ -103,8 +103,9 @@ export class AsyncJobRunner extends StepAudit {
       };
 
       updatedStepContext.finalUrl = await this.urlResolver(site, context);
-      if (site.getDeliveryType() === SiteModel.DELIVERY_TYPES.AEM_CS && message.promiseToken) {
-        updatedStepContext.promiseToken = message.promiseToken;
+      const promiseToken = message.promiseToken || message.auditContext?.promiseToken;
+      if (promiseToken) {
+        updatedStepContext.promiseToken = promiseToken;
         log.info(`site: ${siteId}. Promise token added to step context`);
       }
 
