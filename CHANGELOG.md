@@ -1,3 +1,45 @@
+## [1.114.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.4...v1.114.5) (2025-06-26)
+
+
+### Bug Fixes
+
+* remove duplicates formSource for accessibility ([#994](https://github.com/adobe/spacecat-audit-worker/issues/994)) ([ac856a1](https://github.com/adobe/spacecat-audit-worker/commit/ac856a1a02dd6ed74481edfa97aa23468a3acb2d))
+
+## [1.114.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.3...v1.114.4) (2025-06-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.30.0 ([#1010](https://github.com/adobe/spacecat-audit-worker/issues/1010)) ([5c2b6ea](https://github.com/adobe/spacecat-audit-worker/commit/5c2b6eaf2425f289b9264c63edf5ff719eaa5fa4))
+
+## [1.114.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.2...v1.114.3) (2025-06-26)
+
+
+### Bug Fixes
+
+* adding promise token handling for every step ([#1008](https://github.com/adobe/spacecat-audit-worker/issues/1008)) ([887dd96](https://github.com/adobe/spacecat-audit-worker/commit/887dd961b573028a3a40a7faf02eecf5a05207a0))
+
+## [1.114.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.1...v1.114.2) (2025-06-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.31.0 ([#1006](https://github.com/adobe/spacecat-audit-worker/issues/1006)) ([5f15812](https://github.com/adobe/spacecat-audit-worker/commit/5f15812c57040dc289811ccdff607f222d5e6233))
+
+## [1.114.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.0...v1.114.1) (2025-06-25)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1004](https://github.com/adobe/spacecat-audit-worker/issues/1004)) ([39deb02](https://github.com/adobe/spacecat-audit-worker/commit/39deb02d10f0b89055ca07a3ff6ea90c185140bb))
+
+# [1.114.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.113.2...v1.114.0) (2025-06-25)
+
+
+### Features
+
+* add new issues to existing opportunity ([#998](https://github.com/adobe/spacecat-audit-worker/issues/998)) ([b017b89](https://github.com/adobe/spacecat-audit-worker/commit/b017b8996b9bf577ac5cb23289508b7ab9620d24))
+
 ## [1.113.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.113.1...v1.113.2) (2025-06-24)
 
 

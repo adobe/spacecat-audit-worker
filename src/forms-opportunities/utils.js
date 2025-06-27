@@ -345,15 +345,31 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
 /**
  * Get the urls and form sources for accessibility audit
  * @param scrapedData
+ * @param formVitals
  * @param context
  * @returns {Array} array of objects with url and formsources
  */
-export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
+export function getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context) {
   const { log } = context;
   const urlsData = [];
   const addedFormSources = new Set();
   if (isNonEmptyArray(scrapedData.formData)) {
-    for (const form of scrapedData.formData) {
+    const formUrlPageViewsMap = new Map();
+    for (const fv of formVitals) {
+      const totalPageViews = Object.values(fv.pageview).reduce((acc, curr) => acc + curr, 0);
+      const existingPageViews = formUrlPageViewsMap.get(fv.url) || 0;
+      if (totalPageViews >= existingPageViews) {
+        formUrlPageViewsMap.set(fv.url, totalPageViews);
+      }
+    }
+    const formScrapedData = [...scrapedData.formData];
+    formScrapedData.sort((a, b) => {
+      const aPageViews = formUrlPageViewsMap.get(a.finalUrl);
+      const bPageViews = formUrlPageViewsMap.get(b.finalUrl);
+      return bPageViews - aPageViews;
+    });
+    // sort the form in scraped data based on the page views in the form vitals
+    for (const form of formScrapedData) {
       const formSources = [];
       const scrapeResultArray = Array.isArray(form.scrapeResult) ? form.scrapeResult : [];
       const validForms = scrapeResultArray.filter((sr) => !shouldExcludeForm(sr));
@@ -385,7 +401,12 @@ export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
             return;
           }
           if (sr.id) {
-            formSources.push(`form#${sr.id}`);
+            if (!addedFormSources.has(`form#${sr.id}`)) {
+              formSources.push(`form#${sr.id}`);
+              addedFormSources.add(`form#${sr.id}`);
+            } else {
+              isFormSourceAlreadyAdded = true;
+            }
           } else if (sr.classList) {
             formSources.push(`form.${sr.classList.split(' ').join('.')}`);
           }
