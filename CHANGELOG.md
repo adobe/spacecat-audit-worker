@@ -1,3 +1,24 @@
+## [1.114.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.5...v1.114.6) (2025-06-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.30.1 ([#1013](https://github.com/adobe/spacecat-audit-worker/issues/1013)) ([eda1187](https://github.com/adobe/spacecat-audit-worker/commit/eda118750bba92e181af26d2d82c5512a0a99bd2))
+
+## [1.114.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.4...v1.114.5) (2025-06-26)
+
+
+### Bug Fixes
+
+* remove duplicates formSource for accessibility ([#994](https://github.com/adobe/spacecat-audit-worker/issues/994)) ([ac856a1](https://github.com/adobe/spacecat-audit-worker/commit/ac856a1a02dd6ed74481edfa97aa23468a3acb2d))
+
+## [1.114.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.3...v1.114.4) (2025-06-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.30.0 ([#1010](https://github.com/adobe/spacecat-audit-worker/issues/1010)) ([5c2b6ea](https://github.com/adobe/spacecat-audit-worker/commit/5c2b6eaf2425f289b9264c63edf5ff719eaa5fa4))
+
 ## [1.114.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.114.2...v1.114.3) (2025-06-26)
 
 
