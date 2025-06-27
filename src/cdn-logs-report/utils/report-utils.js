@@ -40,7 +40,7 @@ export function getAnalysisBucket(customerDomain) {
 export function getS3Config(site) {
   const customerDomain = extractCustomerDomain(site);
   const customerName = customerDomain.split(/[._]/)[0];
-  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig();
+  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig() || {};
 
   return {
     bucket,
