@@ -12,7 +12,6 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { isValidUrl } from '@adobe/spacecat-shared-utils';
 import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
@@ -50,6 +49,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const { detectedTags } = auditData.auditResult;
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
+  console.log(`[META-TAGS-AUDIT] opportunityAndSuggestions: ${finalUrl}`);
   Object.keys(detectedTags)
     .forEach((endpoint) => {
       [TITLE, DESCRIPTION, H1].forEach((tag) => {
@@ -244,6 +244,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, audit, finalUrl, log, dataAccess,
   } = context;
+  console.log(`[META-TAGS-AUDIT] runAuditAndGenerateSuggestions: ${finalUrl}`);
   // Get top pages for a site
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
@@ -345,13 +346,7 @@ export async function submitForScraping(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(async (site) => {
-    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
-    if (isValidUrl(overrideBaseURL)) {
-      return overrideBaseURL.replace(/^https?:\/\//, '');
-    }
-    return site.getBaseURL();
-  })
+  .withUrlResolver(wwwUrlResolver)
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
