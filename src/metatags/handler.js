@@ -49,7 +49,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const { detectedTags } = auditData.auditResult;
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
-  console.log(`[META-TAGS-AUDIT] opportunityAndSuggestions: ${finalUrl}`);
+  log.info(`[META-TAGS-AUDIT] opportunityAndSuggestions: ${finalUrl}`);
   Object.keys(detectedTags)
     .forEach((endpoint) => {
       [TITLE, DESCRIPTION, H1].forEach((tag) => {
@@ -244,7 +244,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, audit, finalUrl, log, dataAccess,
   } = context;
-  console.log(`[META-TAGS-AUDIT] runAuditAndGenerateSuggestions: ${finalUrl}`);
+  log.info(`[META-TAGS-AUDIT] runAuditAndGenerateSuggestions: ${finalUrl}`);
   // Get top pages for a site
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
