@@ -36,4 +36,8 @@ describe('isPreviewPage', () => {
     expect(getCountryCodeFromLang('en')).to.equal('us');
     expect(getCountryCodeFromLang('en', 'fr')).to.equal('fr');
   });
+  it('should return the default country if the language code is not present', () => {
+    expect(getCountryCodeFromLang(null)).to.equal('us');
+    expect(getCountryCodeFromLang(undefined)).to.equal('us');
+  });
 });
