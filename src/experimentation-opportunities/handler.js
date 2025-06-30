@@ -173,6 +173,7 @@ export async function organicKeywordsStep(context) {
   const {
     site, log, finalUrl, audit, s3Client,
   } = context;
+  log.info(`Organic keywords step started for ${finalUrl}`);
   let organicKeywordsImportEnabled = false;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const s3BucketPrefix = `scrapes/${site.getId()}`;
