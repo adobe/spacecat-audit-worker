@@ -1,3 +1,10 @@
+# [1.120.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.119.0...v1.120.0) (2025-06-30)
+
+
+### Features
+
+* use cdn config to get bucket details ([#1009](https://github.com/adobe/spacecat-audit-worker/issues/1009)) ([63c94f9](https://github.com/adobe/spacecat-audit-worker/commit/63c94f940c58fefea97bb5d374cb13db14ba8484))
+
 # [1.119.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.118.0...v1.119.0) (2025-06-30)
 
 
