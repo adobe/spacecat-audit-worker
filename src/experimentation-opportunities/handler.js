@@ -134,7 +134,6 @@ export async function runAuditAndScrapeStep(context) {
   };
 }
 
-/* c8 ignore start */
 async function toggleImport(site, importType, enable, log) {
   const siteConfig = site.getConfig();
   if (enable) {
@@ -150,18 +149,12 @@ async function toggleImport(site, importType, enable, log) {
   }
 }
 
-async function getLangFromScrape(s3Client, bucketName, s3BucketPrefix, url, log) {
-  try {
-    let { pathname } = new URL(url);
-    // remove the trailing slash from the pathname
-    pathname = pathname.replace(/\/$/, '');
-    const key = `${s3BucketPrefix}${pathname}/scrape.json`;
-    const pageScrapeJson = await getObjectFromKey(s3Client, bucketName, key, log) || {};
-    return pageScrapeJson.scrapeResult?.tags?.lang;
-  } catch (error) {
-    log.error(`Error getting locale from scrape for url ${url}: ${error.message}`);
-    return null;
-  }
+async function getLangFromScrape(s3Client, bucketName, s3BucketPrefix, pathname, log) {
+  // remove the trailing slash from the pathname
+  const pathnameWithoutTrailingSlash = pathname.replace(/\/$/, '');
+  const key = `${s3BucketPrefix}${pathnameWithoutTrailingSlash}/scrape.json`;
+  const pageScrapeJson = await getObjectFromKey(s3Client, bucketName, key, log) || {};
+  return pageScrapeJson.scrapeResult?.tags?.lang;
 }
 
 function isImportEnabled(importType, imports) {
@@ -186,12 +179,26 @@ export async function organicKeywordsStep(context) {
     await toggleImport(site, IMPORT_ORGNIAC_KEYWORDS, true, log);
     organicKeywordsImportEnabled = true;
   }
-  const urlConfigs = await Promise.all(urls.map(async (url) => {
-    const lang = await getLangFromScrape(s3Client, bucketName, s3BucketPrefix, url, log);
+  let urlConfigs = await Promise.all(urls.map(async (url) => {
+    let urlObj;
+    try {
+      urlObj = new URL(url);
+    } catch (error) {
+      log.error(`Invalid url ${url}: ${error.message}`);
+      return null;
+    }
+    const lang = await getLangFromScrape(
+      s3Client,
+      bucketName,
+      s3BucketPrefix,
+      urlObj.pathname,
+      log,
+    );
     log.info(`Lang for ${url} is ${lang}`);
     const geo = getCountryCodeFromLang(lang);
     return { url, geo };
   }));
+  urlConfigs = urlConfigs.filter(Boolean);
   log.info(`Url configs: ${JSON.stringify(urlConfigs, null, 2)}`);
   if (organicKeywordsImportEnabled) {
     // disable the import after the step is done, if it was enabled in the beginning
@@ -204,7 +211,6 @@ export async function organicKeywordsStep(context) {
     urlConfigs,
   };
 }
-/* c8 ignore stop */
 
 export function importAllTrafficStep(context) {
   const {
