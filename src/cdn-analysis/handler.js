@@ -48,7 +48,8 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   // derive customer, time, config
   const { host, hostEscaped } = extractCustomerDomain(site);
   const { year, month, day, hour } = getHourParts();
-  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig() || {};
+  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
+    || { bucketName: `cdn-logs-${hostEscaped.replace(/[._]/g, '-')}` };
 
   // names & locations
   const rawLogsPrefix = `raw/${year}/${month}/${day}/${hour}/`;
