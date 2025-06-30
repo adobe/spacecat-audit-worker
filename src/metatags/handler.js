@@ -12,6 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { isValidUrl } from '@adobe/spacecat-shared-utils';
 import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
@@ -344,7 +345,13 @@ export async function submitForScraping(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(wwwUrlResolver)
+  .withUrlResolver(async (site) => {
+    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+    if (isValidUrl(overrideBaseURL)) {
+      return overrideBaseURL.replace(/^https?:\/\//, '');
+    }
+    return site.getBaseURL();
+  })
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
