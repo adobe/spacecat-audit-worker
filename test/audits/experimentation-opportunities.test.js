@@ -182,7 +182,7 @@ describe('Experimentation Opportunities Tests', () => {
     expect(messageArg1.data).to.deep.equal({
       url: 'https://abc.com/oppty-one',
       ctr: '0.12',
-      siteAgerageCtr: '0.25',
+      siteAverageCtr: '0.25',
     });
 
     const [queueArg2, messageArg2] = context.sqs.sendMessage.secondCall.args;
@@ -196,7 +196,7 @@ describe('Experimentation Opportunities Tests', () => {
     expect(messageArg2.data).to.deep.equal({
       url: 'https://abc.com/oppty-two',
       ctr: '0.08',
-      siteAgerageCtr: '0.22',
+      siteAverageCtr: '0.22',
     });
   });
 

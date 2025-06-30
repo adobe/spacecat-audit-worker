@@ -421,6 +421,17 @@ describe('Sitemap Audit', () => {
       ]);
       expect(resp).to.deep.equal({});
     });
+
+    it('should skip already processed sitemap URLs', async () => {
+      const sitemapUrl = `${url}/sitemap.xml`;
+      nock(url).get('/sitemap.xml').reply(200, sampleSitemapMoreUrls);
+
+      // Pass the same sitemap URL twice
+      const result = await getBaseUrlPagesFromSitemaps(url, [sitemapUrl, sitemapUrl]);
+      expect(result).to.deep.equal({
+        [sitemapUrl]: [`${url}/foo`, `${url}/bar`],
+      });
+    });
   });
 
   describe('findSitemap', () => {
@@ -1148,6 +1159,16 @@ describe('filterValidUrls with redirect handling', () => {
     nock.cleanAll();
   });
 
+  it('should return empty arrays when given no URLs', async () => {
+    const result = await filterValidUrls([]);
+    expect(result).to.deep.equal({
+      ok: [],
+      notOk: [],
+      networkErrors: [],
+      otherStatusCodes: [],
+    });
+  });
+
   it('should capture final redirect URLs for 301/302 responses', async () => {
     const urls = [
       'https://example.com/ok',
@@ -1263,7 +1284,7 @@ describe('filterValidUrls with redirect handling', () => {
 
     // Second request fails with network error
     nock('https://example.com')
-      .get('/broken-redirect')
+      .head('/error')
       .replyWithError('Network error');
 
     const result = await filterValidUrls(urls);
@@ -1433,6 +1454,21 @@ describe('filterValidUrls with redirect handling', () => {
       statusCode: 302,
       urlsSuggested: 'https://example.com/some-page',
     });
+  });
+
+  it('should suggest homepage for redirects with no location header', async () => {
+    const urls = ['https://example.com/redirect-no-location'];
+    nock('https://example.com')
+      .head('/redirect-no-location')
+      .reply(301, ''); // No location header
+    const result = await filterValidUrls(urls);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect-no-location',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com',
+      },
+    ]);
   });
 });
 

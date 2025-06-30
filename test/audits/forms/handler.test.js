@@ -204,6 +204,9 @@ describe('send a11y urls for scraping step', () => {
           },
           fullAuditRef: 'www.example.com',
           siteId: 'test-site-id',
+          getAuditResult: sinon.stub().returns({
+            formVitals: formVitalsData['form-vitals'],
+          }),
         }),
       },
       env: {

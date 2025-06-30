@@ -14,58 +14,49 @@ import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 
-const MAX_SEGMENT_SIZE = 3;
+const MAX_PAGES_TO_AUDIT = 3;
 const INTERVAL_DAYS = 7;
 const UNCATEGORIZED = 'uncategorized';
+const TRAFFIC_TYPE = 'paid';
+const MIN_DAILY_PAGE_VIEWS = 500;
 
-const ALLOWED_SEGMENTS = ['url', 'pageType'];
+const ALLOWED_SEGMENTS = ['url', 'pageType', 'urlTrafficSource', 'pageTypeTrafficSource'];
 const SITE_CLASSIFIER = {};
-let log;
+
+const AUDIT_CONSTANTS = {
+  GUIDANCE_TYPE: 'guidance:paid-cookie-consent',
+  OBSERVATION: 'Landing page should not have a blocking cookie concent banner',
+};
 
 const isAllowedSegment = (segment) => ALLOWED_SEGMENTS.includes(segment.key);
-const filterByTopSessionViews = (segment) => {
-  const { key, value } = segment;
+const filterAndSortByPageViews = ({ key, value }) => {
+  const minViews = INTERVAL_DAYS * MIN_DAILY_PAGE_VIEWS;
 
-  if (value.length <= MAX_SEGMENT_SIZE) {
-    return segment;
-  }
-
-  const topSessions = [...value]
-    .sort((a, b) => b.totalSessions - a.totalSessions)
-    .slice(0, MAX_SEGMENT_SIZE);
-
-  return { key, value: topSessions };
+  return {
+    key,
+    value: value
+      .filter((item) => item.pageViews >= minViews)
+      .sort((a, b) => b.pageViews - a.pageViews),
+  };
 };
 
 const removeUncategorizedPages = (segment) => {
-  const categorized = segment.value.filter((valueItem) => valueItem.type !== 'uncategorized');
+  const categorized = segment.value.filter((valueItem) => valueItem.type !== UNCATEGORIZED);
   return {
     key: segment.key,
     value: categorized,
   };
 };
 
-const hasValues = (segment) => segment.value?.length > 0;
+const hasValues = (segment) => segment?.value?.length > 0;
 
-function classifyUrl(url, classifier) {
-  let pageType = UNCATEGORIZED;
-  const match = Object
-    .entries(classifier)
-    .find(([, regEx]) => regEx.test(url));
-  if (match) {
-    [pageType] = match;
-  }
-
-  return pageType;
-}
-
-function fetchPageTypeClassifier(site) {
-  const siteId = site.getSiteId();
-  log.info(`Fetching classifier for site ${siteId}`);
+function fetchPageTypeClassifier(site, log) {
+  const siteId = site.getId();
+  log.info(`[paid-audit] [Site: ${siteId}] Fetching page type classifier`);
 
   let classifier = SITE_CLASSIFIER[siteId];
   if (!classifier) {
-    const config = site.getConfig()?.getGroupedURLs('paid');
+    const config = site.getConfig()?.getGroupedURLs(TRAFFIC_TYPE);
     const pageTypes = config?.map((item) => {
       const page = item.name;
       const patternObj = JSON.parse(item.pattern);
@@ -84,70 +75,65 @@ function fetchPageTypeClassifier(site) {
   return classifier;
 }
 
-function enrichPageTypes(auditResult, classifier) {
-  const typeUrlsMap = {};
+const sortAndfilterByUrlPageViews = (segment, rankingMap) => {
+  const { key, value } = segment;
+  if (key === 'url') return segment;
 
-  let enriched = auditResult.map((segment) => {
-    if (segment.key === 'url') {
-      const enrichedWithPageTypes = segment.value.map((vEntry) => {
-        const { url } = vEntry;
-        const pageType = classifyUrl(url, classifier);
-        const urls = typeUrlsMap[pageType] ?? [];
-        urls.push(url);
-        typeUrlsMap[pageType] = urls;
-        return {
-          ...vEntry,
-          pageType,
-        };
-      });
+  const valueWithSortedUrls = value.map((entry) => {
+    const { urls } = entry;
 
-      return {
-        key: segment.key,
-        value: enrichedWithPageTypes,
-      };
-    }
+    const sortedUrls = [...urls]
+      .sort((a, b) => rankingMap.get(b) - rankingMap.get(a))
+      .slice(0, 10);
 
-    return segment;
+    return {
+      ...entry,
+      urls: sortedUrls,
+    };
   });
 
-  enriched = enriched.map((segment) => {
-    if (segment.key === 'pageType') {
-      const enrichedWithUrls = segment.value.map((vEntry) => {
-        const { type } = vEntry;
-        const urls = typeUrlsMap[type] ?? [];
-        return {
-          ...vEntry,
-          urls,
-        };
-      });
+  return {
+    key,
+    value: valueWithSortedUrls,
+  };
+};
 
-      return {
-        key: segment.key,
-        value: enrichedWithUrls,
-      };
-    }
-    return segment;
-  });
-
-  return enriched;
+function getRankingMap(allSegments) {
+  const urlSegment = allSegments.find((item) => item.key === 'url');
+  return new Map(
+    urlSegment.value.map(({ url, pageViews }) => [url, pageViews]),
+  );
 }
 
-function tryEnrich(segments, classifier, auditUrl) {
-  if (isNonEmptyObject(classifier)) {
-    return enrichPageTypes(segments, classifier);
-  }
-  log.warn(`Page type configuration is missing for site ${auditUrl}. Proceeding with auit without page and url enrichment`);
+function renameUrlsToTopURLs(segments) {
+  return segments.map((segment) => ({
+    ...segment,
+    value: segment.value.map((item) => {
+      const { urls, ...rest } = item;
+      return { ...rest, topURLs: urls };
+    }),
+  }));
+}
 
-  return segments;
+function buildMystiqueMessage(site, auditId, url) {
+  return {
+    type: AUDIT_CONSTANTS.GUIDANCE_TYPE,
+    observation: AUDIT_CONSTANTS.OBSERVATION,
+    siteId: site.getId(),
+    url,
+    auditId,
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      url,
+    },
+  };
 }
 
 export async function paidAuditRunner(auditUrl, context, site) {
-  if (typeof log === 'undefined') {
-    log = context.log;
-  }
-
+  const { log } = context;
   const rumAPIClient = RUMAPIClient.createFrom(context, auditUrl, site);
-  const classifier = fetchPageTypeClassifier(site);
+  const classifier = fetchPageTypeClassifier(site, log);
 
   const hasClassifier = isNonEmptyObject(classifier);
   const options = {
@@ -155,30 +141,66 @@ export async function paidAuditRunner(auditUrl, context, site) {
     interval: INTERVAL_DAYS,
     granularity: 'hourly',
     pageTypes: classifier,
+    trafficType: TRAFFIC_TYPE,
   };
 
-  log.info(`Querying paid Optel metrics for site ${auditUrl} with hasPageClassifier: ${hasClassifier}`);
+  log.info(`[paid-audit] [Site: ${auditUrl}] Querying paid Optel metrics (hasPageClassifier: ${hasClassifier}, trafficType: ${options.trafficType})`);
   const allSegments = await rumAPIClient.query('trafficMetrics', options);
-  const segmentsFiltered = allSegments
-    .filter(isAllowedSegment);
+  const segmentsFiltered = allSegments.filter(isAllowedSegment);
 
-  const enrichedResult = tryEnrich(segmentsFiltered, classifier, auditUrl);
-
-  log.info(`Filtering ${enrichedResult?.length} segments by top totalSessions`);
-  const auditResult = enrichedResult
-    .map(filterByTopSessionViews)
+  log.info(`[paid-audit] [Site: ${auditUrl}] Processing ${segmentsFiltered?.length} segments`);
+  const filteredAndSorted = segmentsFiltered
+    .filter(hasValues)
     .map(removeUncategorizedPages)
-    .filter(hasValues);
+    .map(filterAndSortByPageViews);
 
-  log.info(`Traffic metric runner has completed  for domain: ${auditUrl} and found segment Count: ${auditResult?.length}`);
+  let segmentsSortedByViews = filteredAndSorted;
+  if (filteredAndSorted.some(hasValues)) {
+    // Only create rankingMap if there are segments with values
+    const rankingMap = getRankingMap(allSegments);
+    segmentsSortedByViews = filteredAndSorted
+      .map((segment) => sortAndfilterByUrlPageViews(segment, rankingMap));
+  }
 
+  const auditResult = renameUrlsToTopURLs(segmentsSortedByViews);
   return {
     auditResult,
     fullAuditRef: auditUrl,
   };
 }
 
+function selectPagesForConsentBannerAudit(auditResult, auditUrl) {
+  if (!auditResult || !Array.isArray(auditResult) || auditResult === 0) {
+    throw new Error(`Failed to find valid page for consent banner audit for AuditUrl ${auditUrl}`);
+  }
+
+  const urlSegment = auditResult
+    .find((item) => item.key === 'url');
+  const urls = urlSegment?.value.flatMap((item) => item.topURLs);
+
+  return urls.slice(0, MAX_PAGES_TO_AUDIT);
+}
+
+export async function paidConsentBannerCheck(auditUrl, auditData, context, site) {
+  const {
+    log, sqs, env,
+  } = context;
+
+  const { auditResult, id } = auditData;
+  const pagesToAudit = selectPagesForConsentBannerAudit(auditResult, auditUrl);
+
+  // Logic for which url to pick will be improved
+  const selectedPage = pagesToAudit[0];
+
+  const mystiqueMessage = buildMystiqueMessage(site, id, selectedPage);
+
+  log.info(`[paid-audit] [Site: ${auditUrl}] Sending page ${selectedPage} evaluation to mystique`);
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  log.info(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
+}
+
 export default new AuditBuilder()
-  .withRunner(paidAuditRunner)
   .withUrlResolver(wwwUrlResolver)
+  .withRunner(paidAuditRunner)
+  .withPostProcessors([paidConsentBannerCheck])
   .build();

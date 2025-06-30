@@ -11,6 +11,7 @@
  */
 
 import {
+  FORMS_AUDIT_INTERVAL,
   isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
@@ -20,6 +21,7 @@ import {
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
+import { calculateCPCValue } from '../support/utils.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
 
@@ -343,17 +345,34 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
 /**
  * Get the urls and form sources for accessibility audit
  * @param scrapedData
+ * @param formVitals
  * @param context
  * @returns {Array} array of objects with url and formsources
  */
-export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
+export function getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context) {
   const { log } = context;
   const urlsData = [];
   const addedFormSources = new Set();
   if (isNonEmptyArray(scrapedData.formData)) {
-    for (const form of scrapedData.formData) {
+    const formUrlPageViewsMap = new Map();
+    for (const fv of formVitals) {
+      const totalPageViews = Object.values(fv.pageview).reduce((acc, curr) => acc + curr, 0);
+      const existingPageViews = formUrlPageViewsMap.get(fv.url) || 0;
+      if (totalPageViews >= existingPageViews) {
+        formUrlPageViewsMap.set(fv.url, totalPageViews);
+      }
+    }
+    const formScrapedData = [...scrapedData.formData];
+    formScrapedData.sort((a, b) => {
+      const aPageViews = formUrlPageViewsMap.get(a.finalUrl);
+      const bPageViews = formUrlPageViewsMap.get(b.finalUrl);
+      return bPageViews - aPageViews;
+    });
+    // sort the form in scraped data based on the page views in the form vitals
+    for (const form of formScrapedData) {
       const formSources = [];
-      const validForms = form.scrapeResult.filter((sr) => !shouldExcludeForm(sr));
+      const scrapeResultArray = Array.isArray(form.scrapeResult) ? form.scrapeResult : [];
+      const validForms = scrapeResultArray.filter((sr) => !shouldExcludeForm(sr));
       if (form.finalUrl.includes('search') || validForms.length === 0) {
         // eslint-disable-next-line no-continue
         continue;
@@ -382,7 +401,12 @@ export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
             return;
           }
           if (sr.id) {
-            formSources.push(`form#${sr.id}`);
+            if (!addedFormSources.has(`form#${sr.id}`)) {
+              formSources.push(`form#${sr.id}`);
+              addedFormSources.add(`form#${sr.id}`);
+            } else {
+              isFormSourceAlreadyAdded = true;
+            }
           } else if (sr.classList) {
             formSources.push(`form.${sr.classList.split(' ').join('.')}`);
           }
@@ -426,4 +450,41 @@ export function getSuccessCriteriaDetails(criteria) {
     criteriaNumber: successCriteriaNumber,
     understandingUrl: successCriteriaDetails.understandingUrl,
   };
+}
+
+// eslint-disable-next-line no-shadow
+function getCostSaved(originalTraffic, cpc) {
+  const costSaved = 0.2 * originalTraffic * cpc;
+  return parseFloat(costSaved.toFixed(2));
+}
+
+/**
+ * Calculates the projected conversion value for a form based on its views and CPC
+ * @param {Object} context - The context object containing necessary dependencies
+ * @param {string} siteId - The site ID
+ * @param {Object} formMetrics - The form metrics object containing traffic data
+ * @returns {Promise<Object>} Object containing cpcValue and projectedConversionValue
+ */
+export async function calculateProjectedConversionValue(context, siteId, opportunityData) {
+  const { log } = context;
+
+  try {
+    const cpcValue = await calculateCPCValue(context, siteId);
+    log.info(`Calculated CPC value: ${cpcValue} for site: ${siteId}`);
+
+    const originalTraffic = opportunityData.pageViews;
+    // traffic is calculated for 15 days - extrapolating for a year
+    const trafficPerYear = Math.floor((originalTraffic / FORMS_AUDIT_INTERVAL)) * 365;
+    const projectedConversionValue = getCostSaved(
+      trafficPerYear,
+      cpcValue,
+    );
+
+    return {
+      projectedConversionValue,
+    };
+  } catch (error) {
+    log.error(`Error calculating projected conversion value for site ${siteId}:`, error);
+    return null;
+  }
 }

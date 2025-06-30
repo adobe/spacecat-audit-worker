@@ -10,8 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
-import { filterForms, generateOpptyData } from '../utils.js';
+import { calculateProjectedConversionValue, filterForms, generateOpptyData } from '../utils.js';
 import { DATA_SOURCES } from '../../common/constants.js';
 
 const formPathSegments = ['contact', 'newsletter', 'sign', 'enrol', 'subscribe', 'register', 'join', 'apply', 'quote', 'buy', 'trial', 'demo', 'offer'];
@@ -65,6 +66,8 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION
           && oppty.getData().form === opptyData.form,
       );
+      // eslint-disable-next-line no-await-in-loop,max-len
+      const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
       const opportunityData = {
         siteId: auditData.siteId,
@@ -77,6 +80,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         tags: ['Form Navigation'],
         data: {
           ...opptyData,
+          projectedConversionValue,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         },
         guidance: {
@@ -101,7 +105,9 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
           ...highPageViewsLowFormNavOppty.getData(),
           ...opportunityData.data,
         });
-        highPageViewsLowFormNavOppty.setGuidance(opportunityData.guidance);
+        if (!isNonEmptyObject(highPageViewsLowFormNavOppty.guidance)) {
+          highPageViewsLowFormNavOppty.setGuidance(opportunityData.guidance);
+        }
 
         highPageViewsLowFormNavOppty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop
@@ -118,7 +124,6 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         data: {
           url: opportunityData.data.form,
           cr: opportunityData.data.trackedFormKPIValue,
-          screenshot: opportunityData.data.screenshot,
           cta_source: opportunityData.data.formNavigation.source,
           form_source: opportunityData.data.formsource || '',
         },

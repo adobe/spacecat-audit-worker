@@ -10,8 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
-import { filterForms, generateOpptyData } from '../utils.js';
+import { calculateProjectedConversionValue, filterForms, generateOpptyData } from '../utils.js';
 import { DATA_SOURCES } from '../../common/constants.js';
 
 /**
@@ -52,6 +53,8 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_VIEWS
           && oppty.getData().form === opptyData.form,
       );
+      // eslint-disable-next-line no-await-in-loop,max-len
+      const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
       const opportunityData = {
         siteId: auditData.siteId,
@@ -64,6 +67,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         tags: ['Form Placement'],
         data: {
           ...opptyData,
+          projectedConversionValue,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
         },
         guidance: {
@@ -88,7 +92,9 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
           ...highPageViewsLowFormViewsOptty.getData(),
           ...opportunityData.data,
         });
-        highPageViewsLowFormViewsOptty.setGuidance(opportunityData.guidance);
+        if (!isNonEmptyObject(highPageViewsLowFormViewsOptty.guidance)) {
+          highPageViewsLowFormViewsOptty.setGuidance(opportunityData.guidance);
+        }
 
         highPageViewsLowFormViewsOptty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop

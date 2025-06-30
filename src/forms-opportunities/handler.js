@@ -20,7 +20,7 @@ import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
-import createAccessibilityOpportunity from './oppty-handlers/accessibility-handler.js';
+import { createAccessibilityOpportunity } from './oppty-handlers/accessibility-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -92,7 +92,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
   const result = {
     processingType: 'form',
-    allowCache: false,
+    allowCache: true,
     jobId: site.getId(),
     urls: urlsData,
     siteId: site.getId(),
@@ -112,7 +112,8 @@ export async function sendA11yUrlsForScrapingStep(context) {
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
-  const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+  const { formVitals } = latestAudit.getAuditResult();
+  const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context);
   const result = {
     auditResult: latestAudit.auditResult,
     fullAuditRef: latestAudit.fullAuditRef,

@@ -596,6 +596,7 @@ export const accessibilitySolutions = {
   'image-alt': 'Add alt text to images to provide alternative text for screen readers.',
   'aria-required-children': 'Ensure elements with specific roles contain the required child elements.',
   'aria-valid-attr-value': 'Ensure the value inside each attribute is spelled correctly and corresponds to a valid value.',
+  'select-name': 'Add accessible names to select elements using aria-label or visible text content.',
 
   // Level A - Serious issues
   'aria-hidden-focus': 'Add `tabindex="-1"` to all focusable elements inside containers with `aria-hidden="true"` or remove the aria-hidden attribute.',
@@ -709,3 +710,25 @@ export const accessibilityUserImpact = {
   // Level AA - Critical issues
   'meta-viewport': 'Users who need to zoom webpages for better visibility cannot do so when zooming is disabled. This makes content completely inaccessible for users with low vision who rely on zoom functionality.',
 };
+
+export const accessibilityOpportunitiesMap = {
+  'a11y-assistive': [
+    'aria-hidden-focus',
+    'aria-allowed-attr',
+    'aria-required-attr',
+    'aria-prohibited-attr',
+    'aria-roles',
+    'aria-valid-attr-value',
+    'aria-required-parent',
+    'button-name',
+    'link-name',
+    'select-name',
+  ],
+};
+
+/**
+ * Accessibility issue types that should be sent to Mystique for remediation guidance
+ */
+export const issueTypesForMystique = [
+  'aria-allowed-attr',
+];
