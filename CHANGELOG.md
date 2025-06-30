@@ -1,3 +1,10 @@
+# [1.119.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.118.0...v1.119.0) (2025-06-30)
+
+
+### Features
+
+* enhance processing all levels of sitemap indexes ([#1016](https://github.com/adobe/spacecat-audit-worker/issues/1016)) ([b82bec7](https://github.com/adobe/spacecat-audit-worker/commit/b82bec7b7020a190ce750496a91de1ff7b5fcadb))
+
 # [1.118.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.117.2...v1.118.0) (2025-06-30)
 
 
