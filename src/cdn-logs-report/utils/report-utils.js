@@ -21,7 +21,6 @@ const TIME_CONSTANTS = {
 
 const REGEX_PATTERNS = {
   URL_SANITIZATION: /[^a-zA-Z0-9]/g,
-  BUCKET_SANITIZATION: /[._]/g,
 };
 
 const CDN_LOGS_PREFIX = 'cdn-logs-';
@@ -40,7 +39,8 @@ export function getAnalysisBucket(customerDomain) {
 export function getS3Config(site) {
   const customerDomain = extractCustomerDomain(site);
   const customerName = customerDomain.split(/[._]/)[0];
-  const bucket = getAnalysisBucket(customerDomain);
+  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
+    || { bucketName: getAnalysisBucket(customerDomain) };
 
   return {
     bucket,
@@ -184,5 +184,19 @@ export function generateReportingPeriods(referenceDate = new Date()) {
     referenceDate: referenceDate.toISOString(),
     columns: [`Week ${weekNumber}`],
   };
+}
+
+export function buildSiteFilters(filters) {
+  if (!filters || filters.length === 0) return '';
+
+  const clauses = filters.map(({ key, value }) => {
+    const valueConditions = value.map((v) => `${key} = '${v}'`);
+    return valueConditions.length > 1
+      ? `(${valueConditions.join(' OR ')})`
+      : valueConditions[0];
+  });
+
+  const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
+  return `(${filterConditions})`;
 }
 /* c8 ignore stop */
