@@ -1,3 +1,10 @@
+# [1.118.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.117.2...v1.118.0) (2025-06-30)
+
+
+### Features
+
+* Structured data audit to validate issues from scrape data ([#885](https://github.com/adobe/spacecat-audit-worker/issues/885)) ([4bcee5f](https://github.com/adobe/spacecat-audit-worker/commit/4bcee5fb3962b412e7a1f171411374c8ca331e30))
+
 ## [1.117.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.117.1...v1.117.2) (2025-06-28)
 
 
