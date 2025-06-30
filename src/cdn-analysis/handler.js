@@ -14,7 +14,7 @@
 /* c8 ignore start */
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { determineCdnProvider, buildSiteFilters } from './utils/cdn-utils.js';
+import { determineCdnProvider } from './utils/cdn-utils.js';
 import { AWSAthenaClient } from '../utils/athena-client.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -48,8 +48,7 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   // derive customer, time, config
   const { host, hostEscaped } = extractCustomerDomain(site);
   const { year, month, day, hour } = getHourParts();
-  const { bucketName: bucket, filters } = site.getConfig().getCdnLogsConfig() || {};
-  const siteFilters = buildSiteFilters(filters);
+  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig() || {};
 
   // names & locations
   const rawLogsPrefix = `raw/${year}/${month}/${day}/${hour}/`;
@@ -87,10 +86,8 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
     hour,
     bucket,
     host,
-    siteFilters,
-    hostEscaped,
   });
-  const output = `s3://${bucket}/aggregated_${hostEscaped}/${year}/${month}/${day}/${hour}/`;
+  const output = `s3://${bucket}/aggregated/${year}/${month}/${day}/${hour}/`;
   const sqlUnloadDescription = `[Athena Query] Filter the raw logs and unload to ${output}`;
   await athenaClient.execute(sqlUnload, database, sqlUnloadDescription);
 

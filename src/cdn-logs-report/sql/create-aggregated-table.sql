@@ -3,6 +3,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{databaseName}}.{{tableName}} (
   user_agent string,
   status int,
   referer string,
+  host string,
   count bigint
 )
 PARTITIONED BY (

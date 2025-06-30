@@ -46,7 +46,7 @@ export function getS3Config(site) {
     bucket,
     customerName,
     customerDomain,
-    aggregatedLocation: `s3://${bucket}/aggregated_${customerDomain}/`,
+    aggregatedLocation: `s3://${bucket}/aggregated/`,
     databaseName: `cdn_logs_${customerDomain}`,
     tableName: `aggregated_logs_${customerDomain}`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
@@ -184,5 +184,12 @@ export function generateReportingPeriods(referenceDate = new Date()) {
     referenceDate: referenceDate.toISOString(),
     columns: [`Week ${weekNumber}`],
   };
+}
+
+export function buildSiteFilters(filters) {
+  if (!filters || filters.length === 0) return '';
+  const clauses = filters.map(({ key, value }) => `(${key} = '${value}')`);
+  const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
+  return `AND (${filterConditions})`;
 }
 /* c8 ignore stop */

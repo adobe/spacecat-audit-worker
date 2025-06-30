@@ -53,11 +53,4 @@ export async function determineCdnProvider(s3, bucket, prefix) {
   }
   throw new Error(`Unrecognized CDN Type. Bucket: ${bucket}`);
 }
-
-export function buildSiteFilters(filters) {
-  if (!filters || filters.length === 0) return '';
-  const clauses = filters.map(({ key, value }) => `(${key} = '${value}')`);
-  const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
-  return `AND (${filterConditions})`;
-}
 /* c8 ignore stop */
