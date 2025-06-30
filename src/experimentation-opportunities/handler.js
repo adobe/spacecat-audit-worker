@@ -152,7 +152,9 @@ async function toggleImport(site, importType, enable, log) {
 
 async function getLangFromScrape(s3Client, bucketName, s3BucketPrefix, url, log) {
   try {
-    const { pathname } = new URL(url);
+    let { pathname } = new URL(url);
+    // remove the trailing slash from the pathname
+    pathname = pathname.replace(/\/$/, '');
     const key = `${s3BucketPrefix}${pathname}/scrape.json`;
     const pageScrape = await getObjectFromKey(s3Client, bucketName, key, log);
     const pageScrapeJson = pageScrape ? JSON.parse(pageScrape) : {};
