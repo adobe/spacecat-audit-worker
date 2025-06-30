@@ -188,7 +188,14 @@ export function generateReportingPeriods(referenceDate = new Date()) {
 
 export function buildSiteFilters(filters) {
   if (!filters || filters.length === 0) return '';
-  const clauses = filters.map(({ key, value }) => `(${key} = '${value}')`);
+
+  const clauses = filters.map(({ key, value }) => {
+    const valueConditions = value.map((v) => `${key} = '${v}'`);
+    return valueConditions.length > 1
+      ? `(${valueConditions.join(' OR ')})`
+      : valueConditions[0];
+  });
+
   const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
   return `AND (${filterConditions})`;
 }
