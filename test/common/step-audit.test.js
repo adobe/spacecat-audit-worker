@@ -236,6 +236,8 @@ describe('Step-based Audit Tests', () => {
       const expectedPayload = {
         type: 'content-import',
         siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        pageUrl: undefined,
+        urlConfigs: undefined,
         allowCache: true,
         auditContext: {
           next: 'analyze',
