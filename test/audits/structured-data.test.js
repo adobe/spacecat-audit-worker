@@ -17,6 +17,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 
+import chaiAsPromised from 'chai-as-promised';
 import {
   processStructuredData,
   generateSuggestionsData,
@@ -34,72 +35,74 @@ import gscExample4 from '../fixtures/structured-data/gsc-example4.json' with { t
 import gscExample5 from '../fixtures/structured-data/gsc-example5.json' with { type: 'json' };
 
 import expectedOppty from '../fixtures/structured-data/oppty.json' with { type: 'json' };
+import { findPagesWithFAQMismatch, handleGEOStructuredData } from '../../src/structured-data-geo/handler.js';
 
 use(sinonChai);
-
-const sandbox = sinon.createSandbox();
-const message = {
-  type: 'structured-data',
-  url: 'https://www.example.com',
-};
-
-const createPageStub = (url) => ({
-  getUrl: () => url,
-});
-
-const createS3ObjectStub = (object) => ({
-  ContentType: 'application/json',
-  Body: {
-    transformToString: sinon.stub().returns(object),
-  },
-});
-
-const createFirefallSuggestion = (suggestion) => ({
-  choices: [{
-    finish_reason: 'stop',
-    message: {
-      content: JSON.stringify(suggestion),
-    },
-  }],
-});
-
-const createAuditData = (finalUrl, type, issueMessage, suggestion) => ({
-  siteId: 'site-id',
-  id: 'audit-id',
-  fullAuditRef: finalUrl,
-  auditResult: [{
-    inspectionUrl: 'https://example.com/product/1',
-    indexStatusResult: {
-      verdict: 'PASS',
-      lastCrawlTime: '2024-08-13T22:35:22Z',
-    },
-    richResults: {
-      verdict: 'FAIL',
-      detectedItemTypes: [
-        type,
-      ],
-      detectedIssues: [
-        {
-          richResultType: type,
-          items: [
-            {
-              name: 'Unnamed item',
-              issues: [
-                {
-                  issueMessage,
-                  severity: 'ERROR',
-                },
-              ],
-            },
-          ],
-          suggestion,
-        },
-      ],
-    },
-  }],
-});
+use(chaiAsPromised);
 
 describe('Structured Data Audit', () => {
+  const sandbox = sinon.createSandbox();
+  const message = {
+    type: 'structured-data',
+    url: 'https://www.example.com',
+  };
+
+  const createPageStub = (url) => ({
+    getUrl: () => url,
+  });
+
+  const createS3ObjectStub = (object) => ({
+    ContentType: 'application/json',
+    Body: {
+      transformToString: sinon.stub().returns(object),
+    },
+  });
+
+  const createFirefallSuggestion = (suggestion) => ({
+    choices: [{
+      finish_reason: 'stop',
+      message: {
+        content: JSON.stringify(suggestion),
+      },
+    }],
+  });
+
+  const createAuditData = (finalUrl, type, issueMessage, suggestion) => ({
+    siteId: 'site-id',
+    id: 'audit-id',
+    fullAuditRef: finalUrl,
+    auditResult: [{
+      inspectionUrl: 'https://example.com/product/1',
+      indexStatusResult: {
+        verdict: 'PASS',
+        lastCrawlTime: '2024-08-13T22:35:22Z',
+      },
+      richResults: {
+        verdict: 'FAIL',
+        detectedItemTypes: [
+          type,
+        ],
+        detectedIssues: [
+          {
+            richResultType: type,
+            items: [
+              {
+                name: 'Unnamed item',
+                issues: [
+                  {
+                    issueMessage,
+                    severity: 'ERROR',
+                  },
+                ],
+              },
+            ],
+            suggestion,
+          },
+        ],
+      },
+    }],
+  });
+
   let context;
   let googleClientStub;
   let urlInspectStub;
@@ -889,5 +892,206 @@ describe('Structured Data Audit', () => {
     expect(result.auditResult.auditResult[0].richResults.detectedIssues).to.have.lengthOf(1);
     expect(result.auditResult.auditResult[0].richResults.detectedIssues[0].suggestion)
       .to.deep.equal(suggestion);
+  });
+});
+
+describe('FAQ mismatch check', () => {
+  const sandbox = sinon.createSandbox();
+  const message = {
+    type: 'structured-data',
+    url: 'https://www.example.com',
+  };
+
+  const createPageStub = (url) => ({
+    getUrl: () => url,
+  });
+
+  const createS3ObjectStub = (object) => ({
+    ContentType: 'application/json',
+    Body: {
+      transformToString: sinon.stub().returns(object),
+    },
+  });
+
+  let context;
+  let siteStub;
+  let mockConfiguration;
+  let s3ClientStub;
+  let auditStub;
+
+  const finalUrl = 'https://www.example.com';
+
+  beforeEach(() => {
+    mockConfiguration = {
+      isHandlerEnabledForSite: sinon.stub().returns(true),
+    };
+    s3ClientStub = {
+      send: sinon.stub(),
+      getObject: sinon.stub(),
+    };
+
+    siteStub = {
+      getId: () => '123',
+      getConfig: () => ({
+        getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2', 'https://example.com/product/3'],
+      }),
+    };
+    auditStub = {
+      getId: () => 'audit-id',
+    };
+
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        log: {
+          info: sinon.stub(),
+          warn: sinon.stub(),
+          error: sinon.stub(),
+          debug: sinon.spy(),
+        },
+        s3Client: s3ClientStub,
+        site: siteStub,
+        finalUrl,
+        audit: auditStub,
+      })
+      .build(message);
+
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([
+      createPageStub('https://example.com/product/1'),
+      createPageStub('https://example.com/product/2'),
+      createPageStub('https://example.com/product/3'),
+    ]);
+    context.dataAccess.Configuration.findLatest = sinon.stub().resolves(mockConfiguration);
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  const testUrl = 'http://example.com';
+
+  it('handles no pages', async () => {
+    const result = await findPagesWithFAQMismatch([], context);
+
+    expect(result).to.deep.equal([]);
+  });
+
+  it('handles invalid URL', async () => {
+    const result = await findPagesWithFAQMismatch([{ url: 'bad url' }], context);
+
+    expect(result).to.deep.equal([]);
+  });
+
+  it('ignores pages with no scrape', async () => {
+    s3ClientStub.send.rejects(new Error('Failed to fetch S3 object'));
+    const result = await findPagesWithFAQMismatch([{ url: testUrl }], context);
+
+    expect(result).to.deep.equal([]);
+  });
+
+  it('ignores pages with FAQ in structured data', async () => {
+    s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
+      scrapeResult: {
+        rawBody: '<main></main>',
+        structuredData: [{
+          '@type': 'FAQPage',
+        }],
+      },
+    })));
+    const result = await findPagesWithFAQMismatch([{ url: testUrl }], context);
+
+    expect(result).to.deep.equal([]);
+  });
+
+  it('returns pages with no FAQ in structured data but FAQ in body', async () => {
+    s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
+      scrapeResult: {
+        rawBody: '<main><div id="faq"></div></main>',
+        structuredData: [],
+      },
+    })));
+    const result = await findPagesWithFAQMismatch([{ url: testUrl }], context);
+
+    expect(result).to.deep.equal([{ url: testUrl }]);
+  });
+
+  it('fails if no top pages returned', async () => {
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+
+    await expect(handleGEOStructuredData(context)).to.be.rejectedWith('No top pages for site ID 123 found.');
+  });
+
+  it('doesn\'t create suggestions if pages already have FAQData', async () => {
+    const buildS3Object = (strData, body) => createS3ObjectStub(JSON.stringify({
+      scrapeResult: {
+        rawBody: body,
+        structuredData: [strData],
+      },
+    }));
+
+    s3ClientStub.send.onCall(0).resolves(buildS3Object({ '@type': 'FAQPage' }, ''));
+    s3ClientStub.send.onCall(1).resolves(buildS3Object({ '@type': 'FAQPage' }, ''));
+    s3ClientStub.send.onCall(2).resolves(buildS3Object({ '@type': 'FAQPage' }, ''));
+
+    const result = await handleGEOStructuredData(context);
+
+    expect(result).to.deep.equal({
+      auditResult: {
+        message: 'No pages with FAQ mismatch found',
+      },
+      fullAuditRef: 'https://www.example.com',
+    });
+  });
+
+  it('creates suggestions if pages have mismatch', async () => {
+    const buildS3Object = (strData, body) => createS3ObjectStub(JSON.stringify({
+      scrapeResult: {
+        rawBody: body,
+        structuredData: [strData],
+      },
+    }));
+
+    s3ClientStub.send.onCall(0).resolves(buildS3Object({ '@type': 'FAQPage' }, ''));
+    s3ClientStub.send.onCall(1).resolves(buildS3Object({ }, '<div class="faq"></div>'));
+    s3ClientStub.send.onCall(2).resolves(buildS3Object({ }, ''));
+
+    const faqSuggestion = {
+      type: 'url',
+      url: 'https://example.com/product/2',
+      errors: [{
+        id: 'https://example.com/product/2-faq-missing',
+        errorTitle: 'Missing FAQ',
+        fix: 'Detected a page with FAQs that doesn\'t provide the FAQ as structured data.',
+      }],
+    };
+
+    const faqSuggestionsCreated = {
+      createdItems: [faqSuggestion],
+    };
+
+    const faqOpportunity = {
+      opportunityId: 'opportunity-id',
+      type: 'CODE_CHANGE',
+      rank: 10,
+      data: faqSuggestion,
+    };
+
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+    context.dataAccess.Opportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.addSuggestions.resolves(faqSuggestionsCreated);
+
+    const result = await handleGEOStructuredData(context);
+
+    expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledWith([faqOpportunity]);
+
+    expect(result).to.deep.equal({
+      auditResult: {
+        message: 'Successfully created suggestion to update 1 pages with FAQ structured data',
+        pages: JSON.stringify([{ url: 'https://example.com/product/2' }]),
+      },
+      fullAuditRef: 'https://www.example.com',
+    });
   });
 });
