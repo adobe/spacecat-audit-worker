@@ -12,10 +12,16 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { getCountryCodeFromLang } from '../utils/url-utils.js';
+import {
+  getObjectFromKey,
+} from '../utils/s3-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+const IMPORT_ORGNIAC_KEYWORDS = 'organic-keywords';
 
 const DAYS = 7;
 
@@ -128,20 +134,61 @@ export async function runAuditAndScrapeStep(context) {
   };
 }
 
-export function organicKeywordsStep(context) {
+/* c8 ignore start */
+async function enableImport(site, importType, log) {
+  const siteConfig = site.getConfig();
+  siteConfig.enableImport(importType);
+  site.setConfig(Config.toDynamoItem(siteConfig));
+  try {
+    await site.save();
+  } catch (error) {
+    log.error(`Error enabling ${importType} for site ${site.getId()}: ${error.message}`);
+  }
+}
+
+async function getLangFromScrape(s3Client, bucketName, s3BucketPrefix, url, log) {
+  try {
+    const { pathname } = new URL(url);
+    const key = `${s3BucketPrefix}${pathname}/scrape.json`;
+    const pageScrape = await getObjectFromKey(s3Client, bucketName, key, log);
+    const pageScrapeJson = pageScrape ? JSON.parse(pageScrape) : {};
+    return pageScrapeJson.scrapeResult?.tags?.lang;
+  } catch (error) {
+    log.error(`Error getting locale from scrape for url ${url}: ${error.message}`);
+    return null;
+  }
+}
+
+export async function organicKeywordsStep(context) {
   const {
-    site, log, finalUrl, audit,
+    site, log, finalUrl, audit, dataAccess, s3Client,
   } = context;
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const s3BucketPrefix = `scrapes/${site.getId()}/`;
+  const { Configuration } = dataAccess;
   const auditResult = audit.getAuditResult();
   const urls = getHighOrganicLowCtrOpportunityUrls(auditResult.experimentationOpportunities);
   log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
+  const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite(IMPORT_ORGNIAC_KEYWORDS, site)) {
+    log.info(`Enabling ${IMPORT_ORGNIAC_KEYWORDS} for site ${site.getId()}`);
+    // TODO: add geo of the site to the import
+    await enableImport(site, IMPORT_ORGNIAC_KEYWORDS, log);
+  }
+  const urlConfigs = await Promise.all(urls.map(async (url) => {
+    const lang = await getLangFromScrape(s3Client, bucketName, s3BucketPrefix, url, log);
+    log.info(`Lang for ${url} is ${lang}`);
+    const geo = getCountryCodeFromLang(lang);
+    return { url, geo };
+  }));
+  log.info(`Url configs: ${JSON.stringify(urlConfigs, null, 2)}`);
   return {
-    type: 'organic-keywords',
+    type: IMPORT_ORGNIAC_KEYWORDS,
     siteId: site.getId(),
-    // TODO: change to all urls, after support is added to the organic-keywords importter
-    pageUrl: urls?.[0],
+    urlConfigs,
   };
 }
+/* c8 ignore stop */
 
 export function importAllTrafficStep(context) {
   const {
