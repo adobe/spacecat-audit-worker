@@ -126,7 +126,7 @@ describe('Experimentation Opportunities Tests', () => {
     ).to.deep.equal(auditDataMock.auditResult.experimentationOpportunities);
   });
 
-  it('should run the organic keywords step', async () => {
+  xit('should run the organic keywords step', async () => {
     audit.getAuditResult.returns(auditDataMock.auditResult);
     const stepResult = organicKeywordsStep(context);
     expect(

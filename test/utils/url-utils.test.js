@@ -13,7 +13,7 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
-import { isPreviewPage } from '../../src/utils/url-utils.js';
+import { isPreviewPage, getCountryCodeFromLang } from '../../src/utils/url-utils.js';
 
 describe('isPreviewPage', () => {
   it('should return true for preview pages', () => {
@@ -26,5 +26,18 @@ describe('isPreviewPage', () => {
     const url = 'https://www.example.com/test1';
     const result = isPreviewPage(url);
     expect(result).to.be.false;
+  });
+  it('should return the country code from a language code', () => {
+    expect(getCountryCodeFromLang('en-US')).to.equal('us');
+    expect(getCountryCodeFromLang('fr_CA')).to.equal('ca');
+  });
+
+  it('should return the default country code if the language code is not in the format of "language-country" or "language_country"', () => {
+    expect(getCountryCodeFromLang('en')).to.equal('us');
+    expect(getCountryCodeFromLang('en', 'fr')).to.equal('fr');
+  });
+  it('should return the default country if the language code is not present', () => {
+    expect(getCountryCodeFromLang(null)).to.equal('us');
+    expect(getCountryCodeFromLang(undefined)).to.equal('us');
   });
 });
