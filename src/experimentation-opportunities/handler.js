@@ -135,9 +135,9 @@ export async function runAuditAndScrapeStep(context) {
 }
 
 /* c8 ignore start */
-async function toggleImport(site, importType, enabled, log) {
+async function toggleImport(site, importType, enable, log) {
   const siteConfig = site.getConfig();
-  if (enabled) {
+  if (enable) {
     siteConfig.enableImport(importType);
   } else {
     siteConfig.disableImport(importType);
@@ -163,19 +163,22 @@ async function getLangFromScrape(s3Client, bucketName, s3BucketPrefix, url, log)
   }
 }
 
+function isImportEnabled(importType, imports) {
+  return imports.find((importConfig) => importConfig.type === importType)?.enabled;
+}
+
 export async function organicKeywordsStep(context) {
   const {
-    site, log, finalUrl, audit, dataAccess, s3Client,
+    site, log, finalUrl, audit, s3Client,
   } = context;
   let organicKeywordsImportEnabled = false;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-  const s3BucketPrefix = `scrapes/${site.getId()}/`;
-  const { Configuration } = dataAccess;
+  const s3BucketPrefix = `scrapes/${site.getId()}`;
   const auditResult = audit.getAuditResult();
   const urls = getHighOrganicLowCtrOpportunityUrls(auditResult.experimentationOpportunities);
   log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite(IMPORT_ORGNIAC_KEYWORDS, site)) {
+  const imports = site.getConfig().getImports();
+  if (!isImportEnabled(IMPORT_ORGNIAC_KEYWORDS, imports)) {
     log.info(`Enabling ${IMPORT_ORGNIAC_KEYWORDS} for site ${site.getId()}`);
     // TODO: add geo of the site to the import
     await toggleImport(site, IMPORT_ORGNIAC_KEYWORDS, true, log);
