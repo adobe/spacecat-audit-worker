@@ -175,7 +175,6 @@ export function formatWcagRule(wcagRule) {
  * Transforms raw accessibility issue data into a standardized format with:
  * - Formatted WCAG rule information
  * - Complete issue metadata for suggestions
- * - Enhanced htmlWithIssues structure with metadata objects including target selectors
  *
  * @param {string} type - The type of accessibility issue (e.g., "color-contrast")
  * @param {Object} issueData - Raw issue data from accessibility scan
@@ -189,7 +188,7 @@ export function formatIssue(type, issueData, severity) {
   // Format the WCAG rule (e.g., "wcag412" -> "4.1.2 Name, Role, Value")
   const wcagRule = formatWcagRule(rawWcagRule);
 
-  // Extract target selector - same for all instances of this issue type on this URL
+  // Extract target selector from the target field
   let targetSelector = '';
   if (isNonEmptyArray(issueData.target)) {
     [targetSelector] = issueData.target;
@@ -200,13 +199,24 @@ export function formatIssue(type, issueData, severity) {
 
   if (isNonEmptyArray(issueData.htmlWithIssues)) {
     // Use existing htmlWithIssues and ensure each has issue_id
-    htmlWithIssues = issueData.htmlWithIssues.map((item, index) => ({
-      update_from: (typeof item === 'string' ? item : item.update_from)
-                   || (typeof issueData.htmlWithIssues[index] === 'string' ? issueData.htmlWithIssues[index] : '')
-                   || '',
-      target_selector: targetSelector,
-      issue_id: (typeof item === 'string' ? generateUUID() : item.issue_id) || generateUUID(),
-    }));
+    htmlWithIssues = issueData.htmlWithIssues.map((item) => {
+      let updateFrom = '';
+
+      if (typeof item === 'string') {
+        updateFrom = item;
+      } else if (item && item.update_from) {
+        updateFrom = item.update_from;
+      } else {
+        // Final fallback to empty string
+        updateFrom = '';
+      }
+
+      return {
+        update_from: updateFrom,
+        target_selector: targetSelector,
+        issue_id: (typeof item === 'string' ? generateUUID() : (item && item.issue_id)) || generateUUID(),
+      };
+    });
   } else {
     // Create single entry if no htmlWithIssues but issue exists
     htmlWithIssues = [{

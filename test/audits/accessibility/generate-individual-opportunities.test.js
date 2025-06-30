@@ -451,6 +451,358 @@ describe('formatIssue', () => {
       failureSummary: '', // Should default to empty string
     });
   });
+
+  it('should handle htmlWithIssues with object having no update_from (fallback logic)', () => {
+    // This test covers the complex fallback logic on lines 204-208
+    // where we have an object without update_from property
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          // Object without update_from to trigger fallback
+          issue_id: 'existing-uuid',
+          some_other_prop: 'value',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('existing-uuid');
+  });
+
+  it('should handle htmlWithIssues with undefined update_from property (line 207 fallback)', () => {
+    // This test targets line 207 - the final fallback to empty string
+    // when item.update_from is undefined
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          // Object with undefined update_from (not even null)
+          issue_id: 'test-uuid',
+          // update_from is undefined (not present)
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
+  });
+
+  it('should handle htmlWithIssues with empty string update_from (line 207 fallback)', () => {
+    // This test targets line 207 - the final fallback to empty string
+    // when item.update_from is an empty string (falsy)
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: '', // Empty string (falsy)
+          issue_id: 'test-uuid',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
+  });
+
+  it('should handle htmlWithIssues with object without update_from (line 208)', () => {
+    // This test verifies line 208 - the final fallback to empty string
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        { issue_id: 'test-uuid' }, // Object without update_from
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string since no update_from is present (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
+  });
+
+  it('should handle htmlWithIssues with object having falsy update_from (line 208)', () => {
+    // This test also targets line 208 with a falsy update_from value
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          issue_id: 'test-uuid',
+          update_from: null, // Falsy update_from
+        },
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string since update_from is falsy (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
+  });
+
+  it('should handle htmlWithIssues with empty object (line 208)', () => {
+    // This test specifically targets line 208 with an empty object
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {}, // Empty object - no issue_id or update_from
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string and generate UUID (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Generated UUID
+  });
+
+  it('should handle htmlWithIssues with null item (line 208)', () => {
+    // This test specifically targets line 208 with a null item
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        null,
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string since item is falsy (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Generated UUID
+  });
+
+  it('should handle htmlWithIssues with undefined item (line 208)', () => {
+    // This test specifically targets line 208 with an undefined item
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        undefined, // Undefined item
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string since item is falsy (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Generated UUID
+  });
+
+  it('should handle htmlWithIssues with false item (line 208)', () => {
+    // This test specifically targets line 208 with false value
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        false, // Boolean false is falsy
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string since item is falsy (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Generated UUID
+  });
+
+  it('should handle htmlWithIssues with object missing update_from (final fallback)', () => {
+    // This test targets the final fallback when no update_from is available
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          // Object without update_from property
+          issue_id: 'test-uuid',
+          other_prop: 'value',
+        },
+      ],
+    }, 'critical');
+
+    // Should use the final fallback to empty string
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
+  });
+
+  it('should handle htmlWithIssues with string items', () => {
+    // This test verifies the simplified logic handles string items correctly
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        '<div>string content</div>', // String item
+      ],
+    }, 'critical');
+
+    // Should use the string as update_from
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('<div>string content</div>');
+    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Should generate UUID for string items
+  });
+
+  it('should handle htmlWithIssues with null values triggering all fallbacks', () => {
+    // This test ensures all fallback paths are covered
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: null, // Falsy value
+          issue_id: null, // Falsy value to test issue_id fallback too
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Should generate UUID
+  });
+
+  it('should handle htmlWithIssues with false values (line 207)', () => {
+    // This test specifically targets line 207 - the final || ''
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: false, // Falsy but not null/undefined
+          issue_id: 'test-uuid',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
+  });
+
+  it('should handle htmlWithIssues with zero values (line 205)', () => {
+    // This test specifically targets line 205 - the final || ''
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: 0, // Falsy number
+          issue_id: 'test-uuid',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
+  });
+
+  it('should handle htmlWithIssues with NaN values (line 205)', () => {
+    // This test specifically targets line 205 - the final || '' fallback
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: NaN, // Falsy NaN value
+          issue_id: 'test-uuid',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
+  });
+
+  // New tests that actually use htmlWithIssues to cover lines 201-219
+  it('should process htmlWithIssues with string items', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test string</div>', '<span>another string</span>'],
+    }, 'critical');
+
+    expect(result.htmlWithIssues).to.have.length(2);
+    expect(result.htmlWithIssues[0].update_from).to.equal('<div>test string</div>');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[0].issue_id).to.be.a('string');
+    expect(result.htmlWithIssues[1].update_from).to.equal('<span>another string</span>');
+    expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[1].issue_id).to.be.a('string');
+  });
+
+  it('should process htmlWithIssues with object items that have update_from', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: [
+        {
+          update_from: '<div>object with update_from</div>',
+          issue_id: 'existing-uuid-1',
+        },
+        {
+          update_from: '<span>another object</span>',
+          issue_id: 'existing-uuid-2',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues).to.have.length(2);
+    expect(result.htmlWithIssues[0].update_from).to.equal('<div>object with update_from</div>');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('existing-uuid-1');
+    expect(result.htmlWithIssues[1].update_from).to.equal('<span>another object</span>');
+    expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[1].issue_id).to.equal('existing-uuid-2');
+  });
+
+  it('should process htmlWithIssues with mixed string and object items', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: [
+        '<div>string item</div>',
+        {
+          update_from: '<span>object item</span>',
+          issue_id: 'existing-uuid',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues).to.have.length(2);
+    expect(result.htmlWithIssues[0].update_from).to.equal('<div>string item</div>');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Generated UUID for string
+    expect(result.htmlWithIssues[1].update_from).to.equal('<span>object item</span>');
+    expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[1].issue_id).to.equal('existing-uuid');
+  });
+
+  it('should handle htmlWithIssues with objects without update_from (triggers line 208)', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: [
+        {
+          // No update_from property
+          issue_id: 'existing-uuid',
+        },
+        {
+          update_from: null, // Null update_from
+          issue_id: 'another-uuid',
+        },
+        {
+          update_from: '', // Empty string update_from
+          issue_id: 'third-uuid',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues).to.have.length(3);
+    // All should have empty string update_from due to line 208
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[0].issue_id).to.equal('existing-uuid');
+    expect(result.htmlWithIssues[1].update_from).to.equal('');
+    expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[1].issue_id).to.equal('another-uuid');
+    expect(result.htmlWithIssues[2].update_from).to.equal('');
+    expect(result.htmlWithIssues[2].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[2].issue_id).to.equal('third-uuid');
+  });
 });
 
 describe('aggregateAccessibilityIssues', () => {
