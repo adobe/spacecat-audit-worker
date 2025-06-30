@@ -16,6 +16,7 @@ import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { determineCdnProvider } from './utils/cdn-utils.js';
 import { AWSAthenaClient } from '../utils/athena-client.js';
+import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -106,5 +107,6 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
 
 export default new AuditBuilder()
   .withRunner(cdnLogAnalysisRunner)
+  .withUrlResolver(wwwUrlResolver)
   .build();
 /* c8 ignore stop */

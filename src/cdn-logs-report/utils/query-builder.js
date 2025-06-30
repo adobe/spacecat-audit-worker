@@ -41,7 +41,7 @@ function buildWhereClause(conditions = [], provider = null, siteFilters = []) {
   }
 
   if (siteFilters && siteFilters.length > 0) {
-    allConditions.push(...siteFilters);
+    allConditions.push(siteFilters);
   }
 
   return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';

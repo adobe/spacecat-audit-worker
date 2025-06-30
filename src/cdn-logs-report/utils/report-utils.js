@@ -197,6 +197,6 @@ export function buildSiteFilters(filters) {
   });
 
   const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
-  return `AND (${filterConditions})`;
+  return `(${filterConditions})`;
 }
 /* c8 ignore stop */
