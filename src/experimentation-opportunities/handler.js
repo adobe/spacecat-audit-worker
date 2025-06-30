@@ -156,8 +156,7 @@ async function getLangFromScrape(s3Client, bucketName, s3BucketPrefix, url, log)
     // remove the trailing slash from the pathname
     pathname = pathname.replace(/\/$/, '');
     const key = `${s3BucketPrefix}${pathname}/scrape.json`;
-    const pageScrape = await getObjectFromKey(s3Client, bucketName, key, log);
-    const pageScrapeJson = pageScrape ? JSON.parse(pageScrape) : {};
+    const pageScrapeJson = await getObjectFromKey(s3Client, bucketName, key, log) || {};
     return pageScrapeJson.scrapeResult?.tags?.lang;
   } catch (error) {
     log.error(`Error getting locale from scrape for url ${url}: ${error.message}`);
