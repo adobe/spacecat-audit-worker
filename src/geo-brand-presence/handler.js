@@ -17,7 +17,7 @@ import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE = 'organic-keywords-questions';
-const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'guidance:geo-brand-presence';
+const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
 
 export async function sendToMystique(context) {
   const {
@@ -40,23 +40,32 @@ export async function sendToMystique(context) {
     q: keywordQuestion.questions,
     pageUrl: keywordQuestion.url,
     importTime: keywordQuestion.importTime,
+    volume: keywordQuestion.volume,
   }));
+
+  /** @type {typeof keywordQuestions} */
+  const uniqueKeywordQuestions = [];
+  /** @type {Map<string, number>} */
+  const uniqueKeywordQuestionsIndexes = new Map();
+
   // remove duplicates, as metrics will keep appending the same keyword questions for every run
-  const uniqueKeywordQuestions = keywordQuestions.reduce((acc, curr) => {
-    const existing = acc.find(
-      (item) => item.keyword === curr.keyword && item.pageUrl === curr.pageUrl,
-    );
-    if (existing && new Date(existing.importTime) > new Date(curr.importTime)) {
-      return acc;
+  // keeps the most recent one based on importTime.
+  for (const kwQuestion of keywordQuestions) {
+    const key = `${kwQuestion.pageUrl}#${kwQuestion.keyword}`;
+    const atIdx = uniqueKeywordQuestionsIndexes.get(key);
+    if (atIdx == null) {
+      uniqueKeywordQuestionsIndexes.set(key, uniqueKeywordQuestions.length);
+      uniqueKeywordQuestions.push(kwQuestion);
+    } else {
+      const existingImportTime = uniqueKeywordQuestions[atIdx].importTime;
+      // ISO dates can be compared lexicographically
+      if (!existingImportTime || existingImportTime < kwQuestion.importTime) {
+        uniqueKeywordQuestions[atIdx] = kwQuestion;
+      }
     }
-    return [
-      ...acc.filter(
-        (item) => item.keyword !== curr.keyword && item.pageUrl !== curr.pageUrl,
-      ),
-      curr,
-    ];
-  }, []);
-  log.info(`GEO BRAND PRESENCE: Found ${uniqueKeywordQuestions?.length} keyword questions`);
+  }
+
+  log.info(`GEO BRAND PRESENCE: Found ${uniqueKeywordQuestions.length} keyword questions`);
   if (uniqueKeywordQuestions.length === 0) {
     log.info('GEO BRAND PRESENCE: No keyword questions found, skipping message to mystique');
     return;

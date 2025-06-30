@@ -24,27 +24,30 @@ use(sinonChai);
 use(chaiAsPromised);
 const auditUrl = 'www.spacecat.com';
 
-const runDataMissingType = [
-  {
-    key: 'pageType',
-    value: [
-      {
-        totalSessions: 2620,
-      },
-    ],
-  },
-];
-
 const runDataUrlMissingType = [
   {
     key: 'url',
     value: [
       {
-        totalSessions: 2620,
+        pageViews: 7620,
         url: 'some-url',
+        urls: ['some-url'],
       },
       {
-        totalSessions: 2620,
+        pageViews: 8620,
+        url: 'some-url-1',
+        type: 'new-type',
+        urls: ['some-url-1'],
+      },
+      {
+        pageViews: 7620,
+        url: 'some-url-0',
+        urls: ['some-url-0'],
+      },
+      {
+        pageViews: 7620,
+        url: 'some-url-6',
+        urls: ['some-url-6'],
       },
     ],
   },
@@ -52,15 +55,18 @@ const runDataUrlMissingType = [
     key: 'pageType',
     value: [
       {
-        totalSessions: 2620,
+        pageViews: 8620,
         type: 'new-type',
+        urls: ['some-url-1'],
       },
       {
-        totalSessions: 2620,
+        pageViews: 7620,
+        urls: ['some-url-0'],
       },
       {
-        totalSessions: 2620,
-        pageType: 'uncategorized',
+        pageViews: 7620,
+        type: 'uncategorized',
+        urls: ['some-url-6'],
       },
     ],
   },
@@ -117,12 +123,18 @@ describe('Paid Audit', () => {
     };
     site = getSite(sandbox);
     audit = {
-      getAuditResult: sandbox.stub().returns({
-        urls: [
-          { url: 'https://example.com/page1' },
-          { url: 'https://example.com/page2' },
+      getAuditResult: sandbox.stub().returns(
+        [
+          {
+            key: 'url',
+            value:
+              [
+                { pageViews: 71000, url: 'https://example.com/page1', topURLs: ['https://example.com/page1'] },
+                { pageViews: 71000, url: 'https://example.com/page2', topURLs: ['https://example.com/page2'] },
+              ],
+          },
         ],
-      }),
+      ),
       getAuditId: () => 'test-audit-id',
     };
 
@@ -152,7 +164,7 @@ describe('Paid Audit', () => {
     sandbox.restore();
   });
 
-  const expectedSegments = ['url', 'pageType'];
+  const expectedSegments = ['url', 'pageType', 'urlTrafficSource', 'pageTypeTrafficSource'];
 
   it('should handle missing config', async () => {
     context = {
@@ -164,49 +176,41 @@ describe('Paid Audit', () => {
     siteWithMissingConfig.getConfig().getGroupedURLs.returns(null);
     context.getConfig = () => siteWithMissingConfig;
     const result = await paidAuditRunner(auditUrl, context, siteWithMissingConfig);
-    expect(result.auditResult.segments.length).to.eql(2);
+    expect(result.auditResult?.length).to.eql(2);
   });
 
   it('should submit expected rum query data', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
-    const submittedSegments = (result.auditResult.segments.map((entry) => (entry.key)));
+    const submittedSegments = (result.auditResult.map((entry) => (entry.key)));
     submittedSegments.forEach((key) => {
       expect(expectedSegments).to.include(key);
     });
-    result.auditResult
-      .segments.forEach((resultItem) => expect(resultItem.value?.length).to.eqls(3));
-    const pageTypesValues = result.auditResult.segments.find((segment) => segment.key === 'pageType').value;
-    pageTypesValues.forEach((type) => expect(type.urls.length).to.be.lessThanOrEqual(3));
+    result.auditResult.forEach((resultItem) => expect(resultItem.value?.length)
+      .to.be.greaterThanOrEqual(1));
+    const pageTypesValues = result.auditResult.find((segment) => segment.key === 'pageType').value;
+    pageTypesValues.forEach((type) => expect(type.topURLs.length).to.be.greaterThan(3));
     expect(result).to.deep.equal(expectedSubmitted);
   });
 
   it('should submit values ordered by total sessions', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
-    result.auditResult.segments.forEach((segment) => {
+    result.auditResult.forEach((segment) => {
       const values = segment.value;
       if (values.length > 1) {
-        expect(values[0].totalSessions).to.be.greaterThanOrEqual(values[1].totalSessions);
+        expect(values[0].pageViews).to.be.greaterThanOrEqual(values[1].pageViews);
       }
-    });
-  });
-
-  it('should enrich urls with pageType info', async () => {
-    const result = await paidAuditRunner(auditUrl, context, site);
-    const urlSegment = result.auditResult.segments.find((segment) => segment.key === 'url');
-    urlSegment.value.forEach((valueItem) => {
-      expect(valueItem).to.have.property('pageType');
     });
   });
 
   it('should handle missing page data', async () => {
     context = {
       ...context,
-      rumApiClient: { query: sandbox.stub().resolves(runDataMissingType) },
+      rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
     };
 
     const result = await paidAuditRunner(auditUrl, context, site);
-    expect(result.auditResult.segments.length).to.eql(1);
-    expect(result.auditResult.segments[0].value).to.not.have.property('pageType');
+    const pageTypesSegment = result.auditResult.find((item) => item.key === 'pageType');
+    expect(pageTypesSegment.value.length).to.eql(2);
   });
 
   it('should handle empty query respone', async () => {
@@ -216,61 +220,32 @@ describe('Paid Audit', () => {
     };
 
     const result = await paidAuditRunner(auditUrl, context, site);
-    expect(result.auditResult.segments.length).to.eql(0);
-  });
-
-  it('should handle url and page type mismatch', async () => {
-    context = {
-      ...context,
-      rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
-    };
-
-    const result = await paidAuditRunner(auditUrl, context, site);
-    expect(result.auditResult.segments.length).to.eql(2);
-
-    const missingUrl = result.auditResult.segments
-      .find((item) => item.key === 'url')
-      .value
-      .find((valueItem) => !valueItem.url);
-
-    const pageSegemnt = result.auditResult.segments
-      .find((item) => item.key === 'pageType')
-      .value;
-
-    pageSegemnt.forEach((item) => {
-      expect(item).to.have.haveOwnProperty('urls');
-    });
-    expect(missingUrl.pageType).to.eq('other | Other Pages');
-  });
-
-  it('should handle regex settings', async () => {
-    context = {
-      ...context,
-      rumApiClient: { query: sandbox.stub().resolves(runDataUrlMissingType) },
-    };
-
-    const result = await paidAuditRunner(auditUrl, context, context.site);
-    expect(result.auditResult.segments.length).to.eql(2);
-
-    const missingUrl = result.auditResult.segments
-      .find((item) => item.key === 'url')
-      .value
-      .find((valueItem) => !valueItem.url);
-
-    expect(missingUrl.pageType).to.eq('other | Other Pages');
+    expect(result.auditResult.length).to.eql(0);
   });
 
   it('should submit expected result to mistique', async () => {
     const auditData = {
       fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: {
-        urls: [
-          'https://example.com/page1',
-          'https://example.com/page2',
-          'https://example.com',
-        ],
-      },
+      auditResult:
+        [
+          {
+            key: 'url',
+            value: [
+              {
+                topURLs: ['https://example.com/page1'],
+              },
+              {
+                topURLs: ['https://example.com/page2'],
+              },
+              {
+                topURLs: ['https://example.com'],
+              },
+            ],
+          },
+
+        ]
+      ,
     };
 
     const expectedSubmitedMsg = {
@@ -303,7 +278,7 @@ describe('Paid Audit', () => {
     };
 
     await expect(paidConsentBannerCheck(auditUrl, auditData, context, site))
-      .to.be.rejectedWith(Error, `Failed to send page to mystique auditUrl ${auditUrl}`);
+      .to.be.rejectedWith(Error, `Failed to find valid page for consent banner audit for AuditUrl ${auditUrl}`);
 
     expect(context.sqs.sendMessage.called).to.be.false;
   });
