@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 
 const TIME_CONSTANTS = {
@@ -21,6 +20,7 @@ const TIME_CONSTANTS = {
 
 const REGEX_PATTERNS = {
   URL_SANITIZATION: /[^a-zA-Z0-9]/g,
+  BUCKET_SANITIZATION: /[^a-zA-Z0-9]/g,
 };
 
 const CDN_LOGS_PREFIX = 'cdn-logs-';
@@ -107,6 +107,7 @@ export function formatDateString(date) {
 function getWeekNumber(date) {
   const d = new Date(date);
   d.setUTCHours(0, 0, 0, 0);
+  /* c8 ignore next */
   d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
@@ -199,4 +200,3 @@ export function buildSiteFilters(filters) {
   const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
   return `(${filterConditions})`;
 }
-/* c8 ignore stop */

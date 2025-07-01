@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
 import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
 import { loadSql } from './report-utils.js';
 import { DEFAULT_PATTERNS } from '../constants/page-patterns.js';
@@ -44,6 +43,7 @@ function buildWhereClause(conditions = [], provider = null, siteFilters = []) {
     allConditions.push(siteFilters);
   }
 
+  /* c8 ignore next */
   return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
 }
 
@@ -256,4 +256,3 @@ export const weeklyBreakdownQueries = {
   createSuccessUrlsByCategory: createSuccessUrlsByCategoryQuery,
   createTopUrls: createTopUrlsQuery,
 };
-/* c8 ignore end */
