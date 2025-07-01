@@ -20,7 +20,7 @@ const TIME_CONSTANTS = {
 
 const REGEX_PATTERNS = {
   URL_SANITIZATION: /[^a-zA-Z0-9]/g,
-  BUCKET_SANITIZATION: /[^a-zA-Z0-9]/g,
+  BUCKET_SANITIZATION: /[._]/g,
 };
 
 const CDN_LOGS_PREFIX = 'cdn-logs-';
