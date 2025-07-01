@@ -28,21 +28,21 @@ export default async function handler(message, context) {
   log.info(`Fetched Audit ${JSON.stringify(message)}`);
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities
-    .filter((oppty) => oppty.getType() === audit.getAuditType());
-    // .find((oppty) => oppty.page === url);
+    .filter((oppty) => oppty.getType() === 'generic-opportunity')
+    .find((oppty) => oppty.getData().page === url && oppty.getData().opportunityType === 'paid-cookie-consent');
   const entity = mapToPaidOpportunity(siteId, url, audit, guidance);
   if (!opportunity) {
     log.info(`No existing Opportunity found for ${siteId} page: ${url}. Creating a new one.`);
     opportunity = await Opportunity.create(entity);
   } else {
-    log.info(`Found existing paid Opportunity for page ${url} with status ${opportunity.status}. Updating it with new data`);
-    opportunity = {
-      ...entity,
-      // If customer decides to ignore the opportunity we should keep it as ignored
-      status: opportunity.status,
-    };
+    log.info(`Found existing paid Opportunity for page ${url} with status ${opportunity.getStatus()}. Updating it with new data`);
+    opportunity.setAuditId(entity.id);
+    opportunity.setData(entity.data);
+    opportunity.setGuidance(entity.guidance);
+    opportunity.setTitle(entity.title);
+    opportunity.setDescription(entity.description);
+    opportunity = await opportunity.save();
   }
-
   const existingSuggestions = await opportunity.getSuggestions();
 
   // delete previous suggestions if any
@@ -51,7 +51,7 @@ export default async function handler(message, context) {
   const suggestionData = mapToPaidSuggestion(opportunity.getId(), url, guidance);
   await Suggestion.create(suggestionData);
 
-  log.info(`paid guidance would have saved opportunity : ${JSON.stringify(opportunity, null, 2)}`);
+  log.info(`paid-cookie-consent  opportunity succesfully added for site: ${siteId} page: ${url} audit: ${auditId}  opportunity: ${JSON.stringify(opportunity, null, 2)}`);
 
   return ok();
 }

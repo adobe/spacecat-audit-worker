@@ -11,17 +11,32 @@
  */
 
 import { randomUUID } from 'crypto';
+import { DATA_SOURCES } from '../common/constants.js';
+
+function normalizeSuggestionValue(suggestionMarkup) {
+  if (typeof suggestionMarkup !== 'string') return suggestionMarkup;
+
+  if (suggestionMarkup.includes('\\n')) {
+    return suggestionMarkup.replace(/\\n/g, '\n');
+  }
+  return suggestionMarkup;
+}
 
 export function mapToPaidOpportunity(siteId, url, audit, guidance = []) {
   const pageGuidance = guidance[0];
-  // const auditType = audit?.getAuditType();
+  const stats = audit.getAuditResult();
+  const urlSegment = stats.find((item) => item.key === 'url');
+  const pageStats = urlSegment?.value.find((item) => item.url === url) || {};
+  const pageTypeSegment = stats.find((item) => item.key === 'pageType');
+  const pageTypeStats = pageTypeSegment?.value.find((item) => item.topURLs.includes(url)) || {};
   return {
     siteId,
+    id: randomUUID(),
     auditId: audit.getAuditId(),
-    type: audit.getAuditType(),
+    type: 'generic-opportunity',
     origin: 'AUTOMATION',
     title: 'Cookie Consent Banner',
-    description: `Recommendation: ${pageGuidance.recommendation}. Rationale: ${pageGuidance.recommendation}}`,
+    description: `Insight: ${pageGuidance.insight}. Recommendation: ${pageGuidance.recommendation}`,
     guidance: {
       recommendations: [
         {
@@ -33,14 +48,17 @@ export function mapToPaidOpportunity(siteId, url, audit, guidance = []) {
       ],
     },
     data: {
-      // projectedTrafficLost: pageGuidance.projectedTrafficLost || 0,
-      // projectedTrafficValue: pageGuidance.projectedTrafficValue || 0,
       dataSources: [
-        'Ahrefs',
-        'Site',
-        'RUM',
+        DATA_SOURCES.SITE,
+        DATA_SOURCES.RUM,
+        DATA_SOURCES.PAGE,
       ],
+      opportunityType: 'paid-cookie-consent',
       page: url,
+      pageViews: pageStats.pageViews || 0,
+      ctr: pageStats.ctr || 0,
+      bounceRate: pageStats.bounceRate || 0,
+      pageType: pageTypeStats?.type || 'unknown',
     },
     status: 'NEW',
     tags: [
@@ -63,7 +81,7 @@ export function mapToPaidSuggestion(opportunityId, url, guidance = []) {
           pageUrl: url,
         },
       ],
-      suggestionValue: pageGuidance.body,
+      suggestionValue: normalizeSuggestionValue(pageGuidance.body),
     },
   };
 }
