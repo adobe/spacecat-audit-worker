@@ -160,7 +160,7 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
   const { log, site } = context;
 
   const issues = [];
-
+  log.info(`SDA: ${JSON.stringify(pages)} pages found`);
   await Promise.all(pages.map(async ({ url: page }) => {
     let scrapeResult;
     let { pathname } = new URL(page);
@@ -173,6 +173,7 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
         scrapeCache.set(pathname, getScrapeForPath(pathname, context, site));
       }
       scrapeResult = await scrapeCache.get(pathname);
+      log.info(`SDA: ${pathname} Scrape path`);
     } catch (e) {
       log.error(`SDA: Could not find scrape for ${pathname}. Make sure that scrape-top-pages did run.`, e);
       return;
