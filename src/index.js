@@ -52,6 +52,7 @@ import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/g
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
+import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -85,6 +86,7 @@ const HANDLERS = {
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:paid-cookie-consent': paidConsentGuidance,
+  'guidance:missing-alt-text': missingAltTextGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
