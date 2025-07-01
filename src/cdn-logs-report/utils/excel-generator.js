@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
 import ExcelJS from 'exceljs';
 import { generateReportingPeriods, validateCountryCode } from './report-utils.js';
 
@@ -38,6 +37,7 @@ const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
     result.push(Number(row[weekKey]) || 0);
   });
   return result;
+/* c8 ignore next */
 }) || [];
 
 function analyzeTopBottomByStatus(data) {
@@ -82,6 +82,7 @@ const SHEET_CONFIGS = {
     headerColor: SHEET_COLORS.DEFAULT,
     numberColumns: [2],
     processData: (data) => data?.map((row) => [
+      /* c8 ignore next 3 */
       row.user_agent || 'Unknown',
       Number(row.status) || 'All',
       Number(row.total_requests) || 0,
@@ -172,12 +173,14 @@ const SHEET_CONFIGS = {
     getHeaders: () => ['URL', 'Number of 404s'],
     headerColor: SHEET_COLORS.ERROR,
     numberColumns: [1],
+    /* c8 ignore next */
     processData: (data) => data?.map((row) => [row.url || '', Number(row.total_requests) || 0]) || [],
   },
   error503: {
     getHeaders: () => ['URL', 'Number of 503s'],
     headerColor: SHEET_COLORS.ERROR,
     numberColumns: [1],
+    /* c8 ignore next */
     processData: (data) => data?.map((row) => [row.url || '', Number(row.total_requests) || 0]) || [],
   },
   category: {
@@ -187,6 +190,7 @@ const SHEET_CONFIGS = {
     processData: (data) => {
       const urlCountMap = new Map();
 
+      /* c8 ignore next */
       (data || []).forEach((row) => {
         const url = row.url || '';
         const match = url.match(/\/[a-z]{2}\/products\/([^/]+)/);
@@ -206,6 +210,7 @@ const SHEET_CONFIGS = {
     headerColor: SHEET_COLORS.DEFAULT,
     numberColumns: [2],
     processData: (data) => data?.map((row) => [
+      /* c8 ignore next 2 */
       row.url || '',
       Number(row.total_requests) || 0,
     ]) || [],
@@ -214,11 +219,14 @@ const SHEET_CONFIGS = {
 
 function getSheetConfig(type, periods) {
   const config = SHEET_CONFIGS[type];
+  /* c8 ignore start */
   if (!config) {
     throw new Error(`Unknown sheet type: ${type}`);
   }
+  /* c8 ignore stop */
 
   return {
+    /* c8 ignore next */
     headers: typeof config.getHeaders === 'function' ? config.getHeaders(periods) : config.getHeaders(),
     headerColor: config.headerColor,
     numberColumns: typeof config.getNumberColumns === 'function' ? config.getNumberColumns(periods) : config.numberColumns,
@@ -299,5 +307,3 @@ export async function createCDNLogsExcelReport(reportData, options = {}) {
 
   return workbook;
 }
-
-/* c8 ignore end */

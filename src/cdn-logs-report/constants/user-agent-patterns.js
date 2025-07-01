@@ -9,7 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* c8 ignore start */
 export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
   perplexity: '(?i)Perplexity',
@@ -21,4 +20,3 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
 export function getProviderPattern(provider) {
   return PROVIDER_USER_AGENT_PATTERNS[provider?.toLowerCase()] || null;
 }
-/* c8 ignore stop */
