@@ -315,7 +315,7 @@ describe('Meta Tags', () => {
 
       it('should throw error if no top pages found', async () => {
         dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
-        await expect(submitForScraping(context)).to.be.rejectedWith('No URLs found for site (neither top pages nor included URLs)');
+        await expect(submitForScraping(context)).to.be.rejectedWith('No URLs found for site neither top pages nor included URLs');
       });
 
       it('should submit top pages for scraping when getIncludedURLs returns null', async () => {
