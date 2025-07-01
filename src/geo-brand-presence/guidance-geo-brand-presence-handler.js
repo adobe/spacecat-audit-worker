@@ -15,7 +15,7 @@ import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
 
 const POSSIBLE_SUBTYPES = ['guidance:geo-brand-presence', 'guidance:geo-faq'];
 
-export function getSuggestionValue(suggestions, subType, log) {
+function getSuggestionValue(suggestions, subType, log) {
   if (subType === 'guidance:geo-faq') {
     let suggestionValue = '| URL | Question | Answer | Sources |\n|-----|----------|-------|--------|\n';
     suggestions.forEach((suggestion) => {
