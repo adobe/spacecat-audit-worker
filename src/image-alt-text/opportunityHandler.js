@@ -15,7 +15,9 @@ import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/space
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import suggestionsEngine from './suggestionsEngine.js';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
-import { CPC, PENALTY_PER_IMAGE, RUM_INTERVAL } from './constants.js';
+import {
+  CPC, PENALTY_PER_IMAGE, RUM_INTERVAL, ALT_TEXT_GUIDANCE_TYPE, ALT_TEXT_OBSERVATION,
+} from './constants.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
@@ -69,7 +71,7 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
   }
 }
 
-const getProjectedMetrics = async ({
+export const getProjectedMetrics = async ({
   images, auditUrl, context, log,
 }) => {
   let finalUrl;
@@ -258,4 +260,43 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   });
 
   log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${siteId} and alt-text audit type.`);
+}
+
+/**
+ * Sends alt-text opportunity message to Mystique for AI-powered suggestions
+ * @param {string} auditUrl - The base URL being audited
+ * @param {Array} pageUrls - Array of page URLs to analyze for missing alt-text
+ * @param {string} siteId - Site identifier
+ * @param {string} auditId - Audit identifier
+ * @param {Object} context - The context object containing sqs, env, etc.
+ * @returns {Promise<void>}
+ */
+export async function
+sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context) {
+  const {
+    sqs, env, log, dataAccess,
+  } = context;
+
+  try {
+    const site = await dataAccess.Site.findById(siteId);
+
+    const mystiqueMessage = {
+      type: ALT_TEXT_GUIDANCE_TYPE,
+      siteId,
+      auditId,
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      url: auditUrl,
+      observation: ALT_TEXT_OBSERVATION,
+      data: {
+        pageUrls,
+      },
+    };
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+    log.info(`[${AUDIT_TYPE}]: Alt-text opportunity message sent to Mystique: ${JSON.stringify(mystiqueMessage)}`);
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique: ${error.message}`);
+    throw error;
+  }
 }

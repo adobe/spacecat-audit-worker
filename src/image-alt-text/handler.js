@@ -20,11 +20,12 @@ import {
 } from '../utils/s3-utils.js';
 import AuditEngine from './auditEngine.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import convertToOpportunity from './opportunityHandler.js';
+import convertToOpportunity, { sendAltTextOpportunityToMystique } from './opportunityHandler.js';
 import {
   shouldShowImageAsSuggestion,
   isImageDecorative,
 } from './utils.js';
+import { USE_MYSTIQUE_FOR_ALT_TEXT } from './constants.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -207,9 +208,52 @@ export async function processAltTextAuditStep(context) {
   };
 }
 
-export default new AuditBuilder()
+export async function processAltTextWithMystique(context) {
+  const {
+    log, site, audit, dataAccess,
+  } = context;
+
+  log.info(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
+
+  try {
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+    if (topPages.length === 0) {
+      throw new Error(`No top pages found for site ${site.getId()}`);
+    }
+
+    // Get ALL page URLs to send to Mystique
+    const pageUrls = topPages.map((page) => page.getUrl());
+
+    await sendAltTextOpportunityToMystique(
+      site.getBaseURL(),
+      pageUrls,
+      site.getId(),
+      audit.getId(),
+      context,
+    );
+
+    log.info(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
+    throw error;
+  }
+}
+
+// Create two separate audit builders
+const auditBuilderWithMystique = new AuditBuilder()
+  .withUrlResolver((site) => site.getBaseURL())
+  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('processAltTextWithMystique', processAltTextWithMystique)
+  .build();
+
+const auditBuilderWithFirefall = new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('prepareScraping', prepareScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processAltTextAudit', processAltTextAuditStep)
   .build();
+
+// Export the appropriate builder based on the flag
+export default USE_MYSTIQUE_FOR_ALT_TEXT ? auditBuilderWithMystique : auditBuilderWithFirefall;
