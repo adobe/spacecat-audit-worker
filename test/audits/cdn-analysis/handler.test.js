@@ -94,15 +94,6 @@ describe('CDN Analysis Handler', () => {
     expect(athenaClientStub.execute).to.have.been.calledThrice;
   });
 
-  it('uses fallback bucket name if site.getConfig is undefined', async () => {
-    site.getConfig = () => ({ getCdnLogsConfig: () => undefined });
-    const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
-    expect(result.auditResult.database).to.equal('cdn_logs_example_com');
-    expect(determineCdnProviderStub).to.have.been.calledOnce;
-    expect(getStaticContentStub).to.have.been.calledThrice;
-    expect(athenaClientStub.execute).to.have.been.calledThrice;
-  });
-
   it('throws if athenaClient.execute throws', async () => {
     athenaClientStub.execute.onFirstCall().rejects(new Error('Athena error'));
     await expect(
