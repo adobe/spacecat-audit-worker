@@ -75,7 +75,7 @@
     "@adobe/spacecat-shared-google-client": "1.4.33",
     "@adobe/spacecat-shared-gpt-client": "1.5.14",
     "@adobe/spacecat-shared-http-utils": "1.14.1",
-    "@adobe/spacecat-shared-rum-api-client": "https://gitpkg.vercel.app/adobe/spacecat-shared/packages/spacecat-shared-rum-api-client?high-inorganic-interval-change",
+    "@adobe/spacecat-shared-rum-api-client": "2.31.1",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.39.1",
     "@aws-sdk/client-lambda": "3.828.0",
