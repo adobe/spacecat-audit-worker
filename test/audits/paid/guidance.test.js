@@ -23,11 +23,31 @@ import handler from '../../../src/paid/guidance-handler.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('PaidGuidanceHandler', () => {
-  let sandbox;
+// Helper to create a fresh stubbed opportunity instance
+function makeOppty({ page, opportunityType }) {
+  return {
+    getId: () => `opptyId-${page}-${opportunityType}`,
+    getSuggestions: async () => [],
+    setAuditId: sinon.stub(),
+    setData: sinon.stub(),
+    setGuidance: sinon.stub(),
+    setTitle: sinon.stub(),
+    setDescription: sinon.stub(),
+    save: sinon.stub().resolvesThis(),
+    getType: () => 'generic-opportunity',
+    getData: () => ({ page, opportunityType }),
+    getStatus: () => 'NEW',
+  };
+}
 
+describe('Paid Guidance Handler', () => {
+  let sandbox;
   let logStub;
   let context;
+  let Suggestion;
+  let Opportunity;
+  let Audit;
+  let opportunityInstance;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -37,93 +57,166 @@ describe('PaidGuidanceHandler', () => {
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
-
+    Suggestion = { create: sandbox.stub().resolves() };
+    opportunityInstance = {
+      getId: () => 'opptyId',
+      getSuggestions: async () => [],
+      setAuditId: sinon.stub(),
+      setData: sinon.stub(),
+      setGuidance: sinon.stub(),
+      setTitle: sinon.stub(),
+      setStatus: sinon.stub(),
+      setDescription: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+      getType: () => 'generic-opportunity',
+      getData: () => ({ page: 'url', opportunityType: 'paid-cookie-consent' }),
+      getStatus: () => 'NEW',
+    };
+    Opportunity = {
+      allBySiteId: sandbox.stub(),
+      create: sandbox.stub(),
+    };
+    Audit = { findById: sandbox.stub() };
     context = {
       log: logStub,
+      dataAccess: { Audit, Opportunity, Suggestion },
     };
+
+    Audit.findById.resolves({
+      getAuditId: () => 'auditId',
+      getAuditResult: () => [
+        {
+          key: 'url',
+          value: [{
+            url: 'url', pageViews: 10, ctr: 0.5, bounceRate: 0.2,
+          }],
+        },
+        { key: 'pageType', value: [{ topURLs: ['https://example-url'], type: 'product-page' }] },
+      ],
+    });
   });
 
   afterEach(() => {
-    nock.cleanAll();
     sandbox.restore();
-  });
-
-  it('should handle guidance messages for paid', async () => {
-    const Audit = { findById: sinon.stub().resolves(null) };
-    const Opportunity = { allBySiteId: sinon.stub().resolves([]) };
-    const contextWithDA = { ...context, dataAccess: { Audit, Opportunity } };
-    const sampleMessage = {
-      auditId: 'id',
-      siteId: 'site',
-      data: { url: 'url', guidance: {} },
-    };
-    await handler(sampleMessage, contextWithDA);
-    expect(logStub.info.callCount).to.be.above(0);
+    nock.cleanAll();
   });
 
   it('should return notFound if no audit is found', async () => {
-    const Audit = { findById: sinon.stub().resolves(null) };
-    const Opportunity = { allBySiteId: sinon.stub().resolves([]) };
-    const contextWithDA = { ...context, dataAccess: { Audit, Opportunity } };
-    const message = { auditId: '123', siteId: 'site', data: { url: 'url', guidance: {} } };
-
-    const result = await handler(message, contextWithDA);
+    Audit.findById.resolves(null);
+    Opportunity.allBySiteId.resolves([]);
+    const message = { auditId: '123', siteId: 'site', data: { url: 'url', guidance: [{}] } };
+    const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
   });
 
-  it('should create a new opportunity if none exists', async () => {
-    const audit = { auditType: 'paid' };
-    const Audit = { findById: sandbox.stub().resolves(audit) };
-    const Opportunity = {
-      allBySiteId: sandbox.stub().resolves([]),
-      create: sandbox.stub().resolves({ setAuditId: sandbox.stub() }),
-    };
-    const guidanceItem = {
-      insight: 'Banner hides hero CTA on mobile',
-      rationale: 'Blocks the primary purchase path for high-intent visitors.',
-      recommendation: 'Move banner to bottom-center without overlay.',
-      brief: null,
-      type: 'guidanceWithBody',
-      body: '**Banner hides hero CTA on mobile.**\n\nCould recover up to 8% of mobile ad visitors dropping before engaging the main CTA.\n\n- On mobile, the cookie consent banner occupies about one-third of the screen and pushes the main \\"Try free\\" CTA partially out of view, making immediate action less seamless.\n- The banner uses a white background, high-contrast dark text, and a blue accept button—accessible and visually clear, but highly prominent.\n- Banner wording is neutral and professional, avoiding manipulation; users feel neither anxious nor suspicious, but do see the interruption as a hurdle on first visit.\n- "I can\'t immediately tap the CTA or see it in the most natural reading flow... I would tap to accept, but it interrupts my product discovery."\n\n**_Move banner to bottom-center without overlay._**\n\n| Position                | Pros                                             | Cons                                        |\n|-------------------------|--------------------------------------------------|---------------------------------------------|\n| Bottom, no overlay      | CTA and hero remain visible; no conversion loss  | May feel less prominent for compliance      |\n| Current (bottom, large) | Ensures high noticeability, clear acceptance     | Disrupts purchase path, frustrates visitors |\n\nFreeing up the hero CTA on mobile will increase paid traffic returns by maximizing every clickthrough\'s chance to convert.',
-    };
-    const contextWithDA = { ...context, dataAccess: { Audit, Opportunity } };
-    const message = {
-      auditId: '123',
-      siteId: 'site',
-      data: { url: 'url', guidance: [guidanceItem] },
-    };
-
-    const result = await handler(message, contextWithDA);
+  it('should create a new opportunity and suggestion with plain markup', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{
+      body: 'plain\nmarkup', insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance } };
+    const result = await handler(message, context);
     expect(Opportunity.create).to.have.been.called;
-    const calledWith = Opportunity.create.getCall(0).args[0];
-    expect(calledWith).to.have.property('guidance');
-    expect(calledWith.guidance).to.equal(guidanceItem.body);
-    expect(calledWith.title).to.equal(guidanceItem.insight);
-    expect(calledWith.description).to.include(guidanceItem.recommendation);
-    expect(calledWith.type).to.equal('paid');
-    expect(calledWith.origin).to.equal('AUTOMATION');
-    expect(calledWith.status).to.equal('NEW');
-    expect(result.status).to.deep.equal(ok().status);
+    expect(Suggestion.create).to.have.been.called;
+    const suggestion = Suggestion.create.getCall(0).args[0];
+    expect(suggestion.data.suggestionValue).to.equal(`plain
+markup`);
+    expect(result.status).to.equal(ok().status);
   });
 
-  it('should update an existing opportunity if found', async () => {
-    const audit = { auditType: 'type' };
-    const existingOppty = {
-      getType: () => 'type',
-      page: 'url',
-      setAuditId: sinon.stub(),
-    };
-    const Audit = { findById: sinon.stub().resolves(audit) };
-    const Opportunity = {
-      allBySiteId: sinon.stub().resolves([existingOppty]),
-      create: sinon.stub(),
-    };
-    const contextWithDA = { ...context, dataAccess: { Audit, Opportunity } };
-    const message = { auditId: '123', siteId: 'site', data: { url: 'url', guidance: {} } };
+  it('should create a new opportunity and suggestion from serialized JSON with markup', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const markup = 'json\nmarkup';
+    const guidance = [{
+      body: JSON.stringify({ markup }), insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
+    const suggestion = Suggestion.create.getCall(0).args[0];
+    expect(suggestion.data.suggestionValue).to.equal(`json
+markup`);
+    expect(result.status).to.equal(ok().status);
+  });
 
-    const result = await handler(message, contextWithDA);
-    expect(existingOppty.setAuditId).to.have.been.calledWith('123');
-    expect(Opportunity.create).not.to.have.been.called;
-    expect(result.status).to.deep.equal(ok().status);
+  it('should update an existing opportunity and replace suggestions', async () => {
+    // Override getSuggestions for this test to simulate existing suggestions
+    const removeStub = sinon.stub().resolves();
+    opportunityInstance.getSuggestions = async () => [{ remove: removeStub }];
+    Opportunity.allBySiteId.resolves([opportunityInstance]);
+    const guidance = [{
+      body: 'plain\nmarkup', insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance } };
+    const result = await handler(message, context);
+    expect(opportunityInstance.setAuditId).to.have.been.called;
+    expect(opportunityInstance.setData).to.have.been.called;
+    expect(opportunityInstance.setGuidance).to.have.been.called;
+    expect(opportunityInstance.setTitle).to.have.been.called;
+    expect(opportunityInstance.setDescription).to.have.been.called;
+    expect(opportunityInstance.save).to.have.been.called;
+    expect(removeStub).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
+    expect(opportunityInstance.setStatus).to.not.have.been.called;
+    const suggestion = Suggestion.create.getCall(0).args[0];
+    expect(suggestion.data.suggestionValue).to.equal(`plain
+markup`);
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should handle missing guidance/body gracefully', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{}];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
+    const suggestion = Suggestion.create.getCall(0).args[0];
+    expect(suggestion.data.suggestionValue).to.be.undefined;
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should match existing opportunity by page and opportunityType', async () => {
+    const correctOppty = makeOppty({ page: 'url', opportunityType: 'paid-cookie-consent' });
+    const wrongPageOppty = makeOppty({ page: 'wrong-url', opportunityType: 'paid-cookie-consent' });
+    const wrongTypeOppty = makeOppty({ page: 'url', opportunityType: 'other-type' });
+
+    Opportunity.allBySiteId.resolves([wrongPageOppty, wrongTypeOppty, correctOppty]);
+    Audit.findById.resolves({
+      getAuditId: () => 'auditId',
+      getAuditResult: () => [
+        {
+          key: 'url',
+          value: [{
+            url: 'url', pageViews: 10, ctr: 0.5, bounceRate: 0.2,
+          }],
+        },
+        { key: 'pageType', value: [{ topURLs: ['url'], type: 'landing' }] },
+      ],
+    });
+    const guidance = [{
+      body: 'plain\nmarkup', insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance } };
+
+    // Act
+    const result = await handler(message, context);
+
+    // Assert: Only the correctOppty should be updated
+    expect(correctOppty.setAuditId).to.have.been.called;
+    expect(correctOppty.setData).to.have.been.called;
+    expect(correctOppty.setGuidance).to.have.been.called;
+    expect(correctOppty.setTitle).to.have.been.called;
+    expect(correctOppty.setDescription).to.have.been.called;
+    expect(correctOppty.save).to.have.been.called;
+    expect(result.status).to.equal(ok().status);
+
+    // The wrong ones should not be updated
+    expect(wrongPageOppty.setAuditId).to.not.have.been.called;
+    expect(wrongTypeOppty.setAuditId).to.not.have.been.called;
   });
 });

@@ -13,16 +13,29 @@
 import { randomUUID } from 'crypto';
 import { DATA_SOURCES } from '../common/constants.js';
 
-function normalizeSuggestionValue(suggestionMarkup) {
-  if (typeof suggestionMarkup !== 'string') return suggestionMarkup;
-
-  if (suggestionMarkup.includes('\\n')) {
-    return suggestionMarkup.replace(/\\n/g, '\n');
+function sanitizeMarkup(markup) {
+  if (typeof markup === 'string' && markup.includes('\\n')) {
+    return markup.replace(/\\n/g, '\n');
   }
-  return suggestionMarkup;
+  return markup;
 }
 
-export function mapToPaidOpportunity(siteId, url, audit, guidance = []) {
+function extractSuggestionMarkup(body) {
+  if (typeof body !== 'string') return body;
+
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed && typeof parsed === 'object' && parsed.markup) {
+      return sanitizeMarkup(parsed.markup);
+    }
+  } catch {
+    // Not a JSON string, fall through
+  }
+
+  return sanitizeMarkup(body);
+}
+
+export function mapToPaidOpportunity(siteId, url, audit, guidance) {
   const pageGuidance = guidance[0];
   const stats = audit.getAuditResult();
   const urlSegment = stats.find((item) => item.key === 'url');
@@ -81,7 +94,7 @@ export function mapToPaidSuggestion(opportunityId, url, guidance = []) {
           pageUrl: url,
         },
       ],
-      suggestionValue: normalizeSuggestionValue(pageGuidance.body),
+      suggestionValue: extractSuggestionMarkup(pageGuidance.body),
     },
   };
 }
