@@ -328,7 +328,7 @@ export async function submitForScraping(context) {
   log.info(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
   if (finalUrls.length === 0) {
-    throw new Error('No URLs found for site (neither top pages nor included URLs)');
+    throw new Error('No URLs found for site neither top pages nor included URLs');
   }
 
   return {
