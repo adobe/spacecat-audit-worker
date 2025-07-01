@@ -1,3 +1,17 @@
+## [1.120.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.1...v1.120.2) (2025-07-01)
+
+
+### Bug Fixes
+
+* add unit tests for CDN logs report audit ([#1023](https://github.com/adobe/spacecat-audit-worker/issues/1023)) ([43938e6](https://github.com/adobe/spacecat-audit-worker/commit/43938e68a4024790a6cd61d4b2dcf90cdae0c8b9))
+
+## [1.120.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.0...v1.120.1) (2025-07-01)
+
+
+### Bug Fixes
+
+* modifying log line for deployment ([#1021](https://github.com/adobe/spacecat-audit-worker/issues/1021)) ([5b96bb5](https://github.com/adobe/spacecat-audit-worker/commit/5b96bb547f7cbb2cab468aa254d6302acaae831d))
+
 # [1.120.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.119.0...v1.120.0) (2025-06-30)
 
 
