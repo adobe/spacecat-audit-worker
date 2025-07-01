@@ -384,6 +384,38 @@ describe('Preflight Audit', () => {
         },
       });
     });
+    it('returns the correct object for valid input for authentication disabled', async () => {
+      const enableAuthentication = false;
+      const context = {
+        site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
+        job: {
+          getMetadata: () => ({
+            payload: {
+              step: AUDIT_STEP_IDENTIFY,
+              enableAuthentication,
+              urls: [
+                'https://main--example--page.aem.page',
+                'https://another.com/page',
+              ],
+            },
+          }),
+        },
+      };
+      const result = await scrapePages(context);
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://main--example--page.aem.page' },
+          { url: 'https://another.com/page' },
+        ],
+        siteId: 'site-123',
+        type: 'preflight',
+        allowCache: false,
+        options: {
+          enableAuthentication,
+          screenshotTypes: [],
+        },
+      });
+    });
 
     it('includes promiseToken in options if context.promiseToken exists', async () => {
       const context = {
@@ -668,6 +700,7 @@ describe('Preflight Audit', () => {
         payload: {
           step: AUDIT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
+          enableAuthentication: false,
         },
       });
       configuration.isHandlerEnabledForSite.returns(false);
