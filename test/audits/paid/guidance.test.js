@@ -219,4 +219,29 @@ markup`);
     expect(wrongPageOppty.setAuditId).to.not.have.been.called;
     expect(wrongTypeOppty.setAuditId).to.not.have.been.called;
   });
+
+  it('should skip opportunity creation and log for low severity (low)', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const body = JSON.stringify({ issueSeverity: 'loW', markup: 'irrelevant' });
+    const guidance = [{ body }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/Skipping opportunity creation/);
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should create opportunity if severity is medium', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const body = JSON.stringify({ issueSeverity: 'Medium', markup: 'irrelevant' });
+    const guidance = [{ body }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
+    expect(result.status).to.equal(ok().status);
+  });
 });

@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { mapToPaidOpportunity, mapToPaidSuggestion } from './guidance-opportunity-mapper.js';
+import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -26,6 +26,14 @@ export default async function handler(message, context) {
     return notFound();
   }
   log.info(`Fetched Audit ${JSON.stringify(message)}`);
+
+  // Check for low severity and skip if so
+  const firstBody = guidance && guidance[0] && guidance[0].body;
+  if (isLowSeverityGuidanceBody(firstBody)) {
+    log.info(`Skipping opportunity creation for site: ${siteId} page: ${url} audit: ${auditId} due to low issue severity: ${firstBody}`);
+    return ok();
+  }
+
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities
     .filter((oppty) => oppty.getType() === 'generic-opportunity')

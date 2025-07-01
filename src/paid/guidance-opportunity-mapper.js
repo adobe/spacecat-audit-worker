@@ -35,6 +35,20 @@ function extractSuggestionMarkup(body) {
   return sanitizeMarkup(body);
 }
 
+// Returns true if body is a serialized object with issueSeverity all below 'medium'
+export function isLowSeverityGuidanceBody(body) {
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed && parsed.issueSeverity) {
+      const sev = parsed.issueSeverity.toLowerCase();
+      return sev === 'none' || sev === 'low';
+    }
+  } catch {
+    // Not a JSON string, fall through
+  }
+  return false;
+}
+
 export function mapToPaidOpportunity(siteId, url, audit, guidance) {
   const pageGuidance = guidance[0];
   const stats = audit.getAuditResult();
@@ -81,7 +95,7 @@ export function mapToPaidOpportunity(siteId, url, audit, guidance) {
 }
 
 export function mapToPaidSuggestion(opportunityId, url, guidance = []) {
-  const pageGuidance = guidance[0] || {};
+  const pageGuidance = guidance[0];
   return {
     opportunityId,
     type: 'CONTENT_UPDATE',

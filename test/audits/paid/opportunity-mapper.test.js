@@ -53,7 +53,7 @@ newlines`);
   });
 
   // Additional tests for mapToPaidOpportunity edge cases
-  describe('mapToPaidOpportunity edge cases', () => {
+  describe('Paid Opportunity Mapper edge cases', () => {
     const siteId = 'site';
     const url = 'https://example.com/page';
     const guidance = [{ insight: 'insight', rationale: 'rationale', recommendation: 'rec' }];
