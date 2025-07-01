@@ -10,13 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { readFileSync } from 'fs';
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
 
 const POSSIBLE_SUBTYPES = ['guidance:geo-brand-presence', 'guidance:geo-faq'];
 
-function getSuggestionValue(suggestions, subType, log) {
+export function getSuggestionValue(suggestions, subType, log) {
   if (subType === 'guidance:geo-faq') {
     let suggestionValue = '| URL | Question | Answer | Sources |\n|-----|----------|-------|--------|\n';
     suggestions.forEach((suggestion) => {
@@ -94,9 +93,3 @@ export default async function handler(message, context) {
 
   return ok();
 }
-
-const jsonData = JSON.parse(readFileSync('./src/geo-brand-presence/wilson.json', 'utf8'));
-const { suggestions } = jsonData;
-const result = getSuggestionValue(suggestions, 'guidance:geo-faq');
-console.log('=== FAQ Format Result ===');
-console.log(result);
