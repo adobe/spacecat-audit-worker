@@ -10,14 +10,14 @@
  * governing permissions and limitations under the License.
  */
 
-export function mapToPaidOpportunity(siteId, auditId, audit, guidance = []) {
-  // TODO: check first that there is guidance
-  // Add valid data
-  // confirm what should be sent exactly
+import { randomUUID } from 'crypto';
+
+export function mapToPaidOpportunity(siteId, url, audit, guidance = []) {
   const pageGuidance = guidance[0];
+  // const auditType = audit?.getAuditType();
   return {
     siteId,
-    auditId,
+    auditId: audit.getAuditId(),
     type: audit.getAuditType(),
     origin: 'AUTOMATION',
     title: 'Cookie Consent Banner',
@@ -28,15 +28,42 @@ export function mapToPaidOpportunity(siteId, auditId, audit, guidance = []) {
           insight: pageGuidance.insight,
           rationale: pageGuidance.rationale,
           recommendation: pageGuidance.recommendation,
-          // TODO: fix required to ensure body is saved to shareport and we have a link to it
-          runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
           type: 'guidance',
         },
       ],
+    },
+    data: {
+      // projectedTrafficLost: pageGuidance.projectedTrafficLost || 0,
+      // projectedTrafficValue: pageGuidance.projectedTrafficValue || 0,
+      dataSources: [
+        'Ahrefs',
+        'Site',
+        'RUM',
+      ],
+      page: url,
     },
     status: 'NEW',
     tags: [
       'Engagement',
     ],
+  };
+}
+
+export function mapToPaidSuggestion(opportunityId, url, guidance = []) {
+  const pageGuidance = guidance[0] || {};
+  return {
+    opportunityId,
+    type: 'CONTENT_UPDATE',
+    rank: 1,
+    status: 'NEW',
+    data: {
+      recommendations: [
+        {
+          id: randomUUID(),
+          pageUrl: url,
+        },
+      ],
+      suggestionValue: pageGuidance.body,
+    },
   };
 }

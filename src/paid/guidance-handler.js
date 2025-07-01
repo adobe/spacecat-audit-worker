@@ -10,11 +10,11 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { mapToPaidOpportunity } from './guidance-opportunity-mapper.js';
+import { mapToPaidOpportunity, mapToPaidSuggestion } from './guidance-opportunity-mapper.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Audit, Opportunity } = dataAccess;
+  const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { url, guidance } = data;
 
@@ -28,20 +28,29 @@ export default async function handler(message, context) {
   log.info(`Fetched Audit ${JSON.stringify(message)}`);
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities
-    .filter((oppty) => oppty.getType() === audit.auditType)
-    .find((oppty) => oppty.page === url);
-
+    .filter((oppty) => oppty.getType() === audit.getAuditType());
+    // .find((oppty) => oppty.page === url);
+  const entity = mapToPaidOpportunity(siteId, url, audit, guidance);
   if (!opportunity) {
     log.info(`No existing Opportunity found for ${siteId} page: ${url}. Creating a new one.`);
-    const entity = mapToPaidOpportunity(siteId, auditId, audit, guidance);
     opportunity = await Opportunity.create(entity);
   } else {
-    log.info(`Found existing paid Opportunity for page ${url}. Updating it with new data`);
-    opportunity.setAuditId(auditId);
-    // TODO: figure out how to update existing
+    log.info(`Found existing paid Opportunity for page ${url} with status ${opportunity.status}. Updating it with new data`);
+    opportunity = {
+      ...entity,
+      // If customer decides to ignore the opportunity we should keep it as ignored
+      status: opportunity.status,
+    };
   }
 
-  // await opportunity.save();
+  const existingSuggestions = await opportunity.getSuggestions();
+
+  // delete previous suggestions if any
+  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+
+  const suggestionData = mapToPaidSuggestion(opportunity.getId(), url, guidance);
+  await Suggestion.create(suggestionData);
+
   log.info(`paid guidance would have saved opportunity : ${JSON.stringify(opportunity, null, 2)}`);
 
   return ok();
