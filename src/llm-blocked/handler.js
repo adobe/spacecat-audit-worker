@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import robotsParser from 'robots-parser';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -29,6 +30,21 @@ export async function importTopPages(context) {
     fullAuditRef: `llm-blocked::${finalUrl}`,
     finalUrl,
   };
+}
+
+export async function getRobotsTxt(context) {
+  try {
+    const { finalUrl } = context;
+    const robotsTxt = await fetch(`${finalUrl}/robots.txt`);
+    const robotsTxtContent = await robotsTxt.text();
+
+    const robots = robotsParser(`${finalUrl}/robots.txt`, robotsTxtContent);
+
+    return robots;
+  } catch (error) {
+    context.log.error(`Error getting robots.txt: ${error}`);
+    return null;
+  }
 }
 
 export async function checkLLMBlocked(context) {
@@ -58,6 +74,11 @@ export async function checkLLMBlocked(context) {
 
   const agents = [...Object.keys(agentsWithRationale)];
 
+  const robots = await getRobotsTxt(context);
+  if (!robots) {
+    context.log.warn('No robots.txt found. Skipping robots.txt check.');
+  }
+
   // check the top 20 pages
   const failedUrlsPromises = topPages.slice(0, 20).map(async (page) => {
     // fetch the page with each user agent once
@@ -75,9 +96,19 @@ export async function checkLLMBlocked(context) {
     const blockedResults = userAgentResults
       .filter((result) => result.status !== baselineResult.status);
 
+    // if the page is pyhsically accessible, check if it is blocked by robots.txt
+    if (baselineResult.status === 200 && robots && robots.isAllowed(page.getUrl(), '')) {
+      agents.forEach((agent) => {
+        if (!robots.isAllowed(page.getUrl(), agent)) {
+          blockedResults.push({ agent, status: 'Blocked by robots.txt' });
+        }
+      });
+    }
+
     if (blockedResults.length > 0) {
       return { url: page.getUrl(), blockedAgents: blockedResults };
     }
+
     return null;
   });
 

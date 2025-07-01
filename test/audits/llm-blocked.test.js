@@ -35,6 +35,13 @@ describe('LLM Blocked Audit', () => {
     sandbox = sinon.createSandbox();
   });
 
+  function handleRobotsFetch() {
+    return Promise.resolve({
+      status: 200,
+      text: () => Promise.resolve('User-Agent: *\nAllow: /'),
+    });
+  }
+
   beforeEach('setup', () => {
     clock = sinon.useFakeTimers();
     mockTopPages = [
@@ -44,8 +51,11 @@ describe('LLM Blocked Audit', () => {
 
     // Only stub fetch if it's not already stubbed
     if (!global.fetch.restore) {
-      fetchStub = sandbox.stub(global, 'fetch').resolves({
-        status: 200,
+      fetchStub = sandbox.stub(global, 'fetch').callsFake((url) => {
+        if (url.includes('robots.txt')) {
+          return handleRobotsFetch();
+        }
+        return Promise.resolve({ status: 200 });
       });
     } else {
       fetchStub = global.fetch;
@@ -64,6 +74,7 @@ describe('LLM Blocked Audit', () => {
         log: {
           info: sandbox.stub(),
           error: sandbox.stub(),
+          warn: sandbox.stub(),
         },
       })
       .withSandbox(sandbox).build();
@@ -81,7 +92,7 @@ describe('LLM Blocked Audit', () => {
     const result = await checkLLMBlocked(context);
 
     expect(result.auditResult).to.equal('[]');
-    expect(fetchStub.callCount).to.equal(14); // 2 pages × (6 user agents + 1 baseline)
+    expect(fetchStub.callCount).to.equal(15); // 2 pages × (6 user agents + 1 baseline) + 1 robots
 
     // Verify each page was checked with each user agent
     const userAgents = [
@@ -111,6 +122,9 @@ describe('LLM Blocked Audit', () => {
 
     // Set up fetchStub to return 403 for ClaudeBot/1.0 on page1, 200 otherwise
     fetchStub.callsFake((url, opts) => {
+      if (url.includes('robots.txt')) {
+        return handleRobotsFetch();
+      }
       if (url === blockedUrl && opts && opts.headers && opts.headers['User-Agent'] === 'ClaudeBot/1.0') {
         return Promise.resolve({ status: 403 });
       }
@@ -144,9 +158,124 @@ describe('LLM Blocked Audit', () => {
       url: blockedUrl,
       blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
     }]));
-    expect(fetchStub.callCount).to.equal(14); // 2 pages × (6 user agents + 1 baseline)
+    expect(fetchStub.callCount).to.equal(15); // 2 pages × (6 user agents + 1 baseline) + 1 robots
     expect(fetchStub.calledWith(blockedUrl, { headers: { 'User-Agent': 'ClaudeBot/1.0' } })).to.be.true;
     expect(fetchStub.calledWith(blockedUrl)).to.be.true;
+  });
+
+  it('should return blocked URLs when a page is blocked by robots.txt', async () => {
+    // Arrange: page1 returns 200 for all user agents but is blocked by robots.txt
+    const blockedUrl = 'https://example.com/page1';
+
+    // Set up fetchStub to return 200 for all user agents but blocked by robots.txt
+    fetchStub.callsFake((url) => {
+      if (url.includes('robots.txt')) {
+        return {
+          status: 200,
+          text: () => Promise.resolve('User-Agent: ClaudeBot/1.0\nDisallow: /page1'),
+        };
+      }
+      return Promise.resolve({ status: 200 });
+    });
+
+    const expectedSuggestionsData = [
+      {
+        affectedUrls: [
+          {
+            status: 'Blocked by robots.txt',
+            url: 'https://example.com/page1',
+          },
+        ],
+        agent: 'ClaudeBot/1.0',
+        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
+      },
+    ];
+
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+    context.dataAccess.Opportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.addSuggestions.resolves(expectedSuggestionsData);
+
+    // Act
+    const result = await checkLLMBlocked(context);
+
+    // Assert
+    expect(result.auditResult).to.equal(JSON.stringify([{
+      url: blockedUrl,
+      blockedAgents: [{ agent: 'ClaudeBot/1.0', status: 'Blocked by robots.txt' }],
+    }]));
+    expect(fetchStub.callCount).to.equal(15); // 2 pages × (6 user agents + 1 baseline) + 1 robots
+    expect(fetchStub.calledWith(blockedUrl, { headers: { 'User-Agent': 'ClaudeBot/1.0' } })).to.be.true;
+    expect(fetchStub.calledWith(blockedUrl)).to.be.true;
+  });
+
+  it('should return the expected data structure if multiple issues are detected', async () => {
+    // Set up fetchStub
+    fetchStub.callsFake((url, opts) => {
+      if (url.includes('robots.txt')) {
+        return {
+          status: 200,
+          text: () => Promise.resolve('User-Agent: Perplexity-User/1.0\nDisallow: /'),
+        };
+      }
+      if (url === 'https://example.com/page1' && opts && opts.headers && opts.headers['User-Agent'] === 'ClaudeBot/1.0') {
+        return Promise.resolve({ status: 403 });
+      }
+      if (url === 'https://example.com/page2' && opts && opts.headers && opts.headers['User-Agent'] === 'Perplexity-User/1.0') {
+        return Promise.resolve({ status: 403 });
+      }
+      return Promise.resolve({ status: 200 });
+    });
+
+    const expectedSuggestionsData = [
+      {
+        affectedUrls: [
+          {
+            status: 'Blocked by robots.txt',
+            url: 'https://example.com/page1',
+          },
+        ],
+        agent: 'ClaudeBot/1.0',
+        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
+      },
+    ];
+
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+    context.dataAccess.Opportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.addSuggestions.resolves(expectedSuggestionsData);
+
+    // Act
+    const result = await checkLLMBlocked(context);
+
+    // Assert
+    expect(result.auditResult).to.equal(JSON.stringify([{
+      url: 'https://example.com/page1',
+      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }, { agent: 'Perplexity-User/1.0', status: 'Blocked by robots.txt' }],
+    }, {
+      url: 'https://example.com/page2',
+      blockedAgents: [{ status: 403, agent: 'Perplexity-User/1.0' }, { agent: 'Perplexity-User/1.0', status: 'Blocked by robots.txt' }],
+    }]));
+  });
+
+  it('should warn if robots fetching fails', async () => {
+    fetchStub.callsFake((url) => {
+      if (url.includes('robots.txt')) {
+        return {
+          status: 500,
+        };
+      }
+      return Promise.resolve({ status: 200 });
+    });
+
+    const result = await checkLLMBlocked(context);
+
+    expect(result.auditResult).to.equal('[]');
+    expect(fetchStub.callCount).to.equal(15); // 2 pages × (6 user agents + 1 baseline) + 1 robots
+
+    expect(context.log.warn).to.have.been.calledWith('No robots.txt found. Skipping robots.txt check.');
   });
 
   it('should throw an error when no top pages are returned', async () => {
