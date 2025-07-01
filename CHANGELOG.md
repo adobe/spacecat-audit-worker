@@ -1,3 +1,10 @@
+## [1.120.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.0...v1.120.1) (2025-07-01)
+
+
+### Bug Fixes
+
+* modifying log line for deployment ([#1021](https://github.com/adobe/spacecat-audit-worker/issues/1021)) ([5b96bb5](https://github.com/adobe/spacecat-audit-worker/commit/5b96bb547f7cbb2cab468aa254d6302acaae831d))
+
 # [1.120.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.119.0...v1.120.0) (2025-06-30)
 
 
