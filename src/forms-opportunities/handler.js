@@ -110,7 +110,8 @@ export async function sendA11yUrlsForScrapingStep(context) {
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
-  const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
+  const { formVitals } = latestAudit.getAuditResult();
+  const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context);
   const result = {
     auditResult: latestAudit.auditResult,
     fullAuditRef: latestAudit.fullAuditRef,

@@ -17,16 +17,10 @@ import { getScrapedDataForSiteId } from '../support/utils.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
-export const generateSuggestionData = async (finalUrl, audit, context, site) => {
+export const generateSuggestionData = async (finalUrl, brokenInternalLinks, context, site) => {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const { FIREFALL_MODEL } = context.env;
-  const { brokenInternalLinks } = audit.getAuditResult();
-
-  if (audit.getAuditResult().success === false) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
-    return brokenInternalLinks;
-  }
 
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {

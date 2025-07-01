@@ -24,7 +24,6 @@ import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 
 const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
-const CONVERSION_BOOST = 0.2;
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -346,15 +345,31 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
 /**
  * Get the urls and form sources for accessibility audit
  * @param scrapedData
+ * @param formVitals
  * @param context
  * @returns {Array} array of objects with url and formsources
  */
-export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
+export function getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context) {
   const { log } = context;
   const urlsData = [];
   const addedFormSources = new Set();
   if (isNonEmptyArray(scrapedData.formData)) {
-    for (const form of scrapedData.formData) {
+    const formUrlPageViewsMap = new Map();
+    for (const fv of formVitals) {
+      const totalPageViews = Object.values(fv.pageview).reduce((acc, curr) => acc + curr, 0);
+      const existingPageViews = formUrlPageViewsMap.get(fv.url) || 0;
+      if (totalPageViews >= existingPageViews) {
+        formUrlPageViewsMap.set(fv.url, totalPageViews);
+      }
+    }
+    const formScrapedData = [...scrapedData.formData];
+    formScrapedData.sort((a, b) => {
+      const aPageViews = formUrlPageViewsMap.get(a.finalUrl);
+      const bPageViews = formUrlPageViewsMap.get(b.finalUrl);
+      return bPageViews - aPageViews;
+    });
+    // sort the form in scraped data based on the page views in the form vitals
+    for (const form of formScrapedData) {
       const formSources = [];
       const scrapeResultArray = Array.isArray(form.scrapeResult) ? form.scrapeResult : [];
       const validForms = scrapeResultArray.filter((sr) => !shouldExcludeForm(sr));
@@ -386,7 +401,12 @@ export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
             return;
           }
           if (sr.id) {
-            formSources.push(`form#${sr.id}`);
+            if (!addedFormSources.has(`form#${sr.id}`)) {
+              formSources.push(`form#${sr.id}`);
+              addedFormSources.add(`form#${sr.id}`);
+            } else {
+              isFormSourceAlreadyAdded = true;
+            }
           } else if (sr.classList) {
             formSources.push(`form.${sr.classList.split(' ').join('.')}`);
           }
@@ -433,16 +453,8 @@ export function getSuccessCriteriaDetails(criteria) {
 }
 
 // eslint-disable-next-line no-shadow
-function getCostSaved(originalTraffic, conversionRate, cpc, conversionBoost) {
-  if (conversionRate === 0) {
-    return 0;
-  }
-  const originalConversions = originalTraffic * conversionRate;
-  const newConversionRate = conversionRate * (1 + conversionBoost);
-  const newTrafficNeeded = originalConversions / newConversionRate;
-  const trafficDelta = originalTraffic - newTrafficNeeded;
-  const costSaved = trafficDelta * cpc;
-
+function getCostSaved(originalTraffic, cpc) {
+  const costSaved = 0.2 * originalTraffic * cpc;
   return parseFloat(costSaved.toFixed(2));
 }
 
@@ -461,17 +473,11 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
     log.info(`Calculated CPC value: ${cpcValue} for site: ${siteId}`);
 
     const originalTraffic = opportunityData.pageViews;
-    const conversionRate = opportunityData?.metrics?.find(
-      (m) => m?.type === 'conversionRate' && m?.device === '*',
-    )?.value?.page ?? 0;
-
     // traffic is calculated for 15 days - extrapolating for a year
     const trafficPerYear = Math.floor((originalTraffic / FORMS_AUDIT_INTERVAL)) * 365;
     const projectedConversionValue = getCostSaved(
       trafficPerYear,
-      conversionRate,
       cpcValue,
-      CONVERSION_BOOST,
     );
 
     return {

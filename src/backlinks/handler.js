@@ -115,10 +115,6 @@ export async function submitForScraping(context) {
   const { site, dataAccess } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  if (topPages.length === 0) {
-    throw new Error('No top pages found for site');
-  }
-
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
@@ -130,7 +126,7 @@ export const generateSuggestionData = async (context) => {
   const {
     site, audit, finalUrl, dataAccess, log,
   } = context;
-  const { Configuration } = dataAccess;
+  const { Configuration, SiteTopPage } = dataAccess;
   const { FIREFALL_MODEL } = context.env;
 
   if (audit.getAuditResult().success === false) {
@@ -142,6 +138,12 @@ export const generateSuggestionData = async (context) => {
   if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
     log.info('Auto-suggest is disabled for site');
     throw new Error('Auto-suggest is disabled for site');
+  }
+
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (topPages.length === 0) {
+    log.error('No top pages found for site, will not be able to generate suggestions');
+    throw new Error('No top pages found for site, will not be able to generate suggestions');
   }
 
   log.info(`Generating suggestions for site ${finalUrl}`);
