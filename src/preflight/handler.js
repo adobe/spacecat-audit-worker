@@ -139,7 +139,6 @@ export const preflightAudit = async (context) => {
   try {
     let pageAuthToken = null;
     if (enableAuthentication) {
-      console.log('Ankit nableAuthentication', enableAuthentication);
       const options = {
         ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
       };
