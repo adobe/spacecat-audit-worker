@@ -21,7 +21,7 @@ function getGuidanceObj(guidance) {
     }
   } catch {
     body = {
-      markup: body,
+      markdown: body,
     };
   }
   return {
@@ -31,7 +31,7 @@ function getGuidanceObj(guidance) {
 }
 
 export default async function handler(message, context) {
-  const { log, dataAccess } = context;
+  const { log, dataAccess, env } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { url, guidance } = data;
@@ -55,7 +55,7 @@ export default async function handler(message, context) {
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities
     .filter((oppty) => oppty.getType() === 'generic-opportunity')
-    .find((oppty) => oppty.getData().page === url && oppty.getData().opportunityType === 'paid-cookie-consent');
+    .find((oppty) => oppty.getData()?.page === url && oppty.getData().opportunityType === 'paid-cookie-consent');
   const entity = mapToPaidOpportunity(siteId, url, audit, guidanceParsed);
   if (!opportunity) {
     log.info(`No existing Opportunity found for ${siteId} page: ${url}. Creating a new one.`);
@@ -74,7 +74,7 @@ export default async function handler(message, context) {
   // delete previous suggestions if any
   await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
 
-  const suggestionData = mapToPaidSuggestion(opportunity.getId(), url, guidanceParsed);
+  const suggestionData = mapToPaidSuggestion(env, siteId, opportunity.getId(), url, guidanceParsed);
   await Suggestion.create(suggestionData);
 
   log.info(`paid-cookie-consent  opportunity succesfully added for site: ${siteId} page: ${url} audit: ${auditId}  opportunity: ${JSON.stringify(opportunity, null, 2)}`);

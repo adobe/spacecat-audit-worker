@@ -13,11 +13,30 @@
 import { randomUUID } from 'crypto';
 import { DATA_SOURCES } from '../common/constants.js';
 
-function sanitizeMarkup(markup) {
-  if (typeof markup === 'string' && markup.includes('\\n')) {
-    return markup.replace(/\\n/g, '\n');
+function sanitizeMarkdown(markdown) {
+  if (typeof markdown === 'string' && markdown.includes('\\n')) {
+    return markdown.replace(/\\n/g, '\n');
   }
-  return markup;
+  return markdown;
+}
+
+function appendScreenshots(env, siteId, markdown, url) {
+  const apiBase = env.SPACECAT_API_URI || 'https://spacecat.experiencecloud.live/api/v1';
+  const urlPath = new URL(url).pathname;
+  const suffix = urlPath === '/' ? '' : urlPath;
+
+  const desktopScreenshot = `${apiBase}/sites/${siteId}/files?key=scrapes/${siteId}${suffix}/consent-banner-on/screenshot-desktop-viewport.png`;
+  const mobileScreenshot = `${apiBase}/sites/${siteId}/files?key=scrapes/${siteId}${suffix}/consent-banner-on/screenshot-iphone-6-viewport.png`;
+
+  const appendedSection = `
+### Screenshots
+
+| Mobile | Desktop |
+|--------|---------|
+| ![Mobile Screenshot](${mobileScreenshot}) | ![Desktop Screenshot](${desktopScreenshot}) |
+`;
+
+  return `${sanitizeMarkdown(markdown)}\n\n${appendedSection.trim()}\n`;
 }
 
 export function isLowSeverityGuidanceBody(body) {
@@ -73,7 +92,7 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
   };
 }
 
-export function mapToPaidSuggestion(opportunityId, url, pageGuidance = []) {
+export function mapToPaidSuggestion(env, siteId, opportunityId, url, pageGuidance = []) {
   return {
     opportunityId,
     type: 'CONTENT_UPDATE',
@@ -86,7 +105,7 @@ export function mapToPaidSuggestion(opportunityId, url, pageGuidance = []) {
           pageUrl: url,
         },
       ],
-      suggestionValue: sanitizeMarkup(pageGuidance.body.markup),
+      suggestionValue: appendScreenshots(env, siteId, pageGuidance.body.markdown, url),
     },
   };
 }

@@ -16,33 +16,36 @@ import { expect } from 'chai';
 import { describe } from 'mocha';
 import { mapToPaidSuggestion, mapToPaidOpportunity } from '../../../src/paid/guidance-opportunity-mapper.js';
 
+const TEST_SITE_ID = 'some-id';
+const TEST_SITE = 'https://sample-page';
+
 describe('Paid opportunity mapper', () => {
-  it('handles plain markup string', () => {
-    const body = 'Simple markup';
-    const result = mapToPaidSuggestion('oppId', 'url', { body: { markup: body } });
-    expect(result.data.suggestionValue).to.equal('Simple markup');
+  it('handles plain markdown string', () => {
+    const body = 'Simple markdown';
+    const result = mapToPaidSuggestion({}, 'oppId', TEST_SITE_ID, TEST_SITE, { body: { markdown: body } });
+    expect(result.data.suggestionValue).to.include('Simple markdown');
   });
 
-  it('handles plain markup string with double-escaped newlines', () => {
+  it('handles plain markdown string with double-escaped newlines', () => {
     const body = 'Line1\\nLine2\\nLine3';
-    const result = mapToPaidSuggestion('oppId', 'url', { body: { markup: body } });
-    expect(result.data.suggestionValue).to.equal(`Line1
+    const result = mapToPaidSuggestion({}, 'oppId', TEST_SITE_ID, TEST_SITE, { body: { markdown: body } });
+    expect(result.data.suggestionValue).to.include(`Line1
 Line2
 Line3`);
   });
 
-  it('handles serialized JSON body with markup', () => {
-    const markup = 'Markup with\nnewlines';
-    const guidance = { body: { markup } };
-    const result = mapToPaidSuggestion('oppId', 'url', guidance);
-    expect(result.data.suggestionValue).to.equal('Markup with\nnewlines');
+  it('handles serialized JSON body with markdown', () => {
+    const markdown = 'Markup with\nnewlines';
+    const guidance = { body: { markdown } };
+    const result = mapToPaidSuggestion({}, 'oppId', TEST_SITE_ID, TEST_SITE, guidance);
+    expect(result.data.suggestionValue).to.include('Markup with\nnewlines');
   });
 
-  it('handles serialized JSON body with double-escaped newlines in markup', () => {
-    const markup = 'Markup with\\nnewlines';
-    const guidance = { body: { markup } };
-    const result = mapToPaidSuggestion('oppId', 'url', guidance);
-    expect(result.data.suggestionValue).to.equal(`Markup with
+  it('handles serialized JSON body with double-escaped newlines in markdown', () => {
+    const markdown = 'Markup with\\nnewlines';
+    const guidance = { body: { markdown } };
+    const result = mapToPaidSuggestion({}, 'oppId', TEST_SITE_ID, TEST_SITE, guidance);
+    expect(result.data.suggestionValue).to.include(`Markup with
 newlines`);
   });
 
