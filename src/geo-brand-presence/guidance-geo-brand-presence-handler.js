@@ -48,13 +48,12 @@ export default async function handler(message, context) {
     return notFound();
   }
 
-  const entity = convertToOpportunityEntity(siteId, auditId);
-
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities.find(
     (oppty) => POSSIBLE_SUBTYPES.includes(oppty.getData()?.subType),
   );
   const subType = opportunity.getData()?.subType;
+  const entity = convertToOpportunityEntity(siteId, auditId, subType);
 
   if (!opportunity) {
     log.info(`No existing Opportunity found for ${subType}. Creating a new one.`);

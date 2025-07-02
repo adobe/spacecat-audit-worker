@@ -14,21 +14,35 @@ import { DATA_SOURCES } from '../common/constants.js';
 
 const RUNBOOK_URL = 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/Doc.aspx?sourcedoc=%7B19613D9B-93D4-4112-B7C8-DBE0D9DCC55B%7D&file=Experience_Success_Studio_High_Organic_Traffic_Low_CTR_Runbook.docx&action=default&mobileredirect=true';
 
-export function convertToOpportunityEntity(siteId, auditId) {
+export function convertToOpportunityEntity(siteId, auditId, subType) {
+  const opportunityConfigs = {
+    'guidance:geo-brand-presence': {
+      title: 'GEO Brand Improvement Opportunity detected',
+      description: 'The page is not optimized for the GEO Brand presence.',
+      dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.AHREFS],
+    },
+    'guidance:geo-faq': {
+      title: 'LLM Prompt Improvement: Add FAQs to Pages',
+      description: 'The page is not optimized for the GEO FAQ presence.',
+      dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.PAGE, DATA_SOURCES.AHREFS],
+    },
+  };
+
+  const config = opportunityConfigs[subType] || opportunityConfigs['guidance:geo-brand-presence'];
+
   return {
     siteId,
     auditId,
     runbook: RUNBOOK_URL,
     type: 'generic-opportunity',
     origin: 'AUTOMATION',
-    title: 'GEO Brand Improvement Opportunity detected',
-    description:
-      'The page is not optimized for the GEO Brand presence.',
+    title: config.title,
+    description: config.description,
     status: 'NEW',
     tags: ['Awareness', 'Engagement', 'isElmo'],
     data: {
-      subType: 'guidance:geo-brand-presence',
-      dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.AHREFS],
+      subType,
+      dataSources: config.dataSources,
     },
   };
 }
