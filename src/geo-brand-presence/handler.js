@@ -17,7 +17,9 @@ import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE = 'organic-keywords-questions';
-const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
+const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'guidance:geo-brand-presence';
+const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
+const OPPTY_TYPES = [GEO_BRAND_PRESENCE_OPPTY_TYPE, GEO_FAQ_OPPTY_TYPE];
 
 export async function sendToMystique(context) {
   const {
@@ -37,7 +39,7 @@ export async function sendToMystique(context) {
     (keywordQuestion) => keywordQuestion?.questions?.length > 0,
   )?.map((keywordQuestion) => ({
     keyword: keywordQuestion.keyword,
-    q: keywordQuestion.questions,
+    questions: keywordQuestion.questions,
     pageUrl: keywordQuestion.url,
     importTime: keywordQuestion.importTime,
     volume: keywordQuestion.volume,
@@ -70,19 +72,21 @@ export async function sendToMystique(context) {
     log.info('GEO BRAND PRESENCE: No keyword questions found, skipping message to mystique');
     return;
   }
-  const message = {
-    type: GEO_BRAND_PRESENCE_OPPTY_TYPE,
-    siteId: site.getId(),
-    url: site.getBaseURL(),
-    auditId: audit.getId(),
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      keywordQuestions: uniqueKeywordQuestions,
-    },
-  };
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-  log.info(`GEO BRAND PRESENCE Message sent to Mystique: ${JSON.stringify(message)}`);
+  await Promise.all(OPPTY_TYPES.map(async (opptyType) => {
+    const message = {
+      type: opptyType,
+      siteId: site.getId(),
+      url: site.getBaseURL(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        keywordQuestions: uniqueKeywordQuestions,
+      },
+    };
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(`${opptyType} Message sent to Mystique: ${JSON.stringify(message)}`);
+  }));
 }
 
 export async function keywordQuestionsImportStep(context) {

@@ -13,15 +13,26 @@
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
 
-function getSuggestionValue(suggestions) {
-  // TODO: convert the suggestions to markdown table, read
-  // the url, type, keywords, copy from suggestion and add it to the table
-  // return the markdown table
-  let suggestionValue = '| Url | Questions | Screenshot |\n |-----|-----------|------------|\n';
-  suggestions.forEach((suggestion) => {
-    suggestionValue += `| ${suggestion.url} | ${suggestion.q.join('\n')} | [![${suggestion.name}](${suggestion.previewImage})](${suggestion.screenshotUrl})|\n`;
-  });
-  return suggestionValue;
+const POSSIBLE_SUBTYPES = ['guidance:geo-brand-presence', 'guidance:geo-faq'];
+
+function getSuggestionValue(suggestions, subType, log) {
+  if (subType === 'guidance:geo-faq') {
+    let suggestionValue = '| URL | Question | Answer | Sources |\n|-----|----------|-------|--------|\n';
+    suggestions.forEach((suggestion) => {
+      const sources = suggestion.sources ? suggestion.sources.map((source, sourceIndex) => `[${sourceIndex + 1}] ${source}`).join('<br>') : '';
+      suggestionValue += `| ${suggestion.page_url} | ${suggestion.question} | ${suggestion.answer} | ${sources} |\n`;
+    });
+    return suggestionValue;
+  } else if (subType === 'guidance:geo-brand-presence') {
+    let suggestionValue = '| Url | Questions | Screenshot |\n |-----|-----------|------------|\n';
+    suggestions.forEach((suggestion) => {
+      suggestionValue += `| ${suggestion.url} | ${suggestion.q.join('\n')} | [![${suggestion.name}](${suggestion.previewImage})](${suggestion.screenshotUrl})|\n`;
+    });
+    return suggestionValue;
+  } else {
+    log.error(`Unsupported subType: ${subType}`);
+    return notFound();
+  }
 }
 
 export default async function handler(message, context) {
@@ -29,7 +40,7 @@ export default async function handler(message, context) {
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { suggestions } = data;
-  log.info(`Message received in guidance:geo-brand-presence handler: ${JSON.stringify(message, null, 2)}`);
+  log.info('Message received in guidance handler:', message);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
@@ -37,18 +48,18 @@ export default async function handler(message, context) {
     return notFound();
   }
 
-  const entity = convertToOpportunityEntity(siteId, auditId);
-
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities.find(
-    (oppty) => oppty.getData()?.subType === 'guidance:geo-brand-presence',
+    (oppty) => POSSIBLE_SUBTYPES.includes(oppty.getData()?.subType),
   );
+  const subType = opportunity.getData()?.subType;
+  const entity = convertToOpportunityEntity(siteId, auditId, subType);
 
   if (!opportunity) {
-    log.info('No existing Opportunity found for GEO Brand presence. Creating a new one.');
+    log.info(`No existing Opportunity found for ${subType}. Creating a new one.`);
     opportunity = await Opportunity.create(entity);
   } else {
-    log.info('Existing Opportunity found for GEO Brand presence. Updating it with new data.');
+    log.info(`Existing Opportunity found for ${subType}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     opportunity.setData({
       ...opportunity.getData(),
@@ -70,7 +81,7 @@ export default async function handler(message, context) {
     rank: 1,
     status: 'NEW',
     data: {
-      suggestionValue: getSuggestionValue(suggestions),
+      suggestionValue: getSuggestionValue(suggestions, subType, log),
     },
     kpiDeltas: {
       estimatedKPILift: 0,
