@@ -9,13 +9,12 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
-/* c8 ignore start */
 import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getS3Config, ensureTableExists } from './utils/report-utils.js';
+import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
 import { runWeeklyReport, runCustomDateRangeReport } from './utils/report-runner.js';
 import { AWSAthenaClient } from '../utils/athena-client.js';
+import { wwwUrlResolver } from '../common/base-audit.js';
 
 async function runCdnLogsReport(url, context, site) {
   const { log, message = {} } = context;
@@ -33,6 +32,12 @@ async function runCdnLogsReport(url, context, site) {
   }, { url: SHAREPOINT_URL, type: 'onedrive' });
 
   const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+
+  // create db if not exists
+  const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
+  const sqlDbDescription = `[Athena Query] Create database ${s3Config.databaseName}`;
+  await athenaClient.execute(sqlDb, s3Config.databaseName, sqlDbDescription);
+
   await ensureTableExists(athenaClient, s3Config, log);
 
   const auditResultBase = {
@@ -89,5 +94,5 @@ async function runCdnLogsReport(url, context, site) {
 
 export default new AuditBuilder()
   .withRunner(runCdnLogsReport)
+  .withUrlResolver(wwwUrlResolver)
   .build();
-/* c8 ignore end */

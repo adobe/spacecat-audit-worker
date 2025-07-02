@@ -9,16 +9,15 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* c8 ignore start */
 import { sleep } from '../../support/utils.js';
 
-async function publishToAdminHlx(filename, customerName, log) {
+async function publishToAdminHlx(filename, outputLocation, log) {
   try {
     const org = 'adobe';
     const site = 'project-elmo-ui-data';
     const ref = 'main';
     const jsonFilename = `${filename.replace(/\.[^/.]+$/, '')}.json`;
-    const path = `${customerName}/${jsonFilename}`;
+    const path = `${outputLocation}/${jsonFilename}`;
     const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}` };
 
     const baseUrl = 'https://admin.hlx.page';
@@ -50,9 +49,9 @@ async function publishToAdminHlx(filename, customerName, log) {
   }
 }
 
-async function uploadToSharePoint(buffer, filename, customerName, sharepointClient, log) {
+async function uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log) {
   try {
-    const documentPath = `/sites/elmo-ui-data/${customerName}/${filename}`;
+    const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
     const sharepointDoc = sharepointClient.getDocument(documentPath);
     await sharepointDoc.uploadRawDocument(buffer);
     log.info(`Excel report successfully uploaded to SharePoint: ${documentPath}`);
@@ -64,7 +63,7 @@ async function uploadToSharePoint(buffer, filename, customerName, sharepointClie
 
 export async function saveExcelReport({
   workbook,
-  customerName,
+  outputLocation,
   log,
   sharepointClient,
   filename,
@@ -72,13 +71,11 @@ export async function saveExcelReport({
   try {
     const buffer = await workbook.xlsx.writeBuffer();
     if (sharepointClient) {
-      await uploadToSharePoint(buffer, filename, customerName, sharepointClient, log);
-      await publishToAdminHlx(filename, customerName, log);
+      await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
+      await publishToAdminHlx(filename, outputLocation, log);
     }
   } catch (error) {
     log.error(`Failed to save Excel report: ${error.message}`);
     throw error;
   }
 }
-
-/* c8 ignore end */

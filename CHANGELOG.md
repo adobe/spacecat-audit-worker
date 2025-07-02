@@ -1,3 +1,45 @@
+## [1.120.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.3...v1.120.4) (2025-07-02)
+
+
+### Bug Fixes
+
+* support regex filter patterns ([#1028](https://github.com/adobe/spacecat-audit-worker/issues/1028)) ([77ea3ad](https://github.com/adobe/spacecat-audit-worker/commit/77ea3ade596cf54a8b1f6c676464d85648ab39ed))
+
+## [1.120.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.2...v1.120.3) (2025-07-02)
+
+
+### Bug Fixes
+
+* **deps:** update @adobe/structured-data-validator to v1.2.1 ([#1030](https://github.com/adobe/spacecat-audit-worker/issues/1030)) ([43a36ec](https://github.com/adobe/spacecat-audit-worker/commit/43a36ec3523f39bcea3ef297b08ab1304700a9eb))
+
+## [1.120.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.1...v1.120.2) (2025-07-01)
+
+
+### Bug Fixes
+
+* add unit tests for CDN logs report audit ([#1023](https://github.com/adobe/spacecat-audit-worker/issues/1023)) ([43938e6](https://github.com/adobe/spacecat-audit-worker/commit/43938e68a4024790a6cd61d4b2dcf90cdae0c8b9))
+
+## [1.120.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.0...v1.120.1) (2025-07-01)
+
+
+### Bug Fixes
+
+* modifying log line for deployment ([#1021](https://github.com/adobe/spacecat-audit-worker/issues/1021)) ([5b96bb5](https://github.com/adobe/spacecat-audit-worker/commit/5b96bb547f7cbb2cab468aa254d6302acaae831d))
+
+# [1.120.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.119.0...v1.120.0) (2025-06-30)
+
+
+### Features
+
+* use cdn config to get bucket details ([#1009](https://github.com/adobe/spacecat-audit-worker/issues/1009)) ([63c94f9](https://github.com/adobe/spacecat-audit-worker/commit/63c94f940c58fefea97bb5d374cb13db14ba8484))
+
+# [1.119.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.118.0...v1.119.0) (2025-06-30)
+
+
+### Features
+
+* enhance processing all levels of sitemap indexes ([#1016](https://github.com/adobe/spacecat-audit-worker/issues/1016)) ([b82bec7](https://github.com/adobe/spacecat-audit-worker/commit/b82bec7b7020a190ce750496a91de1ff7b5fcadb))
+
 # [1.118.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.117.2...v1.118.0) (2025-06-30)
 
 
