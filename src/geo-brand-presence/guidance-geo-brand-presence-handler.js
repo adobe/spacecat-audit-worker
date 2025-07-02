@@ -40,7 +40,7 @@ export default async function handler(message, context) {
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { suggestions } = data;
-  log.info(`Message received in guidance handler: ${JSON.stringify(message, null, 2)}`);
+  log.info('Message received in guidance handler:', message);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
