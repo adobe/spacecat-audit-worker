@@ -1,3 +1,10 @@
+## [1.120.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.4...v1.120.5) (2025-07-02)
+
+
+### Bug Fixes
+
+* trim whitespace in the sitemap indexes and sitemap urls ([#1022](https://github.com/adobe/spacecat-audit-worker/issues/1022)) ([46b1f00](https://github.com/adobe/spacecat-audit-worker/commit/46b1f00f33151d80250dc2294ea718d2b323e10c))
+
 ## [1.120.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.3...v1.120.4) (2025-07-02)
 
 
