@@ -20,37 +20,16 @@ function sanitizeMarkup(markup) {
   return markup;
 }
 
-function extractSuggestionMarkup(body) {
-  if (typeof body !== 'string') return body;
-
-  try {
-    const parsed = JSON.parse(body);
-    if (parsed && typeof parsed === 'object' && parsed.markup) {
-      return sanitizeMarkup(parsed.markup);
-    }
-  } catch {
-    // Not a JSON string, fall through
-  }
-
-  return sanitizeMarkup(body);
-}
-
-// Returns true if body is a serialized object with issueSeverity all below 'medium'
 export function isLowSeverityGuidanceBody(body) {
-  try {
-    const parsed = JSON.parse(body);
-    if (parsed && parsed.issueSeverity) {
-      const sev = parsed.issueSeverity.toLowerCase();
-      return sev === 'none' || sev === 'low';
-    }
-  } catch {
-    // Not a JSON string, fall through
+  if (body.issueSeverity) {
+    const sev = body.issueSeverity.toLowerCase();
+    return sev === 'none' || sev === 'low';
   }
+
   return false;
 }
 
-export function mapToPaidOpportunity(siteId, url, audit, guidance) {
-  const pageGuidance = guidance[0];
+export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
   const stats = audit.getAuditResult();
   const urlSegment = stats.find((item) => item.key === 'url');
   const pageStats = urlSegment?.value.find((item) => item.url === url) || {};
@@ -94,8 +73,7 @@ export function mapToPaidOpportunity(siteId, url, audit, guidance) {
   };
 }
 
-export function mapToPaidSuggestion(opportunityId, url, guidance = []) {
-  const pageGuidance = guidance[0];
+export function mapToPaidSuggestion(opportunityId, url, pageGuidance = []) {
   return {
     opportunityId,
     type: 'CONTENT_UPDATE',
@@ -108,7 +86,7 @@ export function mapToPaidSuggestion(opportunityId, url, guidance = []) {
           pageUrl: url,
         },
       ],
-      suggestionValue: extractSuggestionMarkup(pageGuidance.body),
+      suggestionValue: sanitizeMarkup(pageGuidance.body.markup),
     },
   };
 }

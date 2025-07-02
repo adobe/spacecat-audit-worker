@@ -19,13 +19,13 @@ import { mapToPaidSuggestion, mapToPaidOpportunity } from '../../../src/paid/gui
 describe('Paid opportunity mapper', () => {
   it('handles plain markup string', () => {
     const body = 'Simple markup';
-    const result = mapToPaidSuggestion('oppId', 'url', [{ body }]);
+    const result = mapToPaidSuggestion('oppId', 'url', { body: { markup: body } });
     expect(result.data.suggestionValue).to.equal('Simple markup');
   });
 
   it('handles plain markup string with double-escaped newlines', () => {
     const body = 'Line1\\nLine2\\nLine3';
-    const result = mapToPaidSuggestion('oppId', 'url', [{ body }]);
+    const result = mapToPaidSuggestion('oppId', 'url', { body: { markup: body } });
     expect(result.data.suggestionValue).to.equal(`Line1
 Line2
 Line3`);
@@ -33,23 +33,17 @@ Line3`);
 
   it('handles serialized JSON body with markup', () => {
     const markup = 'Markup with\nnewlines';
-    const body = JSON.stringify({ markup });
-    const result = mapToPaidSuggestion('oppId', 'url', [{ body }]);
+    const guidance = { body: { markup } };
+    const result = mapToPaidSuggestion('oppId', 'url', guidance);
     expect(result.data.suggestionValue).to.equal('Markup with\nnewlines');
   });
 
   it('handles serialized JSON body with double-escaped newlines in markup', () => {
     const markup = 'Markup with\\nnewlines';
-    const body = JSON.stringify({ markup });
-    const result = mapToPaidSuggestion('oppId', 'url', [{ body }]);
+    const guidance = { body: { markup } };
+    const result = mapToPaidSuggestion('oppId', 'url', guidance);
     expect(result.data.suggestionValue).to.equal(`Markup with
 newlines`);
-  });
-
-  it('handles non-string body gracefully', () => {
-    const body = { markup: 'should not parse' };
-    const result = mapToPaidSuggestion('oppId', 'url', [{ body }]);
-    expect(result.data.suggestionValue).to.deep.equal({ markup: 'should not parse' });
   });
 
   // Additional tests for mapToPaidOpportunity edge cases

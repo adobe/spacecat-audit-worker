@@ -12,6 +12,24 @@
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 
+function getGuidanceObj(guidance) {
+  let body = guidance && guidance[0] && guidance[0].body;
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed && typeof parsed === 'object') {
+      body = parsed;
+    }
+  } catch {
+    body = {
+      markup: body,
+    };
+  }
+  return {
+    ...guidance[0],
+    body,
+  };
+}
+
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
@@ -28,9 +46,9 @@ export default async function handler(message, context) {
   log.info(`Fetched Audit ${JSON.stringify(message)}`);
 
   // Check for low severity and skip if so
-  const firstBody = guidance && guidance[0] && guidance[0].body;
-  if (isLowSeverityGuidanceBody(firstBody)) {
-    log.info(`Skipping opportunity creation for site: ${siteId} page: ${url} audit: ${auditId} due to low issue severity: ${firstBody}`);
+  const guidanceParsed = getGuidanceObj(guidance);
+  if (isLowSeverityGuidanceBody(guidanceParsed.body)) {
+    log.info(`Skipping opportunity creation for site: ${siteId} page: ${url} audit: ${auditId} due to low issue severity: ${guidanceParsed}`);
     return ok();
   }
 
@@ -38,7 +56,7 @@ export default async function handler(message, context) {
   let opportunity = existingOpportunities
     .filter((oppty) => oppty.getType() === 'generic-opportunity')
     .find((oppty) => oppty.getData().page === url && oppty.getData().opportunityType === 'paid-cookie-consent');
-  const entity = mapToPaidOpportunity(siteId, url, audit, guidance);
+  const entity = mapToPaidOpportunity(siteId, url, audit, guidanceParsed);
   if (!opportunity) {
     log.info(`No existing Opportunity found for ${siteId} page: ${url}. Creating a new one.`);
     opportunity = await Opportunity.create(entity);
@@ -56,7 +74,7 @@ export default async function handler(message, context) {
   // delete previous suggestions if any
   await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
 
-  const suggestionData = mapToPaidSuggestion(opportunity.getId(), url, guidance);
+  const suggestionData = mapToPaidSuggestion(opportunity.getId(), url, guidanceParsed);
   await Suggestion.create(suggestionData);
 
   log.info(`paid-cookie-consent  opportunity succesfully added for site: ${siteId} page: ${url} audit: ${auditId}  opportunity: ${JSON.stringify(opportunity, null, 2)}`);

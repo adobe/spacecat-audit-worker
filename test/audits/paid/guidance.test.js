@@ -244,4 +244,22 @@ markup`);
     expect(Suggestion.create).to.have.been.called;
     expect(result.status).to.equal(ok().status);
   });
+
+  it('should wrap non-JSON guidance body in markup property', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    // This is not a valid JSON string
+    const body = 'not a json string';
+    const guidance = [{
+      body, insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).to.have.been.called;
+    const calledWith = Opportunity.create.getCall(0).args[0];
+    expect(calledWith.guidance.recommendations[0].insight).to.equal('insight');
+    expect(calledWith.guidance.recommendations[0].recommendation).to.equal('rec');
+    expect(calledWith.guidance.recommendations[0].rationale).to.equal('rationale');
+    expect(result.status).to.equal(ok().status);
+  });
 });
