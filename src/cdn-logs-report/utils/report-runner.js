@@ -68,6 +68,12 @@ async function collectReportData(
 
   for (const [key, query] of Object.entries(queries)) {
     try {
+      if (query === null) {
+        reportData[key] = [];
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
       const sqlQueryDescription = `[Athena Query] ${key} for ${provider}`;
       // eslint-disable-next-line no-await-in-loop
       const results = await athenaClient.query(
