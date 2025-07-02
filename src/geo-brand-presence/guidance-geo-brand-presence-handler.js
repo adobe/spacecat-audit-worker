@@ -30,7 +30,7 @@ function getSuggestionValue(suggestions, subType, log) {
     });
     return suggestionValue;
   } else {
-    log.warn(`Unsupported subType: ${subType}`);
+    log.error(`Unsupported subType: ${subType}`);
     return notFound();
   }
 }
