@@ -179,13 +179,19 @@ describe('CDN Logs Report Utils', () => {
       expect(utils.buildSiteFilters([])).to.equal('');
       expect(utils.buildSiteFilters(null)).to.equal('');
       expect(utils.buildSiteFilters([{ key: 'domain', value: ['example.com'] }]))
-        .to.equal("(domain = 'example.com')");
-      expect(utils.buildSiteFilters([{ key: 'domain', value: ['example.com', 'test.com'] }]))
-        .to.equal("((domain = 'example.com' OR domain = 'test.com'))");
+        .to.equal("(REGEXP_LIKE(domain, '(?i)(example.com)'))");
+      expect(utils.buildSiteFilters([{ key: 'domain', value: ['example.com', 'test.com'], type: 'include' }]))
+        .to.equal("(REGEXP_LIKE(domain, '(?i)(example.com|test.com)'))");
+      expect(utils.buildSiteFilters([{ key: 'domain', value: ['example.com', 'test.com'], type: 'exclude' }]))
+        .to.equal("(NOT REGEXP_LIKE(domain, '(?i)(example.com|test.com)'))");
       expect(utils.buildSiteFilters([
         { key: 'domain', value: ['example.com'] },
         { key: 'status', value: ['200'] },
-      ])).to.equal("(domain = 'example.com' AND status = '200')");
+      ])).to.equal("(REGEXP_LIKE(domain, '(?i)(example.com)') AND REGEXP_LIKE(status, '(?i)(200)'))");
+      expect(utils.buildSiteFilters([
+        { key: 'domain', value: ['example.com', 'test.com'], type: 'exclude' },
+        { key: 'status', value: ['200'], type: 'include' },
+      ])).to.equal("(NOT REGEXP_LIKE(domain, '(?i)(example.com|test.com)') AND REGEXP_LIKE(status, '(?i)(200)'))");
     });
   });
 
