@@ -9,8 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
-/* c8 ignore start */
 import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
@@ -98,4 +96,3 @@ export default new AuditBuilder()
   .withRunner(runCdnLogsReport)
   .withUrlResolver(wwwUrlResolver)
   .build();
-/* c8 ignore end */

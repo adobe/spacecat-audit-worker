@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
 import { weeklyBreakdownQueries } from './query-builder.js';
 import {
   createDateRange,
@@ -82,10 +81,9 @@ async function collectReportData(
         s3Config.databaseName,
         sqlQueryDescription,
       );
-      reportData[key] = results || [];
+      reportData[key] = results;
     } catch (error) {
-      const providerMsg = provider ? ` for ${provider}` : '';
-      log.error(`Failed to collect data for ${key}${providerMsg}: ${error.message}`);
+      log.error(`Failed to collect data for ${key} for ${provider}: ${error.message}`);
       reportData[key] = [];
     }
   }
@@ -120,8 +118,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
   }
 
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
-  const providerMsg = provider ? ` for ${provider}` : '';
-  log.info(`Running report${providerMsg} for ${periodIdentifier}`);
+  log.info(`Running report for ${provider} for ${periodIdentifier}`);
   const { outputLocation, filters } = site.getConfig().getCdnLogsConfig() || {};
 
   try {
@@ -135,8 +132,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
       filters,
     );
 
-    const providerSuffix = provider ? `-${provider}` : '';
-    const filename = `agentictraffic${providerSuffix}-${periodIdentifier}.xlsx`;
+    const filename = `agentictraffic-${provider}-${periodIdentifier}.xlsx`;
 
     const workbook = await createCDNLogsExcelReport(reportData, {
       customEndDate: referenceDate.toISOString().split('T')[0],
@@ -209,5 +205,3 @@ export async function runCustomDateRangeReport({
     sharepointClient,
   });
 }
-
-/* c8 ignore end */
