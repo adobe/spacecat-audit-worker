@@ -1,3 +1,10 @@
+## [1.120.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.3...v1.120.4) (2025-07-02)
+
+
+### Bug Fixes
+
+* support regex filter patterns ([#1028](https://github.com/adobe/spacecat-audit-worker/issues/1028)) ([77ea3ad](https://github.com/adobe/spacecat-audit-worker/commit/77ea3ade596cf54a8b1f6c676464d85648ab39ed))
+
 ## [1.120.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.2...v1.120.3) (2025-07-02)
 
 
