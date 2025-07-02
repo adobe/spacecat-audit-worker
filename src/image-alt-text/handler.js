@@ -98,7 +98,7 @@ export async function processAltTextAuditStep(context) {
   } = context;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const siteId = site.getId();
-  const auditUrl = finalUrl;
+  const auditUrl = finalUrl.replace(/^https?:\/\//, '$&www.');
 
   log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] [Audit Url: ${auditUrl}] processing scraped content`);
 
