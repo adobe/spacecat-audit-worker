@@ -274,17 +274,17 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
 export async function
 sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context) {
   const {
-    sqs, env, log, dataAccess,
+    sqs, env, log, // dataAccess,
   } = context;
 
   try {
-    const site = await dataAccess.Site.findById(siteId);
+    // const site = await dataAccess.Site.findById(siteId);
 
     const mystiqueMessage = {
       type: ALT_TEXT_GUIDANCE_TYPE,
       siteId,
       auditId,
-      deliveryType: site.getDeliveryType(),
+      deliveryType: 'aem_edge', // TODO: Change to site.getDeliveryType()
       time: new Date().toISOString(),
       url: auditUrl,
       observation: ALT_TEXT_OBSERVATION,
