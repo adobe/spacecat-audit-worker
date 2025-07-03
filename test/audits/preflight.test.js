@@ -625,6 +625,7 @@ describe('Preflight Audit', () => {
       })));
     });
 
+    // eslint-disable-next-line func-names
     it('completes successfully on the happy path for the identify step', async function () {
       this.timeout(10000); // Increase timeout to 10 seconds
       const head = '<head><link rel="canonical" href="https://main--example--page.aem.page/page1"/></head>';
