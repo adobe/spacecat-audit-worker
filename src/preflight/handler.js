@@ -60,7 +60,7 @@ export async function scrapePages(context) {
   const siteId = site.getId();
 
   const jobMetadata = job.getMetadata();
-  const { urls } = jobMetadata.payload;
+  const { urls, enableAuthentication = true } = jobMetadata.payload;
 
   if (!isValidUrls(urls)) {
     throw new Error(`[preflight-audit] site: ${siteId}. Invalid urls provided for scraping`);
@@ -77,7 +77,7 @@ export async function scrapePages(context) {
     type: 'preflight',
     allowCache: false,
     options: {
-      enableAuthentication: true,
+      enableAuthentication,
       screenshotTypes: [],
       ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
     },
@@ -103,6 +103,7 @@ export const preflightAudit = async (context) => {
     urls,
     step = AUDIT_STEP_IDENTIFY,
     checks,
+    enableAuthentication = true,
   } = jobMetadata.payload;
   const normalizedStep = step.toLowerCase();
   const normalizedUrls = urls.map((url) => {
@@ -136,14 +137,17 @@ export const preflightAudit = async (context) => {
   }
 
   try {
-    const options = {
-      ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
-    };
-    let pageAuthToken = await retrievePageAuthentication(site, context, options);
-    pageAuthToken = getPrefixedPageAuthToken(site, pageAuthToken, options);
+    let pageAuthToken = null;
+    if (enableAuthentication) {
+      const options = {
+        ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
+      };
+      pageAuthToken = await retrievePageAuthentication(site, context, options);
+      pageAuthToken = getPrefixedPageAuthToken(site, pageAuthToken, options);
+    }
 
     const baseURL = new URL(normalizedUrls[0]).origin;
-    const authHeader = { headers: { Authorization: pageAuthToken } };
+    const authHeader = pageAuthToken ? { headers: { Authorization: pageAuthToken } } : {};
 
     // Initialize results
     const result = normalizedUrls.map((url) => ({
