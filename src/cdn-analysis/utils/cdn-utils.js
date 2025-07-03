@@ -9,8 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
-/* c8 ignore start */
 import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
@@ -53,4 +51,3 @@ export async function determineCdnProvider(s3, bucket, prefix) {
   }
   throw new Error(`Unrecognized CDN Type. Bucket: ${bucket}`);
 }
-/* c8 ignore stop */
