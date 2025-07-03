@@ -1,3 +1,10 @@
+## [1.121.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.121.0...v1.121.1) (2025-07-03)
+
+
+### Bug Fixes
+
+* add tests for cdn analysis ([#1024](https://github.com/adobe/spacecat-audit-worker/issues/1024)) ([2676f80](https://github.com/adobe/spacecat-audit-worker/commit/2676f80ee624d063c86861190adaa47ce329f748))
+
 # [1.121.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.6...v1.121.0) (2025-07-03)
 
 
