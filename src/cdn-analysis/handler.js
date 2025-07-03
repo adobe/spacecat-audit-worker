@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-disable object-curly-newline */
-
-/* c8 ignore start */
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { determineCdnProvider } from './utils/cdn-utils.js';
@@ -109,4 +107,3 @@ export default new AuditBuilder()
   .withRunner(cdnLogAnalysisRunner)
   .withUrlResolver(wwwUrlResolver)
   .build();
-/* c8 ignore stop */

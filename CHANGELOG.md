@@ -1,3 +1,10 @@
+# [1.121.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.6...v1.121.0) (2025-07-03)
+
+
+### Features
+
+* save paid cookie consent opp ([#1029](https://github.com/adobe/spacecat-audit-worker/issues/1029)) ([85b8648](https://github.com/adobe/spacecat-audit-worker/commit/85b8648b0d86b8afa54336a54a6d0be6f65e5489))
+
 ## [1.120.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.5...v1.120.6) (2025-07-03)
 
 
