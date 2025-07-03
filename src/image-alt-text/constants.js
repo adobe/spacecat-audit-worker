@@ -14,3 +14,9 @@
 export const CPC = 1; // $1
 export const PENALTY_PER_IMAGE = 0.01; // 1%
 export const RUM_INTERVAL = 30; // days
+
+// Feature flag to control alt-text suggestion source
+export const USE_MYSTIQUE_FOR_ALT_TEXT = true;
+
+export const ALT_TEXT_GUIDANCE_TYPE = 'guidance:missing-alt-text';
+export const ALT_TEXT_OBSERVATION = 'Missing alt text on images';
