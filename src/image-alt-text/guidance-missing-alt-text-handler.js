@@ -43,7 +43,7 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   const { auditId, siteId, data } = message;
-  const { suggestions } = data;
+  const { suggestions } = data || {};
 
   log.info(`[${AUDIT_TYPE}]: Received Mystique guidance for alt-text: ${JSON.stringify(message, null, 2)}`);
 

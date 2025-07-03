@@ -718,3 +718,144 @@ describe('Image Alt Text Opportunity Handler', () => {
     );
   });
 });
+
+describe('sendAltTextOpportunityToMystique', () => {
+  let context;
+  let logStub;
+  let sqsStub;
+  let dataAccessStub;
+  let sendAltTextOpportunityToMystique;
+
+  beforeEach(async () => {
+    sinon.restore();
+
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+    };
+
+    sqsStub = {
+      sendMessage: sinon.stub().resolves(),
+    };
+
+    dataAccessStub = {
+      Site: {
+        findById: sinon.stub().resolves({
+          getDeliveryType: () => 'aem_edge',
+        }),
+      },
+    };
+
+    context = {
+      log: logStub,
+      sqs: sqsStub,
+      dataAccess: dataAccessStub,
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      },
+    };
+
+    // Import the function
+    const module = await import('../../../src/image-alt-text/opportunityHandler.js');
+    sendAltTextOpportunityToMystique = module.sendAltTextOpportunityToMystique;
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should send alt-text opportunity to Mystique successfully', async () => {
+    const auditUrl = 'https://example.com';
+    const pageUrls = ['https://example.com/page1', 'https://example.com/page2'];
+    const siteId = 'site-id';
+    const auditId = 'audit-id';
+
+    await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
+
+    expect(sqsStub.sendMessage).to.have.been.calledOnce;
+    expect(sqsStub.sendMessage).to.have.been.calledWith(
+      'test-queue',
+      sinon.match({
+        type: 'guidance:missing-alt-text',
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        deliveryType: 'aem_edge',
+        url: 'https://example.com',
+        observation: 'Missing alt text on images',
+        data: {
+          pageUrls: ['https://example.com/page1', 'https://example.com/page2'],
+        },
+      }),
+    );
+
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Sending 2 URLs to Mystique in 1 batch(es)',
+    );
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: All 1 batches sent to Mystique successfully',
+    );
+  });
+
+  it('should batch URLs when there are more than the batch size', async () => {
+    const auditUrl = 'https://example.com';
+    // Create 25 URLs to test batching (batch size is 20)
+    const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+    const siteId = 'site-id';
+    const auditId = 'audit-id';
+
+    await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
+
+    // Should send 2 batches (20 + 5)
+    expect(sqsStub.sendMessage).to.have.been.calledTwice;
+
+    // First batch should have 20 URLs
+    const firstCall = sqsStub.sendMessage.getCall(0);
+    expect(firstCall.args[1].data.pageUrls).to.have.lengthOf(20);
+
+    // Second batch should have 5 URLs
+    const secondCall = sqsStub.sendMessage.getCall(1);
+    expect(secondCall.args[1].data.pageUrls).to.have.lengthOf(5);
+
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Sending 25 URLs to Mystique in 2 batch(es)',
+    );
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: All 2 batches sent to Mystique successfully',
+    );
+  });
+
+  it('should handle errors when sending to Mystique fails', async () => {
+    const auditUrl = 'https://example.com';
+    const pageUrls = ['https://example.com/page1'];
+    const siteId = 'site-id';
+    const auditId = 'audit-id';
+
+    const error = new Error('SQS send failed');
+    sqsStub.sendMessage.rejects(error);
+
+    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context))
+      .to.be.rejectedWith('SQS send failed');
+
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Failed to send alt-text opportunity to Mystique: SQS send failed',
+    );
+  });
+
+  it('should handle errors when fetching site fails', async () => {
+    const auditUrl = 'https://example.com';
+    const pageUrls = ['https://example.com/page1'];
+    const siteId = 'site-id';
+    const auditId = 'audit-id';
+
+    const error = new Error('Site not found');
+    dataAccessStub.Site.findById.rejects(error);
+
+    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context))
+      .to.be.rejectedWith('Site not found');
+
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Failed to send alt-text opportunity to Mystique: Site not found',
+    );
+  });
+});

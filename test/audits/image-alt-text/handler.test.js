@@ -684,4 +684,99 @@ describe('Image Alt Text Handler', () => {
       );
     });
   });
+
+  describe('processAltTextWithMystique', () => {
+    let sendAltTextOpportunityToMystiqueStub;
+
+    beforeEach(async () => {
+      sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
+
+      // Mock the module with our stubs
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+        '../../../src/image-alt-text/opportunityHandler.js': {
+          default: sandbox.stub(),
+          sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+        },
+      });
+    });
+
+    it('should process alt-text with Mystique successfully', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Processing alt-text with Mystique for site site-id',
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Sent 2 pages to Mystique for generating alt-text suggestions',
+      );
+    });
+
+    it('should handle case when no top pages found', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('No top pages found for site site-id');
+
+      expect(context.log.error).to.have.been.calledWith(
+        '[alt-text]: Failed to process with Mystique: No top pages found for site site-id',
+      );
+    });
+
+    it('should handle errors when sending to Mystique fails', async () => {
+      const error = new Error('Mystique send failed');
+      sendAltTextOpportunityToMystiqueStub.rejects(error);
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('Mystique send failed');
+
+      expect(context.log.error).to.have.been.calledWith(
+        '[alt-text]: Failed to process with Mystique: Mystique send failed',
+      );
+    });
+  });
+
+  describe('audit builder selection', () => {
+    it('should use Mystique audit builder with 2 steps when USE_MYSTIQUE_FOR_ALT_TEXT is true', async () => {
+      const handlerModuleWithMystique = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/constants.js': {
+          USE_MYSTIQUE_FOR_ALT_TEXT: true,
+        },
+      });
+
+      // Mystique builder should have 2 steps: processImport, processAltTextWithMystique
+      expect(Object.keys(handlerModuleWithMystique.default.steps)).to.have.lengthOf(2);
+    });
+
+    it('should use Firefall audit builder with 3 steps when USE_MYSTIQUE_FOR_ALT_TEXT is false', async () => {
+      const handlerModuleWithFirefall = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/constants.js': {
+          USE_MYSTIQUE_FOR_ALT_TEXT: false,
+        },
+      });
+
+      // Firefall builder should have 3 steps: processImport, prepareScraping, processAltTextAudit
+      expect(Object.keys(handlerModuleWithFirefall.default.steps)).to.have.lengthOf(3);
+    });
+  });
 });
