@@ -194,7 +194,7 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
 
   const mystiqueMessage = buildMystiqueMessage(site, id, selectedPage);
 
-  log.info(`[paid-audit] [Site: ${auditUrl}] Sending page ${selectedPage} evaluation to mystique`);
+  log.info(`[paid-audit] [Site: ${auditUrl}] Sending page ${selectedPage}  with message ${JSON.stringify(mystiqueMessage, 2)} evaluation to mystique`);
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
   log.info(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
 }
