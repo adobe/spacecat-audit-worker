@@ -1,3 +1,10 @@
+## [1.120.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.5...v1.120.6) (2025-07-03)
+
+
+### Bug Fixes
+
+* update title and description text for forms-a11y ([#1031](https://github.com/adobe/spacecat-audit-worker/issues/1031)) ([d59893e](https://github.com/adobe/spacecat-audit-worker/commit/d59893edd039369bcb2da98e1253ecc4ab9d3ea7))
+
 ## [1.120.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.4...v1.120.5) (2025-07-02)
 
 
