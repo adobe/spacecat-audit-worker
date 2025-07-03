@@ -65,7 +65,7 @@ export async function processStructuredData(finalUrl, context, pages, scrapeCach
   );
 
   log.info(`SDA: ${gscPagesWithIssues.length} issues from GSC, ${scraperPagesWithIssues.length} issues from scrape. ${pagesWithIssues.length} issues after deduplication`);
-  log.debug('SDA: Deduplicated issues', JSON.stringify(pagesWithIssues));
+  log.info('SDA: Deduplicated issues', JSON.stringify(pagesWithIssues));
 
   // Abort early if no issues are found
   if (pagesWithIssues.length === 0) {
@@ -113,6 +113,11 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
 
   // Go through audit results, one for each URL
   for (const issue of auditData.auditResult.issues) {
+    // Do not generate suggestions for missing structured data, for now
+    if (issue.issue === 'missing') {
+      continue;
+    }
+
     // Limit to avoid excessive Firefall requests. Can be increased if needed.
     if (firefallRequests >= parseInt(AUDIT_STRUCTURED_DATA_FIREFALL_REQ_LIMIT, 10)) {
       log.error(`SDA: Aborting suggestion generation as more than ${AUDIT_STRUCTURED_DATA_FIREFALL_REQ_LIMIT} Firefall requests have been used.`);
@@ -196,7 +201,10 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   for (const issue of auditData.auditResult.issues) {
     issue.errors = [];
     const fix = generateErrorMarkupForIssue(issue);
-    const errorTitle = `${issue.rootType}: ${issue.issueMessage}`;
+    let errorTitle = `Invalid ${issue.rootType}: ${issue.issueMessage}`;
+    if (issue.issue === 'missing') {
+      errorTitle = `Missing: ${issue.rootType}`;
+    }
     const errorId = errorTitle.replaceAll(/["\s]/g, '').toLowerCase();
     issue.errors.push({ fix, id: errorId, errorTitle });
   }
@@ -281,26 +289,84 @@ export async function submitForScraping(context) {
   };
 }
 
-export async function runAuditAndGenerateSuggestions(context) {
+function classifyUrl(url, classifier) {
+  let pageType = 'uncategorized';
+  const match = Object
+    .entries(classifier)
+    .find(([, regEx]) => regEx.test(url));
+  if (match) {
+    [pageType] = match;
+  }
+
+  return pageType;
+}
+
+async function getClassifiedTopPages(context) {
   const {
-    site, finalUrl, log, dataAccess, audit,
+    site, log, dataAccess,
   } = context;
   const { SiteTopPage } = dataAccess;
+  const siteId = site.getId();
+
+  let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+  if (!isNonEmptyArray(topPages)) {
+    log.error(`SDA: No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
+    throw new Error(`No top pages for site ID ${siteId} found.`);
+  } else {
+    topPages = topPages.map((page) => ({ url: page.getUrl() }));
+  }
+
+  const classifierConfig = site.getConfig()?.getGroupedURLs('paid');
+  const pageTypes = classifierConfig?.map((item) => {
+    const page = item.name;
+    const patternObj = JSON.parse(item.pattern);
+    const pattern = new RegExp(patternObj.pattern, patternObj.flags);
+    return {
+      [page]: pattern,
+    };
+  });
+  const classifier = pageTypes?.reduce((acc, pageType) => ({ ...acc, ...pageType }), {});
+
+  const classificationToEntityMapping = {
+    homepage: ['Organization'],
+    blog: ['Article'],
+    newsroom: ['Article'],
+    news: ['Article'],
+    productdetail: ['Product'],
+    productdetailpage: ['Product'],
+    careers: ['JobPosting'],
+    recipe: ['Recipe'],
+    events: ['Event'],
+  };
+
+  // Classify top pages
+  topPages = topPages.map((page) => {
+    const type = classifyUrl(page.url, classifier);
+    const cleanedType = type.includes(' | ') ? type.split(' | ')[0] : type;
+    return {
+      url: page.url,
+      type: cleanedType,
+      requiredEntities: classificationToEntityMapping[cleanedType] ?? [],
+    };
+  });
+
+  log.info('SDA: Classified URLs', JSON.stringify(topPages));
+
+  return topPages;
+}
+
+export async function runAuditAndGenerateSuggestions(context) {
+  const {
+    site, finalUrl, log, audit,
+  } = context;
 
   const startTime = process.hrtime();
-  const siteId = site.getId();
 
   // Cache scrape results from S3, as individual pages might be requested multiple times
   const scrapeCache = new Map();
 
   try {
-    let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-    if (!isNonEmptyArray(topPages)) {
-      log.error(`SDA: No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
-      throw new Error(`No top pages for site ID ${siteId} found.`);
-    } else {
-      topPages = topPages.map((page) => ({ url: page.getUrl() }));
-    }
+    const topPages = await getClassifiedTopPages(context);
 
     let auditResult = await processStructuredData(finalUrl, context, topPages, scrapeCache);
 

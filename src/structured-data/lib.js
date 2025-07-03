@@ -115,6 +115,7 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
               issueMessage: issue.issueMessage,
               severity: issue.severity,
               errors: [],
+              issue: 'invalid',
             });
           });
         });
@@ -161,7 +162,7 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
 
   const issues = [];
 
-  await Promise.all(pages.map(async ({ url: page }) => {
+  await Promise.all(pages.map(async ({ url: page, requiredEntities }) => {
     let scrapeResult;
     let { pathname } = new URL(page);
     // If pathname ends with a slash, remove it
@@ -183,6 +184,35 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
     // If scrape contains old format of structured data, skip
     if (isNonEmptyArray(waeResult)) {
       return;
+    }
+
+    // Check for missing entities based on page classification
+    const entitiesOnPage = new Set();
+    if (Object.keys(waeResult.jsonld).length > 0) {
+      entitiesOnPage.add(...Object.keys(waeResult.jsonld));
+    }
+    if (Object.keys(waeResult.microdata).length > 0) {
+      entitiesOnPage.add(...Object.keys(waeResult.microdata));
+    }
+    if (Object.keys(waeResult.rdfa).length > 0) {
+      entitiesOnPage.add(...Object.keys(waeResult.rdfa));
+    }
+
+    // Check if any structured data is missing
+    const missingEntities = requiredEntities.filter((entity) => !entitiesOnPage.has(entity));
+    if (missingEntities.length > 0) {
+      log.info('Entities on page', page, entitiesOnPage);
+      log.info('Required entities', requiredEntities);
+      log.warn('Missing entity on page', missingEntities);
+      missingEntities.forEach((entity) => {
+        issues.push({
+          pageUrl: page,
+          issue: 'missing',
+          rootType: entity,
+          severity: 'ERROR',
+          issueMessage: 'Missing structured data',
+        });
+      });
     }
 
     const schemaOrgPath = join(
@@ -211,6 +241,7 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
         issues.push({
           pageUrl: page,
           ...issue,
+          issue: 'invalid',
           errors: [],
         });
       }
@@ -267,7 +298,7 @@ export function getWrongMarkup(context, issue, scrapeResult) {
 }
 
 export function generateErrorMarkupForIssue(issue) {
-  if (issue.suggestion && issue.suggestion.aiRationale) {
+  if (issue.suggestion && issue.suggestion.aiRationale && issue.issue !== 'missing') {
     const {
       errorDescription,
       correctedMarkup,
@@ -312,57 +343,68 @@ export function generateErrorMarkupForIssue(issue) {
     ].join('\n');
   }
 
-  const fix = [
-    '## Affected page',
+  const fix = ['## Affected page',
     ` * ${issue.pageUrl}`,
     '',
-    `## Issue Detected for ${issue.rootType}`,
-    issue.issueMessage,
   ];
 
-  if (issue.source) {
-    let markup;
-    if (issue.dataFormat === 'jsonld') {
-      try {
-        markup = [
-          '```json',
-          JSON.stringify(JSON.parse(issue.source), null, 4),
-          '```',
-        ].join('\n');
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      } catch (error) {
-        markup = [
-          '```json',
-          issue.source,
-          '```',
-        ].join('\n');
-      }
-    } else {
-      try {
-        let cleanup = cheerioLoad(issue.source);
-        cleanup = cleanupStructuredDataMarkup(cleanup);
-        cleanup = jsBeautify.html(cleanup, {
-          indent_size: 2,
-        });
-
-        markup = [
-          '```html',
-          cleanup,
-          '```',
-        ].join('\n');
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      } catch (error) {
-        markup = [
-          '```html',
-          issue.source,
-          '```',
-        ].join('\n');
-      }
-    }
-
+  if (issue.issue === 'invalid') {
     fix.push(
-      '## Problematic Structured Data',
-      markup,
+      `## Issue Detected for ${issue.rootType}`,
+      `The structured data entity ${issue.rootType} is potentially invalid and search engines might ignore it.`,
+      '',
+      issue.issueMessage,
+    );
+
+    if (issue.source) {
+      let markup;
+      if (issue.dataFormat === 'jsonld') {
+        try {
+          markup = [
+            '```json',
+            JSON.stringify(JSON.parse(issue.source), null, 4),
+            '```',
+          ].join('\n');
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (error) {
+          markup = [
+            '```json',
+            issue.source,
+            '```',
+          ].join('\n');
+        }
+      } else {
+        try {
+          let cleanup = cheerioLoad(issue.source);
+          cleanup = cleanupStructuredDataMarkup(cleanup);
+          cleanup = jsBeautify.html(cleanup, {
+            indent_size: 2,
+          });
+
+          markup = [
+            '```html',
+            cleanup,
+            '```',
+          ].join('\n');
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (error) {
+          markup = [
+            '```html',
+            issue.source,
+            '```',
+          ].join('\n');
+        }
+      }
+
+      fix.push(
+        '## Problematic Structured Data',
+        markup,
+      );
+    }
+  } else if (issue.issue === 'missing') {
+    fix.push(
+      '## Structured Data Missing',
+      `Based on the classification of the page above, it is recommended to add a structured data entity of type ${issue.rootType}.`,
     );
   }
 
