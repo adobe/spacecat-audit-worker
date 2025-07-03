@@ -49,6 +49,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const { detectedTags } = auditData.auditResult;
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
+  log.info(`[META-TAGS-AUDIT] opportunityAndSuggestions: ${finalUrl}`);
   Object.keys(detectedTags)
     .forEach((endpoint) => {
       [TITLE, DESCRIPTION, H1].forEach((tag) => {
@@ -243,6 +244,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, audit, finalUrl, log, dataAccess,
   } = context;
+  log.info(`[META-TAGS-AUDIT] runAuditAndGenerateSuggestions: ${finalUrl}`);
   // Get top pages for a site
   const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
@@ -271,6 +273,11 @@ export async function runAuditAndGenerateSuggestions(context) {
     detectedTags,
     log,
   );
+
+  log.info(`[${auditType}] [Site Id: ${site.getId()}] Projected traffic values:`, {
+    projectedTrafficLost,
+    projectedTrafficValue,
+  });
 
   // Generate AI suggestions for detected tags if auto-suggest enabled for site
   const allTags = {
@@ -335,11 +342,12 @@ export async function submitForScraping(context) {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'meta-tags',
+    allowCache: true,
   };
 }
 
 export default new AuditBuilder()
-  .withUrlResolver((site) => site.getBaseURL())
+  .withUrlResolver(wwwUrlResolver)
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)

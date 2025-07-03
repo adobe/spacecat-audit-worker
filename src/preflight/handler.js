@@ -11,7 +11,7 @@
  */
 
 import { isNonEmptyArray, isValidUrl, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
-import { Audit, AsyncJob, Site } from '@adobe/spacecat-shared-data-access';
+import { AsyncJob, Site } from '@adobe/spacecat-shared-data-access';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopPersister, noopUrlResolver } from '../common/index.js';
@@ -22,7 +22,6 @@ import { runLinksChecks } from './links-checks.js';
 import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
 import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const AUDIT_STEP_IDENTIFY = 'identify';
 export const AUDIT_STEP_SUGGEST = 'suggest';
 
@@ -501,7 +500,6 @@ export const preflightAudit = async (context) => {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withPersister(noopPersister)
-  .addStep('scrape-pages', scrapePages, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('preflight-audit', preflightAudit)
   .withAsyncJob()
   .build();
