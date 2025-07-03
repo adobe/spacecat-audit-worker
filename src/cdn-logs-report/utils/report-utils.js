@@ -190,11 +190,12 @@ export function generateReportingPeriods(referenceDate = new Date()) {
 export function buildSiteFilters(filters) {
   if (!filters || filters.length === 0) return '';
 
-  const clauses = filters.map(({ key, value }) => {
-    const valueConditions = value.map((v) => `${key} = '${v}'`);
-    return valueConditions.length > 1
-      ? `(${valueConditions.join(' OR ')})`
-      : valueConditions[0];
+  const clauses = filters.map(({ key, value, type }) => {
+    const regexPattern = value.join('|');
+    if (type === 'exclude') {
+      return `NOT REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+    }
+    return `REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
   });
 
   const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];

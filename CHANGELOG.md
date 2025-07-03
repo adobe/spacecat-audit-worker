@@ -1,3 +1,31 @@
+## [1.120.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.5...v1.120.6) (2025-07-03)
+
+
+### Bug Fixes
+
+* update title and description text for forms-a11y ([#1031](https://github.com/adobe/spacecat-audit-worker/issues/1031)) ([d59893e](https://github.com/adobe/spacecat-audit-worker/commit/d59893edd039369bcb2da98e1253ecc4ab9d3ea7))
+
+## [1.120.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.4...v1.120.5) (2025-07-02)
+
+
+### Bug Fixes
+
+* trim whitespace in the sitemap indexes and sitemap urls ([#1022](https://github.com/adobe/spacecat-audit-worker/issues/1022)) ([46b1f00](https://github.com/adobe/spacecat-audit-worker/commit/46b1f00f33151d80250dc2294ea718d2b323e10c))
+
+## [1.120.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.3...v1.120.4) (2025-07-02)
+
+
+### Bug Fixes
+
+* support regex filter patterns ([#1028](https://github.com/adobe/spacecat-audit-worker/issues/1028)) ([77ea3ad](https://github.com/adobe/spacecat-audit-worker/commit/77ea3ade596cf54a8b1f6c676464d85648ab39ed))
+
+## [1.120.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.2...v1.120.3) (2025-07-02)
+
+
+### Bug Fixes
+
+* **deps:** update @adobe/structured-data-validator to v1.2.1 ([#1030](https://github.com/adobe/spacecat-audit-worker/issues/1030)) ([43a36ec](https://github.com/adobe/spacecat-audit-worker/commit/43a36ec3523f39bcea3ef297b08ab1304700a9eb))
+
 ## [1.120.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.120.1...v1.120.2) (2025-07-01)
 
 

@@ -165,4 +165,46 @@ describe('CDN Logs Report Runner', () => {
     expect(testParams.log.info).to.have.been.calledWith('Generating reports for providers: chatgpt, perplexity');
     expect(saveExcelReportMock).to.have.been.called;
   });
+
+  describe('null query handling', () => {
+    it('continues processing other queries when some return null and others fail', async () => {
+      const mockQueryBuilder = {
+        createCountryWeeklyBreakdown: sandbox.stub().resolves('SELECT country data'),
+        createUserAgentWeeklyBreakdown: sandbox.stub().resolves(null),
+        createUrlStatusWeeklyBreakdown: sandbox.stub().resolves('SELECT url status data'),
+        createTopBottomUrlsByStatus: sandbox.stub().resolves('SELECT top bottom urls'),
+        createError404Urls: sandbox.stub().resolves('SELECT 404 errors'),
+        createError503Urls: sandbox.stub().resolves(null),
+        createSuccessUrlsByCategory: sandbox.stub().resolves(null),
+        createTopUrls: sandbox.stub().resolves('SELECT top urls'),
+      };
+
+      const mixedRunner = await esmock(
+        '../../../src/cdn-logs-report/utils/report-runner.js',
+        createEsmockConfig({
+          queryBuilder: mockQueryBuilder,
+        }),
+      );
+
+      const testParams = createMockParams();
+
+      testParams.athenaClient.query
+        .onCall(0).resolves([{ country_code: 'US', week_1: 100 }])
+        .onCall(1).rejects(new Error('Query failed'))
+        .onCall(2)
+        .resolves([{ page_type: 'product', week_1: 50 }])
+        .onCall(3)
+        .resolves([{ url: '/test', status: 200 }])
+        .onCall(4)
+        .resolves([{ url: '/error', status: 404 }]);
+
+      await mixedRunner.runWeeklyReport(testParams);
+
+      expect(testParams.athenaClient.query.callCount).to.equal(10);
+      expect(testParams.log.error.callCount).to.be.greaterThan(0);
+
+      expect(testParams.log.info).to.have.been.calledWith('Successfully generated chatgpt report');
+      expect(testParams.log.info).to.have.been.calledWith('Successfully generated perplexity report');
+    });
+  });
 });

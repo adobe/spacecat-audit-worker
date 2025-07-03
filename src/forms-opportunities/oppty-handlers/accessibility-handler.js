@@ -106,8 +106,8 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
         type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
         origin: 'AUTOMATION',
-        title: 'Form Accessibility Issues',
-        description: 'Form Accessibility Issues',
+        title: 'Form accessibility report',
+        description: '',
         tags: [
           'Forms Accessibility',
         ],
