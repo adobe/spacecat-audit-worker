@@ -25,8 +25,7 @@ function sanitizeMarkdown(markdown) {
 function appendScreenshots(env, siteId, markdown, url) {
   const apiBase = env.SPACECAT_API_URI || 'https://spacecat.experiencecloud.live/api/v1';
   const urlPath = new URL(url).pathname;
-  const suffix = urlPath === '/' ? '' : urlPath;
-
+  const suffix = urlPath.replace(/\/$/, '') || '';
   const desktopScreenshot = `${apiBase}/sites/${siteId}/files?key=scrapes/${siteId}${suffix}/consent-banner-on/screenshot-desktop-viewport.png`;
   const mobileScreenshot = `${apiBase}/sites/${siteId}/files?key=scrapes/${siteId}${suffix}/consent-banner-on/screenshot-iphone-6-viewport.png`;
 
