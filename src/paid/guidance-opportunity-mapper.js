@@ -13,6 +13,8 @@
 import { randomUUID } from 'crypto';
 import { DATA_SOURCES } from '../common/constants.js';
 
+const ESTIMATED_CPC = 2.65;
+
 function sanitizeMarkdown(markdown) {
   if (typeof markdown === 'string' && markdown.includes('\\n')) {
     return markdown.replace(/\\n/g, '\n');
@@ -54,6 +56,10 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
   const pageStats = urlSegment?.value.find((item) => item.url === url) || {};
   const pageTypeSegment = stats.find((item) => item.key === 'pageType');
   const pageTypeStats = pageTypeSegment?.value.find((item) => item.topURLs.includes(url)) || {};
+  const pageViews = pageStats.pageViews || 0;
+  const bounceRate = pageStats.bounceRate || 0;
+  const projectedTrafficLost = bounceRate * pageViews;
+  const projectedTrafficValue = projectedTrafficLost * ESTIMATED_CPC;
   return {
     siteId,
     id: randomUUID(),
@@ -78,11 +84,13 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
         DATA_SOURCES.RUM,
         DATA_SOURCES.PAGE,
       ],
+      projectedTrafficLost,
+      projectedTrafficValue,
       opportunityType: 'paid-cookie-consent',
       page: url,
-      pageViews: pageStats.pageViews || 0,
+      pageViews,
       ctr: pageStats.ctr || 0,
-      bounceRate: pageStats.bounceRate || 0,
+      bounceRate,
       pageType: pageTypeStats?.type || 'unknown',
     },
     status: 'NEW',
