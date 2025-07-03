@@ -23,6 +23,7 @@ import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
 const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
+const MYSTIQUE_BATCH_SIZE = 20;
 
 /**
  * Synchronizes existing suggestions with new data
@@ -262,6 +263,15 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${siteId} and alt-text audit type.`);
 }
 
+// Chunk array into batches
+const chunkArray = (array, chunkSize) => {
+  const chunks = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+};
+
 /**
  * Sends alt-text opportunity message to Mystique for AI-powered suggestions
  * @param {string} auditUrl - The base URL being audited
@@ -271,8 +281,13 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
  * @param {Object} context - The context object containing sqs, env, etc.
  * @returns {Promise<void>}
  */
-export async function
-sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context) {
+export async function sendAltTextOpportunityToMystique(
+  auditUrl,
+  pageUrls,
+  siteId,
+  auditId,
+  context,
+) {
   const {
     sqs, env, log, dataAccess,
   } = context;
@@ -280,21 +295,34 @@ sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context) {
   try {
     const site = await dataAccess.Site.findById(siteId);
 
-    const mystiqueMessage = {
-      type: ALT_TEXT_GUIDANCE_TYPE,
-      siteId,
-      auditId,
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      url: auditUrl,
-      observation: ALT_TEXT_OBSERVATION,
-      data: {
-        pageUrls,
-      },
-    };
+    // Batch the URLs to avoid sending too many at once
+    const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
 
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`[${AUDIT_TYPE}]: Alt-text opportunity message sent to Mystique: ${JSON.stringify(mystiqueMessage)}`);
+    log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es)`);
+
+    // Send each batch as a separate message
+    for (let i = 0; i < urlBatches.length; i += 1) {
+      const batch = urlBatches[i];
+
+      const mystiqueMessage = {
+        type: ALT_TEXT_GUIDANCE_TYPE,
+        siteId,
+        auditId,
+        deliveryType: site.getDeliveryType(),
+        time: new Date().toISOString(),
+        url: auditUrl,
+        observation: ALT_TEXT_OBSERVATION,
+        data: {
+          pageUrls: batch,
+        },
+      };
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+      log.info(`[${AUDIT_TYPE}]: Batch ${i + 1}/${urlBatches.length} sent to Mystique with ${batch.length} URLs`);
+      log.info(`[${AUDIT_TYPE}]: Message sent to Mystique: ${JSON.stringify(mystiqueMessage)}`);
+    }
+
+    log.info(`[${AUDIT_TYPE}]: All ${urlBatches.length} batches sent to Mystique successfully`);
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique: ${error.message}`);
     throw error;
