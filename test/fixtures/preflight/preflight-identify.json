@@ -97,7 +97,7 @@
             "check": "broken-external-links",
             "issue": {
               "url": "http://test.com/",
-              "issue": "Status error",
+              "issue": "Status 404",
               "seoImpact": "High",
               "seoRecommendation": "Fix or remove broken links to improve user experience"
             }
