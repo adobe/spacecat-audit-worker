@@ -687,16 +687,18 @@ describe('Image Alt Text Handler', () => {
 
   describe('processAltTextWithMystique', () => {
     let sendAltTextOpportunityToMystiqueStub;
+    let clearAltTextSuggestionsStub;
 
     beforeEach(async () => {
       sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
-
+      clearAltTextSuggestionsStub = sandbox.stub().resolves();
       // Mock the module with our stubs
       handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
         '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
         '../../../src/image-alt-text/opportunityHandler.js': {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+          clearAltTextSuggestions: clearAltTextSuggestionsStub,
         },
       });
     });
@@ -752,6 +754,48 @@ describe('Image Alt Text Handler', () => {
 
       expect(context.log.error).to.have.been.calledWith(
         '[alt-text]: Failed to process with Mystique: Mystique send failed',
+      );
+    });
+
+    it('should call clearAltTextSuggestions when existing opportunity is found', async () => {
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+      };
+
+      // Override the default empty array with our mock opportunity
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(clearAltTextSuggestionsStub).to.have.been.calledWith({
+        opportunity: mockOpportunity,
+        log: context.log,
+      });
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Clearing existing suggestions before sending to Mystique',
+      );
+    });
+
+    it('should not call clearAltTextSuggestions when no existing opportunity is found', async () => {
+      // Ensure no existing opportunities are returned
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(clearAltTextSuggestionsStub).to.not.have.been.called;
+      expect(context.log.info).to.not.have.been.calledWith(
+        '[alt-text]: Clearing existing suggestions before sending to Mystique',
       );
     });
   });

@@ -328,3 +328,75 @@ export async function sendAltTextOpportunityToMystique(
     throw error;
   }
 }
+
+/**
+ * Clears all existing alt-text suggestions except those that are ignored/skipped
+ * This should be called once at the beginning of the alt-text audit process
+ *
+ * @param {Object} params - The parameters for the cleanup operation.
+ * @param {Object} params.opportunity - The opportunity object to clear suggestions for.
+ * @param {Object} params.log - Logger object for error reporting.
+ * @returns {Promise<void>} - Resolves when the cleanup is complete.
+ */
+export async function clearAltTextSuggestions({ opportunity, log }) {
+  if (!opportunity) {
+    log.debug(`[${AUDIT_TYPE}]: No opportunity found, skipping suggestion cleanup`);
+    return;
+  }
+
+  const existingSuggestions = await opportunity.getSuggestions();
+
+  if (!existingSuggestions || existingSuggestions.length === 0) {
+    log.debug(`[${AUDIT_TYPE}]: No existing suggestions to clear`);
+    return;
+  }
+
+  const ignoredSuggestions = existingSuggestions.filter(
+    (s) => s.getStatus() === SuggestionModel.STATUSES.SKIPPED,
+  );
+  const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
+
+  // Remove existing suggestions that were not ignored
+  const suggestionsToRemove = existingSuggestions.filter(
+    (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
+  );
+
+  if (suggestionsToRemove.length > 0) {
+    await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
+    log.info(`[${AUDIT_TYPE}]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions)`);
+  } else {
+    log.debug(`[${AUDIT_TYPE}]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored)`);
+  }
+}
+
+/**
+ * Adds new alt-text suggestions incrementally without removing existing ones
+ * This should be called when receiving batches from Mystique
+ *
+ * @param {Object} params - The parameters for the sync operation.
+ * @param {Object} params.opportunity - The opportunity object to add suggestions to.
+ * @param {Array} params.newSuggestionDTOs - Array of new suggestion DTOs to add.
+ * @param {Object} params.log - Logger object for error reporting.
+ * @returns {Promise<void>} - Resolves when the addition is complete.
+ */
+export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
+  if (!isNonEmptyArray(newSuggestionDTOs)) {
+    log.debug(`[${AUDIT_TYPE}]: No new suggestions to add`);
+    return;
+  }
+
+  const updateResult = await opportunity.addSuggestions(newSuggestionDTOs);
+
+  if (isNonEmptyArray(updateResult.errorItems)) {
+    log.error(`[${AUDIT_TYPE}]: Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
+    updateResult.errorItems.forEach((errorItem) => {
+      log.error(`[${AUDIT_TYPE}]: Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+    });
+
+    if (!isNonEmptyArray(updateResult.createdItems)) {
+      throw new Error(`[${AUDIT_TYPE}]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+    }
+  }
+
+  log.info(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
+}

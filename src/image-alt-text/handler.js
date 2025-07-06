@@ -20,7 +20,7 @@ import {
 } from '../utils/s3-utils.js';
 import AuditEngine from './auditEngine.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import convertToOpportunity, { sendAltTextOpportunityToMystique } from './opportunityHandler.js';
+import convertToOpportunity, { sendAltTextOpportunityToMystique, clearAltTextSuggestions } from './opportunityHandler.js';
 import {
   shouldShowImageAsSuggestion,
   isImageDecorative,
@@ -216,6 +216,19 @@ export async function processAltTextWithMystique(context) {
   log.info(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
 
   try {
+    const { Opportunity } = dataAccess;
+
+    // First, find or create the opportunity and clear existing suggestions
+    const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
+    const altTextOppty = opportunities.find(
+      (oppty) => oppty.getType() === AUDIT_TYPE,
+    );
+
+    if (altTextOppty) {
+      log.info(`[${AUDIT_TYPE}]: Clearing existing suggestions before sending to Mystique`);
+      await clearAltTextSuggestions({ opportunity: altTextOppty, log });
+    }
+
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 

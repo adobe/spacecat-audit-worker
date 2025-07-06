@@ -22,7 +22,7 @@ describe('Missing Alt Text Guidance Handler', () => {
   let mockOpportunity;
   let mockMessage;
   let guidanceHandler;
-  let syncAltTextSuggestionsStub;
+  let addAltTextSuggestionsStub;
   let getProjectedMetricsStub;
   let checkGoogleConnectionStub;
 
@@ -76,7 +76,7 @@ describe('Missing Alt Text Guidance Handler', () => {
     };
 
     // Create stubs for the imported functions
-    syncAltTextSuggestionsStub = sandbox.stub().resolves();
+    addAltTextSuggestionsStub = sandbox.stub().resolves();
     getProjectedMetricsStub = sandbox.stub().resolves({
       projectedTrafficLost: 100,
       projectedTrafficValue: 100,
@@ -86,7 +86,7 @@ describe('Missing Alt Text Guidance Handler', () => {
     // Mock the guidance handler with all dependencies
     guidanceHandler = await esmock('../../../src/image-alt-text/guidance-missing-alt-text-handler.js', {
       '../../../src/image-alt-text/opportunityHandler.js': {
-        syncAltTextSuggestions: syncAltTextSuggestionsStub,
+        addAltTextSuggestions: addAltTextSuggestionsStub,
         getProjectedMetrics: getProjectedMetricsStub,
       },
       '../../../src/common/opportunity-utils.js': {
@@ -105,7 +105,7 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(result.status).to.equal(200);
     expect(mockOpportunity.setAuditId).to.have.been.calledWith('test-audit-id');
     expect(mockOpportunity.save).to.have.been.called;
-    expect(syncAltTextSuggestionsStub).to.have.been.called;
+    expect(addAltTextSuggestionsStub).to.have.been.called;
     expect(context.log.info).to.have.been.called;
   });
 

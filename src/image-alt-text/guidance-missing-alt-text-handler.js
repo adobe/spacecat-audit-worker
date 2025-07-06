@@ -12,7 +12,7 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import { syncAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
+import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
@@ -135,7 +135,7 @@ export default async function handler(message, context) {
 
   // Process suggestions from Mystique
   if (suggestions && suggestions.length > 0) {
-    await syncAltTextSuggestions({
+    await addAltTextSuggestions({
       opportunity: altTextOppty,
       newSuggestionDTOs: mappedSuggestions.map((suggestion) => ({
         opportunityId: altTextOppty.getId(),
