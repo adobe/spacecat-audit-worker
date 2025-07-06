@@ -113,6 +113,7 @@ describe('Redirect Chains Audit', () => {
     describe('is404page', () => {
       it('should return true for 404 page URLs', () => {
         expect(is404page('/404')).to.be.true;
+        expect(is404page('/404/')).to.be.true;
         expect(is404page('/404.html')).to.be.true;
         expect(is404page('/404.htm')).to.be.true;
       });
@@ -120,6 +121,8 @@ describe('Redirect Chains Audit', () => {
       it('should return false for non-404 page URLs', () => {
         expect(is404page('/page')).to.be.false;
         expect(is404page('/error')).to.be.false;
+        expect(is404page('/some/product/404/cleaner')).to.be.false;
+        expect(is404page('https://www.visionwheel.com/wheel/15432/VisionOffRoad/404%20Brawl?finishID=1')).to.be.false;
       });
     });
 

@@ -10,7 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-const PATTERNS_FOR_404_PAGES = ['/404', '/404.html', '/404.htm']; // ex: https://github.com/adobe/aem-boilerplate/blob/main/404.html
+// ex: https://github.com/adobe/aem-boilerplate/blob/main/404.html
+const PATTERNS_FOR_404_PAGES = ['/404', '/404/', '/404.html', '/404.htm'];
 
 // ----- utils (stand-alone) -----------------------------------------------------------------------
 
