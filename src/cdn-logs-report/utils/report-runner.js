@@ -10,12 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
 import { weeklyBreakdownQueries } from './query-builder.js';
 import {
   createDateRange,
   generatePeriodIdentifier,
   generateReportingPeriods,
+  buildSiteFilters,
 } from './report-utils.js';
 import { createCDNLogsExcelReport } from './excel-generator.js';
 import { saveExcelReport } from './report-uploader.js';
@@ -29,62 +29,41 @@ async function collectReportData(
   log,
   provider,
   site,
+  filters,
 ) {
   const { databaseName, tableName } = s3Config;
   const periods = generateReportingPeriods(endDate);
   const reportData = {};
+  const siteFilters = buildSiteFilters(filters);
+
+  const baseQueryOptions = {
+    periods,
+    databaseName,
+    tableName,
+    provider,
+    siteFilters,
+    site,
+  };
 
   const queries = {
     reqcountbycountry: await weeklyBreakdownQueries.createCountryWeeklyBreakdown(
-      periods,
-      databaseName,
-      tableName,
-      provider,
+      baseQueryOptions,
     ),
     reqcountbyuseragent: await weeklyBreakdownQueries.createUserAgentWeeklyBreakdown(
-      periods,
-      databaseName,
-      tableName,
-      provider,
+      baseQueryOptions,
     ),
     reqcountbyurlstatus: await weeklyBreakdownQueries.createUrlStatusWeeklyBreakdown(
-      periods,
-      databaseName,
-      tableName,
-      provider,
-      site,
+      baseQueryOptions,
     ),
     top_bottom_urls_by_status: await weeklyBreakdownQueries.createTopBottomUrlsByStatus(
-      periods,
-      databaseName,
-      tableName,
-      provider,
+      baseQueryOptions,
     ),
-    error_404_urls: await weeklyBreakdownQueries.createError404Urls(
-      periods,
-      databaseName,
-      tableName,
-      provider,
-    ),
-    error_503_urls: await weeklyBreakdownQueries.createError503Urls(
-      periods,
-      databaseName,
-      tableName,
-      provider,
-    ),
+    error_404_urls: await weeklyBreakdownQueries.createError404Urls(baseQueryOptions),
+    error_503_urls: await weeklyBreakdownQueries.createError503Urls(baseQueryOptions),
     success_urls_by_category: await weeklyBreakdownQueries.createSuccessUrlsByCategory(
-      periods,
-      databaseName,
-      tableName,
-      provider,
-      site,
+      baseQueryOptions,
     ),
-    top_urls: await weeklyBreakdownQueries.createTopUrls(
-      periods,
-      databaseName,
-      tableName,
-      provider,
-    ),
+    top_urls: await weeklyBreakdownQueries.createTopUrls(baseQueryOptions),
   };
 
   for (const [key, query] of Object.entries(queries)) {
@@ -102,10 +81,9 @@ async function collectReportData(
         s3Config.databaseName,
         sqlQueryDescription,
       );
-      reportData[key] = results || [];
+      reportData[key] = results;
     } catch (error) {
-      const providerMsg = provider ? ` for ${provider}` : '';
-      log.error(`Failed to collect data for ${key}${providerMsg}: ${error.message}`);
+      log.error(`Failed to collect data for ${key} for ${provider}: ${error.message}`);
       reportData[key] = [];
     }
   }
@@ -140,8 +118,8 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
   }
 
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
-  const providerMsg = provider ? ` for ${provider}` : '';
-  log.info(`Running report${providerMsg} for ${periodIdentifier}`);
+  log.info(`Running report for ${provider} for ${periodIdentifier}`);
+  const { outputLocation, filters } = site.getConfig().getCdnLogsConfig() || {};
 
   try {
     const reportData = await collectReportData(
@@ -151,10 +129,10 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
       log,
       provider,
       site,
+      filters,
     );
 
-    const providerSuffix = provider ? `-${provider}` : '';
-    const filename = `agentictraffic${providerSuffix}-${periodIdentifier}.xlsx`;
+    const filename = `agentictraffic-${provider}-${periodIdentifier}.xlsx`;
 
     const workbook = await createCDNLogsExcelReport(reportData, {
       customEndDate: referenceDate.toISOString().split('T')[0],
@@ -164,7 +142,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
 
     await saveExcelReport({
       workbook,
-      customerName: s3Config.customerName,
+      outputLocation: outputLocation || s3Config.customerName,
       log,
       sharepointClient,
       filename,
@@ -227,5 +205,3 @@ export async function runCustomDateRangeReport({
     sharepointClient,
   });
 }
-
-/* c8 ignore end */
