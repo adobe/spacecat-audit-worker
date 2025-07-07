@@ -75,7 +75,7 @@ describe('Structured Data Audit', () => {
       isHandlerEnabledForSite: sinon.stub().returns(true),
     };
     s3ClientStub = {
-      send: sinon.stub(),
+      send: sinon.mock(),
       getObject: sinon.stub(),
     };
     firefallClientStub = {
@@ -157,6 +157,26 @@ describe('Structured Data Audit', () => {
         },
       });
     });
+
+    /* it('filters out files from top pages', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([
+        createPageStub('https://example.com/product/1'),
+        createPageStub('https://example.com/product/2.pdf'),
+        createPageStub('https://example.com/product/8.xlsx'),
+      ]);
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus
+        .resolves([context.dataAccess.Opportunity]);
+      context.dataAccess.Opportunity.getSuggestions.resolves([]);
+      context.dataAccess.Opportunity.getId.returns('opportunity-id');
+      context.dataAccess.Opportunity.getType.returns('structured-data');
+      context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
+
+      await runAuditAndGenerateSuggestions(context);
+      expect(s3ClientStub.send.calledOnce).to.equal(true);
+      const scrapeRequests = s3ClientStub.send.getCalls().map((call) => call.args[0].input.Key);
+      expect(scrapeRequests).to.deep.equal(['scrapes/123/product/1/scrape.json']);
+    }); */
 
     it('runs a full audit', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([

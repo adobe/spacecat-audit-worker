@@ -302,6 +302,10 @@ export async function runAuditAndGenerateSuggestions(context) {
       topPages = topPages.map((page) => ({ url: page.getUrl() }));
     }
 
+    // Filter out files from the top pages as these are not scraped
+    const dataTypesToIgnore = ['pdf', 'ps', 'dwf', 'kml', 'kmz', 'xls', 'xlsx', 'ppt', 'pptx', 'doc', 'docx', 'rtf', 'swf'];
+    topPages = topPages.filter((page) => !dataTypesToIgnore.some((dataType) => page.url.endsWith(`.${dataType}`)));
+
     let auditResult = await processStructuredData(finalUrl, context, topPages, scrapeCache);
 
     // Create opportunities and suggestions
