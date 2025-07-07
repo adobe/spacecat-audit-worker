@@ -82,9 +82,9 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
         return;
       }
 
-      richResults.detectedItems.forEach((type) => {
-        type.items.forEach((item) => {
-          item.issues.forEach((issue) => {
+      richResults.detectedItems?.forEach((type) => {
+        type?.items?.forEach((item) => {
+          item?.issues?.forEach((issue) => {
             const rootType = entityMapping[type.richResultType];
             if (!rootType) {
               log.warn(`SDA: Skipping GSC issue, because cannot map GSC type "${type.richResultType}" to schema.org type.`);
