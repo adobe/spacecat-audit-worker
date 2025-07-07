@@ -22,14 +22,14 @@
             "verdict": "FAIL",
             "detectedItems": [
                 {
-                    "richResultType": "Product snippets",
+                    "richResultType": "Unsupported snippets",
                     "items": [
                         {
                             "name": "Unnamed item",
                             "issues": [
                                 {
                                     "issueMessage": "Missing field \"name\"",
-                                    "severity": "WARNING"
+                                    "severity": "ERROR"
                                 }
                             ]
                         }
