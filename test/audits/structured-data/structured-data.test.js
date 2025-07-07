@@ -158,7 +158,7 @@ describe('Structured Data Audit', () => {
       });
     });
 
-    /* it('filters out files from top pages', async () => {
+    it('filters out files from top pages', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([
         createPageStub('https://example.com/product/1'),
         createPageStub('https://example.com/product/2.pdf'),
@@ -176,7 +176,7 @@ describe('Structured Data Audit', () => {
       expect(s3ClientStub.send.calledOnce).to.equal(true);
       const scrapeRequests = s3ClientStub.send.getCalls().map((call) => call.args[0].input.Key);
       expect(scrapeRequests).to.deep.equal(['scrapes/123/product/1/scrape.json']);
-    }); */
+    });
 
     it('runs a full audit', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([
@@ -459,7 +459,7 @@ describe('Structured Data Audit', () => {
       s3ClientStub.send.rejects(new Error('Failed to fetch S3 object'));
 
       await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(context.log.error).to.have.been.calledWith('SDA: Could not find scrape for /product/1. Make sure that scrape-top-pages did run.');
+      expect(context.log.error).to.have.been.calledWith('SDA: Could not find scrape for https://example.com/product/1 at /product/1. Make sure that scrape-top-pages did run.');
       expect(firefallClientStub.fetchChatCompletion).to.not.have.been.called;
     });
 
