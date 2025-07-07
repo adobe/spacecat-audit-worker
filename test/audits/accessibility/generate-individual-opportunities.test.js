@@ -621,6 +621,11 @@ describe('createIndividualOpportunitySuggestions', () => {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
         },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: () => true,
+          }),
+        },
       },
       sqs: {
         sendMessage: sandbox.stub().resolves(),
@@ -1028,6 +1033,11 @@ describe('createAccessibilityIndividualOpportunities', () => {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
           allBySiteId: sandbox.stub().resolves([]),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: () => true,
+          }),
         },
       },
       sqs: {
@@ -1875,6 +1885,11 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
         },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: () => true,
+          }),
+        },
       },
       sqs: {
         sendMessage: sandbox.stub().resolves(),
@@ -1951,6 +1966,11 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: () => true,
+          }),
         },
       },
       sqs: null, // Missing SQS
@@ -2074,6 +2094,11 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
         },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: () => true,
+          }),
+        },
       },
       sqs: {
         sendMessage: sandbox.stub().resolves(),
@@ -2125,6 +2150,32 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
     );
     expect(mockLog.info).to.have.been.calledWithMatch(
       '[A11yIndividual] Message sending completed: 1 successful, 0 failed, 0 rejected',
+    );
+  });
+
+  it('should skip message sending when Mystique suggestions are disabled', async () => {
+    // Mock Configuration to return disabled state
+    mockContext.dataAccess.Configuration.findLatest.resolves({
+      isHandlerEnabledForSite: () => false,
+    });
+
+    const aggregatedData = {
+      data: [
+        { url: 'https://example.com', type: 'url', issues: [] },
+      ],
+    };
+
+    const result = await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    // Should return success without sending messages
+    expect(result.success).to.be.true;
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending',
     );
   });
 });

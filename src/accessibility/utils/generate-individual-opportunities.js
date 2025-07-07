@@ -16,6 +16,7 @@ import { syncSuggestions } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
 import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
+import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 
 /**
  * Creates a Mystique message object
@@ -377,6 +378,13 @@ export async function createIndividualOpportunitySuggestions(
     // Get the suggestions that were just created/updated
     const suggestions = await refreshedOpportunity.getSuggestions();
     log.debug(`[A11yIndividual] Retrieved ${suggestions.length} suggestions from opportunity ${opportunity.getId()}`);
+
+    // Check if mystique suggestions are enabled for this site
+    const isMystiqueEnabled = await isAuditEnabledForSite('a11y-mystique-auto-suggest', context.site, context);
+    if (!isMystiqueEnabled) {
+      log.info('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
+      return { success: true };
+    }
 
     const { sqs, env } = context;
     const siteId = refreshedOpportunity.getSiteId
