@@ -1,3 +1,10 @@
+## [1.121.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.121.2...v1.121.3) (2025-07-07)
+
+
+### Bug Fixes
+
+* adding no auth handling ([#1027](https://github.com/adobe/spacecat-audit-worker/issues/1027)) ([2d858b1](https://github.com/adobe/spacecat-audit-worker/commit/2d858b14d5feb1ad5fb7b410703a81e259da240e))
+
 ## [1.121.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.121.1...v1.121.2) (2025-07-05)
 
 
