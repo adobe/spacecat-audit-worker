@@ -187,8 +187,7 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
 
     const schemaOrgPath = join(
       process.cwd(),
-      'src',
-      'structured-data',
+      'static',
       'schemaorg-current-https.jsonld',
     );
 
