@@ -1109,6 +1109,7 @@ describe('createIndividualOpportunitySuggestions', () => {
   let mockContext;
   let mockLog;
   let mockSyncSuggestions;
+  let mockIsAuditEnabledForSite;
   let createIndividualOpportunitySuggestions;
 
   beforeEach(async () => {
@@ -1125,6 +1126,7 @@ describe('createIndividualOpportunitySuggestions', () => {
       error: sandbox.stub(),
     };
     mockSyncSuggestions = sandbox.stub().resolves();
+    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
       site: {
         getId: sandbox.stub().returns('test-site'),
@@ -1136,6 +1138,11 @@ describe('createIndividualOpportunitySuggestions', () => {
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
         },
       },
       sqs: {
@@ -1152,6 +1159,9 @@ describe('createIndividualOpportunitySuggestions', () => {
       },
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
@@ -1368,6 +1378,9 @@ describe('createIndividualOpportunitySuggestions', () => {
           },
         ]),
       },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
     });
 
     const testFunction = module.createIndividualOpportunitySuggestions;
@@ -1389,6 +1402,18 @@ describe('createIndividualOpportunitySuggestions', () => {
     expect(mockLog.info).to.have.been.calledWithMatch(
       /Message sending completed: 0 successful, 1 failed, 0 rejected/,
     );
+  });
+
+  it('should skip mystique suggestions and log when feature toggle is disabled', async () => {
+    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(false);
+    const result = await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      { data: [] }, // aggregatedData cu proprietatea data
+      mockContext,
+      mockLog,
+    );
+    expect(result).to.deep.equal({ success: true });
+    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
   });
 });
 
@@ -1519,6 +1544,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
   let mockGetAuditData;
   let mockCreateAssistiveOppty;
   let mockSyncSuggestions;
+  let mockIsAuditEnabledForSite;
   let createAccessibilityIndividualOpportunities;
 
   beforeEach(async () => {
@@ -1532,6 +1558,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
       getAuditId: sandbox.stub().returns('test-audit'),
       getSuggestions: sandbox.stub().resolves([]),
     };
+    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
       site: mockSite,
       log: {
@@ -1544,6 +1571,11 @@ describe('createAccessibilityIndividualOpportunities', () => {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
           allBySiteId: sandbox.stub().resolves([]),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
         },
       },
       sqs: {
@@ -1615,6 +1647,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
             issuesList: [3],
           },
         ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
     createAccessibilityIndividualOpportunities = module.createAccessibilityIndividualOpportunities;
@@ -2362,6 +2397,7 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
   let mockOpportunity;
   let mockContext;
   let mockLog;
+  let mockIsAuditEnabledForSite;
   let createIndividualOpportunitySuggestions;
 
   beforeEach(async () => {
@@ -2376,6 +2412,7 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
       debug: sandbox.stub(),
       error: sandbox.stub(),
     };
+    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
       site: {
         getId: sandbox.stub().returns('site-1'),
@@ -2391,6 +2428,11 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
         },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
+        },
       },
       sqs: {
         sendMessage: sandbox.stub().resolves(),
@@ -2405,6 +2447,9 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
       },
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
@@ -2441,6 +2486,7 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
   let mockOpportunity;
   let mockContext;
   let mockLog;
+  let mockIsAuditEnabledForSite;
   let createIndividualOpportunitySuggestions;
 
   beforeEach(async () => {
@@ -2456,6 +2502,7 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
       debug: sandbox.stub(),
       error: sandbox.stub(),
     };
+    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
       site: {
         getId: sandbox.stub().returns('site-1'),
@@ -2467,6 +2514,11 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
         },
       },
       sqs: null, // Missing SQS
@@ -2486,6 +2538,9 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
             issuesList: [{ issue_name: 'aria-allowed-attr' }],
           },
         ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
@@ -2545,6 +2600,7 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
   let mockOpportunity;
   let mockContext;
   let mockLog;
+  let mockIsAuditEnabledForSite;
   let createIndividualOpportunitySuggestions;
 
   beforeEach(async () => {
@@ -2578,6 +2634,7 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
       debug: sandbox.stub(),
       error: sandbox.stub(),
     };
+    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
       site: {
         getId: sandbox.stub().returns('site-1'),
@@ -2589,6 +2646,11 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
         },
       },
       sqs: {
@@ -2612,6 +2674,9 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
             issuesList: [{ issue_name: 'aria-allowed-attr' }],
           },
         ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
