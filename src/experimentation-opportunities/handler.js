@@ -21,7 +21,7 @@ import {
 } from '../utils/s3-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const IMPORT_ORGNIAC_KEYWORDS = 'organic-keywords';
+const IMPORT_ORGANIC_KEYWORDS = 'organic-keywords';
 
 const DAYS = 7;
 
@@ -173,10 +173,9 @@ export async function organicKeywordsStep(context) {
   const urls = getHighOrganicLowCtrOpportunityUrls(auditResult.experimentationOpportunities);
   log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
   const imports = site.getConfig().getImports();
-  if (!isImportEnabled(IMPORT_ORGNIAC_KEYWORDS, imports)) {
-    log.info(`Enabling ${IMPORT_ORGNIAC_KEYWORDS} for site ${site.getId()}`);
-    // TODO: add geo of the site to the import
-    await toggleImport(site, IMPORT_ORGNIAC_KEYWORDS, true, log);
+  if (!isImportEnabled(IMPORT_ORGANIC_KEYWORDS, imports)) {
+    log.info(`Enabling ${IMPORT_ORGANIC_KEYWORDS} for site ${site.getId()}`);
+    await toggleImport(site, IMPORT_ORGANIC_KEYWORDS, true, log);
     organicKeywordsImportEnabled = true;
   }
   let urlConfigs = await Promise.all(urls.map(async (url) => {
@@ -202,11 +201,11 @@ export async function organicKeywordsStep(context) {
   log.info(`Url configs: ${JSON.stringify(urlConfigs, null, 2)}`);
   if (organicKeywordsImportEnabled) {
     // disable the import after the step is done, if it was enabled in the beginning
-    log.info(`Disabling ${IMPORT_ORGNIAC_KEYWORDS} for site ${site.getId()}`);
-    await toggleImport(site, IMPORT_ORGNIAC_KEYWORDS, false, log);
+    log.info(`Disabling ${IMPORT_ORGANIC_KEYWORDS} for site ${site.getId()}`);
+    await toggleImport(site, IMPORT_ORGANIC_KEYWORDS, false, log);
   }
   return {
-    type: IMPORT_ORGNIAC_KEYWORDS,
+    type: IMPORT_ORGANIC_KEYWORDS,
     siteId: site.getId(),
     urlConfigs,
   };
