@@ -25,7 +25,7 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  */
 function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
   return mystiquesuggestions.map((suggestion) => {
-    const suggestionId = `${suggestion.pageurl}/${suggestion.imageid}`; // TODO: Might be different from the one in opportunityHandler.js line 22
+    const suggestionId = `${suggestion.pageurl}/${suggestion.imageid}`;
 
     return {
       id: suggestionId,
