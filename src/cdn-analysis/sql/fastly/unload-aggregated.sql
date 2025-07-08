@@ -4,6 +4,7 @@ UNLOAD (
     request_user_agent AS user_agent,
     response_status AS status,
     try(url_extract_host(request_referer)) AS referer,
+    host,
     COUNT(*) AS count
   FROM {{database}}.{{rawTable}}
   WHERE year  = '{{year}}'
@@ -33,7 +34,8 @@ UNLOAD (
     url,
     request_user_agent,
     response_status,
-    request_referer
+    request_referer,
+    host
 
 ) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
 WITH (format = 'PARQUET');
