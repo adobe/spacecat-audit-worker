@@ -421,6 +421,34 @@ describe('Sitemap Audit', () => {
       ]);
       expect(resp).to.deep.equal({});
     });
+
+    it('should skip already processed sitemap URLs', async () => {
+      const sitemapUrl = `${url}/sitemap.xml`;
+      nock(url).get('/sitemap.xml').reply(200, sampleSitemapMoreUrls);
+
+      // Pass the same sitemap URL twice
+      const result = await getBaseUrlPagesFromSitemaps(url, [sitemapUrl, sitemapUrl]);
+      expect(result).to.deep.equal({
+        [sitemapUrl]: [`${url}/foo`, `${url}/bar`],
+      });
+    });
+
+    it('should handle URLs with whitespace in sitemap XML (ex: crucial.com)', async () => {
+      const sampleSitemapWithWhitespace = '<?xml version="1.0" encoding="UTF-8"?>\n'
+        + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + `<url> <loc> ${url}/foo </loc></url>\n`
+        + `<url> <loc> ${url}/bar </loc></url>\n`
+        + '<url> <loc> https://another-url.test/baz </loc></url>\n'
+        + '</urlset>';
+
+      nock(url).get('/sitemap.xml').reply(200, sampleSitemapWithWhitespace);
+      const result = await getBaseUrlPagesFromSitemaps(url, [
+        `${url}/sitemap.xml`,
+      ]);
+      expect(result).to.deep.equal({
+        [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
+      });
+    });
   });
 
   describe('findSitemap', () => {

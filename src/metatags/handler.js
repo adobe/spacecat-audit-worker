@@ -320,15 +320,16 @@ export async function submitForScraping(context) {
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  if (topPages.length === 0) {
-    throw new Error('No top pages found for site');
-  }
   const topPagesUrls = topPages.map((page) => page.getUrl());
   // Combine includedURLs and topPages URLs to scrape
   const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.info(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+
+  if (finalUrls.length === 0) {
+    throw new Error('No URLs found for site neither top pages nor included URLs');
+  }
 
   return {
     urls: finalUrls.map((url) => ({ url })),
