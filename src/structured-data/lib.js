@@ -211,6 +211,7 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
           rootType: entity,
           severity: 'ERROR',
           issueMessage: 'Missing structured data',
+          errors: [],
         });
       });
     }

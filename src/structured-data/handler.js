@@ -14,6 +14,7 @@ import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { load as cheerioLoad } from 'cheerio';
+import { createHash } from 'crypto';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -205,7 +206,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     if (issue.issue === 'missing') {
       errorTitle = `Missing: ${issue.rootType}`;
     }
-    const errorId = errorTitle.replaceAll(/["\s]/g, '').toLowerCase();
+    const errorId = createHash('sha256').update(`${issue.pageUrl}:${errorTitle.replaceAll(/[^a-zA-Z]/g, '').toLowerCase()}`).digest('hex');
     issue.errors.push({ fix, id: errorId, errorTitle });
   }
 
