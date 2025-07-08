@@ -32,7 +32,7 @@ function checkEnvSafe() {
 
 async function run() {
   // comment this fct if the session token is longer than 1h
-  checkEnvSafe();
+  // checkEnvSafe();
 
   process.env.HLX_DEV_SERVER_HOST = 'localhost:3000';
   process.env.HLX_DEV_SERVER_SCHEME = 'http';

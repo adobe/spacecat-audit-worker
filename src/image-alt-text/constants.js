@@ -11,6 +11,6 @@
  */
 
 // Projected traffic metrics
-export const CPC = 1; // $1
+export const CPC = 0.0459; // $1
 export const PENALTY_PER_IMAGE = 0.01; // 1%
-export const RUM_INTERVAL = 30; // days
+export const RUM_INTERVAL = 180; // days

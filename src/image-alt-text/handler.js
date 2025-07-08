@@ -56,6 +56,7 @@ export async function prepareScrapingStep(context) {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
     type: 'alt-text',
+    allowCache: true,
   };
 }
 
@@ -97,7 +98,7 @@ export async function processAltTextAuditStep(context) {
   } = context;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const siteId = site.getId();
-  const auditUrl = finalUrl;
+  const auditUrl = finalUrl.replace(/^https?:\/\//, '$&www.');
 
   log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] [Audit Url: ${auditUrl}] processing scraped content`);
 
@@ -159,6 +160,18 @@ export async function processAltTextAuditStep(context) {
   };
 
   await convertToOpportunity(auditUrl, auditResult, context);
+
+  // Get the opportunity to log the projected traffic values
+  const { Opportunity } = context.dataAccess;
+  const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+  const altTextOppty = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+  if (altTextOppty) {
+    const data = altTextOppty.getData();
+    log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] Projected traffic values:`, {
+      projectedTrafficLost: data.projectedTrafficLost,
+      projectedTrafficValue: data.projectedTrafficValue,
+    });
+  }
 
   return {
     status: 'complete',

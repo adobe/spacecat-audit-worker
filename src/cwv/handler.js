@@ -20,7 +20,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
 
 const DAILY_THRESHOLD = 1000;
-const INTERVAL = 7; // days
+const INTERVAL = 120; // days
 const auditType = Audit.AUDIT_TYPES.CWV;
 
 export async function CWVRunner(auditUrl, context, site) {
@@ -29,7 +29,7 @@ export async function CWVRunner(auditUrl, context, site) {
   const options = {
     domain: auditUrl,
     interval: INTERVAL,
-    granularity: 'hourly',
+    granularity: 'daily',
     groupedURLs,
   };
   const cwvData = await rumAPIClient.query(auditType, options);
@@ -49,6 +49,8 @@ export async function CWVRunner(auditUrl, context, site) {
 export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
   const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const kpiDeltas = calculateKpiDeltasForAudit(auditData, context, groupedURLs);
+  const { log } = context;
+  log.info(`[${auditType}] [Site: ${site.getId()}] Calculated KPI deltas:`, JSON.stringify(kpiDeltas, null, 2));
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
@@ -57,7 +59,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
     auditType,
     kpiDeltas,
   );
-  const { log } = context;
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
   const maxOrganicForUrls = Math.max(...auditData.auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews));
