@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
@@ -203,7 +203,7 @@ export function formatIssue(type, issueData, severity) {
     htmlWithIssues = issueData.htmlWithIssues.map((item) => {
       let updateFrom = '';
 
-      if (typeof item === 'string') {
+      if (isString(item)) {
         updateFrom = item;
       } else if (item && item.update_from) {
         updateFrom = item.update_from;
@@ -215,7 +215,7 @@ export function formatIssue(type, issueData, severity) {
       return {
         update_from: updateFrom,
         target_selector: targetSelector,
-        issue_id: (typeof item === 'string' ? generateUUID() : (item && item.issue_id)) || generateUUID(),
+        issue_id: (isString(item) ? generateUUID() : (item && item.issue_id)) || generateUUID(),
       };
     });
   } else {
