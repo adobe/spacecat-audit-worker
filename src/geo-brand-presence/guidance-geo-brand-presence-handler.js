@@ -12,18 +12,19 @@
 
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
-
-const POSSIBLE_SUBTYPES = ['guidance:geo-brand-presence', 'guidance:geo-faq'];
+import {
+  GEO_BRAND_PRESENCE_OPPTY_TYPE, GEO_FAQ_OPPTY_TYPE, OPPTY_TYPES,
+} from './handler.js';
 
 function getSuggestionValue(suggestions, subType, log) {
-  if (subType === 'guidance:geo-faq') {
+  if (subType === GEO_FAQ_OPPTY_TYPE) {
     let suggestionValue = '| URL | Question | Answer | Sources |\n|-----|----------|-------|--------|\n';
     suggestions.forEach((suggestion) => {
       const sources = suggestion.sources ? suggestion.sources.map((source, sourceIndex) => `[${sourceIndex + 1}] ${source}`).join('<br>') : '';
       suggestionValue += `| ${suggestion.pageUrl} | ${suggestion.question} | ${suggestion.answer} | ${sources} |\n`;
     });
     return suggestionValue;
-  } else if (subType === 'guidance:geo-brand-presence') {
+  } else if (subType === GEO_BRAND_PRESENCE_OPPTY_TYPE) {
     let suggestionValue = '| Url | Questions | Screenshot |\n |-----|-----------|------------|\n';
     suggestions.forEach((suggestion) => {
       suggestionValue += `| ${suggestion.url} | ${suggestion.q.join('\n')} | [![${suggestion.name}](${suggestion.previewImage})](${suggestion.screenshotUrl})|\n`;
@@ -50,7 +51,7 @@ export default async function handler(message, context) {
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities.find(
-    (oppty) => POSSIBLE_SUBTYPES.includes(oppty.getData()?.subType),
+    (oppty) => OPPTY_TYPES.includes(oppty.getData()?.subType),
   );
   const subType = opportunity.getData()?.subType;
   const entity = convertToOpportunityEntity(siteId, auditId, subType);
