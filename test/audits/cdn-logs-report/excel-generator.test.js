@@ -18,9 +18,11 @@ use(sinonChai);
 
 describe('CDN Logs Excel Generator', () => {
   let createExcelReport;
+  let REPORT_CONFIGS;
 
   before(async () => {
-    ({ createCDNLogsExcelReport: createExcelReport } = await import('../../../src/cdn-logs-report/utils/excel-generator.js'));
+    ({ createExcelReport } = await import('../../../src/cdn-logs-report/utils/excel-generator.js'));
+    ({ REPORT_CONFIGS } = await import('../../../src/cdn-logs-report/constants/report-configs.js'));
   });
 
   it('creates comprehensive excel report with all data sheets', async () => {
@@ -59,7 +61,7 @@ describe('CDN Logs Excel Generator', () => {
       getConfig: () => ({}),
     };
 
-    const result = await createExcelReport(mockData, { site });
+    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, { site });
     const buffer = await result.xlsx.writeBuffer();
 
     expect(buffer).to.be.instanceOf(Buffer);
@@ -89,11 +91,37 @@ describe('CDN Logs Excel Generator', () => {
       getConfig: () => ({}),
     };
 
-    const result = await createExcelReport(mockData, { site });
+    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, { site });
     const buffer = await result.xlsx.writeBuffer();
 
     expect(buffer).to.be.instanceOf(Buffer);
     expect(result.worksheets.length).to.be.greaterThan(5);
+  });
+
+  it('creates referral traffic report with country-topic and url-topic sheets', async () => {
+    const mockData = {
+      referralCountryTopic: [
+        { country: 'US', topic: 'photoshop', hits: 100 },
+        { country: 'GLOBAL', topic: 'pure whey protein', hits: 50 },
+      ],
+      referralUrlTopic: [
+        { url: '/products/photoshop.html', topic: 'photoshop', hits: 75 },
+        { url: '/products/pure-whey-protein/', topic: 'pure whey protein', hits: 25 },
+      ],
+    };
+
+    const site = {
+      getBaseURL: () => 'https://adobe.com',
+      getConfig: () => ({}),
+    };
+
+    const result = await createExcelReport(mockData, REPORT_CONFIGS.referral, { site });
+    const buffer = await result.xlsx.writeBuffer();
+
+    expect(buffer).to.be.instanceOf(Buffer);
+    expect(result.worksheets).to.have.length(2);
+    expect(result.worksheets[0].name).to.equal('shared-hits_by_country_topic');
+    expect(result.worksheets[1].name).to.equal('shared-hits_by_url_topic');
   });
 
   it('processes null properties and empty status fallbacks', async () => {
@@ -121,7 +149,7 @@ describe('CDN Logs Excel Generator', () => {
       getConfig: () => ({}),
     };
 
-    const result = await createExcelReport(mockData, {
+    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, {
       site,
       customEndDate: '2024-01-01',
     });
@@ -145,7 +173,7 @@ describe('CDN Logs Excel Generator', () => {
       getConfig: () => ({}),
     };
 
-    const result = await createExcelReport(mockData, { site });
+    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, { site });
     expect(result.worksheets.length).to.be.greaterThan(0);
   });
 });

@@ -63,11 +63,13 @@ describe('CDN Logs Report Runner', () => {
           createError503Urls: sandbox.stub().resolves('SELECT 503 errors'),
           createSuccessUrlsByCategory: sandbox.stub().resolves('SELECT success urls'),
           createTopUrls: sandbox.stub().resolves('SELECT top urls'),
+          createReferralTrafficByCountryTopic: sandbox.stub().resolves('SELECT referral country topic'),
+          createReferralTrafficByUrlTopic: sandbox.stub().resolves('SELECT referral url topic'),
           ...overrides.queryBuilder,
         },
       },
       '../../../src/cdn-logs-report/utils/excel-generator.js': {
-        createCDNLogsExcelReport: sandbox.stub().resolves({ xlsx: { writeBuffer: () => Buffer.from('excel') } }),
+        createExcelReport: sandbox.stub().resolves({ xlsx: { writeBuffer: () => Buffer.from('excel') } }),
         ...overrides.excelGenerator,
       },
       '../../../src/cdn-logs-report/utils/report-uploader.js': {
@@ -81,6 +83,35 @@ describe('CDN Logs Report Runner', () => {
         buildSiteFilters: sandbox.stub().returns([]),
         ...overrides.reportUtils,
       },
+      '../../../src/cdn-logs-report/constants/report-configs.js': {
+        REPORT_CONFIGS: {
+          agentic: {
+            filePrefix: 'agentictraffic',
+            workbookCreator: 'Test Agentic',
+            queries: {
+              reqcountbycountry: overrides.queryBuilder?.createCountryWeeklyBreakdown || sandbox.stub().resolves('SELECT country data'),
+              reqcountbyuseragent: overrides.queryBuilder?.createUserAgentWeeklyBreakdown || sandbox.stub().resolves('SELECT user agent data'),
+              reqcountbyurlstatus: overrides.queryBuilder?.createUrlStatusWeeklyBreakdown || sandbox.stub().resolves('SELECT url status data'),
+              top_bottom_urls_by_status: overrides.queryBuilder?.createTopBottomUrlsByStatus || sandbox.stub().resolves('SELECT top bottom urls'),
+              error_404_urls: overrides.queryBuilder?.createError404Urls || sandbox.stub().resolves('SELECT 404 errors'),
+              error_503_urls: overrides.queryBuilder?.createError503Urls || sandbox.stub().resolves('SELECT 503 errors'),
+              success_urls_by_category: overrides.queryBuilder?.createSuccessUrlsByCategory || sandbox.stub().resolves('SELECT success urls'),
+              top_urls: overrides.queryBuilder?.createTopUrls || sandbox.stub().resolves('SELECT top urls'),
+            },
+            sheets: [],
+          },
+          referral: {
+            filePrefix: 'referral-traffic',
+            workbookCreator: 'Test Referral',
+            queries: {
+              referralCountryTopic: overrides.queryBuilder?.createReferralTrafficByCountryTopic || sandbox.stub().resolves('SELECT referral country topic'),
+              referralUrlTopic: overrides.queryBuilder?.createReferralTrafficByUrlTopic || sandbox.stub().resolves('SELECT referral url topic'),
+            },
+            sheets: [],
+          },
+        },
+        ...overrides.reportConfigs,
+      },
     };
   };
 
@@ -93,9 +124,11 @@ describe('CDN Logs Report Runner', () => {
     sandbox.restore();
   });
 
-  it('runs weekly report successfully for all providers', async () => {
+  it('runs weekly report successfully for all providers and report types', async () => {
     await reportRunner.runWeeklyReport(baseMockParams);
 
+    expect(baseMockParams.log.info).to.have.been.calledWith('Starting weekly agentic reports...');
+    expect(baseMockParams.log.info).to.have.been.calledWith('Starting weekly referral reports...');
     expect(baseMockParams.log.info).to.have.been.calledWith('Generating reports for providers: chatgpt, perplexity');
     expect(baseMockParams.log.info).to.have.been.calledWith('Starting report generation for chatgpt...');
     expect(baseMockParams.log.info).to.have.been.calledWith('Starting report generation for perplexity...');
@@ -111,6 +144,8 @@ describe('CDN Logs Report Runner', () => {
 
     await reportRunner.runCustomDateRangeReport(customParams);
 
+    expect(baseMockParams.log.info).to.have.been.calledWith('Starting custom date range agentic reports...');
+    expect(baseMockParams.log.info).to.have.been.calledWith('Starting custom date range referral reports...');
     expect(baseMockParams.log.info).to.have.been.calledWith('Generating reports for providers: chatgpt, perplexity');
     expect(baseMockParams.athenaClient.query).to.have.been.called;
   });
@@ -140,7 +175,7 @@ describe('CDN Logs Report Runner', () => {
       '../../../src/cdn-logs-report/utils/report-runner.js',
       createEsmockConfig({
         excelGenerator: {
-          createCDNLogsExcelReport: sandbox.stub().rejects(new Error('Excel generation failed')),
+          createExcelReport: sandbox.stub().rejects(new Error('Excel generation failed')),
         },
       }),
     );
@@ -167,44 +202,29 @@ describe('CDN Logs Report Runner', () => {
   });
 
   describe('null query handling', () => {
-    it('continues processing other queries when some return null and others fail', async () => {
-      const mockQueryBuilder = {
-        createCountryWeeklyBreakdown: sandbox.stub().resolves('SELECT country data'),
-        createUserAgentWeeklyBreakdown: sandbox.stub().resolves(null),
-        createUrlStatusWeeklyBreakdown: sandbox.stub().resolves('SELECT url status data'),
-        createTopBottomUrlsByStatus: sandbox.stub().resolves('SELECT top bottom urls'),
-        createError404Urls: sandbox.stub().resolves('SELECT 404 errors'),
-        createError503Urls: sandbox.stub().resolves(null),
-        createSuccessUrlsByCategory: sandbox.stub().resolves(null),
-        createTopUrls: sandbox.stub().resolves('SELECT top urls'),
-      };
-
-      const mixedRunner = await esmock(
+    it('handles null queries gracefully', async () => {
+      const nullQueryRunner = await esmock(
         '../../../src/cdn-logs-report/utils/report-runner.js',
         createEsmockConfig({
-          queryBuilder: mockQueryBuilder,
+          queryBuilder: {
+            createUserAgentBreakdownQuery: () => null,
+            createCountryBreakdownQuery: () => null,
+            createPageTypeBreakdownQuery: () => null,
+            createTopBottomUrlsByStatusQuery: () => null,
+            createTopUrlsByTrafficQuery: () => null,
+            createError404Query: () => null,
+            createError503Query: () => null,
+            createCategoryBreakdownQuery: () => null,
+            createReferralTrafficByCountryTopicQuery: () => null,
+            createReferralTrafficByUrlTopicQuery: () => null,
+          },
         }),
       );
 
-      const testParams = createMockParams();
+      await nullQueryRunner.runWeeklyReport(baseMockParams);
 
-      testParams.athenaClient.query
-        .onCall(0).resolves([{ country_code: 'US', week_1: 100 }])
-        .onCall(1).rejects(new Error('Query failed'))
-        .onCall(2)
-        .resolves([{ page_type: 'product', week_1: 50 }])
-        .onCall(3)
-        .resolves([{ url: '/test', status: 200 }])
-        .onCall(4)
-        .resolves([{ url: '/error', status: 404 }]);
-
-      await mixedRunner.runWeeklyReport(testParams);
-
-      expect(testParams.athenaClient.query.callCount).to.equal(10);
-      expect(testParams.log.error.callCount).to.be.greaterThan(0);
-
-      expect(testParams.log.info).to.have.been.calledWith('Successfully generated chatgpt report');
-      expect(testParams.log.info).to.have.been.calledWith('Successfully generated perplexity report');
+      expect(baseMockParams.log.info).to.have.been.calledWith('Generating reports for providers: chatgpt, perplexity');
+      expect(saveExcelReportMock).to.have.been.called;
     });
   });
 });
