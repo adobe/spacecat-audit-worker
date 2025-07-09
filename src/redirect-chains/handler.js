@@ -30,7 +30,7 @@ import {
 
 const auditType = 'redirect-chains';
 
-export const AUDIT_DISPLAY_NAME = 'Redirect Chains'; // used for logging, and in unit tests
+export const AUDIT_LOGGING_NAME = 'RedC: Redirect Chains'; // used for logging, and in unit tests
 const USER_AGENT = 'Spacecat/1.0'; // identify ourselves in all HTTP requests
 const KEY_SEPARATOR = '~|~'; // part of building a unique key for each entry in the suggestions
 const STOP_AFTER_N_REDIRECTS = 5; // per entry tested ... used to prevent infinite redirects
@@ -332,13 +332,13 @@ export async function getJsonData(url, log) {
       // ... which just means there is no /redirects.json file. That's A-OK.
       if (response.status !== 404) {
         // otherwise, this is an unexpected error code
-        log.error(`${AUDIT_DISPLAY_NAME} - Error trying to get ${url} ... HTTP code: ${response.status}`);
+        log.error(`${AUDIT_LOGGING_NAME} - Error trying to get ${url} ... HTTP code: ${response.status}`);
       }
       return []; // return an empty array
     }
     return await response.json(); // return the data as JSON
   } catch (error) {
-    log.error(`${AUDIT_DISPLAY_NAME} - Error in method "getJsonData" for URL: ${url} ...`, error);
+    log.error(`${AUDIT_LOGGING_NAME} - Error in method "getJsonData" for URL: ${url} ...`, error);
     return []; // return an empty array if the fetch fails
   }
 }
@@ -374,7 +374,7 @@ export async function processRedirectsFile(baseUrl, log) {
   }
   // sanity check: log if we do not have all the entries
   if (redirectsJson.data.length !== totalEntries) {
-    log.warn(`${AUDIT_DISPLAY_NAME} - Expected ${totalEntries} entries in ${redirectsUrl}, but found only ${redirectsJson.data.length}.`);
+    log.warn(`${AUDIT_LOGGING_NAME} - Expected ${totalEntries} entries in ${redirectsUrl}, but found only ${redirectsJson.data.length}.`);
   }
 
   // Extract the page URLs from the 'data' property of the /redirects.json file.
@@ -586,7 +586,7 @@ export async function redirectsAuditRunner(baseUrl, context) {
   };
 
   // run the audit
-  log.info(`${AUDIT_DISPLAY_NAME} - STARTED running audit for /redirects.json for ${baseUrl}`);
+  log.info(`${AUDIT_LOGGING_NAME} - STARTED running audit for /redirects.json for ${baseUrl}`);
   if (!extractDomainAndProtocol(baseUrl)) {
     auditResult.success = false;
     auditResult.reasons = [{ value: baseUrl, error: 'INVALID URL' }];
@@ -595,7 +595,7 @@ export async function redirectsAuditRunner(baseUrl, context) {
   // get a pre-processed array of page URLs from the /redirects.json file
   let pageUrls = [];
   if (auditResult.success) {
-    log.info(`${AUDIT_DISPLAY_NAME} - PROCESSING /redirects.json for ${baseUrl}`);
+    log.info(`${AUDIT_LOGGING_NAME} - PROCESSING /redirects.json for ${baseUrl}`);
     pageUrls = await processRedirectsFile(baseUrl, log);
   }
 
@@ -611,18 +611,18 @@ export async function redirectsAuditRunner(baseUrl, context) {
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
   // echo the stats
-  log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json has total number of entries checked:       ${pageUrls.length}`);
-  log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json has total number of entries with problems: ${counts.countTotalEntriesWithProblems}`);
+  log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json has total number of entries checked:       ${pageUrls.length}`);
+  log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json has total number of entries with problems: ${counts.countTotalEntriesWithProblems}`);
   if (counts.countTotalEntriesWithProblems > 0) {
-    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. duplicate Source URLs:        ${counts.countDuplicateSourceUrls}`);
-    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. too qualified URLs:           ${counts.countTooQualifiedUrls}`);
-    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. same Source and Dest URLs:    ${counts.countHasSameSrcDest}`);
-    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. resulted in HTTP error:       ${counts.count400Errors}`);
-    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. Final URL not match Dest URL: ${counts.countNotMatchDestinationUrl}`);
-    log.info(`${AUDIT_DISPLAY_NAME} - STATS: /redirects.json .. with too many redirects:      ${counts.countTooManyRedirects}`);
+    log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. duplicate Source URLs:        ${counts.countDuplicateSourceUrls}`);
+    log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. too qualified URLs:           ${counts.countTooQualifiedUrls}`);
+    log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. same Source and Dest URLs:    ${counts.countHasSameSrcDest}`);
+    log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. resulted in HTTP error:       ${counts.count400Errors}`);
+    log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. Final URL not match Dest URL: ${counts.countNotMatchDestinationUrl}`);
+    log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. with too many redirects:      ${counts.countTooManyRedirects}`);
   }
 
-  log.info(`${AUDIT_DISPLAY_NAME} - DONE running audit for /redirects.json for ${baseUrl}. Completed in ${formattedElapsed} seconds.`);
+  log.info(`${AUDIT_LOGGING_NAME} - DONE running audit for /redirects.json for ${baseUrl}. Completed in ${formattedElapsed} seconds.`);
   return {
     fullAuditRef: baseUrl,
     url: baseUrl,
@@ -702,8 +702,8 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
   const suggestedFixes = []; // {key: '...', fix: '...'}
   const entriesWithIssues = auditData?.auditResult?.details?.issues ?? [];
 
-  log.info(`${AUDIT_DISPLAY_NAME} - Generating suggestions for URL ${auditUrl} which has ${entriesWithIssues.length} affected entries.`);
-  log.debug(`${AUDIT_DISPLAY_NAME} - Audit data: ${JSON.stringify(auditData)}`);
+  log.info(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has ${entriesWithIssues.length} affected entries.`);
+  log.debug(`${AUDIT_LOGGING_NAME} - Audit data: ${JSON.stringify(auditData)}`);
 
   for (const row of entriesWithIssues) {
     const suggestedFix = getSuggestedFix(row);
@@ -711,8 +711,8 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
       suggestedFixes.push({ key: buildUniqueKey(row), fix: suggestedFix });
     }
   }
-  log.info(`${AUDIT_DISPLAY_NAME} - Generated ${suggestedFixes.length} suggested fixes.`);
-  log.debug(`${AUDIT_DISPLAY_NAME} - Suggested fixes: ${JSON.stringify(suggestedFixes)}`);
+  log.info(`${AUDIT_LOGGING_NAME} - Generated ${suggestedFixes.length} suggested fixes.`);
+  log.debug(`${AUDIT_LOGGING_NAME} - Suggested fixes: ${JSON.stringify(suggestedFixes)}`);
 
   // return what will become the next 'auditData' object
   return {
@@ -736,17 +736,17 @@ export async function generateOpportunities(auditUrl, auditData, context) {
 
   // check if audit itself ran successfully
   if (auditData.auditResult.success === false) {
-    log.info(`${AUDIT_DISPLAY_NAME} audit itself failed, skipping opportunity creation`);
+    log.info(`${AUDIT_LOGGING_NAME} audit itself failed, skipping opportunity creation`);
     return { ...auditData };
   }
 
   // check if the audit produced any suggestions to resolve the issues it found
   if (!auditData.suggestions || !auditData.suggestions.length) {
-    log.info(`${AUDIT_DISPLAY_NAME} has no suggested fixes found, skipping opportunity creation`);
+    log.info(`${AUDIT_LOGGING_NAME} has no suggested fixes found, skipping opportunity creation`);
     return { ...auditData };
   }
 
-  log.info(`${AUDIT_DISPLAY_NAME} generated ${auditData.suggestions.length} suggestions.  Now creating opportunities for these.`);
+  log.info(`${AUDIT_LOGGING_NAME} generated ${auditData.suggestions.length} suggestions.  Now creating opportunities for these.`);
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,

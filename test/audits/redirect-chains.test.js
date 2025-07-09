@@ -26,7 +26,7 @@ import {
   getSuggestedFix,
   generateSuggestedFixes,
   generateOpportunities,
-  AUDIT_DISPLAY_NAME,
+  AUDIT_LOGGING_NAME,
 } from '../../src/redirect-chains/handler.js';
 import {
   addWWW,
@@ -1263,8 +1263,8 @@ describe('Redirect Chains Audit', () => {
         expect(result.suggestions[0].fix).to.include('Automatically remove this entry');
         expect(result.suggestions[1].fix).to.include('The Source URL: /same and the Destination URL: /same are the same');
 
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_DISPLAY_NAME} - Generating suggestions for URL ${auditUrl} which has 2 affected entries.`);
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_DISPLAY_NAME} - Generated 2 suggested fixes.`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 2 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 2 suggested fixes.`);
       });
 
       it('should handle empty or missing issues array', () => {
@@ -1282,8 +1282,8 @@ describe('Redirect Chains Audit', () => {
 
         expect(result).to.have.property('suggestions');
         expect(result.suggestions).to.be.an('array').that.is.empty;
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_DISPLAY_NAME} - Generating suggestions for URL ${auditUrl} which has 0 affected entries.`);
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_DISPLAY_NAME} - Generated 0 suggested fixes.`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 0 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 0 suggested fixes.`);
       });
 
       it('should handle missing audit data', () => {
@@ -1295,8 +1295,8 @@ describe('Redirect Chains Audit', () => {
 
         expect(result).to.have.property('suggestions');
         expect(result.suggestions).to.be.an('array').that.is.empty;
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_DISPLAY_NAME} - Generating suggestions for URL ${auditUrl} which has 0 affected entries.`);
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_DISPLAY_NAME} - Generated 0 suggested fixes.`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 0 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 0 suggested fixes.`);
       });
 
       it('should skip opportunity creation when audit fails', async () => {
@@ -1312,7 +1312,7 @@ describe('Redirect Chains Audit', () => {
         const result = await generateOpportunities(auditUrl, auditData, context);
 
         expect(result).to.deep.equal(auditData);
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_DISPLAY_NAME} audit itself failed, skipping opportunity creation`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} audit itself failed, skipping opportunity creation`);
       });
 
       it('should skip opportunity creation when no suggestions exist', async () => {
@@ -1327,7 +1327,7 @@ describe('Redirect Chains Audit', () => {
         const result = await generateOpportunities(auditUrl, auditData, context);
 
         expect(result).to.deep.equal(auditData);
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_DISPLAY_NAME} has no suggested fixes found, skipping opportunity creation`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} has no suggested fixes found, skipping opportunity creation`);
       });
 
       it('should create opportunities for valid suggestions', async () => {
