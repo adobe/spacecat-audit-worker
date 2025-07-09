@@ -1,3 +1,10 @@
+## [1.121.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.121.3...v1.121.4) (2025-07-09)
+
+
+### Bug Fixes
+
+* Multiple bug fixes in structured data audit ([#1033](https://github.com/adobe/spacecat-audit-worker/issues/1033)) ([23d364e](https://github.com/adobe/spacecat-audit-worker/commit/23d364e93277429bd917da55f6df6156f0bff951))
+
 ## [1.121.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.121.2...v1.121.3) (2025-07-07)
 
 
