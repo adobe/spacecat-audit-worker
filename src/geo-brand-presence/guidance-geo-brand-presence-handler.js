@@ -20,7 +20,7 @@ function getSuggestionValue(suggestions, subType, log) {
     let suggestionValue = '| URL | Question | Answer | Sources |\n|-----|----------|-------|--------|\n';
     suggestions.forEach((suggestion) => {
       const sources = suggestion.sources ? suggestion.sources.map((source, sourceIndex) => `[${sourceIndex + 1}] ${source}`).join('<br>') : '';
-      suggestionValue += `| ${suggestion.page_url} | ${suggestion.question} | ${suggestion.answer} | ${sources} |\n`;
+      suggestionValue += `| ${suggestion.pageUrl} | ${suggestion.question} | ${suggestion.answer} | ${sources} |\n`;
     });
     return suggestionValue;
   } else if (subType === 'guidance:geo-brand-presence') {
