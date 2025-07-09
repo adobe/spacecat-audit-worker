@@ -1,3 +1,10 @@
+# [1.122.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.121.4...v1.122.0) (2025-07-09)
+
+
+### Features
+
+* add referral traffic report support ([#1034](https://github.com/adobe/spacecat-audit-worker/issues/1034)) ([dcaa85f](https://github.com/adobe/spacecat-audit-worker/commit/dcaa85fe7ed3f7cb6a5ec45fb89a9c0b8e18d8cf))
+
 ## [1.121.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.121.3...v1.121.4) (2025-07-09)
 
 
