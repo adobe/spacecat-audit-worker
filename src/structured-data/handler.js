@@ -94,7 +94,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
   // Check if auto suggest was enabled
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite(auditAutoSuggestType, site)) {
-    log.info('SDA: Auto-suggest is disabled for site');
+    log.info(`SDA: Auto-suggest is disabled for site ${auditUrl}`);
     return { ...auditData };
   }
 
@@ -138,7 +138,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
         }
         scrapeResult = await scrapeCache.get(pathname);
       } catch (e) {
-        log.error(`SDA: Could not find scrape for ${pathname}. Make sure that scrape-top-pages did run.`, e);
+        log.error(`SDA: Could not find scrape for ${issue.pageUrl} at ${pathname}. Make sure that scrape-top-pages did run.`, e);
         continue;
       }
 
@@ -301,6 +301,10 @@ export async function runAuditAndGenerateSuggestions(context) {
     } else {
       topPages = topPages.map((page) => ({ url: page.getUrl() }));
     }
+
+    // Filter out files from the top pages as these are not scraped
+    const dataTypesToIgnore = ['pdf', 'ps', 'dwf', 'kml', 'kmz', 'xls', 'xlsx', 'ppt', 'pptx', 'doc', 'docx', 'rtf', 'swf'];
+    topPages = topPages.filter((page) => !dataTypesToIgnore.some((dataType) => page.url.endsWith(`.${dataType}`)));
 
     let auditResult = await processStructuredData(finalUrl, context, topPages, scrapeCache);
 
