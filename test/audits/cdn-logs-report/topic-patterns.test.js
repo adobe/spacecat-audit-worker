@@ -36,31 +36,49 @@ describe('Topic Patterns', () => {
     expect(regex.exec(testUrls[3])?.[1]).to.be.undefined;
   });
 
-  it('extracts topics from adobe.com URLs with multiple patterns', () => {
+  it('tests adobe.com URL patterns', () => {
+    // note: this patterns are designed for SQL, may behave differently in JS
     const patterns = TOPIC_PATTERNS['adobe.com'];
     const testUrls = [
-      '/products/photoshop.html',
-      '/products/illustrator.html',
-      '/express/business',
-      '/creativecloud/',
+      '/acrobat/',
+      '/acrobat.html',
+      '/products/acrobat/',
+      '/products/firefly/',
+      '/ai/generative-firefly/',
       '/not-matching/',
     ];
 
-    const productPattern = patterns.find((p) => p.name === 'Individual Creative Applications');
-    const productRegex = new RegExp(productPattern.regex);
-    expect(productRegex.test(testUrls[0])).to.be.true;
-    expect(productRegex.test(testUrls[1])).to.be.true;
+    const acrobatPattern = patterns.find((p) => p.name === 'Acrobat');
+    const acrobatRegex = new RegExp(acrobatPattern.regex);
+    expect(acrobatPattern.regex).to.include('acrobat');
+    expect(acrobatRegex.test(testUrls[0])).to.be.true;
+    expect(acrobatRegex.test(testUrls[1])).to.be.true;
+    expect(acrobatRegex.test(testUrls[2])).to.be.true;
 
-    const expressPattern = patterns.find((p) => p.name === 'Express Creative Tools');
-    const expressRegex = new RegExp(expressPattern.regex);
-    expect(expressRegex.test(testUrls[2])).to.be.true;
+    const fireflyPattern = patterns.find((p) => p.name === 'Firefly');
+    const fireflyRegex = new RegExp(fireflyPattern.regex);
+    expect(fireflyPattern.regex).to.include('firefly');
+    expect(fireflyRegex.test(testUrls[3])).to.be.true;
+    expect(fireflyRegex.test(testUrls[4])).to.be.true;
 
-    const ccPattern = patterns.find((p) => p.name === 'Creative Cloud Suite');
-    const ccRegex = new RegExp(ccPattern.regex);
-    expect(ccRegex.test(testUrls[3])).to.be.true;
-
-    const anyMatch = patterns.some((p) => new RegExp(p.regex).test(testUrls[4]));
+    const anyMatch = patterns.some((p) => new RegExp(p.regex).test(testUrls[5]));
     expect(anyMatch).to.be.false;
+  });
+
+  it('tests business.adobe.com URL patterns', () => {
+    const patterns = TOPIC_PATTERNS['business.adobe.com'];
+    const testUrls = [
+      '/products/',
+      '/products/analytics/',
+      '/not-matching/',
+    ];
+
+    const enterprisePattern = patterns.find((p) => p.name === 'Enterprise Products');
+    const enterpriseRegex = new RegExp(enterprisePattern.regex);
+    expect(enterprisePattern.regex).to.include('products');
+    expect(enterpriseRegex.test(testUrls[0])).to.be.true;
+    expect(enterpriseRegex.test(testUrls[1])).to.be.true;
+    expect(enterpriseRegex.test(testUrls[2])).to.be.false;
   });
 
   it('handles unknown domains gracefully', () => {
