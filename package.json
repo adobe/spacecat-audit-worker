@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.121.3",
+  "version": "1.122.0",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -45,6 +45,7 @@
       "static/prompts/broken-backlinks-followup.prompt",
       "static/prompts/structured-data-suggest.prompt",
       "static/prompts/image-alt-text.prompt",
+      "static/schemaorg-current-https.jsonld",
       "src/cdn-analysis/sql",
       "src/cdn-logs-report/sql"
     ]
