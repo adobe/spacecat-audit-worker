@@ -31,6 +31,7 @@ export async function CWVRunner(auditUrl, context, site) {
     interval: INTERVAL,
     granularity: 'hourly',
     groupedURLs,
+    filterBotTraffic: false,
   };
   const cwvData = await rumAPIClient.query(auditType, options);
   const auditResult = {
