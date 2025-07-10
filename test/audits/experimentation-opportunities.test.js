@@ -118,6 +118,7 @@ describe('Experimentation Opportunities Tests', () => {
         domain: 'https://abc.com',
         interval: 7,
         granularity: 'hourly',
+        filterBotTraffic: false,
       },
     );
 
