@@ -97,6 +97,7 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
     domain: auditUrl,
     interval: DAYS,
     granularity: 'hourly',
+    filterBotTraffic: false,
   };
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
