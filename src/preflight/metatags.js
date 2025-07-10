@@ -22,19 +22,19 @@ export default async function metatags(context, auditContext) {
   } = context;
   const {
     checks,
-    baseURL,
-    normalizedUrls,
-    normalizedStep,
+    previewBaseURL,
+    previewUrls,
+    step,
     audits,
     auditsResult,
-    targetKeys,
+    s3Keys,
     timeExecutionBreakdown,
   } = auditContext;
   if (!checks || checks.includes(PREFLIGHT_METATAGS)) {
     const metatagsStartTime = Date.now();
     const metatagsStartTimestamp = new Date().toISOString();
     // Create metatags audit entries for all pages
-    normalizedUrls.forEach((url) => {
+    previewUrls.forEach((url) => {
       const pageResult = audits.get(url);
       pageResult.audits.push({ name: PREFLIGHT_METATAGS, type: 'seo', opportunities: [] });
     });
@@ -43,8 +43,8 @@ export default async function metatags(context, auditContext) {
       seoChecks,
       detectedTags,
       extractedTags,
-    } = await metatagsAutoDetect(site, targetKeys, context);
-    const tagCollection = normalizedStep === 'suggest'
+    } = await metatagsAutoDetect(site, s3Keys, context);
+    const tagCollection = step === 'suggest'
       ? await metatagsAutoSuggest({
         detectedTags,
         healthyTags: seoChecks.getFewHealthyTags(),
@@ -52,7 +52,7 @@ export default async function metatags(context, auditContext) {
       }, context, site, { forceAutoSuggest: true })
       : detectedTags;
     Object.entries(tagCollection).forEach(([path, tags]) => {
-      const pageUrl = `${baseURL}${path}`;
+      const pageUrl = `${previewBaseURL}${path}`;
       const audit = audits.get(pageUrl)?.audits.find((a) => a.name === PREFLIGHT_METATAGS);
       return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
         ...data,
@@ -62,7 +62,7 @@ export default async function metatags(context, auditContext) {
     const metatagsEndTime = Date.now();
     const metatagsEndTimestamp = new Date().toISOString();
     const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Meta tags audit completed in ${metatagsElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'metatags',

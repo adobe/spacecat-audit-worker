@@ -23,9 +23,9 @@ export default async function links(context, auditContext) {
   } = context;
   const {
     checks,
-    baseURL,
-    normalizedUrls,
-    normalizedStep,
+    previewBaseURL,
+    previewUrls,
+    step,
     audits,
     auditsResult,
     scrapedObjects,
@@ -35,14 +35,14 @@ export default async function links(context, auditContext) {
   } = auditContext;
   if (!checks || checks.includes(PREFLIGHT_LINKS)) {
     // Create links audit entries for all pages
-    normalizedUrls.forEach((url) => {
+    previewUrls.forEach((url) => {
       const pageResult = audits.get(url);
       pageResult.audits.push({ name: PREFLIGHT_LINKS, type: 'seo', opportunities: [] });
     });
 
     // Pre-index PREFLIGHT_LINKS audits for O(1) lookups
     const linksAuditMap = new Map();
-    normalizedUrls.forEach((url) => {
+    previewUrls.forEach((url) => {
       const pageResult = audits.get(url);
       if (pageResult) {
         const linksAudit = pageResult.audits.find((a) => a.name === PREFLIGHT_LINKS);
@@ -62,7 +62,7 @@ export default async function links(context, auditContext) {
 
     // Process internal links
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
-      if (normalizedStep === 'suggest') {
+      if (step === 'suggest') {
         const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
           urlTo: new URL(site.getBaseURL()).origin + new URL(link.urlTo).pathname.replace(/\/$/, ''),
           href: link.href,
@@ -70,9 +70,9 @@ export default async function links(context, auditContext) {
         }));
         log.debug(`[preflight-audit] Found ${JSON.stringify(brokenLinks)} broken internal links`);
         const brokenInternalLinks = await
-        generateSuggestionData(baseURL, brokenLinks, context, site);
+        generateSuggestionData(previewBaseURL, brokenLinks, context, site);
         log.debug(`[preflight-audit] Generated suggestions for broken internal links: ${JSON.stringify(brokenInternalLinks)}`);
-        const baseURLOrigin = new URL(baseURL).origin;
+        const baseURLOrigin = new URL(previewBaseURL).origin;
         brokenInternalLinks.forEach(({
           urlTo, href, status, urlsSuggested, aiRationale,
         }) => {
@@ -125,7 +125,7 @@ export default async function links(context, auditContext) {
     const linksEndTime = Date.now();
     const linksEndTimestamp = new Date().toISOString();
     const linksElapsed = ((linksEndTime - linksStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Links audit completed in ${linksElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Links audit completed in ${linksElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'links',

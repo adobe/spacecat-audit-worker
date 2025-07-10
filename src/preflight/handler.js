@@ -93,12 +93,12 @@ export const preflightAudit = async (context) => {
    */
   const {
     urls,
-    step = PREFLIGHT_STEP_IDENTIFY,
+    step: rawStep = PREFLIGHT_STEP_IDENTIFY,
     checks,
     enableAuthentication = true,
   } = jobMetadata.payload;
-  const normalizedStep = step.toLowerCase();
-  const normalizedUrls = urls.map((url) => {
+  const step = rawStep.toLowerCase();
+  const previewUrls = urls.map((url) => {
     if (!isValidUrl(url)) {
       throw new Error(`[preflight-audit] site: ${site.getId()}. Invalid URL provided: ${url}`);
     }
@@ -106,7 +106,7 @@ export const preflightAudit = async (context) => {
     return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`;
   });
 
-  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Preflight audit started.`);
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
@@ -124,25 +124,25 @@ export const preflightAudit = async (context) => {
       pageAuthToken = getPrefixedPageAuthToken(site, pageAuthToken, options);
     }
 
-    const baseURL = new URL(normalizedUrls[0]).origin;
+    const previewBaseURL = new URL(previewUrls[0]).origin;
     const authHeader = pageAuthToken ? { headers: { Authorization: pageAuthToken } } : {};
 
     // Retrieve scraped pages
     const prefix = `scrapes/${site.getId()}/`;
     const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
-    const targetKeys = new Set(normalizedUrls.map((u) => `scrapes/${site.getId()}${new URL(u).pathname.replace(/\/$/, '')}/scrape.json`));
+    const s3Keys = new Set(previewUrls.map((u) => `scrapes/${site.getId()}${new URL(u).pathname.replace(/\/$/, '')}/scrape.json`));
     const scrapedObjects = await Promise.all(
       allKeys
-        .filter((key) => targetKeys.has(key))
+        .filter((key) => s3Keys.has(key))
         .map(async (Key) => ({
           Key, data: await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, Key, log),
         })),
     );
 
     // Initialize results
-    const auditsResult = normalizedUrls.map((url) => ({
+    const auditsResult = previewUrls.map((url) => ({
       pageUrl: url,
-      step: normalizedStep,
+      step,
       audits: [],
     }));
     const audits = new Map(auditsResult.map((r) => [r.pageUrl, r]));
@@ -153,7 +153,7 @@ export const preflightAudit = async (context) => {
       const domStartTime = Date.now();
       const domStartTimestamp = new Date().toISOString();
       // Create DOM-based audit entries for all pages
-      normalizedUrls.forEach((url) => {
+      previewUrls.forEach((url) => {
         const pageResult = audits.get(url);
         if (!checks || checks.includes(AUDIT_BODY_SIZE)) {
           pageResult.audits.push({ name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] });
@@ -211,7 +211,7 @@ export const preflightAudit = async (context) => {
       const domEndTime = Date.now();
       const domEndTimestamp = new Date().toISOString();
       const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
-      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. DOM-based audit completed in ${domElapsed} seconds`);
+      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit completed in ${domElapsed} seconds`);
 
       timeExecutionBreakdown.push({
         name: 'dom',
@@ -230,12 +230,12 @@ export const preflightAudit = async (context) => {
         const res = await PREFLIGHT_HANDLERS[handler](context, {
           checks,
           authHeader,
-          baseURL,
-          normalizedUrls,
-          normalizedStep,
+          previewBaseURL,
+          previewUrls,
+          step,
           audits,
           auditsResult,
-          targetKeys,
+          s3Keys,
           scrapedObjects,
           pageAuthToken,
           urls,
@@ -261,7 +261,7 @@ export const preflightAudit = async (context) => {
       },
     }));
 
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${JSON.stringify(resultWithProfiling)}`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. ${JSON.stringify(resultWithProfiling)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     jobEntity.setStatus(AsyncJob.Status.COMPLETED);
@@ -270,7 +270,7 @@ export const preflightAudit = async (context) => {
     jobEntity.setEndedAt(new Date().toISOString());
     await jobEntity.save();
   } catch (error) {
-    log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Error during preflight audit.`, error);
+    log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Error during preflight audit.`, error);
     const jobEntity = await AsyncJobEntity.findById(jobId);
     jobEntity.setStatus(AsyncJob.Status.FAILED);
     jobEntity.setError({
@@ -283,7 +283,7 @@ export const preflightAudit = async (context) => {
     throw error;
   }
 
-  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. Preflight audit completed.`);
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit completed.`);
 };
 
 export default new AuditBuilder()
