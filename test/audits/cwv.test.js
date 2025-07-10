@@ -37,6 +37,7 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   domain: auditUrl,
   interval: 7,
   granularity: 'hourly',
+  filterBotTraffic: false,
 };
 
 describe('CWVRunner Tests', () => {
