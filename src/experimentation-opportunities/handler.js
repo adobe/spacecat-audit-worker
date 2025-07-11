@@ -12,10 +12,16 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { getCountryCodeFromLang } from '../utils/url-utils.js';
+import {
+  getObjectFromKey,
+} from '../utils/s3-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+const IMPORT_ORGANIC_KEYWORDS = 'organic-keywords';
 
 const DAYS = 7;
 
@@ -128,18 +134,80 @@ export async function runAuditAndScrapeStep(context) {
   };
 }
 
-export function organicKeywordsStep(context) {
+async function toggleImport(site, importType, enable, log) {
+  const siteConfig = site.getConfig();
+  if (enable) {
+    siteConfig.enableImport(importType);
+  } else {
+    siteConfig.disableImport(importType);
+  }
+  site.setConfig(Config.toDynamoItem(siteConfig));
+  try {
+    await site.save();
+  } catch (error) {
+    log.error(`Error enabling ${importType} for site ${site.getId()}: ${error.message}`);
+  }
+}
+
+async function getLangFromScrape(s3Client, bucketName, s3BucketPrefix, pathname, log) {
+  // remove the trailing slash from the pathname
+  const pathnameWithoutTrailingSlash = pathname.replace(/\/$/, '');
+  const key = `${s3BucketPrefix}${pathnameWithoutTrailingSlash}/scrape.json`;
+  const pageScrapeJson = await getObjectFromKey(s3Client, bucketName, key, log) || {};
+  return pageScrapeJson.scrapeResult?.tags?.lang;
+}
+
+function isImportEnabled(importType, imports) {
+  return imports.find((importConfig) => importConfig.type === importType)?.enabled;
+}
+
+export async function organicKeywordsStep(context) {
   const {
-    site, log, finalUrl, audit,
+    site, log, finalUrl, audit, s3Client,
   } = context;
+  log.info(`Organic keywords step started for ${finalUrl}`);
+  let organicKeywordsImportEnabled = false;
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const s3BucketPrefix = `scrapes/${site.getId()}`;
   const auditResult = audit.getAuditResult();
   const urls = getHighOrganicLowCtrOpportunityUrls(auditResult.experimentationOpportunities);
   log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
+  const imports = site.getConfig().getImports();
+  if (!isImportEnabled(IMPORT_ORGANIC_KEYWORDS, imports)) {
+    log.info(`Enabling ${IMPORT_ORGANIC_KEYWORDS} for site ${site.getId()}`);
+    await toggleImport(site, IMPORT_ORGANIC_KEYWORDS, true, log);
+    organicKeywordsImportEnabled = true;
+  }
+  let urlConfigs = await Promise.all(urls.map(async (url) => {
+    let urlObj;
+    try {
+      urlObj = new URL(url);
+    } catch (error) {
+      log.error(`Invalid url ${url}: ${error.message}`);
+      return null;
+    }
+    const lang = await getLangFromScrape(
+      s3Client,
+      bucketName,
+      s3BucketPrefix,
+      urlObj.pathname,
+      log,
+    );
+    log.info(`Lang for ${url} is ${lang}`);
+    const geo = getCountryCodeFromLang(lang);
+    return { url, geo };
+  }));
+  urlConfigs = urlConfigs.filter(Boolean);
+  log.info(`Url configs: ${JSON.stringify(urlConfigs, null, 2)}`);
+  if (organicKeywordsImportEnabled) {
+    // disable the import after the step is done, if it was enabled in the beginning
+    log.info(`Disabling ${IMPORT_ORGANIC_KEYWORDS} for site ${site.getId()}`);
+    await toggleImport(site, IMPORT_ORGANIC_KEYWORDS, false, log);
+  }
   return {
-    type: 'organic-keywords',
+    type: IMPORT_ORGANIC_KEYWORDS,
     siteId: site.getId(),
-    // TODO: change to all urls, after support is added to the organic-keywords importter
-    pageUrl: urls?.[0],
+    urlConfigs,
   };
 }
 
