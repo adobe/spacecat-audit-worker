@@ -1,3 +1,10 @@
+## [1.122.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.122.0...v1.122.1) (2025-07-11)
+
+
+### Bug Fixes
+
+* enable organic-keywords import by default in high organic low ctr ([#1019](https://github.com/adobe/spacecat-audit-worker/issues/1019)) ([d739467](https://github.com/adobe/spacecat-audit-worker/commit/d7394677cc9166fd7bc6a92a7046f7048a1247c7))
+
 # [1.122.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.121.4...v1.122.0) (2025-07-09)
 
 
