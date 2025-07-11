@@ -15,16 +15,13 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
-import {
-  internalLinksAuditRunner,
-  runAuditAndImportTopPagesStep,
-  prepareScrapingStep,
-} from '../../../src/internal-links/handler.js';
+// direct imports of individual functions removed; tests now use handler.* versions
 import {
   internalLinksData,
   expectedOpportunity,
@@ -83,6 +80,7 @@ const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
 ];
 
 use(sinonChai);
+use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 
@@ -98,12 +96,15 @@ const site = {
     },
   }),
   getConfig: sinon.stub(),
+  // Mock delivery type as AEM CS so HTML comment scanning path is enabled
+  getDeliveryType: () => 'AEM_CS',
 };
 
 describe('Broken internal links audit ', () => {
   let context;
+  let handler; // Declare handler here
 
-  beforeEach(() => {
+  beforeEach(async () => {
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
@@ -123,6 +124,13 @@ describe('Broken internal links audit ', () => {
         finalUrl: 'www.example.com',
       })
       .build();
+
+    // Use esmock for the handler in this describe block
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sinon.stub().resolves({ siteData: [] }),
+      },
+    });
   });
 
   afterEach(() => {
@@ -131,7 +139,7 @@ describe('Broken internal links audit ', () => {
   });
 
   it('broken-internal-links audit runs rum api client 404 query', async () => {
-    const result = await internalLinksAuditRunner(
+    const result = await handler.internalLinksAuditRunner( // Use handler.internalLinksAuditRunner
       'www.example.com',
       context,
       site,
@@ -148,6 +156,10 @@ describe('Broken internal links audit ', () => {
         finalUrl: auditUrl,
         auditContext: {
           interval: 30,
+          sources: {
+            rumDataCount: 3, // Assuming 3 links from internalLinksData
+            htmlCommentCount: 0,
+          },
         },
       },
       fullAuditRef: auditUrl,
@@ -156,7 +168,7 @@ describe('Broken internal links audit ', () => {
 
   it('broken-internal-links audit runs ans throws error incase of error in audit', async () => {
     context.rumApiClient.query.rejects(new Error('error'));
-    expect(await internalLinksAuditRunner(
+    expect(await handler.internalLinksAuditRunner( // Use handler.internalLinksAuditRunner
       'www.example.com',
       context,
       site,
@@ -171,7 +183,7 @@ describe('Broken internal links audit ', () => {
   }).timeout(5000);
 
   it('runAuditAndImportTopPagesStep should run audit and import top pages', async () => {
-    const result = await runAuditAndImportTopPagesStep(context);
+    const result = await handler.runAuditAndImportTopPagesStep(context); // Use handler.runAuditAndImportTopPagesStep
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: site.getId(),
@@ -181,6 +193,10 @@ describe('Broken internal links audit ', () => {
         finalUrl: 'www.example.com',
         auditContext: {
           interval: 30,
+          sources: {
+            rumDataCount: 3,
+            htmlCommentCount: 0,
+          },
         },
       },
       fullAuditRef: auditUrl,
@@ -188,12 +204,13 @@ describe('Broken internal links audit ', () => {
   });
 
   it('prepareScrapingStep should send top pages to scraping service', async () => {
-    const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
+    const topPages = [{ getUrl: () => 'https://example.com/page1' },
+      { getUrl: () => 'https://example.com/page2' }];
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
 
-    const result = await prepareScrapingStep(context);
+    const result = await handler.prepareScrapingStep(context); // Use handler.prepareScrapingStep
     expect(result).to.deep.equal({
       siteId: site.getId(),
       type: 'broken-internal-links',
@@ -283,6 +300,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
       },
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sinon.stub().resolves({ siteData: [] }),
+      },
     });
   });
 
@@ -365,6 +385,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => [],
       },
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sinon.stub().resolves({ siteData: [] }),
+      },
     });
 
     await expect(
@@ -383,6 +406,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => { throw new Error('error'); },
       },
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sinon.stub().resolves({ siteData: [] }),
+      },
     });
 
     const result = await handler.opportunityAndSuggestionsStep(context);
@@ -394,7 +420,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(result.status).to.equal('complete');
 
     expect(context.log.error).to.have.been.calledOnceWith(
-      `[broken-internal-links] [Site: ${site.getId()}] suggestion generation error: error`,
+      `[broken-internal-links] [Site: ${site.getId()}] `
+      + 'suggestion generation error: error',
     );
   }).timeout(5000);
 
@@ -408,6 +435,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => [],
+      },
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sinon.stub().resolves({ siteData: [] }),
       },
     });
 
@@ -450,6 +480,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => [],
+      },
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sinon.stub().resolves({ siteData: [] }),
       },
     });
 
