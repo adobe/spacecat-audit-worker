@@ -17,7 +17,7 @@ import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE = 'organic-keywords-questions';
-export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'guidance:geo-brand-presence';
+export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
 export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
 export const OPPTY_TYPES = [GEO_BRAND_PRESENCE_OPPTY_TYPE, GEO_FAQ_OPPTY_TYPE];
 

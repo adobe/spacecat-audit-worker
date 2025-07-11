@@ -80,7 +80,7 @@ describe('Geo Brand Presence Handler', () => {
     });
   });
 
-  it('should send message to Mystique when keywordQuestions are found', async () => {
+  it('should send message to Mystique for all opportunity types when keywordQuestions are found', async () => {
     // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
     context.s3Client.send = sinon.stub().resolves({
       Body: {
@@ -119,34 +119,47 @@ describe('Geo Brand Presence Handler', () => {
         },
       },
     });
-
-    await sendToMystique(context);
-    expect(sqs.sendMessage).to.have.been.calledOnce;
-    const [queue, message] = sqs.sendMessage.firstCall.args;
-    expect(queue).to.equal('spacecat-to-mystique');
-    expect(message).to.include({
-      type: 'detect:geo-brand-presence',
-      siteId: site.getId(),
-      url: site.getBaseURL(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-    });
-    expect(message.data.keywordQuestions).to.deep.equal([
+    const expectedKeywordQuestions = [
       {
         keyword: 'adobe',
-        q: ['what is adobe?', 'adobe pricing'],
+        questions: ['what is adobe?', 'adobe pricing'],
         pageUrl: 'https://adobe.com/page1',
         importTime: '2024-06-01T00:00:00Z',
         volume: 1000,
       },
       {
         keyword: 'photoshop',
-        q: ['how to use photoshop?'],
+        questions: ['how to use photoshop?'],
         pageUrl: 'https://adobe.com/page2',
         importTime: '2024-06-02T00:00:00Z',
         volume: 5000,
       },
-    ]);
+    ];
+
+    await sendToMystique(context);
+    // two messages are sent to Mystique, one for brand presence and one for faq
+    expect(sqs.sendMessage).to.have.been.calledTwice;
+    const [brandPresenceQueue, brandPresenceMessage] = sqs.sendMessage.firstCall.args;
+    expect(brandPresenceQueue).to.equal('spacecat-to-mystique');
+    expect(brandPresenceMessage).to.include({
+      type: 'detect:geo-brand-presence',
+      siteId: site.getId(),
+      url: site.getBaseURL(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+    });
+    expect(brandPresenceMessage.data.keywordQuestions).to.deep.equal(expectedKeywordQuestions);
+
+    const [faqQueue, faqMessage] = sqs.sendMessage.secondCall.args;
+    expect(faqQueue).to.equal('spacecat-to-mystique');
+    expect(faqMessage).to.include({
+      type: 'guidance:geo-faq',
+      siteId: site.getId(),
+      url: site.getBaseURL(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+    });
+    expect(faqMessage.data.keywordQuestions).to.deep.equal(expectedKeywordQuestions);
   });
 
   it('should skip sending message to Mystique when no keywordQuestions', async () => {
@@ -208,19 +221,19 @@ describe('Geo Brand Presence Handler', () => {
     });
 
     await sendToMystique(context);
-    expect(sqs.sendMessage).to.have.been.calledOnce;
+    expect(sqs.sendMessage).to.have.been.calledTwice;
     const [, message] = sqs.sendMessage.firstCall.args;
     expect(message.data.keywordQuestions).to.deep.equal([
       {
         keyword: 'adobe',
-        q: ['what is adobe?'],
+        questions: ['what is adobe?'],
         pageUrl: 'https://adobe.com/page1',
         importTime: '2024-06-01T00:01:00Z',
         volume: 1234,
       },
       {
         keyword: 'photoshop',
-        q: ['how to use photoshop?'],
+        questions: ['how to use photoshop?'],
         pageUrl: 'https://adobe.com/page2',
         importTime: '2024-06-02T00:00:00Z',
         volume: 4000,
@@ -260,19 +273,19 @@ describe('Geo Brand Presence Handler', () => {
     });
 
     await sendToMystique(context);
-    expect(sqs.sendMessage).to.have.been.calledOnce;
+    expect(sqs.sendMessage).to.have.been.calledTwice;
     const [, message] = sqs.sendMessage.firstCall.args;
     expect(message.data.keywordQuestions).to.deep.equal([
       {
         keyword: 'adobe',
-        q: ['what is adobe?'],
+        questions: ['what is adobe?'],
         pageUrl: 'https://adobe.com/page1',
         importTime: '2024-06-01T00:01:00Z',
         volume: 5678,
       },
       {
         keyword: 'photoshop',
-        q: ['how to use photoshop?'],
+        questions: ['how to use photoshop?'],
         pageUrl: 'https://adobe.com/page2',
         importTime: '2024-06-02T00:00:00Z',
         volume: 4000,
@@ -312,19 +325,19 @@ describe('Geo Brand Presence Handler', () => {
     });
 
     await sendToMystique(context);
-    expect(sqs.sendMessage).to.have.been.calledOnce;
+    expect(sqs.sendMessage).to.have.been.calledTwice;
     const [, message] = sqs.sendMessage.firstCall.args;
     expect(message.data.keywordQuestions).to.deep.equal([
       {
         keyword: 'adobe',
-        q: ['what is adobe?'],
+        questions: ['what is adobe?'],
         pageUrl: 'https://adobe.com/page1',
         importTime: '2024-06-01T00:00:00Z',
         volume: 1234,
       },
       {
         keyword: 'photoshop',
-        q: ['how to use photoshop?'],
+        questions: ['how to use photoshop?'],
         pageUrl: 'https://adobe.com/page2',
         importTime: '2024-06-02T00:00:00Z',
         volume: 4000,
@@ -364,19 +377,19 @@ describe('Geo Brand Presence Handler', () => {
     });
 
     await sendToMystique(context);
-    expect(sqs.sendMessage).to.have.been.calledOnce;
+    expect(sqs.sendMessage).to.have.been.calledTwice;
     const [, message] = sqs.sendMessage.firstCall.args;
     expect(message.data.keywordQuestions).to.deep.equal([
       {
         keyword: 'adobe',
-        q: ['what is adobe?'],
+        questions: ['what is adobe?'],
         pageUrl: 'https://adobe.com/page1',
         importTime: '2024-06-01T00:00:00Z',
         volume: 5678,
       },
       {
         keyword: 'photoshop',
-        q: ['how to use photoshop?'],
+        questions: ['how to use photoshop?'],
         pageUrl: 'https://adobe.com/page2',
         importTime: '2024-06-02T00:00:00Z',
         volume: 4000,

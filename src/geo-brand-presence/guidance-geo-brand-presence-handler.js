@@ -12,34 +12,39 @@
 
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
-import {
-  GEO_BRAND_PRESENCE_OPPTY_TYPE, GEO_FAQ_OPPTY_TYPE, OPPTY_TYPES,
-} from './handler.js';
+import { GEO_FAQ_OPPTY_TYPE, OPPTY_TYPES } from './handler.js';
 
 function getSuggestionValue(suggestions, subType, log) {
   if (subType === GEO_FAQ_OPPTY_TYPE) {
-    let suggestionValue = '| URL | Question | Answer | Sources |\n|-----|----------|-------|--------|\n';
+    let suggestionValue = '| URL | Question | Answer | Rationale | Sources |\n|-----|----------|-------|--------|---------|\n';
     suggestions.forEach((suggestion) => {
       const sources = suggestion.sources ? suggestion.sources.map((source, sourceIndex) => `[${sourceIndex + 1}] ${source}`).join('<br>') : '';
-      suggestionValue += `| ${suggestion.pageUrl} | ${suggestion.question} | ${suggestion.answer} | ${sources} |\n`;
+      if (!sources) {
+        log.warn(`No sources found for suggestion: ${suggestion.question}. Skipping this suggestion.`);
+      } else {
+        suggestionValue += `| ${suggestion.pageUrl} | ${suggestion.question} | ${suggestion.answer} | ${suggestion.rationale} | ${sources} |\n`;
+      }
     });
     return suggestionValue;
-  } else if (subType === GEO_BRAND_PRESENCE_OPPTY_TYPE) {
+  } else {
     let suggestionValue = '| Url | Questions | Screenshot |\n |-----|-----------|------------|\n';
     suggestions.forEach((suggestion) => {
       suggestionValue += `| ${suggestion.url} | ${suggestion.q.join('\n')} | [![${suggestion.name}](${suggestion.previewImage})](${suggestion.screenshotUrl})|\n`;
     });
     return suggestionValue;
-  } else {
-    log.error(`Unsupported subType: ${subType}`);
-    return notFound();
   }
 }
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
-  const { auditId, siteId, data } = message;
+  const {
+    auditId, siteId, type: subType, data,
+  } = message;
+  if (!subType || !OPPTY_TYPES.includes(subType)) {
+    log.error(`Unsupported subtype: ${subType}`);
+    return notFound();
+  }
   const { suggestions } = data;
   log.info('Message received in guidance handler:', message);
 
@@ -49,12 +54,11 @@ export default async function handler(message, context) {
     return notFound();
   }
 
+  const entity = convertToOpportunityEntity(siteId, auditId, subType);
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities.find(
-    (oppty) => OPPTY_TYPES.includes(oppty.getData()?.subType),
+    (oppty) => oppty.getData()?.subType === subType,
   );
-  const subType = opportunity.getData()?.subType;
-  const entity = convertToOpportunityEntity(siteId, auditId, subType);
 
   if (!opportunity) {
     log.info(`No existing Opportunity found for ${subType}. Creating a new one.`);
@@ -74,6 +78,7 @@ export default async function handler(message, context) {
 
   // delete previous suggestions if any
   await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+  const suggestionValue = getSuggestionValue(suggestions, subType, log);
 
   // map the suggestions received from Mystique to ASO
   const suggestionData = {
@@ -82,7 +87,7 @@ export default async function handler(message, context) {
     rank: 1,
     status: 'NEW',
     data: {
-      suggestionValue: getSuggestionValue(suggestions, subType, log),
+      suggestionValue,
     },
     kpiDeltas: {
       estimatedKPILift: 0,
