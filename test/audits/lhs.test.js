@@ -170,11 +170,8 @@ describe('LHS Audit', () => {
 
   describe('CSP post-processor', () => {
     const siteUrl = 'https://adobe.com/';
-    const cspSite = {
-      ...site,
-      getDeliveryType: () => 'aem_edge',
-    };
 
+    let cspSite;
     let auditData;
     let opportunityStub;
     let cspOpportunity;
@@ -185,17 +182,28 @@ describe('LHS Audit', () => {
         .get('/?url=https%3A%2F%2Fadobe.com%2F&strategy=mobile&serviceId=some-site-id')
         .reply(200, psiResult);
 
+      cspSite = {
+        ...site,
+        getDeliveryType: () => 'aem_edge',
+      };
+
       auditData = await mobileAuditRunner(siteUrl, context, cspSite);
       assertAuditData(auditData);
 
-      auditData.auditResult.csp = [
-        {
-          severity: 'High',
-          description: 'No CSP found in enforcement mode',
+      auditData = {
+        ...auditData,
+        siteId: 'test-site-id',
+        auditId: 'test-audit-id',
+        auditResult: {
+          ...auditData.auditResult,
+          csp: [
+            {
+              severity: 'High',
+              description: 'No CSP found in enforcement mode',
+            },
+          ],
         },
-      ];
-      auditData.siteId = 'test-site-id';
-      auditData.auditId = 'test-audit-id';
+      };
 
       opportunityStub = {
         allBySiteIdAndStatus: sinon.stub().resolves([]),
@@ -305,6 +313,88 @@ describe('LHS Audit', () => {
       ));
     });
 
+    it('should remove reference to hashes', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      auditData.auditResult.csp = [
+        {
+          directive: 'script-src',
+          description: 'Host allowlists can frequently be bypassed. Consider using CSP nonces instead, along with `\'strict-dynamic\'` if necessary.',
+          severity: 'High',
+        },
+        {
+          directive: 'script-src',
+          description: '`\'unsafe-inline\'` allows the execution of unsafe in-page scripts and event handlers. Consider using CSP nonces to allow scripts individually.',
+          severity: 'High',
+        },
+        {
+          directive: 'object-src',
+          description: 'Avoid using plain URL schemes (data:) in this directive. Plain URL schemes allow scripts to be sourced from an unsafe domain.',
+          severity: 'High',
+        },
+      ];
+
+      const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+      assertAuditData(cspAuditData);
+
+      expect(opportunityStub.create).to.have.been.calledWith(sinon.match({
+        siteId: 'test-site-id',
+        auditId: 'test-audit-id',
+        runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
+        type: Audit.AUDIT_TYPES.SECURITY_CSP,
+        origin: 'AUTOMATION',
+        title: 'The Content Security Policy configuration is ineffective against Cross Site Scripting (XSS) attacks',
+        description: 'Content Security Policy can help protect applications from Cross Site Scripting (XSS) attacks, but in order for it to be effective one needs to define a secure policy. The recommended CSP setup is "Strict CSP with (cached) nonce + strict-dynamic".',
+        data: {
+          securityScoreImpact: 10,
+          howToFix: '**Warning:** This solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.  \nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
+          dataSources: [
+            'Page',
+          ],
+          securityType: 'EDS-CSP',
+          mainMetric: {
+            name: 'Issues',
+            value: 3,
+          },
+        },
+        tags: [
+          'CSP',
+          'Security',
+        ],
+      }));
+      expect(cspOpportunity.addSuggestions).to.have.been.calledOnce;
+      expect(cspOpportunity.addSuggestions).to.have.been.calledWith(sinon.match(
+        [
+          sinon.match({
+            type: 'CODE_CHANGE',
+            rank: 0,
+            data: {
+              severity: 'High',
+              directive: 'script-src',
+              description: 'Host allowlists can frequently be bypassed. Consider using CSP nonces instead, along with `\'strict-dynamic\'` if necessary.',
+            },
+          }),
+          sinon.match({
+            type: 'CODE_CHANGE',
+            rank: 0,
+            data: {
+              severity: 'High',
+              directive: 'script-src',
+              description: '`\'unsafe-inline\'` allows the execution of unsafe in-page scripts and event handlers. Consider using CSP nonces to allow scripts individually.',
+            },
+          }),
+          sinon.match({
+            type: 'CODE_CHANGE',
+            rank: 0,
+            data: {
+              severity: 'High',
+              directive: 'object-src',
+              description: 'Avoid using plain URL schemes (data:) in this directive. Plain URL schemes allow scripts to be sourced from an unsafe domain.',
+            },
+          }),
+        ],
+      ));
+    });
+
     it('should extract multiple suggestions with subitems', async () => {
       configuration.isHandlerEnabledForSite.returns(true);
       auditData.auditResult.csp = [
@@ -395,7 +485,7 @@ describe('LHS Audit', () => {
             data: {
               severity: 'High',
               directive: 'script-src',
-              description: 'Host allowlists can frequently be bypassed. Consider using CSP nonces or hashes instead, along with `\'strict-dynamic\'` if necessary.',
+              description: 'Host allowlists can frequently be bypassed. Consider using CSP nonces instead, along with `\'strict-dynamic\'` if necessary.',
             },
           }),
           sinon.match({
@@ -404,7 +494,7 @@ describe('LHS Audit', () => {
             data: {
               severity: 'High',
               directive: 'script-src',
-              description: '`\'unsafe-inline\'` allows the execution of unsafe in-page scripts and event handlers. Consider using CSP nonces or hashes to allow scripts individually.',
+              description: '`\'unsafe-inline\'` allows the execution of unsafe in-page scripts and event handlers. Consider using CSP nonces to allow scripts individually.',
             },
           }),
         ],
@@ -436,6 +526,23 @@ describe('LHS Audit', () => {
         },
       ];
       cspSite.getDeliveryType = () => 'other';
+
+      const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+      assertAuditData(cspAuditData);
+
+      expect(opportunityStub.create).to.not.have.been.called;
+      expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+    });
+
+    it('should not extract opportunity if audit failed', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      auditData.auditResult.csp = [
+        {
+          severity: 'High',
+          description: 'No CSP found in enforcement mode',
+        },
+      ];
+      auditData.auditResult.success = false;
 
       const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
       assertAuditData(cspAuditData);
