@@ -21,13 +21,14 @@ import AWSXray from 'aws-xray-sdk';
 import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { Site } from '@adobe/spacecat-shared-data-access';
 import {
-  isValidUrls, preflightAudit, scrapePages, AUDIT_STEP_SUGGEST, AUDIT_STEP_IDENTIFY,
-  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT, getPrefixedPageAuthToken,
+  preflightAudit, scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
+  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
 } from '../../src/preflight/handler.js';
 import { runLinksChecks } from '../../src/preflight/links-checks.js';
 import { MockContextBuilder } from '../shared.js';
 import { suggestionData } from '../fixtures/preflight/preflight-suggest.js';
 import identifyData from '../fixtures/preflight/preflight-identify.json' with { type: 'json' };
+import { getPrefixedPageAuthToken, isValidUrls } from '../../src/preflight/utils.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -360,7 +361,7 @@ describe('Preflight Audit', () => {
         job: {
           getMetadata: () => ({
             payload: {
-              step: AUDIT_STEP_IDENTIFY,
+              step: PREFLIGHT_STEP_IDENTIFY,
               urls: [
                 'https://main--example--page.aem.page',
                 'https://another.com/page',
@@ -391,7 +392,7 @@ describe('Preflight Audit', () => {
         job: {
           getMetadata: () => ({
             payload: {
-              step: AUDIT_STEP_IDENTIFY,
+              step: PREFLIGHT_STEP_IDENTIFY,
               enableAuthentication,
               urls: [
                 'https://main--example--page.aem.page',
@@ -423,7 +424,7 @@ describe('Preflight Audit', () => {
         job: {
           getMetadata: () => ({
             payload: {
-              step: AUDIT_STEP_IDENTIFY,
+              step: PREFLIGHT_STEP_IDENTIFY,
               urls: [
                 'https://main--example--page.aem.page',
               ],
@@ -442,7 +443,7 @@ describe('Preflight Audit', () => {
         job: {
           getMetadata: () => ({
             payload: {
-              step: AUDIT_STEP_IDENTIFY,
+              step: PREFLIGHT_STEP_IDENTIFY,
               urls: [
                 'not-a-url',
                 'https://main--example--page.aem.page',
@@ -486,7 +487,7 @@ describe('Preflight Audit', () => {
       job = {
         getMetadata: () => ({
           payload: {
-            step: AUDIT_STEP_IDENTIFY,
+            step: PREFLIGHT_STEP_IDENTIFY,
             urls: ['https://main--example--page.aem.page/page1'],
           },
         }),
@@ -601,7 +602,7 @@ describe('Preflight Audit', () => {
 
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_SUGGEST,
+          step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page/page1'],
         },
       });
@@ -699,7 +700,7 @@ describe('Preflight Audit', () => {
 
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
           enableAuthentication: false,
         },
@@ -741,7 +742,7 @@ describe('Preflight Audit', () => {
     it('throws if the provided urls are invalid', async () => {
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['not-a-url'],
         },
       });
@@ -752,7 +753,7 @@ describe('Preflight Audit', () => {
     it('sets status to FAILED if an error occurs', async () => {
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
         },
       });
@@ -795,7 +796,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['canonical', 'metatags', 'dom', 'links'];
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -856,7 +857,7 @@ describe('Preflight Audit', () => {
     it('handles individual AUDIT_BODY_SIZE check', async () => {
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
           checks: [AUDIT_BODY_SIZE], // Only test body size check
         },
@@ -910,7 +911,7 @@ describe('Preflight Audit', () => {
     it('handles individual AUDIT_LOREM_IPSUM check', async () => {
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
           checks: [AUDIT_LOREM_IPSUM], // Only test lorem ipsum check
         },
@@ -964,7 +965,7 @@ describe('Preflight Audit', () => {
     it('handles individual AUDIT_H1_COUNT check', async () => {
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
           checks: [AUDIT_H1_COUNT], // Only test h1 count check
         },
