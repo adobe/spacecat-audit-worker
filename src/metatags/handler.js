@@ -300,6 +300,8 @@ export async function runAuditAndGenerateSuggestions(context) {
 }
 
 export async function importTopPages(context) {
+  const { log } = context;
+  log.warn(`Checking variables ${JSON.stringify(context.env)}`);
   const { site, finalUrl } = context;
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
