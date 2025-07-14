@@ -52,6 +52,7 @@ import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/g
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
+import analyticsReport from './analytics-report/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -88,6 +89,7 @@ const HANDLERS = {
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
+  'analytics-report': analyticsReport,
   dummy: (message) => ok(message),
 };
 

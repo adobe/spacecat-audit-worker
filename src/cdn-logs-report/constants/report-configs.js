@@ -43,7 +43,7 @@ export const REPORT_CONFIGS = {
     ],
   },
   referral: {
-    filePrefix: 'referraltraffic',
+    filePrefix: 'referraltraffic-v2',
     workbookCreator: 'Spacecat Referral Traffic Report',
     queries: {
       referralCountryTopic: weeklyBreakdownQueries.createReferralTrafficByCountryTopic,

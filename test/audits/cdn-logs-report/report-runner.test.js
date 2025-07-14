@@ -72,7 +72,7 @@ describe('CDN Logs Report Runner', () => {
         createExcelReport: sandbox.stub().resolves({ xlsx: { writeBuffer: () => Buffer.from('excel') } }),
         ...overrides.excelGenerator,
       },
-      '../../../src/cdn-logs-report/utils/report-uploader.js': {
+      '../../../src/utils/report-uploader.js': {
         saveExcelReport: saveExcelReportMock,
         ...overrides.reportUploader,
       },
