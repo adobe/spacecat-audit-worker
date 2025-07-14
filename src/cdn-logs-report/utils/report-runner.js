@@ -16,7 +16,7 @@ import {
   generateReportingPeriods,
   buildSiteFilters,
 } from './report-utils.js';
-import { saveExcelReport } from './report-uploader.js';
+import { saveExcelReport } from '../../utils/report-uploader.js';
 import { createExcelReport } from './excel-generator.js';
 import { REPORT_CONFIGS } from '../constants/report-configs.js';
 
