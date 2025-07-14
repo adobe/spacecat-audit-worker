@@ -261,6 +261,8 @@ describe('geo-brand-presence guidance handler', () => {
     await handler(message, context);
     expect(log.warn).to.have.been.calledWithMatch(/No sources found for suggestion: q2. Skipping this suggestion./);
     expect(Suggestion.create).to.have.been.calledOnce;
+    expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.include('https://adobe.com/page1');
     expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.not.include('https://adobe.com/page2');
+    expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.not.include('https://adobe.com/page3');
   });
 });
