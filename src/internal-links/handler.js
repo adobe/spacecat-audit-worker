@@ -11,16 +11,10 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { syncSuggestions } from '../utils/data-access.js';
-import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
-import { generateSuggestionData } from './suggestions-generator.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
-  calculateKpiDeltasForAudit,
   isLinkInaccessible,
   calculatePriority,
 } from './helpers.js';
@@ -134,107 +128,41 @@ export async function prepareScrapingStep(context) {
   };
 }
 
-export async function opportunityAndSuggestionsStep(context) {
+export const generateSuggestionData = async (context) => {
   const {
-    log, site, finalUrl, audit, dataAccess,
+    site, audit, dataAccess, log, sqs, env,
   } = context;
+  const { Configuration } = dataAccess;
 
-  let { brokenInternalLinks } = audit.getAuditResult();
-
-  // generate suggestions
-  try {
-    if (audit.getAuditResult().success) {
-      brokenInternalLinks = await generateSuggestionData(
-        finalUrl,
-        audit.getAuditResult().brokenInternalLinks,
-        context,
-        site,
-      );
-    } else {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
-    }
-  } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
+  const auditResult = audit.getAuditResult();
+  if (audit.getAuditResult().success === false) {
+    log.info('Audit failed, skipping suggestions generation');
+    throw new Error('Audit failed, skipping suggestions generation');
   }
 
-  // TODO: skip opportunity creation if no internal link items are found in the audit data
-  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
-
-  if (!isNonEmptyArray(brokenInternalLinks)) {
-    // no broken internal links found
-    // fetch opportunity
-    const { Opportunity } = dataAccess;
-    let opportunity;
-    try {
-      const opportunities = await Opportunity
-        .allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
-      opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-    } catch (e) {
-      log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
-      throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
-    }
-
-    if (!opportunity) {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`);
-    } else {
-      // no broken internal links found, update opportunity status to RESOLVED
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`);
-      await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
-
-      // We also need to update all suggestions inside this opportunity
-      // Get all suggestions for this opportunity
-      const suggestions = await opportunity.getSuggestions();
-
-      // If there are suggestions, update their status to outdated
-      if (isNonEmptyArray(suggestions)) {
-        const { Suggestion } = dataAccess;
-        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
-      }
-      opportunity.setUpdatedBy('system');
-      await opportunity.save();
-    }
-    return {
-      status: 'complete',
-    };
+  const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
+    log.info('Auto-suggest is disabled for site');
+    throw new Error('Auto-suggest is disabled for site');
   }
-
-  const opportunity = await convertToOpportunity(
-    finalUrl,
-    { siteId: site.getId(), id: audit.getId() },
-    context,
-    createOpportunityData,
-    AUDIT_TYPE,
-    {
-      kpiDeltas,
+  const messages = auditResult?.map((oppty) => ({
+    type: 'guidance:broken-internal-links',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      url_from: oppty.urlFrom,
+      url_to: oppty.urlTo,
     },
-  );
+  }));
 
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
-  await syncSuggestions({
-    opportunity,
-    newData: brokenInternalLinks,
-    context,
-    buildKey,
-    mapNewSuggestion: (entry) => ({
-      opportunityId: opportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
-        trafficDomain: entry.trafficDomain,
-        priority: entry.priority,
-      },
-    }),
-    log,
-  });
-  return {
-    status: 'complete',
-  };
-}
+  for (const message of messages) {
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
+  }
+};
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
@@ -248,5 +176,5 @@ export default new AuditBuilder()
     prepareScrapingStep,
     AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
   )
-  .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
+  .addStep('generate-suggestion-data', generateSuggestionData)
   .build();
