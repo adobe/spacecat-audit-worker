@@ -1,3 +1,15 @@
+# [1.123.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.122.1...v1.123.0) (2025-07-14)
+
+
+### Bug Fixes
+
+* add tests to complete coverage ([#1040](https://github.com/adobe/spacecat-audit-worker/issues/1040)) ([125f69b](https://github.com/adobe/spacecat-audit-worker/commit/125f69b906b69013498020fdfedd6ed3f3accfdf))
+
+
+### Features
+
+* enhance GEO brand presence audit to handle FAQs ([#1026](https://github.com/adobe/spacecat-audit-worker/issues/1026)) ([7b1d9b7](https://github.com/adobe/spacecat-audit-worker/commit/7b1d9b722f6edfc59b9679abf885fdfb573cc9b5))
+
 ## [1.122.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.122.0...v1.122.1) (2025-07-11)
 
 
