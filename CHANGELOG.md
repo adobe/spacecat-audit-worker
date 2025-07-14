@@ -1,3 +1,10 @@
+# [1.124.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.123.0...v1.124.0) (2025-07-14)
+
+
+### Features
+
+* add analytics report audit ([#1039](https://github.com/adobe/spacecat-audit-worker/issues/1039)) ([696f949](https://github.com/adobe/spacecat-audit-worker/commit/696f949369a0bd31956607a7a3a63727344db75f))
+
 # [1.123.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.122.1...v1.123.0) (2025-07-14)
 
 
