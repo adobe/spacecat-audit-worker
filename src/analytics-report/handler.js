@@ -54,6 +54,7 @@ export async function analyticsReportRunner(auditUrl, context) {
           processed: 0,
           success: true,
         },
+        fullAuditRef: `${currentDate}-analytics-report`,
       };
     }
 
@@ -87,6 +88,7 @@ export async function analyticsReportRunner(auditUrl, context) {
         processed: todayFiles.length,
         success: true,
       },
+      fullAuditRef: `${currentDate}-analytics-report`,
     };
   } catch (error) {
     log.error(`Analytics report failed: ${error.message}`);
