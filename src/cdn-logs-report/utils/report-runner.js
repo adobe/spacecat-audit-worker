@@ -10,17 +10,18 @@
  * governing permissions and limitations under the License.
  */
 
-import { weeklyBreakdownQueries } from './query-builder.js';
 import {
   createDateRange,
   generatePeriodIdentifier,
   generateReportingPeriods,
   buildSiteFilters,
 } from './report-utils.js';
-import { createCDNLogsExcelReport } from './excel-generator.js';
-import { saveExcelReport } from './report-uploader.js';
+import { saveExcelReport } from '../../utils/report-uploader.js';
+import { createExcelReport } from './excel-generator.js';
+import { REPORT_CONFIGS } from '../constants/report-configs.js';
 
 const SUPPORTED_PROVIDERS = ['chatgpt', 'perplexity'];
+const REPORT_TYPES = Object.keys(REPORT_CONFIGS);
 
 async function collectReportData(
   athenaClient,
@@ -30,6 +31,7 @@ async function collectReportData(
   provider,
   site,
   filters,
+  queries,
 ) {
   const { databaseName, tableName } = s3Config;
   const periods = generateReportingPeriods(endDate);
@@ -45,34 +47,21 @@ async function collectReportData(
     site,
   };
 
-  const queries = {
-    reqcountbycountry: await weeklyBreakdownQueries.createCountryWeeklyBreakdown(
-      baseQueryOptions,
-    ),
-    reqcountbyuseragent: await weeklyBreakdownQueries.createUserAgentWeeklyBreakdown(
-      baseQueryOptions,
-    ),
-    reqcountbyurlstatus: await weeklyBreakdownQueries.createUrlStatusWeeklyBreakdown(
-      baseQueryOptions,
-    ),
-    top_bottom_urls_by_status: await weeklyBreakdownQueries.createTopBottomUrlsByStatus(
-      baseQueryOptions,
-    ),
-    error_404_urls: await weeklyBreakdownQueries.createError404Urls(baseQueryOptions),
-    error_503_urls: await weeklyBreakdownQueries.createError503Urls(baseQueryOptions),
-    success_urls_by_category: await weeklyBreakdownQueries.createSuccessUrlsByCategory(
-      baseQueryOptions,
-    ),
-    top_urls: await weeklyBreakdownQueries.createTopUrls(baseQueryOptions),
-  };
+  const resolvedQueries = {};
+  for (const [key, queryFunction] of Object.entries(queries)) {
+    // eslint-disable-next-line no-await-in-loop
+    resolvedQueries[key] = await queryFunction(baseQueryOptions);
+  }
 
-  for (const [key, query] of Object.entries(queries)) {
+  for (const [key, query] of Object.entries(resolvedQueries)) {
     try {
+      /* c8 ignore start */
       if (query === null) {
         reportData[key] = [];
         // eslint-disable-next-line no-continue
         continue;
       }
+      /* c8 ignore end */
 
       const sqlQueryDescription = `[Athena Query] ${key} for ${provider}`;
       // eslint-disable-next-line no-await-in-loop
@@ -98,6 +87,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
     provider,
     site,
     sharepointClient,
+    reportType = 'agentic',
   } = options;
 
   let periodStart;
@@ -117,8 +107,9 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
     periodEnd = week.endDate;
   }
 
+  const reportConfig = REPORT_CONFIGS[reportType];
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
-  log.info(`Running report for ${provider} for ${periodIdentifier}`);
+  log.info(`Running ${reportType} report for ${provider} for ${periodIdentifier}`);
   const { outputLocation, filters } = site.getConfig().getCdnLogsConfig() || {};
 
   try {
@@ -130,11 +121,12 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
       provider,
       site,
       filters,
+      reportConfig.queries,
     );
 
-    const filename = `agentictraffic-${provider}-${periodIdentifier}.xlsx`;
+    const filename = `${reportConfig.filePrefix}-${provider}-${periodIdentifier}.xlsx`;
 
-    const workbook = await createCDNLogsExcelReport(reportData, {
+    const workbook = await createExcelReport(reportData, reportConfig, {
       customEndDate: referenceDate.toISOString().split('T')[0],
       filename,
       site,
@@ -148,7 +140,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
       filename,
     });
   } catch (error) {
-    log.error(`Report generation failed: ${error.message}`);
+    log.error(`${reportType} report generation failed: ${error.message}`);
     throw error;
   }
 }
@@ -183,10 +175,22 @@ export async function runWeeklyReport({
   site,
   sharepointClient,
 }) {
-  await runReportsForAllProviders(athenaClient, s3Config, log, {
-    site,
-    sharepointClient,
-  });
+  for (const reportType of REPORT_TYPES) {
+    try {
+      log.info(`Starting weekly ${reportType} reports...`);
+      // eslint-disable-next-line no-await-in-loop
+      await runReportsForAllProviders(athenaClient, s3Config, log, {
+        site,
+        sharepointClient,
+        reportType,
+      });
+      log.info(`Successfully completed weekly ${reportType} reports`);
+      /* c8 ignore start */
+    } catch (error) {
+      log.error(`Failed to generate weekly ${reportType} reports: ${error.message}`);
+    }
+    /* c8 ignore end */
+  }
 }
 
 export async function runCustomDateRangeReport({
@@ -198,10 +202,22 @@ export async function runCustomDateRangeReport({
   site,
   sharepointClient,
 }) {
-  await runReportsForAllProviders(athenaClient, s3Config, log, {
-    startDate: startDateStr,
-    endDate: endDateStr,
-    site,
-    sharepointClient,
-  });
+  for (const reportType of REPORT_TYPES) {
+    try {
+      log.info(`Starting custom date range ${reportType} reports...`);
+      // eslint-disable-next-line no-await-in-loop
+      await runReportsForAllProviders(athenaClient, s3Config, log, {
+        startDate: startDateStr,
+        endDate: endDateStr,
+        site,
+        sharepointClient,
+        reportType,
+      });
+      log.info(`Successfully completed custom date range ${reportType} reports`);
+      /* c8 ignore start */
+    } catch (error) {
+      log.error(`Failed to generate custom date range ${reportType} reports: ${error.message}`);
+    }
+    /* c8 ignore end */
+  }
 }

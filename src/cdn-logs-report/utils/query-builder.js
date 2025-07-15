@@ -14,6 +14,7 @@ import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
 import { loadSql } from './report-utils.js';
 import { DEFAULT_PATTERNS } from '../constants/page-patterns.js';
 import { getProviderPattern } from '../constants/user-agent-patterns.js';
+import { TOPIC_PATTERNS } from '../constants/topic-patterns.js';
 
 function buildDateFilter(startDate, endDate) {
   const formatPart = (date) => ({
@@ -79,6 +80,29 @@ function buildCountryExtractionSQL() {
     .join('\n          ');
 
   return `CASE\n          ${cases}\n          ELSE 'GLOBAL'\n        END`;
+}
+
+// Topic Classification
+function buildTopicExtractionSQL(site) {
+  const siteUrl = site.getBaseURL();
+  const domain = new URL(siteUrl).hostname.replace('www.', '');
+
+  const patterns = TOPIC_PATTERNS[domain];
+
+  if (Array.isArray(patterns)) {
+    const cases = patterns
+      .map(({ regex, name }) => {
+        if (name) {
+          return `WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`;
+        } else {
+          return `WHEN REGEXP_EXTRACT(url, '${regex}', 1) != '' THEN REGEXP_EXTRACT(url, '${regex}', 1)`;
+        }
+      })
+      .join('\n          ');
+    return `CASE\n          ${cases}\n          ELSE 'Other'\n        END`;
+  }
+
+  return "CASE WHEN url IS NOT NULL THEN 'Other' END";
 }
 
 // Query Builders
@@ -246,6 +270,45 @@ async function createTopUrlsQuery(options) {
   });
 }
 
+async function createReferralTrafficByCountryTopicQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, site, siteFilters = [],
+  } = options;
+
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause([
+    buildDateFilter(lastWeek.startDate, lastWeek.endDate),
+    `REGEXP_LIKE(referer, '${provider}')`,
+  ], null, siteFilters);
+
+  return loadSql('referral-traffic-by-country-topic', {
+    countryExtraction: buildCountryExtractionSQL(),
+    topicExtraction: buildTopicExtractionSQL(site),
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
+async function createReferralTrafficByUrlTopicQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, site, siteFilters = [],
+  } = options;
+
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause([
+    buildDateFilter(lastWeek.startDate, lastWeek.endDate),
+    `REGEXP_LIKE(referer, '${provider}')`,
+  ], null, siteFilters);
+
+  return loadSql('referral-traffic-by-url-topic', {
+    topicExtraction: buildTopicExtractionSQL(site),
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
 export const weeklyBreakdownQueries = {
   createCountryWeeklyBreakdown: createCountryWeeklyBreakdownQuery,
   createUserAgentWeeklyBreakdown: createUserAgentWeeklyBreakdownQuery,
@@ -255,4 +318,6 @@ export const weeklyBreakdownQueries = {
   createError503Urls: createError503UrlsQuery,
   createSuccessUrlsByCategory: createSuccessUrlsByCategoryQuery,
   createTopUrls: createTopUrlsQuery,
+  createReferralTrafficByCountryTopic: createReferralTrafficByCountryTopicQuery,
+  createReferralTrafficByUrlTopic: createReferralTrafficByUrlTopicQuery,
 };

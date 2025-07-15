@@ -15,6 +15,35 @@ export const suggestionData = [
     step: 'suggest',
     audits: [
       {
+        name: 'body-size',
+        type: 'seo',
+        opportunities: [
+          {
+            check: 'content-length',
+            issue: 'Body content length is below 100 characters',
+            seoImpact: 'Moderate',
+            seoRecommendation: 'Add more meaningful content to the page',
+          },
+        ],
+      },
+      {
+        name: 'lorem-ipsum',
+        type: 'seo',
+        opportunities: [],
+      },
+      {
+        name: 'h1-count',
+        type: 'seo',
+        opportunities: [
+          {
+            check: 'multiple-h1',
+            issue: 'Found 2 H1 tags',
+            seoImpact: 'High',
+            seoRecommendation: 'Use exactly one H1 tag per page for better SEO structure',
+          },
+        ],
+      },
+      {
         name: 'canonical',
         type: 'seo',
         opportunities: [
@@ -47,35 +76,6 @@ export const suggestionData = [
             seoRecommendation: '140-160 characters long',
             tagContent: 'Page 1 Description',
             tagName: 'description',
-          },
-        ],
-      },
-      {
-        name: 'body-size',
-        type: 'seo',
-        opportunities: [
-          {
-            check: 'content-length',
-            issue: 'Body content length is below 100 characters',
-            seoImpact: 'Moderate',
-            seoRecommendation: 'Add more meaningful content to the page',
-          },
-        ],
-      },
-      {
-        name: 'lorem-ipsum',
-        type: 'seo',
-        opportunities: [],
-      },
-      {
-        name: 'h1-count',
-        type: 'seo',
-        opportunities: [
-          {
-            check: 'multiple-h1',
-            issue: 'Found 2 H1 tags',
-            seoImpact: 'High',
-            seoRecommendation: 'Use exactly one H1 tag per page for better SEO structure',
           },
         ],
       },
