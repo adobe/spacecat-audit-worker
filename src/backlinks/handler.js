@@ -12,8 +12,12 @@
 
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
+import calculateKpiMetrics from './kpi-metrics.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -117,9 +121,9 @@ export async function submitForScraping(context) {
 
 export const generateSuggestionData = async (context) => {
   const {
-    site, audit, dataAccess, log, sqs, env,
+    site, audit, dataAccess, log, sqs, env, finalUrl,
   } = context;
-  const { Configuration } = dataAccess;
+  const { Configuration, Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (audit.getAuditResult().success === false) {
@@ -132,23 +136,61 @@ export const generateSuggestionData = async (context) => {
     log.info('Auto-suggest is disabled for site');
     throw new Error('Auto-suggest is disabled for site');
   }
-  const messages = auditResult?.map((oppty) => ({
-    type: 'guidance:broken-backlinks',
-    siteId: site.getId(),
-    auditId: audit.getId(),
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      url_from: oppty.url_from,
-      url_to: oppty.url_to,
-    },
-  }));
 
-  for (const message of messages) {
-    // eslint-disable-next-line no-await-in-loop
+  const kpiDeltas = await calculateKpiMetrics(audit, context, site);
+
+  const opportunity = await convertToOpportunity(
+    finalUrl,
+    { siteId: site.getId(), id: audit.getId() },
+    context,
+    createOpportunityData,
+    audit.getType(),
+    kpiDeltas,
+  );
+
+  const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
+  await syncSuggestions({
+    opportunity,
+    newData: auditResult,
+    buildKey,
+    context,
+    mapNewSuggestion: (backlink) => ({
+      opportunityId: opportunity.getId(),
+      type: 'REDIRECT_UPDATE',
+      rank: backlink.traffic_domain,
+      data: {
+        title: backlink.title,
+        url_from: backlink.url_from,
+        url_to: backlink.url_to,
+        traffic_domain: backlink.traffic_domain,
+      },
+    }),
+    log,
+  });
+  const suggestions = await Suggestion.allByOpportunityIdAndStatus(
+    opportunity.getId(),
+    SuggestionModel.STATUSES.NEW,
+  );
+  await Promise.all(suggestions.map(async (suggestion) => {
+    const message = {
+      type: 'guidance:broken-backlinks',
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        url_from: suggestion?.url_from,
+        url_to: suggestion?.url_to,
+        suggestionId: suggestion?.getId(),
+        opportunityId: opportunity?.getId(),
+      },
+    };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
-  }
+  }));
+  return {
+    status: 'complete',
+  };
 };
 
 export default new AuditBuilder()

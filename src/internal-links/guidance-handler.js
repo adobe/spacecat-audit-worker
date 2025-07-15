@@ -10,9 +10,6 @@
  * governing permissions and limitations under the License.
  */
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import { calculateKpiDeltasForAudit } from './helpers.js';
-import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -20,7 +17,7 @@ export default async function handler(message, context) {
   const { auditId, siteId, data } = message;
   const {
     // eslint-disable-next-line camelcase
-    broken_url, source_url, suggested_urls, aiRationale,
+    suggested_urls, aiRationale, suggestionId, opportunityId,
   } = data;
   log.info(`Message received in broken-backlinks suggestion handler: ${JSON.stringify(message, null, 2)}`);
 
@@ -29,34 +26,29 @@ export default async function handler(message, context) {
     log.warn(`No audit found for auditId: ${auditId}`);
     return notFound();
   }
-  const kpiDeltas = calculateKpiDeltasForAudit(audit.getResult());
-  const opportunity = await convertToOpportunity(
-    audit.getFullAuditRef(),
-    { siteId, id: audit.getId() },
-    context,
-    createOpportunityData,
-    audit.getType(),
-    kpiDeltas,
-  );
+  const { Opportunity } = dataAccess;
+  const opportunity = await Opportunity.findById(opportunityId);
 
-  // map the suggestions received from M to PSS
-  const suggestionData = {
-    opportunityId: opportunity.getId(),
-    type: 'CONTENT_UPDATE',
-    rank: 1,
-    status: 'NEW',
-    data: {
-      // eslint-disable-next-line camelcase
-      urlFrom: source_url,
-      // eslint-disable-next-line camelcase
-      urlTo: broken_url,
-      // eslint-disable-next-line camelcase
-      suggestedUrls: suggested_urls,
-      aiRationale,
-    },
-  };
+  if (!opportunity) {
+    log.error(`[BrokenInternalLinksGuidance] Opportunity not found for ID: ${opportunityId}`);
+    return { success: false, error: 'Opportunity not found' };
+  }
 
-  await Suggestion.create(suggestionData);
+  // Verify the opportunity belongs to the correct site
+  if (opportunity.getSiteId() !== siteId) {
+    const errorMsg = `[BrokenInternalLinks] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
+    log.error(errorMsg);
+    return { success: false, error: 'Site ID mismatch' };
+  }
+
+  const suggestion = await Suggestion.findById(suggestionId);
+  suggestion.setData(...suggestion.getData(), {
+    // eslint-disable-next-line camelcase
+    suggestedUrls: suggested_urls,
+    aiRationale,
+  });
+
+  await suggestion.save();
 
   return ok();
 }
