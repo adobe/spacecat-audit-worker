@@ -128,9 +128,7 @@ export async function submitForScraping(context) {
     fullAuditRef: baseURL,
     auditResult: {
       status: 'preparing',
-      urls: finalUrls.map((url) => ({ url })),
     },
-    url: baseURL,
   };
 }
 
