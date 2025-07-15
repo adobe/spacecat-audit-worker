@@ -1,3 +1,24 @@
+## [1.125.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.125.0...v1.125.1) (2025-07-15)
+
+
+### Bug Fixes
+
+* add proper products regex for bacom ([#1043](https://github.com/adobe/spacecat-audit-worker/issues/1043)) ([0dc527b](https://github.com/adobe/spacecat-audit-worker/commit/0dc527b544102044a4269cbc93d72009707b4bb4))
+
+# [1.125.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.124.1...v1.125.0) (2025-07-15)
+
+
+### Features
+
+* make preflight audit easily extendable for other audits ([#1035](https://github.com/adobe/spacecat-audit-worker/issues/1035)) ([df4cc33](https://github.com/adobe/spacecat-audit-worker/commit/df4cc33cd997b26cd1db5839c306185f04fcd31e))
+
+## [1.124.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.124.0...v1.124.1) (2025-07-15)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1037](https://github.com/adobe/spacecat-audit-worker/issues/1037)) ([af360c1](https://github.com/adobe/spacecat-audit-worker/commit/af360c1440516259e636d367112b820ac0f7b590))
+
 # [1.124.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.123.0...v1.124.0) (2025-07-14)
 
 

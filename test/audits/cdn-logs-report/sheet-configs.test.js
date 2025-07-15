@@ -78,9 +78,9 @@ describe('Sheet Configs', () => {
         const result = SHEET_CONFIGS.referralCountryTopic.processData(mockData);
 
         expect(result).to.have.length(3);
-        expect(result[0]).to.deep.equal(['US', 'photoshop', 175]); // Aggregated
-        expect(result[1]).to.deep.equal(['GLOBAL', 'photoshop', 50]); // Invalid country
-        expect(result[2]).to.deep.equal(['CA', 'Other', 25]); // Null topic
+        expect(result[0]).to.deep.equal(['US', 'Photoshop', 175]);
+        expect(result[1]).to.deep.equal(['GLOBAL', 'Photoshop', 50]);
+        expect(result[2]).to.deep.equal(['CA', 'Other', 25]);
       });
 
       it('processes referralUrlTopic data', () => {
@@ -92,7 +92,7 @@ describe('Sheet Configs', () => {
         const result = SHEET_CONFIGS.referralUrlTopic.processData(mockData);
 
         expect(result).to.deep.equal([
-          ['/products/photoshop.html', 'photoshop', 100],
+          ['/products/photoshop.html', 'Photoshop', 100],
           ['', 'Other', 0],
         ]);
       });
