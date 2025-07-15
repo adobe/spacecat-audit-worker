@@ -94,7 +94,7 @@ export class StepAudit extends BaseAudit {
         return ok();
       }
 
-      log.info(`auditContext :rocket: ${JSON.stringify(auditContext)}`);
+      log.info(`auditContext :rocket: soft-404s${JSON.stringify(auditContext)}`);
 
       // Determine which step to run
       const hasNext = hasText(auditContext.next);

@@ -23,7 +23,7 @@ import {
   extractTextAndCountWords,
   isNonHtmlFile,
 } from './utils.js';
-import { noopPersister } from '../common/index.js';
+// import { noopPersister } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -380,9 +380,8 @@ export async function soft404sAuditRunner(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver((site) => site.getBaseURL())
-  .withPersister(noopPersister)
+  // .withPersister(noopPersister)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('soft404s-audit-runner', soft404sAuditRunner)
-  .withAsyncJob()
+  // .withAsyncJob()
   .build();
