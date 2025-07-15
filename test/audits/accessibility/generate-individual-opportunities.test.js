@@ -1289,6 +1289,7 @@ describe('createIndividualOpportunitySuggestions', () => {
             occurrences: 3,
           },
         ],
+        isCreateTicketClicked: false,
       },
     });
   });

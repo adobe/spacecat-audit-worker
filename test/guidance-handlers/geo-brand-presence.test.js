@@ -34,7 +34,7 @@ describe('geo-brand-presence guidance handler', () => {
     dummyOpportunity = {
       getId: sinon.stub().returns('existing-oppty-id'),
       getSuggestions: sinon.stub().resolves([]),
-      getData: sinon.stub().returns({ subType: 'guidance:geo-brand-presence' }),
+      getData: sinon.stub().returns({ subType: 'detect:geo-brand-presence' }),
       setAuditId: sinon.stub(),
       setData: sinon.stub(),
       save: sinon.stub().resolvesThis(),
@@ -66,11 +66,27 @@ describe('geo-brand-presence guidance handler', () => {
     sinon.restore();
   });
 
+  it('should log an error and return 404 if no type is found', async () => {
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        suggestions: [],
+      },
+    };
+    await handler(message, context);
+    expect(log.error).to.have.been.calledWithMatch(/Unsupported subtype: undefined/);
+    expect(Opportunity.allBySiteId).not.to.have.been.called;
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+  });
+
   it('should log a warning and return if no audit found', async () => {
     Audit.findById.resolves(null);
     const message = {
       auditId: 'unknown-audit-id',
       siteId: 'site-id',
+      type: 'detect:geo-brand-presence',
       data: {
         suggestions: [],
       },
@@ -82,11 +98,12 @@ describe('geo-brand-presence guidance handler', () => {
     expect(Suggestion.create).not.to.have.been.called;
   });
 
-  it('should create a new opportunity if no existing opportunity is found', async () => {
+  it('should create a new brand presence opportunity if no existing opportunity is found', async () => {
     Opportunity.allBySiteId.resolves([]);
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
+      type: 'detect:geo-brand-presence',
       data: {
         suggestions: [
           {
@@ -103,15 +120,16 @@ describe('geo-brand-presence guidance handler', () => {
     expect(Opportunity.create).to.have.been.calledOnce;
     const createdArg = Opportunity.create.getCall(0).args[0];
     expect(createdArg.type).to.equal('generic-opportunity');
-    expect(createdArg.data.subType).to.equal('guidance:geo-brand-presence');
+    expect(createdArg.data.subType).to.equal('detect:geo-brand-presence');
     expect(Suggestion.create).to.have.been.calledOnce;
   });
 
-  it('should update existing opportunity if found', async () => {
+  it('should update existing brand presence opportunity if found', async () => {
     Opportunity.allBySiteId.resolves([dummyOpportunity]);
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
+      type: 'detect:geo-brand-presence',
       data: {
         suggestions: [
           {
@@ -140,6 +158,7 @@ describe('geo-brand-presence guidance handler', () => {
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
+      type: 'detect:geo-brand-presence',
       data: {
         suggestions: [
           {
@@ -155,5 +174,95 @@ describe('geo-brand-presence guidance handler', () => {
     await handler(message, context);
     expect(oldSuggestion.remove).to.have.been.calledTwice;
     expect(Suggestion.create).to.have.been.calledOnce;
+  });
+
+  it('should update existing faq opportunity if found', async () => {
+    const faqOpportunity = {
+      ...dummyOpportunity,
+      getData: sinon.stub().returns({ subType: 'guidance:geo-faq' }),
+    };
+    Opportunity.allBySiteId.resolves([faqOpportunity]);
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      type: 'guidance:geo-faq',
+      data: {
+        suggestions: [
+          {
+            pageUrl: 'https://adobe.com/page1',
+            question: 'q1',
+            answer: 'a1',
+            sources: ['s1', 's2'],
+          },
+        ],
+      },
+    };
+    await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(dummyOpportunity.setAuditId).to.have.been.calledWith('audit-id');
+    expect(dummyOpportunity.setData).to.have.been.called;
+    expect(dummyOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+    expect(dummyOpportunity.save).to.have.been.called;
+    expect(Suggestion.create).to.have.been.calledOnce;
+  });
+
+  it('should create a new faq opportunity if no existing opportunity is found', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      type: 'guidance:geo-faq',
+      data: {
+        suggestions: [
+          {
+            pageUrl: 'https://adobe.com/page1',
+            question: 'q1',
+            answer: 'a1',
+            sources: ['s1', 's2'],
+          },
+        ],
+      },
+    };
+    await handler(message, context);
+    expect(Opportunity.create).to.have.been.calledOnce;
+    const createdArg = Opportunity.create.getCall(0).args[0];
+    expect(createdArg.type).to.equal('generic-opportunity');
+    expect(createdArg.data.subType).to.equal('guidance:geo-faq');
+    expect(Suggestion.create).to.have.been.calledOnce;
+  });
+
+  it('should skip suggestions with empty or no sources', async () => {
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      type: 'guidance:geo-faq',
+      data: {
+        suggestions: [
+          {
+            pageUrl: 'https://adobe.com/page1',
+            question: 'q1',
+            answer: 'a1',
+            sources: ['s1', 's2'],
+          },
+          {
+            pageUrl: 'https://adobe.com/page2',
+            question: 'q2',
+            answer: 'a2',
+            sources: [],
+          },
+          {
+            pageUrl: 'https://adobe.com/page3',
+            question: 'q3',
+            answer: 'a3',
+          },
+        ],
+      },
+    };
+    await handler(message, context);
+    expect(log.warn).to.have.been.calledWithMatch(/No sources found for suggestion: q2. Skipping this suggestion./);
+    expect(Suggestion.create).to.have.been.calledOnce;
+    expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.include('https://adobe.com/page1');
+    expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.not.include('https://adobe.com/page2');
+    expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.not.include('https://adobe.com/page3');
   });
 });
