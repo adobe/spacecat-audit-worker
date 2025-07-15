@@ -1,3 +1,10 @@
+# [1.125.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.124.1...v1.125.0) (2025-07-15)
+
+
+### Features
+
+* make preflight audit easily extendable for other audits ([#1035](https://github.com/adobe/spacecat-audit-worker/issues/1035)) ([df4cc33](https://github.com/adobe/spacecat-audit-worker/commit/df4cc33cd997b26cd1db5839c306185f04fcd31e))
+
 ## [1.124.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.124.0...v1.124.1) (2025-07-15)
 
 
