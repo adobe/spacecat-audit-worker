@@ -26,8 +26,7 @@ export const TOPIC_PATTERNS = {
   ],
   'business.adobe.com': [
     {
-      name: 'Enterprise Products',
-      regex: '(?!.*blog|.*learn)/?products/',
+      regex: '^(?!/blog|/learn).*?/products/([^/.]+)',
     },
   ],
 };

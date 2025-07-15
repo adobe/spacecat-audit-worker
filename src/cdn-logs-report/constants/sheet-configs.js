@@ -20,6 +20,11 @@ const SHEET_COLORS = {
 
 const WEEK_KEY_TRANSFORMER = (weekLabel) => weekLabel.replace(' ', '_').toLowerCase();
 
+const capitalizeFirstLetter = (str) => {
+  if (!str || typeof str !== 'string') return str;
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+};
+
 const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
   const result = [valueExtractor(row)];
   periods.weeks.forEach((week) => {
@@ -245,7 +250,7 @@ export const SHEET_CONFIGS = {
       const aggregatedData = processCountryWithFields(data, ['topic']);
       return aggregatedData.map((row) => [
         row.country,
-        row.topic,
+        capitalizeFirstLetter(row.topic),
         row.hits,
       ]);
     },
@@ -257,7 +262,7 @@ export const SHEET_CONFIGS = {
     numberColumns: [2],
     processData: (data) => data?.map((row) => [
       row.url || '',
-      row.topic || 'Other',
+      capitalizeFirstLetter(row.topic) || 'Other',
       Number(row.hits) || 0,
     ]) || [],
   },
