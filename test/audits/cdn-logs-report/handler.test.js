@@ -77,7 +77,7 @@ describe('CDN Logs Report Audit', () => {
         loadSql: mockLoadSql,
         ensureTableExists: mockEnsureTableExists,
       },
-      '../../../src/utils/athena-client.js': {
+      '@adobe/spacecat-shared-athena-client': {
         AWSAthenaClient: {
           fromContext: () => ({
             execute: mockAthenaExecute,
