@@ -1,7 +1,8 @@
 SELECT 
   {{countryExtraction}} as country_code,
+  {{topicExtraction}} as topic,
   {{weekColumns}}
 FROM {{databaseName}}.{{tableName}}
 {{whereClause}}
-GROUP BY {{countryExtraction}}
-ORDER BY {{orderBy}} DESC
+GROUP BY {{countryExtraction}}, {{topicExtraction}}
+ORDER BY {{orderBy}} DESC 

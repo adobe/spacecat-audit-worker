@@ -16,8 +16,8 @@ import {
   AthenaClient,
   StartQueryExecutionCommand,
   GetQueryExecutionCommand,
-  GetQueryResultsCommand,
   QueryExecutionState,
+  paginateGetQueryResults,
 } from '@aws-sdk/client-athena';
 import { hasText, instrumentAWSClient } from '@adobe/spacecat-shared-utils';
 import { sleep } from '../support/utils.js';
@@ -238,11 +238,35 @@ export class AWSAthenaClient {
   async query(sql, database, description = 'Athena query', opts = {}) {
     const queryExecutionId = await this.execute(sql, database, description, opts);
 
-    // Get query results
-    const resultsCommand = new GetQueryResultsCommand({ QueryExecutionId: queryExecutionId });
-    const results = await this.client.send(resultsCommand);
+    this.log.debug(`[Athena Client] Fetching paginated results for QueryExecutionId=${queryExecutionId}`);
 
-    return AWSAthenaClient.#parseAthenaResults(results);
+    const paginationConfig = {
+      client: this.client,
+    };
+
+    const input = {
+      QueryExecutionId: queryExecutionId,
+    };
+
+    const paginator = paginateGetQueryResults(paginationConfig, input);
+
+    const allResults = [];
+    let pageCount = 0;
+    let totalRows = 0;
+
+    for await (const page of paginator) {
+      pageCount += 1;
+      const pageRows = page.ResultSet?.Rows?.length || 0;
+      totalRows += pageRows;
+
+      this.log.debug(`[Athena Client] Processing page ${pageCount} with ${pageRows} rows`);
+
+      const pageResults = AWSAthenaClient.#parseAthenaResults(page);
+      allResults.push(...pageResults);
+    }
+
+    this.log.info(`[Athena Client] Fetched ${totalRows} total rows across ${pageCount} pages`);
+    return allResults;
   }
 }
 /* c8 ignore stop */

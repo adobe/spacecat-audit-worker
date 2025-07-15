@@ -108,7 +108,7 @@ function buildTopicExtractionSQL(site) {
 // Query Builders
 async function createCountryWeeklyBreakdownQuery(options) {
   const {
-    periods, databaseName, tableName, provider, siteFilters = [],
+    periods, databaseName, tableName, provider, site, siteFilters = [],
   } = options;
 
   const dateFilter = buildDateFilter(
@@ -123,6 +123,7 @@ async function createCountryWeeklyBreakdownQuery(options) {
 
   return loadSql('country-weekly-breakdown', {
     countryExtraction: buildCountryExtractionSQL(),
+    topicExtraction: buildTopicExtractionSQL(site),
     weekColumns: buildWeeklyColumns(periods),
     databaseName,
     tableName,
@@ -133,7 +134,7 @@ async function createCountryWeeklyBreakdownQuery(options) {
 
 async function createUserAgentWeeklyBreakdownQuery(options) {
   const {
-    periods, databaseName, tableName, provider, siteFilters = [],
+    periods, databaseName, tableName, provider, site, siteFilters = [],
   } = options;
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
@@ -144,6 +145,7 @@ async function createUserAgentWeeklyBreakdownQuery(options) {
   );
 
   return loadSql('user-agent-breakdown', {
+    topicExtraction: buildTopicExtractionSQL(site),
     databaseName,
     tableName,
     whereClause,
@@ -171,28 +173,9 @@ async function createUrlStatusWeeklyBreakdownQuery(options) {
   });
 }
 
-async function createTopBottomUrlsByStatusQuery(options) {
-  const {
-    periods, databaseName, tableName, provider, siteFilters = [],
-  } = options;
-
-  const lastWeek = periods.weeks[periods.weeks.length - 1];
-  const whereClause = buildWhereClause(
-    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
-    provider,
-    siteFilters,
-  );
-
-  return loadSql('top-bottom-urls-by-status', {
-    databaseName,
-    tableName,
-    whereClause,
-  });
-}
-
 async function createError404UrlsQuery(options) {
   const {
-    periods, databaseName, tableName, provider, siteFilters = [],
+    periods, databaseName, tableName, provider, site, siteFilters = [],
   } = options;
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
@@ -203,6 +186,7 @@ async function createError404UrlsQuery(options) {
   );
 
   return loadSql('individual-urls-by-status', {
+    topicExtraction: buildTopicExtractionSQL(site),
     databaseName,
     tableName,
     whereClause,
@@ -211,7 +195,7 @@ async function createError404UrlsQuery(options) {
 
 async function createError503UrlsQuery(options) {
   const {
-    periods, databaseName, tableName, provider, siteFilters = [],
+    periods, databaseName, tableName, provider, site, siteFilters = [],
   } = options;
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
@@ -222,6 +206,7 @@ async function createError503UrlsQuery(options) {
   );
 
   return loadSql('individual-urls-by-status', {
+    topicExtraction: buildTopicExtractionSQL(site),
     databaseName,
     tableName,
     whereClause,
@@ -245,6 +230,7 @@ async function createSuccessUrlsByCategoryQuery(options) {
   );
 
   return loadSql('individual-urls-by-status', {
+    topicExtraction: buildTopicExtractionSQL(site),
     databaseName,
     tableName,
     whereClause,
@@ -253,7 +239,7 @@ async function createSuccessUrlsByCategoryQuery(options) {
 
 async function createTopUrlsQuery(options) {
   const {
-    periods, databaseName, tableName, provider, siteFilters = [],
+    periods, databaseName, tableName, provider, site, siteFilters = [],
   } = options;
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
@@ -264,6 +250,7 @@ async function createTopUrlsQuery(options) {
   );
 
   return loadSql('top-urls-by-traffic', {
+    topicExtraction: buildTopicExtractionSQL(site),
     databaseName,
     tableName,
     whereClause,
@@ -313,7 +300,6 @@ export const weeklyBreakdownQueries = {
   createCountryWeeklyBreakdown: createCountryWeeklyBreakdownQuery,
   createUserAgentWeeklyBreakdown: createUserAgentWeeklyBreakdownQuery,
   createUrlStatusWeeklyBreakdown: createUrlStatusWeeklyBreakdownQuery,
-  createTopBottomUrlsByStatus: createTopBottomUrlsByStatusQuery,
   createError404Urls: createError404UrlsQuery,
   createError503Urls: createError503UrlsQuery,
   createSuccessUrlsByCategory: createSuccessUrlsByCategoryQuery,
