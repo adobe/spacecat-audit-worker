@@ -1,3 +1,10 @@
+## [1.126.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.126.0...v1.126.1) (2025-07-16)
+
+
+### Bug Fixes
+
+* running preflight for root pages ([#1042](https://github.com/adobe/spacecat-audit-worker/issues/1042)) ([68c6704](https://github.com/adobe/spacecat-audit-worker/commit/68c6704d2eae7cd40bb85576fd93c7079c00af86))
+
 # [1.126.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.125.2...v1.126.0) (2025-07-16)
 
 
