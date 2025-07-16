@@ -768,6 +768,100 @@ describe('Preflight Audit', () => {
       })));
     });
 
+    it('completes successfully on the happy path for the suggest step for the root page', async () => {
+      context.promiseToken = 'mock-promise-token';
+      const head = '<head><a href="https://example.com/header-url"/></head>';
+      const body = '<body><a href="https://example.com/broken"></a><a href="https://example.com/another-broken-url"></a><h1>Home H1</h1></body>';
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  tags: {
+                    title: 'Home Title',
+                    description: 'Home Description',
+                    h1: ['Home H1'],
+                  },
+                },
+                finalUrl: 'https://main--example--page.aem.page',
+              })),
+            },
+          });
+        }
+      });
+
+      nock('https://main--example--page.aem.page')
+        .head('/header-url')
+        .reply(200);
+      nock('https://main--example--page.aem.page')
+        .head('/broken')
+        .reply(404);
+      nock('https://main--example--page.aem.page')
+        .head('/another-broken-url')
+        .reply(404);
+
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_SUGGEST,
+          urls: ['https://main--example--page.aem.page'],
+        },
+      });
+
+      firefallClient.fetchChatCompletion.resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://example.com/fix'], aiRationale: 'Rationale' }),
+            aiRationale: 'Rationale',
+          },
+          finish_reason: 'stop',
+        }],
+      });
+
+      configuration.isHandlerEnabledForSite.onCall(0).returns(true);
+      configuration.isHandlerEnabledForSite.onCall(1).returns(false);
+      genvarClient.generateSuggestions.resolves({
+        '/': {
+          h1: {
+            aiRationale: 'The H1 tag is clear...',
+            aiSuggestion: 'Welcome to Our Homepage',
+          },
+          title: {
+            aiRationale: 'The title is descriptive...',
+            aiSuggestion: 'Home - Our Company',
+          },
+          description: {
+            aiRationale: 'The description is concise...',
+            aiSuggestion: 'Welcome to the homepage of Our Company.',
+          },
+        },
+      });
+
+      await preflightAudit(context);
+
+      expect(genvarClient.generateSuggestions).to.have.been.called;
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(finalJobEntity.setResultType).to.have.been.called;
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
+      expect(finalJobEntity.setResult).to.have.been.called;
+    });
+
     // eslint-disable-next-line func-names
     it('completes successfully on the happy path for the identify step', async function () {
       this.timeout(10000); // Increase timeout to 10 seconds
