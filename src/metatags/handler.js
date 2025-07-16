@@ -31,7 +31,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.META_TAGS;
-const { AUDIT_STEP_DESTINATIONS } = Audit;
+// const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
@@ -340,6 +340,5 @@ export async function submitForScraping(context) {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
   .build();
