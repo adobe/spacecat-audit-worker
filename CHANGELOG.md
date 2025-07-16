@@ -1,3 +1,17 @@
+# [1.126.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.125.2...v1.126.0) (2025-07-16)
+
+
+### Features
+
+* Add Mystique SQS Integration for Accessibility Remediation Guidance  ([#986](https://github.com/adobe/spacecat-audit-worker/issues/986)) ([1b51eef](https://github.com/adobe/spacecat-audit-worker/commit/1b51eef80aaad6e18842672441a21af9fe9f1805))
+
+## [1.125.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.125.1...v1.125.2) (2025-07-15)
+
+
+### Bug Fixes
+
+* remove page auth token from external link checks and fix internal link checks broken bug. ([#1007](https://github.com/adobe/spacecat-audit-worker/issues/1007)) ([0c1cc05](https://github.com/adobe/spacecat-audit-worker/commit/0c1cc058c50fb63053a366f36478aec430a7635c))
+
 ## [1.125.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.125.0...v1.125.1) (2025-07-15)
 
 
