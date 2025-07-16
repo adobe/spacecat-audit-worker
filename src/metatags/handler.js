@@ -288,6 +288,8 @@ export async function runAuditAndGenerateSuggestions(context) {
     ...(projectedTrafficLost && { projectedTrafficLost }),
     ...(projectedTrafficValue && { projectedTrafficValue }),
   };
+  log.info(`Audit data: ${JSON.stringify(audit)}`);
+
   await opportunityAndSuggestions(finalUrl, {
     siteId: site.getId(),
     auditId: audit.getId(),
