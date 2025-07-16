@@ -126,7 +126,7 @@ export const generateSuggestionData = async (context) => {
   const { Configuration, Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
-  if (audit.getAuditResult().success === false) {
+  if (auditResult.success === false) {
     log.info('Audit failed, skipping suggestions generation');
     throw new Error('Audit failed, skipping suggestions generation');
   }
@@ -151,7 +151,7 @@ export const generateSuggestionData = async (context) => {
   const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
   await syncSuggestions({
     opportunity,
-    newData: auditResult,
+    newData: auditResult?.brokenBacklinks,
     buildKey,
     context,
     mapNewSuggestion: (backlink) => ({

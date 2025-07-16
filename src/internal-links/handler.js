@@ -133,7 +133,7 @@ export async function prepareScrapingStep(context) {
   };
 }
 
-export const generateSuggestionData = async (context) => {
+export const opportunityAndSuggestionsStep = async (context) => {
   const {
     site, audit, dataAccess, log, sqs, env, finalUrl,
   } = context;
@@ -144,15 +144,15 @@ export const generateSuggestionData = async (context) => {
     log.info('Audit failed, skipping suggestions generation');
     throw new Error('Audit failed, skipping suggestions generation');
   }
-
+  const brokenInternalLinks = auditResult.brokenInternalLinks || [];
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
     log.info('Auto-suggest is disabled for site');
     throw new Error('Auto-suggest is disabled for site');
   }
-  const kpiDeltas = calculateKpiDeltasForAudit(auditResult);
+  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
 
-  if (!isNonEmptyArray(auditResult)) {
+  if (!isNonEmptyArray(brokenInternalLinks)) {
     // no broken internal links found
     // fetch opportunity
     const { Opportunity } = dataAccess;
@@ -203,7 +203,7 @@ export const generateSuggestionData = async (context) => {
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
   await syncSuggestions({
     opportunity,
-    newData: auditResult.brokenInternalLinks || [],
+    newData: brokenInternalLinks,
     context,
     buildKey,
     mapNewSuggestion: (entry) => ({
@@ -232,8 +232,8 @@ export const generateSuggestionData = async (context) => {
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
-        url_from: suggestion?.urlFrom,
-        url_to: suggestion?.urlTo,
+        url_from: suggestion?.getData()?.urlFrom,
+        url_to: suggestion?.getData()?.urlTo,
         suggestionId: suggestion?.getId(),
         opportunityId: opportunity?.getId(),
       },
@@ -258,5 +258,5 @@ export default new AuditBuilder()
     prepareScrapingStep,
     AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
   )
-  .addStep('generate-suggestion-data', generateSuggestionData)
+  .addStep('trigger-ai-suggestions', opportunityAndSuggestionsStep)
   .build();
