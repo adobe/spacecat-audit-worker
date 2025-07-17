@@ -11,19 +11,18 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
+  from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { syncSuggestions } from '../utils/data-access.js';
-import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
-import { generateSuggestionData } from './suggestions-generator.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
-  calculateKpiDeltasForAudit,
   isLinkInaccessible,
-  calculatePriority,
+  calculatePriority, calculateKpiDeltasForAudit,
 } from './helpers.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
@@ -134,30 +133,23 @@ export async function prepareScrapingStep(context) {
   };
 }
 
-export async function opportunityAndSuggestionsStep(context) {
+export const opportunityAndSuggestionsStep = async (context) => {
   const {
-    log, site, finalUrl, audit, dataAccess,
+    site, audit, dataAccess, log, sqs, env, finalUrl,
   } = context;
+  const { Configuration, Suggestion } = dataAccess;
 
-  let { brokenInternalLinks } = audit.getAuditResult();
-
-  // generate suggestions
-  try {
-    if (audit.getAuditResult().success) {
-      brokenInternalLinks = await generateSuggestionData(
-        finalUrl,
-        audit.getAuditResult().brokenInternalLinks,
-        context,
-        site,
-      );
-    } else {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
-    }
-  } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
+  const auditResult = audit.getAuditResult();
+  if (audit.getAuditResult().success === false) {
+    log.info('Audit failed, skipping suggestions generation');
+    throw new Error('Audit failed, skipping suggestions generation');
   }
-
-  // TODO: skip opportunity creation if no internal link items are found in the audit data
+  const brokenInternalLinks = auditResult.brokenInternalLinks || [];
+  const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
+    log.info('Auto-suggest is disabled for site');
+    throw new Error('Auto-suggest is disabled for site');
+  }
   const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
 
   if (!isNonEmptyArray(brokenInternalLinks)) {
@@ -187,7 +179,6 @@ export async function opportunityAndSuggestionsStep(context) {
 
       // If there are suggestions, update their status to outdated
       if (isNonEmptyArray(suggestions)) {
-        const { Suggestion } = dataAccess;
         await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
       }
       opportunity.setUpdatedBy('system');
@@ -223,18 +214,37 @@ export async function opportunityAndSuggestionsStep(context) {
         title: entry.title,
         urlFrom: entry.urlFrom,
         urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
         trafficDomain: entry.trafficDomain,
         priority: entry.priority,
       },
     }),
     log,
   });
+  const suggestions = await Suggestion.allByOpportunityIdAndStatus(
+    opportunity.getId(),
+    SuggestionDataAccess.STATUSES.NEW,
+  );
+  await Promise.all(suggestions.map(async (suggestion) => {
+    const message = {
+      type: 'guidance:broken-internal-links',
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        url_from: suggestion?.getData()?.urlFrom,
+        url_to: suggestion?.getData()?.urlTo,
+        suggestionId: suggestion?.getId(),
+        opportunityId: opportunity?.getId(),
+      },
+    };
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
+  }));
   return {
     status: 'complete',
   };
-}
+};
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
@@ -248,5 +258,5 @@ export default new AuditBuilder()
     prepareScrapingStep,
     AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
   )
-  .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
+  .addStep('trigger-ai-suggestions', opportunityAndSuggestionsStep)
   .build();
