@@ -1,3 +1,10 @@
+# [1.127.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.126.1...v1.127.0) (2025-07-17)
+
+
+### Features
+
+* add support for google and bing bot traffic ([#1047](https://github.com/adobe/spacecat-audit-worker/issues/1047)) ([32c177f](https://github.com/adobe/spacecat-audit-worker/commit/32c177faeb0efcc126b3363c3d575eae75e3a49f))
+
 ## [1.126.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.126.0...v1.126.1) (2025-07-16)
 
 
