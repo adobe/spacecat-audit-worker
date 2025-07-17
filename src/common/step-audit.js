@@ -113,7 +113,6 @@ export class StepAudit extends BaseAudit {
       let response = ok();
 
       if (!hasNext) {
-        log.info('Last step in audit', stepResult);
         response = await this.processAuditResult(
           stepResult,
           {
@@ -124,13 +123,10 @@ export class StepAudit extends BaseAudit {
           },
           stepContext,
         );
-
-        log.info('Response after last step', response);
       }
 
       if (!isLastStep) {
         const result = await this.chainStep(step, stepResult, stepContext);
-        log.info('Step audit result', result);
         response = ok(result);
       }
 
