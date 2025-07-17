@@ -52,7 +52,7 @@ export default async function metatags(context, auditContext) {
       }, context, site, { forceAutoSuggest: true })
       : detectedTags;
     Object.entries(tagCollection).forEach(([path, tags]) => {
-      const pageUrl = `${previewBaseURL}${path}`;
+      const pageUrl = `${previewBaseURL}${path}`.replace(/\/$/, '');
       const audit = audits.get(pageUrl)?.audits.find((a) => a.name === PREFLIGHT_METATAGS);
       return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
         ...data,
