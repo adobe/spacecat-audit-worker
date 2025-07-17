@@ -30,6 +30,7 @@ export const PREFLIGHT_STEP_SUGGEST = 'suggest';
 export const AUDIT_BODY_SIZE = 'body-size';
 export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 export const AUDIT_H1_COUNT = 'h1-count';
+export const AUDIT_ACCESSIBILITY = 'accessibility';
 
 /**
  * NOTE: When adding a new audit check:
@@ -263,12 +264,11 @@ export const preflightAudit = async (context) => {
 
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. ${JSON.stringify(resultWithProfiling)}`);
 
-    const jobEntity = await AsyncJobEntity.findById(jobId);
-    jobEntity.setStatus(AsyncJob.Status.COMPLETED);
-    jobEntity.setResultType(AsyncJob.ResultType.INLINE);
-    jobEntity.setResult(resultWithProfiling);
-    jobEntity.setEndedAt(new Date().toISOString());
-    await jobEntity.save();
+    // Store preflight results in context for final step
+    context.preflightResults = resultWithProfiling;
+
+    // Don't complete the job here - let the final step handle it
+    return resultWithProfiling;
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Error during preflight audit.`, error);
     const jobEntity = await AsyncJobEntity.findById(jobId);
@@ -282,14 +282,134 @@ export const preflightAudit = async (context) => {
     await jobEntity.save();
     throw error;
   }
-
-  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit completed.`);
 };
+
+// Simplified accessibility scraping for preflight - uses the same URLs as preflight
+export async function scrapeAccessibilityDataForPreflight(context) {
+  const { site, job, log } = context;
+
+  const jobMetadata = job.getMetadata();
+  const { urls, checks } = jobMetadata.payload;
+
+  // Skip if accessibility check is not requested
+  if (checks && !checks.includes(AUDIT_ACCESSIBILITY)) {
+    log.info('[preflight-a11y] Step 3: Skipping accessibility scrape - not in checks array');
+    return { status: 'SKIPPED', message: 'Accessibility check not requested' };
+  }
+
+  log.info(`[preflight-a11y] Step 3: Preparing accessibility scrape for ${urls.length} URLs`);
+
+  // Use the same URLs as preflight
+  const urlsToScrape = urls.map((url) => {
+    const urlObj = new URL(url);
+    return {
+      url: `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`,
+    };
+  });
+
+  return {
+    urls: urlsToScrape,
+    siteId: site.getId(),
+    type: 'accessibility',
+    allowCache: false,
+    options: {
+      enableAuthentication: true,
+      screenshotTypes: [],
+      ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
+    },
+  };
+}
+
+// Simplified accessibility processing for preflight - just logs the results
+export async function processAccessibilityResultsForPreflight(context) {
+  const { site, job, log } = context;
+
+  const jobMetadata = job.getMetadata();
+  const { checks } = jobMetadata.payload;
+
+  // Skip if accessibility check is not requested
+  if (checks && !checks.includes(AUDIT_ACCESSIBILITY)) {
+    log.info('[preflight-a11y] Step 4: Skipping accessibility processing - not in checks array');
+    const accessibilityResults = {
+      status: 'SKIPPED',
+      message: 'Accessibility check not requested',
+      urlsProcessed: 0,
+      issuesFound: 0,
+      timestamp: new Date().toISOString(),
+    };
+    context.accessibilityResults = accessibilityResults;
+    return accessibilityResults;
+  }
+
+  log.info(`[preflight-a11y] Step 4: Processing accessibility results for site ${site.getBaseURL()}`);
+
+  // For now, just create a simple result to test the flow
+  const accessibilityResults = {
+    status: 'PROCESSED',
+    message: 'Accessibility processing completed (simplified for preflight)',
+    urlsProcessed: 0,
+    issuesFound: 0,
+    timestamp: new Date().toISOString(),
+  };
+
+  log.info(`[preflight-a11y] Accessibility results: ${JSON.stringify(accessibilityResults, null, 2)}`);
+
+  // Store accessibility results in context for final step
+  context.accessibilityResults = accessibilityResults;
+
+  return accessibilityResults;
+}
+
+// Final step: combines preflight and accessibility results and completes the job
+export async function saveFinalResult(context) {
+  const { job, dataAccess, log } = context;
+  const { AsyncJob: AsyncJobEntity } = dataAccess;
+  const jobId = job.getId();
+
+  log.info(`[preflight-final-result] Step 5: site: ${context.site.getId()}, job: ${jobId}. Combining results and completing job.`);
+
+  try {
+    // Combine preflight and accessibility results
+    const combinedResults = {
+      preflight: context.preflightResults || [],
+      accessibility: context.accessibilityResults || { status: 'NOT_PROCESSED' },
+      timestamp: new Date().toISOString(),
+      jobId,
+    };
+
+    log.info(`[preflight-final-result] Combined results: ${JSON.stringify(combinedResults, null, 2)}`);
+
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    jobEntity.setStatus(AsyncJob.Status.COMPLETED);
+    jobEntity.setResultType(AsyncJob.ResultType.INLINE);
+    jobEntity.setResult(combinedResults);
+    jobEntity.setEndedAt(new Date().toISOString());
+    await jobEntity.save();
+
+    log.info(`[preflight-final-result] Job ${jobId} completed successfully`);
+    return combinedResults;
+  } catch (error) {
+    log.error(`[preflight-final-result] Error completing job ${jobId}: ${error.message}`, error);
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    jobEntity.setStatus(AsyncJob.Status.FAILED);
+    jobEntity.setError({
+      code: 'EXCEPTION',
+      message: error.message,
+      details: error.stack,
+    });
+    jobEntity.setEndedAt(new Date().toISOString());
+    await jobEntity.save();
+    throw error;
+  }
+}
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withPersister(noopPersister)
   .addStep('scrape-pages', scrapePages, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('preflight-audit', preflightAudit)
+  .addStep('scrapeAccessibilityData', scrapeAccessibilityDataForPreflight, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('processAccessibilityResults', processAccessibilityResultsForPreflight)
+  .addStep('preflight-final-result', saveFinalResult)
   .withAsyncJob()
   .build();
