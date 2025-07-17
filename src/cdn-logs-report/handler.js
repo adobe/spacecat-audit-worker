@@ -10,10 +10,10 @@
  * governing permissions and limitations under the License.
  */
 import { createFrom } from '@adobe/spacecat-helix-content-sdk';
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
 import { runWeeklyReport, runCustomDateRangeReport } from './utils/report-runner.js';
-import { AWSAthenaClient } from '../utils/athena-client.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
 async function runCdnLogsReport(url, context, site) {

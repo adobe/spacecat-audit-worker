@@ -64,7 +64,6 @@ describe('CDN Logs Query Builder', () => {
       weeklyBreakdownQueries.createCountryWeeklyBreakdown(mockOptions),
       weeklyBreakdownQueries.createUserAgentWeeklyBreakdown(mockOptions),
       weeklyBreakdownQueries.createUrlStatusWeeklyBreakdown(mockOptions),
-      weeklyBreakdownQueries.createTopBottomUrlsByStatus(mockOptions),
       weeklyBreakdownQueries.createError404Urls(mockOptions),
       weeklyBreakdownQueries.createError503Urls(mockOptions),
       weeklyBreakdownQueries.createTopUrls(mockOptions),

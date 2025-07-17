@@ -26,7 +26,8 @@ const capitalizeFirstLetter = (str) => {
 };
 
 const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
-  const result = [valueExtractor(row)];
+  const extractedValue = valueExtractor(row);
+  const result = Array.isArray(extractedValue) ? [...extractedValue] : [extractedValue];
   periods.weeks.forEach((week) => {
     const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
     result.push(Number(row[weekKey]) || 0);
@@ -43,14 +44,17 @@ const processCountryWeeklyData = (data, reportPeriods) => {
   return Object.values(
     data.reduce((acc, row) => {
       const country = validateCountryCode(row.country_code || '');
+      const topic = row.topic || 'Other';
+      const key = `${country}|${topic}`;
 
-      acc[country] ??= {
+      acc[key] ??= {
         country_code: country,
-        ...Object.fromEntries(weekKeys.map((key) => [key, 0])),
+        topic,
+        ...Object.fromEntries(weekKeys.map((weekKey) => [weekKey, 0])),
       };
 
-      weekKeys.forEach((key) => {
-        acc[country][key] += Number(row[key]) || 0;
+      weekKeys.forEach((weekKey) => {
+        acc[key][weekKey] += Number(row[weekKey]) || 0;
       });
 
       return acc;
@@ -86,33 +90,6 @@ const processCountryWithFields = (data, additionalFields = []) => {
   ).sort((a, b) => b.hits - a.hits);
 };
 
-function analyzeTopBottomByStatus(data) {
-  if (!data?.length) return {};
-
-  const statusAnalysis = {};
-
-  data.forEach((row) => {
-    const status = row.status || 'Unknown';
-    if (!statusAnalysis[status]) {
-      statusAnalysis[status] = { urls: [] };
-    }
-    statusAnalysis[status].urls.push({
-      url: row.url || '',
-      hits: row.total_requests || 0,
-    });
-  });
-
-  Object.keys(statusAnalysis).forEach((status) => {
-    const urls = statusAnalysis[status].urls.sort((a, b) => b.hits - a.hits);
-    statusAnalysis[status] = {
-      top: urls.slice(0, 5),
-      bottom: urls.slice(-5).reverse(),
-    };
-  });
-
-  return statusAnalysis;
-}
-
 export const SHEET_CONFIGS = {
   userAgents: {
     getHeaders: (periods) => {
@@ -120,33 +97,36 @@ export const SHEET_CONFIGS = {
       return [
         'Request User Agent',
         'Status',
+        'Topic',
         'Number of Hits',
         `Interval: Last Week (${lastWeek.dateRange.start} - ${lastWeek.dateRange.end})`,
       ];
     },
     headerColor: SHEET_COLORS.DEFAULT,
-    numberColumns: [2],
+    numberColumns: [3],
     processData: (data) => data?.map((row) => [
-      /* c8 ignore next 3 */
+      /* c8 ignore next 4 */
       row.user_agent || 'Unknown',
       Number(row.status) || 'All',
+      row.topic || 'Other',
       Number(row.total_requests) || 0,
       '',
     ]) || [],
   },
 
   country: {
-    getHeaders: (periods) => ['Country Code', ...periods.columns],
+    getHeaders: (periods) => ['Country Code', 'Topic', ...periods.columns],
     headerColor: SHEET_COLORS.DEFAULT,
     getNumberColumns: (periods) => (
-      Array.from({ length: periods.columns.length - 1 }, (_, i) => i + 1)
+      Array.from({ length: periods.columns.length - 1 }, (_, i) => i + 2)
     ),
     processData: (data, reportPeriods) => {
       const aggregatedData = processCountryWeeklyData(data, reportPeriods);
       return processWeekData(
         aggregatedData,
         reportPeriods,
-        (row) => row.country_code,
+        /* c8 ignore next */
+        (row) => [row.country_code, row.topic || 'Other'],
       );
     },
   },
@@ -165,53 +145,26 @@ export const SHEET_CONFIGS = {
     },
   },
 
-  topBottom: {
-    getHeaders: () => ['Status', 'TOP', '', '', 'BOTTOM', ''],
-    headerColor: SHEET_COLORS.DEFAULT,
-    numberColumns: [2, 5],
-    processData: (data) => {
-      const rows = [['', 'URL', 'Hits', '', 'URL', 'Hits']];
-      const statusAnalysis = analyzeTopBottomByStatus(data);
-
-      Object.entries(statusAnalysis).forEach(([status, analysis]) => {
-        rows.push([status, '', '', '', '', '']);
-        for (let i = 0; i < 5; i += 1) {
-          const topUrl = analysis.top[i];
-          const bottomUrl = analysis.bottom[i];
-          rows.push([
-            '',
-            topUrl?.url || '',
-            Number(topUrl?.hits) || '',
-            '',
-            bottomUrl?.url || '',
-            Number(bottomUrl?.hits) || '',
-          ]);
-        }
-      });
-      return rows;
-    },
-  },
-
   error404: {
-    getHeaders: () => ['URL', 'Number of 404s'],
+    getHeaders: () => ['URL', 'Topic', 'Number of 404s'],
     headerColor: SHEET_COLORS.ERROR,
-    numberColumns: [1],
+    numberColumns: [2],
     /* c8 ignore next */
-    processData: (data) => data?.map((row) => [row.url || '', Number(row.total_requests) || 0]) || [],
+    processData: (data) => data?.map((row) => [row.url || '', row.topic || 'Other', Number(row.total_requests) || 0]) || [],
   },
 
   error503: {
-    getHeaders: () => ['URL', 'Number of 503s'],
+    getHeaders: () => ['URL', 'Topic', 'Number of 503s'],
     headerColor: SHEET_COLORS.ERROR,
-    numberColumns: [1],
+    numberColumns: [2],
     /* c8 ignore next */
-    processData: (data) => data?.map((row) => [row.url || '', Number(row.total_requests) || 0]) || [],
+    processData: (data) => data?.map((row) => [row.url || '', row.topic || 'Other', Number(row.total_requests) || 0]) || [],
   },
 
   category: {
-    getHeaders: () => ['Category', 'Number of Hits'],
+    getHeaders: () => ['Category', 'Topic', 'Number of Hits'],
     headerColor: SHEET_COLORS.SUCCESS,
-    numberColumns: [1],
+    numberColumns: [2],
     processData: (data) => {
       const urlCountMap = new Map();
 
@@ -220,24 +173,32 @@ export const SHEET_CONFIGS = {
         const url = row.url || '';
         const match = url.match(/\/[a-z]{2}\/products\/([^/]+)/);
         const categoryUrl = match ? `products/${match[1]}` : 'Other';
+        const topic = row.topic || 'Other';
+        const key = `${categoryUrl}|${topic}`;
 
         urlCountMap.set(
-          categoryUrl,
-          (urlCountMap.get(categoryUrl) || 0) + (Number(row.total_requests) || 0),
+          key,
+          (urlCountMap.get(key) || 0) + (Number(row.total_requests) || 0),
         );
       });
 
-      return Array.from(urlCountMap.entries()).sort((a, b) => b[1] - a[1]);
+      return Array.from(urlCountMap.entries())
+        .map(([key, count]) => {
+          const [category, topic] = key.split('|');
+          return [category, topic, count];
+        })
+        .sort((a, b) => b[2] - a[2]);
     },
   },
 
   topUrls: {
-    getHeaders: (periods) => ['URL', ...periods.columns],
+    getHeaders: () => ['URL', 'Topic', 'Number of Hits'],
     headerColor: SHEET_COLORS.DEFAULT,
     numberColumns: [2],
     processData: (data) => data?.map((row) => [
-      /* c8 ignore next 2 */
+      /* c8 ignore next 3 */
       row.url || '',
+      row.topic || 'Other',
       Number(row.total_requests) || 0,
     ]) || [],
   },

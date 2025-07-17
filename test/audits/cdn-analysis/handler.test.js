@@ -56,7 +56,7 @@ describe('CDN Analysis Handler', () => {
     getStaticContentStub = sandbox.stub().resolves('SELECT 1;');
     determineCdnProviderStub = sandbox.stub().resolves('akamai');
     handlerModule = await esmock('../../../src/cdn-analysis/handler.js', {
-      '../../../src/utils/athena-client.js': { AWSAthenaClient: { fromContext: () => athenaClientStub } },
+      '@adobe/spacecat-shared-athena-client': { AWSAthenaClient: { fromContext: () => athenaClientStub } },
       '@adobe/spacecat-shared-utils': { getStaticContent: getStaticContentStub },
       '../../../src/cdn-analysis/utils/cdn-utils.js': { determineCdnProvider: determineCdnProviderStub },
       '../../../src/common/base-audit.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },

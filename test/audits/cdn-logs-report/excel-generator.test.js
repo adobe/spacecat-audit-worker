@@ -50,10 +50,6 @@ describe('CDN Logs Excel Generator', () => {
         { url: '/popular-page', total_requests: 200 },
         { url: '/trending-content', total_requests: 150 },
       ],
-      top_bottom_urls_by_status: [
-        { status: 200, url: '/success-page', total_requests: 100 },
-        { status: 404, url: '/error-page', total_requests: 20 },
-      ],
     };
 
     const site = {
@@ -83,7 +79,6 @@ describe('CDN Logs Excel Generator', () => {
       error_404_urls: [],
       error_503_urls: [],
       top_urls: [],
-      top_bottom_urls_by_status: [],
     };
 
     const site = {
@@ -133,9 +128,6 @@ describe('CDN Logs Excel Generator', () => {
       reqcountbyurlstatus: [
         { page_type: null, week_1: 50 },
       ],
-      top_bottom_urls_by_status: [
-        { status: '', url: null, total_requests: null },
-      ],
       error_404_urls: null,
       error_503_urls: [],
       top_urls: null,
@@ -165,7 +157,6 @@ describe('CDN Logs Excel Generator', () => {
       error_404_urls: [],
       error_503_urls: [],
       top_urls: [],
-      top_bottom_urls_by_status: [],
     };
 
     const site = {

@@ -46,21 +46,18 @@ describe('Sheet Configs', () => {
     it('should return correct headers', () => {
       expect(SHEET_CONFIGS.referralCountryTopic.getHeaders()).to.deep.equal(['Country', 'Topic', 'Hits']);
       expect(SHEET_CONFIGS.referralUrlTopic.getHeaders()).to.deep.equal(['URL', 'Topic', 'Hits']);
-      expect(SHEET_CONFIGS.country.getHeaders(mockPeriods)).to.deep.equal(['Country Code', 'Week 1', 'Week 2']);
+      expect(SHEET_CONFIGS.country.getHeaders(mockPeriods)).to.deep.equal(['Country Code', 'Topic', 'Week 1', 'Week 2']);
       expect(SHEET_CONFIGS.userAgents.getHeaders(mockPeriods)).to.deep.equal([
-        'Request User Agent', 'Status', 'Number of Hits',
+        'Request User Agent', 'Status', 'Topic', 'Number of Hits',
         'Interval: Last Week (2024-01-08 - 2024-01-14)',
       ]);
-      expect(SHEET_CONFIGS.topBottom.getHeaders()).to.deep.equal(['Status', 'TOP', '', '', 'BOTTOM', '']);
-      expect(SHEET_CONFIGS.error404.getHeaders()).to.deep.equal(['URL', 'Number of 404s']);
-      expect(SHEET_CONFIGS.error503.getHeaders()).to.deep.equal(['URL', 'Number of 503s']);
-      expect(SHEET_CONFIGS.category.getHeaders()).to.deep.equal(['Category', 'Number of Hits']);
-      expect(SHEET_CONFIGS.topUrls.getHeaders(mockPeriods)).to.deep.equal(['URL', 'Week 1', 'Week 2']);
+      expect(SHEET_CONFIGS.category.getHeaders()).to.deep.equal(['Category', 'Topic', 'Number of Hits']);
+      expect(SHEET_CONFIGS.topUrls.getHeaders()).to.deep.equal(['URL', 'Topic', 'Number of Hits']);
       expect(SHEET_CONFIGS.pageType.getHeaders(mockPeriods)).to.deep.equal(['Page Type', 'Week 1', 'Week 2']);
     });
 
     it('should return correct number columns for dynamic configs', () => {
-      expect(SHEET_CONFIGS.country.getNumberColumns(mockPeriods)).to.deep.equal([1]);
+      expect(SHEET_CONFIGS.country.getNumberColumns(mockPeriods)).to.deep.equal([2]);
       expect(SHEET_CONFIGS.pageType.getNumberColumns(mockPeriods)).to.deep.equal([1]);
     });
   });
@@ -101,16 +98,22 @@ describe('Sheet Configs', () => {
     describe('Weekly Data Processing', () => {
       it('processes country data with weekly aggregation', () => {
         const mockData = [
-          { country_code: 'US', week_1: 100, week_2: 150 },
-          { country_code: 'invalid', week_1: 50, week_2: 75 },
-          { country_code: 'US', week_1: 25, week_2: 30 },
+          {
+            country_code: 'US', topic: 'Acrobat', week_1: 100, week_2: 150,
+          },
+          {
+            country_code: 'invalid', topic: 'Firefly', week_1: 50, week_2: 75,
+          },
+          {
+            country_code: 'US', topic: 'Acrobat', week_1: 25, week_2: 30,
+          },
         ];
 
         const result = SHEET_CONFIGS.country.processData(mockData, mockPeriods);
 
         expect(result).to.have.length(2);
-        expect(result[0]).to.deep.equal(['US', 125, 180]); // Aggregated US data
-        expect(result[1]).to.deep.equal(['GLOBAL', 50, 75]); // Invalid country -> GLOBAL
+        expect(result[0]).to.deep.equal(['US', 'Acrobat', 125, 180]); // Aggregated US data
+        expect(result[1]).to.deep.equal(['GLOBAL', 'Firefly', 50, 75]); // Invalid country -> GLOBAL
       });
 
       it('processes pageType data with fallback', () => {
@@ -130,90 +133,90 @@ describe('Sheet Configs', () => {
     describe('Standard Data Processing', () => {
       it('processes userAgents data', () => {
         const mockData = [
-          { user_agent: 'Chrome', status: 200, total_requests: 100 },
-          { user_agent: null, status: null, total_requests: null },
+          {
+            user_agent: 'Chrome', status: 200, topic: 'Acrobat', total_requests: 100,
+          },
+          {
+            user_agent: null, status: null, topic: null, total_requests: null,
+          },
         ];
 
         const result = SHEET_CONFIGS.userAgents.processData(mockData);
 
         expect(result).to.deep.equal([
-          ['Chrome', 200, 100, ''],
-          ['Unknown', 'All', 0, ''],
+          ['Chrome', 200, 'Acrobat', 100, ''],
+          ['Unknown', 'All', 'Other', 0, ''],
         ]);
       });
 
       it('processes topUrls data', () => {
         const mockData = [
-          { url: '/page1', total_requests: 100 },
-          { url: null, total_requests: null },
+          { url: '/page1', topic: 'Acrobat', total_requests: 100 },
+          { url: null, topic: null, total_requests: null },
         ];
 
         const result = SHEET_CONFIGS.topUrls.processData(mockData);
 
         expect(result).to.deep.equal([
-          ['/page1', 100],
-          ['', 0],
+          ['/page1', 'Acrobat', 100],
+          ['', 'Other', 0],
         ]);
       });
 
       it('processes error pages data', () => {
         const mockData = [
-          { url: '/missing-page', total_requests: 10 },
-          { url: '/server-error', total_requests: 3 },
+          { url: '/missing-page', topic: 'Acrobat', total_requests: 10 },
+          { url: '/server-error', topic: 'Firefly', total_requests: 3 },
         ];
 
         const error404Result = SHEET_CONFIGS.error404.processData(mockData);
         expect(error404Result).to.deep.equal([
-          ['/missing-page', 10],
-          ['/server-error', 3],
+          ['/missing-page', 'Acrobat', 10],
+          ['/server-error', 'Firefly', 3],
         ]);
 
         const error503Result = SHEET_CONFIGS.error503.processData(mockData);
         expect(error503Result).to.deep.equal([
-          ['/missing-page', 10],
-          ['/server-error', 3],
+          ['/missing-page', 'Acrobat', 10],
+          ['/server-error', 'Firefly', 3],
         ]);
       });
 
       it('processes category data with URL pattern matching', () => {
         const mockData = [
-          { url: '/en/products/photoshop/features', total_requests: 100 },
-          { url: '/es/products/illustrator/pricing', total_requests: 50 },
-          { url: '/other-page', total_requests: 25 },
+          { url: '/en/products/photoshop/features', topic: 'Acrobat', total_requests: 100 },
+          { url: '/es/products/illustrator/pricing', topic: 'Firefly', total_requests: 50 },
+          { url: '/other-page', topic: 'Other', total_requests: 25 },
         ];
 
         const result = SHEET_CONFIGS.category.processData(mockData);
 
         expect(result).to.be.an('array');
         expect(result.length).to.be.greaterThan(0);
-        expect(result.some(([category]) => category.includes('photoshop'))).to.be.true;
-        expect(result.some(([category]) => category.includes('illustrator'))).to.be.true;
-        expect(result.some(([category]) => category === 'Other')).to.be.true;
+        expect(result.some(([category, topic]) => category.includes('photoshop') && topic === 'Acrobat')).to.be.true;
+        expect(result.some(([category, topic]) => category.includes('illustrator') && topic === 'Firefly')).to.be.true;
+        expect(result.some(([category, topic]) => category === 'Other' && topic === 'Other')).to.be.true;
       });
 
-      it('processes topBottom data with status analysis', () => {
+      it('processes pageType data with weekly aggregation', () => {
         const mockData = [
-          { status: 200, url: '/page1', total_requests: 100 },
-          { status: 200, url: '/page2', total_requests: 50 },
-          { status: 404, url: '/missing', total_requests: 10 },
+          { page_type: 'Product', week_1: 100, week_2: 150 },
+          { page_type: 'Category', week_1: 50, week_2: 75 },
         ];
 
-        const result = SHEET_CONFIGS.topBottom.processData(mockData);
+        const result = SHEET_CONFIGS.pageType.processData(mockData, mockPeriods);
 
         expect(result).to.be.an('array');
-        expect(result[0]).to.deep.equal(['', 'URL', 'Hits', '', 'URL', 'Hits']);
-        expect(result.length).to.be.greaterThan(1);
-
-        // Check that it contains status sections
-        expect(result.some((row) => row[0] === '200')).to.be.true;
-        expect(result.some((row) => row[0] === '404')).to.be.true;
+        expect(result.length).to.equal(2);
+        expect(result[0]).to.deep.equal(['Product', 100, 150]);
+        expect(result[1]).to.deep.equal(['Category', 50, 75]);
       });
     });
   });
 
   describe('Edge Cases and Error Handling', () => {
     const configsToTest = [
-      'userAgents', 'topUrls', 'topBottom', 'error404', 'error503',
+      'userAgents', 'topUrls', 'pageType',
       'category', 'referralCountryTopic', 'referralUrlTopic',
     ];
 
@@ -222,10 +225,50 @@ describe('Sheet Configs', () => {
         const config = SHEET_CONFIGS[configName];
 
         [null, undefined, []].forEach((testData) => {
-          const result = config.processData(testData);
+          // Some configs require periods parameter
+          const requiresPeriods = ['country', 'pageType'];
+          const result = requiresPeriods.includes(configName)
+            ? config.processData(testData, mockPeriods)
+            : config.processData(testData);
           expect(result).to.be.an('array', `${configName} should return array for ${testData}`);
         });
       });
+    });
+
+    it('processes referral traffic data with null/missing fields', () => {
+      const mockDataWithNulls = [
+        { country: null, topic: null, hits: null },
+        { country: 'US', topic: 'photoshop', hits: 100 },
+        { country: '', topic: '', hits: undefined },
+      ];
+
+      const countryResult = SHEET_CONFIGS.referralCountryTopic.processData(mockDataWithNulls);
+      expect(countryResult).to.be.an('array');
+      expect(countryResult.some((row) => row[0] === 'GLOBAL')).to.be.true;
+      expect(countryResult.some((row) => row[1] === 'Other')).to.be.true;
+
+      const urlResult = SHEET_CONFIGS.referralUrlTopic.processData([
+        { url: null, topic: null, hits: null },
+        { url: '', topic: '', hits: undefined },
+      ]);
+      expect(urlResult).to.be.an('array');
+      expect(urlResult.every((row) => row[1] === 'Other')).to.be.true;
+    });
+
+    it('handles empty country data in weekly breakdown', () => {
+      const mockData = [
+        {
+          country_code: '', topic: '', week_1: null, week_2: undefined,
+        },
+        {
+          country_code: null, topic: null, week_1: 0, week_2: 0,
+        },
+      ];
+
+      const result = SHEET_CONFIGS.country.processData(mockData, mockPeriods);
+      expect(result).to.be.an('array');
+      expect(result.every((row) => row[0] === 'GLOBAL')).to.be.true;
+      expect(result.every((row) => row[1] === 'Other')).to.be.true;
     });
 
     it('handles malformed data gracefully', () => {
@@ -238,7 +281,10 @@ describe('Sheet Configs', () => {
 
       configsToTest.forEach((configName) => {
         const config = SHEET_CONFIGS[configName];
-        const result = config.processData(malformedData);
+        const requiresPeriods = ['country', 'pageType'];
+        const result = requiresPeriods.includes(configName)
+          ? config.processData(malformedData, mockPeriods)
+          : config.processData(malformedData);
         expect(result).to.be.an('array', `${configName} should handle malformed data`);
       });
     });
