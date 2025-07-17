@@ -322,9 +322,15 @@ export async function runAuditAndGenerateSuggestions(context) {
 
     log.info(`SDA: Structured data audit completed in ${formattedElapsed} seconds for ${finalUrl}`);
 
+    log.info('Audit result', {
+      fullAuditRef: finalUrl,
+      auditResult,
+    });
+
     return {
       fullAuditRef: finalUrl,
       auditResult,
+      status: 'complete',
     };
   } catch (e) {
     log.error(`SDA: Structured data audit failed for ${finalUrl}`, e);
