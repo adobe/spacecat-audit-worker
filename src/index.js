@@ -54,6 +54,7 @@ import accessibilityRemediationGuidance from './accessibility/guidance-handlers/
 import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
+import detectPageIntent from './page-intent/handler.detect.js';
 
 const HANDLERS = {
   accessibility,
@@ -92,6 +93,7 @@ const HANDLERS = {
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
+  'detect:page-intent': detectPageIntent,
   dummy: (message) => ok(message),
 };
 
