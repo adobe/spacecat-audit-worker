@@ -168,10 +168,12 @@ export const preflightAudit = async (context) => {
 
       scrapedObjects.forEach(({ data }) => {
         const { finalUrl, scrapeResult: { rawBody } } = data;
+        const normalizedFinalUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
+        const pageResult = audits.get(normalizedFinalUrl);
         const doc = new JSDOM(rawBody).window.document;
 
         const auditsByName = Object.fromEntries(
-          audits.get(finalUrl).audits.map((auditEntry) => [auditEntry.name, auditEntry]),
+          pageResult.audits.map((auditEntry) => [auditEntry.name, auditEntry]),
         );
 
         const textContent = doc.body.textContent.replace(/\n/g, '').trim();
