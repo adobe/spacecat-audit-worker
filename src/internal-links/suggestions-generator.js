@@ -18,15 +18,8 @@ import { getScrapedDataForSiteId } from '../support/utils.js';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 export const generateSuggestionData = async (finalUrl, brokenInternalLinks, context, site) => {
-  const { dataAccess, log } = context;
-  const { Configuration } = dataAccess;
+  const { log } = context;
   const { FIREFALL_MODEL } = context.env;
-
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Auto-suggest is disabled for site`);
-    return brokenInternalLinks;
-  }
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Generating suggestions for site ${finalUrl}`);
 
@@ -153,6 +146,5 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   }
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete.`);
-
   return updatedInternalLinks;
 };
