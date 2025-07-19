@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Preflight Flow Diagram</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Preflight Flow Sequence Diagram</h1>
+        <div class="mermaid">
+sequenceDiagram
+    participant Client
+    participant API Service (`spacecat-api-service`)
+    participant SQS
+    participant Audit Worker (`spacecat-audit-worker`)
+    participant DataAccess
+    participant PageScrapper
+
+    Client->>API Service: POST /v1/preflight (urls, step, checks)
+    API Service->>DataAccess: Find site by URL
+    DataAccess-->>API Service: Site object
+    alt AEM CS Site
+        API Service->>API Service: getCSPromiseToken()
+        API Service-->>API Service: promiseToken
+    end
+    API Service->>DataAccess: Create AsyncJob (status: IN_PROGRESS)
+    DataAccess-->>API Service: Job object with jobId
+    API Service->>SQS: Send message { jobId, type: 'preflight', promiseToken? }
+    API Service-->>Client: 202 Accepted { jobId, pollUrl }
+
+    loop Poll for status
+        Client->>API Service: GET /v1/preflight/jobs/{jobId}
+        API Service->>DataAccess: Find AsyncJob by ID
+        DataAccess-->>API Service: Job object (status, result)
+        API Service-->>Client: 200 OK { job details }
+    end
+
+    SQS-->>Audit Worker: Consume message
+    Audit Worker->>DataAccess: Find AsyncJob by ID
+    DataAccess-->>Audit Worker: Job object
+    Audit Worker->>DataAccess: Update job status to RUNNING
+    Audit Worker->>PageScrapper: Initialize
+    loop For each URL
+        Audit Worker->>PageScrapper: scrape(url, promiseToken?)
+        PageScrapper-->>Audit Worker: Scraped page content
+        Audit Worker->>Audit Worker: Run audits (canonical, links, etc.)
+        Audit Worker->>DataAccess: Store partial results in memory
+    end
+    Audit Worker->>DataAccess: Update job with final result and status COMPLETE
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true });
+    </script>
+</body>
+</html> 
