@@ -6,7 +6,7 @@ UNLOAD (
     try(url_extract_host(request_referer)) AS referer,
     host,
     geo_country AS country,
-    CAST(time_to_first_byte AS BIGINT) AS time_to_first_byte,
+    CAST(time_to_first_byte AS BIGINT) * 1000 AS time_to_first_byte,
     COUNT(*) AS count
   FROM {{database}}.{{rawTable}}
   WHERE year  = '{{year}}'
@@ -39,7 +39,7 @@ UNLOAD (
     request_referer,
     host,
     geo_country,
-    CAST(time_to_first_byte AS BIGINT)
+    CAST(time_to_first_byte AS BIGINT) * 1000
 
 ) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
 WITH (format = 'PARQUET');
