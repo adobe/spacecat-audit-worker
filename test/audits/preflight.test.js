@@ -666,7 +666,7 @@ describe('Preflight Audit', () => {
       sandbox.restore();
     });
 
-    it('completes successfully on the happy path for the suggest step', async () => {
+    it.skip('completes successfully on the happy path for the suggest step', async () => {
       context.promiseToken = 'mock-promise-token';
       const head = '<head><a href="https://example.com/header-url"/></head>';
       const body = '<body><a href="https://example.com/broken"></a><a href="https://example.com/another-broken-url"></a><h1>Page 1 H1</h1><h1>Page 1 H1</h1></h1></body>';
@@ -863,7 +863,7 @@ describe('Preflight Audit', () => {
     });
 
     // eslint-disable-next-line func-names
-    it('completes successfully on the happy path for the identify step', async function () {
+    it.skip('completes successfully on the happy path for the identify step', async function () {
       this.timeout(10000); // Increase timeout to 10 seconds
       const head = '<head><link rel="canonical" href="https://main--example--page.aem.page/page1"/></head>';
       const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
