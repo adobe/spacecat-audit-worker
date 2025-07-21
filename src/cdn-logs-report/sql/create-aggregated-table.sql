@@ -5,7 +5,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{databaseName}}.{{tableName}} (
   referer string,
   host string,
   country string,
-  response_time_ms bigint,
+  time_to_first_byte bigint,
   count bigint
 )
 PARTITIONED BY (

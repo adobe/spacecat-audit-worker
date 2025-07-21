@@ -10,8 +10,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   statusCode        string,
   referer           string,
   rspContentType    string,
-  timeToFirstByte   string,
-  transferTimeMSec  string
+  timeToFirstByte   string
 )
 PARTITIONED BY (
   year  string,
