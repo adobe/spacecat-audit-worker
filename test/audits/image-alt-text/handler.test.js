@@ -50,6 +50,9 @@ describe('Image Alt Text Handler', () => {
         site: {
           getId: () => 'site-id',
           resolveFinalURL: () => 'https://example.com',
+          getConfig: () => ({
+            getIncludedURLs: sandbox.stub().returns([]),
+          }),
         },
         audit: {
           getId: () => 'audit-id',
@@ -104,7 +107,7 @@ describe('Image Alt Text Handler', () => {
   });
 
   describe('prepareScrapingStep', () => {
-    it('should prepare scraping step with top pages', async () => {
+    it('should prepare scraping step with top pages only', async () => {
       const result = await handlerModule.prepareScrapingStep(context);
 
       expect(result).to.deep.equal({
@@ -117,10 +120,87 @@ describe('Image Alt Text Handler', () => {
       });
     });
 
-    it('should throw error if no top pages found', async () => {
+    it('should prepare scraping step with top pages and included URLs', async () => {
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns([
+        'https://example.com/page3',
+        'https://example.com/page4',
+      ]);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+          { url: 'https://example.com/page3' },
+          { url: 'https://example.com/page4' },
+        ],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
+
+    it('should prepare scraping step with included URLs only when no top pages', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
-      await expect(handlerModule.prepareScrapingStep(context)).to.be.rejectedWith('No top pages found for site');
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns(['https://example.com/page3']);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [{ url: 'https://example.com/page3' }],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
+
+    it('should deduplicate URLs between top pages and included URLs', async () => {
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns([
+        'https://example.com/page1', // duplicate
+        'https://example.com/page3',
+      ]);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+          { url: 'https://example.com/page3' },
+        ],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
+
+    it('should throw error if no URLs found', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns([]);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      await expect(handlerModule.prepareScrapingStep(context)).to.be.rejectedWith(
+        'No URLs found for site neither top pages nor included URLs',
+      );
     });
   });
 
@@ -204,8 +284,10 @@ describe('Image Alt Text Handler', () => {
 
       s3UtilsStub = {
         getObjectKeysUsingPrefix: sandbox.stub().resolves([
+          `${s3BucketPath}/scrape.json`, // homepage
           `${s3BucketPath}page1/scrape.json`,
           `${s3BucketPath}page2/scrape.json`,
+          `${s3BucketPath}other-page/scrape.json`, // not in top pages or included URLs
         ]),
         getObjectFromKey: sandbox.stub().resolves({
           scrapeResult: {
@@ -223,16 +305,16 @@ describe('Image Alt Text Handler', () => {
       });
     });
 
-    it('should process scraped pages and create opportunities', async () => {
+    it('should process only top pages when no included URLs', async () => {
       const result = await handlerModule.processAltTextAuditStep(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
+
+      // Should only process 2 pages (page1, page2) from top pages, not the other-page
       expect(context.log.info).to.have.been.calledWith(
-        `[${AUDIT_TYPE}] [Site Id: site-id] [Audit Url: https://example.com] processing scraped content`,
+        sinon.match(/found 2 relevant scraped pages to analyze out of 4 total scraped pages/),
       );
-      expect(context.log.info).to.have.been.calledWith(
-        `[${AUDIT_TYPE}] [Site Id: site-id] found 2 scraped pages to analyze`,
-      );
+
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
       expect(convertToOpportunityStub.firstCall.args[1]).to.deep.include({
@@ -241,22 +323,39 @@ describe('Image Alt Text Handler', () => {
       });
     });
 
-    it('should handle case when no scraped content is found', async () => {
-      s3UtilsStub.getObjectKeysUsingPrefix.resolves([]);
+    it('should process top pages and included URLs', async () => {
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns(['https://example.com/other-page']);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+
+      // Should now process 3 pages (page1, page2, other-page)
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/found 3 relevant scraped pages to analyze out of 4 total scraped pages/),
+      );
+
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+    });
+
+    it('should handle case when no relevant scraped content is found', async () => {
+      s3UtilsStub.getObjectKeysUsingPrefix.resolves([
+        `${s3BucketPath}different-page/scrape.json`, // not in top pages
+      ]);
       auditEngineStub.getAuditedTags.returns({ imagesWithoutAltText: [] });
 
       const result = await handlerModule.processAltTextAuditStep(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.log.error).to.have.been.calledWith(
-        `[${AUDIT_TYPE}] [Site Id: site-id] no scraped content found, cannot proceed with audit`,
+        sinon.match(/no relevant scraped content found for specified pages, cannot proceed with audit/),
       );
       expect(convertToOpportunityStub).to.have.been.calledOnce;
-      expect(convertToOpportunityStub.firstCall.args[1]).to.deep.include({
-        detectedImages: { imagesWithoutAltText: [] },
-        siteId: 'site-id',
-        auditId: 'audit-id',
-      });
     });
 
     it('should handle case when no images are found', async () => {
@@ -298,6 +397,25 @@ describe('Image Alt Text Handler', () => {
       const expectedMessage = `[${AUDIT_TYPE}]: Found no images without alt text from the scraped content in bucket ${bucketName} with path ${s3BucketPath}`;
       expect(logMessages).to.include(expectedMessage);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
+    });
+
+    it('should log correct counts for top pages and included URLs', async () => {
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns([
+        'https://example.com/page3',
+        'https://example.com/page1', // duplicate with top page
+      ]);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      await handlerModule.processAltTextAuditStep(context);
+
+      // Should log 2 top pages, 2 included URLs, 3 total after deduplication
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Received topPages: 2, includedURLs: 2, totalPages to process after removing duplicates: 3/),
+      );
     });
   });
 });
