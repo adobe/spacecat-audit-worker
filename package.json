@@ -97,7 +97,7 @@
     "get-xpath": "3.3.0",
     "js-beautify": "^1.15.4",
     "jsdom": "26.1.0",
-    "robots-parser": "^3.0.1",
+    "robots-parser": "3.0.1",
     "urijs": "1.19.11"
   },
   "devDependencies": {

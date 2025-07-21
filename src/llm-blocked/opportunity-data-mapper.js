@@ -19,6 +19,6 @@ export function createOpportunityData() {
         'Check each URL in the suggestions and ensure that AI user agents are not blocked at the CDN level.',
       ],
     },
-    tags: ['llm'],
+    tags: ['llm', 'isElmo'],
   };
 }

@@ -76,7 +76,7 @@ export async function checkLLMBlocked(context) {
 
   const robots = await getRobotsTxt(context);
   if (!robots) {
-    context.log.warn('No robots.txt found. Skipping robots.txt check.');
+    log.warn('No robots.txt found. Skipping robots.txt check.');
   }
 
   // check the top 20 pages
