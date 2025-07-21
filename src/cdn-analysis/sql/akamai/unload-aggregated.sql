@@ -11,6 +11,8 @@ UNLOAD (
     CAST(statusCode AS INTEGER) AS status,
     try(url_extract_host(referer)) AS referer,
     reqHost AS host,
+    country,
+    (CAST(timeToFirstByte AS BIGINT) + CAST(transferTimeMSec AS BIGINT)) AS response_time_ms
     COUNT(*) AS count
 
   FROM {{database}}.{{rawTable}}
@@ -51,7 +53,9 @@ UNLOAD (
     ua,
     statusCode,
     try(url_extract_host(referer)),
-    reqHost
+    reqHost,
+    country,
+    (CAST(timeToFirstByte AS BIGINT) + CAST(transferTimeMSec AS BIGINT))
 
 ) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
 WITH (format = 'PARQUET');

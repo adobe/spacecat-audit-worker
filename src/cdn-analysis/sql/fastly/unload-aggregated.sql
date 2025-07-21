@@ -5,6 +5,8 @@ UNLOAD (
     response_status AS status,
     try(url_extract_host(request_referer)) AS referer,
     host,
+    geo_country AS country,
+    CAST(time_elapsed_msec AS BIGINT) AS response_time_ms,
     COUNT(*) AS count
   FROM {{database}}.{{rawTable}}
   WHERE year  = '{{year}}'
@@ -35,7 +37,9 @@ UNLOAD (
     request_user_agent,
     response_status,
     request_referer,
-    host
+    host,
+    geo_country,
+    CAST(time_elapsed_msec AS BIGINT)
 
 ) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
 WITH (format = 'PARQUET');

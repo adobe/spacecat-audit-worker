@@ -1,15 +1,17 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
-  reqTimeSec      string,
-  country         string,
-  reqHost         string,
-  reqPath         string,
-  queryStr        string,
-  reqMethod       string,
-  proto           string,
-  ua              string,
-  statusCode      string,
-  referer         string,
-  rspContentType  string
+  reqTimeSec        string,
+  country           string,
+  reqHost           string,
+  reqPath           string,
+  queryStr          string,
+  reqMethod         string,
+  proto             string,
+  ua                string,
+  statusCode        string,
+  referer           string,
+  rspContentType    string,
+  timeToFirstByte   string,
+  transferTimeMSec  string
 )
 PARTITIONED BY (
   year  string,
