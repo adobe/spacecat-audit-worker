@@ -23,7 +23,7 @@ UNLOAD (
     -- agentic and LLM-attributed traffic filter based on user-agent, referer and utm tag
     AND (
       -- match known LLM-related user-agents
-      REGEXP_LIKE(ua, '(?i)ChatGPT|GPTBot|Perplexity|Claude|Anthropic|Gemini|Copilot')
+      REGEXP_LIKE(ua, '(?i)ChatGPT|GPTBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
 
       -- match known referer hostnames for LLM-attributed real-user traffic
       OR REGEXP_LIKE(COALESCE(referer, ''), '(?i)chatgpt\.com|openai\.com|perplexity\.ai|claude\.ai|gemini\.google\.com|copilot\.microsoft\.com')

@@ -33,21 +33,22 @@ export function processSuggestionsForMystique(suggestions) {
       const issuesByType = {};
 
       for (const issue of suggestionData.issues) {
-        if (!issuesByType[issue.type]) {
-          issuesByType[issue.type] = [];
+        // Only process issues that have htmlWithIssues with content
+        if (Array.isArray(issue.htmlWithIssues) && issue.htmlWithIssues.length > 0) {
+          if (!issuesByType[issue.type]) {
+            issuesByType[issue.type] = [];
+          }
+
+          for (const htmlIssueItem of issue.htmlWithIssues) {
+            issuesByType[issue.type].push({
+              issue_name: issue.type,
+              faulty_line: htmlIssueItem.update_from || '',
+              target_selector: htmlIssueItem.target_selector || issue.targetSelector || '',
+              issue_description: issue.description || '',
+              issue_id: htmlIssueItem.issue_id || '',
+            });
+          }
         }
-
-        const faultyLine = Array.isArray(issue.htmlWithIssues) && issue.htmlWithIssues.length > 0
-          ? issue.htmlWithIssues[0]
-          : '';
-        const targetSelector = issue.targetSelector || '';
-
-        issuesByType[issue.type].push({
-          issue_name: issue.type,
-          faulty_line: faultyLine,
-          target_selector: targetSelector,
-          issue_description: issue.description || '',
-        });
       }
 
       // Create message data for each issue type
