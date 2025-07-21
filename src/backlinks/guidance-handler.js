@@ -18,7 +18,7 @@ export default async function handler(message, context) {
   const { auditId, siteId, data } = message;
   const {
   // eslint-disable-next-line camelcase
-    suggested_urls, aiRationale, suggestionId, opportunityId,
+    suggested_urls, ai_rationale, suggestionId, opportunityId,
   } = data;
   log.info(`Message received in broken-backlinks suggestion handler: ${JSON.stringify(message, null, 2)}`);
 
@@ -46,7 +46,8 @@ export default async function handler(message, context) {
   suggestion.setData(...suggestion.getData(), {
     // eslint-disable-next-line camelcase
     suggestedUrls: suggested_urls,
-    aiRationale,
+    // eslint-disable-next-line camelcase
+    aiRationale: ai_rationale,
   });
 
   await suggestion.save();
