@@ -202,6 +202,55 @@ describe('Image Alt Text Handler', () => {
         'No URLs found for site neither top pages nor included URLs',
       );
     });
+
+    it('should handle when site config is null', async () => {
+      context.site.getConfig = () => null;
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+        ],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
+
+    it('should handle when getIncludedURLs returns null', async () => {
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns(null);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+        ],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
+
+    it('should handle when site.getConfig() is undefined', async () => {
+      context.site.getConfig = undefined;
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+        ],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
   });
 
   describe('fetchPageScrapeAndRunAudit', () => {
@@ -260,6 +309,127 @@ describe('Image Alt Text Handler', () => {
       expect(result['/page1']).to.have.property('images');
       expect(result['/page1'].images).to.have.lengthOf(4);
       expect(result['/page1'].images.filter((img) => img.isDecorative)).to.have.lengthOf(3);
+    });
+
+    it('should handle when S3 object is null', async () => {
+      context.s3Client.send.resolves(null);
+
+      const result = await handlerModule.fetchPageScrapeAndRunAudit(
+        context.s3Client,
+        bucketName,
+        'scrape.json',
+        s3BucketPath,
+        context.log,
+      );
+
+      expect(result).to.be.null;
+    });
+
+    it('should handle when scrapeResult is missing', async () => {
+      context.s3Client.send.resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify({})),
+        },
+      });
+
+      const result = await handlerModule.fetchPageScrapeAndRunAudit(
+        context.s3Client,
+        bucketName,
+        'scrape.json',
+        s3BucketPath,
+        context.log,
+      );
+
+      expect(result).to.be.null;
+    });
+
+    it('should handle when rawBody is empty string', async () => {
+      const mockScrapeResult = {
+        scrapeResult: {
+          rawBody: '',
+        },
+      };
+
+      context.s3Client.send.resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(mockScrapeResult)),
+        },
+      });
+
+      const result = await handlerModule.fetchPageScrapeAndRunAudit(
+        context.s3Client,
+        bucketName,
+        'scrape.json',
+        s3BucketPath,
+        context.log,
+      );
+
+      expect(result).to.be.null;
+    });
+
+    it('should handle homepage URL (root path)', async () => {
+      const mockScrapeResult = {
+        scrapeResult: {
+          rawBody: '<html><body><img src="test.jpg" alt="test" /></body></html>',
+        },
+      };
+
+      context.s3Client.send.resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(mockScrapeResult)),
+        },
+      });
+
+      const result = await handlerModule.fetchPageScrapeAndRunAudit(
+        context.s3Client,
+        bucketName,
+        `${s3BucketPath}/scrape.json`, // root/homepage path
+        s3BucketPath,
+        context.log,
+      );
+
+      expect(result).to.not.be.null;
+      expect(result).to.have.property('');
+      expect(result['']).to.have.property('images');
+    });
+
+    it('should filter out images without src attribute', async () => {
+      const mockScrapeResult = {
+        scrapeResult: {
+          rawBody: `
+            <html>
+              <body>
+                <img src="image1.jpg" alt="Image 1" />
+                <img alt="No src" />
+                <img src="" alt="Empty src" />
+                <img src="image2.jpg" />
+              </body>
+            </html>
+          `,
+        },
+      };
+
+      context.s3Client.send.resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(mockScrapeResult)),
+        },
+      });
+
+      const result = await handlerModule.fetchPageScrapeAndRunAudit(
+        context.s3Client,
+        bucketName,
+        `${s3BucketPath}page1/scrape.json`,
+        s3BucketPath,
+        context.log,
+      );
+
+      expect(result).to.not.be.null;
+      expect(result['/page1'].images).to.have.lengthOf(2); // Only images with non-empty src
+      expect(result['/page1'].images.every((img) => img.src)).to.be.true;
     });
   });
 
@@ -415,6 +585,67 @@ describe('Image Alt Text Handler', () => {
       // Should log 2 top pages, 2 included URLs, 3 total after deduplication
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/Received topPages: 2, includedURLs: 2, totalPages to process after removing duplicates: 3/),
+      );
+    });
+
+    it('should handle when site config is null in processAltTextAuditStep', async () => {
+      context.site.getConfig = () => null;
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+
+      // Should only process top pages
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Received topPages: 2, includedURLs: 0, totalPages to process after removing duplicates: 2/),
+      );
+    });
+
+    it('should handle when getIncludedURLs returns null in processAltTextAuditStep', async () => {
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns(null);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+
+      // Should only process top pages
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Received topPages: 2, includedURLs: 0, totalPages to process after removing duplicates: 2/),
+      );
+    });
+
+    it('should handle when fetchPageScrapeAndRunAudit returns null', async () => {
+      // Override the fetchPageScrapeAndRunAudit to return null for some pages
+      sandbox.stub(handlerModule, 'fetchPageScrapeAndRunAudit')
+        .onFirstCall().resolves(null)
+        .onSecondCall()
+        .resolves({
+          '/page2': {
+            images: [{ src: 'test.jpg', alt: 'test' }],
+            dom: {},
+          },
+        });
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+    });
+
+    it('should handle when audit engine returns empty results', async () => {
+      auditEngineStub.getAuditedTags.returns({
+        imagesWithoutAltText: [],
+      });
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Identified 0 images \(after filtering\)/),
       );
     });
   });
