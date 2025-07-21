@@ -103,6 +103,7 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
     const tags = updatedDetectedTags[endpoint];
     for (const tagName of ['title', 'description', 'h1']) {
       if (tags[tagName] && !tags[tagName].aiSuggestion) {
+        log.info(`Removing endpoint ${endpoint} from updatedDetectedTags as it doesn't have aiSuggestion for tag ${tagName}`);
         delete updatedDetectedTags[endpoint][tagName];
       }
     }
