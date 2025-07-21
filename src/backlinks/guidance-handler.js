@@ -43,7 +43,8 @@ export default async function handler(message, context) {
   }
 
   const suggestion = await Suggestion.findById(suggestionId);
-  suggestion.setData(...suggestion.getData(), {
+  suggestion.setData({
+    ...suggestion.getData(),
     // eslint-disable-next-line camelcase
     suggestedUrls: suggested_urls,
     // eslint-disable-next-line camelcase
