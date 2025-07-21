@@ -238,7 +238,12 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle when site.getConfig() is undefined', async () => {
-      context.site.getConfig = undefined;
+      // Set getConfig to undefined to test optional chaining fallback
+      const originalSite = context.site;
+      context.site = {
+        ...originalSite,
+        getConfig: undefined,
+      };
 
       const result = await handlerModule.prepareScrapingStep(context);
 
@@ -372,9 +377,38 @@ describe('Image Alt Text Handler', () => {
     it('should handle homepage URL (root path)', async () => {
       const mockScrapeResult = {
         scrapeResult: {
-          rawBody: '<html><body><img src="test.jpg" alt="test" /></body></html>',
+          rawBody: '<html><head></head><body><img src="test.jpg" alt="test" /></body></html>',
         },
       };
+
+      // Mock JSDOM and utility functions to avoid localStorage issues
+      const handlerModuleWithMocks = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+        jsdom: {
+          JSDOM: class MockJSDOM {
+            constructor() {
+              this.window = {
+                document: {
+                  getElementsByTagName: () => [
+                    {
+                      getAttribute: sandbox.stub()
+                        .withArgs('src')
+                        .returns('test.jpg')
+                        .withArgs('alt')
+                        .returns('test'),
+                    },
+                  ],
+                },
+              };
+            }
+          },
+        },
+        '../../../src/image-alt-text/utils.js': {
+          shouldShowImageAsSuggestion: sandbox.stub().returns(true),
+          isImageDecorative: sandbox.stub().returns(false),
+        },
+        'get-xpath': sandbox.stub().returns('//img[1]'),
+      });
 
       context.s3Client.send.resolves({
         ContentType: 'application/json',
@@ -383,7 +417,7 @@ describe('Image Alt Text Handler', () => {
         },
       });
 
-      const result = await handlerModule.fetchPageScrapeAndRunAudit(
+      const result = await handlerModuleWithMocks.fetchPageScrapeAndRunAudit(
         context.s3Client,
         bucketName,
         `${s3BucketPath}/scrape.json`, // root/homepage path
@@ -392,8 +426,9 @@ describe('Image Alt Text Handler', () => {
       );
 
       expect(result).to.not.be.null;
-      expect(result).to.have.property('');
-      expect(result['']).to.have.property('images');
+      expect(result).to.have.property('/');
+      expect(result['/']).to.have.property('images');
+      expect(result['/'].images).to.have.lengthOf(1);
     });
 
     it('should filter out images without src attribute', async () => {

@@ -62,7 +62,7 @@ export async function prepareScrapingStep(context) {
 
   const topPagesUrls = topPages.map((topPage) => topPage.getUrl());
   // Combine includedURLs and topPages URLs to scrape
-  const includedURLs = await site?.getConfig()?.getIncludedURLs('alt-text') || [];
+  const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.info(`[${AUDIT_TYPE}] Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
@@ -123,7 +123,7 @@ export async function processAltTextAuditStep(context) {
   // Get top pages for a site (similar to metatags handler)
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-  const includedURLs = await site?.getConfig()?.getIncludedURLs('alt-text') || [];
+  const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
 
   // Transform URLs into scrape.json paths and combine them into a Set
   const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.getUrl(), siteId));
