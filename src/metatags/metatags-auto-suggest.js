@@ -101,16 +101,10 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
   // Remove entries from updatedDetectedTags which don't have aiSuggestion for any of the tags
   for (const endpoint of Object.keys(updatedDetectedTags)) {
     const tags = updatedDetectedTags[endpoint];
-    let hasAiSuggestion = true;
     for (const tagName of ['title', 'description', 'h1']) {
       if (tags[tagName] && !tags[tagName].aiSuggestion) {
-        hasAiSuggestion = false;
-        break;
+        delete updatedDetectedTags[endpoint][tagName];
       }
-    }
-    if (!hasAiSuggestion) {
-      log.info(`Removing endpoint ${endpoint} from updatedDetectedTags as it doesn't have aiSuggestion for tags ${Object.keys(tags).join(', ')}`);
-      delete updatedDetectedTags[endpoint];
     }
   }
   log.info('Generated AI suggestions for Meta-tags using Genvar.');
