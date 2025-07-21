@@ -179,8 +179,8 @@ export const generateSuggestionData = async (context) => {
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
-        url_from: suggestion?.url_from,
-        url_to: suggestion?.url_to,
+        url_from: suggestion?.getData()?.url_from,
+        url_to: suggestion?.getData()?.url_to,
         suggestionId: suggestion?.getId(),
         opportunityId: opportunity?.getId(),
       },

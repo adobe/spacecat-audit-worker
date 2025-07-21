@@ -1,3 +1,17 @@
+## [1.128.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.128.1...v1.128.2) (2025-07-21)
+
+
+### Bug Fixes
+
+* fixing preflight audit for root pages ([#1051](https://github.com/adobe/spacecat-audit-worker/issues/1051)) ([56b488a](https://github.com/adobe/spacecat-audit-worker/commit/56b488aebbf0ded134cf77a78ac024996ca612ef))
+
+## [1.128.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.128.0...v1.128.1) (2025-07-19)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1052](https://github.com/adobe/spacecat-audit-worker/issues/1052)) ([2b620e2](https://github.com/adobe/spacecat-audit-worker/commit/2b620e2506c4de31f191425af60bf11daf5b81a7))
+
 # [1.128.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.127.1...v1.128.0) (2025-07-17)
 
 
