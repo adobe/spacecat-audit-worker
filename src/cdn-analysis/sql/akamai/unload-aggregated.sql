@@ -11,7 +11,6 @@ UNLOAD (
     CAST(statusCode AS INTEGER) AS status,
     try(url_extract_host(referer)) AS referer,
     reqHost AS host,
-    country,
     CAST(timeToFirstByte AS BIGINT) AS time_to_first_byte,
     COUNT(*) AS count
 
@@ -54,7 +53,6 @@ UNLOAD (
     statusCode,
     try(url_extract_host(referer)),
     reqHost,
-    country,
     CAST(timeToFirstByte AS BIGINT)
 
 ) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'

@@ -4,7 +4,6 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{databaseName}}.{{tableName}} (
   status int,
   referer string,
   host string,
-  country string,
   time_to_first_byte bigint,
   count bigint
 )
