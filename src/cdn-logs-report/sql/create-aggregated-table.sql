@@ -4,6 +4,8 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{databaseName}}.{{tableName}} (
   status int,
   referer string,
   host string,
+  country string,
+  response_time_ms bigint,
   count bigint
 )
 PARTITIONED BY (
