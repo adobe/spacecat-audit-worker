@@ -1,3 +1,45 @@
+## [1.128.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.128.1...v1.128.2) (2025-07-21)
+
+
+### Bug Fixes
+
+* fixing preflight audit for root pages ([#1051](https://github.com/adobe/spacecat-audit-worker/issues/1051)) ([56b488a](https://github.com/adobe/spacecat-audit-worker/commit/56b488aebbf0ded134cf77a78ac024996ca612ef))
+
+## [1.128.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.128.0...v1.128.1) (2025-07-19)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1052](https://github.com/adobe/spacecat-audit-worker/issues/1052)) ([2b620e2](https://github.com/adobe/spacecat-audit-worker/commit/2b620e2506c4de31f191425af60bf11daf5b81a7))
+
+# [1.128.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.127.1...v1.128.0) (2025-07-17)
+
+
+### Features
+
+* page intent detect handler ([#1050](https://github.com/adobe/spacecat-audit-worker/issues/1050)) ([88c53cd](https://github.com/adobe/spacecat-audit-worker/commit/88c53cd6d3599a952aa34c341b6960153e8e6248))
+
+## [1.127.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.127.0...v1.127.1) (2025-07-17)
+
+
+### Bug Fixes
+
+* **deps:** Update @adobe/structured-data-validator to 1.2.3 ([#1048](https://github.com/adobe/spacecat-audit-worker/issues/1048)) ([0b438b7](https://github.com/adobe/spacecat-audit-worker/commit/0b438b7a821735e1d2a6144589180400b1f1d911))
+
+# [1.127.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.126.1...v1.127.0) (2025-07-17)
+
+
+### Features
+
+* add support for google and bing bot traffic ([#1047](https://github.com/adobe/spacecat-audit-worker/issues/1047)) ([32c177f](https://github.com/adobe/spacecat-audit-worker/commit/32c177faeb0efcc126b3363c3d575eae75e3a49f))
+
+## [1.126.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.126.0...v1.126.1) (2025-07-16)
+
+
+### Bug Fixes
+
+* running preflight for root pages ([#1042](https://github.com/adobe/spacecat-audit-worker/issues/1042)) ([68c6704](https://github.com/adobe/spacecat-audit-worker/commit/68c6704d2eae7cd40bb85576fd93c7079c00af86))
+
 # [1.126.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.125.2...v1.126.0) (2025-07-16)
 
 
