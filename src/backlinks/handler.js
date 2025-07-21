@@ -144,7 +144,7 @@ export const generateSuggestionData = async (context) => {
     { siteId: site.getId(), id: audit.getId() },
     context,
     createOpportunityData,
-    audit.getType(),
+    Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
     kpiDeltas,
   );
 
