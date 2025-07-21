@@ -11,24 +11,39 @@
  */
 
 import { DATA_SOURCES } from '../common/constants.js';
+import { GEO_BRAND_PRESENCE_OPPTY_TYPE, GEO_FAQ_OPPTY_TYPE } from './handler.js';
 
 const RUNBOOK_URL = 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/Doc.aspx?sourcedoc=%7B19613D9B-93D4-4112-B7C8-DBE0D9DCC55B%7D&file=Experience_Success_Studio_High_Organic_Traffic_Low_CTR_Runbook.docx&action=default&mobileredirect=true';
 
-export function convertToOpportunityEntity(siteId, auditId) {
+export function convertToOpportunityEntity(siteId, auditId, subType) {
+  const opportunityConfigs = {
+    [GEO_BRAND_PRESENCE_OPPTY_TYPE]: {
+      title: 'GEO Brand Improvement Opportunity detected',
+      description: 'The page is not optimized for the GEO Brand presence.',
+      dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.AHREFS],
+    },
+    [GEO_FAQ_OPPTY_TYPE]: {
+      title: 'LLM Prompt Improvement: Add FAQs to Pages',
+      description: 'Content that closely matches user intent as understood by large language models (LLMs) is significantly more likely to be referenced or mentioned by these models in their responses. This is due to several interrelated factors in how LLMs process, select, and cite web content.',
+      dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.PAGE, DATA_SOURCES.AHREFS],
+    },
+  };
+
+  const config = opportunityConfigs[subType];
+
   return {
     siteId,
     auditId,
     runbook: RUNBOOK_URL,
     type: 'generic-opportunity',
     origin: 'AUTOMATION',
-    title: 'GEO Brand Improvement Opportunity detected',
-    description:
-      'The page is not optimized for the GEO Brand presence.',
+    title: config.title,
+    description: config.description,
     status: 'NEW',
     tags: ['Awareness', 'Engagement', 'isElmo'],
     data: {
-      subType: 'guidance:geo-brand-presence',
-      dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.AHREFS],
+      subType,
+      dataSources: config.dataSources,
     },
   };
 }

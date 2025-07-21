@@ -4,6 +4,42 @@
     "step": "identify",
     "audits": [
       {
+        "name": "body-size",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "content-length",
+            "issue": "Body content length is below 100 characters",
+            "seoImpact": "Moderate",
+            "seoRecommendation": "Add more meaningful content to the page"
+          }
+        ]
+      },
+      {
+        "name": "lorem-ipsum",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "placeholder-text",
+            "issue": "Found Lorem ipsum placeholder text in the page content",
+            "seoImpact": "High",
+            "seoRecommendation": "Replace placeholder text with meaningful content"
+          }
+        ]
+      },
+      {
+        "name": "h1-count",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "missing-h1",
+            "issue": "No H1 tag found on the page",
+            "seoImpact": "High",
+            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
+          }
+        ]
+      },
+      {
         "name": "canonical",
         "type": "seo",
         "opportunities": [
@@ -45,42 +81,6 @@
         ]
       },
       {
-        "name": "body-size",
-        "type": "seo",
-        "opportunities": [
-          {
-            "check": "content-length",
-            "issue": "Body content length is below 100 characters",
-            "seoImpact": "Moderate",
-            "seoRecommendation": "Add more meaningful content to the page"
-          }
-        ]
-      },
-      {
-        "name": "lorem-ipsum",
-        "type": "seo",
-        "opportunities": [
-          {
-            "check": "placeholder-text",
-            "issue": "Found Lorem ipsum placeholder text in the page content",
-            "seoImpact": "High",
-            "seoRecommendation": "Replace placeholder text with meaningful content"
-          }
-        ]
-      },
-      {
-        "name": "h1-count",
-        "type": "seo",
-        "opportunities": [
-          {
-            "check": "missing-h1",
-            "issue": "No H1 tag found on the page",
-            "seoImpact": "High",
-            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
-          }
-        ]
-      },
-      {
         "name": "links",
         "type": "seo",
         "opportunities": [
@@ -97,7 +97,7 @@
             "check": "broken-external-links",
             "issue": {
               "url": "http://test.com/",
-              "issue": "Status error",
+              "issue": "Status 404",
               "seoImpact": "High",
               "seoRecommendation": "Fix or remove broken links to improve user experience"
             }
