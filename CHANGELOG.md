@@ -1,3 +1,10 @@
+# [1.129.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.128.2...v1.129.0) (2025-07-22)
+
+
+### Features
+
+* Adding support of enabling image-alt-text audit of includeUrls in site config ([#1053](https://github.com/adobe/spacecat-audit-worker/issues/1053)) ([a763ad9](https://github.com/adobe/spacecat-audit-worker/commit/a763ad9c359f84d85366a639f9e6367ada81e037))
+
 ## [1.128.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.128.1...v1.128.2) (2025-07-21)
 
 
