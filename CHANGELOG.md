@@ -1,3 +1,10 @@
+## [1.129.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.0...v1.129.1) (2025-07-22)
+
+
+### Bug Fixes
+
+* Catch errors from SDA validator ([#1057](https://github.com/adobe/spacecat-audit-worker/issues/1057)) ([8c39ad5](https://github.com/adobe/spacecat-audit-worker/commit/8c39ad5826b0c3a9800651f233b224a8e650f04d))
+
 # [1.129.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.128.2...v1.129.0) (2025-07-22)
 
 
