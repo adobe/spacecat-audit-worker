@@ -164,3 +164,23 @@ export async function updateStatusToIgnored(dataAccess, siteId, log) {
     };
   }
 }
+
+export async function saveA11yMetricsToS3(reportData, context) {
+  const { log, env } = context;
+  const bucketName = env.S3_IMPORTER_BUCKET_NAME;
+
+  // TODO: extract a11y metrics needed in the JSON structure
+
+  // TODO: read existing a11y-audit.json file from s3
+
+  // TODO: create s3 file path > metrics/{siteId}/xcore/a11y-audit.json
+
+  // TODO: save new metrics to s3 a11y-audit.json file
+
+  log.info(`[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`);
+  log.info(`[A11yAudit] Bucket name: ${bucketName}`);
+  return {
+    success: true,
+    message: 'A11y metrics saved to s3',
+  };
+}

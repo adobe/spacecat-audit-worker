@@ -19,6 +19,7 @@ import {
   getRemainingUrls,
   getExistingUrlsFromFailedAudits,
   updateStatusToIgnored,
+  saveA11yMetricsToS3,
 } from './utils/scrape-utils.js';
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
 
@@ -186,6 +187,18 @@ export async function processAccessibilityOpportunities(context) {
       context,
     );
     log.debug('[A11yAudit] Individual opportunities created successfully');
+  } catch (error) {
+    log.error(`[A11yAudit] Error creating individual opportunities: ${error.message}`, error);
+    return {
+      status: 'PROCESSING_FAILED',
+      error: error.message,
+    };
+  }
+
+  // step 3 save a11y metrics to s3
+  try {
+    await saveA11yMetricsToS3(aggregationResult.finalResultFiles.current, context);
+    log.debug('[A11yAudit] Saving a11y metrics to s3');
   } catch (error) {
     log.error(`[A11yAudit] Error creating individual opportunities: ${error.message}`, error);
     return {

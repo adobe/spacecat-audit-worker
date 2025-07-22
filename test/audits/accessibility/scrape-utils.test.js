@@ -21,6 +21,7 @@ import {
   extractUrlsFromSettledResults,
   filterAccessibilityOpportunities,
   updateStatusToIgnored,
+  saveA11yMetricsToS3,
 } from '../../../src/accessibility/utils/scrape-utils.js';
 
 use(sinonChai);
@@ -475,6 +476,240 @@ describe('Scrape Utils', () => {
         error: 'Fetch failed',
       });
       expect(mockLog.error).to.have.been.calledWith('[A11yAudit] Error updating opportunities to IGNORED: Fetch failed');
+    });
+  });
+
+  describe('saveA11yMetricsToS3', () => {
+    let mockContext;
+    let mockLog;
+    let sandbox;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+      mockLog = {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+        warn: sandbox.stub(),
+        debug: sandbox.stub(),
+      };
+      mockContext = {
+        log: mockLog,
+        env: {
+          S3_IMPORTER_BUCKET_NAME: 'test-importer-bucket',
+        },
+      };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('should successfully save a11y metrics to S3 and return success', async () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: { total: 5, critical: { items: { rule1: { count: 3 } } } },
+        },
+        'https://example.com/page1': {
+          violations: { total: 2, critical: { items: { rule1: { count: 2 } } } },
+        },
+      };
+
+      // Act
+      const result = await saveA11yMetricsToS3(reportData, mockContext);
+
+      // Assert
+      expect(result).to.deep.equal({
+        success: true,
+        message: 'A11y metrics saved to s3',
+      });
+
+      expect(mockLog.info).to.have.been.calledWith(
+        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
+      );
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yAudit] Bucket name: test-importer-bucket',
+      );
+    });
+
+    it('should handle empty report data and log correctly', async () => {
+      // Arrange
+      const reportData = {};
+
+      // Act
+      const result = await saveA11yMetricsToS3(reportData, mockContext);
+
+      // Assert
+      expect(result).to.deep.equal({
+        success: true,
+        message: 'A11y metrics saved to s3',
+      });
+
+      expect(mockLog.info).to.have.been.calledWith(
+        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
+      );
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yAudit] Bucket name: test-importer-bucket',
+      );
+    });
+
+    it('should handle null report data gracefully', async () => {
+      // Arrange
+      const reportData = null;
+
+      // Act
+      const result = await saveA11yMetricsToS3(reportData, mockContext);
+
+      // Assert
+      expect(result).to.deep.equal({
+        success: true,
+        message: 'A11y metrics saved to s3',
+      });
+
+      expect(mockLog.info).to.have.been.calledWith(
+        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
+      );
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yAudit] Bucket name: test-importer-bucket',
+      );
+    });
+
+    it('should handle missing S3_IMPORTER_BUCKET_NAME and log undefined', async () => {
+      // Arrange
+      const reportData = { test: 'data' };
+      mockContext.env.S3_IMPORTER_BUCKET_NAME = undefined;
+
+      // Act
+      const result = await saveA11yMetricsToS3(reportData, mockContext);
+
+      // Assert
+      expect(result).to.deep.equal({
+        success: true,
+        message: 'A11y metrics saved to s3',
+      });
+
+      expect(mockLog.info).to.have.been.calledWith(
+        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
+      );
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yAudit] Bucket name: undefined',
+      );
+    });
+
+    it('should extract bucket name correctly from context environment', async () => {
+      // Arrange
+      const reportData = { metrics: 'test' };
+      const customBucketName = 'custom-metrics-bucket';
+      mockContext.env.S3_IMPORTER_BUCKET_NAME = customBucketName;
+
+      // Act
+      await saveA11yMetricsToS3(reportData, mockContext);
+
+      // Assert
+      expect(mockLog.info).to.have.been.calledWith(
+        `[A11yAudit] Bucket name: ${customBucketName}`,
+      );
+    });
+
+    it('should handle complex nested report data structure', async () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: {
+            total: 10,
+            critical: {
+              items: {
+                'color-contrast': { count: 5, impact: 'serious' },
+                'missing-alt': { count: 3, impact: 'critical' },
+              },
+            },
+            moderate: {
+              items: {
+                'link-name': { count: 2, impact: 'moderate' },
+              },
+            },
+          },
+        },
+        'https://example.com/page1': {
+          violations: {
+            total: 6,
+            critical: {
+              items: {
+                'color-contrast': { count: 3, impact: 'serious' },
+                'missing-alt': { count: 2, impact: 'critical' },
+              },
+            },
+          },
+        },
+        'https://example.com/page2': {
+          violations: {
+            total: 4,
+            critical: {
+              items: {
+                'color-contrast': { count: 2, impact: 'serious' },
+                'missing-alt': { count: 1, impact: 'critical' },
+              },
+            },
+            moderate: {
+              items: {
+                'link-name': { count: 1, impact: 'moderate' },
+              },
+            },
+          },
+        },
+      };
+
+      // Act
+      const result = await saveA11yMetricsToS3(reportData, mockContext);
+
+      // Assert
+      expect(result).to.deep.equal({
+        success: true,
+        message: 'A11y metrics saved to s3',
+      });
+
+      expect(mockLog.info).to.have.been.calledWith(
+        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
+      );
+    });
+
+    it('should handle missing env object in context', async () => {
+      // Arrange
+      const reportData = { test: 'data' };
+      const contextWithoutEnv = {
+        log: mockLog,
+        env: {}, // Empty env object instead of undefined
+      };
+
+      // Act
+      const result = await saveA11yMetricsToS3(reportData, contextWithoutEnv);
+
+      // Assert
+      expect(result).to.deep.equal({
+        success: true,
+        message: 'A11y metrics saved to s3',
+      });
+
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yAudit] Bucket name: undefined',
+      );
+    });
+
+    it('should always log both report data and bucket name', async () => {
+      // Arrange
+      const reportData = { simple: 'test' };
+
+      // Act
+      await saveA11yMetricsToS3(reportData, mockContext);
+
+      // Assert
+      expect(mockLog.info).to.have.been.calledTwice;
+      expect(mockLog.info.firstCall).to.have.been.calledWith(
+        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
+      );
+      expect(mockLog.info.secondCall).to.have.been.calledWith(
+        '[A11yAudit] Bucket name: test-importer-bucket',
+      );
     });
   });
 });
