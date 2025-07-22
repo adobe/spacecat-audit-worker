@@ -32,9 +32,10 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
       pageUrl: suggestion.pageurl,
       imageUrl: suggestion.imageurl,
       altText: suggestion.alttext,
-      isAppropriate: true, // TODO: Add logic to determine if the suggestion is appropriate
+      isAppropriate: suggestion.isappropriate,
+      isDecorative: suggestion.isdecorative,
       xpath: '', // TODO: Add logic to determine the xpath
-      language: 'en', // TODO: Add logic to determine the language
+      language: suggestion.language,
     };
   });
 }
@@ -80,7 +81,8 @@ export default async function handler(message, context) {
 
   const opportunityData = {
     ...projectedMetrics,
-    decorativeImagesCount: 0, // TODO: Add logic to determine the decorative images count
+    decorativeImagesCount:
+    mappedSuggestions.filter((suggestion) => suggestion.isDecorative === true).length,
   };
 
   opportunityData.dataSources = [
