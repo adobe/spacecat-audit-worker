@@ -42,18 +42,37 @@ export async function processImportStep(context) {
   };
 }
 
+/**
+ * Transforms a URL into a scrape.json path for a given site
+ * @param {string} url - The URL to transform
+ * @param {string} siteId - The site ID
+ * @returns {string} The path to the scrape.json file
+ */
+function getScrapeJsonPath(url, siteId) {
+  const pathname = new URL(url).pathname.replace(/\/$/, '');
+  return `scrapes/${siteId}${pathname}/scrape.json`;
+}
+
 export async function prepareScrapingStep(context) {
   const { site, log, dataAccess } = context;
   log.info(`[${AUDIT_TYPE}] [Site Id: ${site.getId()}] preparing scraping step`);
 
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  if (topPages.length === 0) {
-    throw new Error('No top pages found for site');
+
+  const topPagesUrls = topPages.map((topPage) => topPage.getUrl());
+  // Combine includedURLs and topPages URLs to scrape
+  const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
+
+  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+  log.info(`[${AUDIT_TYPE}] Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+
+  if (finalUrls.length === 0) {
+    throw new Error('No URLs found for site neither top pages nor included URLs');
   }
 
   return {
-    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'alt-text',
   };
@@ -93,13 +112,27 @@ export async function fetchPageScrapeAndRunAudit(
 
 export async function processAltTextAuditStep(context) {
   const {
-    log, s3Client, audit, site, finalUrl,
+    log, s3Client, audit, site, finalUrl, dataAccess,
   } = context;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const siteId = site.getId();
   const auditUrl = finalUrl;
 
   log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] [Audit Url: ${auditUrl}] processing scraped content`);
+
+  // Get top pages for a site (similar to metatags handler)
+  const { SiteTopPage } = dataAccess;
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+  const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
+
+  // Transform URLs into scrape.json paths and combine them into a Set
+  const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.getUrl(), siteId));
+  const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
+  const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
+
+  log.info(
+    `[${AUDIT_TYPE}] Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`,
+  );
 
   const s3BucketPath = `scrapes/${siteId}/`;
   const scrapedPagesFullPathFilenames = await getObjectKeysUsingPrefix(
@@ -109,15 +142,24 @@ export async function processAltTextAuditStep(context) {
     log,
   );
 
-  if (scrapedPagesFullPathFilenames.length === 0) {
-    log.error(`[${AUDIT_TYPE}] [Site Id: ${siteId}] no scraped content found, cannot proceed with audit`);
+  // Filter scraped pages to only process the ones we want (top pages + included URLs)
+  const filteredScrapedPages = scrapedPagesFullPathFilenames.filter(
+    (key) => totalPagesSet.has(key),
+  );
+
+  if (filteredScrapedPages.length === 0) {
+    log.error(
+      `[${AUDIT_TYPE}] [Site Id: ${siteId}] no relevant scraped content found for specified pages, cannot proceed with audit`,
+    );
   }
 
-  log.info(`[${AUDIT_TYPE}] [Site Id: ${siteId}] found ${scrapedPagesFullPathFilenames.length} scraped pages to analyze`);
+  log.info(
+    `[${AUDIT_TYPE}] [Site Id: ${siteId}] found ${filteredScrapedPages.length} relevant scraped pages to analyze out of ${scrapedPagesFullPathFilenames.length} total scraped pages`,
+  );
 
   const PageToImagesWithoutAltTextMap = {};
   const pageAuditResults = await Promise.all(
-    scrapedPagesFullPathFilenames.map(
+    filteredScrapedPages.map(
       async (scrape) => fetchPageScrapeAndRunAudit(s3Client, bucketName, scrape, s3BucketPath, log),
     ),
   );
