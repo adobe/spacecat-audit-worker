@@ -130,7 +130,50 @@ async function scrapeAccessibilityData(context, auditContext) {
       );
     }
   }
-  // No return statement needed
+
+  // Wait for scraping to complete by polling S3
+  log.info('[preflight-audit] Waiting for accessibility scraping to complete...');
+  const maxWaitTime = 5 * 60 * 1000; // 5 minutes
+  const pollInterval = 10 * 1000; // 10 seconds
+  const startTime = Date.now();
+
+  // eslint-disable-next-line no-await-in-loop
+  while (Date.now() - startTime < maxWaitTime) {
+    try {
+      // Check if accessibility data is available by trying to aggregate
+      const version = new Date().toISOString().split('T')[0];
+      const outputKey = `accessibility/${siteId}/${version}-final-result.json`;
+
+      // eslint-disable-next-line no-await-in-loop
+      const aggregationResult = await aggregateAccessibilityData(
+        s3Client,
+        bucketName,
+        siteId,
+        log,
+        outputKey,
+        version,
+      );
+
+      if (aggregationResult.success) {
+        log.info('[preflight-audit] Accessibility scraping completed successfully');
+        return;
+      }
+
+      log.info('[preflight-audit] Accessibility scraping still in progress, waiting...');
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => {
+        setTimeout(resolve, pollInterval);
+      });
+    } catch {
+      log.info('[preflight-audit] Accessibility scraping still in progress, waiting...');
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => {
+        setTimeout(resolve, pollInterval);
+      });
+    }
+  }
+
+  log.warn('[preflight-audit] Accessibility scraping timed out after 5 minutes');
 }
 
 /**
@@ -184,11 +227,49 @@ async function processAccessibilityOpportunities(context, auditContext) {
       log.info(`[preflight-audit] aggregateAccessibilityData result: success=${aggregationResult.success}, message=${aggregationResult.message || 'N/A'}`);
 
       if (!aggregationResult.success) {
-        log.error(`[preflight-audit] No data aggregated: ${aggregationResult.message}`);
+        log.info(`[preflight-audit] No accessibility data available yet: ${aggregationResult.message}`);
+
+        // Add a note to each page that accessibility data is being processed
+        previewUrls.forEach((url) => {
+          const pageResult = audits.get(url);
+          const accessibilityAudit = pageResult.audits.find(
+            (a) => a.name === PREFLIGHT_ACCESSIBILITY,
+          );
+
+          if (accessibilityAudit) {
+            accessibilityAudit.opportunities.push({
+              type: 'accessibility-processing',
+              title: 'Accessibility Audit in Progress',
+              description: 'Accessibility data is being collected. Please run the preflight audit again in a few minutes to see the results.',
+              severity: 'info',
+            });
+          }
+        });
+
         return;
       }
     } catch (error) {
-      log.error(`[preflight-audit] Error processing accessibility data: ${error.message}`, error);
+      const errorMsg = `[preflight-audit] Error processing accessibility data: ${error.message}`;
+      log.error(errorMsg, error);
+
+      // Add error to audit results
+      previewUrls.forEach((url) => {
+        const pageResult = audits.get(url);
+        // eslint-disable-next-line max-len
+        const accessibilityAudit = pageResult.audits.find((a) => a.name === PREFLIGHT_ACCESSIBILITY);
+
+        if (accessibilityAudit) {
+          const prefix = 'Failed to process accessibility data: ';
+          const errorDesc = prefix + error.message;
+          accessibilityAudit.opportunities.push({
+            type: 'accessibility-error',
+            title: 'Accessibility Audit Error',
+            description: errorDesc,
+            severity: 'error',
+          });
+        }
+      });
+
       return;
     }
 
@@ -253,7 +334,8 @@ async function processAccessibilityOpportunities(context, auditContext) {
         }
       });
     } catch (error) {
-      log.error(`[preflight-audit] Error mapping accessibility opportunities: ${error.message}`, error);
+      const errorMsg = `[preflight-audit] Error mapping accessibility opportunities: ${error.message}`;
+      log.error(errorMsg, error);
       return;
     }
 
@@ -276,7 +358,8 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
 
     await saveIntermediateResults(context, auditsResult, 'accessibility audit');
   } catch (error) {
-    log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Accessibility audit failed: ${error.message}`, error);
+    const errorMsg = `[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Accessibility audit failed: ${error.message}`;
+    log.error(errorMsg, error);
 
     // Add error to audit results
     previewUrls.forEach((url) => {
@@ -285,10 +368,12 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
       const accessibilityAudit = pageResult.audits.find((a) => a.name === PREFLIGHT_ACCESSIBILITY);
 
       if (accessibilityAudit) {
+        const prefix = 'Failed to complete accessibility audit: ';
+        const errorDesc = prefix + error.message;
         accessibilityAudit.opportunities.push({
           type: 'accessibility-error',
           title: 'Accessibility Audit Error',
-          description: `Failed to complete accessibility audit: ${error.message}`,
+          description: errorDesc,
           severity: 'error',
         });
       }
@@ -297,14 +382,16 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
 }
 
 /**
- * Accessibility handler for preflight that uses the same two-step pattern as main accessibility
- * handler
+ * Accessibility handler for preflight that runs accessibility scraping and processing
+ * Note: The main preflight process doesn't scrape accessibility data, so we need to do it here
  */
 export default async function accessibility(context, auditContext) {
   const { checks } = auditContext;
 
+  // eslint-disable-next-line max-len
   if (!checks || checks.includes(PREFLIGHT_ACCESSIBILITY)) {
     // Step 1: Send URLs to content scraper for accessibility-specific processing
+    // and wait for completion
     await scrapeAccessibilityData(context, auditContext);
     // Step 2: Process scraped data and create opportunities
     await processAccessibilityOpportunities(context, auditContext);
