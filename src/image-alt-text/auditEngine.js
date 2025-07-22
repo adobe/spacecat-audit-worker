@@ -47,23 +47,25 @@ export const convertImagesToBase64 = async (imageUrls, auditUrl, log, fetch) => 
       log.debug(`[${AUDIT_TYPE}]: Fetching image: ${url}`);
       const response = await fetch(new URL(url, auditUrl).toString());
       if (!response.ok) {
-        log.warn(`[${AUDIT_TYPE}]: Failed to fetch image from ${url} - Status: ${response.status}`);
+        log.error(`[${AUDIT_TYPE}]: Error downloading blob for ${url}: Status: ${response.status}`);
         return;
       }
 
       const contentLength = response.headers.get('Content-Length');
       if (contentLength && parseInt(contentLength, 10) > MAX_SIZE_BYTES) {
-        log.info(`[${AUDIT_TYPE}]: Skipping image ${url} as it exceeds ${MAX_SIZE_KB}KB (Content-Length: ${contentLength})`);
+        log.info(`[${AUDIT_TYPE}]: Skipping image ${url} as it exceeds 120KB`);
         return;
       }
 
       const arrayBuffer = await response.arrayBuffer();
+      // Ensure compatibility with ArrayBuffer
       const base64String = Buffer.from(arrayBuffer).toString('base64');
       const mimeType = await getMimeType(url);
+
       const base64Blob = `data:${mimeType};base64,${base64String}`;
 
       if (Buffer.byteLength(base64Blob, 'utf8') > MAX_SIZE_BYTES) {
-        log.info(`[${AUDIT_TYPE}]: Skipping base64 image ${url} as it exceeds ${MAX_SIZE_KB}KB (Base64 size: ${Buffer.byteLength(base64Blob, 'utf8')} bytes)`);
+        log.info(`[${AUDIT_TYPE}]: Skipping base64 image ${url} as it exceeds 120KB`);
         return;
       }
 
@@ -211,12 +213,18 @@ export default class AuditEngine {
       this.log.info(`[${AUDIT_TYPE}]: Supported blob URLs:`, supportedBlobUrls);
       this.log.info(`[${AUDIT_TYPE}]: Supported image URLs:`, supportedImageUrls);
 
-      // Log URLs that don't match any format
+      // Log URLs that don't match any format with their page URLs
       const unsupportedUrls = imageUrls.filter(
         (url) => !SUPPORTED_BLOB_FORMATS.test(url) && !SUPPORTED_FORMATS.test(url),
       );
       this.log.info(`[${AUDIT_TYPE}]: Unsupported URLs (no format match): ${unsupportedUrls.length}`);
-      this.log.info(`[${AUDIT_TYPE}]: Unsupported URLs:`, unsupportedUrls);
+      this.log.info(
+        `[${AUDIT_TYPE}]: Unsupported URLs with page URLs:`,
+        unsupportedUrls.map((url) => ({
+          imageUrl: url,
+          pageUrl: this.auditedImages.imagesWithoutAltText.get(url)?.pageUrl,
+        })),
+      );
 
       const base64Blobs = await convertImagesToBase64(
         supportedBlobUrls,
@@ -262,9 +270,21 @@ export default class AuditEngine {
         filteredImages.set(originalData.src, { ...originalData, blob: !!originalData.blob });
       });
 
-      // Log final results
+      // Log final results with details about filtered out images
       this.log.info(`[${AUDIT_TYPE}]: Final filtered images count: ${filteredImages.size}`);
       this.log.info(`[${AUDIT_TYPE}]: Images filtered out: ${imageUrls.length - filteredImages.size}`);
+
+      // Log details of filtered out images with their page URLs
+      const filteredOutUrls = imageUrls.filter((url) => !filteredImages.has(url));
+      if (filteredOutUrls.length > 0) {
+        this.log.info(
+          `[${AUDIT_TYPE}]: Filtered out images with page URLs:`,
+          filteredOutUrls.map((url) => ({
+            imageUrl: url,
+            pageUrl: this.auditedImages.imagesWithoutAltText.get(url)?.pageUrl,
+          })),
+        );
+      }
 
       this.auditedImages.imagesWithoutAltText = filteredImages;
     } catch (error) {
