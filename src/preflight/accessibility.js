@@ -30,7 +30,7 @@ export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
  */
 async function scrapeAccessibilityData(context, auditContext) {
   const {
-    site, jobId, log, env, s3Client, dataAccess, sqs,
+    site, jobId, log, env, s3Client, dataAccess,
   } = context;
   const {
     previewUrls,
@@ -44,7 +44,10 @@ async function scrapeAccessibilityData(context, auditContext) {
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
     log.error(errorMsg);
-    return;
+    return {
+      status: 'PROCESSING_FAILED',
+      error: errorMsg,
+    };
   }
 
   log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Step 1: Preparing accessibility scrape`);
@@ -99,38 +102,21 @@ async function scrapeAccessibilityData(context, auditContext) {
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
   log.info(`[preflight-audit] Remaining URLs to scrape: ${JSON.stringify(remainingUrls, null, 2)}`);
 
-  // Send to content scraper with accessibility-specific processing
-  if (remainingUrls.length > 0) {
-    log.info(`[preflight-audit] Will send ${remainingUrls.length} URLs to content scraper`);
-  } else {
-    log.info('[preflight-audit] No remaining URLs to scrape, will process existing data');
-  }
-
-  if (remainingUrls.length > 0) {
-    log.info(`[preflight-audit] Sending ${remainingUrls.length} URLs to content scraper for accessibility audit`);
-
-    try {
-      const scrapeMessage = {
-        urls: remainingUrls,
-        siteId,
-        jobId: siteId,
-        processingType: AUDIT_TYPE_ACCESSIBILITY,
-        type: 'accessibility',
-        ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
-      };
-
-      // Send to content scraper queue
-      await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, scrapeMessage);
-      log.info(
-        `[preflight-audit] Sent accessibility scraping request to content scraper for ${remainingUrls.length} URLs`,
-      );
-    } catch (error) {
-      log.error(
-        `[preflight-audit] Failed to send accessibility scraping request: ${error.message}`,
-      );
-    }
-  }
-  // No return statement needed
+  // Return data for CONTENT_SCRAPER (same as main accessibility handler)
+  return {
+    auditResult: {
+      status: 'SCRAPING_REQUESTED',
+      message: 'Content scraping for accessibility audit initiated.',
+      scrapedUrls: remainingUrls,
+    },
+    fullAuditRef: previewUrls[0], // Use first preview URL as reference
+    // Data for the CONTENT_SCRAPER
+    urls: remainingUrls,
+    siteId,
+    jobId: siteId,
+    processingType: AUDIT_TYPE_ACCESSIBILITY,
+    ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
+  };
 }
 
 /**
@@ -156,7 +142,10 @@ async function processAccessibilityOpportunities(context, auditContext) {
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
     log.error(errorMsg);
-    return;
+    return {
+      status: 'PROCESSING_FAILED',
+      error: errorMsg,
+    };
   }
 
   log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Step 2: Processing accessibility data`);
@@ -185,21 +174,30 @@ async function processAccessibilityOpportunities(context, auditContext) {
 
       if (!aggregationResult.success) {
         log.error(`[preflight-audit] No data aggregated: ${aggregationResult.message}`);
-        return;
+        return {
+          status: 'NO_OPPORTUNITIES',
+          message: aggregationResult.message,
+        };
       }
     } catch (error) {
       log.error(`[preflight-audit] Error processing accessibility data: ${error.message}`, error);
-      return;
+      return {
+        status: 'PROCESSING_FAILED',
+        error: error.message,
+      };
     }
 
     // Update existing opportunities status
     await updateStatusToIgnored(dataAccess, siteId, log);
 
+    // Extract key metrics for the audit result summary
+    const totalIssues = aggregationResult.finalResultFiles.current.overall.violations.total;
+    // Subtract 1 for the 'overall' key to get actual URL count
+    const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
+
     // Map individual accessibility opportunities to preflight structure
     try {
       const accessibilityData = aggregationResult.finalResultFiles.current;
-      const totalIssues = accessibilityData.overall.violations.total;
-      const urlsProcessed = Object.keys(accessibilityData).length - 1;
 
       log.info(
         `[preflight-audit] Found ${totalIssues} accessibility issues across \n${urlsProcessed} URLs`,
@@ -254,7 +252,10 @@ async function processAccessibilityOpportunities(context, auditContext) {
       });
     } catch (error) {
       log.error(`[preflight-audit] Error mapping accessibility opportunities: ${error.message}`, error);
-      return;
+      return {
+        status: 'PROCESSING_FAILED',
+        error: error.message,
+      };
     }
 
     const accessibilityEndTime = Date.now();
@@ -275,6 +276,15 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
     });
 
     await saveIntermediateResults(context, auditsResult, 'accessibility audit');
+
+    // Return success result
+    return {
+      status: 'OPPORTUNITIES_FOUND',
+      opportunitiesFound: totalIssues,
+      urlsProcessed,
+      summary: `Found ${totalIssues} accessibility issues across ${urlsProcessed} URLs`,
+      fullReportUrl: outputKey,
+    };
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Accessibility audit failed: ${error.message}`, error);
 
@@ -293,6 +303,12 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
         });
       }
     });
+
+    // Return error result
+    return {
+      status: 'PROCESSING_FAILED',
+      error: error.message,
+    };
   }
 }
 
@@ -305,8 +321,18 @@ export default async function accessibility(context, auditContext) {
 
   if (!checks || checks.includes(PREFLIGHT_ACCESSIBILITY)) {
     // Step 1: Send URLs to content scraper for accessibility-specific processing
-    await scrapeAccessibilityData(context, auditContext);
-    // Step 2: Process scraped data and create opportunities
-    await processAccessibilityOpportunities(context, auditContext);
+    const step1Result = await scrapeAccessibilityData(context, auditContext);
+
+    // If Step 1 was successful and there are URLs to scrape, return the result
+    // The StepAudit system will handle sending to content scraper and waiting for completion
+    if (step1Result && step1Result.urls && step1Result.urls.length > 0) {
+      return step1Result;
+    }
+
+    // If no URLs to scrape, proceed directly to Step 2
+    return processAccessibilityOpportunities(context, auditContext);
   }
+
+  // Return undefined if accessibility check is not requested
+  return undefined;
 }
