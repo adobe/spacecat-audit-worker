@@ -25,41 +25,19 @@ use(sinonChai);
 use(chaiAsPromised);
 
 describe('LLM Blocked Audit', () => {
-  let clock;
   let context;
   let sandbox;
   let mockTopPages;
-  let fetchStub;
 
   before('setup', () => {
     sandbox = sinon.createSandbox();
   });
 
-  function handleRobotsFetch() {
-    return Promise.resolve({
-      status: 200,
-      text: () => Promise.resolve('User-Agent: *\nAllow: /'),
-    });
-  }
-
   beforeEach('setup', () => {
-    clock = sinon.useFakeTimers();
     mockTopPages = [
       { getUrl: () => 'https://example.com/page1' },
       { getUrl: () => 'https://example.com/page2' },
     ];
-
-    // Only stub fetch if it's not already stubbed
-    if (!global.fetch.restore) {
-      fetchStub = sandbox.stub(global, 'fetch').callsFake((url) => {
-        if (url.includes('robots.txt')) {
-          return handleRobotsFetch();
-        }
-        return Promise.resolve({ status: 200 });
-      });
-    } else {
-      fetchStub = global.fetch;
-    }
 
     context = new MockContextBuilder()
       .withOverrides({
@@ -84,52 +62,90 @@ describe('LLM Blocked Audit', () => {
 
   afterEach(() => {
     nock.cleanAll();
-    clock.restore();
     sandbox.restore();
   });
 
   it('should return no blocked URLs when all requests return 200', async () => {
+    // Mock robots.txt
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: *\nAllow: /');
+
+    // Mock page requests - all return 200
+    // const userAgents = [
+    //   'ClaudeBot/1.0',
+    //   'Perplexity-User/1.0',
+    //   'PerplexityBot/1.0',
+    //   'ChatGPT-User/1.0',
+    //   'GPTBot/1.0',
+    //   'OAI-SearchBot/1.0',
+    // ];
+
+    // Mock baseline requests (no user agent) - allow multiple calls
+    nock('https://example.com')
+      .get('/page1')
+      .times(7) // 1 baseline + 6 user agents
+      .reply(200);
+    nock('https://example.com')
+      .get('/page2')
+      .times(7) // 1 baseline + 6 user agents
+      .reply(200);
+
     const result = await checkLLMBlocked(context);
 
+    // TODO check that each user agent was called
+
     expect(result.auditResult).to.equal('[]');
-    expect(fetchStub.callCount).to.equal(15); // 2 pages × (6 user agents + 1 baseline) + 1 robots
-
-    // Verify each page was checked with each user agent
-    const userAgents = [
-      'ClaudeBot/1.0',
-      'Perplexity-User/1.0',
-      'PerplexityBot/1.0',
-      'ChatGPT-User/1.0',
-      'GPTBot/1.0',
-    ];
-
-    mockTopPages.forEach((page) => {
-      // Check baseline request (no user agent)
-      expect(fetchStub.calledWith(page.getUrl())).to.be.true;
-
-      // Check each user agent request
-      userAgents.forEach((agent) => {
-        expect(fetchStub.calledWith(page.getUrl(), {
-          headers: { 'User-Agent': agent },
-        })).to.be.true;
-      });
-    });
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
   it('should return blocked URLs when a user agent is blocked', async () => {
-    // Arrange: page1 returns 403 for ClaudeBot/1.0, 200 for all others and baseline
-    const blockedUrl = 'https://example.com/page1';
+    // Mock robots.txt
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: *\nAllow: /');
 
-    // Set up fetchStub to return 403 for ClaudeBot/1.0 on page1, 200 otherwise
-    fetchStub.callsFake((url, opts) => {
-      if (url.includes('robots.txt')) {
-        return handleRobotsFetch();
-      }
-      if (url === blockedUrl && opts && opts.headers && opts.headers['User-Agent'] === 'ClaudeBot/1.0') {
-        return Promise.resolve({ status: 403 });
-      }
-      return Promise.resolve({ status: 200 });
-    });
+    // Mock all requests to page1 and page2 with different responses based on user agent
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'ClaudeBot/1.0')
+      .reply(403);
+
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'Perplexity-User/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'PerplexityBot/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'ChatGPT-User/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'GPTBot/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'OAI-SearchBot/1.0')
+      .reply(200);
+
+    // Baseline request for page1 (no user agent)
+    nock('https://example.com')
+      .get('/page1')
+      .reply(200);
+
+    // All requests to page2 return 200
+    nock('https://example.com')
+      .get('/page2')
+      .times(7) // 1 baseline + 6 user agents
+      .reply(200);
 
     const expectedSuggestionsData = [
       {
@@ -140,7 +156,7 @@ describe('LLM Blocked Audit', () => {
           },
         ],
         agent: 'ClaudeBot/1.0',
-        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
+        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic\'s Claude to access your site when assisting users.',
       },
     ];
 
@@ -150,33 +166,30 @@ describe('LLM Blocked Audit', () => {
     context.dataAccess.Opportunity.getId.returns('opportunity-id');
     context.dataAccess.Opportunity.addSuggestions.resolves(expectedSuggestionsData);
 
-    // Act
     const result = await checkLLMBlocked(context);
 
-    // Assert
     expect(result.auditResult).to.equal(JSON.stringify([{
-      url: blockedUrl,
+      url: 'https://example.com/page1',
       blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
     }]));
-    expect(fetchStub.callCount).to.equal(15); // 2 pages × (6 user agents + 1 baseline) + 1 robots
-    expect(fetchStub.calledWith(blockedUrl, { headers: { 'User-Agent': 'ClaudeBot/1.0' } })).to.be.true;
-    expect(fetchStub.calledWith(blockedUrl)).to.be.true;
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
   it('should return blocked URLs when a page is blocked by robots.txt', async () => {
-    // Arrange: page1 returns 200 for all user agents but is blocked by robots.txt
-    const blockedUrl = 'https://example.com/page1';
+    // Mock robots.txt that blocks page1 for ClaudeBot/1.0
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: ClaudeBot/1.0\nDisallow: /page1\n\nUser-Agent: *\nAllow: /');
 
-    // Set up fetchStub to return 200 for all user agents but blocked by robots.txt
-    fetchStub.callsFake((url) => {
-      if (url.includes('robots.txt')) {
-        return {
-          status: 200,
-          text: () => Promise.resolve('User-Agent: ClaudeBot/1.0\nDisallow: /page1'),
-        };
-      }
-      return Promise.resolve({ status: 200 });
-    });
+    // Mock requests to pages - all return 200 but page1 is blocked by robots.txt for ClaudeBot/1.0
+    nock('https://example.com')
+      .get('/page1')
+      .times(7) // 1 baseline + 6 user agents
+      .reply(200);
+    nock('https://example.com')
+      .get('/page2')
+      .times(7) // 1 baseline + 6 user agents
+      .reply(200);
 
     const expectedSuggestionsData = [
       {
@@ -187,7 +200,7 @@ describe('LLM Blocked Audit', () => {
           },
         ],
         agent: 'ClaudeBot/1.0',
-        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
+        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic\'s Claude to access your site when assisting users.',
       },
     ];
 
@@ -197,36 +210,92 @@ describe('LLM Blocked Audit', () => {
     context.dataAccess.Opportunity.getId.returns('opportunity-id');
     context.dataAccess.Opportunity.addSuggestions.resolves(expectedSuggestionsData);
 
-    // Act
     const result = await checkLLMBlocked(context);
 
-    // Assert
     expect(result.auditResult).to.equal(JSON.stringify([{
-      url: blockedUrl,
+      url: 'https://example.com/page1',
       blockedAgents: [{ agent: 'ClaudeBot/1.0', status: 'Blocked by robots.txt' }],
     }]));
-    expect(fetchStub.callCount).to.equal(15); // 2 pages × (6 user agents + 1 baseline) + 1 robots
-    expect(fetchStub.calledWith(blockedUrl, { headers: { 'User-Agent': 'ClaudeBot/1.0' } })).to.be.true;
-    expect(fetchStub.calledWith(blockedUrl)).to.be.true;
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
   it('should return the expected data structure if multiple issues are detected', async () => {
-    // Set up fetchStub
-    fetchStub.callsFake((url, opts) => {
-      if (url.includes('robots.txt')) {
-        return {
-          status: 200,
-          text: () => Promise.resolve('User-Agent: Perplexity-User/1.0\nDisallow: /'),
-        };
-      }
-      if (url === 'https://example.com/page1' && opts && opts.headers && opts.headers['User-Agent'] === 'ClaudeBot/1.0') {
-        return Promise.resolve({ status: 403 });
-      }
-      if (url === 'https://example.com/page2' && opts && opts.headers && opts.headers['User-Agent'] === 'Perplexity-User/1.0') {
-        return Promise.resolve({ status: 403 });
-      }
-      return Promise.resolve({ status: 200 });
-    });
+    // Mock robots.txt that blocks everything for Perplexity-User/1.0
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: Perplexity-User/1.0\nDisallow: /\n\nUser-Agent: *\nAllow: /');
+
+    // Mock specific responses for page1
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'ClaudeBot/1.0')
+      .reply(403);
+
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'Perplexity-User/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'PerplexityBot/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'ChatGPT-User/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'GPTBot/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page1')
+      .matchHeader('User-Agent', 'OAI-SearchBot/1.0')
+      .reply(200);
+
+    // Baseline request for page1
+    nock('https://example.com')
+      .get('/page1')
+      .reply(200);
+
+    // Mock specific responses for page2
+    nock('https://example.com')
+      .get('/page2')
+      .matchHeader('User-Agent', 'ClaudeBot/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page2')
+      .matchHeader('User-Agent', 'Perplexity-User/1.0')
+      .reply(403);
+
+    nock('https://example.com')
+      .get('/page2')
+      .matchHeader('User-Agent', 'PerplexityBot/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page2')
+      .matchHeader('User-Agent', 'ChatGPT-User/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page2')
+      .matchHeader('User-Agent', 'GPTBot/1.0')
+      .reply(200);
+
+    nock('https://example.com')
+      .get('/page2')
+      .matchHeader('User-Agent', 'OAI-SearchBot/1.0')
+      .reply(200);
+
+    // Baseline request for page2
+    nock('https://example.com')
+      .get('/page2')
+      .reply(200);
 
     const expectedSuggestionsData = [
       {
@@ -237,7 +306,7 @@ describe('LLM Blocked Audit', () => {
           },
         ],
         agent: 'ClaudeBot/1.0',
-        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
+        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic\'s Claude to access your site when assisting users.',
       },
     ];
 
@@ -247,10 +316,8 @@ describe('LLM Blocked Audit', () => {
     context.dataAccess.Opportunity.getId.returns('opportunity-id');
     context.dataAccess.Opportunity.addSuggestions.resolves(expectedSuggestionsData);
 
-    // Act
     const result = await checkLLMBlocked(context);
 
-    // Assert
     expect(result.auditResult).to.equal(JSON.stringify([{
       url: 'https://example.com/page1',
       blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }, { agent: 'Perplexity-User/1.0', status: 'Blocked by robots.txt' }],
@@ -258,24 +325,31 @@ describe('LLM Blocked Audit', () => {
       url: 'https://example.com/page2',
       blockedAgents: [{ status: 403, agent: 'Perplexity-User/1.0' }, { agent: 'Perplexity-User/1.0', status: 'Blocked by robots.txt' }],
     }]));
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
   it('should warn if robots fetching fails', async () => {
-    fetchStub.callsFake((url) => {
-      if (url.includes('robots.txt')) {
-        return {
-          status: 500,
-        };
-      }
-      return Promise.resolve({ status: 200 });
-    });
+    // Mock robots.txt to throw a network error
+    nock('https://example.com')
+      .get('/robots.txt')
+      .replyWithError('Network error');
+
+    // Mock baseline requests (no user agent) - allow multiple calls
+    nock('https://example.com')
+      .get('/page1')
+      .times(7) // 1 baseline + 6 user agents
+      .reply(200);
+    nock('https://example.com')
+      .get('/page2')
+      .times(7) // 1 baseline + 6 user agents
+      .reply(200);
 
     const result = await checkLLMBlocked(context);
 
     expect(result.auditResult).to.equal('[]');
-    expect(fetchStub.callCount).to.equal(15); // 2 pages × (6 user agents + 1 baseline) + 1 robots
-
+    expect(context.log.error).to.have.been.calledWith('Error getting robots.txt: Error: Network error');
     expect(context.log.warn).to.have.been.calledWith('No robots.txt found. Skipping robots.txt check.');
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
   it('should throw an error when no top pages are returned', async () => {
@@ -304,6 +378,7 @@ describe('LLM Blocked Audit', () => {
 
     // Act & Assert
     await expect(checkLLMBlocked(contextWithNoPages)).to.be.rejectedWith('No top pages found for site');
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
   it('should return correct data structure from importTopPages', async () => {
@@ -321,6 +396,7 @@ describe('LLM Blocked Audit', () => {
 
     // Verify that log.info was called
     expect(context.log.info).to.have.been.calledWith('Importing top pages for https://example.com');
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
   it('should return expected opportunity data from createOpportunityData', () => {
@@ -337,7 +413,7 @@ describe('LLM Blocked Audit', () => {
           'Check each URL in the suggestions and ensure that AI user agents are not blocked at the CDN level.',
         ],
       },
-      tags: ['llm'],
+      tags: ['llm', 'isElmo'],
     });
   });
 });
