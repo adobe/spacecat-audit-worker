@@ -39,16 +39,21 @@ export const convertImagesToBase64 = async (imageUrls, auditUrl, log, fetch) => 
   const MAX_SIZE_KB = 120;
   const MAX_SIZE_BYTES = MAX_SIZE_KB * 1024;
 
+  log.info(`[${AUDIT_TYPE}]: Starting base64 conversion for ${imageUrls.length} images`);
+  log.info(`[${AUDIT_TYPE}]: Max size limit: ${MAX_SIZE_KB}KB (${MAX_SIZE_BYTES} bytes)`);
+
   const fetchPromises = imageUrls.map(async (url) => {
     try {
+      log.debug(`[${AUDIT_TYPE}]: Fetching image: ${url}`);
       const response = await fetch(new URL(url, auditUrl).toString());
       if (!response.ok) {
-        throw new Error(`Failed to fetch image from ${url}`);
+        log.warn(`[${AUDIT_TYPE}]: Failed to fetch image from ${url} - Status: ${response.status}`);
+        return;
       }
 
       const contentLength = response.headers.get('Content-Length');
       if (contentLength && parseInt(contentLength, 10) > MAX_SIZE_BYTES) {
-        log.info(`[${AUDIT_TYPE}]: Skipping image ${url} as it exceeds ${MAX_SIZE_KB}KB`);
+        log.info(`[${AUDIT_TYPE}]: Skipping image ${url} as it exceeds ${MAX_SIZE_KB}KB (Content-Length: ${contentLength})`);
         return;
       }
 
@@ -58,10 +63,11 @@ export const convertImagesToBase64 = async (imageUrls, auditUrl, log, fetch) => 
       const base64Blob = `data:${mimeType};base64,${base64String}`;
 
       if (Buffer.byteLength(base64Blob, 'utf8') > MAX_SIZE_BYTES) {
-        log.info(`[${AUDIT_TYPE}]: Skipping base64 image ${url} as it exceeds ${MAX_SIZE_KB}KB`);
+        log.info(`[${AUDIT_TYPE}]: Skipping base64 image ${url} as it exceeds ${MAX_SIZE_KB}KB (Base64 size: ${Buffer.byteLength(base64Blob, 'utf8')} bytes)`);
         return;
       }
 
+      log.debug(`[${AUDIT_TYPE}]: Successfully converted ${url} to base64 (size: ${Buffer.byteLength(base64Blob, 'utf8')} bytes)`);
       base64Blobs.push({ url, blob: base64Blob });
     } catch (error) {
       log.error(`[${AUDIT_TYPE}]: Error downloading blob for ${url}:`, error);
@@ -70,6 +76,7 @@ export const convertImagesToBase64 = async (imageUrls, auditUrl, log, fetch) => 
 
   await Promise.all(fetchPromises);
 
+  log.info(`[${AUDIT_TYPE}]: Base64 conversion completed. Successfully converted ${base64Blobs.length} out of ${imageUrls.length} images`);
   return base64Blobs;
 };
 
@@ -153,10 +160,17 @@ export default class AuditEngine {
     const pageLanguage = getPageLanguage({ document: pageImages.dom?.window?.document, pageUrl });
 
     this.log.debug(`[${AUDIT_TYPE}]: Language: ${pageLanguage}, Page: ${pageUrl}`);
+    this.log.info(`[${AUDIT_TYPE}]: Processing ${pageImages.images.length} images for page ${pageUrl}`);
+
+    let imagesWithoutAltText = 0;
+    let decorativeImages = 0;
+    let imagesWithAltText = 0;
 
     pageImages.images.forEach((image) => {
       if (!hasText(image.alt?.trim())) {
+        imagesWithoutAltText += 1;
         if (image.isDecorative) {
+          decorativeImages += 1;
           this.auditedImages.decorativeImagesWithoutAltText.set(image.src, {
             pageUrl,
             src: image.src,
@@ -172,21 +186,48 @@ export default class AuditEngine {
             language: pageLanguage,
           });
         }
+      } else {
+        imagesWithAltText += 1;
       }
     });
+
+    this.log.info(`[${AUDIT_TYPE}]: Page ${pageUrl} summary - Total: ${pageImages.images.length}, Without alt: ${imagesWithoutAltText}, With alt: ${imagesWithAltText}, Decorative: ${decorativeImages}, Should suggest: ${this.auditedImages.imagesWithoutAltText.size - this.auditedImages.decorativeImagesWithoutAltText.size}`);
   }
 
   async filterImages(baseURL, fetch) {
     try {
       const imageUrls = Array.from(this.auditedImages.imagesWithoutAltText.keys());
+
+      // Log initial state
+      this.log.info(`[${AUDIT_TYPE}]: Starting filterImages - Total images without alt text: ${imageUrls.length}`);
+      this.log.info(`[${AUDIT_TYPE}]: Image URLs:`, imageUrls);
+
       const supportedBlobUrls = imageUrls.filter((url) => SUPPORTED_BLOB_FORMATS.test(url));
       const supportedImageUrls = imageUrls.filter((url) => SUPPORTED_FORMATS.test(url));
+
+      // Log filtering results
+      this.log.info(`[${AUDIT_TYPE}]: Supported blob formats (svg|bmp|tiff|ico): ${supportedBlobUrls.length}`);
+      this.log.info(`[${AUDIT_TYPE}]: Supported image formats (webp|png|gif|jpeg|jpg): ${supportedImageUrls.length}`);
+      this.log.info(`[${AUDIT_TYPE}]: Supported blob URLs:`, supportedBlobUrls);
+      this.log.info(`[${AUDIT_TYPE}]: Supported image URLs:`, supportedImageUrls);
+
+      // Log URLs that don't match any format
+      const unsupportedUrls = imageUrls.filter(
+        (url) => !SUPPORTED_BLOB_FORMATS.test(url) && !SUPPORTED_FORMATS.test(url),
+      );
+      this.log.info(`[${AUDIT_TYPE}]: Unsupported URLs (no format match): ${unsupportedUrls.length}`);
+      this.log.info(`[${AUDIT_TYPE}]: Unsupported URLs:`, unsupportedUrls);
+
       const base64Blobs = await convertImagesToBase64(
         supportedBlobUrls,
         baseURL,
         this.log,
         fetch,
       );
+
+      // Log base64 conversion results
+      this.log.info(`[${AUDIT_TYPE}]: Base64 conversion successful for ${base64Blobs.length} blobs`);
+
       const filteredImages = new Map();
 
       // Add supported images directly to the map
@@ -194,7 +235,7 @@ export default class AuditEngine {
         const originalData = this.auditedImages.imagesWithoutAltText.get(url);
         filteredImages.set(url, originalData);
       });
-      this.log.info(`[${AUDIT_TYPE}]: Supported images:`, Array.from(filteredImages.values()));
+      this.log.info(`[${AUDIT_TYPE}]: Supported images added to filtered map: ${filteredImages.size}`);
 
       // Add unique blobs to the map
       const uniqueBlobsMap = new Map();
@@ -220,6 +261,10 @@ export default class AuditEngine {
       uniqueBlobsMap.forEach((originalData) => {
         filteredImages.set(originalData.src, { ...originalData, blob: !!originalData.blob });
       });
+
+      // Log final results
+      this.log.info(`[${AUDIT_TYPE}]: Final filtered images count: ${filteredImages.size}`);
+      this.log.info(`[${AUDIT_TYPE}]: Images filtered out: ${imageUrls.length - filteredImages.size}`);
 
       this.auditedImages.imagesWithoutAltText = filteredImages;
     } catch (error) {
