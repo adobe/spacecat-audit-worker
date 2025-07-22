@@ -149,25 +149,40 @@ async function scrapeAccessibilityData(context, auditContext) {
   while (Date.now() - startTime < maxWaitTime) {
     try {
       // Check if accessibility data files exist in S3
+      // Look for timestamp subdirectories that contain raw accessibility data
       const prefix = `accessibility/${siteId}/`;
       const listParams = {
         Bucket: bucketName,
         Prefix: prefix,
+        Delimiter: '/', // Use delimiter to get subdirectories
         MaxKeys: 10, // Limit to avoid too many results
       };
 
       // eslint-disable-next-line no-await-in-loop
       const listResult = await s3Client.listObjectsV2(listParams);
-      const objectKeys = listResult.Contents?.map((obj) => obj.Key) || [];
 
-      // Check if we have any accessibility data files (excluding the final result file)
-      const hasAccessibilityData = objectKeys.some(
-        (key) => key.startsWith(prefix) && key.includes('.json') && !key.includes('-final-result.json'),
-      );
+      // Check for CommonPrefixes (subdirectories) which indicate timestamp folders
+      const hasTimestampFolders = listResult.CommonPrefixes && listResult.CommonPrefixes.length > 0;
 
-      if (hasAccessibilityData) {
-        log.info('[preflight-audit] Accessibility scraping completed successfully - found data files');
-        return;
+      if (hasTimestampFolders) {
+        // Check if any of the timestamp folders contain JSON files
+        for (const commonPrefix of listResult.CommonPrefixes) {
+          const timestampPrefix = commonPrefix.Prefix;
+          const timestampListParams = {
+            Bucket: bucketName,
+            Prefix: timestampPrefix,
+            MaxKeys: 5,
+          };
+
+          // eslint-disable-next-line no-await-in-loop
+          const timestampListResult = await s3Client.listObjectsV2(timestampListParams);
+          const jsonFiles = timestampListResult.Contents?.filter((obj) => obj.Key.endsWith('.json')) || [];
+
+          if (jsonFiles.length > 0) {
+            log.info(`[preflight-audit] Accessibility scraping completed successfully - found ${jsonFiles.length} data files in ${timestampPrefix}`);
+            return;
+          }
+        }
       }
 
       log.info('[preflight-audit] Accessibility scraping still in progress, waiting...');
