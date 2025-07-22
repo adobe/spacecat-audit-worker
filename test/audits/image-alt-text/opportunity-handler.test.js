@@ -13,12 +13,19 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
+import esmock from 'esmock';
 import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import convertToOpportunity from '../../../src/image-alt-text/opportunityHandler.js';
 import suggestionsEngine from '../../../src/image-alt-text/suggestionsEngine.js';
 import { DATA_SOURCES } from '../../../src/common/constants.js';
+
+// Shared mock class factory to avoid max-classes-per-file ESLint error
+const createMockRUMAPIClient = (stub) => class MockRUMAPIClient {
+  static createFrom() {
+    return stub;
+  }
+};
 
 describe('Image Alt Text Opportunity Handler', () => {
   let logStub;
@@ -108,10 +115,33 @@ describe('Image Alt Text Opportunity Handler', () => {
   it('should create new opportunity when none exists', async function createNewOpportunity() {
     this.timeout(5000);
 
-    dataAccessStub.Opportunity.create.resolves(altTextOppty);
-    sinon.stub(GoogleClient, 'createFrom').resolves(true);
+    // Mock utility functions to ensure predictable behavior
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/image-alt-text/constants.js': {
+        CPC: 1,
+        PENALTY_PER_IMAGE: 0.01,
+        RUM_INTERVAL: 30,
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    dataAccessStub.Opportunity.create.resolves(altTextOppty);
+
+    await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
 
     expect(dataAccessStub.Opportunity.create).to.have.been.calledWith(sinon.match({
       siteId: 'site-id',
@@ -148,9 +178,33 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should update existing opportunity when one exists', async () => {
+    // Mock utility functions to ensure predictable behavior
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/image-alt-text/constants.js': {
+        CPC: 1,
+        PENALTY_PER_IMAGE: 0.01,
+        RUM_INTERVAL: 30,
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
+
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
 
     expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
     expect(altTextOppty.setUpdatedBy).to.have.been.calledWith('system');
@@ -159,10 +213,34 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should update existing opportunity with empty suggestion if none are found', async () => {
+    // Mock utility functions to ensure predictable behavior
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/image-alt-text/constants.js': {
+        CPC: 1,
+        PENALTY_PER_IMAGE: 0.01,
+        RUM_INTERVAL: 30,
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
+
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
     suggestionsEngine.getImageSuggestions.resolves({});
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
 
     expect(altTextOppty.setAuditId).to.have.been.calledWith('audit-id');
     expect(altTextOppty.setUpdatedBy).to.have.been.calledWith('system');
@@ -172,11 +250,35 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should handle error when fetching opportunities fails', async () => {
+    // Mock utility functions to ensure predictable behavior
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/image-alt-text/constants.js': {
+        CPC: 1,
+        PENALTY_PER_IMAGE: 0.01,
+        RUM_INTERVAL: 30,
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
+
     const error = new Error('Fetch failed');
     dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(error);
 
     try {
-      await convertToOpportunity(auditUrl, auditData, context);
+      await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
       expect.fail('Should have thrown an error');
     } catch (e) {
       expect(e.message).to.equal(
@@ -189,11 +291,35 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should handle error when creating opportunity fails', async () => {
+    // Mock utility functions to ensure predictable behavior
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/image-alt-text/constants.js': {
+        CPC: 1,
+        PENALTY_PER_IMAGE: 0.01,
+        RUM_INTERVAL: 30,
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
+
     const error = new Error('Creation failed');
     dataAccessStub.Opportunity.create.rejects(error);
 
     try {
-      await convertToOpportunity(auditUrl, auditData, context);
+      await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
       expect.fail('Should have thrown an error');
     } catch (e) {
       expect(e.message).to.equal(
@@ -207,6 +333,30 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should handle errors when adding suggestions', async () => {
+    // Mock utility functions to ensure predictable behavior
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/image-alt-text/constants.js': {
+        CPC: 1,
+        PENALTY_PER_IMAGE: 0.01,
+        RUM_INTERVAL: 30,
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
+
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
     altTextOppty.getSuggestions.returns([{
@@ -227,7 +377,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       createdItems: [1], // At least one successful creation to avoid throwing
     });
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
 
     expect(logStub.error).to.have.been.calledWith(
       '[alt-text]: Suggestions for siteId site-id contains 1 items with errors',
@@ -238,6 +388,30 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should throw error when all suggestions fail to create', async () => {
+    // Mock utility functions to ensure predictable behavior
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/image-alt-text/constants.js': {
+        CPC: 1,
+        PENALTY_PER_IMAGE: 0.01,
+        RUM_INTERVAL: 30,
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
+
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
     altTextOppty.getSuggestions.returns([{
@@ -259,7 +433,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     });
 
     try {
-      await convertToOpportunity(auditUrl, auditData, context);
+      await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
       expect.fail('Should have thrown an error');
     } catch (e) {
       expect(e.message).to.equal('[alt-text]: Failed to create suggestions for siteId site-id');
@@ -273,6 +447,30 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should preserve ignored suggestions when syncing', async () => {
+    // Mock utility functions to ensure predictable behavior
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/image-alt-text/constants.js': {
+        CPC: 1,
+        PENALTY_PER_IMAGE: 0.01,
+        RUM_INTERVAL: 30,
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
+
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
     // Mock existing suggestions with one ignored
@@ -295,7 +493,7 @@ describe('Image Alt Text Opportunity Handler', () => {
 
     altTextOppty.getSuggestions.returns(mockSuggestions);
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
 
     // Verify that only non-ignored suggestion was removed
     expect(mockSuggestions[0].remove).to.not.have.been.called;
@@ -305,6 +503,22 @@ describe('Image Alt Text Opportunity Handler', () => {
   it('should log error when page URL is not found in RUM API results', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
+    // Mock utility functions to ensure predictable URL handling
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+    });
+
     // Set up RUM API to return results that don't match our image URLs
     rumClientStub.query.resolves([
       { url: 'https://example.com/different-page', earned: 100000 },
@@ -312,14 +526,19 @@ describe('Image Alt Text Opportunity Handler', () => {
     ]);
 
     // Our test data has images on /page1 and /page2, which won't be found in the RUM results
-    await convertToOpportunity(auditUrl, auditData, context);
+    await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
 
-    // Verify the error was logged for both missing pages with correct www/non-www format
-    expect(logStub.debug).to.have.been.calledWith(
+    // Verify the error was logged for missing pages with correct www/non-www format
+    const debugCalls = logStub.debug.getCalls().map((call) => call.args[0]);
+
+    expect(debugCalls).to.include(
       '[alt-text]: Page URL https://example.com/page1 or https://www.example.com/page1 not found in RUM API results',
     );
-    expect(logStub.debug).to.have.been.calledWith(
+    expect(debugCalls).to.include(
       '[alt-text]: Page URL https://example.com/page2 or https://www.example.com/page2 not found in RUM API results',
+    );
+    expect(debugCalls).to.include(
+      '[alt-text]: Page URL https://example.com/page3 or https://www.example.com/page3 not found in RUM API results',
     );
 
     // The opportunity should still be created/updated despite the missing pages
@@ -328,6 +547,30 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should calculate projected metrics correctly', async () => {
+    // Mock utility functions to ensure predictable URL handling
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/image-alt-text/constants.js': {
+        CPC: 1,
+        PENALTY_PER_IMAGE: 0.01,
+        RUM_INTERVAL: 30,
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
+
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
     // Set up RUM API to return results in the correct format
@@ -342,7 +585,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       { pageUrl: '/page2', src: 'image2.jpg' },
     ];
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
 
     // Check that the metrics were calculated and passed to setData
     const setDataCall = altTextOppty.setData.getCall(0);
@@ -367,6 +610,30 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should handle www and non-www URLs correctly when calculating metrics', async () => {
+    // Mock utility functions to ensure predictable URL handling
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/image-alt-text/constants.js': {
+        CPC: 1,
+        PENALTY_PER_IMAGE: 0.01,
+        RUM_INTERVAL: 30,
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
+
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
     // Set up RUM API to return results with www prefix
@@ -381,7 +648,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       { pageUrl: '/page2', src: 'image2.jpg' },
     ];
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
 
     // Check that the metrics were calculated correctly despite the www/non-www difference
     const setDataCall = altTextOppty.setData.getCall(0);
@@ -401,6 +668,25 @@ describe('Image Alt Text Opportunity Handler', () => {
   });
 
   it('should handle errors when fetching RUM API results', async () => {
+    // Mock utility functions to ensure predictable behavior
+    const convertToOpportunityWithMocks = await esmock('../../../src/image-alt-text/opportunityHandler.js', {
+      '../../../src/support/utils.js': {
+        getRUMUrl: sinon.stub().resolves('example.com'),
+        toggleWWW: sinon.stub().callsFake((url) => {
+          if (url.includes('www.')) {
+            return url.replace('www.', '');
+          }
+          return url.replace('://', '://www.');
+        }),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: createMockRUMAPIClient(rumClientStub),
+      },
+      '../../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: sinon.stub().resolves(true),
+      },
+    });
+
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
     sinon.stub(GoogleClient, 'createFrom').resolves(true);
 
@@ -408,7 +694,7 @@ describe('Image Alt Text Opportunity Handler', () => {
     const rumError = new Error('RUM API connection failed');
     rumClientStub.query.rejects(rumError);
 
-    await convertToOpportunity(auditUrl, auditData, context);
+    await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
 
     // Verify error was logged
     expect(logStub.error).to.have.been.calledWith(
