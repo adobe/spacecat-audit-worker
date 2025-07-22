@@ -58,6 +58,7 @@ async function scrapeAccessibilityData(context, auditContext) {
   // Get URLs to scrape (same as main accessibility handler)
   let urlsToScrape = [];
   urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
+  log.info(`[preflight-audit] getUrlsForAudit returned ${urlsToScrape.length} URLs`);
 
   if (urlsToScrape.length === 0) {
     const { SiteTopPage } = dataAccess;
@@ -65,15 +66,17 @@ async function scrapeAccessibilityData(context, auditContext) {
     log.info(`[preflight-audit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}`);
 
     if (!isNonEmptyArray(topPages)) {
-      log.info('[preflight-audit] No top pages found, skipping accessibility audit');
-      return;
+      log.info('[preflight-audit] No top pages found, using preview URLs for accessibility audit');
+      // Use preview URLs instead of skipping
+      urlsToScrape = previewUrls.map((url) => ({ url }));
+      log.info(`[preflight-audit] Using preview URLs: ${JSON.stringify(urlsToScrape, null, 2)}`);
+    } else {
+      urlsToScrape = topPages
+        .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
+        .sort((a, b) => b.traffic - a.traffic)
+        .slice(0, 100);
+      log.info(`[preflight-audit] Top 100 pages: ${JSON.stringify(urlsToScrape, null, 2)}`);
     }
-
-    urlsToScrape = topPages
-      .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
-      .sort((a, b) => b.traffic - a.traffic)
-      .slice(0, 100);
-    log.info(`[preflight-audit] Top 100 pages: ${JSON.stringify(urlsToScrape, null, 2)}`);
   }
 
   // Check for existing scraped data (same as main accessibility handler)
@@ -97,6 +100,12 @@ async function scrapeAccessibilityData(context, auditContext) {
   log.info(`[preflight-audit] Remaining URLs to scrape: ${JSON.stringify(remainingUrls, null, 2)}`);
 
   // Send to content scraper with accessibility-specific processing
+  if (remainingUrls.length > 0) {
+    log.info(`[preflight-audit] Will send ${remainingUrls.length} URLs to content scraper`);
+  } else {
+    log.info('[preflight-audit] No remaining URLs to scrape, will process existing data');
+  }
+
   if (remainingUrls.length > 0) {
     log.info(`[preflight-audit] Sending ${remainingUrls.length} URLs to content scraper for accessibility audit`);
 
@@ -162,6 +171,7 @@ async function processAccessibilityOpportunities(context, auditContext) {
     // Use the accessibility aggregator to process data
     let aggregationResult;
     try {
+      log.info(`[preflight-audit] Calling aggregateAccessibilityData for siteId: ${siteId}, bucket: ${bucketName}, version: ${version}`);
       aggregationResult = await aggregateAccessibilityData(
         s3Client,
         bucketName,
@@ -170,6 +180,8 @@ async function processAccessibilityOpportunities(context, auditContext) {
         outputKey,
         version,
       );
+
+      log.info(`[preflight-audit] aggregateAccessibilityData result: success=${aggregationResult.success}, message=${aggregationResult.message || 'N/A'}`);
 
       if (!aggregationResult.success) {
         log.error(`[preflight-audit] No data aggregated: ${aggregationResult.message}`);
@@ -193,8 +205,13 @@ async function processAccessibilityOpportunities(context, auditContext) {
         `[preflight-audit] Found ${totalIssues} accessibility issues across \n${urlsProcessed} URLs`,
       );
 
+      log.info(`[preflight-audit] Accessibility data keys: ${JSON.stringify(Object.keys(accessibilityData))}`);
+      log.info(`[preflight-audit] Overall violations: ${JSON.stringify(accessibilityData.overall.violations)}`);
+
       // Use the existing accessibility audit function to group issues by opportunity type
+      log.info('[preflight-audit] Calling aggregateAccessibilityIssues');
       const aggregatedData = aggregateAccessibilityIssues(accessibilityData);
+      log.info(`[preflight-audit] aggregateAccessibilityIssues result: ${JSON.stringify(aggregatedData)}`);
 
       const opportunityTypes = aggregatedData.data.map((item) => Object.keys(item)[0]).join(', ');
       log.info(
