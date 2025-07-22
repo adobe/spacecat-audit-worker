@@ -28,10 +28,29 @@ describe('LLM Blocked Audit', () => {
   let context;
   let sandbox;
   let mockTopPages;
+  const userAgents = [
+    'ClaudeBot/1.0',
+    'Perplexity-User/1.0',
+    'PerplexityBot/1.0',
+    'ChatGPT-User/1.0',
+    'GPTBot/1.0',
+    'OAI-SearchBot/1.0',
+  ];
 
   before('setup', () => {
     sandbox = sinon.createSandbox();
   });
+
+  // Helper function to create nock mocks for user agents
+  function mockUserAgentRequests(domain, path, agents = userAgents, statusMap = {}) {
+    agents.forEach((agent) => {
+      const status = statusMap[agent] || 200;
+      nock(domain)
+        .get(path)
+        .matchHeader('User-Agent', agent)
+        .reply(status);
+    });
+  }
 
   beforeEach('setup', () => {
     mockTopPages = [
@@ -72,31 +91,22 @@ describe('LLM Blocked Audit', () => {
       .reply(200, 'User-Agent: *\nAllow: /');
 
     // Mock page requests - all return 200
-    // const userAgents = [
-    //   'ClaudeBot/1.0',
-    //   'Perplexity-User/1.0',
-    //   'PerplexityBot/1.0',
-    //   'ChatGPT-User/1.0',
-    //   'GPTBot/1.0',
-    //   'OAI-SearchBot/1.0',
-    // ];
+    // Mock user agent requests for both pages - all return 200
+    mockUserAgentRequests('https://example.com', '/page1');
+    mockUserAgentRequests('https://example.com', '/page2');
 
-    // Mock baseline requests (no user agent) - allow multiple calls
+    // Mock baseline requests (no user agent)
     nock('https://example.com')
       .get('/page1')
-      .times(7) // 1 baseline + 6 user agents
       .reply(200);
     nock('https://example.com')
       .get('/page2')
-      .times(7) // 1 baseline + 6 user agents
       .reply(200);
 
     const result = await checkLLMBlocked(context);
 
-    // TODO check that each user agent was called
-
     expect(result.auditResult).to.equal('[]');
-    expect(nock.pendingMocks()).to.have.lengthOf(0);
+    expect(nock.pendingMocks()).to.have.lengthOf(0, 'not all requests were made');
   });
 
   it('should return blocked URLs when a user agent is blocked', async () => {
@@ -105,46 +115,20 @@ describe('LLM Blocked Audit', () => {
       .get('/robots.txt')
       .reply(200, 'User-Agent: *\nAllow: /');
 
-    // Mock all requests to page1 and page2 with different responses based on user agent
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'ClaudeBot/1.0')
-      .reply(403);
+    // Mock user agent requests for page1
+    mockUserAgentRequests('https://example.com', '/page1', userAgents, {
+      'ClaudeBot/1.0': 403,
+    });
 
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'Perplexity-User/1.0')
-      .reply(200);
+    // Mock user agent requests for page2 - all return 200
+    mockUserAgentRequests('https://example.com', '/page2');
 
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'PerplexityBot/1.0')
-      .reply(200);
-
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'ChatGPT-User/1.0')
-      .reply(200);
-
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'GPTBot/1.0')
-      .reply(200);
-
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'OAI-SearchBot/1.0')
-      .reply(200);
-
-    // Baseline request for page1 (no user agent)
+    // Mock baseline requests (no user agent)
     nock('https://example.com')
       .get('/page1')
       .reply(200);
-
-    // All requests to page2 return 200
     nock('https://example.com')
       .get('/page2')
-      .times(7) // 1 baseline + 6 user agents
       .reply(200);
 
     const expectedSuggestionsData = [
@@ -181,14 +165,16 @@ describe('LLM Blocked Audit', () => {
       .get('/robots.txt')
       .reply(200, 'User-Agent: ClaudeBot/1.0\nDisallow: /page1\n\nUser-Agent: *\nAllow: /');
 
-    // Mock requests to pages - all return 200 but page1 is blocked by robots.txt for ClaudeBot/1.0
+    // Mock user agent requests for both pages - all return 200
+    mockUserAgentRequests('https://example.com', '/page1');
+    mockUserAgentRequests('https://example.com', '/page2');
+
+    // Mock baseline requests (no user agent)
     nock('https://example.com')
       .get('/page1')
-      .times(7) // 1 baseline + 6 user agents
       .reply(200);
     nock('https://example.com')
       .get('/page2')
-      .times(7) // 1 baseline + 6 user agents
       .reply(200);
 
     const expectedSuggestionsData = [
@@ -225,74 +211,20 @@ describe('LLM Blocked Audit', () => {
       .get('/robots.txt')
       .reply(200, 'User-Agent: Perplexity-User/1.0\nDisallow: /\n\nUser-Agent: *\nAllow: /');
 
-    // Mock specific responses for page1
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'ClaudeBot/1.0')
-      .reply(403);
+    // Mock user agent requests for page1
+    mockUserAgentRequests('https://example.com', '/page1', userAgents, {
+      'ClaudeBot/1.0': 403,
+    });
 
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'Perplexity-User/1.0')
-      .reply(200);
+    // Mock user agent requests for page2
+    mockUserAgentRequests('https://example.com', '/page2', userAgents, {
+      'Perplexity-User/1.0': 403,
+    });
 
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'PerplexityBot/1.0')
-      .reply(200);
-
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'ChatGPT-User/1.0')
-      .reply(200);
-
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'GPTBot/1.0')
-      .reply(200);
-
-    nock('https://example.com')
-      .get('/page1')
-      .matchHeader('User-Agent', 'OAI-SearchBot/1.0')
-      .reply(200);
-
-    // Baseline request for page1
+    // Mock baseline requests (no user agent)
     nock('https://example.com')
       .get('/page1')
       .reply(200);
-
-    // Mock specific responses for page2
-    nock('https://example.com')
-      .get('/page2')
-      .matchHeader('User-Agent', 'ClaudeBot/1.0')
-      .reply(200);
-
-    nock('https://example.com')
-      .get('/page2')
-      .matchHeader('User-Agent', 'Perplexity-User/1.0')
-      .reply(403);
-
-    nock('https://example.com')
-      .get('/page2')
-      .matchHeader('User-Agent', 'PerplexityBot/1.0')
-      .reply(200);
-
-    nock('https://example.com')
-      .get('/page2')
-      .matchHeader('User-Agent', 'ChatGPT-User/1.0')
-      .reply(200);
-
-    nock('https://example.com')
-      .get('/page2')
-      .matchHeader('User-Agent', 'GPTBot/1.0')
-      .reply(200);
-
-    nock('https://example.com')
-      .get('/page2')
-      .matchHeader('User-Agent', 'OAI-SearchBot/1.0')
-      .reply(200);
-
-    // Baseline request for page2
     nock('https://example.com')
       .get('/page2')
       .reply(200);
@@ -334,14 +266,16 @@ describe('LLM Blocked Audit', () => {
       .get('/robots.txt')
       .replyWithError('Network error');
 
-    // Mock baseline requests (no user agent) - allow multiple calls
+    // Mock user agent requests for both pages - all return 200
+    mockUserAgentRequests('https://example.com', '/page1');
+    mockUserAgentRequests('https://example.com', '/page2');
+
+    // Mock baseline requests (no user agent)
     nock('https://example.com')
       .get('/page1')
-      .times(7) // 1 baseline + 6 user agents
       .reply(200);
     nock('https://example.com')
       .get('/page2')
-      .times(7) // 1 baseline + 6 user agents
       .reply(200);
 
     const result = await checkLLMBlocked(context);
