@@ -107,6 +107,7 @@ async function scrapeAccessibilityData(context, auditContext) {
         jobId: siteId,
         processingType: AUDIT_TYPE_ACCESSIBILITY,
         type: 'accessibility',
+        ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
       };
 
       // Send to content scraper queue
