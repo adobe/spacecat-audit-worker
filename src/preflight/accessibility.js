@@ -120,7 +120,7 @@ async function scrapeAccessibilityData(context, auditContext) {
       };
 
       // Send to content scraper queue
-      await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, scrapeMessage);
+      await sqs.sendMessage(env.CONTENT_SCRAPER_QUEUE_URL, scrapeMessage);
       log.info(
         `[preflight-audit] Sent accessibility scraping request to content scraper for ${remainingUrls.length} URLs`,
       );
