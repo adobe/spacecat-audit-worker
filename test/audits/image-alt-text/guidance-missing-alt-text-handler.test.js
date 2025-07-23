@@ -20,6 +20,7 @@ describe('Missing Alt Text Guidance Handler', () => {
   let sandbox;
   let context;
   let mockOpportunity;
+  let mockSite;
   let mockMessage;
   let guidanceHandler;
   let addAltTextSuggestionsStub;
@@ -41,6 +42,11 @@ describe('Missing Alt Text Guidance Handler', () => {
       setUpdatedBy: sandbox.stub(),
     };
 
+    mockSite = {
+      getId: () => 'test-site-id',
+      getBaseURL: () => 'https://example.com',
+    };
+
     context = {
       log: {
         info: sandbox.stub(),
@@ -51,6 +57,9 @@ describe('Missing Alt Text Guidance Handler', () => {
         Opportunity: {
           allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
           create: sandbox.stub().resolves(mockOpportunity),
+        },
+        Site: {
+          findById: sandbox.stub().resolves(mockSite),
         },
       },
       env: {
@@ -66,10 +75,13 @@ describe('Missing Alt Text Guidance Handler', () => {
       data: {
         suggestions: [
           {
-            pageurl: 'https://example.com/page1',
-            imageid: 'image1.jpg',
-            alttext: 'Test alt text',
-            imageurl: 'https://example.com/image1.jpg',
+            pageUrl: 'https://example.com/page1',
+            imageId: 'image1.jpg',
+            altText: 'Test alt text',
+            imageUrl: 'https://example.com/image1.jpg',
+            isAppropriate: true,
+            isDecorative: false,
+            language: 'en',
           },
         ],
       },
@@ -103,6 +115,7 @@ describe('Missing Alt Text Guidance Handler', () => {
     const result = await guidanceHandler(mockMessage, context);
 
     expect(result.status).to.equal(200);
+    expect(context.dataAccess.Site.findById).to.have.been.calledWith('test-site-id');
     expect(mockOpportunity.setAuditId).to.have.been.calledWith('test-audit-id');
     expect(mockOpportunity.save).to.have.been.called;
     expect(addAltTextSuggestionsStub).to.have.been.called;
@@ -170,6 +183,19 @@ describe('Missing Alt Text Guidance Handler', () => {
     );
   });
 
+  it('should handle errors when updating existing opportunity fails', async () => {
+    const error = new Error('Save failed');
+    mockOpportunity.save.rejects(error);
+
+    await expect(guidanceHandler(mockMessage, context))
+      .to.be.rejectedWith('[alt-text]: Failed to create alt-text opportunity for siteId test-site-id: Save failed');
+
+    expect(context.log.error).to.have.been.calledWith(
+      '[alt-text]: Creating alt-text opportunity for siteId test-site-id failed with error: Save failed',
+      error,
+    );
+  });
+
   it('should filter out GSC data source when Google is not connected', async () => {
     checkGoogleConnectionStub.resolves(false);
 
@@ -193,5 +219,39 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(result.status).to.equal(200);
     expect(getProjectedMetricsStub).to.have.been.called;
+  });
+
+  it('should calculate decorative images count correctly', async () => {
+    const messageWithDecorative = {
+      ...mockMessage,
+      data: {
+        suggestions: [
+          {
+            pageUrl: 'https://example.com/page1',
+            imageId: 'image1.jpg',
+            altText: 'Test alt text',
+            imageUrl: 'https://example.com/image1.jpg',
+            isAppropriate: true,
+            isDecorative: true,
+            language: 'en',
+          },
+          {
+            pageUrl: 'https://example.com/page2',
+            imageId: 'image2.jpg',
+            altText: 'Another alt text',
+            imageUrl: 'https://example.com/image2.jpg',
+            isAppropriate: true,
+            isDecorative: false,
+            language: 'en',
+          },
+        ],
+      },
+    };
+
+    await guidanceHandler(messageWithDecorative, context);
+
+    expect(mockOpportunity.setData).to.have.been.called;
+    const setDataCall = mockOpportunity.setData.firstCall.args[0];
+    expect(setDataCall.decorativeImagesCount).to.equal(1);
   });
 });
