@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { notFound, ok, badRequest } from '@adobe/spacecat-shared-http-utils';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -24,21 +24,21 @@ export default async function handler(message, context) {
   const audit = await Audit.findById(auditId);
   if (!audit) {
     log.warn(`No audit found for auditId: ${auditId}`);
-    return notFound();
+    return notFound('Audit not found');
   }
   const { Opportunity } = dataAccess;
   const opportunity = await Opportunity.findById(opportunityId);
 
   if (!opportunity) {
     log.error(`[BrokenInternalLinksGuidance] Opportunity not found for ID: ${opportunityId}`);
-    notFound('Opportunity not found');
+    return notFound('Opportunity not found');
   }
 
   // Verify the opportunity belongs to the correct site
   if (opportunity.getSiteId() !== siteId) {
     const errorMsg = `[BrokenInternalLinks] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
     log.error(errorMsg);
-    return { success: false, error: 'Site ID mismatch' };
+    return badRequest('Site ID mismatch');
   }
 
   const suggestion = await Suggestion.findById(suggestionId);

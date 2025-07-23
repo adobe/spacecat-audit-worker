@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -39,7 +39,7 @@ export default async function handler(message, context) {
   if (opportunity.getSiteId() !== siteId) {
     const errorMsg = `[BrokenBacklinksGuidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
     log.error(errorMsg);
-    return notFound('Site ID mismatch');
+    return badRequest('Site ID mismatch');
   }
 
   const suggestion = await Suggestion.findById(suggestionId);

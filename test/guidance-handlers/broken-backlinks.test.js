@@ -93,6 +93,20 @@ describe('guidance-broken-backlinks-remediation handler', () => {
     expect(mockContext.dataAccess.Suggestion.findById).to.not.have.been.called;
   });
 
+  it('should return error if Opportunity siteId does not match message siteId', async () => {
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({});
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => 'site-actual',
+    });
+    mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({});
+    const response = await brokenBacklinksGuidanceHandler(mockMessage, mockContext);
+    expect(response.status).to.equal(400);
+    expect(mockContext.dataAccess.Audit.findById).to.have.been.calledWith(mockMessage.auditId);
+    expect(mockContext.dataAccess.Opportunity.findById).to.have.been
+      .calledWith(mockMessage.data.opportunityId);
+    expect(mockContext.dataAccess.Suggestion.findById).to.not.have.been.called;
+  });
+
   it('should return 404 if Suggestion is not found', async () => {
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves(
