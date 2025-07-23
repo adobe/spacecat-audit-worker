@@ -31,7 +31,7 @@ export default async function handler(message, context) {
 
   if (!opportunity) {
     log.error(`[BrokenInternalLinksGuidance] Opportunity not found for ID: ${opportunityId}`);
-    return { success: false, error: 'Opportunity not found' };
+    notFound('Opportunity not found');
   }
 
   // Verify the opportunity belongs to the correct site
@@ -42,6 +42,10 @@ export default async function handler(message, context) {
   }
 
   const suggestion = await Suggestion.findById(suggestionId);
+  if (!suggestion) {
+    log.error(`[BrokenInternalLinksGuidance] Suggestion not found for ID: ${suggestionId}`);
+    return notFound('Suggestion not found');
+  }
   suggestion.setData({
     ...suggestion.getData(),
     // eslint-disable-next-line camelcase

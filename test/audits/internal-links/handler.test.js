@@ -202,7 +202,7 @@ describe('Broken internal links audit ', () => {
   }).timeout(5000);
 });
 
-describe.skip('broken-internal-links audit opportunity and suggestions', () => {
+describe('broken-internal-links audit opportunity and suggestions', () => {
   let addSuggestionsResponse;
   let opportunity;
   let auditData;

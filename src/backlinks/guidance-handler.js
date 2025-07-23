@@ -32,17 +32,21 @@ export default async function handler(message, context) {
 
   if (!opportunity) {
     log.error(`[BrokenBacklinksGuidance] Opportunity not found for ID: ${opportunityId}`);
-    return { success: false, error: 'Opportunity not found' };
+    return notFound('Opportunity not found');
   }
 
   // Verify the opportunity belongs to the correct site
   if (opportunity.getSiteId() !== siteId) {
     const errorMsg = `[BrokenBacklinksGuidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
     log.error(errorMsg);
-    return { success: false, error: 'Site ID mismatch' };
+    return notFound('Site ID mismatch');
   }
 
   const suggestion = await Suggestion.findById(suggestionId);
+  if (!suggestion) {
+    log.error(`[BrokenBacklinksGuidance] Suggestion not found for ID: ${suggestionId}`);
+    return notFound('Suggestion not found');
+  }
   suggestion.setData({
     ...suggestion.getData(),
     // eslint-disable-next-line camelcase
