@@ -11,7 +11,6 @@
  */
 
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import { aggregateAccessibilityData, getUrlsForAudit } from '../accessibility/utils/data-processing.js';
 import {
   updateStatusToIgnored,
@@ -19,7 +18,6 @@ import {
 import { aggregateAccessibilityIssues } from '../accessibility/utils/generate-individual-opportunities.js';
 import { saveIntermediateResults } from './utils.js';
 
-const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY;
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
 
 /**
@@ -87,7 +85,7 @@ async function scrapeAccessibilityData(context, auditContext) {
         urls: urlsToScrape,
         siteId,
         jobId: siteId,
-        processingType: AUDIT_TYPE_ACCESSIBILITY,
+        processingType: 'accessibility',
         type: 'accessibility',
         allowCache: false, // Force re-scraping even if files already exist
         ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
