@@ -1,3 +1,17 @@
+## [1.129.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.0...v1.129.1) (2025-07-22)
+
+
+### Bug Fixes
+
+* Catch errors from SDA validator ([#1057](https://github.com/adobe/spacecat-audit-worker/issues/1057)) ([8c39ad5](https://github.com/adobe/spacecat-audit-worker/commit/8c39ad5826b0c3a9800651f233b224a8e650f04d))
+
+# [1.129.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.128.2...v1.129.0) (2025-07-22)
+
+
+### Features
+
+* Adding support of enabling image-alt-text audit of includeUrls in site config ([#1053](https://github.com/adobe/spacecat-audit-worker/issues/1053)) ([a763ad9](https://github.com/adobe/spacecat-audit-worker/commit/a763ad9c359f84d85366a639f9e6367ada81e037))
+
 ## [1.128.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.128.1...v1.128.2) (2025-07-21)
 
 
