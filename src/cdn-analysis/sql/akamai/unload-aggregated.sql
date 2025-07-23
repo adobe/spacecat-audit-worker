@@ -11,7 +11,7 @@ UNLOAD (
     CAST(statusCode AS INTEGER) AS status,
     try(url_extract_host(referer)) AS referer,
     reqHost AS host,
-    CAST(timeToFirstByte AS BIGINT) AS time_to_first_byte,
+    CAST(timeToFirstByte AS DOUBLE) AS time_to_first_byte,
     COUNT(*) AS count
 
   FROM {{database}}.{{rawTable}}
@@ -53,7 +53,7 @@ UNLOAD (
     statusCode,
     try(url_extract_host(referer)),
     reqHost,
-    CAST(timeToFirstByte AS BIGINT)
+    CAST(timeToFirstByte AS DOUBLE)
 
 ) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
 WITH (format = 'PARQUET');
