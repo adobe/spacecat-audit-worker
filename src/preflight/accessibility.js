@@ -85,7 +85,7 @@ async function scrapeAccessibilityData(context, auditContext) {
       const scrapeMessage = {
         urls: urlsToScrape,
         siteId,
-        jobId,
+        jobId: siteId, // Override jobId with siteId for correct storage path
         processingType: 'accessibility',
         s3BucketName: bucketName,
         completionQueueUrl: env.AUDIT_JOBS_QUEUE_URL,
