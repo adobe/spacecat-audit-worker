@@ -86,13 +86,23 @@ async function scrapeAccessibilityData(context, auditContext) {
         siteId,
         jobId: siteId,
         processingType: 'accessibility',
-        type: 'accessibility',
+        s3BucketName: bucketName,
+        completionQueueUrl: env.AUDIT_JOBS_QUEUE_URL,
+        skipMessage: false,
+        skipStorage: false,
         allowCache: false, // Force re-scraping even if files already exist
+        options: {},
         ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
       };
 
+      log.info(`[preflight-audit] Scrape message being sent: ${JSON.stringify(scrapeMessage, null, 2)}`);
+      log.info(`[preflight-audit] Processing type: ${scrapeMessage.processingType}`);
+      log.info(`[preflight-audit] S3 bucket: ${scrapeMessage.s3BucketName}`);
+      log.info(`[preflight-audit] Completion queue: ${scrapeMessage.completionQueueUrl}`);
+
       // Send to content scraper queue
-      await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, scrapeMessage);
+      log.info(`[preflight-audit] Sending to queue: ${env.CONTENT_SCRAPER_QUEUE_URL}`);
+      await sqs.sendMessage(env.CONTENT_SCRAPER_QUEUE_URL, scrapeMessage);
       log.info(
         `[preflight-audit] Sent accessibility scraping request to content scraper for ${urlsToScrape.length} URLs`,
       );
