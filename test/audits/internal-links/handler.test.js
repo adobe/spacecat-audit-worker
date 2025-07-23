@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -217,6 +217,12 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         runtime: { name: 'aws-lambda', region: 'us-east-1' },
         func: { package: 'spacecat-services', version: 'ci', name: 'test' },
         finalUrl: 'www.example.com',
+        env: {
+          QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue-url',
+        },
+        sqs: {
+          sendMessage: sandbox.stub().resolves({ MessageId: 'test-message-id' }),
+        },
       })
       .build();
     context.log = {
@@ -312,7 +318,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     );
   }).timeout(10000);
 
-  it('does not create new suggestions if the audit result was not successful', async () => {
+  it('throws error when audit result was not successful', async () => {
     context.audit = {
       ...auditData,
       getAuditResult: () => ({
@@ -327,10 +333,30 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Opportunity.create.resolves(opportunity);
     context.site.getLatestAuditByAuditType = () => context.audit;
 
-    await handler.opportunityAndSuggestionsStep(context);
-    expect(context.log.info).to.have.been.calledWith(
-      `[broken-internal-links] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`,
-    );
+    try {
+      await handler.opportunityAndSuggestionsStep(context);
+      expect.fail('Should have thrown an error');
+    } catch (error) {
+      expect(error.message).to.equal('Audit failed, skipping suggestions generation');
+    }
+  });
+
+  it('throws error when auto-suggest is disabled for site', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => false,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    context.site.getLatestAuditByAuditType = () => auditData;
+
+    try {
+      await handler.opportunityAndSuggestionsStep(context);
+      expect.fail('Should have thrown an error');
+    } catch (error) {
+      expect(error.message).to.equal('Auto-suggest is disabled for site');
+    }
   });
 
   it('creating a new opportunity object fails', async () => {
@@ -361,6 +387,18 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     );
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
 
+    // Override audit to have no broken links
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [],
+        success: true,
+        auditContext: {
+          interval: 30,
+        },
+      }),
+    };
+
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => [],
@@ -369,18 +407,68 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     await expect(
       handler.opportunityAndSuggestionsStep(context),
-    ).to.be.rejectedWith('read error happened');
+    ).to.be.rejectedWith('Failed to fetch opportunities for siteId site-id-1: read error happened');
+
+    expect(context.log.error).to.have.been.calledWith(
+      'Fetching opportunities for siteId site-id-1 failed with error: read error happened',
+    );
   }).timeout(5000);
 
-  it('creating a new opportunity object succeeds even if suggestion generation error occurs', async () => {
+  it('handles SQS message sending errors', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    context.sqs.sendMessage.rejects(new Error('SQS error'));
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    await expect(
+      handler.opportunityAndSuggestionsStep(context),
+    ).to.be.rejectedWith('SQS error');
+
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
+      expectedOpportunity,
+    );
+  }).timeout(5000);
+
+  it('handles undefined brokenInternalLinks in audit result', async () => {
+    // Override audit to have undefined brokenInternalLinks to test the fallback
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        // brokenInternalLinks property is undefined
+        success: true,
+        auditContext: {
+          interval: 30,
+        },
+      }),
+    };
+
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+    expect(context.log.info).to.have.been.calledWith(
+      `[broken-internal-links] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`,
+    );
+  }).timeout(5000);
+
+  it('creating a new opportunity object succeeds and sends SQS messages', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
 
     context.site.getLatestAuditByAuditType = () => auditData;
     context.site.getDeliveryType = () => 'aem_edge';
-
-    context.dataAccess.Opportunity.addSuggestions.resolves({ errorItems: [{ error: 'error', item: 0 }] });
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
@@ -390,12 +478,15 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     expect(result.status).to.equal('complete');
 
-    expect(context.log.error).to.have.been.called();
+    // Verify SQS messages were sent
+    expect(context.sqs.sendMessage).to.have.been.called;
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match('Message sent to Mystique:'),
+    );
   }).timeout(5000);
 
   it('no new opportunity created if no broken internal links found', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.resolves(opportunity);
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
 
     context.site.getLatestAuditByAuditType = () => auditData;
@@ -405,6 +496,18 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         generateSuggestionData: () => [],
       },
     });
+
+    // Override audit to have no broken links
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [],
+        success: true,
+        auditContext: {
+          interval: 30,
+        },
+      }),
+    };
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
@@ -441,6 +544,18 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW' });
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
     context.site.getLatestAuditByAuditType = () => auditData;
+
+    // Override audit to have no broken links
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [],
+        success: true,
+        auditContext: {
+          interval: 30,
+        },
+      }),
+    };
 
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
