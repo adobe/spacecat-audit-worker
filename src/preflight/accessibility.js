@@ -89,6 +89,7 @@ async function scrapeAccessibilityData(context, auditContext) {
         jobId: siteId,
         processingType: AUDIT_TYPE_ACCESSIBILITY,
         type: 'accessibility',
+        allowCache: false, // Force re-scraping even if files already exist
         ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
       };
 
@@ -282,13 +283,54 @@ export default async function accessibility(context, auditContext) {
     // Step 1: Send URLs to content scraper for accessibility-specific processing
     await scrapeAccessibilityData(context, auditContext);
 
-    // Wait for content scraper to process the URLs
-    const { log } = context;
-    log.info('[preflight-audit] Waiting for content scraper to process accessibility data...');
-    await new Promise((resolve) => {
-      setTimeout(resolve, 600000); // Wait
-    });
-    log.info('[preflight-audit] Wait completed, proceeding to process accessibility data');
+    // Poll for content scraper to process the URLs
+    const { log, s3Client, env } = context;
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    const siteId = context.site.getId();
+
+    log.info('[preflight-audit] Polling for accessibility data files...');
+
+    const maxWaitTime = 10 * 60 * 1000; // 10 minutes
+    const pollInterval = 30 * 1000; // 30 seconds
+    const startTime = Date.now();
+
+    // Import ListObjectsV2Command outside the loop
+    const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+
+    // eslint-disable-next-line no-await-in-loop
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        // Check if accessibility data files exist in S3
+        const listCommand = new ListObjectsV2Command({
+          Bucket: bucketName,
+          Prefix: `accessibility/${siteId}/`,
+          MaxKeys: 10,
+        });
+
+        // eslint-disable-next-line no-await-in-loop
+        const response = await s3Client.send(listCommand);
+        const hasData = response.Contents && response.Contents.length > 0;
+
+        if (hasData) {
+          log.info('[preflight-audit] Accessibility data found, proceeding to process');
+          break;
+        }
+
+        log.info('[preflight-audit] No accessibility data yet, waiting...');
+        // eslint-disable-next-line no-promise-executor-return, no-await-in-loop
+        await new Promise((resolve) => {
+          setTimeout(resolve, pollInterval);
+        });
+      } catch (error) {
+        log.error(`[preflight-audit] Error polling for accessibility data: ${error.message}`);
+        // eslint-disable-next-line no-promise-executor-return, no-await-in-loop
+        await new Promise((resolve) => {
+          setTimeout(resolve, pollInterval);
+        });
+      }
+    }
+
+    log.info('[preflight-audit] Polling completed, proceeding to process accessibility data');
 
     // Step 2: Process scraped data and create opportunities
     await processAccessibilityOpportunities(context, auditContext);
