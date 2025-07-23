@@ -51,7 +51,7 @@ async function scrapeAccessibilityData(context, auditContext) {
     pageResult.audits.push({ name: PREFLIGHT_ACCESSIBILITY, type: 'accessibility', opportunities: [] });
   });
 
-  // Get URLs to scrape (same as main accessibility handler)
+  // Get URLs to scrape
   let urlsToScrape = [];
   urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
   log.info(`[preflight-audit] getUrlsForAudit returned ${urlsToScrape.length} URLs`);
@@ -68,7 +68,7 @@ async function scrapeAccessibilityData(context, auditContext) {
       log.info(`[preflight-audit] Using preview URLs: ${JSON.stringify(urlsToScrape, null, 2)}`);
     } else {
       urlsToScrape = topPages
-        .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
+        .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic() }))
         .sort((a, b) => b.traffic - a.traffic)
         .slice(0, 100);
       log.info(`[preflight-audit] Top 100 pages: ${JSON.stringify(urlsToScrape, null, 2)}`);
@@ -85,7 +85,7 @@ async function scrapeAccessibilityData(context, auditContext) {
       const scrapeMessage = {
         urls: urlsToScrape,
         siteId,
-        jobId: siteId,
+        jobId, // Use the actual job ID from context
         processingType: 'accessibility',
         s3BucketName: bucketName,
         completionQueueUrl: env.AUDIT_JOBS_QUEUE_URL,
@@ -115,7 +115,6 @@ async function scrapeAccessibilityData(context, auditContext) {
   } else {
     log.info('[preflight-audit] No URLs to scrape');
   }
-  // No return statement needed
 }
 
 /**
@@ -148,7 +147,7 @@ async function processAccessibilityOpportunities(context, auditContext) {
   log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Step 2: Processing accessibility data`);
 
   try {
-    // Process scraped data (same as main accessibility handler)
+    // Process scraped data
     const version = new Date().toISOString().split('T')[0];
     const outputKey = `accessibility/${siteId}/${version}-final-result.json`;
 
