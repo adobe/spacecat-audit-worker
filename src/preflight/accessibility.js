@@ -288,7 +288,10 @@ export default async function accessibility(context, auditContext) {
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const siteId = context.site.getId();
 
-    log.info('[preflight-audit] Polling for accessibility data files...');
+    log.info('[preflight-audit] Starting to poll for accessibility data');
+    log.info(`[preflight-audit] S3 Bucket: ${bucketName}`);
+    log.info(`[preflight-audit] Site ID: ${siteId}`);
+    log.info(`[preflight-audit] Looking for data in path: accessibility/${siteId}/`);
 
     const maxWaitTime = 10 * 60 * 1000; // 10 minutes
     const pollInterval = 30 * 1000; // 30 seconds
@@ -300,6 +303,8 @@ export default async function accessibility(context, auditContext) {
     // eslint-disable-next-line no-await-in-loop
     while (Date.now() - startTime < maxWaitTime) {
       try {
+        log.info(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`);
+
         // Check if accessibility data files exist in S3
         const listCommand = new ListObjectsV2Command({
           Bucket: bucketName,
@@ -307,8 +312,23 @@ export default async function accessibility(context, auditContext) {
           MaxKeys: 10,
         });
 
+        log.info(`[preflight-audit] S3 ListObjectsV2Command parameters: Bucket=${bucketName}, Prefix=accessibility/${siteId}/, MaxKeys=10`);
+
         // eslint-disable-next-line no-await-in-loop
         const response = await s3Client.send(listCommand);
+
+        log.info(`[preflight-audit] S3 response received: Contents=${response.Contents?.length || 0}`);
+
+        // Log all found files for debugging
+        if (response.Contents && response.Contents.length > 0) {
+          log.info(`[preflight-audit] Found ${response.Contents.length} files in S3 bucket ${bucketName}:`);
+          response.Contents.forEach((object, index) => {
+            log.info(`[preflight-audit]   File ${index + 1}: ${object.Key} (Size: ${object.Size} bytes)`);
+          });
+        } else {
+          log.info(`[preflight-audit] No files found in S3 bucket ${bucketName}`);
+        }
+
         const hasData = response.Contents && response.Contents.length > 0;
 
         if (hasData) {
