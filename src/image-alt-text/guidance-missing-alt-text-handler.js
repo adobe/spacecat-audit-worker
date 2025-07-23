@@ -24,16 +24,17 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  * @returns {Array} Array of suggestions in the same format as opportunityHandler
  */
 function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
+  console.log('mystiquesuggestions', mystiquesuggestions);
   return mystiquesuggestions.map((suggestion) => {
-    const suggestionId = `${suggestion.pageurl}/${suggestion.imageid}`;
+    const suggestionId = `${suggestion.pageUrl}/${suggestion.imageId}`;
 
     return {
       id: suggestionId,
-      pageUrl: suggestion.pageurl,
-      imageUrl: suggestion.imageurl,
-      altText: suggestion.alttext,
-      isAppropriate: suggestion.isappropriate,
-      isDecorative: suggestion.isdecorative,
+      pageUrl: suggestion.pageUrl,
+      imageUrl: suggestion.imageUrl,
+      altText: suggestion.altText,
+      isAppropriate: suggestion.isAppropriate,
+      isDecorative: suggestion.isDecorative,
       xpath: '', // TODO: Add logic to determine the xpath
       language: suggestion.language,
     };
