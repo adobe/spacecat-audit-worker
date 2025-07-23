@@ -85,4 +85,67 @@ describe('Index Tests', () => {
     const resp = await main(request, context);
     expect(resp.status).to.equal(200);
   });
+
+  it('handles warmup requests efficiently', async () => {
+    messageBodyJson.type = 'warmup';
+    messageBodyJson.siteId = 'warmup-site-1';
+    messageBodyJson.warmupId = '1';
+    context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+
+    const infoSpy = sandbox.spy(console, 'info');
+    const resp = await main(request, context);
+
+    expect(resp.status).to.equal(200);
+    expect(infoSpy).to.have.been.calledWith('Warmup request received - minimal processing');
+
+    const responseBody = JSON.parse(await resp.text());
+    expect(responseBody).to.deep.include({
+      status: 'OK',
+      message: 'Lambda warmed successfully',
+      type: 'warmup',
+      warmupId: '1',
+      siteId: 'warmup-site-1',
+    });
+    expect(responseBody.timestamp).to.be.a('string');
+  });
+
+  it('handles warmup requests with missing warmupId', async () => {
+    messageBodyJson.type = 'warmup';
+    messageBodyJson.siteId = 'warmup-site-2';
+    // warmupId is missing
+    context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+
+    const resp = await main(request, context);
+
+    expect(resp.status).to.equal(200);
+
+    const responseBody = JSON.parse(await resp.text());
+    expect(responseBody).to.deep.include({
+      status: 'OK',
+      message: 'Lambda warmed successfully',
+      type: 'warmup',
+      warmupId: '1', // Should use default value
+      siteId: 'warmup-site-2',
+    });
+  });
+
+  it('handles warmup requests with different warmupId values', async () => {
+    messageBodyJson.type = 'warmup';
+    messageBodyJson.siteId = 'warmup-site-3';
+    messageBodyJson.warmupId = '5';
+    context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+
+    const resp = await main(request, context);
+
+    expect(resp.status).to.equal(200);
+
+    const responseBody = JSON.parse(await resp.text());
+    expect(responseBody).to.deep.include({
+      status: 'OK',
+      message: 'Lambda warmed successfully',
+      type: 'warmup',
+      warmupId: '5',
+      siteId: 'warmup-site-3',
+    });
+  });
 });
