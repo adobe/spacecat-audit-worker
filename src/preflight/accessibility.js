@@ -25,8 +25,9 @@ export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
  */
 async function scrapeAccessibilityData(context, auditContext) {
   const {
-    site, jobId, log, env, s3Client, dataAccess, sqs,
+    site, job, log, env, s3Client, dataAccess, sqs,
   } = context;
+  const jobId = job?.getId();
   const {
     previewUrls,
     step,
@@ -84,7 +85,7 @@ async function scrapeAccessibilityData(context, auditContext) {
       const scrapeMessage = {
         urls: urlsToScrape,
         siteId,
-        jobId: siteId,
+        jobId: jobId || siteId,
         processingType: 'accessibility',
         s3BucketName: bucketName,
         completionQueueUrl: env.AUDIT_JOBS_QUEUE_URL,
@@ -122,8 +123,9 @@ async function scrapeAccessibilityData(context, auditContext) {
  */
 async function processAccessibilityOpportunities(context, auditContext) {
   const {
-    site, jobId, log, env, s3Client, dataAccess,
+    site, job, log, env, s3Client, dataAccess,
   } = context;
+  const jobId = job?.getId();
   const {
     previewUrls,
     step,
@@ -258,7 +260,9 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
       endTime: accessibilityEndTimestamp,
     });
 
-    await saveIntermediateResults(context, auditsResult, 'accessibility audit');
+    // Add jobId to context for saveIntermediateResults
+    const contextWithJobId = { ...context, jobId };
+    await saveIntermediateResults(contextWithJobId, auditsResult, 'accessibility audit');
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Accessibility audit failed: ${error.message}`, error);
 
