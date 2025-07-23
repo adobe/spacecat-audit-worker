@@ -43,16 +43,17 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Opportunity } = dataAccess;
+  const { Opportunity, Site } = dataAccess;
   const { auditId, siteId, data } = message;
   const { suggestions } = data || {};
 
   log.info(`[${AUDIT_TYPE}]: Received Mystique guidance for alt-text: ${JSON.stringify(message, null, 2)}`);
 
-  // Get auditUrl from message
-  const auditUrl = message.url;
+  const site = await Site.findById(siteId);
+  const auditUrl = site.getBaseURL();
 
-  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${siteId}`);
+  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${siteId}
+    and auditUrl: ${auditUrl}`);
   let altTextOppty;
 
   try {
