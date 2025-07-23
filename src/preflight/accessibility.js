@@ -85,14 +85,16 @@ async function scrapeAccessibilityData(context, auditContext) {
       const scrapeMessage = {
         urls: urlsToScrape,
         siteId,
-        jobId, // Use the actual job ID from context
+        jobId,
         processingType: 'accessibility',
         s3BucketName: bucketName,
         completionQueueUrl: env.AUDIT_JOBS_QUEUE_URL,
         skipMessage: false,
         skipStorage: false,
         allowCache: false, // Force re-scraping even if files already exist
-        options: {},
+        options: {
+          storagePath: `accessibility/${siteId}`, // Custom storage path
+        },
         ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
       };
 
