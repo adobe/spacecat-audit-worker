@@ -14,9 +14,6 @@ import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { aggregateAccessibilityData, getUrlsForAudit } from '../accessibility/utils/data-processing.js';
 import {
-  getExistingObjectKeysFromFailedAudits,
-  getRemainingUrls,
-  getExistingUrlsFromFailedAudits,
   updateStatusToIgnored,
 } from '../accessibility/utils/scrape-utils.js';
 import { aggregateAccessibilityIssues } from '../accessibility/utils/generate-individual-opportunities.js';
@@ -79,39 +76,15 @@ async function scrapeAccessibilityData(context, auditContext) {
     }
   }
 
-  // Check for existing scraped data (same as main accessibility handler)
-  const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
-    s3Client,
-    bucketName,
-    siteId,
-    log,
-  );
-  log.info(`[preflight-audit] Found existing files from failed audits: ${existingObjectKeys}`);
+  // Force re-scrape all URLs regardless of existing data
+  log.info(`[preflight-audit] Force re-scraping all ${urlsToScrape.length} URLs for accessibility audit`);
 
-  const existingUrls = await getExistingUrlsFromFailedAudits(
-    s3Client,
-    bucketName,
-    log,
-    existingObjectKeys,
-  );
-  log.info(`[preflight-audit] Found existing URLs from failed audits: ${existingUrls}`);
-
-  const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
-  log.info(`[preflight-audit] Remaining URLs to scrape: ${JSON.stringify(remainingUrls, null, 2)}`);
-
-  // Send to content scraper with accessibility-specific processing
-  if (remainingUrls.length > 0) {
-    log.info(`[preflight-audit] Will send ${remainingUrls.length} URLs to content scraper`);
-  } else {
-    log.info('[preflight-audit] No remaining URLs to scrape, will process existing data');
-  }
-
-  if (remainingUrls.length > 0) {
-    log.info(`[preflight-audit] Sending ${remainingUrls.length} URLs to content scraper for accessibility audit`);
+  if (urlsToScrape.length > 0) {
+    log.info(`[preflight-audit] Sending ${urlsToScrape.length} URLs to content scraper for accessibility audit`);
 
     try {
       const scrapeMessage = {
-        urls: remainingUrls,
+        urls: urlsToScrape,
         siteId,
         jobId: siteId,
         processingType: AUDIT_TYPE_ACCESSIBILITY,
@@ -122,13 +95,15 @@ async function scrapeAccessibilityData(context, auditContext) {
       // Send to content scraper queue
       await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, scrapeMessage);
       log.info(
-        `[preflight-audit] Sent accessibility scraping request to content scraper for ${remainingUrls.length} URLs`,
+        `[preflight-audit] Sent accessibility scraping request to content scraper for ${urlsToScrape.length} URLs`,
       );
     } catch (error) {
       log.error(
         `[preflight-audit] Failed to send accessibility scraping request: ${error.message}`,
       );
     }
+  } else {
+    log.info('[preflight-audit] No URLs to scrape');
   }
   // No return statement needed
 }
