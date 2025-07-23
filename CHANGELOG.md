@@ -1,3 +1,10 @@
+## [1.129.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.1...v1.129.2) (2025-07-23)
+
+
+### Bug Fixes
+
+* add TTFB related fields ([#1055](https://github.com/adobe/spacecat-audit-worker/issues/1055)) ([dafe567](https://github.com/adobe/spacecat-audit-worker/commit/dafe56781cfc9e89444edd4f94781a8938be333d))
+
 ## [1.129.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.0...v1.129.1) (2025-07-22)
 
 
