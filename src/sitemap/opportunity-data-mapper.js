@@ -12,7 +12,7 @@
 
 import { DATA_SOURCES } from '../common/constants.js';
 
-export function createOpportunityData() {
+export function createOpportunityData(auditData, kpis) {
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
     origin: 'AUTOMATION',
@@ -25,6 +25,7 @@ export function createOpportunityData() {
       ],
     },
     tags: ['Traffic Acquisition'],
+    kpis,
     data: {
       dataSources: [DATA_SOURCES.SITE],
     },
