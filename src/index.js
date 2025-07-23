@@ -51,8 +51,11 @@ import geoBrandPresence from './geo-brand-presence/handler.js';
 import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
+import accessibilityRemediationGuidance from './accessibility/guidance-handlers/guidance-accessibility-remediation.js';
 import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
+import analyticsReport from './analytics-report/handler.js';
+import detectPageIntent from './page-intent/handler.detect.js';
 
 const HANDLERS = {
   accessibility,
@@ -86,10 +89,13 @@ const HANDLERS = {
   'guidance:geo-brand-presence': guidanceGeoBrandPresence,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
+  'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
+  'analytics-report': analyticsReport,
+  'detect:page-intent': detectPageIntent,
   dummy: (message) => ok(message),
 };
 

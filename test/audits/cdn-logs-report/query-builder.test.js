@@ -48,7 +48,7 @@ describe('CDN Logs Query Builder', () => {
       provider: 'chatgpt',
       siteFilters: [],
       site: {
-        getBaseURL: () => 'https://test.com',
+        getBaseURL: () => 'https://adobe.com',
         getConfig: () => ({
           getGroupedURLs: () => [
             { name: 'home', pattern: '^/$' },
@@ -68,6 +68,8 @@ describe('CDN Logs Query Builder', () => {
       weeklyBreakdownQueries.createError404Urls(mockOptions),
       weeklyBreakdownQueries.createError503Urls(mockOptions),
       weeklyBreakdownQueries.createTopUrls(mockOptions),
+      weeklyBreakdownQueries.createReferralTrafficByCountryTopic(mockOptions),
+      weeklyBreakdownQueries.createReferralTrafficByUrlTopic(mockOptions),
     ]);
 
     queries.forEach((query) => {
@@ -198,6 +200,58 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.be.a('string');
     expect(query).to.include('test_db');
     expect(query).to.include('test_table');
-    expect(query.toUpperCase()).to.include('CASE');
+  });
+
+  it('creates referral traffic queries with proper filtering', async () => {
+    const referralQueries = await Promise.all([
+      weeklyBreakdownQueries.createReferralTrafficByCountryTopic(mockOptions),
+      weeklyBreakdownQueries.createReferralTrafficByUrlTopic(mockOptions),
+    ]);
+
+    referralQueries.forEach((query) => {
+      expect(query).to.be.a('string');
+      expect(query).to.include('test_db');
+      expect(query).to.include('test_table');
+    });
+
+    const countryTopicQuery = referralQueries[0];
+    expect(countryTopicQuery).to.include('CASE');
+    expect(countryTopicQuery).to.include('REGEXP_EXTRACT');
+
+    const urlTopicQuery = referralQueries[1];
+    expect(urlTopicQuery).to.include('CASE');
+  });
+
+  it('handles unknown domains by returning Other for topic extraction', async () => {
+    const unknownDomainOptions = {
+      ...mockOptions,
+      site: {
+        getBaseURL: () => 'https://unknown-domain.com',
+        getConfig: () => ({ getGroupedURLs: () => [] }),
+      },
+    };
+
+    const query = await weeklyBreakdownQueries
+      .createReferralTrafficByCountryTopic(unknownDomainOptions);
+
+    expect(query).to.include("'Other'");
+  });
+
+  it('handles single pattern objects for topic extraction', async () => {
+    const singlePatternOptions = {
+      ...mockOptions,
+      site: {
+        getBaseURL: () => 'https://bulk.com',
+        getConfig: () => ({ getGroupedURLs: () => [] }),
+      },
+    };
+
+    const query = await weeklyBreakdownQueries
+      .createReferralTrafficByCountryTopic(singlePatternOptions);
+
+    expect(query).to.be.a('string');
+    expect(query).to.include('CASE');
+    expect(query).to.include('REGEXP_EXTRACT');
+    expect(query).to.include('/products/([^/]+)/');
   });
 });
