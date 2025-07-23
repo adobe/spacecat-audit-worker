@@ -1,3 +1,10 @@
+# [1.130.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.2...v1.130.0) (2025-07-23)
+
+
+### Features
+
+* canonical audit checks ([#1059](https://github.com/adobe/spacecat-audit-worker/issues/1059)) ([0489be9](https://github.com/adobe/spacecat-audit-worker/commit/0489be942cbee2ac9c3cf68a938f79a3016b6f0a))
+
 ## [1.129.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.1...v1.129.2) (2025-07-23)
 
 
