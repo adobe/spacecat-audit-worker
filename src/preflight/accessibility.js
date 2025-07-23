@@ -310,29 +310,43 @@ export default async function accessibility(context, auditContext) {
           Bucket: bucketName,
           Prefix: `accessibility/${siteId}/`,
           MaxKeys: 10,
+          Delimiter: '/', // Use delimiter to get subfolders
         });
 
-        log.info(`[preflight-audit] S3 ListObjectsV2Command parameters: Bucket=${bucketName}, Prefix=accessibility/${siteId}/, MaxKeys=10`);
+        log.info(
+          `[preflight-audit] S3 ListObjectsV2Command parameters: Bucket=${bucketName}, `
+          + `Prefix=accessibility/${siteId}/, MaxKeys=10, Delimiter=/`,
+        );
 
         // eslint-disable-next-line no-await-in-loop
         const response = await s3Client.send(listCommand);
 
-        log.info(`[preflight-audit] S3 response received: Contents=${response.Contents?.length || 0}`);
+        log.info(`[preflight-audit] S3 response received: CommonPrefixes=${response.CommonPrefixes?.length || 0}, Contents=${response.Contents?.length || 0}`);
 
-        // Log all found files for debugging
-        if (response.Contents && response.Contents.length > 0) {
-          log.info(`[preflight-audit] Found ${response.Contents.length} files in S3 bucket ${bucketName}:`);
-          response.Contents.forEach((object, index) => {
-            log.info(`[preflight-audit]   File ${index + 1}: ${object.Key} (Size: ${object.Size} bytes)`);
+        // Log all found subfolders for debugging
+        if (response.CommonPrefixes && response.CommonPrefixes.length > 0) {
+          log.info(`[preflight-audit] Found ${response.CommonPrefixes.length} subfolders in S3 bucket ${bucketName}:`);
+          response.CommonPrefixes.forEach((prefix, index) => {
+            log.info(`[preflight-audit]   Subfolder ${index + 1}: ${prefix.Prefix}`);
           });
         } else {
-          log.info(`[preflight-audit] No files found in S3 bucket ${bucketName}`);
+          log.info(`[preflight-audit] No subfolders found in S3 bucket ${bucketName}`);
         }
 
-        const hasData = response.Contents && response.Contents.length > 0;
+        // Check if we have timestamped subfolders (which aggregateAccessibilityData expects)
+        const hasTimestampedSubfolders = response.CommonPrefixes
+          && response.CommonPrefixes.some((prefix) => {
+            const subfolderName = prefix.Prefix.split('/').filter((item) => item !== '').pop();
+            // Check if subfolder name is a timestamp (numeric)
+            const isTimestamp = /^\d+$/.test(subfolderName);
+            log.info(
+              `[preflight-audit] Checking subfolder: ${subfolderName} - is timestamp: ${isTimestamp}`,
+            );
+            return isTimestamp;
+          });
 
-        if (hasData) {
-          log.info('[preflight-audit] Accessibility data found, proceeding to process');
+        if (hasTimestampedSubfolders) {
+          log.info('[preflight-audit] Timestamped subfolders found, proceeding to process');
           break;
         }
 
