@@ -73,7 +73,7 @@ export default async function handler(message, context) {
   // (all suggestions are images without alt-text)
   const projectedMetrics = await getProjectedMetrics({
     images: mappedSuggestions.map((suggestion) => ({
-      pageUrl: suggestion.pageUrl,
+      pageUrl: suggestion.pageUrl === auditUrl ? '' : suggestion.pageUrl,
       src: suggestion.imageUrl,
     })),
     auditUrl,
