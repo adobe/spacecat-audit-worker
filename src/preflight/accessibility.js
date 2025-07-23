@@ -85,7 +85,7 @@ async function scrapeAccessibilityData(context, auditContext) {
       const scrapeMessage = {
         urls: urlsToScrape,
         siteId,
-        jobId: siteId, // Use siteId for storage path to match our polling logic
+        jobId: siteId,
         processingType: 'accessibility',
         s3BucketName: bucketName,
         completionQueueUrl: env.AUDIT_JOBS_QUEUE_URL,
@@ -345,20 +345,21 @@ export default async function accessibility(context, auditContext) {
           log.info(`[preflight-audit] No subfolders found in S3 bucket ${bucketName}`);
         }
 
-        // Check if we have timestamped subfolders (which aggregateAccessibilityData expects)
-        const hasTimestampedSubfolders = response.CommonPrefixes
-          && response.CommonPrefixes.some((prefix) => {
-            const subfolderName = prefix.Prefix.split('/').filter((item) => item !== '').pop();
-            // Check if subfolder name is a timestamp (numeric)
-            const isTimestamp = /^\d+$/.test(subfolderName);
-            log.info(
-              `[preflight-audit] Checking subfolder: ${subfolderName} - is timestamp: ${isTimestamp}`,
-            );
-            return isTimestamp;
+        // Log all found files for debugging
+        if (response.Contents && response.Contents.length > 0) {
+          log.info(`[preflight-audit] Found ${response.Contents.length} files in S3 bucket ${bucketName}:`);
+          response.Contents.forEach((content, index) => {
+            log.info(`[preflight-audit]   File ${index + 1}: ${content.Key}`);
           });
+        } else {
+          log.info(`[preflight-audit] No files found in S3 bucket ${bucketName}`);
+        }
 
-        if (hasTimestampedSubfolders) {
-          log.info('[preflight-audit] Timestamped subfolders found, proceeding to process');
+        // Check if we have files directly in the site folder
+        const hasFilesInSiteFolder = response.Contents && response.Contents.length > 0;
+
+        if (hasFilesInSiteFolder) {
+          log.info(`[preflight-audit] Files found in site folder: ${response.Contents.length} files`);
           break;
         }
 
