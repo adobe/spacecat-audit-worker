@@ -80,13 +80,25 @@ describe('mystique-data-processing', () => {
           issues: [
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<dt aria-level="3">Term</dt>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<dt aria-level="3">Term</dt>',
+                  target_selector: 'dt',
+                  issue_id: 'test-uuid-1',
+                },
+              ],
               targetSelector: 'dt',
               description: 'ARIA attribute not allowed on this element',
             },
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<span aria-level="2">Text</span>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<span aria-level="2">Text</span>',
+                  target_selector: 'span',
+                  issue_id: 'test-uuid-2',
+                },
+              ],
               targetSelector: 'span',
               description: 'ARIA attribute not allowed on this element',
             },
@@ -114,13 +126,25 @@ describe('mystique-data-processing', () => {
           issues: [
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<dt aria-level="3">Term</dt>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<dt aria-level="3">Term</dt>',
+                  target_selector: 'dt',
+                  issue_id: 'test-uuid-1',
+                },
+              ],
               targetSelector: 'dt',
               description: 'ARIA attribute not allowed on this element',
             },
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<span aria-level="2">Text</span>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<span aria-level="2">Text</span>',
+                  target_selector: 'span',
+                  issue_id: 'test-uuid-2',
+                },
+              ],
               targetSelector: 'span',
               description: 'ARIA attribute not allowed on this element',
             },
@@ -151,13 +175,8 @@ describe('mystique-data-processing', () => {
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
-      expect(result).to.have.length(1);
-      expect(result[0].issuesList[0]).to.deep.include({
-        issue_name: 'aria-allowed-attr',
-        faulty_line: '',
-        target_selector: 'dt',
-        issue_description: 'ARIA attribute not allowed on this element',
-      });
+      // Should return empty array since no htmlWithIssues means no items to process
+      expect(result).to.be.an('array').that.is.empty;
     });
 
     it('should handle issues with empty htmlWithIssues array', () => {
@@ -176,13 +195,8 @@ describe('mystique-data-processing', () => {
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
-      expect(result).to.have.length(1);
-      expect(result[0].issuesList[0]).to.deep.include({
-        issue_name: 'aria-allowed-attr',
-        faulty_line: '',
-        target_selector: 'dt',
-        issue_description: 'ARIA attribute not allowed on this element',
-      });
+      // Should return empty array since empty htmlWithIssues means no items to process
+      expect(result).to.be.an('array').that.is.empty;
     });
 
     it('should handle issues without targetSelector', () => {
@@ -191,7 +205,13 @@ describe('mystique-data-processing', () => {
           issues: [
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<dt aria-level="3">Term</dt>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<dt aria-level="3">Term</dt>',
+                  target_selector: '',
+                  issue_id: 'test-uuid-1',
+                },
+              ],
               description: 'ARIA attribute not allowed on this element',
             },
           ],
@@ -215,7 +235,13 @@ describe('mystique-data-processing', () => {
           issues: [
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<dt aria-level="3">Term</dt>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<dt aria-level="3">Term</dt>',
+                  target_selector: 'dt',
+                  issue_id: 'test-uuid-1',
+                },
+              ],
               targetSelector: 'dt',
             },
           ],
@@ -239,13 +265,25 @@ describe('mystique-data-processing', () => {
           issues: [
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<dt aria-level="3">Term</dt>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<dt aria-level="3">Term</dt>',
+                  target_selector: 'dt',
+                  issue_id: 'test-uuid-1',
+                },
+              ],
               targetSelector: 'dt',
               description: 'ARIA attribute not allowed on this element',
             },
             {
               type: 'color-contrast',
-              htmlWithIssues: ['<button style="color: #ccc">Button</button>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<button style="color: #ccc">Button</button>',
+                  target_selector: 'button',
+                  issue_id: 'test-uuid-2',
+                },
+              ],
               targetSelector: 'button',
               description: 'Insufficient color contrast',
             },
@@ -267,7 +305,13 @@ describe('mystique-data-processing', () => {
           issues: [
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<dt aria-level="3">Term</dt>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<dt aria-level="3">Term</dt>',
+                  target_selector: 'dt',
+                  issue_id: 'test-uuid-1',
+                },
+              ],
               targetSelector: 'dt',
               description: 'ARIA attribute not allowed on this element',
             },
@@ -280,7 +324,13 @@ describe('mystique-data-processing', () => {
           issues: [
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<span aria-level="2">Text</span>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<span aria-level="2">Text</span>',
+                  target_selector: 'span',
+                  issue_id: 'test-uuid-2',
+                },
+              ],
               targetSelector: 'span',
               description: 'ARIA attribute not allowed on this element',
             },
@@ -303,7 +353,13 @@ describe('mystique-data-processing', () => {
           issues: [
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<dt aria-level="3">Term</dt>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<dt aria-level="3">Term</dt>',
+                  target_selector: 'dt',
+                  issue_id: 'test-uuid-1',
+                },
+              ],
               targetSelector: 'dt',
               description: 'ARIA attribute not allowed on this element',
             },
@@ -316,7 +372,13 @@ describe('mystique-data-processing', () => {
           issues: [
             {
               type: 'color-contrast',
-              htmlWithIssues: ['<button style="color: #ccc">Button</button>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<button style="color: #ccc">Button</button>',
+                  target_selector: 'button',
+                  issue_id: 'test-uuid-2',
+                },
+              ],
               targetSelector: 'button',
               description: 'Insufficient color contrast',
             },
@@ -329,7 +391,13 @@ describe('mystique-data-processing', () => {
           issues: [
             {
               type: 'aria-allowed-attr',
-              htmlWithIssues: ['<span aria-level="2">Text</span>'],
+              htmlWithIssues: [
+                {
+                  update_from: '<span aria-level="2">Text</span>',
+                  target_selector: 'span',
+                  issue_id: 'test-uuid-3',
+                },
+              ],
               targetSelector: 'span',
               description: 'ARIA attribute not allowed on this element',
             },
@@ -348,6 +416,35 @@ describe('mystique-data-processing', () => {
       expect(result[1].suggestion).to.equal(mockSuggestion3);
       expect(result[0].issueType).to.equal('aria-allowed-attr');
       expect(result[1].issueType).to.equal('aria-allowed-attr');
+    });
+
+    it('should handle missing faulty_line, target_selector, and issue_description', () => {
+      const mockSuggestion = {
+        getData: () => ({
+          issues: [
+            {
+              type: 'aria-allowed-attr',
+              htmlWithIssues: [
+                {
+                  // Missing update_from, target_selector, issue_id
+                },
+              ],
+              // Missing targetSelector and description
+            },
+          ],
+        }),
+      };
+
+      const result = processSuggestionsForMystique([mockSuggestion]);
+
+      expect(result).to.have.length(1);
+      expect(result[0].issuesList[0]).to.deep.include({
+        issue_name: 'aria-allowed-attr',
+        faulty_line: '', // Should default to empty string
+        target_selector: '', // Should default to empty string
+        issue_description: '', // Should default to empty string
+        issue_id: '', // Should default to empty string
+      });
     });
   });
 });
