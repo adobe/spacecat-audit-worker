@@ -24,6 +24,8 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  * @returns {Array} Array of suggestions in the same format as opportunityHandler
  */
 function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
+  console.log(`[${AUDIT_TYPE}]: Mystiquesuggestions: ${JSON.stringify(mystiquesuggestions)}`);
+
   return mystiquesuggestions.map((suggestion) => {
     const suggestionId = `${suggestion.pageUrl}/${suggestion.imageId}`;
 
