@@ -262,9 +262,7 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
       endTime: accessibilityEndTimestamp,
     });
 
-    // Add jobId to context for saveIntermediateResults
-    const contextWithJobId = { ...context, jobId };
-    await saveIntermediateResults(contextWithJobId, auditsResult, 'accessibility audit');
+    await saveIntermediateResults(context, auditsResult, 'accessibility audit');
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Accessibility audit failed: ${error.message}`, error);
 
