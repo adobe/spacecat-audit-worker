@@ -106,14 +106,43 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
 export async function sendA11yUrlsForScrapingStep(context) {
   const {
-    log, site,
+    log, site, dataAccess,
   } = context;
+  const { SiteTopForm } = dataAccess;
+  const topForms = await SiteTopForm.allBySiteId(site.getId());
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   const { formVitals } = latestAudit.getAuditResult();
   const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context);
+
+  // Merge top form URLs with existing urlsData
+  const existingUrls = new Set(urlsData.map((item) => item.url));
+
+  for (const topForm of topForms) {
+    const url = topForm.getUrl();
+    const formSource = topForm.getFormSource();
+
+    if (!existingUrls.has(url)) {
+      const formSources = formSource ? [formSource] : [];
+      urlsData.push({
+        url,
+        ...(formSources.length > 0 && { formSources }),
+      });
+      existingUrls.add(url);
+    } else {
+      // URL exists, merge form sources if needed
+      const existingItem = urlsData.find((item) => item.url === url);
+      if (existingItem && formSource && existingItem.formSources) {
+        if (!existingItem.formSources.includes(formSource)) {
+          existingItem.formSources.push(formSource);
+        }
+      } else if (existingItem && formSource && !existingItem.formSources) {
+        existingItem.formSources = [formSource];
+      }
+    }
+  }
   const result = {
     auditResult: latestAudit.auditResult,
     fullAuditRef: latestAudit.fullAuditRef,
