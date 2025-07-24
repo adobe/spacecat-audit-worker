@@ -20,7 +20,6 @@ import { saveExcelReport } from '../../utils/report-uploader.js';
 import { createExcelReport } from './excel-generator.js';
 import { REPORT_CONFIGS } from '../constants/report-configs.js';
 
-const SUPPORTED_PROVIDERS = ['chatgpt', 'perplexity'];
 const REPORT_TYPES = Object.keys(REPORT_CONFIGS);
 
 async function collectReportData(
@@ -151,19 +150,23 @@ export async function runReportsForAllProviders(
   log,
   options = {},
 ) {
-  log.info(`Generating reports for providers: ${SUPPORTED_PROVIDERS.join(', ')}`);
+  const { reportType = 'agentic' } = options;
+  const reportConfig = REPORT_CONFIGS[reportType];
+  const supportedProviders = reportConfig.providers || [];
 
-  for (const provider of SUPPORTED_PROVIDERS) {
+  log.info(`Generating ${reportType} reports for providers: ${supportedProviders.join(', ')}`);
+
+  for (const provider of supportedProviders) {
     try {
-      log.info(`Starting report generation for ${provider}...`);
+      log.info(`Starting ${reportType} report generation for ${provider}...`);
       // eslint-disable-next-line no-await-in-loop
       await runReport(athenaClient, s3Config, log, {
         ...options,
         provider,
       });
-      log.info(`Successfully generated ${provider} report`);
+      log.info(`Successfully generated ${reportType} ${provider} report`);
     } catch (error) {
-      log.error(`Failed to generate ${provider} report: ${error.message}`);
+      log.error(`Failed to generate ${reportType} ${provider} report: ${error.message}`);
     }
   }
 }

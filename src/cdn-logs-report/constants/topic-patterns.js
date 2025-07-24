@@ -23,6 +23,14 @@ export const TOPIC_PATTERNS = {
       name: 'Firefly',
       regex: '(?!.*blog|.*learn)(/products/firefly|/ai/.*firefly)',
     },
+    {
+      name: 'Express',
+      regex: '(?!.*blog|.*learn)(/?express)',
+    },
+    {
+      name: 'Creative Cloud',
+      regex: '(?!.*blog|.*learn)(/?creativecloud)',
+    },
   ],
   'business.adobe.com': [
     {

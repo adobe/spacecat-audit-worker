@@ -1,17 +1,15 @@
 WITH classified_data AS (
   SELECT 
-    url,
-    status,
     count,
+    {{topicExtraction}} as product,
     {{agentTypeClassification}} as agent_type
   FROM {{databaseName}}.{{tableName}}
   {{whereClause}}
 )
 SELECT 
-  url,
-  status,
+  product,
   agent_type,
-  SUM(count) as total_requests
+  SUM(count) as hits
 FROM classified_data
-GROUP BY url, status, agent_type
-ORDER BY total_requests DESC
+GROUP BY product, agent_type
+ORDER BY hits DESC 

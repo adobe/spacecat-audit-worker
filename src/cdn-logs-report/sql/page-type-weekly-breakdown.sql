@@ -1,7 +1,16 @@
+WITH classified_data AS (
+  SELECT 
+    count,
+    year,
+    month,
+    day,
+    {{pageTypeCase}} as page_type
+  FROM {{databaseName}}.{{tableName}}
+  {{whereClause}}
+)
 SELECT 
-  {{pageTypeCase}} as page_type,
+  page_type,
   {{weekColumns}}
-FROM {{databaseName}}.{{tableName}}
-{{whereClause}}
-GROUP BY {{pageTypeCase}}
+FROM classified_data
+GROUP BY page_type
 ORDER BY {{orderBy}} DESC

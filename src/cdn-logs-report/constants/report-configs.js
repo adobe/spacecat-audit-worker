@@ -16,24 +16,25 @@ export const REPORT_CONFIGS = {
   agentic: {
     filePrefix: 'agentictraffic',
     workbookCreator: 'Spacecat Agentic Traffic Report',
+    providers: ['chatgpt', 'perplexity'],
     queries: {
       reqcountbycountry: weeklyBreakdownQueries.createCountryWeeklyBreakdown,
       reqcountbyuseragent: weeklyBreakdownQueries.createUserAgentWeeklyBreakdown,
-      reqcountbyurlstatus: weeklyBreakdownQueries.createUrlStatusWeeklyBreakdown,
-      top_bottom_urls_by_status: weeklyBreakdownQueries.createTopBottomUrlsByStatus,
       error_404_urls: weeklyBreakdownQueries.createError404Urls,
       error_503_urls: weeklyBreakdownQueries.createError503Urls,
       success_urls_by_category: weeklyBreakdownQueries.createSuccessUrlsByCategory,
       top_urls: weeklyBreakdownQueries.createTopUrls,
+      hits_by_product_agent_type: weeklyBreakdownQueries.createHitsByProductAgentType,
+      hits_by_page_category_agent_type: weeklyBreakdownQueries.createHitsByPageCategoryAgentType,
     },
     sheets: [
       { name: 'shared-hits_by_user_agents', dataKey: 'reqcountbyuseragent', type: 'userAgents' },
       { name: 'shared-hits_by_country', dataKey: 'reqcountbycountry', type: 'country' },
-      { name: 'shared-hits_by_page_type', dataKey: 'reqcountbyurlstatus', type: 'pageType' },
-      { name: 'shared-top_bottom_5_by_status', dataKey: 'top_bottom_urls_by_status', type: 'topBottom' },
       { name: 'shared-404_all_urls', dataKey: 'error_404_urls', type: 'error404' },
       { name: 'shared-503_all_urls', dataKey: 'error_503_urls', type: 'error503' },
       { name: 'shared-hits_by_page', dataKey: 'top_urls', type: 'topUrls' },
+      { name: 'shared-hits_by_product', dataKey: 'hits_by_product_agent_type', type: 'hitsByProductAgentType' },
+      { name: 'shared-hits_by_page_category', dataKey: 'hits_by_page_category_agent_type', type: 'hitsByPageCategoryAgentType' },
     ],
     conditionalSheets: [
       {
@@ -42,9 +43,26 @@ export const REPORT_CONFIGS = {
       },
     ],
   },
+  traditional: {
+    filePrefix: 'traditionaltraffic',
+    workbookCreator: 'Spacecat Traditional Traffic Report',
+    providers: ['google', 'bing'],
+    queries: {
+      hits_by_page_category_traditional_search:
+        weeklyBreakdownQueries.createHitsByPageCategoryTraditionalSearch,
+    },
+    sheets: [
+      {
+        name: 'shared-hits_by_page_category',
+        dataKey: 'hits_by_page_category_traditional_search',
+        type: 'hitsByPageCategoryAgentType',
+      },
+    ],
+  },
   referral: {
     filePrefix: 'referraltraffic-v2',
     workbookCreator: 'Spacecat Referral Traffic Report',
+    providers: ['chatgpt', 'perplexity'],
     queries: {
       referralCountryTopic: weeklyBreakdownQueries.createReferralTrafficByCountryTopic,
       referralUrlTopic: weeklyBreakdownQueries.createReferralTrafficByUrlTopic,
