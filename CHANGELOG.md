@@ -1,3 +1,10 @@
+## [1.130.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.130.0...v1.130.1) (2025-07-24)
+
+
+### Bug Fixes
+
+* should not remove fixed suggestions ([#1062](https://github.com/adobe/spacecat-audit-worker/issues/1062)) ([a837657](https://github.com/adobe/spacecat-audit-worker/commit/a837657793a9fb6683ebb7da0346cc038c94bd98))
+
 # [1.130.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.2...v1.130.0) (2025-07-23)
 
 
