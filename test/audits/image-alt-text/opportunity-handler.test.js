@@ -1073,25 +1073,25 @@ describe('sendAltTextOpportunityToMystique', () => {
   it('should batch URLs when there are more than the batch size', async () => {
     const auditUrl = 'https://example.com';
     // Create 25 URLs to test batching (batch size is 20)
-    const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+    const pageUrls = Array.from({ length: 15 }, (_, i) => `https://example.com/page${i + 1}`);
     const siteId = 'site-id';
     const auditId = 'audit-id';
 
     await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
 
-    // Should send 2 batches (20 + 5)
+    // Should send 2 batches (10 + 5)
     expect(sqsStub.sendMessage).to.have.been.calledTwice;
 
-    // First batch should have 20 URLs
+    // First batch should have 10 URLs
     const firstCall = sqsStub.sendMessage.getCall(0);
-    expect(firstCall.args[1].data.pageUrls).to.have.lengthOf(20);
+    expect(firstCall.args[1].data.pageUrls).to.have.lengthOf(10);
 
     // Second batch should have 5 URLs
     const secondCall = sqsStub.sendMessage.getCall(1);
     expect(secondCall.args[1].data.pageUrls).to.have.lengthOf(5);
 
     expect(logStub.info).to.have.been.calledWith(
-      '[alt-text]: Sending 25 URLs to Mystique in 2 batch(es)',
+      '[alt-text]: Sending 15 URLs to Mystique in 2 batch(es)',
     );
     expect(logStub.info).to.have.been.calledWith(
       '[alt-text]: All 2 batches sent to Mystique successfully',

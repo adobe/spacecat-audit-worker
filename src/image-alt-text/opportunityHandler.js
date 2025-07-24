@@ -17,13 +17,13 @@ import suggestionsEngine from './suggestionsEngine.js';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
 import {
   CPC, PENALTY_PER_IMAGE, RUM_INTERVAL, ALT_TEXT_GUIDANCE_TYPE, ALT_TEXT_OBSERVATION,
+  MYSTIQUE_BATCH_SIZE,
 } from './constants.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
 const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
-const MYSTIQUE_BATCH_SIZE = 20;
 
 /**
  * Synchronizes existing suggestions with new data
