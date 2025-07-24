@@ -26,7 +26,7 @@ import {
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
-const AUDIT_TYPE = 'broken-internal-links';
+const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 const LINKS_CHUNK_SIZE = 10;
 
 /**

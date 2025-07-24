@@ -98,7 +98,7 @@ const site = {
     },
   }),
   getConfig: sinon.stub(),
-  getDeliveryType: sinon.stub().returns('eds'),
+  getDeliveryType: sinon.stub().returns('aem_edge'),
 };
 
 describe('Broken internal links audit ', () => {
