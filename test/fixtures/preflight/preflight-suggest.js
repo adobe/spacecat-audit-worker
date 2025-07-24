@@ -69,14 +69,6 @@ export const suggestionData = [
             aiRationale: 'The title is catchy and broad...',
             tagName: 'title',
           },
-          {
-            seoImpact: 'Moderate',
-            issue: 'Description too short',
-            issueDetails: '122 chars below limit',
-            seoRecommendation: '140-160 characters long',
-            tagContent: 'Page 1 Description',
-            tagName: 'description',
-          },
         ],
       },
       {
