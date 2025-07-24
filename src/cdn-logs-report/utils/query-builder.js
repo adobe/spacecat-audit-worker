@@ -10,11 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
 import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
 import { loadSql } from './report-utils.js';
 import { DEFAULT_PATTERNS } from '../constants/page-patterns.js';
 import { getProviderPattern } from '../constants/user-agent-patterns.js';
+import { TOPIC_PATTERNS } from '../constants/topic-patterns.js';
 
 function buildDateFilter(startDate, endDate) {
   const formatPart = (date) => ({
@@ -32,12 +32,20 @@ function buildDateFilter(startDate, endDate) {
        OR (year = '${end.year}' AND month = '${end.month}' AND day <= '${end.day}'))`;
 }
 
-function buildWhereClause(conditions = [], provider = null) {
+function buildWhereClause(conditions = [], provider = null, siteFilters = []) {
+  const allConditions = [...conditions];
+
   if (provider) {
     const pattern = getProviderPattern(provider);
-    conditions.push(`REGEXP_LIKE(user_agent, '${pattern}')`);
+    allConditions.push(`REGEXP_LIKE(user_agent, '${pattern}')`);
   }
-  return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  if (siteFilters && siteFilters.length > 0) {
+    allConditions.push(siteFilters);
+  }
+
+  /* c8 ignore next */
+  return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
 }
 
 function buildWeeklyColumns(periods) {
@@ -74,8 +82,35 @@ function buildCountryExtractionSQL() {
   return `CASE\n          ${cases}\n          ELSE 'GLOBAL'\n        END`;
 }
 
+// Topic Classification
+function buildTopicExtractionSQL(site) {
+  const siteUrl = site.getBaseURL();
+  const domain = new URL(siteUrl).hostname.replace('www.', '');
+
+  const patterns = TOPIC_PATTERNS[domain];
+
+  if (Array.isArray(patterns)) {
+    const cases = patterns
+      .map(({ regex, name }) => {
+        if (name) {
+          return `WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`;
+        } else {
+          return `WHEN REGEXP_EXTRACT(url, '${regex}', 1) != '' THEN REGEXP_EXTRACT(url, '${regex}', 1)`;
+        }
+      })
+      .join('\n          ');
+    return `CASE\n          ${cases}\n          ELSE 'Other'\n        END`;
+  }
+
+  return "CASE WHEN url IS NOT NULL THEN 'Other' END";
+}
+
 // Query Builders
-async function createCountryWeeklyBreakdownQuery(periods, databaseName, tableName, provider) {
+async function createCountryWeeklyBreakdownQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, siteFilters = [],
+  } = options;
+
   const dateFilter = buildDateFilter(
     periods.weeks[0].startDate,
     periods.weeks[periods.weeks.length - 1].endDate,
@@ -84,7 +119,7 @@ async function createCountryWeeklyBreakdownQuery(periods, databaseName, tableNam
     dateFilter,
     'url NOT LIKE \'%robots.txt\'',
     'url NOT LIKE \'%sitemap%\'',
-  ], provider);
+  ], provider, siteFilters);
 
   return loadSql('country-weekly-breakdown', {
     countryExtraction: buildCountryExtractionSQL(),
@@ -96,11 +131,16 @@ async function createCountryWeeklyBreakdownQuery(periods, databaseName, tableNam
   });
 }
 
-async function createUserAgentWeeklyBreakdownQuery(periods, databaseName, tableName, provider) {
+async function createUserAgentWeeklyBreakdownQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, siteFilters = [],
+  } = options;
+
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClause(
     [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
     provider,
+    siteFilters,
   );
 
   return loadSql('user-agent-breakdown', {
@@ -110,20 +150,18 @@ async function createUserAgentWeeklyBreakdownQuery(periods, databaseName, tableN
   });
 }
 
-async function createUrlStatusWeeklyBreakdownQuery(
-  periods,
-  databaseName,
-  tableName,
-  provider,
-  site,
-) {
+async function createUrlStatusWeeklyBreakdownQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, site, siteFilters = [],
+  } = options;
+
   const dateFilter = buildDateFilter(
     periods.weeks[0].startDate,
     periods.weeks[periods.weeks.length - 1].endDate,
   );
-  const whereClause = buildWhereClause([dateFilter], provider);
+  const whereClause = buildWhereClause([dateFilter], provider, siteFilters);
 
-  return loadSql('url-status-weekly-breakdown', {
+  return loadSql('page-type-weekly-breakdown', {
     pageTypeCase: generatePageTypeClassification(site),
     weekColumns: buildWeeklyColumns(periods),
     databaseName,
@@ -133,11 +171,16 @@ async function createUrlStatusWeeklyBreakdownQuery(
   });
 }
 
-async function createTopBottomUrlsByStatusQuery(periods, databaseName, tableName, provider) {
+async function createTopBottomUrlsByStatusQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, siteFilters = [],
+  } = options;
+
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClause(
     [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
     provider,
+    siteFilters,
   );
 
   return loadSql('top-bottom-urls-by-status', {
@@ -147,11 +190,16 @@ async function createTopBottomUrlsByStatusQuery(periods, databaseName, tableName
   });
 }
 
-async function createError404UrlsQuery(periods, databaseName, tableName, provider) {
+async function createError404UrlsQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, siteFilters = [],
+  } = options;
+
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClause(
     [buildDateFilter(lastWeek.startDate, lastWeek.endDate), 'status = 404'],
     provider,
+    siteFilters,
   );
 
   return loadSql('individual-urls-by-status', {
@@ -161,11 +209,16 @@ async function createError404UrlsQuery(periods, databaseName, tableName, provide
   });
 }
 
-async function createError503UrlsQuery(periods, databaseName, tableName, provider) {
+async function createError503UrlsQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, siteFilters = [],
+  } = options;
+
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClause(
     [buildDateFilter(lastWeek.startDate, lastWeek.endDate), 'status = 503'],
     provider,
+    siteFilters,
   );
 
   return loadSql('individual-urls-by-status', {
@@ -175,7 +228,11 @@ async function createError503UrlsQuery(periods, databaseName, tableName, provide
   });
 }
 
-async function createSuccessUrlsByCategoryQuery(periods, databaseName, tableName, provider, site) {
+async function createSuccessUrlsByCategoryQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, site, siteFilters = [],
+  } = options;
+
   if (!site || !site.getBaseURL().includes('bulk.com')) {
     return null;
   }
@@ -184,9 +241,68 @@ async function createSuccessUrlsByCategoryQuery(periods, databaseName, tableName
   const whereClause = buildWhereClause(
     [buildDateFilter(lastWeek.startDate, lastWeek.endDate), 'status = 200', "url LIKE '%/products%'"],
     provider,
+    siteFilters,
   );
 
   return loadSql('individual-urls-by-status', {
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
+async function createTopUrlsQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, siteFilters = [],
+  } = options;
+
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate), 'url NOT LIKE \'%robots.txt\'', 'url NOT LIKE \'%sitemap%\''],
+    provider,
+    siteFilters,
+  );
+
+  return loadSql('top-urls-by-traffic', {
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
+async function createReferralTrafficByCountryTopicQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, site, siteFilters = [],
+  } = options;
+
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause([
+    buildDateFilter(lastWeek.startDate, lastWeek.endDate),
+    `REGEXP_LIKE(referer, '${provider}')`,
+  ], null, siteFilters);
+
+  return loadSql('referral-traffic-by-country-topic', {
+    countryExtraction: buildCountryExtractionSQL(),
+    topicExtraction: buildTopicExtractionSQL(site),
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
+async function createReferralTrafficByUrlTopicQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, site, siteFilters = [],
+  } = options;
+
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause([
+    buildDateFilter(lastWeek.startDate, lastWeek.endDate),
+    `REGEXP_LIKE(referer, '${provider}')`,
+  ], null, siteFilters);
+
+  return loadSql('referral-traffic-by-url-topic', {
+    topicExtraction: buildTopicExtractionSQL(site),
     databaseName,
     tableName,
     whereClause,
@@ -201,5 +317,7 @@ export const weeklyBreakdownQueries = {
   createError404Urls: createError404UrlsQuery,
   createError503Urls: createError503UrlsQuery,
   createSuccessUrlsByCategory: createSuccessUrlsByCategoryQuery,
+  createTopUrls: createTopUrlsQuery,
+  createReferralTrafficByCountryTopic: createReferralTrafficByCountryTopicQuery,
+  createReferralTrafficByUrlTopic: createReferralTrafficByUrlTopicQuery,
 };
-/* c8 ignore end */

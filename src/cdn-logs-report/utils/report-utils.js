@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 
 const TIME_CONSTANTS = {
@@ -40,7 +39,8 @@ export function getAnalysisBucket(customerDomain) {
 export function getS3Config(site) {
   const customerDomain = extractCustomerDomain(site);
   const customerName = customerDomain.split(/[._]/)[0];
-  const bucket = getAnalysisBucket(customerDomain);
+  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
+    || { bucketName: getAnalysisBucket(customerDomain) };
 
   return {
     bucket,
@@ -55,6 +55,28 @@ export function getS3Config(site) {
 
 export async function loadSql(filename, variables) {
   return getStaticContent(variables, `./src/cdn-logs-report/sql/${filename}.sql`);
+}
+
+export function validateCountryCode(code) {
+  const DEFAULT_COUNTRY_CODE = 'GLOBAL';
+  if (!code) return DEFAULT_COUNTRY_CODE;
+
+  const upperCode = code.toUpperCase();
+
+  if (upperCode === DEFAULT_COUNTRY_CODE) return DEFAULT_COUNTRY_CODE;
+
+  try {
+    const displayNames = new Intl.DisplayNames(['en'], { type: 'region' });
+    const countryName = displayNames.of(upperCode);
+
+    if (countryName && countryName !== upperCode) {
+      return upperCode;
+    }
+  } catch {
+    // Invalid country code
+  }
+
+  return DEFAULT_COUNTRY_CODE;
 }
 
 export async function ensureTableExists(athenaClient, s3Config, log) {
@@ -85,6 +107,7 @@ export function formatDateString(date) {
 function getWeekNumber(date) {
   const d = new Date(date);
   d.setUTCHours(0, 0, 0, 0);
+  /* c8 ignore next */
   d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
@@ -163,4 +186,18 @@ export function generateReportingPeriods(referenceDate = new Date()) {
     columns: [`Week ${weekNumber}`],
   };
 }
-/* c8 ignore stop */
+
+export function buildSiteFilters(filters) {
+  if (!filters || filters.length === 0) return '';
+
+  const clauses = filters.map(({ key, value, type }) => {
+    const regexPattern = value.join('|');
+    if (type === 'exclude') {
+      return `NOT REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+    }
+    return `REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+  });
+
+  const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
+  return `(${filterConditions})`;
+}

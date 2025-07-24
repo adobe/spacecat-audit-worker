@@ -4,6 +4,42 @@
     "step": "identify",
     "audits": [
       {
+        "name": "body-size",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "content-length",
+            "issue": "Body content length is below 100 characters",
+            "seoImpact": "Moderate",
+            "seoRecommendation": "Add more meaningful content to the page"
+          }
+        ]
+      },
+      {
+        "name": "lorem-ipsum",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "placeholder-text",
+            "issue": "Found Lorem ipsum placeholder text in the page content",
+            "seoImpact": "High",
+            "seoRecommendation": "Replace placeholder text with meaningful content"
+          }
+        ]
+      },
+      {
+        "name": "h1-count",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "missing-h1",
+            "issue": "No H1 tag found on the page",
+            "seoImpact": "High",
+            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
+          }
+        ]
+      },
+      {
         "name": "canonical",
         "type": "seo",
         "opportunities": [
@@ -19,6 +55,13 @@
         "name": "metatags",
         "type": "seo",
         "opportunities": [
+          {
+            "seoImpact": "High",
+            "issue": "Missing H1",
+            "issueDetails": "H1 tag is missing",
+            "seoRecommendation": "Should be present",
+            "tagName": "h1"
+          },
           {
             "seoImpact": "Moderate",
             "issue": "Title too short",
@@ -38,31 +81,39 @@
         ]
       },
       {
-        "name": "body-size",
-        "type": "seo",
-        "opportunities": []
-      },
-      {
-        "name": "lorem-ipsum",
-        "type": "seo",
-        "opportunities": []
-      },
-      {
-        "name": "h1-count",
+        "name": "links",
         "type": "seo",
         "opportunities": [
           {
-            "check": "missing-h1",
-            "issue": "No H1 tag found on the page",
-            "seoImpact": "High",
-            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
+            "check": "broken-internal-links",
+            "issue": {
+              "url": "https://main--example--page.aem.page/broken",
+              "issue": "Status 404",
+              "seoImpact": "High",
+              "seoRecommendation": "Fix or remove broken links to improve user experience and SEO"
+            }
+          },
+          {
+            "check": "broken-external-links",
+            "issue": {
+              "url": "http://test.com/",
+              "issue": "Status 404",
+              "seoImpact": "High",
+              "seoRecommendation": "Fix or remove broken links to improve user experience"
+            }
+          },
+          {
+            "check": "bad-links",
+            "issue": [
+              {
+                "url": "http://test.com/",
+                "issue": "Link using HTTP instead of HTTPS",
+                "seoImpact": "High",
+                "seoRecommendation": "Update all links to use HTTPS protocol"
+              }
+            ]
           }
         ]
-      },
-      {
-        "name": "links",
-        "type": "seo",
-        "opportunities": []
       }
     ]
   }

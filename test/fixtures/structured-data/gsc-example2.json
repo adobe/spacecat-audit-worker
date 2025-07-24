@@ -1,6 +1,6 @@
 {
     "inspectionResult": {
-        "inspectionResultLink": "https://search.google.com/search-console/inspect?resource_id=https://example.com/product/2",
+        "inspectionResultLink": "https://search.google.com/search-console/inspect?resource_id=https://example.com/product/1",
         "indexStatusResult": {
             "verdict": "PASS",
             "coverageState": "Submitted and indexed",
@@ -8,8 +8,8 @@
             "indexingState": "INDEXING_ALLOWED",
             "lastCrawlTime": "2024-08-13T22:35:22Z",
             "pageFetchState": "SUCCESSFUL",
-            "googleCanonical": "https://example.com/product/2",
-            "userCanonical": "https://example.com/product/2",
+            "googleCanonical": "https://example.com/product/1",
+            "userCanonical": "https://example.com/product/1",
             "referringUrls": [
                 "https://www.example.com/bar"
             ],
@@ -22,18 +22,14 @@
             "verdict": "FAIL",
             "detectedItems": [
                 {
-                    "richResultType": "Merchant listings",
+                    "richResultType": "Product snippets",
                     "items": [
                         {
-                            "name": "Example Product Name",
+                            "name": "Unnamed item",
                             "issues": [
                                 {
-                                    "issueMessage": "Missing field \"hasMerchantReturnPolicy\"",
+                                    "issueMessage": "Missing field \"name\"",
                                     "severity": "WARNING"
-                                },
-                                {
-                                    "issueMessage": "Missing field \"priceCurrency\"",
-                                    "severity": "ERROR"
                                 }
                             ]
                         }

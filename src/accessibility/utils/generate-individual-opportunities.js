@@ -10,10 +10,124 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
 import { getAuditData } from './data-processing.js';
+import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
+import { isAuditEnabledForSite } from '../../common/audit-utils.js';
+
+/**
+ * Creates a Mystique message object
+ *
+ * @param {Object} params - Parameters for creating the message
+ * @param {Object} params.suggestionData - The suggestion data
+ * @param {Array} params.issuesList - List of issues for this type
+ * @param {Object} params.opportunity - The opportunity object
+ * @param {string} params.siteId - Site identifier
+ * @param {string} params.auditId - Audit identifier
+ * @param {string} params.deliveryType - Delivery type
+ * @returns {Object} The message object ready for SQS
+ */
+function createMystiqueMessage({
+  suggestion,
+  suggestionData,
+  issuesList,
+  opportunity,
+  siteId,
+  auditId,
+  deliveryType,
+}) {
+  return {
+    type: 'guidance:accessibility-remediation',
+    siteId: siteId || '',
+    auditId: auditId || '',
+    deliveryType,
+    time: new Date().toISOString(),
+    data: {
+      url: suggestionData.url,
+      opportunity_id: opportunity.getId(),
+      suggestion_id: suggestion.getId ? suggestion.getId() : '',
+      issues_list: issuesList,
+    },
+  };
+}
+
+/**
+ * Sends a single message to Mystique for a specific issue type
+ *
+ * @param {Object} params - Parameters for sending the message
+ * @param {Object} params.suggestion - The suggestion object
+ * @param {Object} params.suggestionData - The suggestion data
+ * @param {string} params.issueType - The type of accessibility issue
+ * @param {Array} params.issuesList - List of issues for this type
+ * @param {Object} params.opportunity - The opportunity object
+ * @param {string} params.siteId - Site identifier
+ * @param {string} params.auditId - Audit identifier
+ * @param {string} params.deliveryType - Delivery type
+ * @param {Object} params.sqs - SQS client
+ * @param {Object} params.env - Environment variables
+ * @param {Object} params.log - Logger instance
+ * @returns {Promise<Object>} Result object with success status and details
+ */
+async function sendMystiqueMessage({
+  suggestion,
+  suggestionData,
+  issueType,
+  issuesList,
+  opportunity,
+  siteId,
+  auditId,
+  deliveryType,
+  sqs,
+  env,
+  log,
+}) {
+  const message = createMystiqueMessage({
+    suggestion,
+    suggestionData,
+    issuesList,
+    opportunity,
+    siteId,
+    auditId,
+    deliveryType,
+  });
+
+  try {
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(
+      `[A11yIndividual] Sent message to Mystique for suggestion ${
+        suggestion.getId ? suggestion.getId() : ''
+      } and issue type ${issueType} with ${issuesList.length} issues`,
+    );
+    return {
+      success: true,
+      issueType,
+      suggestionId: suggestion.getId ? suggestion.getId() : '',
+    };
+  } catch (error) {
+    log.error(
+      `[A11yIndividual] Failed to send message to Mystique for suggestion ${
+        suggestion.getId ? suggestion.getId() : ''
+      } and issue type ${issueType}: ${error.message}`,
+    );
+    return {
+      success: false,
+      issueType,
+      suggestionId: suggestion.getId ? suggestion.getId() : '',
+      error: error.message,
+    };
+  }
+}
+
+/**
+ * Generates a UUID for issue identification
+ * @returns {string} A unique identifier
+ */
+function generateUUID() {
+  return crypto.randomUUID();
+}
 
 /**
  * Helper function to format WCAG rule from internal format to human-readable format
@@ -75,6 +189,44 @@ export function formatIssue(type, issueData, severity) {
   // Format the WCAG rule (e.g., "wcag412" -> "4.1.2 Name, Role, Value")
   const wcagRule = formatWcagRule(rawWcagRule);
 
+  // Extract target selector from the target field
+  let targetSelector = '';
+  if (isNonEmptyArray(issueData.target)) {
+    [targetSelector] = issueData.target;
+  }
+
+  // Use htmlWithIssues directly from issueData if available, otherwise create minimal structure
+  let htmlWithIssues = [];
+
+  if (isNonEmptyArray(issueData.htmlWithIssues)) {
+    // Use existing htmlWithIssues and ensure each has issue_id
+    htmlWithIssues = issueData.htmlWithIssues.map((item) => {
+      let updateFrom = '';
+
+      if (isString(item)) {
+        updateFrom = item;
+      } else if (item && item.update_from) {
+        updateFrom = item.update_from;
+      } else {
+        // Final fallback to empty string
+        updateFrom = '';
+      }
+
+      return {
+        update_from: updateFrom,
+        target_selector: targetSelector,
+        issue_id: (isString(item) ? generateUUID() : (item && item.issue_id)) || generateUUID(),
+      };
+    });
+  } else {
+    // Create single entry if no htmlWithIssues but issue exists
+    htmlWithIssues = [{
+      update_from: '',
+      target_selector: targetSelector,
+      issue_id: generateUUID(),
+    }];
+  }
+
   return {
     type,
     description: issueData.description || '',
@@ -82,7 +234,7 @@ export function formatIssue(type, issueData, severity) {
     wcagLevel: issueData.level || '', // AA, AAA, etc.
     severity,
     occurrences: issueData.count || 0,
-    htmlWithIssues: issueData.htmlWithIssues || [],
+    htmlWithIssues,
     failureSummary: issueData.failureSummary || '',
   };
 }
@@ -254,10 +406,91 @@ export async function createIndividualOpportunitySuggestions(
           url: urlData.url,
           type: urlData.type,
           issues: urlData.issues, // Array of formatted accessibility issues
+          isCreateTicketClicked: false,
         },
       }),
       log,
     });
+
+    // Check if mystique suggestions are enabled for this site
+    const isMystiqueEnabled = await isAuditEnabledForSite('a11y-mystique-auto-suggest', context.site, context);
+    if (!isMystiqueEnabled) {
+      log.info('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
+      return { success: true };
+    }
+
+    // Get fresh opportunity data to ensure we have the latest suggestions
+    const { Opportunity } = context.dataAccess;
+    const refreshedOpportunity = await Opportunity.findById(opportunity.getId());
+    // Get the suggestions that were just created/updated
+    const suggestions = await refreshedOpportunity.getSuggestions();
+    log.debug(`[A11yIndividual] Retrieved ${suggestions.length} suggestions from opportunity ${opportunity.getId()}`);
+
+    const { sqs, env } = context;
+    const siteId = refreshedOpportunity.getSiteId
+      ? refreshedOpportunity.getSiteId()
+      : (context.site && context.site.getId && context.site.getId());
+    const auditId = refreshedOpportunity.getAuditId
+      ? refreshedOpportunity.getAuditId()
+      : (context.auditId || (context.audit && context.audit.getId && context.audit.getId()));
+    const deliveryType = (context.site && context.site.getDeliveryType && context.site.getDeliveryType()) || 'aem_edge';
+
+    log.debug(`[A11yIndividual] Debug info - suggestions: ${suggestions.length}, sqs: ${!!sqs}, env: ${!!env}, siteId: ${siteId}, auditId: ${auditId}`);
+
+    // Log details about each suggestion for debugging
+    suggestions.forEach((suggestion, index) => {
+      const suggestionData = suggestion.getData();
+      const issueTypes = suggestionData.issues
+        ? suggestionData.issues.map((issue) => issue.type) : [];
+      log.debug(`[A11yIndividual] Suggestion ${index}: URL=${suggestionData.url}, Issues=[${issueTypes.join(', ')}]`);
+    });
+
+    // Process the suggestions directly to create Mystique messages
+    const mystiqueData = processSuggestionsForMystique(suggestions);
+
+    log.debug(`[A11yIndividual] Mystique data processed: ${mystiqueData.length} messages to send`);
+
+    if (mystiqueData.length === 0) {
+      log.info('[A11yIndividual] No messages to send to Mystique - no matching issue types found');
+      return { success: true };
+    }
+
+    // Validate required context objects before proceeding
+    if (!sqs || !env || !env.QUEUE_SPACECAT_TO_MYSTIQUE) {
+      log.error(`[A11yIndividual] Missing required context - sqs: ${!!sqs}, env: ${!!env}, queue: ${env?.QUEUE_SPACECAT_TO_MYSTIQUE || 'undefined'}`);
+      return { success: false, error: 'Missing SQS context or queue configuration' };
+    }
+
+    log.info(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+
+    const messagePromises = mystiqueData.map(({
+      suggestion, suggestionData, issueType, issuesList,
+    }) => sendMystiqueMessage({
+      suggestion,
+      suggestionData,
+      issueType,
+      issuesList,
+      opportunity: refreshedOpportunity,
+      siteId,
+      auditId,
+      deliveryType,
+      sqs,
+      env,
+      log,
+    }));
+
+    // Wait for all messages to be sent (successfully or with errors)
+    const results = await Promise.allSettled(messagePromises);
+
+    // Log summary of results
+    const successfulMessages = results.filter((result) => result.status === 'fulfilled' && result.value.success).length;
+    const failedMessages = results.filter((result) => result.status === 'fulfilled' && !result.value.success).length;
+    const rejectedPromises = results.filter((result) => result.status === 'rejected').length;
+
+    log.info(
+      `[A11yIndividual] Message sending completed: ${successfulMessages} successful, ${failedMessages} failed, ${rejectedPromises} rejected`,
+    );
+
     return { success: true };
   } catch (e) {
     log.error(`Failed to create suggestions for opportunity ${opportunity.getId()}: ${e.message}`);
@@ -475,3 +708,150 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     };
   }
 }
+
+/**
+ * Handles Mystique response for accessibility remediation guidance
+ *
+ * This function processes responses from Mystique containing detailed guidance for
+ * accessibility issues. It updates the existing opportunity with the comprehensive
+ * remediation data provided by Mystique, including specific HTML fixes and user impact.
+ *
+ * The function enhances the htmlWithIssues structure by adding guidance to existing objects:
+ *
+ * BEFORE: htmlWithIssues: [
+ *   {
+ *     update_from: '<div aria-label="test">...',
+ *     target_selector: 'div.test',
+ *     issue_id: 'a1ec0c56-76c8-417d-9480-cfbfbdad85bd'
+ *   }
+ * ]
+ * AFTER:  htmlWithIssues: [
+ *   {
+ *     update_from: '<div aria-label="test">...',
+ *     target_selector: 'div.test',
+ *     issue_id: 'a1ec0c56-76c8-417d-9480-cfbfbdad85bd',
+ *     guidance: {
+ *       general_suggestion: 'Remove disallowed ARIA attributes...',
+ *       update_to: '<div>...',
+ *       user_impact: 'Screen readers may deliver incorrect information...'
+ *     }
+ *   }
+ * ]
+ *
+ * @param {Object} message - The message from Mystique containing detailed remediation guidance
+ * @param {Object} message.type - Message type (guidance:accessibility-remediation)
+ * @param {string} message.auditId - Audit ID
+ * @param {string} message.siteId - Site ID
+ * @param {Object} message.data - Remediation data
+ * @param {string} message.data.opportunityId - Target opportunity ID
+ * @param {string} message.data.suggestionId - Target suggestion ID
+ * @param {string} message.data.pageUrl - URL of the page being remediated
+ * @param {Array} message.data.remediations - Array of detailed remediation objects
+ * @param {number} message.data.totalIssues - Total number of issues addressed
+ * @param {Object} context - Audit context containing dataAccess and logging
+ * @returns {Object} Success status object
+ */
+export async function handleAccessibilityRemediationGuidance(message, context) {
+  const { log, dataAccess } = context;
+  const { auditId, siteId, data } = message;
+  const {
+    opportunityId, suggestionId, pageUrl, remediations, totalIssues,
+  } = data;
+
+  log.info(`[A11yRemediationGuidance] Received accessibility remediation guidance for opportunity ${opportunityId}, suggestion ${suggestionId}`);
+  log.debug(`[A11yRemediationGuidance] Processing ${totalIssues} issues for page: ${pageUrl}`);
+
+  try {
+    const { Opportunity } = dataAccess;
+    const opportunity = await Opportunity.findById(opportunityId);
+
+    if (!opportunity) {
+      log.error(`[A11yRemediationGuidance] Opportunity not found for ID: ${opportunityId}`);
+      return { success: false, error: 'Opportunity not found' };
+    }
+
+    // Verify the opportunity belongs to the correct site
+    if (opportunity.getSiteId() !== siteId) {
+      const errorMsg = `[A11yRemediationGuidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
+      log.error(errorMsg);
+      return { success: false, error: 'Site ID mismatch' };
+    }
+
+    // Get the current suggestions
+    const suggestions = await opportunity.getSuggestions();
+    const targetSuggestion = suggestions.find((suggestion) => suggestion.getId() === suggestionId);
+
+    if (!targetSuggestion) {
+      log.error(`[A11yRemediationGuidance] Suggestion not found for ID: ${suggestionId}`);
+      return { success: false, error: 'Suggestion not found' };
+    }
+
+    // Process the remediations and match them to specific issues and HTML elements
+    const suggestionData = targetSuggestion.getData();
+    const updatedIssues = suggestionData.issues.map((issue) => {
+      if (isNonEmptyArray(issue.htmlWithIssues)) {
+        // Enhanced htmlWithIssues structure - match remediations directly by issue_id
+        const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => {
+          // Find the specific remediation that matches this HTML element by issue_id
+          const specificRemediation = remediations.find(
+            (remediation) => remediation.issue_id === htmlIssueObj.issue_id,
+          );
+
+          if (specificRemediation) {
+            // Return enhanced structure with specific remediation guidance
+            return {
+              ...htmlIssueObj,
+              guidance: {
+                general_suggestion: specificRemediation.general_suggestion,
+                update_to: specificRemediation.update_to,
+                user_impact: specificRemediation.user_impact,
+              },
+            };
+          }
+
+          // Return unchanged if no specific remediation found
+          return htmlIssueObj;
+        });
+
+        // Return enhanced issue with improved htmlWithIssues structure
+        return {
+          ...issue,
+          htmlWithIssues: enhancedHtmlWithIssues,
+        };
+      }
+
+      // Return issue unchanged if no matching remediation found
+      return issue;
+    });
+
+    // Update the suggestion with enhanced issues containing remediation details
+    const updatedSuggestionData = {
+      ...suggestionData,
+      issues: updatedIssues,
+    };
+
+    // Update the suggestion
+    targetSuggestion.setData(updatedSuggestionData);
+    await targetSuggestion.save();
+
+    // Update the opportunity with new audit ID
+    opportunity.setAuditId(auditId);
+    opportunity.setUpdatedBy('system');
+    await opportunity.save();
+
+    const logMsg = `Successfully updated suggestion ${suggestionId} with remediations`;
+    log.info(`[A11yRemediationGuidance] ${logMsg} for opportunity ${opportunityId}`);
+
+    return {
+      success: true,
+      totalIssues,
+      pageUrl,
+    };
+  } catch (error) {
+    log.error(`[A11yRemediationGuidance] Failed to process accessibility remediation guidance: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+// Export these for testing
+export { createMystiqueMessage, sendMystiqueMessage };

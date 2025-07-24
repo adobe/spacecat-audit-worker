@@ -10,12 +10,11 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-disable object-curly-newline */
-
-/* c8 ignore start */
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { determineCdnProvider } from './utils/cdn-utils.js';
 import { AWSAthenaClient } from '../utils/athena-client.js';
+import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -45,12 +44,13 @@ async function loadSql(provider, filename, variables) {
 export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   const { log, s3Client } = context;
 
-  // derive customer & time
+  // derive customer, time, config
   const { host, hostEscaped } = extractCustomerDomain(site);
   const { year, month, day, hour } = getHourParts();
+  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
+    || { bucketName: `cdn-logs-${hostEscaped.replace(/[._]/g, '-')}` };
 
   // names & locations
-  const bucket = `cdn-logs-${hostEscaped.replace(/[._]/g, '-')}`;
   const rawLogsPrefix = `raw/${year}/${month}/${day}/${hour}/`;
   const database = `cdn_logs_${hostEscaped}`;
   const rawTable = `raw_logs_${hostEscaped}`;
@@ -105,5 +105,5 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
 
 export default new AuditBuilder()
   .withRunner(cdnLogAnalysisRunner)
+  .withUrlResolver(wwwUrlResolver)
   .build();
-/* c8 ignore stop */
