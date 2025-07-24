@@ -176,21 +176,18 @@ export async function saveA11yMetricsToS3(reportData, context) {
 
   // Extract a11y metrics needed in the JSON structure
   const { overall } = reportData;
-  const totalViolations = overall?.violations?.total || 0;
-  const criticalViolations = overall?.violations?.critical?.count || 0;
-  const seriousViolations = overall?.violations?.serious?.count || 0;
-
-  // Calculate passed (assuming total represents all checks)
-  const failedChecks = criticalViolations + seriousViolations;
-  const totalChecks = Math.max(totalViolations, failedChecks);
+  // Calculate compliance metrics
+  const totalChecks = 50; // Fixed total representing number of accessibility issues checked
+  const criticalItemsCount = Object.keys(overall?.violations?.critical?.items || {}).length;
+  const seriousItemsCount = Object.keys(overall?.violations?.serious?.items || {}).length;
+  const failedChecks = criticalItemsCount + seriousItemsCount;
   const passedChecks = totalChecks - failedChecks;
 
   // Calculate top offenders from individual URL data
   const topOffenders = [];
   for (const [url, urlData] of Object.entries(reportData)) {
     if (url !== 'overall' && urlData.violations) {
-      const urlViolationCount = (urlData.violations.critical?.count || 0)
-                               + (urlData.violations.serious?.count || 0);
+      const urlViolationCount = urlData.violations.total || 0;
       if (urlViolationCount > 0) {
         topOffenders.push({ url, count: urlViolationCount });
       }

@@ -538,18 +538,32 @@ describe('Scrape Utils', () => {
         overall: {
           violations: {
             total: 10,
-            critical: { count: 5 },
-            serious: { count: 3 },
+            critical: {
+              count: 5,
+              items: {
+                'color-contrast': { count: 3 },
+                'missing-alt': { count: 2 },
+              },
+            },
+            serious: {
+              count: 3,
+              items: {
+                'link-name': { count: 1 },
+                'form-label': { count: 2 },
+              },
+            },
           },
         },
         'https://example.com/page1': {
           violations: {
+            total: 8,
             critical: { count: 3 },
             serious: { count: 2 },
           },
         },
         'https://example.com/page2': {
           violations: {
+            total: 5,
             critical: { count: 2 },
             serious: { count: 1 },
           },
@@ -576,15 +590,15 @@ describe('Scrape Utils', () => {
         name: 'a11y-audit',
         time: '2024-07-24T10:00:00.000Z',
         compliance: {
-          total: 10,
-          failed: 8,
-          passed: 2,
+          total: 50,
+          failed: 4,
+          passed: 46,
         },
       });
       expect(result.metricsData.topOffenders).to.have.lengthOf(2);
       expect(result.metricsData.topOffenders[0]).to.deep.equal({
         url: 'https://example.com/page1',
-        count: 5,
+        count: 8,
       });
 
       expect(mockS3Client.send).to.have.been.calledOnce;
@@ -608,12 +622,23 @@ describe('Scrape Utils', () => {
         overall: {
           violations: {
             total: 5,
-            critical: { count: 2 },
-            serious: { count: 1 },
+            critical: {
+              count: 2,
+              items: {
+                'color-contrast': { count: 2 },
+              },
+            },
+            serious: {
+              count: 1,
+              items: {
+                'link-name': { count: 1 },
+              },
+            },
           },
         },
         'https://example.com/page1': {
           violations: {
+            total: 3,
             critical: { count: 2 },
             serious: { count: 1 },
           },
@@ -658,9 +683,9 @@ describe('Scrape Utils', () => {
       // Assert
       expect(result.success).to.be.true;
       expect(result.metricsData.compliance).to.deep.equal({
-        total: 0,
+        total: 50,
         failed: 0,
-        passed: 0,
+        passed: 50,
       });
       expect(result.metricsData.topOffenders).to.be.an('array').that.is.empty;
     });
@@ -669,7 +694,24 @@ describe('Scrape Utils', () => {
       // Arrange
       const reportData = {
         overall: {
-          violations: { total: 50, critical: { count: 25 }, serious: { count: 20 } },
+          violations: {
+            total: 50,
+            critical: {
+              count: 25,
+              items: {
+                'color-contrast': { count: 10 },
+                'missing-alt': { count: 8 },
+                'keyboard-nav': { count: 7 },
+              },
+            },
+            serious: {
+              count: 20,
+              items: {
+                'link-name': { count: 12 },
+                'form-label': { count: 8 },
+              },
+            },
+          },
         },
       };
 
@@ -677,6 +719,7 @@ describe('Scrape Utils', () => {
       for (let i = 1; i <= 15; i += 1) {
         reportData[`https://example.com/page${i}`] = {
           violations: {
+            total: i * 2, // Use total instead of critical + serious
             critical: { count: i },
             serious: { count: i - 1 },
           },
@@ -696,11 +739,11 @@ describe('Scrape Utils', () => {
       expect(result.metricsData.topOffenders).to.have.lengthOf(10);
       expect(result.metricsData.topOffenders[0]).to.deep.equal({
         url: 'https://example.com/page15',
-        count: 29, // 15 + 14
+        count: 30, // 15 * 2
       });
       expect(result.metricsData.topOffenders[9]).to.deep.equal({
         url: 'https://example.com/page6',
-        count: 11, // 6 + 5
+        count: 12, // 6 * 2
       });
     });
 
@@ -708,7 +751,21 @@ describe('Scrape Utils', () => {
       // Arrange
       const reportData = {
         overall: {
-          violations: { total: 5, critical: { count: 2 }, serious: { count: 1 } },
+          violations: {
+            total: 5,
+            critical: {
+              count: 2,
+              items: {
+                'color-contrast': { count: 2 },
+              },
+            },
+            serious: {
+              count: 1,
+              items: {
+                'link-name': { count: 1 },
+              },
+            },
+          },
         },
       };
 
