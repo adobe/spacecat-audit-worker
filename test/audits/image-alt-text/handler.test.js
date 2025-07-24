@@ -798,6 +798,82 @@ describe('Image Alt Text Handler', () => {
         '[alt-text]: Clearing existing suggestions before sending to Mystique',
       );
     });
+
+    it('should handle includedURLs when site.getConfig is available', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns(['https://example.com/included']),
+        }),
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2', 'https://example.com/included'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle when site.getConfig is null', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => null,
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle when site.getConfig is undefined', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: undefined,
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle when getIncludedURLs returns null', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns(null),
+        }),
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
   });
 
   describe('audit builder selection', () => {

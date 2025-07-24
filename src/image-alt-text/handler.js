@@ -219,7 +219,8 @@ export async function processAltTextWithMystique(context) {
     const { Opportunity } = dataAccess;
 
     // First, find or create the opportunity and clear existing suggestions
-    const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
+    const siteId = site.getId();
+    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
     const altTextOppty = opportunities.find(
       (oppty) => oppty.getType() === AUDIT_TYPE,
     );
@@ -229,15 +230,16 @@ export async function processAltTextWithMystique(context) {
       await clearAltTextSuggestions({ opportunity: altTextOppty, log });
     }
 
+    // Get top pages for a site (similar to metatags handler)
     const { SiteTopPage } = dataAccess;
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-
-    if (topPages.length === 0) {
-      throw new Error(`No top pages found for site ${site.getId()}`);
-    }
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
 
     // Get ALL page URLs to send to Mystique
-    const pageUrls = topPages.map((page) => page.getUrl());
+    const pageUrls = [...topPages.map((page) => page.getUrl()), ...includedURLs];
+    if (pageUrls.length === 0) {
+      throw new Error(`No top pages found for site ${site.getId()}`);
+    }
 
     await sendAltTextOpportunityToMystique(
       site.getBaseURL(),
