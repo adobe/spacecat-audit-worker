@@ -26,6 +26,7 @@ function fillUrlTemplate(template, params) {
     .replace(/%locale/g, params.locale)
     .replace(/%urlKey/g, params.urlKey)
     .replace(/%skuLowerCase/g, params.sku ? params.sku.toLowerCase() : '')
+    .replace(/%skuUpperCase/g, params.sku ? params.sku.toUpperCase() : '')
     .replace(/%sku/g, params.sku || '');
 }
 
@@ -119,6 +120,7 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
   const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
   const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
   const notCoveredProduct = {};
+  const localeErrors = {};
 
   const urlsFromSitemap = Object.values(extractedPaths).flat();
 
@@ -129,9 +131,10 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
     await Promise.all(locales.map(async (locale) => {
       const params = {
         storeUrl: inputUrl,
-        contentUrl: inputUrl + (locale !== 'default' ? `/${locale}` : ''),
+        contentUrl: inputUrl + (locale === 'default' ? '' : `/${locale}`),
         configName: customConfig.configName,
         configSection: customConfig.configSection,
+        productUrlTemplate: customConfig.productUrlTemplate || '%baseUrl/%locale/products/%urlKey/%skuLowerCase',
         cookies: customConfig.cookies,
         config: customConfig.config,
       };
@@ -141,7 +144,7 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
         context.log.info(`Found SKUs for locale ${locale}: ${allSkus.length}`);
         const fullUrls = allSkus.map(
           ({ urlKey, sku }) => fillUrlTemplate(
-            customConfig.productUrlTemplate,
+            params.productUrlTemplate,
             {
               baseUrl: inputUrl, locale, urlKey, sku,
             },
@@ -154,15 +157,25 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
         }
       } catch (error) {
         context.log.error(error);
+        localeErrors[locale] = error.message || 'Unknown error';
       }
     }));
-  }
 
-  // Return final result
-  if (extractedPaths && Object.keys(extractedPaths).length > 0) {
+    if (Object.keys(localeErrors).length > 0) {
+      return {
+        success: false,
+        reasons: [{
+          value: 'Errors occurred while checking locales.',
+          error: 'COLLECTING PRODUCTS FAILED',
+        }],
+        url: inputUrl,
+        details: { issues: notCoveredProduct, errors: localeErrors },
+      };
+    }
+
     return {
       success: true,
-      reasons: [{ value: 'Sitemaps found and checked.' }],
+      reasons: [{ value: 'Sitemaps found and checked without errors.' }],
       url: inputUrl,
       details: { issues: notCoveredProduct },
     };
@@ -181,12 +194,13 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
 
 export async function sitemapProductCoverageAuditRunner(baseURL, context, site) {
   const { log } = context;
-
-  log.info(`Running custom audit for ${baseURL}`);
-
+  const startTime = process.hrtime();
+  log.info(`Starting sitemap products coverage audit for ${baseURL}`);
   const auditResult = await sitemapProductCoverageAudit(baseURL, context, site);
-
-  log.info(`Finished custom audit for ${baseURL}`);
+  const endTime = process.hrtime(startTime);
+  const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
+  const formattedElapsed = elapsedSeconds.toFixed(2);
+  log.info(`Sitemap products coverage audit for ${baseURL} completed in ${formattedElapsed} seconds`);
 
   return {
     fullAuditRef: baseURL,
