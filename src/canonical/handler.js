@@ -539,17 +539,36 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       if (result.status === 'fulfilled') {
         const { url, checks } = result.value;
         checks.forEach((check) => {
-          const { check: checkType, success, error } = check;
-          if (!acc[checkType]) {
-            acc[checkType] = { success, error, url: [] };
+          const { check: checkType, success, explanation } = check;
+
+          // only process failed checks
+          if (success === false) {
+            if (!acc[checkType]) {
+              acc[checkType] = {
+                success: false,
+                explanation,
+                url: [],
+              };
+            }
+            acc[checkType].url.push(url);
           }
-          acc[checkType].url.push(url);
         });
       }
       return acc;
     }, {});
 
     log.info(`Successfully completed Canonical Audit for site: ${baseURL}`);
+
+    // all checks are successful, no issues were found
+    if (Object.keys(aggregatedResults).length === 0) {
+      return {
+        fullAuditRef: baseURL,
+        auditResult: {
+          status: 'success',
+          message: 'No canonical issues detected',
+        },
+      };
+    }
 
     return {
       fullAuditRef: baseURL,

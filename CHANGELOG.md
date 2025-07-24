@@ -1,3 +1,31 @@
+## [1.130.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.130.0...v1.130.1) (2025-07-24)
+
+
+### Bug Fixes
+
+* should not remove fixed suggestions ([#1062](https://github.com/adobe/spacecat-audit-worker/issues/1062)) ([a837657](https://github.com/adobe/spacecat-audit-worker/commit/a837657793a9fb6683ebb7da0346cc038c94bd98))
+
+# [1.130.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.2...v1.130.0) (2025-07-23)
+
+
+### Features
+
+* canonical audit checks ([#1059](https://github.com/adobe/spacecat-audit-worker/issues/1059)) ([0489be9](https://github.com/adobe/spacecat-audit-worker/commit/0489be942cbee2ac9c3cf68a938f79a3016b6f0a))
+
+## [1.129.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.1...v1.129.2) (2025-07-23)
+
+
+### Bug Fixes
+
+* add TTFB related fields ([#1055](https://github.com/adobe/spacecat-audit-worker/issues/1055)) ([dafe567](https://github.com/adobe/spacecat-audit-worker/commit/dafe56781cfc9e89444edd4f94781a8938be333d))
+
+## [1.129.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.0...v1.129.1) (2025-07-22)
+
+
+### Bug Fixes
+
+* Catch errors from SDA validator ([#1057](https://github.com/adobe/spacecat-audit-worker/issues/1057)) ([8c39ad5](https://github.com/adobe/spacecat-audit-worker/commit/8c39ad5826b0c3a9800651f233b224a8e650f04d))
+
 # [1.129.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.128.2...v1.129.0) (2025-07-22)
 
 

@@ -11,6 +11,7 @@ UNLOAD (
     CAST(statusCode AS INTEGER) AS status,
     try(url_extract_host(referer)) AS referer,
     reqHost AS host,
+    CAST(timeToFirstByte AS DOUBLE) AS time_to_first_byte,
     COUNT(*) AS count
 
   FROM {{database}}.{{rawTable}}
@@ -35,6 +36,7 @@ UNLOAD (
     -- only count text/html responses with robots.txt and sitemaps
     AND (
       rspContentType LIKE 'text/html%'
+      OR rspContentType LIKE 'application/pdf%'
       OR reqPath LIKE '%robots.txt'
       OR reqPath LIKE '%sitemap%'
     )
@@ -51,7 +53,8 @@ UNLOAD (
     ua,
     statusCode,
     try(url_extract_host(referer)),
-    reqHost
+    reqHost,
+    CAST(timeToFirstByte AS DOUBLE)
 
 ) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
 WITH (format = 'PARQUET');
