@@ -669,7 +669,7 @@ describe('Preflight Audit', () => {
     it('completes successfully on the happy path for the suggest step', async () => {
       context.promiseToken = 'mock-promise-token';
       const head = '<head><a href="https://example.com/header-url"/></head>';
-      const body = '<body><a href="https://example.com/broken"></a><a href="https://example.com/another-broken-url"></a><h1>Page 1 H1</h1><h1>Page 1 H1</h1></h1></body>';
+      const body = `<body><a href="https://example.com/broken"></a><a href="https://example.com/another-broken-url"></a><h1>Page 1 H1</h1><h1>Page 1 H1</h1></h1><p>This is additional content to ensure the body length exceeds 300 characters. ${'A'.repeat(100)} </p></body>`;
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
 
       s3Client.send.callsFake((command) => {
