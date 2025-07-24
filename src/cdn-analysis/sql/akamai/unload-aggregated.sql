@@ -36,6 +36,7 @@ UNLOAD (
     -- only count text/html responses with robots.txt and sitemaps
     AND (
       rspContentType LIKE 'text/html%'
+      OR rspContentType LIKE 'application/pdf%'
       OR reqPath LIKE '%robots.txt'
       OR reqPath LIKE '%sitemap%'
     )
