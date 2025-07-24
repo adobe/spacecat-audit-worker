@@ -17,6 +17,7 @@ import {
 } from '../accessibility/utils/scrape-utils.js';
 import { aggregateAccessibilityIssues } from '../accessibility/utils/generate-individual-opportunities.js';
 import { saveIntermediateResults } from './utils.js';
+import { sleep } from '../support/utils.js';
 
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
 
@@ -326,35 +327,8 @@ export default async function accessibility(context, auditContext) {
           Delimiter: '/', // Use delimiter to get subfolders
         });
 
-        log.info(
-          `[preflight-audit] S3 ListObjectsV2Command parameters: Bucket=${bucketName}, `
-          + `Prefix=accessibility/${siteId}/, MaxKeys=10, Delimiter=/`,
-        );
-
         // eslint-disable-next-line no-await-in-loop
         const response = await s3Client.send(listCommand);
-
-        log.info(`[preflight-audit] S3 response received: CommonPrefixes=${response.CommonPrefixes?.length || 0}, Contents=${response.Contents?.length || 0}`);
-
-        // Log all found subfolders for debugging
-        if (response.CommonPrefixes && response.CommonPrefixes.length > 0) {
-          log.info(`[preflight-audit] Found ${response.CommonPrefixes.length} subfolders in S3 bucket ${bucketName}:`);
-          response.CommonPrefixes.forEach((prefix, index) => {
-            log.info(`[preflight-audit]   Subfolder ${index + 1}: ${prefix.Prefix}`);
-          });
-        } else {
-          log.info(`[preflight-audit] No subfolders found in S3 bucket ${bucketName}`);
-        }
-
-        // Log all found files for debugging
-        if (response.Contents && response.Contents.length > 0) {
-          log.info(`[preflight-audit] Found ${response.Contents.length} files in S3 bucket ${bucketName}:`);
-          response.Contents.forEach((content, index) => {
-            log.info(`[preflight-audit]   File ${index + 1}: ${content.Key}`);
-          });
-        } else {
-          log.info(`[preflight-audit] No files found in S3 bucket ${bucketName}`);
-        }
 
         // Check if we have files directly in the site folder
         const hasFilesInSiteFolder = response.Contents && response.Contents.length > 0;
@@ -365,16 +339,12 @@ export default async function accessibility(context, auditContext) {
         }
 
         log.info('[preflight-audit] No accessibility data yet, waiting...');
-        // eslint-disable-next-line no-promise-executor-return, no-await-in-loop
-        await new Promise((resolve) => {
-          setTimeout(resolve, pollInterval);
-        });
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(pollInterval);
       } catch (error) {
         log.error(`[preflight-audit] Error polling for accessibility data: ${error.message}`);
-        // eslint-disable-next-line no-promise-executor-return, no-await-in-loop
-        await new Promise((resolve) => {
-          setTimeout(resolve, pollInterval);
-        });
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(pollInterval);
       }
     }
 
