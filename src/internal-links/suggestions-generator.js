@@ -78,11 +78,11 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   }
 
   /**
-   * Process a broken internal link to generate URL suggestions
-   * @param {Object} link - The broken internal link object containing urlTo and other properties
-   * @param {Object} headerSuggestions - Suggestions generated from header links
-   * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
-   */
+     * Process a broken internal link to generate URL suggestions
+     * @param {Object} link - The broken internal link object containing urlTo and other properties
+     * @param {Object} headerSuggestions - Suggestions generated from header links
+     * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
+     */
   const processLink = async (link, headerSuggestions) => {
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Processing link: ${link.urlTo}`);
     const suggestions = await processBatches(dataBatches, link.urlTo);
@@ -116,9 +116,11 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     return {
       ...link,
       urlsSuggested:
-        suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
+                suggestions[0]?.suggested_urls?.length > 0
+                  ? suggestions[0]?.suggested_urls
+                  : [finalUrl],
       aiRationale:
-        suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
+                suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
     };
   };
 
