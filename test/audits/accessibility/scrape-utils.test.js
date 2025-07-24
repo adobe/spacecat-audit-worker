@@ -623,15 +623,15 @@ describe('Scrape Utils', () => {
           violations: {
             total: 5,
             critical: {
-              count: 2,
+              count: 3,
               items: {
-                'color-contrast': { count: 2 },
+                'color-contrast': { count: 3 },
               },
             },
             serious: {
-              count: 1,
+              count: 2,
               items: {
-                'link-name': { count: 1 },
+                'link-name': { count: 2 },
               },
             },
           },
@@ -866,22 +866,39 @@ describe('Scrape Utils', () => {
       // Arrange
       const reportData = {
         overall: {
-          violations: { total: 5, critical: { count: 3 }, serious: { count: 2 } },
+          violations: {
+            total: 5,
+            critical: {
+              count: 3,
+              items: {
+                'color-contrast': { count: 3 },
+              },
+            },
+            serious: {
+              count: 2,
+              items: {
+                'link-name': { count: 2 },
+              },
+            },
+          },
         },
         'https://example.com/page1': {
           violations: {
+            total: 3,
             critical: { count: 3 },
             serious: { count: 0 },
           },
         },
         'https://example.com/page2': {
           violations: {
+            total: 0,
             critical: { count: 0 },
             serious: { count: 0 },
           },
         },
         'https://example.com/page3': {
           violations: {
+            total: 2,
             critical: { count: 0 },
             serious: { count: 2 },
           },
