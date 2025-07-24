@@ -15,6 +15,7 @@
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
+import esmock from 'esmock';
 
 import { load as cheerioLoad } from 'cheerio';
 import jsBeautify from 'js-beautify';
@@ -424,6 +425,54 @@ describe('Structured Data Libs', () => {
       expect(s3ClientStub.send.args[0][0].input).to.deep.equal({
         Bucket: 'test-bucket', Key: 'scrapes/123/product/1/scrape.json',
       });
+    });
+
+    it('does not throw an error if the validation fails', async () => {
+      // Create stubs for the StructuredDataValidator
+      const StructuredDataValidatorStub = sinon.stub().returns({
+        validate: sinon.stub().rejects(new Error('Validation failed')),
+      });
+
+      // Mock the module using esmock
+      const mockedLib = await esmock('../../../src/structured-data/lib.js', {
+        '@adobe/structured-data-validator': {
+          default: StructuredDataValidatorStub,
+        },
+      });
+
+      s3ClientStub.send.resolves(createS3ObjectStub({
+        scrapeResult: {
+          structuredData: {
+            jsonld: {
+              BreadcrumbList: [
+                {
+                  itemListElement: [
+                    {
+                      position: 1,
+                      name: 'Product',
+                      '@type': 'ListItem',
+                      item: 'https://example.com/product/1',
+                    },
+                    {
+                      position: 2,
+                      '@type': 'ListItem',
+                    },
+                  ],
+                  '@type': 'BreadcrumbList',
+                  '@location': '1690,2640',
+                },
+              ],
+            },
+            errors: [],
+          },
+        },
+      }));
+
+      const scrapeCache = new Map();
+      const result = await mockedLib.getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], scrapeCache);
+
+      expect(result).to.deep.equal([]);
+      expect(context.log.error).to.be.calledWith('SDA: Failed to validate structured data for https://example.com/product/1.');
     });
   });
 
