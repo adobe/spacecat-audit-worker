@@ -1,3 +1,10 @@
+# [1.131.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.130.2...v1.131.0) (2025-07-24)
+
+
+### Features
+
+* timeout mitigation for broken internal links suggestions generation ([#968](https://github.com/adobe/spacecat-audit-worker/issues/968)) ([ec0f0b1](https://github.com/adobe/spacecat-audit-worker/commit/ec0f0b153cb5ad0e1703d3e9f0924dfad101ce26))
+
 ## [1.130.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.130.1...v1.130.2) (2025-07-24)
 
 
