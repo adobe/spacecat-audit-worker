@@ -80,6 +80,7 @@ export const getProjectedMetrics = async ({
 
   try {
     finalUrl = await getRUMUrl(auditUrl);
+    log.info(`[${AUDIT_TYPE}]: RUM URL: ${finalUrl}`);
     const rumAPIClient = RUMAPIClient.createFrom(context);
     const options = {
       domain: finalUrl,
