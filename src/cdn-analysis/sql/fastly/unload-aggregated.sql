@@ -26,7 +26,12 @@ UNLOAD (
     )
 
     -- only count text/html responses with robots.txt and sitemaps
-    AND (response_content_type LIKE 'text/html%' OR url LIKE '%robots.txt' OR url LIKE '%sitemap%')
+    AND (
+      response_content_type LIKE 'text/html%'
+      OR response_content_type LIKE 'application/pdf%'
+      OR url LIKE '%robots.txt' 
+      OR url LIKE '%sitemap%'
+    )
 
     -- agentic and LLM-attributed traffic never has self-referer 
     AND NOT REGEXP_LIKE(COALESCE(request_referer, ''), '{{host}}')
