@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getObjectKeysFromSubfolders } from './data-processing.js';
 import { getObjectFromKey } from '../../utils/s3-utils.js';
 
@@ -166,21 +167,95 @@ export async function updateStatusToIgnored(dataAccess, siteId, log) {
 }
 
 export async function saveA11yMetricsToS3(reportData, context) {
-  const { log, env } = context;
+  const {
+    log, env, site, s3Client,
+  } = context;
   const bucketName = env.S3_IMPORTER_BUCKET_NAME;
+  const siteId = site.getId();
+  const baseUrl = site.getBaseURL();
 
-  // TODO: extract a11y metrics needed in the JSON structure
+  // Extract a11y metrics needed in the JSON structure
+  const { overall } = reportData;
+  const totalViolations = overall?.violations?.total || 0;
+  const criticalViolations = overall?.violations?.critical?.count || 0;
+  const seriousViolations = overall?.violations?.serious?.count || 0;
 
-  // TODO: read existing a11y-audit.json file from s3
+  // Calculate passed (assuming total represents all checks)
+  const failedChecks = criticalViolations + seriousViolations;
+  const totalChecks = Math.max(totalViolations, failedChecks);
+  const passedChecks = totalChecks - failedChecks;
 
-  // TODO: create s3 file path > metrics/{siteId}/xcore/a11y-audit.json
+  // Calculate top offenders from individual URL data
+  const topOffenders = [];
+  for (const [url, urlData] of Object.entries(reportData)) {
+    if (url !== 'overall' && urlData.violations) {
+      const urlViolationCount = (urlData.violations.critical?.count || 0)
+                               + (urlData.violations.serious?.count || 0);
+      if (urlViolationCount > 0) {
+        topOffenders.push({ url, count: urlViolationCount });
+      }
+    }
+  }
 
-  // TODO: save new metrics to s3 a11y-audit.json file
+  // Sort by count descending and take top 10
+  topOffenders.sort((a, b) => b.count - a.count);
+  const limitedTopOffenders = topOffenders.slice(0, 10);
 
-  log.info(`[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`);
-  log.info(`[A11yAudit] Bucket name: ${bucketName}`);
-  return {
-    success: true,
-    message: 'A11y metrics saved to s3',
+  // Create new metrics entry
+  const newMetricsEntry = {
+    siteId,
+    url: baseUrl,
+    source: 'xcore',
+    name: 'a11y-audit',
+    time: new Date().toISOString(),
+    compliance: {
+      total: totalChecks,
+      failed: failedChecks,
+      passed: passedChecks,
+    },
+    topOffenders: limitedTopOffenders,
   };
+
+  // Read existing a11y-audit.json file from s3
+  const s3Key = `metrics/${siteId}/xcore/a11y-audit.json`;
+  let existingMetrics = [];
+
+  try {
+    const existingData = await getObjectFromKey(s3Client, bucketName, s3Key, log);
+    if (existingData && Array.isArray(existingData)) {
+      existingMetrics = existingData;
+      log.info(`[A11yAudit] Found existing metrics file with ${existingMetrics.length} entries`);
+    }
+  } catch (error) {
+    log.info(`[A11yAudit] No existing metrics file found, creating new one: ${error.message}`);
+  }
+
+  // Save new metrics to s3 a11y-audit.json file
+  existingMetrics.push(newMetricsEntry);
+
+  try {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: s3Key,
+      Body: JSON.stringify(existingMetrics, null, 2),
+      ContentType: 'application/json',
+    }));
+
+    log.info(`[A11yAudit] Successfully saved a11y metrics to S3: ${s3Key}`);
+    log.info(`[A11yAudit] Metrics summary - Total: ${totalChecks}, Failed: ${failedChecks}, Passed: ${passedChecks}, Top Offenders: ${limitedTopOffenders.length}`);
+
+    return {
+      success: true,
+      message: 'A11y metrics saved to S3',
+      metricsData: newMetricsEntry,
+      s3Key,
+    };
+  } catch (error) {
+    log.error(`[A11yAudit] Error saving metrics to S3: ${error.message}`);
+    return {
+      success: false,
+      message: `Failed to save a11y metrics to S3: ${error.message}`,
+      error: error.message,
+    };
+  }
 }

@@ -21,7 +21,6 @@ import {
   extractUrlsFromSettledResults,
   filterAccessibilityOpportunities,
   updateStatusToIgnored,
-  saveA11yMetricsToS3,
 } from '../../../src/accessibility/utils/scrape-utils.js';
 
 use(sinonChai);
@@ -482,234 +481,375 @@ describe('Scrape Utils', () => {
   describe('saveA11yMetricsToS3', () => {
     let mockContext;
     let mockLog;
+    let mockS3Client;
+    let mockSite;
     let sandbox;
+    let clock;
+    let getObjectFromKeyStub;
 
     beforeEach(() => {
       sandbox = sinon.createSandbox();
+      clock = sinon.useFakeTimers(new Date('2024-07-24T10:00:00.000Z'));
+
       mockLog = {
         info: sandbox.stub(),
         error: sandbox.stub(),
         warn: sandbox.stub(),
         debug: sandbox.stub(),
       };
+
+      mockS3Client = {
+        send: sandbox.stub(),
+      };
+
+      mockSite = {
+        getId: sandbox.stub().returns('test-site-id'),
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+      };
+
       mockContext = {
         log: mockLog,
         env: {
           S3_IMPORTER_BUCKET_NAME: 'test-importer-bucket',
         },
+        site: mockSite,
+        s3Client: mockS3Client,
       };
+
+      getObjectFromKeyStub = sandbox.stub();
     });
 
     afterEach(() => {
       sandbox.restore();
+      clock.restore();
     });
 
-    it('should successfully save a11y metrics to S3 and return success', async () => {
-      // Arrange
-      const reportData = {
-        overall: {
-          violations: { total: 5, critical: { items: { rule1: { count: 3 } } } },
+    async function getModuleWithMocks() {
+      return esmock('../../../src/accessibility/utils/scrape-utils.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: getObjectFromKeyStub,
         },
-        'https://example.com/page1': {
-          violations: { total: 2, critical: { items: { rule1: { count: 2 } } } },
-        },
-      };
-
-      // Act
-      const result = await saveA11yMetricsToS3(reportData, mockContext);
-
-      // Assert
-      expect(result).to.deep.equal({
-        success: true,
-        message: 'A11y metrics saved to s3',
       });
+    }
 
-      expect(mockLog.info).to.have.been.calledWith(
-        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
-      );
-      expect(mockLog.info).to.have.been.calledWith(
-        '[A11yAudit] Bucket name: test-importer-bucket',
-      );
-    });
-
-    it('should handle empty report data and log correctly', async () => {
-      // Arrange
-      const reportData = {};
-
-      // Act
-      const result = await saveA11yMetricsToS3(reportData, mockContext);
-
-      // Assert
-      expect(result).to.deep.equal({
-        success: true,
-        message: 'A11y metrics saved to s3',
-      });
-
-      expect(mockLog.info).to.have.been.calledWith(
-        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
-      );
-      expect(mockLog.info).to.have.been.calledWith(
-        '[A11yAudit] Bucket name: test-importer-bucket',
-      );
-    });
-
-    it('should handle null report data gracefully', async () => {
-      // Arrange
-      const reportData = null;
-
-      // Act
-      const result = await saveA11yMetricsToS3(reportData, mockContext);
-
-      // Assert
-      expect(result).to.deep.equal({
-        success: true,
-        message: 'A11y metrics saved to s3',
-      });
-
-      expect(mockLog.info).to.have.been.calledWith(
-        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
-      );
-      expect(mockLog.info).to.have.been.calledWith(
-        '[A11yAudit] Bucket name: test-importer-bucket',
-      );
-    });
-
-    it('should handle missing S3_IMPORTER_BUCKET_NAME and log undefined', async () => {
-      // Arrange
-      const reportData = { test: 'data' };
-      mockContext.env.S3_IMPORTER_BUCKET_NAME = undefined;
-
-      // Act
-      const result = await saveA11yMetricsToS3(reportData, mockContext);
-
-      // Assert
-      expect(result).to.deep.equal({
-        success: true,
-        message: 'A11y metrics saved to s3',
-      });
-
-      expect(mockLog.info).to.have.been.calledWith(
-        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
-      );
-      expect(mockLog.info).to.have.been.calledWith(
-        '[A11yAudit] Bucket name: undefined',
-      );
-    });
-
-    it('should extract bucket name correctly from context environment', async () => {
-      // Arrange
-      const reportData = { metrics: 'test' };
-      const customBucketName = 'custom-metrics-bucket';
-      mockContext.env.S3_IMPORTER_BUCKET_NAME = customBucketName;
-
-      // Act
-      await saveA11yMetricsToS3(reportData, mockContext);
-
-      // Assert
-      expect(mockLog.info).to.have.been.calledWith(
-        `[A11yAudit] Bucket name: ${customBucketName}`,
-      );
-    });
-
-    it('should handle complex nested report data structure', async () => {
+    it('should successfully save a11y metrics to S3 with new file', async () => {
       // Arrange
       const reportData = {
         overall: {
           violations: {
             total: 10,
-            critical: {
-              items: {
-                'color-contrast': { count: 5, impact: 'serious' },
-                'missing-alt': { count: 3, impact: 'critical' },
-              },
-            },
-            moderate: {
-              items: {
-                'link-name': { count: 2, impact: 'moderate' },
-              },
-            },
+            critical: { count: 5 },
+            serious: { count: 3 },
           },
         },
         'https://example.com/page1': {
           violations: {
-            total: 6,
-            critical: {
-              items: {
-                'color-contrast': { count: 3, impact: 'serious' },
-                'missing-alt': { count: 2, impact: 'critical' },
-              },
-            },
+            critical: { count: 3 },
+            serious: { count: 2 },
           },
         },
         'https://example.com/page2': {
           violations: {
-            total: 4,
-            critical: {
-              items: {
-                'color-contrast': { count: 2, impact: 'serious' },
-                'missing-alt': { count: 1, impact: 'critical' },
-              },
-            },
-            moderate: {
-              items: {
-                'link-name': { count: 1, impact: 'moderate' },
-              },
-            },
+            critical: { count: 2 },
+            serious: { count: 1 },
           },
         },
       };
 
+      // Mock no existing file
+      getObjectFromKeyStub.resolves(null);
+      mockS3Client.send.resolves({});
+
+      const { saveA11yMetricsToS3: saveMetrics } = await getModuleWithMocks();
+
       // Act
-      const result = await saveA11yMetricsToS3(reportData, mockContext);
+      const result = await saveMetrics(reportData, mockContext);
 
       // Assert
-      expect(result).to.deep.equal({
-        success: true,
-        message: 'A11y metrics saved to s3',
+      expect(result.success).to.be.true;
+      expect(result.message).to.equal('A11y metrics saved to S3');
+      expect(result.s3Key).to.equal('metrics/test-site-id/xcore/a11y-audit.json');
+      expect(result.metricsData).to.deep.include({
+        siteId: 'test-site-id',
+        url: 'https://example.com',
+        source: 'xcore',
+        name: 'a11y-audit',
+        time: '2024-07-24T10:00:00.000Z',
+        compliance: {
+          total: 10,
+          failed: 8,
+          passed: 2,
+        },
+      });
+      expect(result.metricsData.topOffenders).to.have.lengthOf(2);
+      expect(result.metricsData.topOffenders[0]).to.deep.equal({
+        url: 'https://example.com/page1',
+        count: 5,
       });
 
-      expect(mockLog.info).to.have.been.calledWith(
-        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
-      );
+      expect(mockS3Client.send).to.have.been.calledOnce;
     });
 
-    it('should handle missing env object in context', async () => {
+    it('should successfully append to existing metrics file', async () => {
       // Arrange
-      const reportData = { test: 'data' };
-      const contextWithoutEnv = {
-        log: mockLog,
-        env: {}, // Empty env object instead of undefined
+      const existingMetrics = [
+        {
+          siteId: 'test-site-id',
+          url: 'https://example.com',
+          source: 'rum',
+          name: 'a11y-audit',
+          time: '2024-07-20T10:00:00.000Z',
+          compliance: { total: 20, failed: 5, passed: 15 },
+          topOffenders: [],
+        },
+      ];
+
+      const reportData = {
+        overall: {
+          violations: {
+            total: 5,
+            critical: { count: 2 },
+            serious: { count: 1 },
+          },
+        },
+        'https://example.com/page1': {
+          violations: {
+            critical: { count: 2 },
+            serious: { count: 1 },
+          },
+        },
       };
 
+      getObjectFromKeyStub.resolves(existingMetrics);
+      mockS3Client.send.resolves({});
+
+      const { saveA11yMetricsToS3: saveMetrics } = await getModuleWithMocks();
+
       // Act
-      const result = await saveA11yMetricsToS3(reportData, contextWithoutEnv);
+      const result = await saveMetrics(reportData, mockContext);
 
       // Assert
-      expect(result).to.deep.equal({
-        success: true,
-        message: 'A11y metrics saved to s3',
-      });
+      expect(result.success).to.be.true;
+      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] Found existing metrics file with 1 entries');
 
-      expect(mockLog.info).to.have.been.calledWith(
-        '[A11yAudit] Bucket name: undefined',
-      );
+      // Verify the S3 call includes both old and new metrics
+      const s3CallArgs = mockS3Client.send.getCall(0).args[0];
+      const savedData = JSON.parse(s3CallArgs.input.Body);
+      expect(savedData).to.have.lengthOf(2);
+      expect(savedData[0]).to.deep.equal(existingMetrics[0]);
+      expect(savedData[1]).to.deep.include({
+        siteId: 'test-site-id',
+        source: 'xcore',
+      });
     });
 
-    it('should always log both report data and bucket name', async () => {
+    it('should handle empty report data gracefully', async () => {
       // Arrange
-      const reportData = { simple: 'test' };
+      const reportData = {};
+
+      getObjectFromKeyStub.resolves(null);
+      mockS3Client.send.resolves({});
+
+      const { saveA11yMetricsToS3: saveMetrics } = await getModuleWithMocks();
 
       // Act
-      await saveA11yMetricsToS3(reportData, mockContext);
+      const result = await saveMetrics(reportData, mockContext);
 
       // Assert
-      expect(mockLog.info).to.have.been.calledTwice;
-      expect(mockLog.info.firstCall).to.have.been.calledWith(
-        `[A11yAudit] Saving a11y metrics to s3: ${JSON.stringify(reportData, null, 2)}`,
+      expect(result.success).to.be.true;
+      expect(result.metricsData.compliance).to.deep.equal({
+        total: 0,
+        failed: 0,
+        passed: 0,
+      });
+      expect(result.metricsData.topOffenders).to.be.an('array').that.is.empty;
+    });
+
+    it('should calculate top offenders correctly and limit to 10', async () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: { total: 50, critical: { count: 25 }, serious: { count: 20 } },
+        },
+      };
+
+      // Create 15 URLs with violations to test the limit
+      for (let i = 1; i <= 15; i += 1) {
+        reportData[`https://example.com/page${i}`] = {
+          violations: {
+            critical: { count: i },
+            serious: { count: i - 1 },
+          },
+        };
+      }
+
+      getObjectFromKeyStub.resolves(null);
+      mockS3Client.send.resolves({});
+
+      const { saveA11yMetricsToS3: saveMetrics } = await getModuleWithMocks();
+
+      // Act
+      const result = await saveMetrics(reportData, mockContext);
+
+      // Assert
+      expect(result.success).to.be.true;
+      expect(result.metricsData.topOffenders).to.have.lengthOf(10);
+      expect(result.metricsData.topOffenders[0]).to.deep.equal({
+        url: 'https://example.com/page15',
+        count: 29, // 15 + 14
+      });
+      expect(result.metricsData.topOffenders[9]).to.deep.equal({
+        url: 'https://example.com/page6',
+        count: 11, // 6 + 5
+      });
+    });
+
+    it('should handle S3 read errors gracefully', async () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: { total: 5, critical: { count: 2 }, serious: { count: 1 } },
+        },
+      };
+
+      getObjectFromKeyStub.rejects(new Error('S3 read error'));
+      mockS3Client.send.resolves({});
+
+      const { saveA11yMetricsToS3: saveMetrics } = await getModuleWithMocks();
+
+      // Act
+      const result = await saveMetrics(reportData, mockContext);
+
+      // Assert
+      expect(result.success).to.be.true;
+      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] No existing metrics file found, creating new one: S3 read error');
+
+      // Should still save successfully with empty array as base
+      const s3CallArgs = mockS3Client.send.getCall(0).args[0];
+      const savedData = JSON.parse(s3CallArgs.input.Body);
+      expect(savedData).to.have.lengthOf(1);
+    });
+
+    it('should handle S3 write errors', async () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: { total: 5, critical: { count: 2 }, serious: { count: 1 } },
+        },
+      };
+
+      getObjectFromKeyStub.resolves([]);
+      mockS3Client.send.rejects(new Error('S3 write error'));
+
+      const { saveA11yMetricsToS3: saveMetrics } = await getModuleWithMocks();
+
+      // Act
+      const result = await saveMetrics(reportData, mockContext);
+
+      // Assert
+      expect(result.success).to.be.false;
+      expect(result.message).to.equal('Failed to save a11y metrics to S3: S3 write error');
+      expect(result.error).to.equal('S3 write error');
+      expect(mockLog.error).to.have.been.calledWith('[A11yAudit] Error saving metrics to S3: S3 write error');
+    });
+
+    it('should use correct S3 key format', async () => {
+      // Arrange
+      const reportData = { overall: { violations: { total: 0 } } };
+
+      getObjectFromKeyStub.resolves(null);
+      mockS3Client.send.resolves({});
+
+      const { saveA11yMetricsToS3: saveMetrics } = await getModuleWithMocks();
+
+      // Act
+      await saveMetrics(reportData, mockContext);
+
+      // Assert
+      expect(getObjectFromKeyStub).to.have.been.calledWith(
+        mockS3Client,
+        'test-importer-bucket',
+        'metrics/test-site-id/xcore/a11y-audit.json',
+        mockLog,
       );
-      expect(mockLog.info.secondCall).to.have.been.calledWith(
-        '[A11yAudit] Bucket name: test-importer-bucket',
-      );
+
+      const s3CallArgs = mockS3Client.send.getCall(0).args[0];
+      expect(s3CallArgs.input.Key).to.equal('metrics/test-site-id/xcore/a11y-audit.json');
+      expect(s3CallArgs.input.Bucket).to.equal('test-importer-bucket');
+      expect(s3CallArgs.input.ContentType).to.equal('application/json');
+    });
+
+    it('should handle non-array existing data', async () => {
+      // Arrange
+      const reportData = { overall: { violations: { total: 1, critical: { count: 1 } } } };
+
+      // Mock existing data that's not an array
+      getObjectFromKeyStub.resolves({ invalid: 'data' });
+      mockS3Client.send.resolves({});
+
+      const { saveA11yMetricsToS3: saveMetrics } = await getModuleWithMocks();
+
+      // Act
+      const result = await saveMetrics(reportData, mockContext);
+
+      // Assert
+      expect(result.success).to.be.true;
+
+      // Should start with empty array when existing data is not an array
+      const s3CallArgs = mockS3Client.send.getCall(0).args[0];
+      const savedData = JSON.parse(s3CallArgs.input.Body);
+      expect(savedData).to.have.lengthOf(1);
+      expect(savedData[0]).to.deep.include({
+        siteId: 'test-site-id',
+        source: 'xcore',
+      });
+    });
+
+    it('should filter out URLs with no violations from top offenders', async () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: { total: 5, critical: { count: 3 }, serious: { count: 2 } },
+        },
+        'https://example.com/page1': {
+          violations: {
+            critical: { count: 3 },
+            serious: { count: 0 },
+          },
+        },
+        'https://example.com/page2': {
+          violations: {
+            critical: { count: 0 },
+            serious: { count: 0 },
+          },
+        },
+        'https://example.com/page3': {
+          violations: {
+            critical: { count: 0 },
+            serious: { count: 2 },
+          },
+        },
+      };
+
+      getObjectFromKeyStub.resolves(null);
+      mockS3Client.send.resolves({});
+
+      const { saveA11yMetricsToS3: saveMetrics } = await getModuleWithMocks();
+
+      // Act
+      const result = await saveMetrics(reportData, mockContext);
+
+      // Assert
+      expect(result.success).to.be.true;
+      expect(result.metricsData.topOffenders).to.have.lengthOf(2);
+      expect(result.metricsData.topOffenders[0]).to.deep.equal({
+        url: 'https://example.com/page1',
+        count: 3,
+      });
+      expect(result.metricsData.topOffenders[1]).to.deep.equal({
+        url: 'https://example.com/page3',
+        count: 2,
+      });
     });
   });
 });
