@@ -979,7 +979,7 @@ This is an error description
     it('includes issue if severity is ERROR and rootType is not ImageObject', () => {
       const issue = {
         severity: 'ERROR',
-        rootType: 'VideoObject',
+        rootType: 'BreadcrumbList',
       };
       const result = includeIssue(context, issue);
       expect(result).to.be.true;
@@ -989,7 +989,7 @@ This is an error description
       context.site.getDeliveryType.returns(Site.DELIVERY_TYPES.AEM_CS);
       const issue = {
         severity: 'ERROR',
-        rootType: 'VideoObject',
+        rootType: 'BreadcrumbList',
       };
       const result = includeIssue(context, issue);
       expect(result).to.be.true;
