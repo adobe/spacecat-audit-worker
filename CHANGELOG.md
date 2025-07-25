@@ -1,3 +1,10 @@
+# [1.132.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.131.0...v1.132.0) (2025-07-25)
+
+
+### Features
+
+* implement a11y metrics for accessibility opportunity header ([#1065](https://github.com/adobe/spacecat-audit-worker/issues/1065)) ([81649e2](https://github.com/adobe/spacecat-audit-worker/commit/81649e281f2d1c2b205848261539398b30d91349))
+
 # [1.131.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.130.2...v1.131.0) (2025-07-24)
 
 
