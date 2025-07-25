@@ -1218,7 +1218,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Should not call debug log when error occurs
       expect(mockContext.log.debug).to.not.have.been.calledWith(
-        '[A11yAudit] Saving a11y metrics to s3',
+        '[A11yAudit] Saved a11y metrics to s3',
       );
     });
 
