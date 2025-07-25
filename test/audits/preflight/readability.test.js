@@ -314,44 +314,142 @@ describe('Preflight Readability Audit', () => {
     });
 
     it('should handle overall DOM processing errors', async () => {
-      // Test with data that causes an error during processing
+      // Force an error by making JSDOM constructor throw
+      const originalJSDOM = global.JSDOM;
+      global.JSDOM = function mockJSDOM() {
+        throw new Error('Forced JSDOM error for testing');
+      };
+
       auditContext.scrapedObjects = [{
         data: {
           finalUrl: 'https://example.com/page1',
           scrapeResult: {
-            // Missing rawBody property entirely, which should cause an error
-            // when trying to access it
+            rawBody: '<html><body><p>Valid HTML content for processing</p></body></html>',
           },
         },
       }];
 
-      await readability(context, auditContext);
+      try {
+        await readability(context, auditContext);
 
-      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
-      expect(audit.opportunities).to.have.lengthOf(1);
-      expect(audit.opportunities[0].check).to.equal('readability-analysis-error');
-      expect(audit.opportunities[0].issue).to.include('Failed to analyze page readability');
-      expect(log.error).to.have.been.calledWithMatch('Error processing');
+        const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+        expect(audit.opportunities).to.have.lengthOf(1);
+        expect(audit.opportunities[0].check).to.equal('readability-analysis-error');
+        expect(audit.opportunities[0].issue).to.include('Failed to analyze page readability');
+        expect(log.error).to.have.been.calledWithMatch('Error processing');
+      } finally {
+        // Always restore JSDOM
+        global.JSDOM = originalJSDOM;
+      }
     });
 
-    it('should cover error handling when textContent processing fails', async () => {
-      // Create a scenario where JSDOM succeeds but something else fails
-      // by providing data that will cause an error in the text processing logic
+    it('should handle case when page result is not found', async () => {
+      // Set up scraped object for a URL that's not in the audits map
       auditContext.scrapedObjects = [{
         data: {
-          finalUrl: 'https://example.com/page1',
+          finalUrl: 'https://example.com/nonexistent-page',
           scrapeResult: {
-            rawBody: undefined, // This should cause new JSDOM(undefined) to throw
+            rawBody: '<html><body><p>Some test content that is long enough to process</p></body></html>',
           },
         },
       }];
 
       await readability(context, auditContext);
 
-      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
-      expect(audit.opportunities).to.have.lengthOf(1);
-      expect(audit.opportunities[0].check).to.equal('readability-analysis-error');
-      expect(log.error).to.have.been.calledWithMatch('Error processing');
+      // Should log a warning and return early
+      expect(log.warn).to.have.been.calledWithMatch('No page result found for');
+    });
+
+    it('should handle case when audit entry is missing for a page', async () => {
+      // To trigger "audit not found", we need a scrapedObject for a URL
+      // that's NOT in previewUrls (so no audit entry gets created for it)
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/different-page', // This URL is NOT in previewUrls
+          scrapeResult: {
+            rawBody: '<html><body><p>Some test content that is long enough to process</p></body></html>',
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      // Should log a warning because no page result exists for this URL
+      expect(log.warn).to.have.been.calledWithMatch('No page result found for');
+    });
+
+    it('should handle case when no readability audit exists for a page', async () => {
+      // Create a page result but manually remove its readability audit after function creates it
+      const testUrl = 'https://example.com/page2';
+
+      // First, add the URL to previewUrls so an audit gets created
+      auditContext.previewUrls.push(testUrl);
+
+      const page2Result = {
+        pageUrl: testUrl,
+        step: 'identify',
+        audits: [],
+      };
+      auditsResult.push(page2Result);
+      audits.set(testUrl, page2Result);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: testUrl,
+          scrapeResult: {
+            rawBody: '<html><body><p>Some test content that is long enough to process</p></body></html>',
+          },
+        },
+      }];
+
+      // Call readability to create the audit entries first
+      await readability(context, auditContext);
+
+      // Now remove the readability audit and clear logs
+      page2Result.audits = page2Result.audits.filter((audit) => audit.name !== 'readability');
+      log.warn.resetHistory();
+
+      // Process scrapedObjects again - this should trigger the warning
+      await readability(context, auditContext);
+
+      // Should log a warning because audit entry is missing for this page
+      expect(log.warn).to.have.been.calledWithMatch('No readability audit found for');
+    });
+
+    it('should handle readability calculation error for individual elements', async () => {
+      // We'll use sinon to stub the text-readability module
+      const textReadability = await import('text-readability');
+      const originalFleschReadingEase = textReadability.default.fleschReadingEase;
+
+      // Stub to throw error on first call, succeed on subsequent calls
+      let callCount = 0;
+      textReadability.default.fleschReadingEase = sinon.stub().callsFake((text) => {
+        callCount += 1;
+        if (callCount === 1) {
+          throw new Error('Readability calculation failed');
+        }
+        return originalFleschReadingEase(text);
+      });
+
+      const longText1 = 'This is the first long text that should cause an error during processing. '.repeat(3);
+      const longText2 = 'This is the second long text that should process normally without any issues. '.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${longText1}</p><p>${longText2}</p></body></html>`,
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      // Should log warning for the failed element but continue processing
+      expect(log.warn).to.have.been.calledWithMatch('Error calculating readability for element');
+
+      // Restore the original function
+      textReadability.default.fleschReadingEase = originalFleschReadingEase;
     });
   });
 });
