@@ -21,6 +21,8 @@ import {
   extractUrlsFromSettledResults,
   filterAccessibilityOpportunities,
   updateStatusToIgnored,
+  calculateA11yMetrics,
+  calculateAuditMetrics,
 } from '../../../src/accessibility/utils/scrape-utils.js';
 
 use(sinonChai);
@@ -281,7 +283,7 @@ describe('Scrape Utils', () => {
         '2024-07-24',
         mockLog,
       );
-      expect(mockLog.info).to.have.been.calledWith(`[A11yAudit] Found ${objectKeys.length} existing URLs from failed audits.`);
+      expect(mockLog.info).to.have.been.calledWith(`[A11yAudit] Found ${objectKeys.length} existing URLs from failed audits for site site1.`);
     });
 
     it('returns an empty array when no failed audits are found', async () => {
@@ -293,7 +295,7 @@ describe('Scrape Utils', () => {
       const keys = await getKeys(mockS3Client, 'test-bucket', 'site1', mockLog);
 
       expect(keys).to.deep.equal([]);
-      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] No existing URLs from failed audits found.');
+      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] No existing URLs from failed audits found for site site1.');
     });
 
     it('returns an empty array and logs error when getObjectKeysFromSubfolders fails', async () => {
@@ -306,7 +308,7 @@ describe('Scrape Utils', () => {
       const keys = await getKeys(mockS3Client, 'test-bucket', 'site1', mockLog);
 
       expect(keys).to.deep.equal([]);
-      expect(mockLog.error).to.have.been.calledWith(`[A11yAudit] Error getting existing URLs from failed audits: ${error.message}`);
+      expect(mockLog.error).to.have.been.calledWith(`[A11yAudit] Error getting existing URLs from failed audits for site site1: ${error.message}`);
     });
 
     it('returns all keys even if some are malformed', async () => {
@@ -461,7 +463,7 @@ describe('Scrape Utils', () => {
         error: 'Some updates failed',
       });
       expect(mockLog.error).to.have.been.calledWith(
-        '[A11yAudit] Failed to update 1 opportunities: [{"status":"rejected","reason":{}}]',
+        '[A11yAudit] Failed to update 1 opportunities for site site1: [{"status":"rejected","reason":{}}]',
       );
     });
 
@@ -474,7 +476,7 @@ describe('Scrape Utils', () => {
         updatedCount: 0,
         error: 'Fetch failed',
       });
-      expect(mockLog.error).to.have.been.calledWith('[A11yAudit] Error updating opportunities to IGNORED: Fetch failed');
+      expect(mockLog.error).to.have.been.calledWith('[A11yAudit] Error updating opportunities to IGNORED for site site1: Fetch failed');
     });
   });
 
@@ -582,11 +584,11 @@ describe('Scrape Utils', () => {
       // Assert
       expect(result.success).to.be.true;
       expect(result.message).to.equal('A11y metrics saved to S3');
-      expect(result.s3Key).to.equal('metrics/test-site-id/xcore/a11y-audit.json');
+      expect(result.s3Key).to.equal('metrics/test-site-id/axe-core/a11y-audit.json');
       expect(result.metricsData).to.deep.include({
         siteId: 'test-site-id',
         url: 'https://example.com',
-        source: 'xcore',
+        source: 'axe-core',
         name: 'a11y-audit',
         time: '2024-07-24T10:00:00.000Z',
         compliance: {
@@ -655,7 +657,7 @@ describe('Scrape Utils', () => {
 
       // Assert
       expect(result.success).to.be.true;
-      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] Found existing metrics file with 1 entries');
+      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] Found existing metrics file with 1 entries for site test-site-id (https://example.com)');
 
       // Verify the S3 call includes both old and new metrics
       const s3CallArgs = mockS3Client.send.getCall(0).args[0];
@@ -664,7 +666,7 @@ describe('Scrape Utils', () => {
       expect(savedData[0]).to.deep.equal(existingMetrics[0]);
       expect(savedData[1]).to.deep.include({
         siteId: 'test-site-id',
-        source: 'xcore',
+        source: 'axe-core',
       });
     });
 
@@ -779,7 +781,7 @@ describe('Scrape Utils', () => {
 
       // Assert
       expect(result.success).to.be.true;
-      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] No existing metrics file found, creating new one: S3 read error');
+      expect(mockLog.info).to.have.been.calledWith('[A11yAudit] No existing metrics file found for site test-site-id (https://example.com), creating new one: S3 read error');
 
       // Should still save successfully with empty array as base
       const s3CallArgs = mockS3Client.send.getCall(0).args[0];
@@ -807,7 +809,7 @@ describe('Scrape Utils', () => {
       expect(result.success).to.be.false;
       expect(result.message).to.equal('Failed to save a11y metrics to S3: S3 write error');
       expect(result.error).to.equal('S3 write error');
-      expect(mockLog.error).to.have.been.calledWith('[A11yAudit] Error saving metrics to S3: S3 write error');
+      expect(mockLog.error).to.have.been.calledWith('[A11yAudit] Error saving metrics to S3 for site test-site-id (https://example.com): S3 write error');
     });
 
     it('should use correct S3 key format', async () => {
@@ -826,12 +828,12 @@ describe('Scrape Utils', () => {
       expect(getObjectFromKeyStub).to.have.been.calledWith(
         mockS3Client,
         'test-importer-bucket',
-        'metrics/test-site-id/xcore/a11y-audit.json',
+        'metrics/test-site-id/axe-core/a11y-audit.json',
         mockLog,
       );
 
       const s3CallArgs = mockS3Client.send.getCall(0).args[0];
-      expect(s3CallArgs.input.Key).to.equal('metrics/test-site-id/xcore/a11y-audit.json');
+      expect(s3CallArgs.input.Key).to.equal('metrics/test-site-id/axe-core/a11y-audit.json');
       expect(s3CallArgs.input.Bucket).to.equal('test-importer-bucket');
       expect(s3CallArgs.input.ContentType).to.equal('application/json');
     });
@@ -858,7 +860,7 @@ describe('Scrape Utils', () => {
       expect(savedData).to.have.lengthOf(1);
       expect(savedData[0]).to.deep.include({
         siteId: 'test-site-id',
-        source: 'xcore',
+        source: 'axe-core',
       });
     });
 
@@ -924,6 +926,210 @@ describe('Scrape Utils', () => {
         url: 'https://example.com/page3',
         count: 2,
       });
+    });
+  });
+
+  describe('calculateAuditMetrics', () => {
+    it('should create metrics with custom audit type and source', () => {
+      // Arrange
+      const reportData = { custom: 'data' };
+      const config = {
+        siteId: 'test-site',
+        baseUrl: 'https://test.com',
+        auditType: 'custom',
+        source: 'custom-tool',
+        totalChecks: 25,
+        extractComplianceData: (data, total) => ({
+          total,
+          failed: 5,
+          passed: 20,
+        }),
+        extractTopOffenders: () => [
+          { url: 'https://test.com/page1', count: 3 },
+          { url: 'https://test.com/page2', count: 1 },
+        ],
+      };
+
+      // Act
+      const result = calculateAuditMetrics(reportData, config);
+
+      // Assert
+      expect(result).to.deep.include({
+        siteId: 'test-site',
+        url: 'https://test.com',
+        source: 'custom-tool',
+        name: 'custom-audit',
+        compliance: {
+          total: 25,
+          failed: 5,
+          passed: 20,
+        },
+        topOffenders: [
+          { url: 'https://test.com/page1', count: 3 },
+          { url: 'https://test.com/page2', count: 1 },
+        ],
+      });
+      expect(result.time).to.be.a('string');
+    });
+
+    it('should use default source when not provided', () => {
+      // Arrange
+      const reportData = {};
+      const config = {
+        siteId: 'test-site',
+        baseUrl: 'https://test.com',
+        auditType: 'test',
+        totalChecks: 10,
+        extractComplianceData: () => ({ total: 10, failed: 0, passed: 10 }),
+        extractTopOffenders: () => [],
+      };
+
+      // Act
+      const result = calculateAuditMetrics(reportData, config);
+
+      // Assert
+      expect(result.source).to.equal('axe-core'); // default value
+    });
+
+    it('should call extractor functions with correct parameters', () => {
+      // Arrange
+      const reportData = { test: 'data' };
+      const mockComplianceExtractor = sinon.stub().returns({ total: 20, failed: 5, passed: 15 });
+      const mockOffendersExtractor = sinon.stub().returns([]);
+      const config = {
+        siteId: 'test-site',
+        baseUrl: 'https://test.com',
+        auditType: 'test',
+        totalChecks: 20,
+        extractComplianceData: mockComplianceExtractor,
+        extractTopOffenders: mockOffendersExtractor,
+      };
+
+      // Act
+      calculateAuditMetrics(reportData, config);
+
+      // Assert
+      expect(mockComplianceExtractor).to.have.been.calledOnceWith(reportData, 20);
+      expect(mockOffendersExtractor).to.have.been.calledOnceWith(reportData);
+    });
+
+    it('should generate valid ISO timestamp', () => {
+      // Arrange
+      const config = {
+        siteId: 'test-site',
+        baseUrl: 'https://test.com',
+        auditType: 'test',
+        totalChecks: 10,
+        extractComplianceData: () => ({ total: 10, failed: 0, passed: 10 }),
+        extractTopOffenders: () => [],
+      };
+
+      // Act
+      const result = calculateAuditMetrics({}, config);
+
+      // Assert
+      expect(result.time).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(new Date(result.time)).to.be.a('date');
+    });
+  });
+
+  describe('calculateA11yMetrics', () => {
+    it('should calculate metrics correctly from report data', () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: {
+            critical: {
+              items: {
+                'color-contrast': { count: 3 },
+                'missing-alt': { count: 2 },
+              },
+            },
+            serious: {
+              items: {
+                'link-name': { count: 1 },
+              },
+            },
+          },
+        },
+        'https://example.com/page1': {
+          violations: {
+            total: 8,
+          },
+        },
+        'https://example.com/page2': {
+          violations: {
+            total: 5,
+          },
+        },
+      };
+
+      // Act
+      const result = calculateA11yMetrics(reportData, 'test-site-id', 'https://example.com');
+
+      // Assert
+      expect(result).to.deep.include({
+        siteId: 'test-site-id',
+        url: 'https://example.com',
+        source: 'axe-core',
+        name: 'a11y-audit',
+        compliance: {
+          total: 50,
+          failed: 3, // 2 critical items + 1 serious item
+          passed: 47,
+        },
+      });
+      expect(result.topOffenders).to.have.lengthOf(2);
+      expect(result.topOffenders[0]).to.deep.equal({
+        url: 'https://example.com/page1',
+        count: 8,
+      });
+      expect(result.time).to.be.a('string');
+    });
+
+    it('should handle empty report data', () => {
+      // Arrange
+      const reportData = {};
+
+      // Act
+      const result = calculateA11yMetrics(reportData, 'test-site-id', 'https://example.com');
+
+      // Assert
+      expect(result.compliance).to.deep.equal({
+        total: 50,
+        failed: 0,
+        passed: 50,
+      });
+      expect(result.topOffenders).to.be.an('array').that.is.empty;
+    });
+
+    it('should filter out URLs with zero violations', () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: {
+            critical: { items: { 'test-rule': { count: 1 } } },
+            serious: { items: {} },
+          },
+        },
+        'https://example.com/page1': {
+          violations: { total: 5 },
+        },
+        'https://example.com/page2': {
+          violations: { total: 0 },
+        },
+        'https://example.com/page3': {
+          violations: { total: 3 },
+        },
+      };
+
+      // Act
+      const result = calculateA11yMetrics(reportData, 'test-site-id', 'https://example.com');
+
+      // Assert
+      expect(result.topOffenders).to.have.lengthOf(2);
+      expect(result.topOffenders[0].url).to.equal('https://example.com/page1');
+      expect(result.topOffenders[1].url).to.equal('https://example.com/page3');
     });
   });
 });

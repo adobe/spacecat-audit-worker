@@ -65,7 +65,7 @@ export async function scrapeAccessibilityData(context) {
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
     log.info(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
     if (!isNonEmptyArray(topPages)) {
-      log.info('[A11yAudit] No top pages found, skipping audit');
+      log.info(`[A11yAudit] No top pages found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
       return {
         status: 'NO_OPPORTUNITIES',
         message: 'No top pages found, skipping audit',
@@ -76,7 +76,7 @@ export async function scrapeAccessibilityData(context) {
       .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
       .sort((a, b) => b.traffic - a.traffic)
       .slice(0, 100);
-    log.info(`[A11yAudit] Top 100 pages: ${JSON.stringify(urlsToScrape, null, 2)}`);
+    log.info(`[A11yAudit] Top 100 pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
   }
 
   const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
@@ -85,16 +85,16 @@ export async function scrapeAccessibilityData(context) {
     siteId,
     log,
   );
-  log.info(`[A11yAudit] Found existing files from failed audits: ${existingObjectKeys}`);
+  log.info(`[A11yAudit] Found existing files from failed audits for site ${siteId} (${site.getBaseURL()}): ${existingObjectKeys}`);
   const existingUrls = await getExistingUrlsFromFailedAudits(
     s3Client,
     bucketName,
     log,
     existingObjectKeys,
   );
-  log.info(`[A11yAudit] Found existing URLs from failed audits: ${existingUrls}`);
+  log.info(`[A11yAudit] Found existing URLs from failed audits for site ${siteId} (${site.getBaseURL()}): ${existingUrls}`);
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
-  log.info(`[A11yAudit] Remaining URLs to scrape: ${JSON.stringify(remainingUrls, null, 2)}`);
+  log.info(`[A11yAudit] Remaining URLs to scrape for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(remainingUrls, null, 2)}`);
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
@@ -133,7 +133,7 @@ export async function processAccessibilityOpportunities(context) {
     };
   }
 
-  log.info(`[A11yAudit] Step 2: Processing scraped data for ${site.getBaseURL()}`);
+  log.info(`[A11yAudit] Step 2: Processing scraped data for site ${siteId} (${site.getBaseURL()})`);
 
   // Use the accessibility aggregator to process data
   let aggregationResult;
@@ -148,14 +148,14 @@ export async function processAccessibilityOpportunities(context) {
     );
 
     if (!aggregationResult.success) {
-      log.error(`[A11yAudit] No data aggregated: ${aggregationResult.message}`);
+      log.error(`[A11yAudit] No data aggregated for site ${siteId} (${site.getBaseURL()}): ${aggregationResult.message}`);
       return {
         status: 'NO_OPPORTUNITIES',
         message: aggregationResult.message,
       };
     }
   } catch (error) {
-    log.error(`[A11yAudit] Error processing accessibility data: ${error.message}`, error);
+    log.error(`[A11yAudit] Error processing accessibility data for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -173,7 +173,7 @@ export async function processAccessibilityOpportunities(context) {
       AUDIT_TYPE_ACCESSIBILITY,
     );
   } catch (error) {
-    log.error(`[A11yAudit] Error generating report opportunities: ${error.message}`, error);
+    log.error(`[A11yAudit] Error generating report opportunities for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -186,9 +186,9 @@ export async function processAccessibilityOpportunities(context) {
       aggregationResult.finalResultFiles.current,
       context,
     );
-    log.debug('[A11yAudit] Individual opportunities created successfully');
+    log.debug(`[A11yAudit] Individual opportunities created successfully for site ${siteId} (${site.getBaseURL()})`);
   } catch (error) {
-    log.error(`[A11yAudit] Error creating individual opportunities: ${error.message}`, error);
+    log.error(`[A11yAudit] Error creating individual opportunities for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -197,10 +197,13 @@ export async function processAccessibilityOpportunities(context) {
 
   // step 3 save a11y metrics to s3
   try {
-    await saveA11yMetricsToS3(aggregationResult.finalResultFiles.current, context);
-    log.debug('[A11yAudit] Saving a11y metrics to s3');
+    const metricsResult = await saveA11yMetricsToS3(
+      aggregationResult.finalResultFiles.current,
+      context,
+    );
+    log.debug(`[A11yAudit] Saved a11y metrics for site ${siteId} - Result:`, metricsResult);
   } catch (error) {
-    log.error(`[A11yAudit] Error creating individual opportunities: ${error.message}`, error);
+    log.error(`[A11yAudit] Error saving a11y metrics to s3 for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -212,7 +215,7 @@ export async function processAccessibilityOpportunities(context) {
   // Subtract 1 for the 'overall' key to get actual URL count
   const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
 
-  log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} URLs`);
+  log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} URLs for site ${siteId} (${site.getBaseURL()})`);
 
   // Return the final audit result with metrics and status
   return {

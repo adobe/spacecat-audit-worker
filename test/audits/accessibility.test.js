@@ -457,7 +457,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert - Check that top 100 pages are logged in correct order
       expect(mockContext.log.info).to.have.been.calledWith(
-        sinon.match(/Top 100 pages:.*page2.*page1.*page3/s),
+        sinon.match(/Top 100 pages for site test-site-id \(https:\/\/example\.com\):.*page2.*page1.*page3/s),
       );
     });
 
@@ -480,7 +480,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert - Find the specific "Top 100 pages" log call
       const logCalls = mockContext.log.info.getCalls();
-      const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages:'));
+      const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages for site'));
 
       expect(top100LogCall).to.exist;
 
@@ -541,10 +541,10 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert - Verify only 100 pages are processed
       const logCalls = mockContext.log.info.getCalls();
-      const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages:'));
+      const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages for site'));
 
       const loggedData = top100LogCall.args[0];
-      const jsonStart = loggedData.indexOf('Top 100 pages: ') + 'Top 100 pages: '.length;
+      const jsonStart = loggedData.indexOf('): ') + 3; // Find the end of the site info and start of JSON
       const parsedPages = JSON.parse(loggedData.substring(jsonStart));
 
       expect(parsedPages).to.have.lengthOf(100);
@@ -798,7 +798,7 @@ describe('Accessibility Audit Handler', () => {
       );
 
       expect(mockContext.log.info).to.have.been.calledWith(
-        '[A11yAudit] Step 2: Processing scraped data for https://example.com',
+        '[A11yAudit] Step 2: Processing scraped data for site test-site-id (https://example.com)',
       );
 
       expect(result.status).to.equal('OPPORTUNITIES_FOUND');
@@ -839,7 +839,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error creating individual opportunities: Failed to create individual opportunities',
+        '[A11yAudit] Error creating individual opportunities for site test-site-id (https://example.com): Failed to create individual opportunities',
         error,
       );
 
@@ -924,7 +924,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] No data aggregated: No accessibility data found',
+        '[A11yAudit] No data aggregated for site test-site-id (https://example.com): No accessibility data found',
       );
 
       expect(result).to.deep.equal({
@@ -946,7 +946,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error processing accessibility data: S3 connection failed',
+        '[A11yAudit] Error processing accessibility data for site test-site-id (https://example.com): S3 connection failed',
         error,
       );
 
@@ -989,7 +989,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error generating report opportunities: Failed to create opportunity',
+        '[A11yAudit] Error generating report opportunities for site test-site-id (https://example.com): Failed to create opportunity',
         error,
       );
 
@@ -1116,7 +1116,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.info).to.have.been.calledWith(
-        '[A11yAudit] Step 2: Processing scraped data for https://example.com',
+        '[A11yAudit] Step 2: Processing scraped data for site test-site-id (https://example.com)',
       );
     });
 
@@ -1144,7 +1144,11 @@ describe('Accessibility Audit Handler', () => {
       aggregateAccessibilityDataStub.resolves(mockAggregationResult);
       generateReportOpportunitiesStub.resolves();
       createAccessibilityIndividualOpportunitiesStub.resolves();
-      saveA11yMetricsToS3Stub.resolves();
+      saveA11yMetricsToS3Stub.resolves({
+        success: true,
+        message: 'A11y metrics saved to S3',
+        s3Key: 'metrics/test-site-id/axe-core/a11y-audit.json',
+      });
 
       // Act
       await processAccessibilityOpportunities(mockContext);
@@ -1156,7 +1160,8 @@ describe('Accessibility Audit Handler', () => {
       );
 
       expect(mockContext.log.debug).to.have.been.calledWith(
-        '[A11yAudit] Saving a11y metrics to s3',
+        '[A11yAudit] Saved a11y metrics for site test-site-id - Result:',
+        sinon.match.object,
       );
     });
 
@@ -1197,7 +1202,7 @@ describe('Accessibility Audit Handler', () => {
       );
 
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error creating individual opportunities: S3 upload failed',
+        '[A11yAudit] Error saving a11y metrics to s3 for site test-site-id (https://example.com): S3 upload failed',
         error,
       );
 
