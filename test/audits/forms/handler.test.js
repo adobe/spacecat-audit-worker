@@ -394,6 +394,118 @@ describe('send a11y urls for scraping step', () => {
     expect(result.urls[0].url).to.equal('https://www.business.adobe.com/newsletter');
     expect(result.urls[0].formSources).to.deep.equal(['#container-1 form.newsletter']);
   });
+
+  it('should replace generic form selector with specific form source from top forms', async () => {
+    // Reset and setup fresh mocks for this test
+    context.s3Client.send.reset();
+    context.dataAccess.SiteTopForm.allBySiteId.reset();
+
+    // Mock scraped data that will result in a generic 'form' selector
+    // This happens when forms have no formSource, no id, and no classList
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+      ],
+      IsTruncated: false,
+    });
+
+    const mockFormResponseData = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://example.com/contact',
+          scrapeResult: [
+            {
+              // Form with no formSource, no id, no classList - will fallback to 'form'
+              formType: 'contact',
+              visibleATF: true,
+              fieldCount: 5,
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.onCall(1).resolves(mockFormResponseData);
+    context.s3Client.send.resolves(mockFormResponseData);
+
+    // Create mock top forms with the same URL but with a specific form source
+    const mockTopForms = [
+      {
+        getUrl: () => 'https://example.com/contact', // Same URL as scraped data
+        getFormSource: () => '#contact-form', // Specific form source
+      },
+    ];
+
+    // Mock the SiteTopForm.allBySiteId to return the mock data
+    context.dataAccess.SiteTopForm.allBySiteId.resolves(mockTopForms);
+
+    const result = await sendA11yUrlsForScrapingStep(context);
+
+    expect(context.dataAccess.SiteTopForm.allBySiteId).to.have.been.calledWith(siteId);
+    expect(result.urls).to.have.length(1);
+
+    // Check that the generic 'form' was replaced with the specific form source
+    const contactUrl = result.urls.find((url) => url.url === 'https://example.com/contact');
+    expect(contactUrl).to.exist;
+    expect(contactUrl.formSources).to.deep.equal(['#contact-form']); // Should be replaced, not pushed
+  });
+
+  it('should append form source to existing non-generic form sources from top forms', async () => {
+    // Reset and setup fresh mocks for this test
+    context.s3Client.send.reset();
+    context.dataAccess.SiteTopForm.allBySiteId.reset();
+
+    // Mock scraped data that has a specific form source (not generic 'form')
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+      ],
+      IsTruncated: false,
+    });
+
+    const mockFormResponseData = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://example.com/signup',
+          scrapeResult: [
+            {
+              formSource: '.signup-form', // Specific form source (not generic 'form')
+              formType: 'signup',
+              visibleATF: true,
+              fieldCount: 3,
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.onCall(1).resolves(mockFormResponseData);
+    context.s3Client.send.resolves(mockFormResponseData);
+
+    // Create mock top forms with the same URL but with a different specific form source
+    const mockTopForms = [
+      {
+        getUrl: () => 'https://example.com/signup', // Same URL as scraped data
+        getFormSource: () => '#signup-modal', // Different specific form source
+      },
+    ];
+
+    // Mock the SiteTopForm.allBySiteId to return the mock data
+    context.dataAccess.SiteTopForm.allBySiteId.resolves(mockTopForms);
+
+    const result = await sendA11yUrlsForScrapingStep(context);
+
+    expect(context.dataAccess.SiteTopForm.allBySiteId).to.have.been.calledWith(siteId);
+    expect(result.urls).to.have.length(1);
+
+    const signupUrl = result.urls.find((url) => url.url === 'https://example.com/signup');
+    expect(signupUrl).to.exist;
+    expect(signupUrl.formSources).to.include('.signup-form'); // Original form source
+    expect(signupUrl.formSources).to.include('#signup-modal'); // Added form source
+    expect(signupUrl.formSources).to.have.length(2); // Should have both
+  });
 });
 
 describe('process opportunity step', () => {

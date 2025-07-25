@@ -134,12 +134,14 @@ export async function sendA11yUrlsForScrapingStep(context) {
     } else {
       // URL exists, merge form sources if needed
       const existingItem = urlsData.find((item) => item.url === url);
-      if (existingItem && formSource && existingItem.formSources) {
+      if (existingItem && formSource) {
         if (!existingItem.formSources.includes(formSource)) {
-          existingItem.formSources.push(formSource);
+          if (existingItem.formSources.length === 1 && existingItem.formSources[0] === 'form') {
+            existingItem.formSources = [formSource];
+          } else {
+            existingItem.formSources.push(formSource);
+          }
         }
-      } else if (existingItem && formSource && !existingItem.formSources) {
-        existingItem.formSources = [formSource];
       }
     }
   }
