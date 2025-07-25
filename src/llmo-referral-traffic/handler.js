@@ -57,12 +57,9 @@ async function createWorkbook(results) {
   return workbook;
 }
 
-export async function referralTrafficRunner(auditUrl, context, site, i) {
+export async function referralTrafficRunner(auditUrl, context, site) {
   const { env, log } = context;
   const { S3_IMPORTER_BUCKET_NAME: importerBucket } = env;
-
-  const today = new Date();
-  today.setDate(today.getDate() - i * 7);
 
   // constants
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
@@ -75,7 +72,7 @@ export async function referralTrafficRunner(auditUrl, context, site, i) {
   const variables = {
     tableName: `${databaseName}.${tableName}`,
     siteId: site.getSiteId(),
-    temporalCondition: getTemporalCondition(today),
+    temporalCondition: getTemporalCondition(),
   };
 
   // run athena query - fetch data
@@ -100,7 +97,7 @@ export async function referralTrafficRunner(auditUrl, context, site, i) {
   const workbook = await createWorkbook(results);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/referral-traffic`;
-  const filename = `referral-traffic-w${getPreviousWeekYear(today)}.xlsx`;
+  const filename = `referral-traffic-w${getPreviousWeekYear()}.xlsx`;
 
   await saveExcelReport({
     sharepointClient,
