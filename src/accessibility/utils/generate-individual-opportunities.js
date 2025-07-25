@@ -810,10 +810,13 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
           }
 
           // Return unchanged if no specific remediation found
+          log.debug(`[A11yRemediationGuidance] No specific remediation found for issue ${htmlIssueObj.issue_id}`);
           return htmlIssueObj;
         });
 
         // Return enhanced issue with improved htmlWithIssues structure
+        log.debug(`[A11yRemediationGuidance] Updated issue ${issue.issue_id} with remediation guidance`);
+        log.debug(`[A11yRemediationGuidance] Enhanced HTML with issues: ${JSON.stringify(enhancedHtmlWithIssues)}`);
         return {
           ...issue,
           htmlWithIssues: enhancedHtmlWithIssues,
@@ -823,6 +826,11 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
       // Return issue unchanged if no matching remediation found
       return issue;
     });
+
+    if (updatedIssues.length !== totalIssues) {
+      log.debug(`[A11yRemediationGuidance] Number of updated issues: ${updatedIssues.length}`);
+      log.debug(`[A11yRemediationGuidance] Total issues: ${totalIssues}`);
+    }
 
     // Update the suggestion with enhanced issues containing remediation details
     const updatedSuggestionData = {
@@ -838,9 +846,6 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
     opportunity.setAuditId(auditId);
     opportunity.setUpdatedBy('system');
     await opportunity.save();
-
-    const logMsg = `Successfully updated suggestion ${suggestionId} with remediations`;
-    log.info(`[A11yRemediationGuidance] ${logMsg} for opportunity ${opportunityId}`);
 
     return {
       success: true,
