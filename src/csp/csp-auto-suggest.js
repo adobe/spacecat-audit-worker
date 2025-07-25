@@ -118,7 +118,6 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
     return csp;
   }
 
-  // eslint-disable-next-line no-param-reassign
   const result = [...csp];
   result[0].findings = findings;
 
