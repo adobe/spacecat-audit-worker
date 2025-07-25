@@ -19,7 +19,7 @@ import nock from 'nock';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
 import rumTraffic from '../fixtures/broken-backlinks/all-traffic.json' with { type: 'json' };
 import {
-  brokenBacklinksAuditRunner,
+  brokenBacklinksAuditRunner, generateSuggestionData,
   runAuditAndImportTopPages,
   submitForScraping,
 } from '../../src/backlinks/handler.js';
@@ -33,6 +33,10 @@ import {
   siteWithExcludedUrls,
 } from '../fixtures/broken-backlinks/sites.js';
 import { ahrefsMock, mockFixedBacklinks } from '../fixtures/broken-backlinks/ahrefs.js';
+import {
+  brokenBacklinksSuggestions,
+  suggestions,
+} from '../fixtures/broken-backlinks/suggestion.js';
 import { organicTraffic } from '../fixtures/broken-backlinks/organic-traffic.js';
 import calculateKpiMetrics from '../../src/backlinks/kpi-metrics.js';
 
@@ -57,9 +61,10 @@ describe('Backlinks Tests', function () {
   };
   const contextSite = {
     getId: () => 'site-id',
+    getDeliveryType: () => 'aem_cs',
     getBaseURL: () => 'https://example.com',
   };
-
+  let brokenBacklinksOpportunity;
   const sandbox = sinon.createSandbox();
 
   beforeEach(() => {
@@ -76,6 +81,7 @@ describe('Backlinks Tests', function () {
           AHREFS_API_KEY: 'ahrefs-api',
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
           S3_IMPORTER_BUCKET_NAME: 'test-import-bucket',
+          QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
         },
         s3Client: {
           send: sandbox.stub(),
@@ -87,6 +93,22 @@ describe('Backlinks Tests', function () {
       .build(message);
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([brokenBacklinksOpportunity]);
+    context.dataAccess.Suggestion = {
+      allByOpportunityIdAndStatus: sandbox.stub().resolves(suggestions),
+    };
+
+    brokenBacklinksOpportunity = {
+      getId: () => 'opportunity-id',
+      setAuditId: sinon.stub(),
+      save: sinon.stub(),
+      getSuggestions: sinon.stub().returns([]),
+      addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
+      getType: () => 'broken-backlinks',
+      setData: () => {},
+      getData: () => {},
+      setUpdatedBy: sinon.stub().returnsThis(),
     };
 
     nock('https://foo.com')
@@ -211,6 +233,74 @@ describe('Backlinks Tests', function () {
         error: errorMessage,
         success: false,
       },
+    });
+  });
+
+  describe('generateSuggestionData', async () => {
+    let configuration;
+
+    beforeEach(() => {
+      configuration = {
+        isHandlerEnabledForSite: sandbox.stub(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([brokenBacklinksOpportunity]);
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+      };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('throws error if audit result is unsuccessful', async () => {
+      context.audit.getAuditResult.returns({ success: false });
+
+      try {
+        await generateSuggestionData(context);
+      } catch (error) {
+        expect(error.message).to.equal('Audit failed, skipping suggestions generation');
+      }
+    });
+
+    it('throws error if auto-suggest is disabled for the site', async () => {
+      context.audit.getAuditResult.returns({ success: true });
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      try {
+        await generateSuggestionData(context);
+      } catch (error) {
+        expect(error.message).to.equal('Auto-suggest is disabled for site');
+      }
+    });
+
+    it('processes suggestions for broken backlinks, defaults to base URL if none found', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const result = await generateSuggestionData(context);
+
+      // 4x for headers + 4x for each page
+      expect(result.status).to.deep.equal('complete');
+      expect(context.sqs.sendMessage).to.have.been.calledWithMatch('test-queue', {
+        type: 'guidance:broken-backlinks',
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        deliveryType: 'aem_cs',
+        time: sinon.match.any,
+        data: {
+          url_from: 'https://from.com/from-2',
+          url_to: 'https://foo.com/redirects-throws-error',
+          suggestionId: 'test-suggestion-1',
+          opportunityId: 'opportunity-id',
+        },
+      });
     });
   });
 
