@@ -1,3 +1,10 @@
+## [1.133.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.133.0...v1.133.1) (2025-07-25)
+
+
+### Bug Fixes
+
+* referral traffic audit static files ([#1069](https://github.com/adobe/spacecat-audit-worker/issues/1069)) ([f31eb2d](https://github.com/adobe/spacecat-audit-worker/commit/f31eb2d9bb1ca4c75d2e687c7b20758bfa3bc692))
+
 # [1.133.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.132.0...v1.133.0) (2025-07-25)
 
 
