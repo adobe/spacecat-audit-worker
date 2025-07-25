@@ -48,7 +48,7 @@ async function scrapeAccessibilityData(context, auditContext) {
   // Create accessibility audit entries for all pages
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
-    pageResult.audits.push({ name: PREFLIGHT_ACCESSIBILITY, type: 'accessibility', opportunities: [] });
+    pageResult.audits.push({ name: PREFLIGHT_ACCESSIBILITY, type: 'a11y', opportunities: [] });
   });
 
   // Use the URLs from the preflight job request directly
