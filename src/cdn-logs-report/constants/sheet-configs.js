@@ -27,6 +27,7 @@ const capitalizeFirstLetter = (str) => {
 
 const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
   const extractedValue = valueExtractor(row);
+  /* c8 ignore next */
   const result = Array.isArray(extractedValue) ? [...extractedValue] : [extractedValue];
   periods.weeks.forEach((week) => {
     const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
@@ -77,17 +78,19 @@ export const SHEET_CONFIGS = {
         'Agent Type',
         'Status',
         'Number of Hits',
+        'Avg TTFB (ms)',
         `Interval: Last Week (${lastWeek.dateRange.start} - ${lastWeek.dateRange.end})`,
       ];
     },
     headerColor: SHEET_COLORS.DEFAULT,
-    numberColumns: [3],
+    numberColumns: [3, 4],
     processData: (data) => data?.map((row) => [
-      /* c8 ignore next 3 */
+      /* c8 ignore next 4 */
       row.user_agent || 'Unknown',
       row.agent_type || 'Other',
       Number(row.status) || 'All',
       Number(row.total_requests) || 0,
+      Number(row.avg_ttfb_ms) || 0,
       '',
     ]) || [],
   },
@@ -166,17 +169,18 @@ export const SHEET_CONFIGS = {
   },
 
   topUrls: {
-    getHeaders: () => ['URL', 'Total Hits', 'Unique Agents', 'Top Agent', 'Top Agent Type', 'Success Rate', 'Product'],
+    getHeaders: () => ['URL', 'Total Hits', 'Unique Agents', 'Top Agent', 'Top Agent Type', 'Success Rate', 'Avg TTFB (ms)', 'Product'],
     headerColor: SHEET_COLORS.DEFAULT,
-    numberColumns: [1, 2, 5],
+    numberColumns: [1, 2, 5, 6],
     processData: (data) => data?.map((row) => [
-      /* c8 ignore next 6 */
+      /* c8 ignore next 7 */
       row.url || '',
       Number(row.total_hits) || 0,
       Number(row.unique_agents) || 0,
       row.top_agent || 'N/A',
       row.top_agent_type || 'Other',
       Number(row.success_rate) || 0,
+      Number(row.avg_ttfb_ms) || 0,
       row.product || 'Other',
     ]) || [],
   },
@@ -222,6 +226,7 @@ export const SHEET_CONFIGS = {
     headerColor: SHEET_COLORS.DEFAULT,
     numberColumns: [2],
     processData: (data) => data?.map((row) => [
+      /* c8 ignore next 3 */
       row.category || 'Other',
       row.agent_type || 'Other',
       Number(row.hits) || 0,

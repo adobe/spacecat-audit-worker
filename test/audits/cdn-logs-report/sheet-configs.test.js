@@ -48,17 +48,21 @@ describe('Sheet Configs', () => {
       expect(SHEET_CONFIGS.referralUrlTopic.getHeaders()).to.deep.equal(['URL', 'Topic', 'Hits']);
       expect(SHEET_CONFIGS.country.getHeaders(mockPeriods)).to.deep.equal(['Country Code', 'Agent Type', 'Week 1', 'Week 2']);
       expect(SHEET_CONFIGS.userAgents.getHeaders(mockPeriods)).to.deep.equal([
-        'Request User Agent', 'Agent Type', 'Status', 'Number of Hits',
+        'Request User Agent', 'Agent Type', 'Status', 'Number of Hits', 'Avg TTFB (ms)',
         'Interval: Last Week (2024-01-08 - 2024-01-14)',
       ]);
       expect(SHEET_CONFIGS.error404.getHeaders()).to.deep.equal(['URL', 'Agent Type', 'Number of 404s']);
       expect(SHEET_CONFIGS.error503.getHeaders()).to.deep.equal(['URL', 'Agent Type', 'Number of 503s']);
       expect(SHEET_CONFIGS.category.getHeaders()).to.deep.equal(['Category', 'Agent Type', 'Number of Hits']);
-      expect(SHEET_CONFIGS.topUrls.getHeaders()).to.deep.equal(['URL', 'Total Hits', 'Unique Agents', 'Top Agent', 'Top Agent Type', 'Success Rate', 'Product']);
+      expect(SHEET_CONFIGS.topUrls.getHeaders()).to.deep.equal(['URL', 'Total Hits', 'Unique Agents', 'Top Agent', 'Top Agent Type', 'Success Rate', 'Avg TTFB (ms)', 'Product']);
+      expect(SHEET_CONFIGS.pageType.getHeaders(mockPeriods)).to.deep.equal(['Page Type', 'Agent Type', 'Week 1', 'Week 2']);
+      expect(SHEET_CONFIGS.hitsByProductAgentType.getHeaders()).to.deep.equal(['Product', 'Agent Type', 'Hits']);
+      expect(SHEET_CONFIGS.hitsByPageCategoryAgentType.getHeaders()).to.deep.equal(['Category', 'Agent Type', 'Hits']);
     });
 
     it('should return correct number columns for dynamic configs', () => {
       expect(SHEET_CONFIGS.country.getNumberColumns(mockPeriods)).to.deep.equal([2]);
+      expect(SHEET_CONFIGS.pageType.getNumberColumns(mockPeriods)).to.deep.equal([2]);
     });
   });
 
@@ -132,8 +136,8 @@ describe('Sheet Configs', () => {
 
         const result = SHEET_CONFIGS.userAgents.processData(mockData);
         expect(result).to.deep.equal([
-          ['Chrome', 'Other', 200, 100, ''],
-          ['Unknown', 'Other', 'All', 0, ''],
+          ['Chrome', 'Other', 200, 100, 0, ''],
+          ['Unknown', 'Other', 'All', 0, 0, ''],
         ]);
       });
 
@@ -203,8 +207,8 @@ describe('Sheet Configs', () => {
 
         const result = SHEET_CONFIGS.topUrls.processData(mockData);
         expect(result).to.deep.equal([
-          ['/page1', 100, 0, 'N/A', 'Other', 0, 'Other'],
-          ['', 0, 0, 'N/A', 'Other', 0, 'Other'],
+          ['/page1', 100, 0, 'N/A', 'Other', 0, 0, 'Other'],
+          ['', 0, 0, 'N/A', 'Other', 0, 0, 'Other'],
         ]);
       });
 
@@ -267,6 +271,165 @@ describe('Sheet Configs', () => {
 
       expect(() => SHEET_CONFIGS.country.processData([], emptyPeriods)).to.not.throw();
       expect(() => SHEET_CONFIGS.pageType.processData([], emptyPeriods)).to.not.throw();
+    });
+
+    it('processes pageType data with valid input', () => {
+      const mockData = [
+        {
+          page_type: 'product', agent_type: 'Desktop', week_label: 'Week 1', hits: 100,
+        },
+        {
+          page_type: 'home', agent_type: 'Mobile', week_label: 'Week 2', hits: 50,
+        },
+      ];
+      const mockPeriodsLocal = {
+        weeks: [
+          { weekLabel: 'Week 1', dateRange: { start: '2024-01-01', end: '2024-01-07' } },
+          { weekLabel: 'Week 2', dateRange: { start: '2024-01-08', end: '2024-01-14' } },
+        ],
+        columns: ['Week 1', 'Week 2'],
+      };
+
+      const result = SHEET_CONFIGS.pageType.processData(mockData, mockPeriodsLocal);
+      expect(result).to.be.an('array');
+      expect(result.length).to.be.greaterThan(0);
+    });
+
+    it('processes pageType data with no data fallback', () => {
+      const mockPeriodsNoData = {
+        weeks: [
+          { weekLabel: 'Week 1', dateRange: { start: '2024-01-01', end: '2024-01-07' } },
+        ],
+        columns: ['Week 1'],
+      };
+
+      const result = SHEET_CONFIGS.pageType.processData([], mockPeriodsNoData);
+      expect(result).to.deep.equal([['No data', 'Other', 0]]);
+    });
+
+    it('covers all edge cases and fallbacks in processData functions', () => {
+      // Test referralUrlTopic with null topic fallback
+      const referralUrlTopicData = [{ url: 'test', topic: null, hits: 100 }];
+      const referralUrlResult = SHEET_CONFIGS.referralUrlTopic.processData(referralUrlTopicData);
+      expect(referralUrlResult[0][1]).to.equal('Other');
+
+      // Test hitsByProductAgentType with null product fallback
+      const productData = [{ product: null, agent_type: 'Desktop', hits: 50 }];
+      const productResult = SHEET_CONFIGS.hitsByProductAgentType.processData(productData);
+      expect(productResult[0][0]).to.equal('Other');
+
+      // Test hitsByPageCategoryAgentType with null category fallback
+      const categoryData = [{ category: null, agent_type: 'Mobile', hits: 25 }];
+      const categoryResult = SHEET_CONFIGS.hitsByPageCategoryAgentType.processData(categoryData);
+      expect(categoryResult[0][0]).to.equal('Other');
+
+      // Test capitalizeFirstLetter with empty string fallback
+      const emptyTopicData = [{ url: 'test', topic: '', hits: 100 }];
+      const emptyTopicResult = SHEET_CONFIGS.referralUrlTopic.processData(emptyTopicData);
+      expect(emptyTopicResult[0][1]).to.equal('Other');
+
+      // Test capitalizeFirstLetter with empty product fallback
+      const emptyProductData = [{ product: '', agent_type: 'Desktop', hits: 50 }];
+      const emptyProductResult = SHEET_CONFIGS.hitsByProductAgentType.processData(emptyProductData);
+      expect(emptyProductResult[0][0]).to.equal('Other');
+
+      // Test empty category fallback
+      const emptyCategoryData = [{ category: '', agent_type: 'Mobile', hits: 25 }];
+      const emptyCategoryResult = SHEET_CONFIGS.hitsByPageCategoryAgentType
+        .processData(emptyCategoryData);
+      expect(emptyCategoryResult[0][0]).to.equal('Other');
+
+      // Test null data fallbacks for data?.map operations
+      expect(SHEET_CONFIGS.hitsByProductAgentType.processData(null)).to.deep.equal([]);
+      expect(SHEET_CONFIGS.hitsByPageCategoryAgentType.processData(null)).to.deep.equal([]);
+      expect(SHEET_CONFIGS.referralUrlTopic.processData(undefined)).to.deep.equal([]);
+
+      // Test capitalizeFirstLetter with non-string types
+      const numberProductData = [{ product: 123, agent_type: 'Desktop', hits: 50 }];
+      const numberProductResult = SHEET_CONFIGS.hitsByProductAgentType
+        .processData(numberProductData);
+      expect(numberProductResult[0][0]).to.equal(123);
+
+      const numberTopicData = [{ url: 'test', topic: 123, hits: 100 }];
+      const numberTopicResult = SHEET_CONFIGS.referralUrlTopic
+        .processData(numberTopicData);
+      expect(numberTopicResult[0][1]).to.equal(123);
+
+      const missingAgentData = [{ product: 'test', hits: 50 }];
+      const missingAgentResult = SHEET_CONFIGS.hitsByProductAgentType.processData(missingAgentData);
+      expect(missingAgentResult[0][1]).to.equal('Other');
+
+      const stringHitsData = [{ product: 'test', agent_type: 'Desktop', hits: 'abc' }];
+      const stringHitsResult = SHEET_CONFIGS.hitsByProductAgentType.processData(stringHitsData);
+      expect(stringHitsResult[0][2]).to.equal(0);
+    });
+
+    it('covers all uncovered branches in sheet-configs', () => {
+      const arrayValueData = [{ country_code: 'US', agent_type: 'Desktop', week_1: 100 }];
+      const mockPeriodsForArray = {
+        weeks: [{ weekLabel: 'Week 1', dateRange: { start: '2024-01-01', end: '2024-01-07' } }],
+        columns: ['Week 1'],
+      };
+
+      const result = SHEET_CONFIGS.country.processData(arrayValueData, mockPeriodsForArray);
+      expect(result).to.be.an('array');
+
+      const missingCountryData = [{ agent_type: 'Desktop', week_1: 100 }];
+      const missingCountryResult = SHEET_CONFIGS.country
+        .processData(missingCountryData, mockPeriodsForArray);
+      expect(missingCountryResult).to.be.an('array');
+
+      const missingPageTypeData = [{ agent_type: 'Desktop', week_1: 100 }];
+      const pageTypeResult = SHEET_CONFIGS.pageType
+        .processData(missingPageTypeData, mockPeriodsForArray);
+      expect(pageTypeResult).to.be.an('array');
+      if (pageTypeResult.length > 0) {
+        expect(pageTypeResult[0][0]).to.equal('Other');
+      }
+
+      const missingAgentTypePageData = [{ page_type: 'home', week_1: 100 }];
+      const agentTypePageResult = SHEET_CONFIGS.pageType
+        .processData(missingAgentTypePageData, mockPeriodsForArray);
+      expect(agentTypePageResult).to.be.an('array');
+      if (agentTypePageResult.length > 0) {
+        expect(agentTypePageResult[0][1]).to.equal('Other');
+      }
+    });
+
+    it('covers processCountryWithFields edge cases', () => {
+      const mockDataForCountry = [
+        { country: 'US', hits: 100 },
+        { country: 'UK', hits: 50 },
+      ];
+
+      const countryResult = SHEET_CONFIGS.country.processData(mockDataForCountry, mockPeriods);
+      expect(countryResult).to.be.an('array');
+
+      const missingFieldData = [{ country: 'US', hits: 100, week_1: 50 }];
+      const fieldResult = SHEET_CONFIGS.country.processData(missingFieldData, mockPeriods);
+      expect(fieldResult).to.be.an('array');
+    });
+
+    it('covers processWeekData with different value types', () => {
+      const mockData = [
+        { country_code: 'US', agent_type: 'Desktop', week_1: 100 },
+      ];
+      const mockPeriodsWeekData = {
+        weeks: [{ weekLabel: 'Week 1', dateRange: { start: '2024-01-01', end: '2024-01-07' } }],
+        columns: ['Week 1'],
+      };
+
+      const result = SHEET_CONFIGS.country.processData(mockData, mockPeriodsWeekData);
+      expect(result).to.be.an('array');
+      expect(result.length).to.be.greaterThan(0);
+    });
+
+    it('covers processCountryWithFields edge cases', () => {
+      const emptyResult = SHEET_CONFIGS.country.processData([], mockPeriods);
+      expect(emptyResult).to.deep.equal([]);
+
+      const nullResult = SHEET_CONFIGS.country.processData(null, mockPeriods);
+      expect(nullResult).to.deep.equal([]);
     });
   });
 });

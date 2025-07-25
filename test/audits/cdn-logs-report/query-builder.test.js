@@ -346,4 +346,57 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('test_db');
     expect(query).to.include('test_table');
   });
+
+  it('covers all branches in buildTopicExtractionSQL', async () => {
+    const extractOnlyOptions = {
+      ...mockOptions,
+      site: {
+        getConfig: () => ({ getCdnLogsConfig: () => ({ patterns: {} }) }),
+        getBaseURL: () => 'https://bulk.com',
+      },
+    };
+
+    const extractOnlyQuery = await weeklyBreakdownQueries
+      .createReferralTrafficByCountryTopic(extractOnlyOptions);
+    expect(extractOnlyQuery).to.include('COALESCE');
+    expect(extractOnlyQuery).to.include('REGEXP_EXTRACT');
+
+    const mixedOptions = {
+      ...mockOptions,
+      site: {
+        getConfig: () => ({ getCdnLogsConfig: () => ({ patterns: {} }) }),
+        getBaseURL: () => 'https://business.adobe.com',
+      },
+    };
+
+    const mixedQuery = await weeklyBreakdownQueries
+      .createReferralTrafficByCountryTopic(mixedOptions);
+    expect(mixedQuery).to.include('REGEXP_EXTRACT');
+
+    const namedOnlyOptions = {
+      ...mockOptions,
+      site: {
+        getConfig: () => ({ getCdnLogsConfig: () => ({ patterns: {} }) }),
+        getBaseURL: () => 'https://adobe.com',
+      },
+    };
+
+    const namedOnlyQuery = await weeklyBreakdownQueries
+      .createReferralTrafficByCountryTopic(namedOnlyOptions);
+    expect(namedOnlyQuery).to.include('CASE');
+    expect(namedOnlyQuery).to.include('Acrobat');
+
+    // Test unknown domain - covers lines 118-119
+    const unknownDomainOptions = {
+      ...mockOptions,
+      site: {
+        getConfig: () => ({ getCdnLogsConfig: () => ({ patterns: {} }) }),
+        getBaseURL: () => 'https://unknown-domain.com',
+      },
+    };
+
+    const unknownQuery = await weeklyBreakdownQueries
+      .createReferralTrafficByCountryTopic(unknownDomainOptions);
+    expect(unknownQuery).to.include("'Other'");
+  });
 });

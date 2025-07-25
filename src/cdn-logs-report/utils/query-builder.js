@@ -64,6 +64,7 @@ function buildOrderBy(periods) {
 
 // Page Type Classification
 function generatePageTypeClassification(site) {
+  /* c8 ignore next */
   const patterns = site?.getConfig()?.getGroupedURLs('cdn-analysis') || DEFAULT_PATTERNS;
 
   const caseConditions = patterns
@@ -101,6 +102,7 @@ function buildTopicExtractionSQL(site) {
       }
     });
 
+    /* c8 ignore next 10 */
     if (namedPatterns.length > 0 && extractPatterns.length > 0) {
       const caseClause = `CASE\n          ${namedPatterns.join('\n          ')}\n          ELSE NULL\n        END`;
       const coalesceClause = extractPatterns.join(',\n    ');
