@@ -49,7 +49,7 @@ export const REPORT_CONFIGS = {
     providers: ['google', 'bing'],
     queries: {
       hits_by_page_category_traditional_search:
-        weeklyBreakdownQueries.createHitsByPageCategoryTraditionalSearch,
+        weeklyBreakdownQueries.createHitsByPageCategoryAgentType,
     },
     sheets: [
       {
