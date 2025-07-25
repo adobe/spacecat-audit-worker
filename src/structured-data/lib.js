@@ -17,6 +17,7 @@ import StructuredDataValidator from '@adobe/structured-data-validator';
 import { join } from 'path';
 import { load as cheerioLoad } from 'cheerio';
 import jsBeautify from 'js-beautify';
+import Site from '@adobe/spacecat-shared-data-access';
 
 import { generatePlainHtml, getScrapeForPath } from '../support/utils.js';
 
@@ -156,6 +157,24 @@ export function deduplicateIssues(context, gscIssues, scraperIssues) {
   return issues;
 }
 
+export function includeIssue(context, issue) {
+  const { log } = context;
+  const isError = issue.severity === 'ERROR';
+  const isImageObject = issue.rootType === 'ImageObject';
+  const isAemCs = context.site.getDeliveryType() === Site.DELIVERY_TYPES.AEM_CS;
+
+  if (isError && !isImageObject) return true;
+
+  if (isError && isImageObject && !isAemCs) return true;
+
+  const messageToSuppress = 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing';
+  if (issue.issueMessage.includes(messageToSuppress)) {
+    log.warn('SDA: Suppressing issue', issue.issueMessage);
+    return false;
+  }
+  return true;
+}
+
 export async function getIssuesFromScraper(context, pages, scrapeCache) {
   const { log, site } = context;
 
@@ -196,7 +215,8 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
     try {
       validatorIssues = (await validator.validate(waeResult))
         // For now, ignore issues with severity lower than ERROR
-        .filter((issue) => issue.severity === 'ERROR');
+        //          and suppress unnecessary issues for AEM CS customers
+        .filter((issue) => includeIssue(context, issue));
     } catch (e) {
       log.error(`SDA: Failed to validate structured data for ${page}.`, e);
     }

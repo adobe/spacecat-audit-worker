@@ -185,7 +185,6 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
-  const isInternalCustomer = context.site.getConfig().isInternalCustomer();
 
   // Check if audit was successful
   if (auditData.auditResult.success === false) {
@@ -195,9 +194,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
   // Convert suggestions to errors
   for (const issue of auditData.auditResult.issues) {
-    if (isInternalCustomer && issue.rootType === 'ImageObject') {
-      continue;
-    }
     issue.errors = [];
     const fix = generateErrorMarkupForIssue(issue);
     const errorTitle = `${issue.rootType}: ${issue.issueMessage}`;

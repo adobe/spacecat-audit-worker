@@ -29,6 +29,7 @@ import {
   getWrongMarkup,
   generateErrorMarkupForIssue,
   generateFirefallSuggestion,
+  includeIssue,
 } from '../../../src/structured-data/lib.js';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -933,6 +934,71 @@ This is an error description
         correctedMarkup: '<div>Hello</div>',
         aiRationale: 'Some reason',
       });
+    });
+  });
+
+  describe('includeIssue', () => {
+    let context;
+
+    beforeEach(() => {
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sinon.stub(),
+            warn: sinon.spy(),
+            error: sinon.stub(),
+            debug: sinon.spy(),
+          },
+          site: {
+            getDeliveryType: sinon.stub(),
+          },
+        })
+        .build(message);
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('returns true for ERROR severity non-ImageObject issues', () => {
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'Product',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+    });
+
+    it('returns true for ERROR severity ImageObject issues when not AEM CS', () => {
+      context.site.getDeliveryType.returns('other');
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+    });
+
+    it('returns false for ERROR severity ImageObject issues when AEM CS', () => {
+      context.site.getDeliveryType.returns('aem-cs');
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.false;
+    });
+
+    it('returns false for suppressed message', () => {
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'Product',
+        issueMessage: 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.false;
+      expect(context.log.warn).to.be.calledWith('SDA: Suppressing issue', issue.issueMessage);
     });
   });
 });
