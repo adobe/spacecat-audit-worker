@@ -47,7 +47,8 @@
       "static/prompts/image-alt-text.prompt",
       "static/schemaorg-current-https.jsonld",
       "src/cdn-analysis/sql",
-      "src/cdn-logs-report/sql"
+      "src/cdn-logs-report/sql",
+      "src/llmo-referral-traffic/sql"
     ]
   },
   "repository": {
