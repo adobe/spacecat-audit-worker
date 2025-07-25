@@ -1,3 +1,10 @@
+# [1.134.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.133.1...v1.134.0) (2025-07-25)
+
+
+### Features
+
+* page intent detect handler ([#1070](https://github.com/adobe/spacecat-audit-worker/issues/1070)) ([0cb85be](https://github.com/adobe/spacecat-audit-worker/commit/0cb85be81dc2ead959ecf04f655ffa435a80a62b))
+
 ## [1.133.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.133.0...v1.133.1) (2025-07-25)
 
 
