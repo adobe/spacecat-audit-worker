@@ -17,7 +17,7 @@ import StructuredDataValidator from '@adobe/structured-data-validator';
 import { join } from 'path';
 import { load as cheerioLoad } from 'cheerio';
 import jsBeautify from 'js-beautify';
-import Site from '@adobe/spacecat-shared-data-access';
+import { Site } from '@adobe/spacecat-shared-data-access';
 
 import { generatePlainHtml, getScrapeForPath } from '../support/utils.js';
 
@@ -163,14 +163,15 @@ export function includeIssue(context, issue) {
   const isImageObject = issue.rootType === 'ImageObject';
   const isAemCs = context.site.getDeliveryType() === Site.DELIVERY_TYPES.AEM_CS;
 
-  if (isError && !isImageObject) return true;
+  if (!isError) return false;
+  if (!isImageObject) return true;
 
-  if (isError && isImageObject && !isAemCs) return true;
-
-  const messageToSuppress = 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing';
-  if (issue.issueMessage.includes(messageToSuppress)) {
-    log.warn('SDA: Suppressing issue', issue.issueMessage);
-    return false;
+  if (isImageObject && isAemCs) {
+    const messageToSuppress = 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing';
+    if (issue.issueMessage.includes(messageToSuppress)) {
+      log.warn('SDA: Suppressing issue', issue.issueMessage);
+      return false;
+    }
   }
   return true;
 }
