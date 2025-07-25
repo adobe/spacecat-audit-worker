@@ -33,6 +33,7 @@ export function buildAgentTypeClassificationSQL(provider = null) {
     // Perplexity
     { pattern: '%perplexitybot%', result: 'Crawlers', provider: 'perplexity' },
     { pattern: '%perplexity-user%', result: 'Chatbots', provider: 'perplexity' },
+    { pattern: '%perplexity%', result: 'Chatbots', provider: 'perplexity' },
     // Others
     { pattern: '%googlebot%', result: 'Crawlers', provider: 'google' },
     { pattern: '%bingbot%', result: 'Crawlers', provider: 'bing' },
