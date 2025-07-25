@@ -71,9 +71,10 @@ async function scrapeAccessibilityData(context, auditContext) {
         completionQueueUrl: env.AUDIT_JOBS_QUEUE_URL,
         skipMessage: false,
         skipStorage: false,
-        allowCache: false, // Force re-scraping even if files already exist
+        allowCache: false,
+        forceRescrape: true,
         options: {
-          storagePath: `accessibility/${siteId}`, // Custom storage path
+          storagePath: `accessibility/${siteId}`,
         },
         ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
       };
