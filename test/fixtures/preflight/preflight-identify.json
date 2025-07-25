@@ -114,6 +114,11 @@
             ]
           }
         ]
+      },
+      {
+        "name": "readability",
+        "type": "seo",
+        "opportunities": []
       }
     ]
   }

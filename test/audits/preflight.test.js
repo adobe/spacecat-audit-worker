@@ -1078,7 +1078,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['dom', 'canonical', 'metatags', 'links'];
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'readability'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -1096,9 +1096,9 @@ describe('Preflight Audit', () => {
       await preflightAudit(context);
 
       // Verify that AsyncJob.findById was called for each intermediate save and final save
-      // (total of 5 times: 4 intermediate + 1 final)
+      // (total of 6 times: 5 intermediate + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(5);
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(6);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
