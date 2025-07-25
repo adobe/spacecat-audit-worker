@@ -437,6 +437,79 @@ describe('Meta Tags', () => {
           'No Scraped tags found in S3 scrapes/site-id/page1/scrape.json object',
         );
       });
+
+      it('should skip pages with scrape result body length less than 300 characters (soft 404s)', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/404',
+          scrapeResult: {
+            tags: {
+              title: '404 Not Found',
+              description: 'Page not found',
+              h1: ['404 Error'],
+            },
+            rawBody: '<html><body><h1>404 Not Found</h1></body></html>', // Less than 300 chars
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'scrapes/site-id/404/scrape.json',
+          'scrapes/site-id/',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.error).to.have.been.calledWith(
+          'Scrape result is empty for scrapes/site-id/404/scrape.json',
+        );
+      });
+
+      it('should process pages with scrape result body length of 300 characters or more', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/valid-page',
+          scrapeResult: {
+            tags: {
+              title: 'Valid Page Title',
+              description: 'This is a valid page with sufficient content length to pass the minimum threshold check',
+              h1: ['Valid Page Heading'],
+            },
+            rawBody: 'A'.repeat(300), // Exactly 300 characters
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'scrapes/site-id/valid-page/scrape.json',
+          'scrapes/site-id/',
+          logStub,
+        );
+
+        expect(result).to.deep.equal({
+          '/valid-page': {
+            title: 'Valid Page Title',
+            description: 'This is a valid page with sufficient content length to pass the minimum threshold check',
+            h1: ['Valid Page Heading'],
+            s3key: 'scrapes/site-id/valid-page/scrape.json',
+          },
+        });
+        expect(logStub.error).to.not.have.been.called;
+      });
     });
 
     describe('opportunities handler method', () => {

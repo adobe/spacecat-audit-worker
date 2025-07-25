@@ -88,6 +88,12 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
     log.error(`No Scraped tags found in S3 ${key} object`);
     return null;
   }
+  // if the scrape result is empty, skip the page for metatags audit
+  if (object?.scrapeResult?.rawBody?.length < 300) {
+    log.error(`Scrape result is empty for ${key}`);
+    return null;
+  }
+
   let pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
     : key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
   // handling for homepage
