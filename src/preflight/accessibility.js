@@ -10,8 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { aggregateAccessibilityData, getUrlsForAudit } from '../accessibility/utils/data-processing.js';
+import { aggregateAccessibilityData } from '../accessibility/utils/data-processing.js';
 import {
   updateStatusToIgnored,
 } from '../accessibility/utils/scrape-utils.js';
@@ -26,7 +25,7 @@ export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
  */
 async function scrapeAccessibilityData(context, auditContext) {
   const {
-    site, job, log, env, s3Client, dataAccess, sqs,
+    site, job, log, env, sqs,
   } = context;
   const jobId = job?.getId();
   const {
@@ -52,29 +51,9 @@ async function scrapeAccessibilityData(context, auditContext) {
     pageResult.audits.push({ name: PREFLIGHT_ACCESSIBILITY, type: 'accessibility', opportunities: [] });
   });
 
-  // Get URLs to scrape
-  let urlsToScrape = [];
-  urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
-  log.info(`[preflight-audit] getUrlsForAudit returned ${urlsToScrape.length} URLs`);
-
-  if (urlsToScrape.length === 0) {
-    const { SiteTopPage } = dataAccess;
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-    log.info(`[preflight-audit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}`);
-
-    if (!isNonEmptyArray(topPages)) {
-      log.info('[preflight-audit] No top pages found, using preview URLs for accessibility audit');
-      // Use preview URLs instead of skipping
-      urlsToScrape = previewUrls.map((url) => ({ url }));
-      log.info(`[preflight-audit] Using preview URLs: ${JSON.stringify(urlsToScrape, null, 2)}`);
-    } else {
-      urlsToScrape = topPages
-        .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic() }))
-        .sort((a, b) => b.traffic - a.traffic)
-        .slice(0, 100);
-      log.info(`[preflight-audit] Top 100 pages: ${JSON.stringify(urlsToScrape, null, 2)}`);
-    }
-  }
+  // Use the URLs from the preflight job request directly
+  const urlsToScrape = previewUrls.map((url) => ({ url }));
+  log.info(`[preflight-audit] Using preview URLs for accessibility audit: ${JSON.stringify(urlsToScrape, null, 2)}`);
 
   // Force re-scrape all URLs regardless of existing data
   log.info(`[preflight-audit] Force re-scraping all ${urlsToScrape.length} URLs for accessibility audit`);
