@@ -29,6 +29,7 @@ import {
   getWrongMarkup,
   generateErrorMarkupForIssue,
   generateFirefallSuggestion,
+  includeIssue,
 } from '../../../src/structured-data/lib.js';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -933,6 +934,110 @@ This is an error description
         correctedMarkup: '<div>Hello</div>',
         aiRationale: 'Some reason',
       });
+    });
+  });
+
+  describe('includeIssue', () => {
+    let context;
+    const suppressionMessage = 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing';
+    const Site = {
+      DELIVERY_TYPES: {
+        AEM_CS: 'aem_cs',
+      },
+    };
+
+    beforeEach(() => {
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sinon.stub(),
+            warn: sinon.spy(),
+            error: sinon.stub(),
+            debug: sinon.spy(),
+          },
+          site: {
+            getDeliveryType: sinon.stub(),
+          },
+        })
+        .build(message);
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('excludes issue if severity is not ERROR', () => {
+      const issue = {
+        severity: 'WARNING',
+        rootType: 'ImageObject',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.false;
+    });
+
+    it('includes issue if severity is ERROR and rootType is not ImageObject', () => {
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'BreadcrumbList',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+    });
+
+    it('includes issue if severity is ERROR and rootType is not ImageObject, even in AEM CS', () => {
+      context.site.getDeliveryType.returns(Site.DELIVERY_TYPES.AEM_CS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'BreadcrumbList',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+    });
+
+    it('includes issue if severity is ERROR, rootType is ImageObject, and delivery type is not AEM_CS', () => {
+      context.site.getDeliveryType.returns('other');
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+    });
+
+    it('includes issue if severity is ERROR, rootType is ImageObject, delivery type is not AEM_CS, even with suppression message', () => {
+      context.site.getDeliveryType.returns('other');
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: suppressionMessage,
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+      expect(context.log.warn).not.to.be.called;
+    });
+
+    it('excludes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_CS, and message matches suppression', () => {
+      context.site.getDeliveryType.returns(Site.DELIVERY_TYPES.AEM_CS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: suppressionMessage,
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.false;
+      expect(context.log.warn).to.be.calledWith('SDA: Suppressing issue', suppressionMessage);
+    });
+
+    it('includes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_CS, but message does not match suppression', () => {
+      context.site.getDeliveryType.returns(Site.DELIVERY_TYPES.AEM_CS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: 'Some other error',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
     });
   });
 });
