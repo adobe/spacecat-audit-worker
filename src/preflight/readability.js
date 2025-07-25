@@ -51,7 +51,7 @@ export default async function readability(context, auditContext) {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const normalizedFinalUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
       const pageResult = audits.get(normalizedFinalUrl);
-      
+
       if (!pageResult) {
         log.warn(`[preflight-audit] readability: No page result found for ${normalizedFinalUrl}`);
         return;
@@ -65,16 +65,16 @@ export default async function readability(context, auditContext) {
 
       try {
         const doc = new JSDOM(rawBody).window.document;
-        
+
         // Get all paragraph and div elements
         const textElements = Array.from(doc.querySelectorAll('p, div'));
-        
+
         let processedElements = 0;
         let poorReadabilityCount = 0;
 
         textElements.forEach((element, index) => {
           const textContent = element.textContent?.trim();
-          
+
           // Skip elements with insufficient text content
           if (!textContent || textContent.length < MIN_TEXT_LENGTH) {
             return;
@@ -85,20 +85,20 @@ export default async function readability(context, auditContext) {
           try {
             // Calculate Flesch Reading Ease score
             const readabilityScore = rs.fleschReadingEase(textContent);
-            
+
             // If score is below target, flag as poor readability
             if (readabilityScore < TARGET_READABILITY_SCORE) {
               poorReadabilityCount += 1;
-              
+
               // Get element selector for identification
               const elementTag = element.tagName.toLowerCase();
               const elementId = element.id ? `#${element.id}` : '';
               const elementClass = element.className ? `.${element.className.split(' ').join('.')}` : '';
               const selector = `${elementTag}${elementId}${elementClass}`;
-              
+
               // Truncate text for display (first 150 characters)
-              const displayText = textContent.length > 150 
-                ? `${textContent.substring(0, 150)}...` 
+              const displayText = textContent.length > 150
+                ? `${textContent.substring(0, 150)}...`
                 : textContent;
 
               audit.opportunities.push({
@@ -114,7 +114,6 @@ export default async function readability(context, auditContext) {
         });
 
         log.info(`[preflight-audit] readability: Processed ${processedElements} text elements on ${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`);
-        
       } catch (error) {
         log.error(`[preflight-audit] readability: Error processing ${normalizedFinalUrl}: ${error.message}`);
         audit.opportunities.push({
@@ -140,4 +139,4 @@ export default async function readability(context, auditContext) {
 
     await saveIntermediateResults(context, auditsResult, 'readability audit');
   }
-} 
+}
