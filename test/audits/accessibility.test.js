@@ -35,6 +35,7 @@ describe('Accessibility Audit Handler', () => {
   let createAccessibilityIndividualOpportunitiesStub;
   let getExistingObjectKeysFromFailedAuditsStub;
   let getExistingUrlsFromFailedAuditsStub;
+  let saveA11yMetricsToS3Stub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -76,6 +77,7 @@ describe('Accessibility Audit Handler', () => {
     createAccessibilityIndividualOpportunitiesStub = sandbox.stub();
     getExistingObjectKeysFromFailedAuditsStub = sandbox.stub().resolves([]);
     getExistingUrlsFromFailedAuditsStub = sandbox.stub().resolves([]);
+    saveA11yMetricsToS3Stub = sandbox.stub().resolves();
 
     const accessibilityModule = await esmock('../../src/accessibility/handler.js', {
       '../../src/accessibility/utils/data-processing.js': {
@@ -89,6 +91,7 @@ describe('Accessibility Audit Handler', () => {
       '../../src/accessibility/utils/scrape-utils.js': {
         getExistingObjectKeysFromFailedAudits: getExistingObjectKeysFromFailedAuditsStub,
         getExistingUrlsFromFailedAudits: getExistingUrlsFromFailedAuditsStub,
+        saveA11yMetricsToS3: saveA11yMetricsToS3Stub,
       },
     });
 
@@ -454,7 +457,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert - Check that top 100 pages are logged in correct order
       expect(mockContext.log.info).to.have.been.calledWith(
-        sinon.match(/Top 100 pages:.*page2.*page1.*page3/s),
+        sinon.match(/Top 100 pages for site test-site-id \(https:\/\/example\.com\):.*page2.*page1.*page3/s),
       );
     });
 
@@ -477,7 +480,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert - Find the specific "Top 100 pages" log call
       const logCalls = mockContext.log.info.getCalls();
-      const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages:'));
+      const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages for site'));
 
       expect(top100LogCall).to.exist;
 
@@ -538,10 +541,10 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert - Verify only 100 pages are processed
       const logCalls = mockContext.log.info.getCalls();
-      const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages:'));
+      const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages for site'));
 
       const loggedData = top100LogCall.args[0];
-      const jsonStart = loggedData.indexOf('Top 100 pages: ') + 'Top 100 pages: '.length;
+      const jsonStart = loggedData.indexOf('): ') + 3; // Find the end of the site info and start of JSON
       const parsedPages = JSON.parse(loggedData.substring(jsonStart));
 
       expect(parsedPages).to.have.lengthOf(100);
@@ -795,7 +798,7 @@ describe('Accessibility Audit Handler', () => {
       );
 
       expect(mockContext.log.info).to.have.been.calledWith(
-        '[A11yAudit] Step 2: Processing scraped data for https://example.com',
+        '[A11yAudit] Step 2: Processing scraped data for site test-site-id (https://example.com)',
       );
 
       expect(result.status).to.equal('OPPORTUNITIES_FOUND');
@@ -836,7 +839,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error creating individual opportunities: Failed to create individual opportunities',
+        '[A11yAudit] Error creating individual opportunities for site test-site-id (https://example.com): Failed to create individual opportunities',
         error,
       );
 
@@ -921,7 +924,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] No data aggregated: No accessibility data found',
+        '[A11yAudit] No data aggregated for site test-site-id (https://example.com): No accessibility data found',
       );
 
       expect(result).to.deep.equal({
@@ -943,7 +946,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error processing accessibility data: S3 connection failed',
+        '[A11yAudit] Error processing accessibility data for site test-site-id (https://example.com): S3 connection failed',
         error,
       );
 
@@ -986,7 +989,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error generating report opportunities: Failed to create opportunity',
+        '[A11yAudit] Error generating report opportunities for site test-site-id (https://example.com): Failed to create opportunity',
         error,
       );
 
@@ -1113,7 +1116,153 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.info).to.have.been.calledWith(
-        '[A11yAudit] Step 2: Processing scraped data for https://example.com',
+        '[A11yAudit] Step 2: Processing scraped data for site test-site-id (https://example.com)',
+      );
+    });
+
+    it('should successfully call saveA11yMetricsToS3 and log debug message', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 3,
+                critical: { items: { 'some-id': { count: 3 } } },
+              },
+            },
+            'https://example.com/page1': {
+              violations: {
+                total: 3,
+                critical: { items: { 'some-id': { count: 3 } } },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
+      saveA11yMetricsToS3Stub.resolves({
+        success: true,
+        message: 'A11y metrics saved to S3',
+        s3Key: 'metrics/test-site-id/axe-core/a11y-audit.json',
+      });
+
+      // Act
+      await processAccessibilityOpportunities(mockContext);
+
+      // Assert
+      expect(saveA11yMetricsToS3Stub).to.have.been.calledOnceWith(
+        mockAggregationResult.finalResultFiles.current,
+        mockContext,
+      );
+
+      expect(mockContext.log.debug).to.have.been.calledWith(
+        '[A11yAudit] Saved a11y metrics for site test-site-id - Result:',
+        sinon.match.object,
+      );
+    });
+
+    it('should handle error from saveA11yMetricsToS3 and return failure status', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 2,
+                critical: { items: { 'some-id': { count: 2 } } },
+              },
+            },
+            'https://example.com/page1': {
+              violations: {
+                total: 2,
+                critical: { items: { 'some-id': { count: 2 } } },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
+      const error = new Error('S3 upload failed');
+      saveA11yMetricsToS3Stub.rejects(error);
+
+      // Act
+      const result = await processAccessibilityOpportunities(mockContext);
+
+      // Assert
+      expect(saveA11yMetricsToS3Stub).to.have.been.calledOnceWith(
+        mockAggregationResult.finalResultFiles.current,
+        mockContext,
+      );
+
+      expect(mockContext.log.error).to.have.been.calledWith(
+        '[A11yAudit] Error saving a11y metrics to s3 for site test-site-id (https://example.com): S3 upload failed',
+        error,
+      );
+
+      expect(result).to.deep.equal({
+        status: 'PROCESSING_FAILED',
+        error: 'S3 upload failed',
+      });
+
+      // Should have called previous functions successfully
+      expect(aggregateAccessibilityDataStub).to.have.been.called;
+      expect(generateReportOpportunitiesStub).to.have.been.called;
+      expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.called;
+
+      // Should not call debug log when error occurs
+      expect(mockContext.log.debug).to.not.have.been.calledWith(
+        '[A11yAudit] Saved a11y metrics to s3',
+      );
+    });
+
+    it('should call saveA11yMetricsToS3 after createAccessibilityIndividualOpportunities completes', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { items: { 'some-id': { count: 1 } } },
+              },
+            },
+            'https://example.com/page1': {
+              violations: {
+                total: 1,
+                critical: { items: { 'some-id': { count: 1 } } },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
+      saveA11yMetricsToS3Stub.resolves();
+
+      // Act
+      await processAccessibilityOpportunities(mockContext);
+
+      // Assert - Verify call order by checking callCount at different points
+      expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.called;
+      expect(saveA11yMetricsToS3Stub).to.have.been.called;
+
+      // Verify both were called with correct parameters
+      expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.calledWith(
+        mockAggregationResult.finalResultFiles.current,
+        mockContext,
+      );
+      expect(saveA11yMetricsToS3Stub).to.have.been.calledWith(
+        mockAggregationResult.finalResultFiles.current,
+        mockContext,
       );
     });
   });

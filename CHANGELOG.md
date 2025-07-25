@@ -1,3 +1,31 @@
+# [1.132.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.131.0...v1.132.0) (2025-07-25)
+
+
+### Features
+
+* implement a11y metrics for accessibility opportunity header ([#1065](https://github.com/adobe/spacecat-audit-worker/issues/1065)) ([81649e2](https://github.com/adobe/spacecat-audit-worker/commit/81649e281f2d1c2b205848261539398b30d91349))
+
+# [1.131.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.130.2...v1.131.0) (2025-07-24)
+
+
+### Features
+
+* timeout mitigation for broken internal links suggestions generation ([#968](https://github.com/adobe/spacecat-audit-worker/issues/968)) ([ec0f0b1](https://github.com/adobe/spacecat-audit-worker/commit/ec0f0b153cb5ad0e1703d3e9f0924dfad101ce26))
+
+## [1.130.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.130.1...v1.130.2) (2025-07-24)
+
+
+### Bug Fixes
+
+* add oai searchbot ([#1064](https://github.com/adobe/spacecat-audit-worker/issues/1064)) ([49a8eb6](https://github.com/adobe/spacecat-audit-worker/commit/49a8eb600dbed91585ef97a4906669fe570cd7b3))
+
+## [1.130.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.130.0...v1.130.1) (2025-07-24)
+
+
+### Bug Fixes
+
+* should not remove fixed suggestions ([#1062](https://github.com/adobe/spacecat-audit-worker/issues/1062)) ([a837657](https://github.com/adobe/spacecat-audit-worker/commit/a837657793a9fb6683ebb7da0346cc038c94bd98))
+
 # [1.130.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.129.2...v1.130.0) (2025-07-23)
 
 
