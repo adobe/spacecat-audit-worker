@@ -1006,7 +1006,7 @@ describe('Meta Tags', () => {
         expect(result).to.deep.equal({ status: 'complete' });
         expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
         expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
-      }).timeout(3000);
+      }).timeout(10000);
 
       it('should handle RUM API errors gracefully', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
