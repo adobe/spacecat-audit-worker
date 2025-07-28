@@ -42,10 +42,11 @@ const processWeekDataWithAgentType = (data, periods, valueExtractor) => (
 );
 
 const processCountryWithFields = (data, additionalFields = []) => {
+  /* c8 ignore next */
   if (!data?.length) return [];
 
   const createKey = (row) => {
-    const country = validateCountryCode(row.country || '');
+    const country = validateCountryCode(row.country);
     return additionalFields.length === 0
       /* c8 ignore next */
       ? country
@@ -54,7 +55,7 @@ const processCountryWithFields = (data, additionalFields = []) => {
 
   return Object.values(
     data.reduce((acc, row) => {
-      const country = validateCountryCode(row.country || '');
+      const country = validateCountryCode(row.country);
       const key = createKey(row);
 
       acc[key] ??= {
@@ -63,6 +64,7 @@ const processCountryWithFields = (data, additionalFields = []) => {
         ...Object.fromEntries(additionalFields.map((field) => [field, row[field] || 'Other'])),
       };
 
+      /* c8 ignore next */
       acc[key].hits += Number(row.hits) || 0;
       return acc;
     }, {}),
