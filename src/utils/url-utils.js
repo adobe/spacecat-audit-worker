@@ -20,3 +20,23 @@ export function isPreviewPage(url) {
   const urlObj = new URL(url);
   return urlObj.hostname.endsWith('.page');
 }
+
+/**
+ * Gets the country code (lowercased) from a language code.
+ * If the language code is not in the format of "language-country" or "language_country",
+ * the default country code is returned.
+ * @param {string} lang - The language code.
+ * @param {string} defaultCountry - The default country code.
+ * @returns {string} - The country code.
+ */
+export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
+  if (!lang) return defaultCountry;
+  // Split on hyphen or underscore (both are used in the wild)
+  const parts = lang.split(/[-_]/);
+  if (parts.length === 2 && parts[1].length === 2) {
+    // Return the country part, uppercased
+    return parts[1].toLowerCase();
+  }
+  // If only language is present, return default
+  return defaultCountry;
+}

@@ -37,6 +37,8 @@ describe('Experimentation Opportunities Tests', () => {
   let sandbox;
   let site;
   let audit;
+  let s3Client;
+  let siteConfig;
 
   before('setup', () => {
     sandbox = sinon.createSandbox();
@@ -50,16 +52,38 @@ describe('Experimentation Opportunities Tests', () => {
         finalUrl: 'abc.com',
       },
     };
+    siteConfig = {
+      getImports: () => [],
+      enableImport: sinon.stub(),
+      disableImport: sinon.stub(),
+      getSlackConfig: sinon.stub(),
+      getHandlers: sinon.stub(),
+      getContentAiConfig: sinon.stub(),
+      getFetchConfig: sinon.stub(),
+      getBrandConfig: sinon.stub(),
+      getCdnLogsConfig: sinon.stub(),
+      getLlmoConfig: sinon.stub(),
+    };
     site = {
       getBaseURL: () => 'https://abc.com',
       getId: () => '056f9dbe-e9e1-4d80-8bfb-c9785a873b6a',
       getDeliveryType: () => 'aem_edge',
+      setConfig: sinon.stub(),
+      save: sinon.stub(),
+      getConfig: () => siteConfig,
     };
     audit = {
       getId: () => auditDataMock.id,
       getAuditType: () => 'experimentation-opportunities',
       getFullAuditRef: () => url,
       getAuditResult: sinon.stub(),
+    };
+    s3Client = {
+      send: sinon.stub().resolves({
+        Body: {
+          transformToString: sinon.stub().resolves('{"scrapeResult":{"tags":{"lang":"en-US"}}}'),
+        },
+      }),
     };
 
     context = new MockContextBuilder()
@@ -72,12 +96,14 @@ describe('Experimentation Opportunities Tests', () => {
           AWS_SECRET_ACCESS_KEY: 'some-secret-key',
           AWS_SESSION_TOKEN: 'some-secret-token',
           QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique',
+          S3_SCRAPER_BUCKET_NAME: 'bucket',
         },
         runtime: { name: 'aws-lambda', region: 'us-east-1' },
         func: { package: 'spacecat-services', version: 'ci', name: 'test' },
         audit,
         site,
         finalUrl: url,
+        s3Client,
       })
       .build(messageBodyJson);
 
@@ -126,15 +152,119 @@ describe('Experimentation Opportunities Tests', () => {
     ).to.deep.equal(auditDataMock.auditResult.experimentationOpportunities);
   });
 
-  it('should run the organic keywords step', async () => {
-    audit.getAuditResult.returns(auditDataMock.auditResult);
-    const stepResult = organicKeywordsStep(context);
+  it('should enable the imports if organic-keywords import is not enabled', async () => {
+    context.audit.getAuditResult.returns({
+      experimentationOpportunities: [
+        { type: 'high-organic-low-ctr', page: 'https://abc.com/page1' },
+      ],
+    });
+    const result = await organicKeywordsStep(context);
+
+    // Assert
+    expect(context.site.getConfig().enableImport).to.have.been.calledWith('organic-keywords');
+    expect(context.site.getConfig().disableImport).to.have.been.calledWith('organic-keywords');
+    expect(context.site.save).to.have.been.called;
+    expect(result).to.have.property('urlConfigs');
+    expect(result.urlConfigs[0]).to.deep.include({ url: 'https://abc.com/page1', geo: 'us' });
+  });
+
+  it('should NOT enable the imports if organic-keywords import is already enabled', async () => {
+    context.site.getConfig().getImports = () => [{ type: 'organic-keywords', enabled: true }];
+    context.audit.getAuditResult.returns({
+      experimentationOpportunities: [
+        { type: 'high-organic-low-ctr', page: 'https://abc.com/page2' },
+      ],
+    });
+    const result = await organicKeywordsStep(context);
+    // Assert
+    expect(context.site.getConfig().enableImport).not.to.have.been.called;
+    expect(context.site.getConfig().disableImport).not.to.have.been.called;
+    expect(context.site.save).not.to.have.been.called;
+    expect(result).to.have.property('urlConfigs');
+    expect(result.urlConfigs[0]).to.deep.include({ url: 'https://abc.com/page2', geo: 'us' });
+  });
+
+  it('organic keywords step should handle failures in saving the site config', async () => {
+    context.audit.getAuditResult.returns(auditDataMock.auditResult);
+    context.site.save.rejects(new Error('Failed to save site config'));
+    const stepResult = await organicKeywordsStep(context);
     expect(
       stepResult,
     ).to.deep.equal({
       type: 'organic-keywords',
       siteId: site.getId(),
-      pageUrl: 'https://abc.com/abc-adoption/account',
+      urlConfigs: [{ url: 'https://abc.com/abc-adoption/account', geo: 'us' }],
+    });
+  });
+
+  it('organic keywords step should handle invalid urls in the audit result', async () => {
+    context.audit.getAuditResult.returns({
+      experimentationOpportunities: [
+        { type: 'high-organic-low-ctr', page: 'invalid-url' },
+      ],
+    });
+    const stepResult = await organicKeywordsStep(context);
+    expect(
+      stepResult,
+    ).to.deep.equal({
+      type: 'organic-keywords',
+      siteId: site.getId(),
+      urlConfigs: [],
+    });
+  });
+
+  it('organic keywords step should use default geo if scrape not found', async () => {
+    context.audit.getAuditResult.returns({
+      experimentationOpportunities: [
+        { type: 'high-organic-low-ctr', page: 'https://abc.com/page3' },
+      ],
+    });
+    context.s3Client.send.resolves({
+      Body: {
+        transformToString: sinon.stub().resolves(null),
+      },
+    });
+    const stepResult = await organicKeywordsStep(context);
+    expect(
+      stepResult,
+    ).to.deep.equal({
+      type: 'organic-keywords',
+      siteId: site.getId(),
+      urlConfigs: [{ url: 'https://abc.com/page3', geo: 'us' }],
+    });
+  });
+
+  it('organic keywords step should use default geo if lang tag not found in scrape', async () => {
+    context.audit.getAuditResult.returns({
+      experimentationOpportunities: [
+        { type: 'high-organic-low-ctr', page: 'https://abc.com/page3' },
+      ],
+    });
+    context.s3Client.send.resolves({
+      Body: {
+        transformToString: sinon.stub().resolves({ scrapeResult: { tags: {} } }),
+      },
+    });
+    let stepResult = await organicKeywordsStep(context);
+    expect(
+      stepResult,
+    ).to.deep.equal({
+      type: 'organic-keywords',
+      siteId: site.getId(),
+      urlConfigs: [{ url: 'https://abc.com/page3', geo: 'us' }],
+    });
+    context.s3Client.send.resolves({
+      Body: {
+        transformToString: sinon.stub().resolves({ scrapeResult: {} }),
+      },
+    });
+    stepResult = await organicKeywordsStep(context);
+    expect(
+      stepResult,
+    ).to.deep.equal({
+      type: 'organic-keywords',
+      siteId: site.getId(),
+      urlConfigs: [{ url: 'https://abc.com/page3', geo: 'us' }],
     });
   });
 

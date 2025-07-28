@@ -21,13 +21,14 @@ import AWSXray from 'aws-xray-sdk';
 import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { Site } from '@adobe/spacecat-shared-data-access';
 import {
-  isValidUrls, preflightAudit, scrapePages, AUDIT_STEP_SUGGEST, AUDIT_STEP_IDENTIFY,
-  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT, getPrefixedPageAuthToken,
+  preflightAudit, scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
+  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
 } from '../../src/preflight/handler.js';
 import { runLinksChecks } from '../../src/preflight/links-checks.js';
 import { MockContextBuilder } from '../shared.js';
 import { suggestionData } from '../fixtures/preflight/preflight-suggest.js';
 import identifyData from '../fixtures/preflight/preflight-identify.json' with { type: 'json' };
+import { getPrefixedPageAuthToken, isValidUrls } from '../../src/preflight/utils.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -101,6 +102,8 @@ describe('Preflight Audit', () => {
       const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://main--example--page.aem.page')
         .head('/fail')
+        .replyWithError('network fail')
+        .get('/fail')
         .replyWithError('network fail');
 
       const scrapedObjects = [{
@@ -112,7 +115,49 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
-      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking internal link https://main--example--page.aem.page/fail from https://main--example--page.aem.page/page1:', 'network fail');
+      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking internal link https://main--example--page.aem.page/fail from https://main--example--page.aem.page/page1 with GET fallback:', 'network fail');
+    });
+
+    it('handles HEAD failure with GET fallback success', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://main--example--page.aem.page')
+        .head('/head-fails-get-works')
+        .replyWithError('HEAD request failed')
+        .get('/head-fails-get-works')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/head-fails-get-works">link</a>' },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-works');
+    });
+
+    it('handles HEAD failure with GET fallback returning 404', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://main--example--page.aem.page')
+        .head('/head-fails-get-404')
+        .replyWithError('HEAD request failed')
+        .get('/head-fails-get-404')
+        .reply(404);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/head-fails-get-404">link</a>' },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([
+        { urlTo: 'https://main--example--page.aem.page/head-fails-get-404', href: 'https://main--example--page.aem.page/page1', status: 404 },
+      ]);
+      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-404');
     });
 
     it('filters out scrapedObjects not in the urls list', async () => {
@@ -139,8 +184,8 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      // Verify only one page was processed (now logs both internal and external links)
-      expect(context.log.info).to.have.been.calledTwice;
+      // Verify only one page was processed (now logs total links, internal and external links)
+      expect(context.log.info).to.have.been.calledThrice;
     });
 
     it('returns empty array when no scrapedObjects match urls', async () => {
@@ -190,8 +235,8 @@ describe('Preflight Audit', () => {
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
       // Verify only two pages were processed
-      // (now logs both internal and external links for each page)
-      expect(context.log.info.callCount).to.equal(4);
+      // (now logs total links, internal and external links for each page)
+      expect(context.log.info.callCount).to.equal(6);
     });
 
     it('skips invalid hrefs', async () => {
@@ -275,6 +320,8 @@ describe('Preflight Audit', () => {
       const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://external-site.com')
         .head('/fail')
+        .replyWithError('network fail')
+        .get('/fail')
         .replyWithError('network fail');
 
       const scrapedObjects = [{
@@ -285,15 +332,50 @@ describe('Preflight Audit', () => {
       }];
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
-      expect(result.auditResult.brokenExternalLinks).to.deep.equal([
-        {
-          urlTo: 'https://external-site.com/fail',
-          href: 'https://main--example--page.aem.page/page1',
-          status: 'error',
-          error: 'network fail',
+      expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
+      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking external link https://external-site.com/fail from https://main--example--page.aem.page/page1 with GET fallback:', 'network fail');
+    });
+
+    it('handles external HEAD failure with GET fallback success', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://external-site.com')
+        .head('/head-fails-get-works')
+        .replyWithError('HEAD request failed')
+        .get('/head-fails-get-works')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="https://external-site.com/head-fails-get-works">external link</a>' },
+          finalUrl: urls[0],
         },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
+      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-works');
+    });
+
+    it('handles external HEAD failure with GET fallback returning 404', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://external-site.com')
+        .head('/head-fails-get-404')
+        .replyWithError('HEAD request failed')
+        .get('/head-fails-get-404')
+        .reply(404);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="https://external-site.com/head-fails-get-404">external link</a>' },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenExternalLinks).to.deep.equal([
+        { urlTo: 'https://external-site.com/head-fails-get-404', href: 'https://main--example--page.aem.page/page1', status: 404 },
       ]);
-      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking external link https://external-site.com/fail from https://main--example--page.aem.page/page1:', 'network fail');
+      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-404');
     });
 
     it('processes both internal and external links correctly', async () => {
@@ -321,6 +403,35 @@ describe('Preflight Audit', () => {
       expect(result.auditResult.brokenExternalLinks).to.deep.equal([
         { urlTo: 'https://external-site.com/external-broken', href: 'https://main--example--page.aem.page/page1', status: 500 },
       ]);
+    });
+
+    it('skips links inside header and footer', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      // One link in header, one in footer, one in body
+      const html = `
+        <header><a href="/header-link">Header Link</a></header>
+        <footer><a href="/footer-link">Footer Link</a></footer>
+        <main><a href="/body-link">Body Link</a></main>
+      `;
+      nock('https://main--example--page.aem.page')
+        .head('/body-link')
+        .reply(200);
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: html },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      // Only the body link should be considered internal
+      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+      // Check that only the body link is logged as internal
+      expect(context.log.info).to.have.been.calledWith(
+        '[preflight-audit] Found internal links:',
+        new Set(['https://main--example--page.aem.page/body-link']),
+      );
     });
   });
 
@@ -360,7 +471,7 @@ describe('Preflight Audit', () => {
         job: {
           getMetadata: () => ({
             payload: {
-              step: AUDIT_STEP_IDENTIFY,
+              step: PREFLIGHT_STEP_IDENTIFY,
               urls: [
                 'https://main--example--page.aem.page',
                 'https://another.com/page',
@@ -384,6 +495,38 @@ describe('Preflight Audit', () => {
         },
       });
     });
+    it('returns the correct object for valid input for authentication disabled', async () => {
+      const enableAuthentication = false;
+      const context = {
+        site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
+        job: {
+          getMetadata: () => ({
+            payload: {
+              step: PREFLIGHT_STEP_IDENTIFY,
+              enableAuthentication,
+              urls: [
+                'https://main--example--page.aem.page',
+                'https://another.com/page',
+              ],
+            },
+          }),
+        },
+      };
+      const result = await scrapePages(context);
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://main--example--page.aem.page' },
+          { url: 'https://another.com/page' },
+        ],
+        siteId: 'site-123',
+        type: 'preflight',
+        allowCache: false,
+        options: {
+          enableAuthentication,
+          screenshotTypes: [],
+        },
+      });
+    });
 
     it('includes promiseToken in options if context.promiseToken exists', async () => {
       const context = {
@@ -391,7 +534,7 @@ describe('Preflight Audit', () => {
         job: {
           getMetadata: () => ({
             payload: {
-              step: AUDIT_STEP_IDENTIFY,
+              step: PREFLIGHT_STEP_IDENTIFY,
               urls: [
                 'https://main--example--page.aem.page',
               ],
@@ -410,7 +553,7 @@ describe('Preflight Audit', () => {
         job: {
           getMetadata: () => ({
             payload: {
-              step: AUDIT_STEP_IDENTIFY,
+              step: PREFLIGHT_STEP_IDENTIFY,
               urls: [
                 'not-a-url',
                 'https://main--example--page.aem.page',
@@ -454,7 +597,7 @@ describe('Preflight Audit', () => {
       job = {
         getMetadata: () => ({
           payload: {
-            step: AUDIT_STEP_IDENTIFY,
+            step: PREFLIGHT_STEP_IDENTIFY,
             urls: ['https://main--example--page.aem.page/page1'],
           },
         }),
@@ -512,10 +655,10 @@ describe('Preflight Audit', () => {
         .head('/broken')
         .reply(404);
 
-      // Mock the external link to throw an error (network error)
+      // Mock the external link to return 404
       nock('http://test.com')
         .head('/')
-        .replyWithError('Network error');
+        .reply(404);
     });
 
     afterEach(() => {
@@ -569,7 +712,7 @@ describe('Preflight Audit', () => {
 
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_SUGGEST,
+          step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page/page1'],
         },
       });
@@ -625,6 +768,174 @@ describe('Preflight Audit', () => {
       })));
     });
 
+    it('completes successfully on the happy path for the suggest step for the root page', async () => {
+      context.promiseToken = 'mock-promise-token';
+      const head = '<head><a href="https://example.com/header-url"/></head>';
+      const body = '<body><a href="https://example.com/broken"></a><a href="https://example.com/another-broken-url"></a><h1>Home H1</h1></body>';
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  tags: {
+                    title: 'Home Title',
+                    description: 'Home Description',
+                    h1: ['Home H1'],
+                  },
+                },
+                finalUrl: 'https://main--example--page.aem.page',
+              })),
+            },
+          });
+        }
+      });
+
+      nock('https://main--example--page.aem.page')
+        .head('/header-url')
+        .reply(200);
+      nock('https://main--example--page.aem.page')
+        .head('/broken')
+        .reply(404);
+      nock('https://main--example--page.aem.page')
+        .head('/another-broken-url')
+        .reply(404);
+
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_SUGGEST,
+          urls: ['https://main--example--page.aem.page'],
+        },
+      });
+
+      firefallClient.fetchChatCompletion.resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://example.com/fix'], aiRationale: 'Rationale' }),
+            aiRationale: 'Rationale',
+          },
+          finish_reason: 'stop',
+        }],
+      });
+
+      configuration.isHandlerEnabledForSite.onCall(0).returns(true);
+      configuration.isHandlerEnabledForSite.onCall(1).returns(false);
+      genvarClient.generateSuggestions.resolves({
+        '/': {
+          h1: {
+            aiRationale: 'The H1 tag is clear...',
+            aiSuggestion: 'Welcome to Our Homepage',
+          },
+          title: {
+            aiRationale: 'The title is descriptive...',
+            aiSuggestion: 'Home - Our Company',
+          },
+          description: {
+            aiRationale: 'The description is concise...',
+            aiSuggestion: 'Welcome to the homepage of Our Company.',
+          },
+        },
+      });
+
+      await preflightAudit(context);
+
+      expect(genvarClient.generateSuggestions).to.have.been.called;
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(finalJobEntity.setResultType).to.have.been.called;
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
+      expect(finalJobEntity.setResult).to.have.been.called;
+    });
+
+    it('completes successfully when finalUrl has trailing slash but input URL gets normalized', async () => {
+      context.promiseToken = 'mock-promise-token';
+      const head = '<head><title>Root Page</title></head>';
+      const body = '<body><h1>Root H1</h1><p>Root content with lorem ipsum text</p></body>';
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: html,
+                  tags: {
+                    title: 'Root Page',
+                    description: 'Root Description',
+                    h1: ['Root H1'],
+                  },
+                },
+                finalUrl: 'https://main--example--page.aem.page/',
+              })),
+            },
+          });
+        }
+      });
+
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_IDENTIFY,
+          // Input URL has trailing slash, will get normalized to remove it
+          urls: ['https://main--example--page.aem.page/'],
+          enableAuthentication: false,
+        },
+      });
+
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      await preflightAudit(context);
+
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(finalJobEntity.setResultType).to.have.been.called;
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
+      expect(finalJobEntity.setResult).to.have.been.called;
+
+      // Verify that the result contains the expected audit data
+      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+      expect(actualResult).to.be.an('array');
+      expect(actualResult).to.have.lengthOf(1);
+      expect(actualResult[0]).to.have.property('pageUrl', 'https://main--example--page.aem.page');
+      expect(actualResult[0]).to.have.property('audits');
+      expect(actualResult[0].audits).to.be.an('array');
+      const bodySizeAudit = actualResult[0].audits.find((audit) => audit.name === 'body-size');
+      expect(bodySizeAudit).to.exist;
+      expect(bodySizeAudit.opportunities).to.be.an('array');
+      const loremIpsumAudit = actualResult[0].audits.find((audit) => audit.name === 'lorem-ipsum');
+      expect(loremIpsumAudit).to.exist;
+      expect(loremIpsumAudit.opportunities).to.have.lengthOf(1);
+      expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
+    });
+
+    // eslint-disable-next-line func-names
     it('completes successfully on the happy path for the identify step', async function () {
       this.timeout(10000); // Increase timeout to 10 seconds
       const head = '<head><link rel="canonical" href="https://main--example--page.aem.page/page1"/></head>';
@@ -634,6 +945,11 @@ describe('Preflight Audit', () => {
       // Mock the broken internal link to return 404
       nock('https://main--example--page.aem.page')
         .head('/broken')
+        .reply(404);
+
+      // Mock the external link to return 404
+      nock('http://test.com')
+        .head('/')
         .reply(404);
 
       s3Client.send.callsFake((command) => {
@@ -666,8 +982,9 @@ describe('Preflight Audit', () => {
 
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
+          enableAuthentication: false,
         },
       });
       configuration.isHandlerEnabledForSite.returns(false);
@@ -707,7 +1024,7 @@ describe('Preflight Audit', () => {
     it('throws if the provided urls are invalid', async () => {
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['not-a-url'],
         },
       });
@@ -718,7 +1035,7 @@ describe('Preflight Audit', () => {
     it('sets status to FAILED if an error occurs', async () => {
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
         },
       });
@@ -761,7 +1078,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['canonical', 'metatags', 'dom', 'links'];
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -822,7 +1139,7 @@ describe('Preflight Audit', () => {
     it('handles individual AUDIT_BODY_SIZE check', async () => {
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
           checks: [AUDIT_BODY_SIZE], // Only test body size check
         },
@@ -876,7 +1193,7 @@ describe('Preflight Audit', () => {
     it('handles individual AUDIT_LOREM_IPSUM check', async () => {
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
           checks: [AUDIT_LOREM_IPSUM], // Only test lorem ipsum check
         },
@@ -930,7 +1247,7 @@ describe('Preflight Audit', () => {
     it('handles individual AUDIT_H1_COUNT check', async () => {
       job.getMetadata = () => ({
         payload: {
-          step: AUDIT_STEP_IDENTIFY,
+          step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
           checks: [AUDIT_H1_COUNT], // Only test h1 count check
         },
