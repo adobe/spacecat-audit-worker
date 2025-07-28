@@ -21,6 +21,7 @@ import esmock from 'esmock';
 import {
   getTopPagesForSiteId, validateCanonicalTag, validateCanonicalFormat,
   validateCanonicalRecursively, canonicalAuditRunner, CANONICAL_CHECKS,
+  generateCanonicalSuggestion,
 } from '../../src/canonical/handler.js';
 
 use(sinonChai);
@@ -556,6 +557,8 @@ describe('Canonical URL Tests', () => {
       const result = await canonicalAuditRunner(baseURL, context, site);
 
       expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result).to.have.property('auditResult');
       expect(result.auditResult).to.deep.equal({
         status: 'success',
         message: 'No canonical issues detected',
@@ -688,6 +691,118 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith('Retrieving page authentication for pageUrl http://example.page');
       expect(retrievePageAuthenticationStub).to.have.been.calledOnceWith(site, context);
       expect(log.error).to.have.been.calledWith('Error retrieving page authentication for pageUrl http://example.page: Something went wrong');
+    });
+  });
+
+  describe('generateCanonicalSuggestion', () => {
+    const testUrl = 'https://example.com/test-page';
+    const baseURL = 'https://example.com';
+
+    // shorter alias for the canonical checks
+    const checks = {
+      TAG_EXISTS: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.check,
+      TAG_ONCE: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.check,
+      TAG_NONEMPTY: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
+      TAG_IN_HEAD: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
+      SELF_REFERENCED: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+      URL_ABSOLUTE: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
+      URL_SAME_DOMAIN: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
+      URL_SAME_PROTOCOL: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
+      URL_LOWERCASED: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
+      URL_STATUS_OK: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
+      URL_NO_REDIRECT: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
+      URL_4XX: CANONICAL_CHECKS.CANONICAL_URL_4XX.check,
+      URL_5XX: CANONICAL_CHECKS.CANONICAL_URL_5XX.check,
+      URL_FETCH_ERROR: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+      URL_INVALID: CANONICAL_CHECKS.CANONICAL_URL_INVALID.check,
+    };
+
+    it('should generate suggestion for CANONICAL_TAG_EXISTS', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_EXISTS, testUrl, baseURL);
+      expect(result).to.equal(`Add a canonical tag to the head section: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_TAG_ONCE', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_ONCE, testUrl, baseURL);
+      expect(result).to.equal('Remove duplicate canonical tags and keep only one canonical tag in the head section.');
+    });
+
+    it('should generate suggestion for CANONICAL_TAG_NONEMPTY', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_NONEMPTY, testUrl, baseURL);
+      expect(result).to.equal(`Set the canonical URL in the href attribute: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_TAG_IN_HEAD', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_IN_HEAD, testUrl, baseURL);
+      expect(result).to.equal('Move the canonical tag to the <head> section of the HTML document.');
+    });
+
+    it('should generate suggestion for CANONICAL_URL_STATUS_OK', () => {
+      const result = generateCanonicalSuggestion(checks.URL_STATUS_OK, testUrl, baseURL);
+      expect(result).to.equal('Ensure the canonical URL returns a 200 status code and is accessible.');
+    });
+
+    it('should generate suggestion for CANONICAL_URL_NO_REDIRECT', () => {
+      const result = generateCanonicalSuggestion(checks.URL_NO_REDIRECT, testUrl, baseURL);
+      expect(result).to.equal('Update the canonical URL to point directly to the final destination without redirects.');
+    });
+
+    it('should generate suggestion for CANONICAL_URL_4XX', () => {
+      const result = generateCanonicalSuggestion(checks.URL_4XX, testUrl, baseURL);
+      expect(result).to.equal('Fix the canonical URL to resolve the 4xx client error and make it accessible.');
+    });
+
+    it('should generate suggestion for CANONICAL_URL_5XX', () => {
+      const result = generateCanonicalSuggestion(checks.URL_5XX, testUrl, baseURL);
+      expect(result).to.equal('Fix the canonical URL to resolve the 5xx server error and ensure it\'s accessible.');
+    });
+
+    it('should generate suggestion for CANONICAL_SELF_REFERENCED', () => {
+      const result = generateCanonicalSuggestion(checks.SELF_REFERENCED, testUrl, baseURL);
+      expect(result).to.equal(`Update canonical URL to point to itself: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_URL_ABSOLUTE', () => {
+      const result = generateCanonicalSuggestion(checks.URL_ABSOLUTE, testUrl, baseURL);
+      expect(result).to.equal(`Use an absolute URL for the canonical tag: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_URL_SAME_DOMAIN', () => {
+      const result = generateCanonicalSuggestion(checks.URL_SAME_DOMAIN, testUrl, baseURL);
+      expect(result).to.equal(`Update canonical URL to use the same domain as the page: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_URL_SAME_PROTOCOL', () => {
+      const result = generateCanonicalSuggestion(checks.URL_SAME_PROTOCOL, testUrl, baseURL);
+      expect(result).to.equal(`Update canonical URL to use the same protocol (HTTP/HTTPS): <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_URL_LOWERCASED', () => {
+      const testUrlMixed = 'https://Example.com/Test-Page';
+      const result = generateCanonicalSuggestion(checks.URL_LOWERCASED, testUrlMixed, baseURL);
+      expect(result).to.equal(`Update canonical URL to use lowercase: <link rel="canonical" href="${testUrlMixed.toLowerCase()}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_URL_FETCH_ERROR', () => {
+      const result = generateCanonicalSuggestion(checks.URL_FETCH_ERROR, testUrl, baseURL);
+      expect(result).to.equal('Check if the canonical URL is accessible and fix any connectivity issues.');
+    });
+
+    it('should generate suggestion for CANONICAL_URL_INVALID', () => {
+      const result = generateCanonicalSuggestion(checks.URL_INVALID, testUrl, baseURL);
+      expect(result).to.equal(`Fix the malformed canonical URL and ensure it follows proper URL format: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should return fallback message for unknown check type', () => {
+      const unknownCheckType = 'unknown-check-type';
+      const result = generateCanonicalSuggestion(unknownCheckType, testUrl, baseURL);
+      expect(result).to.equal('Review and fix the canonical tag implementation according to SEO best practices.');
+    });
+
+    it('should return fallback message when check object has no suggestion function', () => {
+      // Test with a check that exists but has no suggestion (since we removed some suggestions)
+      const result = generateCanonicalSuggestion(CANONICAL_CHECKS.TOPPAGES.check, testUrl, baseURL);
+      expect(result).to.equal('Review and fix the canonical tag implementation according to SEO best practices.');
     });
   });
 });
