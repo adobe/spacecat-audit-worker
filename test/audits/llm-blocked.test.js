@@ -28,29 +28,10 @@ describe('LLM Blocked Audit', () => {
   let context;
   let sandbox;
   let mockTopPages;
-  const userAgents = [
-    'ClaudeBot/1.0',
-    'Perplexity-User/1.0',
-    'PerplexityBot/1.0',
-    'ChatGPT-User/1.0',
-    'GPTBot/1.0',
-    'OAI-SearchBot/1.0',
-  ];
 
   before('setup', () => {
     sandbox = sinon.createSandbox();
   });
-
-  // Helper function to create nock mocks for user agents
-  function mockUserAgentRequests(domain, path, agents = userAgents, statusMap = {}) {
-    agents.forEach((agent) => {
-      const status = statusMap[agent] || 200;
-      nock(domain)
-        .get(path)
-        .matchHeader('User-Agent', agent)
-        .reply(status);
-    });
-  }
 
   beforeEach('setup', () => {
     mockTopPages = [
@@ -77,6 +58,7 @@ describe('LLM Blocked Audit', () => {
       .withSandbox(sandbox).build();
 
     context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves(mockTopPages);
+    context.dataAccess.Opportunity.allBySiteIdAndStatus = sinon.stub().resolves([]);
   });
 
   afterEach(() => {
@@ -84,79 +66,16 @@ describe('LLM Blocked Audit', () => {
     sandbox.restore();
   });
 
-  it('should return no blocked URLs when all requests return 200', async () => {
+  it('should return no blocked URLs when robots txt allows all', async () => {
     // Mock robots.txt
     nock('https://example.com')
       .get('/robots.txt')
       .reply(200, 'User-Agent: *\nAllow: /');
-
-    // Mock page requests - all return 200
-    // Mock user agent requests for both pages - all return 200
-    mockUserAgentRequests('https://example.com', '/page1');
-    mockUserAgentRequests('https://example.com', '/page2');
-
-    // Mock baseline requests (no user agent)
-    nock('https://example.com')
-      .get('/page1')
-      .reply(200);
-    nock('https://example.com')
-      .get('/page2')
-      .reply(200);
 
     const result = await checkLLMBlocked(context);
 
     expect(result.auditResult).to.equal('[]');
     expect(nock.pendingMocks()).to.have.lengthOf(0, 'not all requests were made');
-  });
-
-  it('should return blocked URLs when a user agent is blocked', async () => {
-    // Mock robots.txt
-    nock('https://example.com')
-      .get('/robots.txt')
-      .reply(200, 'User-Agent: *\nAllow: /');
-
-    // Mock user agent requests for page1
-    mockUserAgentRequests('https://example.com', '/page1', userAgents, {
-      'ClaudeBot/1.0': 403,
-    });
-
-    // Mock user agent requests for page2 - all return 200
-    mockUserAgentRequests('https://example.com', '/page2');
-
-    // Mock baseline requests (no user agent)
-    nock('https://example.com')
-      .get('/page1')
-      .reply(200);
-    nock('https://example.com')
-      .get('/page2')
-      .reply(200);
-
-    const expectedSuggestionsData = [
-      {
-        affectedUrls: [
-          {
-            status: 403,
-            url: 'https://example.com/page1',
-          },
-        ],
-        agent: 'ClaudeBot/1.0',
-        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic\'s Claude to access your site when assisting users.',
-      },
-    ];
-
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
-    context.dataAccess.Opportunity.getSuggestions.resolves([]);
-    context.dataAccess.Opportunity.getId.returns('opportunity-id');
-    context.dataAccess.Opportunity.addSuggestions.resolves(expectedSuggestionsData);
-
-    const result = await checkLLMBlocked(context);
-
-    expect(result.auditResult).to.equal(JSON.stringify([{
-      url: 'https://example.com/page1',
-      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }],
-    }]));
-    expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
   it('should return blocked URLs when a page is blocked by robots.txt', async () => {
@@ -165,28 +84,13 @@ describe('LLM Blocked Audit', () => {
       .get('/robots.txt')
       .reply(200, 'User-Agent: ClaudeBot/1.0\nDisallow: /page1\n\nUser-Agent: *\nAllow: /');
 
-    // Mock user agent requests for both pages - all return 200
-    mockUserAgentRequests('https://example.com', '/page1');
-    mockUserAgentRequests('https://example.com', '/page2');
-
-    // Mock baseline requests (no user agent)
-    nock('https://example.com')
-      .get('/page1')
-      .reply(200);
-    nock('https://example.com')
-      .get('/page2')
-      .reply(200);
-
     const expectedSuggestionsData = [
       {
-        affectedUrls: [
-          {
-            status: 'Blocked by robots.txt',
-            url: 'https://example.com/page1',
-          },
-        ],
         agent: 'ClaudeBot/1.0',
-        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic\'s Claude to access your site when assisting users.',
+        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
+        affectedUrls: [
+          'https://example.com/page1',
+        ],
       },
     ];
 
@@ -198,65 +102,7 @@ describe('LLM Blocked Audit', () => {
 
     const result = await checkLLMBlocked(context);
 
-    expect(result.auditResult).to.equal(JSON.stringify([{
-      url: 'https://example.com/page1',
-      blockedAgents: [{ agent: 'ClaudeBot/1.0', status: 'Blocked by robots.txt' }],
-    }]));
-    expect(nock.pendingMocks()).to.have.lengthOf(0);
-  });
-
-  it('should return the expected data structure if multiple issues are detected', async () => {
-    // Mock robots.txt that blocks everything for Perplexity-User/1.0
-    nock('https://example.com')
-      .get('/robots.txt')
-      .reply(200, 'User-Agent: Perplexity-User/1.0\nDisallow: /\n\nUser-Agent: *\nAllow: /');
-
-    // Mock user agent requests for page1
-    mockUserAgentRequests('https://example.com', '/page1', userAgents, {
-      'ClaudeBot/1.0': 403,
-    });
-
-    // Mock user agent requests for page2
-    mockUserAgentRequests('https://example.com', '/page2', userAgents, {
-      'Perplexity-User/1.0': 403,
-    });
-
-    // Mock baseline requests (no user agent)
-    nock('https://example.com')
-      .get('/page1')
-      .reply(200);
-    nock('https://example.com')
-      .get('/page2')
-      .reply(200);
-
-    const expectedSuggestionsData = [
-      {
-        affectedUrls: [
-          {
-            status: 'Blocked by robots.txt',
-            url: 'https://example.com/page1',
-          },
-        ],
-        agent: 'ClaudeBot/1.0',
-        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic\'s Claude to access your site when assisting users.',
-      },
-    ];
-
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
-    context.dataAccess.Opportunity.getSuggestions.resolves([]);
-    context.dataAccess.Opportunity.getId.returns('opportunity-id');
-    context.dataAccess.Opportunity.addSuggestions.resolves(expectedSuggestionsData);
-
-    const result = await checkLLMBlocked(context);
-
-    expect(result.auditResult).to.equal(JSON.stringify([{
-      url: 'https://example.com/page1',
-      blockedAgents: [{ status: 403, agent: 'ClaudeBot/1.0' }, { agent: 'Perplexity-User/1.0', status: 'Blocked by robots.txt' }],
-    }, {
-      url: 'https://example.com/page2',
-      blockedAgents: [{ status: 403, agent: 'Perplexity-User/1.0' }, { agent: 'Perplexity-User/1.0', status: 'Blocked by robots.txt' }],
-    }]));
+    expect(result.auditResult).to.equal(JSON.stringify(expectedSuggestionsData));
     expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
@@ -266,23 +112,10 @@ describe('LLM Blocked Audit', () => {
       .get('/robots.txt')
       .replyWithError('Network error');
 
-    // Mock user agent requests for both pages - all return 200
-    mockUserAgentRequests('https://example.com', '/page1');
-    mockUserAgentRequests('https://example.com', '/page2');
-
-    // Mock baseline requests (no user agent)
-    nock('https://example.com')
-      .get('/page1')
-      .reply(200);
-    nock('https://example.com')
-      .get('/page2')
-      .reply(200);
-
     const result = await checkLLMBlocked(context);
 
     expect(result.auditResult).to.equal('[]');
-    expect(context.log.error).to.have.been.calledWith('Error getting robots.txt: Error: Network error');
-    expect(context.log.warn).to.have.been.calledWith('No robots.txt found. Skipping robots.txt check.');
+    expect(context.log.warn).to.have.been.calledWith('No robots.txt found. Aborting robots.txt check.');
     expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 

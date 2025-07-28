@@ -76,66 +76,39 @@ export async function checkLLMBlocked(context) {
 
   const robots = await getRobotsTxt(context);
   if (!robots) {
-    log.warn('No robots.txt found. Skipping robots.txt check.');
-  }
-
-  // check the top 20 pages
-  const failedUrlsPromises = topPages.slice(0, 20).map(async (page) => {
-    // fetch the page with each user agent once
-    const userAgentResults = await Promise.all(agents.map(
-      async (agent) => ({
-        status: (await fetch(page.getUrl(), { headers: { 'User-Agent': agent } })).status,
-        agent,
-      }),
-    ));
-
-    // fetch the page with no user agent (baseline)
-    const baselineResult = await fetch(page.getUrl());
-
-    // check for differences between baseline and each user agent
-    const blockedResults = userAgentResults
-      .filter((result) => result.status !== baselineResult.status);
-
-    // if the page is pyhsically accessible, check if it is blocked by robots.txt
-    if (baselineResult.status === 200 && robots && robots.isAllowed(page.getUrl(), '')) {
-      agents.forEach((agent) => {
-        if (!robots.isAllowed(page.getUrl(), agent)) {
-          blockedResults.push({ agent, status: 'Blocked by robots.txt' });
-        }
-      });
-    }
-
-    if (blockedResults.length > 0) {
-      return { url: page.getUrl(), blockedAgents: blockedResults };
-    }
-
-    return null;
-  });
-
-  const failedUrls = (await Promise.all(failedUrlsPromises)).filter((x) => !!x);
-
-  if (failedUrls.length <= 0) {
+    log.warn('No robots.txt found. Aborting robots.txt check.');
     return {
       auditResult: JSON.stringify([]),
       fullAuditRef: `llm-blocked::${finalUrl}`,
     };
   }
 
-  // reshape the results to be grouped by agent instead of URL for the suggestions UI
-  const resultsByAgent = {};
+  const suggestionsArray = [];
+
   agents.forEach((agent) => {
-    resultsByAgent[agent] = { agent, affectedUrls: [], rationale: agentsWithRationale[agent] };
-  });
+    const agentResult = {
+      agent,
+      rationale: agentsWithRationale[agent],
+      affectedUrls: [],
+    };
 
-  failedUrls.forEach((result) => {
-    result.blockedAgents.forEach((blockedAgentInfo) => {
-      resultsByAgent[blockedAgentInfo.agent].affectedUrls
-        .push({ url: result.url, status: blockedAgentInfo.status });
+    topPages.forEach((page) => {
+      if (!robots.isAllowed(page.getUrl(), agent)) {
+        agentResult.affectedUrls.push(page.getUrl());
+      }
     });
+
+    if (agentResult.affectedUrls.length > 0) {
+      suggestionsArray.push(agentResult);
+    }
   });
 
-  const suggestionsArray = [...Object.values(resultsByAgent)]
-    .filter((x) => x.affectedUrls.length > 0);
+  if (suggestionsArray.length <= 0) {
+    return {
+      auditResult: JSON.stringify([]),
+      fullAuditRef: `llm-blocked::${finalUrl}`,
+    };
+  }
 
   // Create the opportunity
   const opportunity = await convertToOpportunity(
@@ -168,7 +141,7 @@ export async function checkLLMBlocked(context) {
   });
 
   return {
-    auditResult: JSON.stringify(failedUrls),
+    auditResult: JSON.stringify(suggestionsArray),
     fullAuditRef: `llm-blocked::${finalUrl}`,
   };
 }
