@@ -497,14 +497,13 @@ export async function validateCanonicalRecursively(
  * @returns {string} A suggestion for fixing the canonical issue.
  */
 export function generateCanonicalSuggestion(checkType, url, baseURL) {
-  // Find the check object that matches the checkType
   const checkObj = Object.values(CANONICAL_CHECKS).find((check) => check.check === checkType);
 
   if (checkObj && checkObj.suggestion) {
     return checkObj.suggestion(url, baseURL);
   }
 
-  // Fallback for unknown check types
+  // fallback suggestion
   return 'Review and fix the canonical tag implementation according to SEO best practices.';
 }
 
@@ -650,13 +649,13 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
-  // If audit failed or has no issues, return as-is
+  // if audit failed or has no issues, skip suggestions generation
   if (!Array.isArray(auditData.auditResult)) {
     log.info(`Canonical audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
     return { ...auditData };
   }
 
-  // Transform each canonical issue into suggestions format
+  // transform audit results into suggestions
   const suggestions = auditData.auditResult
     .flatMap((issue) => issue.affectedUrls.map((urlData) => ({
       type: 'CODE_CHANGE',
@@ -673,7 +672,6 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
 /**
  * Creates opportunities and syncs suggestions for canonical issues.
- * This integrates canonical audit results with the Experience Success Studio.
  *
  * @param {string} auditUrl - The URL that was audited.
  * @param {Object} auditData - The audit data containing results and suggestions.
@@ -683,13 +681,13 @@ export function generateSuggestions(auditUrl, auditData, context) {
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
-  // If audit failed or has no suggestions, skip opportunity creation
+  // if audit failed or has no suggestions, skip opportunity creation
   if (!Array.isArray(auditData.auditResult) || !auditData.suggestions?.length) {
     log.info('Canonical audit has no issues, skipping opportunity creation');
     return { ...auditData };
   }
 
-  // Create the opportunity using the standard pattern
+  // create opportunity
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
@@ -698,10 +696,9 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditType,
   );
 
-  // Build key function for deduplicating suggestions
   const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
 
-  // Sync suggestions with the opportunity
+  // sync suggestions with opportunity
   await syncSuggestions({
     opportunity,
     newData: auditData.suggestions,
@@ -710,7 +707,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: suggestion.type,
-      rank: 0, // All canonical issues have same priority for now
+      rank: 0, // all suggestions are ranked equally
       data: {
         type: 'url',
         url: suggestion.url,

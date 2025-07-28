@@ -22,10 +22,7 @@ export function createOpportunityData() {
       steps: [
         'Review each URL with canonical issues identified in the audit results.',
         'Ensure canonical tags are properly implemented in the <head> section of each page.',
-        'Verify that canonical URLs point to themselves for preferred pages, or to the preferred version for duplicate content.',
-        'Test canonical URL accessibility to ensure they return 200 status codes.',
         'Use lowercase, absolute URLs for canonical tags to avoid formatting issues.',
-        'Monitor canonical URL implementation over time to ensure ongoing compliance.',
       ],
     },
     tags: ['Traffic Acquisition', 'SEO'],
