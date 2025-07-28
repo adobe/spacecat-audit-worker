@@ -12,13 +12,19 @@
 
 import { JSDOM } from 'jsdom';
 import { composeBaseURL, tracingFetch as fetch, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { isPreviewPage } from '../utils/url-utils.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
 /**
  * @import {type RequestOptions} from "@adobe/fetch"
 */
+
+const auditType = Audit.AUDIT_TYPES.CANONICAL;
 
 export const CANONICAL_CHECKS = Object.freeze({
   CANONICAL_TAG_EXISTS: {
@@ -632,7 +638,97 @@ export async function canonicalAuditRunner(baseURL, context, site) {
   }
 }
 
+/**
+ * Generates suggestions based on canonical audit results.
+ * Transforms the audit result array into a format suitable for the suggestions system.
+ *
+ * @param {string} auditUrl - The URL that was audited.
+ * @param {Object} auditData - The audit data containing results.
+ * @param {Object} context - The context object containing log and other utilities.
+ * @returns {Object} The audit data with suggestions added.
+ */
+export function generateSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
+
+  // If audit failed or has no issues, return as-is
+  if (!Array.isArray(auditData.auditResult)) {
+    log.info(`Canonical audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
+    return { ...auditData };
+  }
+
+  // Transform each canonical issue into suggestions format
+  const suggestions = auditData.auditResult
+    .flatMap((issue) => issue.affectedUrls.map((urlData) => ({
+      type: 'CODE_CHANGE',
+      checkType: issue.type,
+      explanation: issue.explanation,
+      url: urlData.url,
+      suggestion: urlData.suggestion,
+      recommendedAction: urlData.suggestion,
+    })));
+
+  log.info(`Generated ${suggestions.length} canonical suggestions for ${auditUrl}`);
+  return { ...auditData, suggestions };
+}
+
+/**
+ * Creates opportunities and syncs suggestions for canonical issues.
+ * This integrates canonical audit results with the Experience Success Studio.
+ *
+ * @param {string} auditUrl - The URL that was audited.
+ * @param {Object} auditData - The audit data containing results and suggestions.
+ * @param {Object} context - The context object containing log, dataAccess, etc.
+ * @returns {Object} The audit data unchanged (opportunities created as side effect).
+ */
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
+
+  // If audit failed or has no suggestions, skip opportunity creation
+  if (!Array.isArray(auditData.auditResult) || !auditData.suggestions?.length) {
+    log.info('Canonical audit has no issues, skipping opportunity creation');
+    return { ...auditData };
+  }
+
+  // Create the opportunity using the standard pattern
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
+
+  // Build key function for deduplicating suggestions
+  const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
+
+  // Sync suggestions with the opportunity
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.suggestions,
+    context,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: suggestion.type,
+      rank: 0, // All canonical issues have same priority for now
+      data: {
+        type: 'url',
+        url: suggestion.url,
+        checkType: suggestion.checkType,
+        explanation: suggestion.explanation,
+        suggestion: suggestion.suggestion,
+        recommendedAction: suggestion.recommendedAction,
+      },
+    }),
+    log,
+  });
+
+  log.info(`Canonical opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  return { ...auditData };
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(canonicalAuditRunner)
+  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();
