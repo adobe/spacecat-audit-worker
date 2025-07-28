@@ -605,7 +605,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       };
     }
 
-    // Transform aggregated results into the new structure when issues are found
+    // final results structure
     const results = Object.entries(aggregatedResults).map(([checkType, checkData]) => ({
       type: checkType,
       explanation: checkData.explanation,
@@ -620,7 +620,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       results,
     };
   } catch (error) {
-    log.error(`Canonical audit failed for site ${siteId}: ${error.message}`);
+    log.info(`Canonical audit failed for site ${siteId}: ${error.message}`);
 
     return {
       fullAuditRef: baseURL,
