@@ -14,11 +14,16 @@ import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getUrlWithoutPath } from '../support/utils.js';
 import { requestSaaS } from '../utils/saas.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
 import { ProductsQuery, CategoriesQuery, ProductCountQuery } from './queries.js';
 import {
   ERROR_CODES,
   getSitemapUrls,
 } from '../sitemap/common.js';
+
+const auditType = 'sitemap-product-coverage';
 
 function fillUrlTemplate(template, params) {
   return template
@@ -126,17 +131,17 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
 
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
     const customConfig = site.getConfig().getHandlers()?.['sitemap-product-coverage'];
-    const locales = customConfig.locales ? customConfig.locales.split(',') : ['default'];
+    const locales = customConfig?.locales ? customConfig.locales.split(',') : ['default'];
 
     await Promise.all(locales.map(async (locale) => {
       const params = {
         storeUrl: inputUrl,
-        contentUrl: inputUrl + (locale === 'default' ? '' : `/${locale}`),
-        configName: customConfig.configName,
-        configSection: customConfig.configSection,
-        productUrlTemplate: customConfig.productUrlTemplate || '%baseUrl/%locale/products/%urlKey/%skuLowerCase',
-        cookies: customConfig.cookies,
-        config: customConfig.config,
+        locale: locale === 'default' ? '' : `${locale}`,
+        configName: customConfig?.configName,
+        configSection: customConfig?.configSection,
+        configSheet: customConfig?.configSheet,
+        productUrlTemplate: customConfig?.productUrlTemplate || '%baseUrl/%locale/products/%urlKey/%skuLowerCase',
+        config: customConfig?.config?.[locale],
       };
 
       try {
@@ -209,8 +214,74 @@ export async function sitemapProductCoverageAuditRunner(baseURL, context, site) 
   };
 }
 
+export function generateSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
+
+  const success = auditData?.auditResult?.success;
+  const issues = auditData?.auditResult?.details?.issues || {};
+
+  log.info(`Generating suggestions for audit URL: ${auditUrl}`);
+
+  if (success && Object.keys(issues).length > 0) {
+    const suggestions = Object.entries(issues).map(([locale, urls]) => {
+      const issueCount = urls.length;
+      return {
+        locale,
+        recommendedAction: `Found ${issueCount} product URLs missing in the sitemap for locale ${locale}. Please manually check why it happens.`,
+        urls,
+      };
+    });
+    return { ...auditData, suggestions };
+  }
+
+  return auditData;
+}
+
+export async function generateOpportunities(auditUrl, auditData, context) {
+  const { log } = context;
+  log.info(auditData);
+
+  if (auditData.auditResult.success === false) {
+    log.info(`The ${auditType} audit itself failed, skipping opportunity creation.`);
+    return { ...auditData };
+  }
+
+  if (!auditData.suggestions || !auditData.suggestions.length) {
+    log.info(`The ${auditType} has no suggested fixes found, skipping opportunity creation.`);
+    return { ...auditData };
+  }
+
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
+
+  const buildKey = (data) => data.key;
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.suggestions,
+    context,
+    buildKey,
+    mapNewSuggestion: (issue) => ({
+      opportunityId: opportunity.getId(),
+      type: 'REDIRECT_UPDATE',
+      rank: 0,
+      data: issue,
+    }),
+    log,
+  });
+
+  log.info(auditData);
+
+  return { ...auditData };
+}
+
 export default new AuditBuilder()
   .withRunner(sitemapProductCoverageAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
     .then((url) => getUrlWithoutPath(prependSchema(url))))
+  .withPostProcessors([generateSuggestions, generateOpportunities])
   .build();

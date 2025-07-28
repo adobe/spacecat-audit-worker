@@ -17,7 +17,6 @@ export async function request(name, url, req = [], timeout = 60000) {
 
   const headers = {
     ...req.headers,
-    ...(req.cookies && { Cookie: req.cookies }),
     'User-Agent': 'Spacecat/1.0',
   };
 
@@ -49,21 +48,26 @@ export async function request(name, url, req = [], timeout = 60000) {
   throw new Error(`Request '${name}' to '${url}' failed (${resp.status}): ${resp.headers.get('x-error') || resp.statusText}${responseText.length > 0 ? ` responseText: ${responseText}` : ''}`);
 }
 
-export async function requestSpreadsheet(name, sheet, params) {
-  const { contentUrl } = params;
-  let sheetUrl = `${contentUrl}/${name}.json`;
-  if (sheet) {
-    sheetUrl += `?sheet=${sheet}`;
-  }
-
-  return request('spreadsheet', sheetUrl, { cookies: params.cookies });
+export async function requestSpreadsheet(configPath, sheet) {
+  return request(
+    'spreadsheet',
+    configPath + (sheet ? `?sheet=${sheet}` : ''),
+  );
 }
 
 export async function getConfig(params, log) {
-  const { configName = 'configs' } = params;
+  const {
+    configName = 'configs',
+    configSheet,
+    storeUrl,
+    locale,
+  } = params;
+
   if (!params.config) {
+    const localePath = locale ? `${locale}/` : '';
+    const configPath = `${storeUrl}/${localePath}${configName}.json`;
     log.debug(`Fetching config ${configName} for ${params.contentUrl}`);
-    const configData = await requestSpreadsheet(configName, null, params);
+    const configData = await requestSpreadsheet(configPath, configSheet);
 
     let data;
     if (params.configSection) {
@@ -110,7 +114,6 @@ export async function requestSaaS(query, operationName, variables, params, log) 
     {
       method,
       headers,
-      cookies: params.cookies,
       body: JSON.stringify({
         operationName,
         query,
