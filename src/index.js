@@ -14,7 +14,7 @@ import { helixStatus } from '@adobe/helix-status';
 import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
 import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
-import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { internalServerError, notFound } from '@adobe/spacecat-shared-http-utils';
 
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
@@ -52,6 +52,9 @@ import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/g
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
+import llm404Blocked from './llm-404-blocked/handler.js';
+import llm404BlockedGuidance from './llm-404-blocked/guidance-handler.js';
+import llm404BlockedReport from './llm-404-blocked/report-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -88,7 +91,9 @@ const HANDLERS = {
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
-  dummy: (message) => ok(message),
+  'llm-404-blocked': llm404Blocked,
+  'guidance:llm-404-blocked': llm404BlockedGuidance,
+  'llm-404-blocked-report': llm404BlockedReport,
 };
 
 function getElapsedSeconds(startTime) {
