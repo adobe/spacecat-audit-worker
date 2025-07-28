@@ -609,7 +609,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
     const results = Object.entries(aggregatedResults).map(([checkType, checkData]) => ({
       type: checkType,
       explanation: checkData.explanation,
-      affectedPages: checkData.urls.map((url) => ({
+      affectedUrls: checkData.urls.map((url) => ({
         url,
         suggestion: generateCanonicalSuggestion(checkType, url, baseURL),
       })),
@@ -617,7 +617,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
     return {
       fullAuditRef: baseURL,
-      results,
+      auditResult: results,
     };
   } catch (error) {
     log.info(`Canonical audit failed for site ${siteId}: ${error.message}`);
