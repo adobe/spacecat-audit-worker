@@ -98,7 +98,7 @@ function buildTopicExtractionSQL(site) {
       if (name) {
         namedPatterns.push(`WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`);
       } else {
-        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${regex}'), '')`);
+        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${regex}', 1), '')`);
       }
     });
 
