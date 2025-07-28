@@ -943,6 +943,7 @@ This is an error description
     const Site = {
       DELIVERY_TYPES: {
         AEM_CS: 'aem_cs',
+        AEM_AMS: 'aem_ams',
       },
     };
 
@@ -957,7 +958,7 @@ This is an error description
             debug: sinon.spy(),
           },
           site: {
-            getDeliveryType: sinon.stub(),
+            getDeliveryType: () => 'other',
           },
         })
         .build(message);
@@ -996,7 +997,6 @@ This is an error description
     });
 
     it('includes issue if severity is ERROR, rootType is ImageObject, and delivery type is not AEM_CS', () => {
-      context.site.getDeliveryType.returns('other');
       const issue = {
         severity: 'ERROR',
         rootType: 'ImageObject',
@@ -1005,20 +1005,48 @@ This is an error description
       expect(result).to.be.true;
     });
 
-    it('includes issue if severity is ERROR, rootType is ImageObject, delivery type is not AEM_CS, even with suppression message', () => {
-      context.site.getDeliveryType.returns('other');
+    it('excludes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_CS, and message matches suppression', () => {
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sinon.stub(),
+            warn: sinon.spy(),
+            error: sinon.stub(),
+            debug: sinon.spy(),
+          },
+          site: {
+            getDeliveryType: () => Site.DELIVERY_TYPES.AEM_CS,
+          },
+        })
+        .build(message);
+
       const issue = {
         severity: 'ERROR',
         rootType: 'ImageObject',
         issueMessage: suppressionMessage,
       };
       const result = includeIssue(context, issue);
-      expect(result).to.be.true;
-      expect(context.log.warn).not.to.be.called;
+      expect(result).to.be.false;
+      expect(context.log.warn).to.be.calledWith('SDA: Suppressing issue', suppressionMessage);
     });
 
-    it('excludes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_CS, and message matches suppression', () => {
-      context.site.getDeliveryType.returns(Site.DELIVERY_TYPES.AEM_CS);
+    it('excludes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_AMS, and message matches suppression', () => {
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sinon.stub(),
+            warn: sinon.spy(),
+            error: sinon.stub(),
+            debug: sinon.spy(),
+          },
+          site: {
+            getDeliveryType: () => Site.DELIVERY_TYPES.AEM_AMS,
+          },
+        })
+        .build(message);
+
       const issue = {
         severity: 'ERROR',
         rootType: 'ImageObject',
@@ -1030,7 +1058,46 @@ This is an error description
     });
 
     it('includes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_CS, but message does not match suppression', () => {
-      context.site.getDeliveryType.returns(Site.DELIVERY_TYPES.AEM_CS);
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sinon.stub(),
+            warn: sinon.spy(),
+            error: sinon.stub(),
+            debug: sinon.spy(),
+          },
+          site: {
+            getDeliveryType: () => Site.DELIVERY_TYPES.AEM_CS,
+          },
+        })
+        .build(message);
+
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: 'Some other error',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+    });
+
+    it('includes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_AMS, but message does not match suppression', () => {
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sinon.stub(),
+            warn: sinon.spy(),
+            error: sinon.stub(),
+            debug: sinon.spy(),
+          },
+          site: {
+            getDeliveryType: () => Site.DELIVERY_TYPES.AEM_AMS,
+          },
+        })
+        .build(message);
+
       const issue = {
         severity: 'ERROR',
         rootType: 'ImageObject',

@@ -161,12 +161,13 @@ export function includeIssue(context, issue) {
   const { log } = context;
   const isError = issue.severity === 'ERROR';
   const isImageObject = issue.rootType === 'ImageObject';
-  const isAemCs = context.site.getDeliveryType() === Site.DELIVERY_TYPES.AEM_CS;
+  const affectedCustomerTypes = [Site.DELIVERY_TYPES.AEM_CS, Site.DELIVERY_TYPES.AEM_AMS];
+  const isAffectedCustomer = affectedCustomerTypes.includes(context.site.getDeliveryType());
 
   if (!isError) return false;
   if (!isImageObject) return true;
 
-  if (isImageObject && isAemCs) {
+  if (isImageObject && isAffectedCustomer) {
     const messageToSuppress = 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing';
     if (issue.issueMessage.includes(messageToSuppress)) {
       log.warn('SDA: Suppressing issue', issue.issueMessage);
@@ -216,7 +217,7 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
     try {
       validatorIssues = (await validator.validate(waeResult))
         // For now, ignore issues with severity lower than ERROR
-        //          and suppress unnecessary issues for AEM CS customers
+        //          and suppress unnecessary issues for AEM customers
         .filter((issue) => includeIssue(context, issue));
     } catch (e) {
       log.error(`SDA: Failed to validate structured data for ${page}.`, e);
