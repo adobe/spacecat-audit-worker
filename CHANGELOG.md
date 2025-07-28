@@ -1,3 +1,45 @@
+## [1.134.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.0...v1.134.1) (2025-07-26)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1071](https://github.com/adobe/spacecat-audit-worker/issues/1071)) ([5516e86](https://github.com/adobe/spacecat-audit-worker/commit/5516e866849bd02738d3234301caff5221f65752))
+
+# [1.134.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.133.1...v1.134.0) (2025-07-25)
+
+
+### Features
+
+* page intent detect handler ([#1070](https://github.com/adobe/spacecat-audit-worker/issues/1070)) ([0cb85be](https://github.com/adobe/spacecat-audit-worker/commit/0cb85be81dc2ead959ecf04f655ffa435a80a62b))
+
+## [1.133.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.133.0...v1.133.1) (2025-07-25)
+
+
+### Bug Fixes
+
+* referral traffic audit static files ([#1069](https://github.com/adobe/spacecat-audit-worker/issues/1069)) ([f31eb2d](https://github.com/adobe/spacecat-audit-worker/commit/f31eb2d9bb1ca4c75d2e687c7b20758bfa3bc692))
+
+# [1.133.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.132.0...v1.133.0) (2025-07-25)
+
+
+### Features
+
+* llmo referral traffic audit ([#1068](https://github.com/adobe/spacecat-audit-worker/issues/1068)) ([23a9b14](https://github.com/adobe/spacecat-audit-worker/commit/23a9b14a85a10f65783680ce19ed8d6b0f4d3377))
+
+# [1.132.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.131.0...v1.132.0) (2025-07-25)
+
+
+### Features
+
+* implement a11y metrics for accessibility opportunity header ([#1065](https://github.com/adobe/spacecat-audit-worker/issues/1065)) ([81649e2](https://github.com/adobe/spacecat-audit-worker/commit/81649e281f2d1c2b205848261539398b30d91349))
+
+# [1.131.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.130.2...v1.131.0) (2025-07-24)
+
+
+### Features
+
+* timeout mitigation for broken internal links suggestions generation ([#968](https://github.com/adobe/spacecat-audit-worker/issues/968)) ([ec0f0b1](https://github.com/adobe/spacecat-audit-worker/commit/ec0f0b153cb5ad0e1703d3e9f0924dfad101ce26))
+
 ## [1.130.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.130.1...v1.130.2) (2025-07-24)
 
 
