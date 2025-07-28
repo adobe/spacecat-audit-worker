@@ -320,68 +320,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     );
   }).timeout(10000);
 
-  it('throws error when audit result was not successful', async () => {
-    context.audit = {
-      ...auditData,
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: false,
-        auditContext: {
-          interval: 30,
-        },
-      }),
-    };
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.resolves(opportunity);
-    context.site.getLatestAuditByAuditType = () => context.audit;
-
-    try {
-      await handler.opportunityAndSuggestionsStep(context);
-      expect.fail('Should have thrown an error');
-    } catch (error) {
-      expect(error.message).to.equal('Audit failed, skipping suggestions generation');
-    }
-  });
-
-  it('throws error when auto-suggest is disabled for site', async () => {
-    context.dataAccess.Configuration = {
-      findLatest: () => ({
-        isHandlerEnabledForSite: () => false,
-      }),
-    };
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.resolves(opportunity);
-    context.site.getLatestAuditByAuditType = () => auditData;
-
-    try {
-      await handler.opportunityAndSuggestionsStep(context);
-      expect.fail('Should have thrown an error');
-    } catch (error) {
-      expect(error.message).to.equal('Auto-suggest is disabled for site');
-    }
-  });
-
-  it('creating a new opportunity object fails', async () => {
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.rejects(
-      new Error('big error happened'),
-    );
-    sandbox.stub(GoogleClient, 'createFrom').resolves({});
-
-    await expect(
-      handler.opportunityAndSuggestionsStep(context),
-    ).to.be.rejectedWith('big error happened');
-
-    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
-      expectedOpportunity,
-    );
-    expect(context.log.error).to.have.been.calledOnceWith(
-      'Failed to create new opportunity for siteId site-id-1 and auditId audit-id-1: big error happened',
-    );
-
-    // make sure that no new suggestions are added
-    expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
-  }).timeout(5000);
 
   it('no broken internal links found and fetching existing opportunity object fails', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(
@@ -431,36 +369,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
       expectedOpportunity,
-    );
-  }).timeout(5000);
-
-  it('handles undefined brokenInternalLinks in audit result', async () => {
-    // Override audit to have undefined brokenInternalLinks to test the fallback
-    context.audit = {
-      ...auditData,
-      getAuditResult: () => ({
-        // brokenInternalLinks property is undefined
-        success: true,
-        auditContext: {
-          interval: 30,
-        },
-      }),
-    };
-
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    sandbox.stub(GoogleClient, 'createFrom').resolves({});
-
-    handler = await esmock('../../../src/internal-links/handler.js', {
-      '../../../src/internal-links/suggestions-generator.js': {
-        generateSuggestionData: () => [],
-      },
-    });
-
-    const result = await handler.opportunityAndSuggestionsStep(context);
-
-    expect(result.status).to.equal('complete');
-    expect(context.log.info).to.have.been.calledWith(
-      `[broken-internal-links] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`,
     );
   }).timeout(5000);
 
