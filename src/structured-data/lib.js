@@ -161,8 +161,8 @@ export function includeIssue(context, issue) {
   const { log } = context;
   const isError = issue.severity === 'ERROR';
   const isImageObject = issue.rootType === 'ImageObject';
-  const affectedCustomerTypes = [Site.DELIVERY_TYPES.AEM_CS, Site.DELIVERY_TYPES.AEM_AMS];
-  const isAffectedCustomer = affectedCustomerTypes.includes(context.site.getDeliveryType());
+  const customerTypes = [Site.DELIVERY_TYPES.AEM_CS, Site.DELIVERY_TYPES.AEM_AMS];
+  const isAffectedCustomer = customerTypes.includes(context.site.getDeliveryType());
 
   if (!isError) return false;
   if (!isImageObject) return true;

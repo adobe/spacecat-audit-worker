@@ -300,6 +300,7 @@ describe('Structured Data Libs', () => {
           s3Client: s3ClientStub,
           site: {
             getId: () => '123',
+            getDeliveryType: sinon.stub().returns('other'),
           },
         })
         .build(message);
@@ -979,7 +980,7 @@ This is an error description
       expect(result).to.be.false;
     });
 
-    it('returns true for non-ImageObject type', () => {
+    it('returns true for non-ImageObject type with ERROR severity', () => {
       context.site.getDeliveryType = sinon.stub().returns('other');
       const issue = {
         severity: 'ERROR',
@@ -990,7 +991,7 @@ This is an error description
       expect(result).to.be.true;
     });
 
-    it('returns true for ImageObject when delivery type is not in affected types', () => {
+    it('returns true for ImageObject when delivery type is not in specified customer types', () => {
       context.site.getDeliveryType = sinon.stub().returns('some-other-type');
       const issue = {
         severity: 'ERROR',
@@ -1004,6 +1005,18 @@ This is an error description
 
     it('returns true for ImageObject with non-matching message in AEM_CS', () => {
       context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_CS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: 'non-matching message',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+      expect(context.log.warn).not.to.be.called;
+    });
+
+    it('returns true for ImageObject with non-matching message in AEM_AMS', () => {
+      context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_AMS);
       const issue = {
         severity: 'ERROR',
         rootType: 'ImageObject',
