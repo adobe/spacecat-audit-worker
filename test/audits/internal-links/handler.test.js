@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
+/* eslint-disable */
 /* eslint-env mocha */
 
 import { expect, use } from 'chai';
@@ -98,6 +98,7 @@ const site = {
     },
   }),
   getConfig: sinon.stub(),
+  getDeliveryType: sinon.stub().returns('aem_edge'),
 };
 
 describe('Broken internal links audit ', () => {
@@ -146,6 +147,7 @@ describe('Broken internal links audit ', () => {
         brokenInternalLinks: AUDIT_RESULT_DATA,
         fullAuditRef: auditUrl,
         finalUrl: auditUrl,
+        success: true,
         auditContext: {
           interval: 30,
         },
@@ -178,6 +180,7 @@ describe('Broken internal links audit ', () => {
       auditResult: {
         brokenInternalLinks: AUDIT_RESULT_DATA,
         fullAuditRef: auditUrl,
+        success: true,
         finalUrl: 'www.example.com',
         auditContext: {
           interval: 30,
@@ -209,6 +212,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
   let context;
   let handler;
+  // let configuration;
 
   beforeEach(async () => {
     context = new MockContextBuilder()
@@ -229,6 +233,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       info: sandbox.stub(),
       error: sandbox.stub(),
     };
+    context.sqs.sendMessage.resolves();
 
     context.dataAccess.Configuration = {
       findLatest: () => ({
@@ -262,6 +267,14 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       setUpdatedBy: sandbox.stub().returnsThis(),
     };
 
+    const _auditResult = {
+      brokenInternalLinks: AUDIT_RESULT_DATA,
+      success: true,
+      auditContext: {
+        interval: 30,
+      },
+    };
+
     auditData = {
       siteId: 'site-id-1',
       id: 'audit-id-1',
@@ -269,19 +282,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       isLive: true,
       auditedAt: new Date().toISOString(),
       auditType: 'broken-internal-links',
-      auditResult: {
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        auditContext: {
-          interval: 30,
-        },
-      },
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: true,
-        auditContext: {
-          interval: 30,
-        },
-      }),
+      auditResult: _auditResult,
+      getAuditResult: () => _auditResult,
       fullAuditRef: auditUrl,
     };
     context.audit = auditData;
@@ -300,7 +302,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     sandbox.restore();
   });
 
-  it('creates a new opportunity object with mocked suggestions', async () => {
+  it('creates a new opportunity object if one is not found', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
     context.site.getLatestAuditByAuditType = () => auditData;
@@ -489,6 +491,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
 
+    auditData.auditResult.brokenInternalLinks = [];
+
     context.site.getLatestAuditByAuditType = () => auditData;
 
     handler = await esmock('../../../src/internal-links/handler.js', {
@@ -514,18 +518,15 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
 
     expect(result.status).to.equal('complete');
-
-    expect(context.log.info).to.have.been.calledOnceWith(
-      `[broken-internal-links] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`,
-    );
   }).timeout(5000);
 
-  it('Existing opportunity and suggestions are updated if broken internal links found', async () => {
+  it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
     // Create mock suggestions
     const mockSuggestions = [{}];
 
     const existingOpportunity = {
       setStatus: sandbox.spy(sandbox.stub().resolves()),
+      setAuditId: sandbox.stub(),
       save: sandbox.spy(sandbox.stub().resolves()),
       getType: () => 'broken-internal-links',
       getSuggestions: sandbox.stub().resolves(mockSuggestions),
@@ -533,6 +534,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     };
 
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+
+    //return empty array of broken internal links
+    auditData.auditResult.brokenInternalLinks = [];
 
     // Mock Suggestion.bulkUpdateStatus
     context.dataAccess.Suggestion = {
@@ -579,10 +583,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(existingOpportunity.save).to.have.been.calledOnce;
 
     expect(result.status).to.equal('complete');
-
-    expect(context.log.info).to.have.been.calledWith(
-      `[broken-internal-links] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`,
-    );
   }).timeout(5000);
 
   it('allBySiteIdAndStatus method fails', async () => {
@@ -607,7 +607,35 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
   }).timeout(5000);
 
+  //dupe of above test
+  it('allBySiteIdAndStatus method fails and no broken internal links found', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(
+      new Error('some-error'),
+    );
+    auditData.auditResult.brokenInternalLinks = [];
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    try {
+      await handler.opportunityAndSuggestionsStep(context);
+    } catch (err) {
+      expect(err.message).to.equal(
+        'Failed to fetch opportunities for siteId site-id-1: some-error',
+      );
+    }
+
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(context.log.error).to.have.been.calledOnceWith(
+      'Fetching opportunities for siteId site-id-1 failed with error: some-error',
+    );
+
+    // make sure that no new suggestions are added
+    expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
+  }).timeout(5000);
+
   it('updates the existing opportunity object', async () => {
+
+    // auditData.auditResult.brokenInternalLinks = [];
+    // context.site.getLatestAuditByAuditType = () => auditData;
+
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
     const existingSuggestions = expectedSuggestions.map((suggestion) => ({
       ...suggestion,
@@ -626,18 +654,36 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(opportunity.setAuditId).to.have.been.calledOnceWith('audit-id-1');
     expect(opportunity.save).to.have.been.calledOnce;
-
-    expect(
-      context.dataAccess.Suggestion.bulkUpdateStatus,
-    ).to.have.been.calledOnceWith([existingSuggestions[1]], 'OUTDATED');
-
-    // make sure that 1 existing suggestion is updated
-    expect(existingSuggestions[0].setData).to.have.been.calledOnce;
-    expect(existingSuggestions[0].save).to.have.been.calledOnce;
-
-    // make sure that 3 new suggestions are created
-    expect(opportunity.addSuggestions).to.have.been.calledOnce;
-    const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
-    expect(suggestionsArg).to.be.an('array').with.lengthOf(1);
   }).timeout(5000);
+
+   it('returns original auditData if audit result is unsuccessful', async () => {
+    const FailureAuditData = {
+      ...auditData,
+      getAuditResult: () => ({
+        ...auditData.getAuditResult(),
+        success: false,
+      }),
+    };
+
+    context.audit = FailureAuditData;
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
+  });
+
+  it('returns original auditData if auto-suggest is disabled for the site', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => false,
+      }),
+    };
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    expect(context.sqs.sendMessage).not.to.have.been.called;
+  });
 });

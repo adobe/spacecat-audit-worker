@@ -16,13 +16,13 @@ import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { syncBrokenInternalLinksSuggestions } from './suggestions-generator.js';
 import {
   isLinkInaccessible,
   calculatePriority, calculateKpiDeltasForAudit,
 } from './helpers.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestions } from '../utils/data-access.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
@@ -84,6 +84,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         fullAuditRef: auditUrl,
         finalUrl,
         auditContext: { interval: INTERVAL },
+        success: true,
       },
       fullAuditRef: auditUrl,
     };
@@ -135,22 +136,18 @@ export async function prepareScrapingStep(context) {
 
 export const opportunityAndSuggestionsStep = async (context) => {
   const {
-    site, audit, dataAccess, log, sqs, env, finalUrl,
+    log, site, finalUrl, sqs, env, dataAccess, audit,
   } = context;
   const { Configuration, Suggestion } = dataAccess;
 
-  const auditResult = audit.getAuditResult();
-  if (audit.getAuditResult().success === false) {
-    log.info('Audit failed, skipping suggestions generation');
-    throw new Error('Audit failed, skipping suggestions generation');
+  const { brokenInternalLinks, success } = audit.getAuditResult();
+
+  if (!success) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
+    return {
+      status: 'complete',
+    };
   }
-  const brokenInternalLinks = auditResult.brokenInternalLinks || [];
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
-    log.info('Auto-suggest is disabled for site');
-    throw new Error('Auto-suggest is disabled for site');
-  }
-  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
 
   if (!isNonEmptyArray(brokenInternalLinks)) {
     // no broken internal links found
@@ -167,10 +164,12 @@ export const opportunityAndSuggestionsStep = async (context) => {
     }
 
     if (!opportunity) {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`);
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}]
+  no broken internal links found, skipping opportunity creation`);
     } else {
       // no broken internal links found, update opportunity status to RESOLVED
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`);
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal
+  links found, but found opportunity, updating status to RESOLVED`);
       await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
 
       // We also need to update all suggestions inside this opportunity
@@ -189,6 +188,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
     };
   }
 
+  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
+
   const opportunity = await convertToOpportunity(
     finalUrl,
     { siteId: site.getId(), id: audit.getId() },
@@ -199,48 +200,38 @@ export const opportunityAndSuggestionsStep = async (context) => {
       kpiDeltas,
     },
   );
-
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
-  await syncSuggestions({
+  await syncBrokenInternalLinksSuggestions({
     opportunity,
-    newData: brokenInternalLinks,
+    brokenInternalLinks,
     context,
-    buildKey,
-    mapNewSuggestion: (entry) => ({
-      opportunityId: opportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        trafficDomain: entry.trafficDomain,
-        priority: entry.priority,
-      },
-    }),
+    opportunityId: opportunity.getId(),
     log,
   });
-  const suggestions = await Suggestion.allByOpportunityIdAndStatus(
-    opportunity.getId(),
-    SuggestionDataAccess.STATUSES.NEW,
-  );
-  await Promise.all(suggestions.map(async (suggestion) => {
-    const message = {
-      type: 'guidance:broken-internal-links',
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      data: {
-        url_from: suggestion?.getData()?.urlFrom,
-        url_to: suggestion?.getData()?.urlTo,
-        suggestionId: suggestion?.getId(),
-        opportunityId: opportunity?.getId(),
-      },
-    };
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
-  }));
+
+  const configuration = await Configuration.findLatest();
+  if (configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
+    const suggestions = await Suggestion.allByOpportunityIdAndStatus(
+      opportunity.getId(),
+      SuggestionDataAccess.STATUSES.NEW,
+    );
+    await Promise.all(suggestions.map(async (suggestion) => {
+      const message = {
+        type: 'guidance:broken-internal-links',
+        siteId: site.getId(),
+        auditId: audit.getId(),
+        deliveryType: site.getDeliveryType(),
+        time: new Date().toISOString(),
+        data: {
+          url_from: suggestion?.getData()?.urlFrom,
+          url_to: suggestion?.getData()?.urlTo,
+          suggestionId: suggestion?.getId(),
+          opportunityId: opportunity?.getId(),
+        },
+      };
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+      log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
+    }));
+  }
   return {
     status: 'complete',
   };

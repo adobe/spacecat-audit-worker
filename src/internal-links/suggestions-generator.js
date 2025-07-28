@@ -14,19 +14,13 @@ import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getScrapedDataForSiteId } from '../support/utils.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 export const generateSuggestionData = async (finalUrl, brokenInternalLinks, context, site) => {
-  const { dataAccess, log } = context;
-  const { Configuration } = dataAccess;
+  const { log } = context;
   const { FIREFALL_MODEL } = context.env;
-
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Auto-suggest is disabled for site`);
-    return brokenInternalLinks;
-  }
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Generating suggestions for site ${finalUrl}`);
 
@@ -155,6 +149,35 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   }
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete.`);
-
   return updatedInternalLinks;
 };
+
+export async function syncBrokenInternalLinksSuggestions({
+  opportunity,
+  brokenInternalLinks,
+  context,
+  opportunityId,
+  log,
+}) {
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  await syncSuggestions({
+    opportunity,
+    newData: brokenInternalLinks,
+    context,
+    buildKey,
+    mapNewSuggestion: (entry) => ({
+      opportunityId,
+      type: 'CONTENT_UPDATE',
+      rank: entry.trafficDomain,
+      data: {
+        title: entry.title,
+        urlFrom: entry.urlFrom,
+        urlTo: entry.urlTo,
+        urlsSuggested: entry.urlsSuggested || [],
+        aiRationale: entry.aiRationale || '',
+        trafficDomain: entry.trafficDomain,
+      },
+    }),
+    log,
+  });
+}
