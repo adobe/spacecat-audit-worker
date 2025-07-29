@@ -75,6 +75,44 @@ export default async function readability(context, auditContext) {
         let processedElements = 0;
         let poorReadabilityCount = 0;
 
+        // Helper function to calculate readability score and create audit opportunity
+        const analyzeReadability = (text, element, elementIndex, paragraphIndex = null) => {
+          try {
+            const readabilityScore = rs.fleschReadingEase(text.trim());
+
+            if (readabilityScore < TARGET_READABILITY_SCORE) {
+              poorReadabilityCount += 1;
+
+              // Get element selector for identification
+              const elementTag = element.tagName.toLowerCase();
+              const elementId = element.id ? `#${element.id}` : '';
+              const elementClass = element.className ? `.${element.className.split(' ').join('.')}` : '';
+              const selector = `${elementTag}${elementId}${elementClass}`;
+
+              // Truncate text for display
+              const displayText = text.length > MAX_CHARACTERS_DISPLAY
+                ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
+                : text;
+
+              const issueText = paragraphIndex !== null
+                ? `Text content has poor readability (Flesch score: ${readabilityScore.toFixed(1)}) in paragraph ${paragraphIndex + 1} of element ${selector}. Text preview: "${displayText}"`
+                : `Text content has poor readability (Flesch score: ${readabilityScore.toFixed(1)}) in element ${selector}. Text preview: "${displayText}"`;
+
+              audit.opportunities.push({
+                check: 'poor-readability',
+                issue: issueText,
+                seoImpact: 'Moderate',
+                seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
+              });
+            }
+          } catch (error) {
+            const errorContext = paragraphIndex !== null
+              ? `paragraph ${paragraphIndex + 1} in element ${elementIndex}`
+              : `element ${elementIndex}`;
+            log.warn(`[preflight-audit] readability: Error calculating readability for ${errorContext} on ${normalizedFinalUrl}: ${error.message}`);
+          }
+        };
+
         textElements.forEach((element, index) => {
           // Check if element has child elements
           if (element.children.length > 0) {
@@ -97,36 +135,22 @@ export default async function readability(context, auditContext) {
             return;
           }
 
-          processedElements += 1;
+          // Check if element contains <br> or <br /> tags
+          const hasLineBreaks = element.innerHTML.includes('<br');
 
-          try {
-            // Calculate Flesch Reading Ease score
-            const readabilityScore = rs.fleschReadingEase(textContent);
+          if (hasLineBreaks) {
+            // Split text by line breaks and analyze each paragraph separately
+            const paragraphs = textContent.split(/\s*\n\s*/).filter((p) => p.trim().length >= MIN_TEXT_LENGTH);
 
-            // If score is below target, flag as poor readability
-            if (readabilityScore < TARGET_READABILITY_SCORE) {
-              poorReadabilityCount += 1;
+            paragraphs.forEach((paragraph, paragraphIndex) => {
+              analyzeReadability(paragraph, element, index, paragraphIndex);
+            });
 
-              // Get element selector for identification
-              const elementTag = element.tagName.toLowerCase();
-              const elementId = element.id ? `#${element.id}` : '';
-              const elementClass = element.className ? `.${element.className.split(' ').join('.')}` : '';
-              const selector = `${elementTag}${elementId}${elementClass}`;
-
-              // Truncate text for display (first 150 characters)
-              const displayText = textContent.length > MAX_CHARACTERS_DISPLAY
-                ? `${textContent.substring(0, MAX_CHARACTERS_DISPLAY)}...`
-                : textContent;
-
-              audit.opportunities.push({
-                check: 'poor-readability',
-                issue: `Text content has poor readability (Flesch score: ${readabilityScore.toFixed(1)}) in element ${selector}. Text preview: "${displayText}"`,
-                seoImpact: 'Moderate',
-                seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
-              });
-            }
-          } catch (error) {
-            log.warn(`[preflight-audit] readability: Error calculating readability for element ${index} on ${normalizedFinalUrl}: ${error.message}`);
+            processedElements += paragraphs.length;
+          } else {
+            // Analyze as a single text block
+            processedElements += 1;
+            analyzeReadability(textContent, element, index);
           }
         });
 
