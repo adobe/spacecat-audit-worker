@@ -22,6 +22,9 @@ const TARGET_READABILITY_SCORE = 30;
 // Minimum character length for text chunks to be considered for readability analysis
 const MIN_TEXT_LENGTH = 100;
 
+// Maximum characters to display in the audit report
+const MAX_CHARACTERS_DISPLAY = 200;
+
 export default async function readability(context, auditContext) {
   const {
     site, jobId, log,
@@ -102,8 +105,8 @@ export default async function readability(context, auditContext) {
               const selector = `${elementTag}${elementId}${elementClass}`;
 
               // Truncate text for display (first 150 characters)
-              const displayText = textContent.length > 150
-                ? `${textContent.substring(0, 150)}...`
+              const displayText = textContent.length > MAX_CHARACTERS_DISPLAY
+                ? `${textContent.substring(0, MAX_CHARACTERS_DISPLAY)}...`
                 : textContent;
 
               audit.opportunities.push({
