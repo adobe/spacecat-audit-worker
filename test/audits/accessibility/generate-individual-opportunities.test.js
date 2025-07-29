@@ -165,7 +165,6 @@ describe('formatIssue', () => {
         {
           update_from: '',
           target_selector: '',
-          issue_id: result.htmlWithIssues[0].issue_id, // Use the generated UUID
         },
       ],
       failureSummary: 'Test summary',
@@ -244,7 +243,6 @@ describe('formatIssue', () => {
       update_from: '',
       target_selector: '',
     });
-    expect(result.htmlWithIssues[0].issue_id).to.be.a('string');
   });
 
   it('should handle missing failureSummary', () => {
@@ -326,7 +324,6 @@ describe('formatIssue', () => {
         {
           update_from: '',
           target_selector: '',
-          issue_id: result.htmlWithIssues[0].issue_id,
         },
       ],
       failureSummary: '',
@@ -356,7 +353,6 @@ describe('formatIssue', () => {
         {
           update_from: '',
           target_selector: '',
-          issue_id: result.htmlWithIssues[0].issue_id,
         },
       ],
       failureSummary: '',
@@ -386,7 +382,6 @@ describe('formatIssue', () => {
         {
           update_from: '',
           target_selector: '',
-          issue_id: result.htmlWithIssues[0].issue_id,
         },
       ],
       failureSummary: '',
@@ -416,7 +411,6 @@ describe('formatIssue', () => {
         {
           update_from: '', // Should default to empty string
           target_selector: '', // Uses targetSelector from issueData.target (empty in this case)
-          issue_id: result.htmlWithIssues[0].issue_id, // Should generate UUID
         },
       ],
       failureSummary: '', // Should default to empty string
@@ -445,7 +439,6 @@ describe('formatIssue', () => {
         {
           update_from: '', // Should default to empty string
           target_selector: '', // Should default to empty string
-          issue_id: result.htmlWithIssues[0].issue_id, // Should generate UUID
         },
       ],
       failureSummary: '', // Should default to empty string
@@ -460,7 +453,6 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           // Object without update_from to trigger fallback
-          issue_id: 'existing-uuid',
           some_other_prop: 'value',
         },
       ],
@@ -468,7 +460,6 @@ describe('formatIssue', () => {
 
     expect(result.htmlWithIssues[0].update_from).to.equal('');
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('existing-uuid');
   });
 
   it('should handle htmlWithIssues with undefined update_from property (line 207 fallback)', () => {
@@ -479,7 +470,6 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           // Object with undefined update_from (not even null)
-          issue_id: 'test-uuid',
           // update_from is undefined (not present)
         },
       ],
@@ -487,7 +477,6 @@ describe('formatIssue', () => {
 
     expect(result.htmlWithIssues[0].update_from).to.equal('');
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
   });
 
   it('should handle htmlWithIssues with empty string update_from (line 207 fallback)', () => {
@@ -498,14 +487,12 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           update_from: '', // Empty string (falsy)
-          issue_id: 'test-uuid',
         },
       ],
     }, 'critical');
 
     expect(result.htmlWithIssues[0].update_from).to.equal('');
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
   });
 
   it('should handle htmlWithIssues with object without update_from (line 208)', () => {
@@ -513,14 +500,13 @@ describe('formatIssue', () => {
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
       htmlWithIssues: [
-        { issue_id: 'test-uuid' }, // Object without update_from
+        {}, // Object without update_from
       ],
     }, 'critical');
 
     // Should fallback to empty string since no update_from is present (line 208)
     expect(result.htmlWithIssues).to.have.length(1);
     expect(result.htmlWithIssues[0].update_from).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
   });
 
   it('should handle htmlWithIssues with object having falsy update_from (line 208)', () => {
@@ -529,7 +515,6 @@ describe('formatIssue', () => {
       successCriteriaTags: ['wcag412'],
       htmlWithIssues: [
         {
-          issue_id: 'test-uuid',
           update_from: null, // Falsy update_from
         },
       ],
@@ -538,7 +523,6 @@ describe('formatIssue', () => {
     // Should fallback to empty string since update_from is falsy (line 208)
     expect(result.htmlWithIssues).to.have.length(1);
     expect(result.htmlWithIssues[0].update_from).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
   });
 
   it('should handle htmlWithIssues with empty object (line 208)', () => {
@@ -550,10 +534,10 @@ describe('formatIssue', () => {
       ],
     }, 'critical');
 
-    // Should fallback to empty string and generate UUID (line 208)
+    // Should fallback to empty string (line 208)
     expect(result.htmlWithIssues).to.have.length(1);
     expect(result.htmlWithIssues[0].update_from).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Generated UUID
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
   it('should handle htmlWithIssues with null item (line 208)', () => {
@@ -568,7 +552,7 @@ describe('formatIssue', () => {
     // Should fallback to empty string since item is falsy (line 208)
     expect(result.htmlWithIssues).to.have.length(1);
     expect(result.htmlWithIssues[0].update_from).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Generated UUID
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
   it('should handle htmlWithIssues with undefined item (line 208)', () => {
@@ -583,7 +567,7 @@ describe('formatIssue', () => {
     // Should fallback to empty string since item is falsy (line 208)
     expect(result.htmlWithIssues).to.have.length(1);
     expect(result.htmlWithIssues[0].update_from).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Generated UUID
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
   it('should handle htmlWithIssues with false item (line 208)', () => {
@@ -598,7 +582,7 @@ describe('formatIssue', () => {
     // Should fallback to empty string since item is falsy (line 208)
     expect(result.htmlWithIssues).to.have.length(1);
     expect(result.htmlWithIssues[0].update_from).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Generated UUID
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
   it('should handle htmlWithIssues with object missing update_from (final fallback)', () => {
@@ -608,7 +592,6 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           // Object without update_from property
-          issue_id: 'test-uuid',
           other_prop: 'value',
         },
       ],
@@ -617,7 +600,6 @@ describe('formatIssue', () => {
     // Should use the final fallback to empty string
     expect(result.htmlWithIssues[0].update_from).to.equal('');
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
   });
 
   it('should handle htmlWithIssues with string items', () => {
@@ -632,7 +614,7 @@ describe('formatIssue', () => {
     // Should use the string as update_from
     expect(result.htmlWithIssues).to.have.length(1);
     expect(result.htmlWithIssues[0].update_from).to.equal('<div>string content</div>');
-    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Should generate UUID for string items
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
   it('should handle htmlWithIssues with null values triggering all fallbacks', () => {
@@ -642,14 +624,12 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           update_from: null, // Falsy value
-          issue_id: null, // Falsy value to test issue_id fallback too
         },
       ],
     }, 'critical');
 
     expect(result.htmlWithIssues[0].update_from).to.equal('');
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Should generate UUID
   });
 
   it('should handle htmlWithIssues with false values (line 207)', () => {
@@ -659,14 +639,12 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           update_from: false, // Falsy but not null/undefined
-          issue_id: 'test-uuid',
         },
       ],
     }, 'critical');
 
     expect(result.htmlWithIssues[0].update_from).to.equal('');
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
   });
 
   it('should handle htmlWithIssues with zero values (line 205)', () => {
@@ -676,14 +654,12 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           update_from: 0, // Falsy number
-          issue_id: 'test-uuid',
         },
       ],
     }, 'critical');
 
     expect(result.htmlWithIssues[0].update_from).to.equal('');
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
   });
 
   it('should handle htmlWithIssues with NaN values (line 205)', () => {
@@ -693,14 +669,12 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           update_from: NaN, // Falsy NaN value
-          issue_id: 'test-uuid',
         },
       ],
     }, 'critical');
 
     expect(result.htmlWithIssues[0].update_from).to.equal('');
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('test-uuid');
   });
 
   // New tests that actually use htmlWithIssues to cover lines 201-219
@@ -715,10 +689,8 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues).to.have.length(2);
     expect(result.htmlWithIssues[0].update_from).to.equal('<div>test string</div>');
     expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
-    expect(result.htmlWithIssues[0].issue_id).to.be.a('string');
     expect(result.htmlWithIssues[1].update_from).to.equal('<span>another string</span>');
     expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
-    expect(result.htmlWithIssues[1].issue_id).to.be.a('string');
   });
 
   it('should process htmlWithIssues with object items that have update_from', () => {
@@ -729,11 +701,9 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           update_from: '<div>object with update_from</div>',
-          issue_id: 'existing-uuid-1',
         },
         {
           update_from: '<span>another object</span>',
-          issue_id: 'existing-uuid-2',
         },
       ],
     }, 'critical');
@@ -741,10 +711,8 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues).to.have.length(2);
     expect(result.htmlWithIssues[0].update_from).to.equal('<div>object with update_from</div>');
     expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('existing-uuid-1');
     expect(result.htmlWithIssues[1].update_from).to.equal('<span>another object</span>');
     expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
-    expect(result.htmlWithIssues[1].issue_id).to.equal('existing-uuid-2');
   });
 
   it('should process htmlWithIssues with mixed string and object items', () => {
@@ -756,7 +724,6 @@ describe('formatIssue', () => {
         '<div>string item</div>',
         {
           update_from: '<span>object item</span>',
-          issue_id: 'existing-uuid',
         },
       ],
     }, 'critical');
@@ -764,10 +731,8 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues).to.have.length(2);
     expect(result.htmlWithIssues[0].update_from).to.equal('<div>string item</div>');
     expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
-    expect(result.htmlWithIssues[0].issue_id).to.be.a('string'); // Generated UUID for string
     expect(result.htmlWithIssues[1].update_from).to.equal('<span>object item</span>');
     expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
-    expect(result.htmlWithIssues[1].issue_id).to.equal('existing-uuid');
   });
 
   it('should handle htmlWithIssues with objects without update_from (triggers line 208)', () => {
@@ -778,15 +743,12 @@ describe('formatIssue', () => {
       htmlWithIssues: [
         {
           // No update_from property
-          issue_id: 'existing-uuid',
         },
         {
           update_from: null, // Null update_from
-          issue_id: 'another-uuid',
         },
         {
           update_from: '', // Empty string update_from
-          issue_id: 'third-uuid',
         },
       ],
     }, 'critical');
@@ -795,13 +757,10 @@ describe('formatIssue', () => {
     // All should have empty string update_from due to line 208
     expect(result.htmlWithIssues[0].update_from).to.equal('');
     expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
-    expect(result.htmlWithIssues[0].issue_id).to.equal('existing-uuid');
     expect(result.htmlWithIssues[1].update_from).to.equal('');
     expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
-    expect(result.htmlWithIssues[1].issue_id).to.equal('another-uuid');
     expect(result.htmlWithIssues[2].update_from).to.equal('');
     expect(result.htmlWithIssues[2].target_selector).to.equal('div.test');
-    expect(result.htmlWithIssues[2].issue_id).to.equal('third-uuid');
   });
 });
 
@@ -848,7 +807,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -863,7 +824,9 @@ describe('aggregateAccessibilityIssues', () => {
     expect(result.data[0]['a11y-assistive'][0].issues).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].issues[0].type).to.equal('aria-hidden-focus');
     expect(result.data[0]['a11y-assistive'][0].issues[0].severity).to.equal('critical');
-    expect(result.data[0]['a11y-assistive'][0].issues[0].occurrences).to.equal(5);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].occurrences).to.equal(1);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].htmlWithIssues).to.have.lengthOf(1);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].htmlWithIssues[0].update_from).to.equal('<div aria-hidden="true"><button>Click</button></div>');
   });
 
   it('should process serious violations correctly', () => {
@@ -875,7 +838,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 3,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><input type="text"></div>'],
+                target: ['div[aria-hidden] input'],
               },
             },
           },
@@ -890,7 +855,9 @@ describe('aggregateAccessibilityIssues', () => {
     expect(result.data[0]['a11y-assistive'][0].issues).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].issues[0].type).to.equal('aria-hidden-focus');
     expect(result.data[0]['a11y-assistive'][0].issues[0].severity).to.equal('serious');
-    expect(result.data[0]['a11y-assistive'][0].issues[0].occurrences).to.equal(3);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].occurrences).to.equal(1);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].htmlWithIssues).to.have.lengthOf(1);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].htmlWithIssues[0].update_from).to.equal('<div aria-hidden="true"><input type="text"></div>');
   });
 
   it('should process both critical and serious violations', () => {
@@ -902,7 +869,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-required-parent': {
                 description: 'Critical issue',
                 successCriteriaTags: ['wcag412'],
-                count: 2,
+                count: 1,
+                htmlWithIssues: ['<div><li>Item</li></div>'],
+                target: ['div > li'],
               },
             },
           },
@@ -912,6 +881,8 @@ describe('aggregateAccessibilityIssues', () => {
                 description: 'Serious issue',
                 successCriteriaTags: ['wcag412'],
                 count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -922,10 +893,17 @@ describe('aggregateAccessibilityIssues', () => {
     const result = aggregateAccessibilityIssues(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
-    expect(opportunity['a11y-assistive']).to.have.lengthOf(1);
-    expect(opportunity['a11y-assistive'][0].issues).to.have.lengthOf(2);
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(2); // Now creates separate URL objects
+    // First URL object (critical issue)
+    expect(opportunity['a11y-assistive'][0].url).to.equal('https://example.com');
+    expect(opportunity['a11y-assistive'][0].issues).to.have.lengthOf(1);
+    expect(opportunity['a11y-assistive'][0].issues[0].type).to.equal('aria-required-parent');
     expect(opportunity['a11y-assistive'][0].issues[0].severity).to.equal('critical');
-    expect(opportunity['a11y-assistive'][0].issues[1].severity).to.equal('serious');
+    // Second URL object (serious issue)
+    expect(opportunity['a11y-assistive'][1].url).to.equal('https://example.com');
+    expect(opportunity['a11y-assistive'][1].issues).to.have.lengthOf(1);
+    expect(opportunity['a11y-assistive'][1].issues[0].type).to.equal('aria-hidden-focus');
+    expect(opportunity['a11y-assistive'][1].issues[0].severity).to.equal('serious');
   });
 
   it('should handle multiple URLs', () => {
@@ -937,7 +915,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-required-parent': {
                 description: 'Page 1 issue',
                 successCriteriaTags: ['wcag412'],
-                count: 2,
+                count: 1,
+                htmlWithIssues: ['<div><li>Item</li></div>'],
+                target: ['div > li'],
               },
             },
           },
@@ -950,7 +930,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-hidden-focus': {
                 description: 'Page 2 issue',
                 successCriteriaTags: ['wcag111'],
-                count: 3,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -981,7 +963,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-hidden-focus': {
                 description: 'Page 2 issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1017,6 +1001,77 @@ describe('aggregateAccessibilityIssues', () => {
 
     const result = aggregateAccessibilityIssues(input);
     expect(result.data).to.be.empty;
+  });
+
+  it('should skip issues without htmlWithIssues', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Issue without HTML',
+                successCriteriaTags: ['wcag412'],
+                count: 1,
+                // No htmlWithIssues array
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.be.empty;
+  });
+
+  it('should create separate URL objects for multiple HTML elements', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'aria-allowed-attr': {
+                description: 'Multiple elements with invalid ARIA',
+                successCriteriaTags: ['wcag412'],
+                count: 3,
+                htmlWithIssues: [
+                  '<div aria-fake="true">Content 1</div>',
+                  '<span aria-invalid-attr="value">Content 2</span>',
+                  '<p aria-made-up="test">Content 3</p>',
+                ],
+                targets: [
+                  ['div[aria-fake]'],
+                  ['span[aria-invalid-attr]'],
+                  ['p[aria-made-up]'],
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.have.lengthOf(1);
+    const opportunity = result.data[0];
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(3); // Creates 3 separate URL objects
+
+    // Verify each URL object has one issue with one HTML element
+    opportunity['a11y-assistive'].forEach((urlObject) => {
+      expect(urlObject.url).to.equal('https://example.com');
+      expect(urlObject.issues).to.have.lengthOf(1);
+      expect(urlObject.issues[0].type).to.equal('aria-allowed-attr');
+      expect(urlObject.issues[0].htmlWithIssues).to.have.lengthOf(1);
+    });
+
+    // Verify specific HTML content
+    expect(opportunity['a11y-assistive'][0].issues[0].htmlWithIssues[0].update_from)
+      .to.equal('<div aria-fake="true">Content 1</div>');
+    expect(opportunity['a11y-assistive'][1].issues[0].htmlWithIssues[0].update_from)
+      .to.equal('<span aria-invalid-attr="value">Content 2</span>');
+    expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].update_from)
+      .to.equal('<p aria-made-up="test">Content 3</p>');
   });
 });
 
@@ -1726,7 +1781,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1754,7 +1811,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1782,7 +1841,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1856,7 +1917,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1884,7 +1947,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1917,7 +1982,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1951,7 +2018,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1985,7 +2054,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -2013,7 +2084,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'First issue',
                 successCriteriaTags: ['wcag412'],
-                count: 2,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -2022,7 +2095,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-allowed-attr': {
                 description: 'Second issue',
                 successCriteriaTags: ['wcag412'],
-                count: 3,
+                count: 1,
+                htmlWithIssues: ['<div aria-fake="true">Content</div>'],
+                target: ['div[aria-fake]'],
               },
             },
           },
@@ -2041,8 +2116,8 @@ describe('createAccessibilityIndividualOpportunities', () => {
     }
     expect(result.opportunities).to.have.lengthOf(1);
     expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-    expect(result.opportunities[0].suggestionsCount).to.equal(1);
-    expect(result.opportunities[0].totalIssues).to.equal(5);
+    expect(result.opportunities[0].suggestionsCount).to.equal(2);
+    expect(result.opportunities[0].totalIssues).to.equal(2);
     expect(result.opportunities[0].pagesWithIssues).to.equal(1);
   });
 
@@ -2054,7 +2129,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
             items: {
               'aria-hidden-focus': {
                 description: 'Test issue',
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -2084,7 +2161,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: [],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -2114,7 +2193,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['invalid-tag'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -2144,6 +2225,8 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -2172,7 +2255,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
             items: {
               'aria-hidden-focus': {
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -2202,7 +2287,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'unknown-issue-type': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-unknown="true">Content</div>'],
+                target: ['div[aria-unknown]'],
               },
             },
           },

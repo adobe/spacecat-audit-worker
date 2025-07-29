@@ -122,14 +122,6 @@ async function sendMystiqueMessage({
 }
 
 /**
- * Generates a UUID for issue identification
- * @returns {string} A unique identifier
- */
-function generateUUID() {
-  return crypto.randomUUID();
-}
-
-/**
  * Helper function to format WCAG rule from internal format to human-readable format
  *
  * Converts WCAG rules from the internal "wcag412" format to the standard
@@ -215,7 +207,6 @@ export function formatIssue(type, issueData, severity) {
       return {
         update_from: updateFrom,
         target_selector: targetSelector,
-        issue_id: (isString(item) ? generateUUID() : (item && item.issue_id)) || generateUUID(),
       };
     });
   } else {
@@ -223,7 +214,6 @@ export function formatIssue(type, issueData, severity) {
     htmlWithIssues = [{
       update_from: '',
       target_selector: targetSelector,
-      issue_id: generateUUID(),
     }];
   }
 
@@ -256,8 +246,7 @@ export function aggregateAccessibilityIssues(accessibilityData) {
     return { data: [] };
   }
 
-  // Create reverse mapping from issueType to opportunityType
-  // This eliminates the O(n³) complexity by converting the innermost loop to O(1) lookup
+  // Create reverse mapping (unchanged)
   const issueTypeToOpportunityMap = {};
   for (const [opportunityType, issuesList] of Object.entries(accessibilityOpportunitiesMap)) {
     for (const issueType of issuesList) {
@@ -265,62 +254,54 @@ export function aggregateAccessibilityIssues(accessibilityData) {
     }
   }
 
-  // Initialize grouped data structure by opportunity type
+  // Initialize grouped data structure (unchanged)
   const groupedData = {};
   for (const [opportunityType] of Object.entries(accessibilityOpportunitiesMap)) {
     groupedData[opportunityType] = [];
   }
 
-  // Helper function to process issues for a given severity level
-  const processIssuesForSeverity = (items, severity, pageIssuesByType) => {
+  // NEW: Process individual HTML elements directly
+  const processIssuesForSeverity = (items, severity, url, data) => {
     for (const [issueType, issueData] of Object.entries(items)) {
-      // O(1) lookup instead of O(n) search through all opportunity types
       const opportunityType = issueTypeToOpportunityMap[issueType];
-      if (opportunityType) {
-        pageIssuesByType[opportunityType].issues.push(
-          formatIssue(issueType, issueData, severity),
-        );
+      if (opportunityType && issueData.htmlWithIssues) {
+        issueData.htmlWithIssues.forEach((htmlElement, index) => {
+          const singleElementIssueData = {
+            ...issueData,
+            htmlWithIssues: [htmlElement],
+            target: issueData.targets ? issueData.targets[index] : '',
+          };
+
+          const urlObject = {
+            type: 'url',
+            url,
+            issues: [formatIssue(issueType, singleElementIssueData, severity)],
+          };
+
+          data[opportunityType].push(urlObject);
+        });
       }
     }
   };
 
-  // Process each page (skip 'overall' summary which contains site-wide data)
+  // Simplified main processing loop
   for (const [url, pageData] of Object.entries(accessibilityData)) {
     if (url !== 'overall' && pageData.violations) {
-      // Initialize page issues for each opportunity type
-      const pageIssuesByType = {};
-      for (const [opportunityType] of Object.entries(accessibilityOpportunitiesMap)) {
-        pageIssuesByType[opportunityType] = {
-          type: 'url', // Indicates this is a URL-based suggestion
-          url,
-          issues: [], // Will contain accessibility issues for this opportunity type
-        };
-      }
-
       const { violations } = pageData;
 
-      // Process critical issues (only those in our tracked categories)
       if (violations.critical?.items) {
-        processIssuesForSeverity(violations.critical.items, 'critical', pageIssuesByType);
+        processIssuesForSeverity(violations.critical.items, 'critical', url, groupedData);
       }
 
-      // Process serious issues (only those in our tracked categories)
       if (violations.serious?.items) {
-        processIssuesForSeverity(violations.serious.items, 'serious', pageIssuesByType);
-      }
-
-      // Add URLs with issues directly to their respective opportunity type groups
-      for (const [opportunityType, urlData] of Object.entries(pageIssuesByType)) {
-        if (urlData.issues.length > 0) {
-          groupedData[opportunityType].push(urlData);
-        }
+        processIssuesForSeverity(violations.serious.items, 'serious', url, groupedData);
       }
     }
   }
 
-  // Convert grouped data to the desired format
+  // Convert to final format (unchanged)
   const formattedData = Object.entries(groupedData)
-    .filter(([, urls]) => urls.length > 0) // Only include types that have URLs with issues
+    .filter(([, urls]) => urls.length > 0)
     .map(([opportunityType, urls]) => ({
       [opportunityType]: urls,
     }));
@@ -586,6 +567,7 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
 
   // Step 1: Aggregate accessibility issues by URL
   const aggregatedData = aggregateAccessibilityIssues(accessibilityData);
+  log.info(`[A11yIndividual] Aggregated data: ${JSON.stringify(aggregatedData, null, 2)}`);
 
   // Early return if no actionable issues found
   if (!aggregatedData || !aggregatedData.data || aggregatedData.data.length === 0) {
