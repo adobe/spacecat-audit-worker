@@ -332,7 +332,9 @@ describe('Preflight Readability Audit', () => {
       try {
         await readability(context, auditContext);
 
-        const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+        // Find the audit for the specific URL that was processed
+        const pageResult = audits.get('https://example.com/page1');
+        const audit = pageResult.audits.find((a) => a.name === 'readability');
         expect(audit.opportunities).to.have.lengthOf(1);
         expect(audit.opportunities[0].check).to.equal('readability-analysis-error');
         expect(audit.opportunities[0].issue).to.include('Failed to analyze page readability');
@@ -413,7 +415,7 @@ describe('Preflight Readability Audit', () => {
       await readability(context, auditContext);
 
       // Should log a warning because audit entry is missing for this page
-      expect(log.warn).to.have.been.calledWithMatch('No readability audit found for');
+      expect(log.warn).to.have.been.calledWithMatch('[preflight-audit] readability: No readability audit found for');
     });
 
     it('should handle readability calculation error for individual elements', async () => {
