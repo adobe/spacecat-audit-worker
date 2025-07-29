@@ -225,7 +225,7 @@ export function formatIssue(type, issueData, severity) {
     wcagRule,
     wcagLevel: issueData.level || '', // AA, AAA, etc.
     severity,
-    occurrences: issueData.count || 0,
+    occurrences: (issueData.htmlWithIssues && issueData.htmlWithIssues.length) || 0,
     htmlWithIssues,
     failureSummary: issueData.failureSummary || '',
   };
@@ -271,7 +271,7 @@ export function aggregateAccessibilityIssues(accessibilityData) {
           const singleElementIssueData = {
             ...issueData,
             htmlWithIssues: [htmlElement],
-            target: issueData.targets ? issueData.targets[index] : '',
+            target: issueData.target ? issueData.target[index] : '',
           };
 
           const urlObject = {

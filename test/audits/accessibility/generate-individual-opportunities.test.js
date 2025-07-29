@@ -145,6 +145,7 @@ describe('formatIssue', () => {
       description: 'Test description',
       level: 'AA',
       count: 5,
+      htmlWithIssues: ['<div>test1</div>', '<div>test2</div>', '<div>test3</div>', '<div>test4</div>', '<div>test5</div>'],
       nodes: [
         {
           html: '<div>test</div>',
@@ -163,7 +164,23 @@ describe('formatIssue', () => {
       occurrences: 5,
       htmlWithIssues: [
         {
-          update_from: '',
+          update_from: '<div>test1</div>',
+          target_selector: '',
+        },
+        {
+          update_from: '<div>test2</div>',
+          target_selector: '',
+        },
+        {
+          update_from: '<div>test3</div>',
+          target_selector: '',
+        },
+        {
+          update_from: '<div>test4</div>',
+          target_selector: '',
+        },
+        {
+          update_from: '<div>test5</div>',
           target_selector: '',
         },
       ],
@@ -406,7 +423,7 @@ describe('formatIssue', () => {
       wcagRule: '4.1.2 Name, Role, Value',
       wcagLevel: '', // Should default to empty string
       severity: 'critical',
-      occurrences: 0, // Should default to 0
+      occurrences: 1, // Length of htmlWithIssues array
       htmlWithIssues: [
         {
           update_from: '', // Should default to empty string
@@ -434,7 +451,7 @@ describe('formatIssue', () => {
       wcagRule: '4.1.2 Name, Role, Value',
       wcagLevel: '', // Should default to empty string
       severity: 'critical',
-      occurrences: 0, // Should default to 0
+      occurrences: 1, // Length of htmlWithIssues array
       htmlWithIssues: [
         {
           update_from: '', // Should default to empty string
