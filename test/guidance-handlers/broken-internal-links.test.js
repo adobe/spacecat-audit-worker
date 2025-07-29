@@ -15,13 +15,14 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import nock from 'nock';
 import internalLinksGuidanceHandler from '../../src/internal-links/guidance-handler.js';
 import { guidance } from '../fixtures/broken-backlinks/mystique-guidance.js';
 import { MockContextBuilder } from '../shared.js';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
 
 use(sinonChai);
-describe('guidance-broken-backlinks-remediation handler', () => {
+describe('guidance-internal-links-remediation handler', () => {
   let sandbox;
   let mockContext;
   const mockMessage = guidance[0];
@@ -37,7 +38,11 @@ describe('guidance-broken-backlinks-remediation handler', () => {
     sandbox.restore();
   });
 
-  it('should successfully process broken-backlinks remediation guidance', async () => {
+  it('should successfully process broken-internal-links remediation guidance', async () => {
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+    });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
       getAuditType: () => 'broken-internal-links',
@@ -46,6 +51,12 @@ describe('guidance-broken-backlinks-remediation handler', () => {
       getSiteId: () => mockMessage.siteId,
       getId: () => mockMessage.data.opportunityId,
     });
+    nock('https://foo.com')
+      .head('/redirects-throws-error-1')
+      .reply(200);
+    nock('https://foo.com')
+      .head('/redirects-throws-error-2')
+      .reply(200);
     const mockSetData = sandbox.stub();
     const mockSave = sandbox.stub().resolves();
     mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({
@@ -69,7 +80,20 @@ describe('guidance-broken-backlinks-remediation handler', () => {
     });
   });
 
+  it('should return 404 if Site is not found', async () => {
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves(null);
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({});
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({});
+    mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({});
+
+    const response = await internalLinksGuidanceHandler(mockMessage, mockContext);
+    expect(response.status).to.equal(404);
+    expect(mockContext.dataAccess.Site.findById).to.have.been.calledWith(mockMessage.siteId);
+    expect(mockContext.dataAccess.Opportunity.findById).to.not.have.been.called;
+  });
+
   it('should return 404 if Audit is not found', async () => {
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves(null);
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({});
@@ -81,6 +105,7 @@ describe('guidance-broken-backlinks-remediation handler', () => {
   });
 
   it('should return 404 if Opportunity is not found', async () => {
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves(null);
     mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({});
@@ -94,6 +119,7 @@ describe('guidance-broken-backlinks-remediation handler', () => {
   });
 
   it('should return error if Opportunity siteId does not match message siteId', async () => {
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
       getSiteId: () => 'site-actual',
@@ -109,6 +135,7 @@ describe('guidance-broken-backlinks-remediation handler', () => {
   });
 
   it('should return 404 if Suggestion is not found', async () => {
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves(
       { getSiteId: () => mockMessage.siteId },

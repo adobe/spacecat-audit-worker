@@ -11,16 +11,23 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { filterBrokenSuggestedUrls } from '../utils/url-utils.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Audit, Suggestion } = dataAccess;
+  const { Audit, Suggestion, Site } = dataAccess;
   const { auditId, siteId, data } = message;
   const {
   // eslint-disable-next-line camelcase
     suggested_urls, ai_rationale, suggestionId, opportunityId,
   } = data;
   log.info(`Message received in broken-backlinks suggestion handler: ${JSON.stringify(message, null, 2)}`);
+
+  const site = await Site.findById(siteId);
+  if (!site) {
+    log.error(`Site not found for siteId: ${siteId}`);
+    return notFound('Site not found');
+  }
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
@@ -47,10 +54,11 @@ export default async function handler(message, context) {
     log.error(`[BrokenBacklinksGuidance] Suggestion not found for ID: ${suggestionId}`);
     return notFound('Suggestion not found');
   }
+  const suggestedUrls = await filterBrokenSuggestedUrls(suggested_urls, site.getBaseURL());
   suggestion.setData({
     ...suggestion.getData(),
     // eslint-disable-next-line camelcase
-    suggestedUrls: suggested_urls,
+    suggestedUrls,
     // eslint-disable-next-line camelcase
     aiRationale: ai_rationale,
   });
