@@ -183,8 +183,10 @@ export function formatIssue(type, issueData, severity) {
 
   // Extract target selector from the target field
   let targetSelector = '';
-  if (isNonEmptyArray(issueData.target)) {
+  if (Array.isArray(issueData.target) && issueData.target.length > 0) {
     [targetSelector] = issueData.target;
+  } else if (typeof issueData.target === 'string') {
+    targetSelector = issueData.target;
   }
 
   // Use htmlWithIssues directly from issueData if available, otherwise create minimal structure
