@@ -1,3 +1,10 @@
+## [1.134.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.1...v1.134.2) (2025-07-29)
+
+
+### Bug Fixes
+
+* Suppress ImageObject Error in Structured Data Audit  ([#1066](https://github.com/adobe/spacecat-audit-worker/issues/1066)) ([7a7579d](https://github.com/adobe/spacecat-audit-worker/commit/7a7579d048a724e1099170a17a473d1ee423a030))
+
 ## [1.134.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.0...v1.134.1) (2025-07-26)
 
 
