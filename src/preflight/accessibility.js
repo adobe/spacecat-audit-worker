@@ -285,7 +285,7 @@ export default async function accessibility(context, auditContext) {
     log.info(`[preflight-audit] Site ID: ${siteId}`);
     log.info(`[preflight-audit] Looking for data in path: accessibility/${siteId}/`);
 
-    const maxWaitTime = 10 * 60 * 1000; // 10 minutes
+    const maxWaitTime = 15 * 60 * 1000; // 15 minutes (increased from 10 minutes)
     const pollInterval = 30 * 1000; // 30 seconds
     const startTime = Date.now();
 
@@ -302,18 +302,31 @@ export default async function accessibility(context, auditContext) {
           Bucket: bucketName,
           Prefix: `accessibility/${siteId}/`,
           MaxKeys: 10,
-          Delimiter: '/', // Use delimiter to get subfolders
         });
 
         // eslint-disable-next-line no-await-in-loop
         const response = await s3Client.send(listCommand);
 
-        // Check if we have files directly in the site folder
+        // Check if we have any files in the site folder (including final result files)
         const hasFilesInSiteFolder = response.Contents && response.Contents.length > 0;
 
         if (hasFilesInSiteFolder) {
           log.info(`[preflight-audit] Files found in site folder: ${response.Contents.length} files`);
-          break;
+
+          // Log all found files for debugging
+          response.Contents.forEach((obj, index) => {
+            log.info(`[preflight-audit] File ${index + 1}: ${obj.Key}`);
+          });
+
+          // Check if we have a final result file indicating processing is complete
+          const hasFinalResultFile = response.Contents.some((obj) => obj.Key && obj.Key.includes('-final-result.json'));
+
+          if (hasFinalResultFile) {
+            log.info('[preflight-audit] Final result file found, accessibility processing complete');
+            break;
+          } else {
+            log.info('[preflight-audit] Raw data files found but no final result yet, continuing to wait...');
+          }
         }
 
         log.info('[preflight-audit] No accessibility data yet, waiting...');
