@@ -73,6 +73,11 @@ export default async function readability(context, auditContext) {
         let poorReadabilityCount = 0;
 
         textElements.forEach((element, index) => {
+          // Skip elements that have child elements to avoid duplicate analysis
+          if (element.children.length > 0) {
+            return;
+          }
+
           const textContent = element.textContent?.trim();
 
           // Skip elements with insufficient text content
