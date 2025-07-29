@@ -62,6 +62,7 @@ describe('Experimentation Opportunities Tests', () => {
       getFetchConfig: sinon.stub(),
       getBrandConfig: sinon.stub(),
       getCdnLogsConfig: sinon.stub(),
+      getLlmoConfig: sinon.stub(),
     };
     site = {
       getBaseURL: () => 'https://abc.com',
