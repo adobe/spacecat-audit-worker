@@ -76,9 +76,18 @@ export default async function readability(context, auditContext) {
         let poorReadabilityCount = 0;
 
         textElements.forEach((element, index) => {
-          // Skip elements that have child elements to avoid duplicate analysis
+          // Check if element has child elements
           if (element.children.length > 0) {
-            return;
+            // If it has children, check if they are only inline formatting elements
+            const hasOnlyInlineChildren = Array.from(element.children).every((child) => {
+              const inlineTags = ['strong', 'b', 'em', 'i', 'span', 'a', 'mark', 'small', 'sub', 'sup', 'u', 'code', 'br'];
+              return inlineTags.includes(child.tagName.toLowerCase());
+            });
+
+            // Skip if it has block-level children (to avoid duplicate analysis)
+            if (!hasOnlyInlineChildren) {
+              return;
+            }
           }
 
           const textContent = element.textContent?.trim();
