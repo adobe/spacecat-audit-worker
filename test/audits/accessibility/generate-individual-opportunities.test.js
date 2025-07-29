@@ -1444,9 +1444,7 @@ describe('createIndividualOpportunitySuggestions', () => {
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
-            suggestion: { getId: () => 'sugg-1' },
-            suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
-            issueType: 'aria-allowed-attr',
+            url: 'https://example.com',
             issuesList: [{ issue_name: 'aria-allowed-attr' }],
           },
         ]),
@@ -1702,21 +1700,15 @@ describe('createAccessibilityIndividualOpportunities', () => {
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
-            suggestion: {},
-            suggestionData: {},
-            issueType: 'type1',
+            url: 'https://example.com/page1',
             issuesList: [1],
           },
           {
-            suggestion: {},
-            suggestionData: {},
-            issueType: 'type2',
+            url: 'https://example.com/page2',
             issuesList: [2],
           },
           {
-            suggestion: {},
-            suggestionData: {},
-            issueType: 'type3',
+            url: 'https://example.com/page3',
             issuesList: [3],
           },
         ]),
@@ -2352,16 +2344,13 @@ describe('createAccessibilityIndividualOpportunities', () => {
 
 describe('createMystiqueMessage', () => {
   it('should create a message object with all required fields', () => {
-    const fakeSuggestion = { getId: () => 'sugg-456' };
     const fakeOpportunity = { getId: () => 'oppty-123' };
-    const suggestionData = { url: 'https://example.com', suggestionId: 'sugg-456' };
     const issuesList = [{ type: 'color-contrast', description: 'desc' }];
     const siteId = 'site-789';
     const auditId = 'audit-101';
     const deliveryType = 'aem_edge';
     const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData,
+      url: 'https://example.com',
       issuesList,
       opportunity: fakeOpportunity,
       siteId,
@@ -2377,20 +2366,16 @@ describe('createMystiqueMessage', () => {
     expect(result.data).to.deep.equal({
       url: 'https://example.com',
       opportunity_id: 'oppty-123',
-      suggestion_id: 'sugg-456',
       issues_list: issuesList,
     });
     expect(result.time).to.be.a('string');
   });
 
   it('should default siteId and auditId to empty string if not provided', () => {
-    const fakeSuggestion = { getId: () => 'sugg-456' };
     const fakeOpportunity = { getId: () => 'oppty-123' };
-    const suggestionData = { url: 'https://example.com', suggestionId: 'sugg-456' };
     const issuesList = [];
     const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData,
+      url: 'https://example.com',
       issuesList,
       opportunity: fakeOpportunity,
       siteId: undefined,
@@ -2407,18 +2392,14 @@ describe('sendMystiqueMessage', () => {
   let fakeSqs;
   let fakeEnv;
   let fakeLog;
-  let fakeSuggestion;
   let fakeOpportunity;
-  let fakeSuggestionData;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     fakeSqs = { sendMessage: sandbox.stub().resolves() };
     fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
     fakeLog = { info: sandbox.stub(), error: sandbox.stub() };
-    fakeSuggestion = { getId: () => 'sugg-1' };
     fakeOpportunity = { getId: () => 'oppty-1' };
-    fakeSuggestionData = { url: 'https://example.com', suggestionId: 'sugg-1' };
   });
 
   afterEach(() => {
@@ -2427,9 +2408,7 @@ describe('sendMystiqueMessage', () => {
 
   it('should send a message and log info on success', async () => {
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData: fakeSuggestionData,
-      issueType: 'color-contrast',
+      url: 'https://example.com',
       issuesList: [{ type: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-1',
@@ -2441,15 +2420,13 @@ describe('sendMystiqueMessage', () => {
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
     expect(fakeLog.info).to.have.been.calledWithMatch('[A11yIndividual] Sent message to Mystique');
-    expect(result).to.deep.include({ success: true, issueType: 'color-contrast', suggestionId: 'sugg-1' });
+    expect(result).to.deep.include({ success: true, url: 'https://example.com' });
   });
 
   it('should log error and return failure object on error', async () => {
     fakeSqs.sendMessage.rejects(new Error('SQS error'));
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData: fakeSuggestionData,
-      issueType: 'color-contrast',
+      url: 'https://example.com',
       issuesList: [{ type: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-1',
@@ -2461,7 +2438,7 @@ describe('sendMystiqueMessage', () => {
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
     expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual] Failed to send message to Mystique');
-    expect(result).to.deep.include({ success: false, issueType: 'color-contrast', suggestionId: 'sugg-1' });
+    expect(result).to.deep.include({ success: false, url: 'https://example.com' });
     expect(result.error).to.equal('SQS error');
   });
 });
@@ -2471,13 +2448,9 @@ describe('sendMystiqueMessage error path (coverage)', () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Simulated SQS failure')) };
     const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
-    const fakeSuggestion = { getId: () => 'sugg-123' };
     const fakeOpportunity = { getId: () => 'oppty-456' };
-    const fakeSuggestionData = { url: 'https://example.com', suggestionId: 'sugg-123' };
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData: fakeSuggestionData,
-      issueType: 'aria-allowed-attr',
+      url: 'https://example.com',
       issuesList: [{ issue_name: 'aria-allowed-attr' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
@@ -2488,11 +2461,10 @@ describe('sendMystiqueMessage error path (coverage)', () => {
       log: fakeLog,
     });
     expect(result.success).to.be.false;
-    expect(result.issueType).to.equal('aria-allowed-attr');
-    expect(result.suggestionId).to.equal('sugg-123');
+    expect(result.url).to.equal('https://example.com');
     expect(result.error).to.equal('Simulated SQS failure');
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for suggestion sugg-123 and issue type aria-allowed-attr: Simulated SQS failure',
+      '[A11yIndividual] Failed to send message to Mystique for url https://example.com',
     );
   });
 });
@@ -2637,9 +2609,7 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
-            suggestion: { getId: () => 'sugg-1' },
-            suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
-            issueType: 'aria-allowed-attr',
+            url: 'https://example.com',
             issuesList: [{ issue_name: 'aria-allowed-attr' }],
           },
         ]),
@@ -2773,9 +2743,7 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
-            suggestion: { getId: () => 'sugg-1' },
-            suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
-            issueType: 'aria-allowed-attr',
+            url: 'https://example.com',
             issuesList: [{ issue_name: 'aria-allowed-attr' }],
           },
         ]),
@@ -2826,14 +2794,10 @@ describe('sendMystiqueMessage error handling', () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('SQS connection failed')) };
     const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
-    const fakeSuggestion = { getId: () => 'sugg-123' };
     const fakeOpportunity = { getId: () => 'oppty-456' };
-    const fakeSuggestionData = { url: 'https://example.com', suggestionId: 'sugg-123' };
 
     const result = await testModule.sendMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData: fakeSuggestionData,
-      issueType: 'aria-allowed-attr',
+      url: 'https://example.com',
       issuesList: [{ issue_name: 'aria-allowed-attr' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
@@ -2847,29 +2811,24 @@ describe('sendMystiqueMessage error handling', () => {
     // Should return failure object
     expect(result).to.deep.equal({
       success: false,
-      issueType: 'aria-allowed-attr',
-      suggestionId: 'sugg-123',
+      url: 'https://example.com',
       error: 'SQS connection failed',
     });
 
     // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for suggestion sugg-123 and issue type aria-allowed-attr: SQS connection failed',
+      '[A11yIndividual] Failed to send message to Mystique for url https://example.com',
     );
   });
 
-  it('should handle sendMessage errors with suggestion without getId method', async () => {
+  it('should handle sendMessage errors with different URL', async () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Network error')) };
     const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
-    const fakeSuggestion = {}; // No getId method
     const fakeOpportunity = { getId: () => 'oppty-456' };
-    const fakeSuggestionData = { url: 'https://example.com', suggestionId: 'sugg-123' };
 
     const result = await testModule.sendMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData: fakeSuggestionData,
-      issueType: 'color-contrast',
+      url: 'https://test.com',
       issuesList: [{ issue_name: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
@@ -2880,17 +2839,16 @@ describe('sendMystiqueMessage error handling', () => {
       log: fakeLog,
     });
 
-    // Should return failure object with empty suggestionId
+    // Should return failure object
     expect(result).to.deep.equal({
       success: false,
-      issueType: 'color-contrast',
-      suggestionId: '',
+      url: 'https://test.com',
       error: 'Network error',
     });
 
-    // Should log the error with empty suggestion ID
+    // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for suggestion  and issue type color-contrast: Network error',
+      '[A11yIndividual] Failed to send message to Mystique for url https://test.com',
     );
   });
 });

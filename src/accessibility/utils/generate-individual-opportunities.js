@@ -31,8 +31,7 @@ import { isAuditEnabledForSite } from '../../common/audit-utils.js';
  * @returns {Object} The message object ready for SQS
  */
 function createMystiqueMessage({
-  suggestion,
-  suggestionData,
+  url,
   issuesList,
   opportunity,
   siteId,
@@ -46,9 +45,8 @@ function createMystiqueMessage({
     deliveryType,
     time: new Date().toISOString(),
     data: {
-      url: suggestionData.url,
+      url,
       opportunity_id: opportunity.getId(),
-      suggestion_id: suggestion.getId ? suggestion.getId() : '',
       issues_list: issuesList,
     },
   };
@@ -72,9 +70,7 @@ function createMystiqueMessage({
  * @returns {Promise<Object>} Result object with success status and details
  */
 async function sendMystiqueMessage({
-  suggestion,
-  suggestionData,
-  issueType,
+  url,
   issuesList,
   opportunity,
   siteId,
@@ -85,8 +81,7 @@ async function sendMystiqueMessage({
   log,
 }) {
   const message = createMystiqueMessage({
-    suggestion,
-    suggestionData,
+    url,
     issuesList,
     opportunity,
     siteId,
@@ -97,25 +92,19 @@ async function sendMystiqueMessage({
   try {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(
-      `[A11yIndividual] Sent message to Mystique for suggestion ${
-        suggestion.getId ? suggestion.getId() : ''
-      } and issue type ${issueType} with ${issuesList.length} issues`,
+      `[A11yIndividual] Sent message to Mystique for url ${url}: ${JSON.stringify(message, null, 2)}`,
     );
     return {
       success: true,
-      issueType,
-      suggestionId: suggestion.getId ? suggestion.getId() : '',
+      url,
     };
   } catch (error) {
     log.error(
-      `[A11yIndividual] Failed to send message to Mystique for suggestion ${
-        suggestion.getId ? suggestion.getId() : ''
-      } and issue type ${issueType}: ${error.message}`,
+      `[A11yIndividual] Failed to send message to Mystique for url ${url}, message: ${JSON.stringify(message, null, 2)} with error: ${error.message}`,
     );
     return {
       success: false,
-      issueType,
-      suggestionId: suggestion.getId ? suggestion.getId() : '',
+      url,
       error: error.message,
     };
   }
@@ -447,11 +436,9 @@ export async function createIndividualOpportunitySuggestions(
     log.info(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
 
     const messagePromises = mystiqueData.map(({
-      suggestion, suggestionData, issueType, issuesList,
+      url, issuesList,
     }) => sendMystiqueMessage({
-      suggestion,
-      suggestionData,
-      issueType,
+      url,
       issuesList,
       opportunity: refreshedOpportunity,
       siteId,

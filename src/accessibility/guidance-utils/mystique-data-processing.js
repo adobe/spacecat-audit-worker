@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { issueTypesForMystique } from '../utils/constants.js';
 
 /**
@@ -25,44 +26,46 @@ export function processSuggestionsForMystique(suggestions) {
   }
 
   const messageData = [];
+  // Group issues by url
+  const issuesByUrl = {};
 
   for (const suggestion of suggestions) {
     const suggestionData = suggestion.getData();
+    const suggestionId = suggestion.getId();
     if (suggestionData.issues && Array.isArray(suggestionData.issues)) {
-      // Group issues by type for this suggestion
-      const issuesByType = {};
-
       for (const issue of suggestionData.issues) {
-        // Only process issues that have htmlWithIssues with content
-        if (Array.isArray(issue.htmlWithIssues) && issue.htmlWithIssues.length > 0) {
-          if (!issuesByType[issue.type]) {
-            issuesByType[issue.type] = [];
+        if (issueTypesForMystique.includes(issue.type)) {
+          const { url } = suggestionData;
+          if (!issuesByUrl[url]) {
+            issuesByUrl[url] = [];
           }
-
-          for (const htmlIssueItem of issue.htmlWithIssues) {
-            issuesByType[issue.type].push({
-              issue_name: issue.type,
-              faulty_line: htmlIssueItem.update_from || '',
-              target_selector: htmlIssueItem.target_selector || issue.targetSelector || '',
-              issue_description: issue.description || '',
-              issue_id: htmlIssueItem.issue_id || '',
-            });
-          }
+          issuesByUrl[url].push({ ...suggestionData, suggestionId });
         }
       }
+    }
+  }
 
-      // Create message data for each issue type
-      for (const [issueType, issuesList] of Object.entries(issuesByType)) {
-        if (issueTypesForMystique.includes(issueType)) {
-          messageData.push({
-            suggestion,
-            suggestionData,
-            issueType,
-            issuesList,
+  for (const [url, issues] of Object.entries(issuesByUrl)) {
+    const issuesList = [];
+    for (const issue of issues) {
+      if (isNonEmptyArray(issue.issues)) {
+        const singleIssue = issue.issues[0];
+        if (isNonEmptyArray(singleIssue.htmlWithIssues)) {
+          const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
+          issuesList.push({
+            issue_name: singleIssue.type,
+            faulty_line: singleHtmlWithIssue.update_from || '',
+            target_selector: singleHtmlWithIssue.target_selector || '',
+            issue_description: singleIssue.description || '',
+            suggestion_id: issue.suggestionId,
           });
         }
       }
     }
+    messageData.push({
+      url,
+      issuesList,
+    });
   }
 
   return messageData;
