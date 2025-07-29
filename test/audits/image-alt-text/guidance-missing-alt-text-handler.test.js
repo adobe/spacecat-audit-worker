@@ -34,6 +34,7 @@ describe('Missing Alt Text Guidance Handler', () => {
       getId: () => 'opportunity-id',
       setAuditId: sandbox.stub(),
       setData: sandbox.stub(),
+      getData: sandbox.stub().returns({}),
       save: sandbox.stub(),
       getSuggestions: sandbox.stub().returns([]),
       addSuggestions: sandbox.stub().returns({ errorItems: [], createdItems: [1] }),
@@ -253,5 +254,88 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(mockOpportunity.setData).to.have.been.called;
     const setDataCall = mockOpportunity.setData.firstCall.args[0];
     expect(setDataCall.decorativeImagesCount).to.equal(1);
+  });
+
+  it('should accumulate metrics when opportunity already has existing data', async () => {
+    // Set up mockOpportunity to return existing data
+    const existingData = {
+      projectedTrafficLost: 50,
+      projectedTrafficValue: 50,
+      decorativeImagesCount: 2,
+      dataSources: ['RUM', 'SITE'],
+    };
+    mockOpportunity.getData.returns(existingData);
+
+    // New batch metrics from getProjectedMetrics
+    getProjectedMetricsStub.resolves({
+      projectedTrafficLost: 30,
+      projectedTrafficValue: 30,
+    });
+
+    const messageWithNewSuggestions = {
+      ...mockMessage,
+      data: {
+        suggestions: [
+          {
+            pageUrl: 'https://example.com/page2',
+            imageId: 'image2.jpg',
+            altText: 'Another alt text',
+            imageUrl: 'https://example.com/image2.jpg',
+            isAppropriate: true,
+            isDecorative: true,
+            language: 'en',
+          },
+        ],
+      },
+    };
+
+    const result = await guidanceHandler(messageWithNewSuggestions, context);
+
+    expect(result.status).to.equal(200);
+
+    // Verify that setData was called with accumulated values
+    expect(mockOpportunity.setData).to.have.been.calledWith(
+      sinon.match({
+        projectedTrafficLost: 80,
+        projectedTrafficValue: 80,
+        decorativeImagesCount: 3,
+      }),
+    );
+  });
+
+  it('should handle when opportunity getData returns null', async () => {
+    mockOpportunity.getData.returns(null);
+    getProjectedMetricsStub.resolves({
+      projectedTrafficLost: 25,
+      projectedTrafficValue: 25,
+    });
+
+    const messageWithSuggestions = {
+      ...mockMessage,
+      data: {
+        suggestions: [
+          {
+            pageUrl: 'https://example.com/page3',
+            imageId: 'image3.jpg',
+            altText: 'Third alt text',
+            imageUrl: 'https://example.com/image3.jpg',
+            isAppropriate: true,
+            isDecorative: false,
+            language: 'en',
+          },
+        ],
+      },
+    };
+
+    const result = await guidanceHandler(messageWithSuggestions, context);
+
+    expect(result.status).to.equal(200);
+    expect(mockOpportunity.setData).to.have.been.calledWith(
+      sinon.match({
+        projectedTrafficLost: 25,
+        projectedTrafficValue: 25,
+        decorativeImagesCount: 0,
+      }),
+    );
   });
 });

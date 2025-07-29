@@ -761,6 +761,9 @@ describe('Image Alt Text Handler', () => {
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
         getId: () => 'opportunity-id',
+        getData: () => ({}),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
       };
 
       // Override the default empty array with our mock opportunity

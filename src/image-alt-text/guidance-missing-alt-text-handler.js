@@ -72,7 +72,23 @@ export default async function handler(message, context) {
 
   // Calculate projected metrics based on Mystique suggestions
   // (all suggestions are images without alt-text)
-  const projectedMetrics = await getProjectedMetrics({
+  // const projectedMetrics = await getProjectedMetrics({
+  //   images: mappedSuggestions.map((suggestion) => ({
+  //     pageUrl: suggestion.pageUrl,
+  //     src: suggestion.imageUrl,
+  //   })),
+  //   auditUrl,
+  //   context,
+  //   log,
+  // });
+
+  // const opportunityData = {
+  //   ...projectedMetrics,
+  //   decorativeImagesCount:
+  //   mappedSuggestions.filter((suggestion) => suggestion.isDecorative === true).length,
+  // };
+
+  const batchProjectedMetrics = await getProjectedMetrics({
     images: mappedSuggestions.map((suggestion) => ({
       pageUrl: suggestion.pageUrl,
       src: suggestion.imageUrl,
@@ -82,11 +98,28 @@ export default async function handler(message, context) {
     log,
   });
 
-  const opportunityData = {
-    ...projectedMetrics,
-    decorativeImagesCount:
-    mappedSuggestions.filter((suggestion) => suggestion.isDecorative === true).length,
-  };
+  const batchDecorativeImagesCount = mappedSuggestions.filter((
+    suggestion,
+  ) => suggestion.isDecorative === true).length;
+
+  // If opportunity exists, accumulate metrics with existing data
+  let opportunityData;
+  if (altTextOppty) {
+    const existingData = altTextOppty.getData() || {};
+    opportunityData = {
+      projectedTrafficLost: (existingData.projectedTrafficLost || 0)
+      + batchProjectedMetrics.projectedTrafficLost,
+      projectedTrafficValue: (existingData.projectedTrafficValue || 0)
+      + batchProjectedMetrics.projectedTrafficValue,
+      decorativeImagesCount: (existingData.decorativeImagesCount || 0) + batchDecorativeImagesCount,
+    };
+  } else {
+    // New opportunity, use batch metrics directly
+    opportunityData = {
+      ...batchProjectedMetrics,
+      decorativeImagesCount: batchDecorativeImagesCount,
+    };
+  }
 
   opportunityData.dataSources = [
     DATA_SOURCES.RUM,

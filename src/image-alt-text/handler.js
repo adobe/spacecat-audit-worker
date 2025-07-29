@@ -228,6 +228,17 @@ export async function processAltTextWithMystique(context) {
     if (altTextOppty) {
       log.info(`[${AUDIT_TYPE}]: Clearing existing suggestions before sending to Mystique`);
       await clearAltTextSuggestions({ opportunity: altTextOppty, log });
+
+      // Reset opportunity data to start fresh for new audit run
+      const resetData = {
+        projectedTrafficLost: 0,
+        projectedTrafficValue: 0,
+        decorativeImagesCount: 0,
+        dataSources: altTextOppty.getData()?.dataSources || [], // Preserve data sources
+      };
+      altTextOppty.setData(resetData);
+      await altTextOppty.save();
+      log.info(`[${AUDIT_TYPE}]: Reset opportunity data for fresh audit run`);
     }
 
     // Get top pages for a site (similar to metatags handler)
