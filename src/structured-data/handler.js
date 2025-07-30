@@ -193,14 +193,19 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   }
 
   // Convert suggestions to errors
-  let errorIndex = 1;
+  const errorIdMap = {};
   for (const issue of auditData.auditResult.issues) {
     issue.errors = [];
     const fix = generateErrorMarkupForIssue(issue);
     const errorTitle = `${issue.rootType}: ${issue.issueMessage}`;
-    const errorId = `${errorTitle}: ${errorIndex}`.replaceAll(/["\s]/g, '').toLowerCase();
+    let errorId = errorTitle.replaceAll(/["\s]/g, '').toLowerCase();
+    if (errorId in errorIdMap) {
+      errorIdMap[errorId] += 1;
+      errorId = `${errorId}:${errorIdMap[errorId]}`;
+    } else {
+      errorIdMap[errorId] = 1;
+    }
     issue.errors.push({ fix, id: errorId, errorTitle });
-    errorIndex += 1;
   }
 
   const opportunity = await convertToOpportunity(
