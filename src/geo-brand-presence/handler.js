@@ -32,18 +32,32 @@ export async function sendToMystique(context) {
       s3Client,
     },
   };
-  const keywordQuestions = (await getStoredMetrics(
+  const allKeywordQuestions = (await getStoredMetrics(
     { source: 'ahrefs', metric: ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE, siteId: site.getId() },
     storedMetricsConfig,
-  ))?.filter(
+  )).filter(
     (keywordQuestion) => keywordQuestion?.questions?.length > 0,
-  )?.map((keywordQuestion) => ({
-    keyword: keywordQuestion.keyword,
-    questions: keywordQuestion.questions,
-    pageUrl: keywordQuestion.url,
-    importTime: keywordQuestion.importTime,
-    volume: keywordQuestion.volume,
-  }));
+  );
+
+  // Get data from the last import only.
+  // Ee use the following heuristic:
+  // Use the .importTime of the last array item, and choose all entries within 5 minutes
+  const lastImport = allKeywordQuestions[allKeywordQuestions.length - 1];
+  if (!lastImport || !lastImport.importTime) {
+    log.info('GEO BRAND PRESENCE: No keyword questions found, skipping message to mystique');
+    return;
+  }
+  const importTime = +new Date(lastImport.importTime);
+  const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+  const keywordQuestions = allKeywordQuestions
+    .filter(({ importTime: t }) => t && Math.abs(importTime - +new Date(t)) < fiveMinutes)
+    .map((keywordQuestion) => ({
+      keyword: keywordQuestion.keyword,
+      questions: keywordQuestion.questions,
+      pageUrl: keywordQuestion.url,
+      importTime: keywordQuestion.importTime,
+      volume: keywordQuestion.volume,
+    }));
 
   /** @type {typeof keywordQuestions} */
   const uniqueKeywordQuestions = [];

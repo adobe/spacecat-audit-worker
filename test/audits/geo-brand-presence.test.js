@@ -11,6 +11,7 @@
  */
 
 /* eslint-env mocha */
+/* eslint-disable no-use-before-define */
 
 import { expect, use } from 'chai';
 import sinon from 'sinon';
@@ -53,7 +54,9 @@ describe('Geo Brand Presence Handler', () => {
       QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique',
       S3_IMPORTER_BUCKET_NAME: 'bucket',
     };
-    s3Client = {};
+    s3Client = {
+      send: sinon.stub().throws(new Error('no stubbed response')),
+    };
     context = {
       log,
       sqs,
@@ -82,56 +85,50 @@ describe('Geo Brand Presence Handler', () => {
 
   it('should send message to Mystique for all opportunity types when keywordQuestions are found', async () => {
     // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
-    context.s3Client.send = sinon.stub().resolves({
-      Body: {
-        async transformToString() {
-          return JSON.stringify([
-            {
-              keyword: 'adobe',
-              questions: ['what is adobe?', 'adobe pricing'],
-              url: 'https://adobe.com/page1',
-              importTime: '2024-06-01T00:00:00Z',
-              volume: 1000,
-            },
-            {
-              keyword: 'adobe',
-              questions: ['what is adobe?'],
-              url: 'https://adobe.com/page1',
-              importTime: '2024-05-01T00:00:00Z',
-              volume: 2000,
-            },
-            {
-              keyword: 'photoshop',
-              questions: ['how to use photoshop?'],
-              url: 'https://adobe.com/page2',
-              importTime: '2024-06-02T00:00:00Z',
-              volume: 5000,
-            },
-            // This entry should be filtered out (no questions)
-            {
-              keyword: 'illustrator',
-              questions: [],
-              url: 'https://adobe.com/page3',
-              importTime: '2024-06-03T00:00:00Z',
-              volume: 3000,
-            },
-          ]);
-        },
+    fakeS3Response([
+      {
+        keyword: 'adobe',
+        questions: ['what is adobe?', 'adobe pricing'],
+        url: 'https://adobe.com/page1',
+        importTime: '2024-05-01T00:00:00Z',
+        volume: 1000,
       },
-    });
+      {
+        keyword: 'adobe',
+        questions: ['what is adobe?'],
+        url: 'https://adobe.com/page1',
+        importTime: '2024-05-01T00:00:00Z',
+        volume: 2000,
+      },
+      {
+        keyword: 'photoshop',
+        questions: ['how to use photoshop?'],
+        url: 'https://adobe.com/page2',
+        importTime: '2024-05-01T00:00:00Z',
+        volume: 5000,
+      },
+      // This entry should be filtered out (no questions)
+      {
+        keyword: 'illustrator',
+        questions: [],
+        url: 'https://adobe.com/page3',
+        importTime: '2024-06-01T00:00:00Z',
+        volume: 3000,
+      },
+    ]);
     const expectedKeywordQuestions = [
       {
         keyword: 'adobe',
         questions: ['what is adobe?', 'adobe pricing'],
         pageUrl: 'https://adobe.com/page1',
-        importTime: '2024-06-01T00:00:00Z',
+        importTime: '2024-05-01T00:00:00Z',
         volume: 1000,
       },
       {
         keyword: 'photoshop',
         questions: ['how to use photoshop?'],
         pageUrl: 'https://adobe.com/page2',
-        importTime: '2024-06-02T00:00:00Z',
+        importTime: '2024-05-01T00:00:00Z',
         volume: 5000,
       },
     ];
@@ -163,237 +160,154 @@ describe('Geo Brand Presence Handler', () => {
   });
 
   it('should skip sending message to Mystique when no keywordQuestions', async () => {
-    context.s3Client.send = sinon.stub().resolves({
-      Body: {
-        async transformToString() {
-          return JSON.stringify([
-            {
-              keyword: 'adobe',
-              questions: [],
-              url: 'https://adobe.com/page1',
-              importTime: '2024-06-01T00:00:00Z',
-              volume: 1000,
-            },
-            {
-              keyword: 'photoshop',
-              questions: undefined,
-              url: 'https://adobe.com/page2',
-              importTime: '2024-06-02T00:00:00Z',
-              volume: 2000,
-            },
-          ]);
-        },
+    fakeS3Response([
+      {
+        keyword: 'adobe',
+        questions: [],
+        url: 'https://adobe.com/page1',
+        importTime: '2024-06-01T00:00:00Z',
+        volume: 1000,
       },
-    });
+      {
+        keyword: 'photoshop',
+        questions: undefined,
+        url: 'https://adobe.com/page2',
+        importTime: '2024-06-02T00:00:00Z',
+        volume: 2000,
+      },
+    ]);
     await sendToMystique(context);
     expect(sqs.sendMessage).to.not.have.been.called;
   });
 
-  it('prefers the later importTime if it comes first', async () => {
-    context.s3Client.send = sinon.stub().resolves({
-      Body: {
-        async transformToString() {
-          return JSON.stringify([
-            {
-              keyword: 'adobe',
-              questions: ['what is adobe?'],
-              url: 'https://adobe.com/page1',
-              importTime: '2024-06-01T00:01:00Z',
-              volume: 1234,
-            },
-            {
-              keyword: 'photoshop',
-              questions: ['how to use photoshop?'],
-              url: 'https://adobe.com/page2',
-              importTime: '2024-06-02T00:00:00Z',
-              volume: 4000,
-            },
-            {
-              keyword: 'adobe',
-              questions: ['what is adobe?'],
-              url: 'https://adobe.com/page1',
-              importTime: '2024-06-01T00:00:00Z',
-              volume: 5678.0,
-            },
-          ]);
-        },
-      },
-    });
-
-    await sendToMystique(context);
-    expect(sqs.sendMessage).to.have.been.calledTwice;
-    const [, message] = sqs.sendMessage.firstCall.args;
-    expect(message.data.keywordQuestions).to.deep.equal([
+  it('only sends data from the last import to Mystique', async () => {
+    fakeS3Response([
       {
         keyword: 'adobe',
         questions: ['what is adobe?'],
-        pageUrl: 'https://adobe.com/page1',
+        url: 'https://adobe.com/page1',
         importTime: '2024-06-01T00:01:00Z',
         volume: 1234,
       },
       {
         keyword: 'photoshop',
         questions: ['how to use photoshop?'],
-        pageUrl: 'https://adobe.com/page2',
-        importTime: '2024-06-02T00:00:00Z',
-        volume: 4000,
+        url: 'https://adobe.com/page2',
+        importTime: '2024-06-01T00:00:00Z',
+        volume: 1345,
+      },
+      {
+        keyword: 'firefly',
+        questions: ['how to generate AI images?'],
+        url: 'https://adobe.com/page3',
+        importTime: '2024-06-01T00:02:00Z',
+        volume: 1456,
+      },
+      {
+        keyword: 'adobe',
+        questions: ['what is adobe?'],
+        url: 'https://adobe.com/page1',
+        importTime: '2024-06-01T00:11:00Z',
+        volume: 2234,
+      },
+      {
+        keyword: 'photoshop',
+        questions: ['how to use photoshop?'],
+        url: 'https://adobe.com/page2',
+        importTime: '2024-06-01T00:10:00Z',
+        volume: 2345,
+      },
+      {
+        keyword: 'firefly',
+        questions: ['how to generate AI images?'],
+        url: 'https://adobe.com/page3',
+        importTime: '2024-06-01T00:12:00Z',
+        volume: 2456,
+      },
+      {
+        keyword: 'adobe',
+        questions: ['what is adobe?'],
+        url: 'https://adobe.com/page1',
+        importTime: '2024-06-01T00:14:00Z',
+        volume: 3234,
+      },
+      {
+        keyword: 'photoshop',
+        questions: ['how to use photoshop?'],
+        url: 'https://adobe.com/page2',
+        importTime: '2024-06-01T00:22:00Z',
+        volume: 3345,
+      },
+      {
+        keyword: 'firefly',
+        questions: ['how to generate AI images?'],
+        url: 'https://adobe.com/page3',
+        importTime: '2024-06-01T00:18:00Z',
+        volume: 3456,
       },
     ]);
-  });
-
-  it('prefers the later importTime if it comes later', async () => {
-    context.s3Client.send = sinon.stub().resolves({
-      Body: {
-        async transformToString() {
-          return JSON.stringify([
-            {
-              keyword: 'adobe',
-              questions: ['what is adobe?'],
-              url: 'https://adobe.com/page1',
-              importTime: '2024-06-01T00:00:00Z',
-              volume: 1234,
-            },
-            {
-              keyword: 'photoshop',
-              questions: ['how to use photoshop?'],
-              url: 'https://adobe.com/page2',
-              importTime: '2024-06-02T00:00:00Z',
-              volume: 4000,
-            },
-            {
-              keyword: 'adobe',
-              questions: ['what is adobe?'],
-              url: 'https://adobe.com/page1',
-              importTime: '2024-06-01T00:01:00Z',
-              volume: 5678,
-            },
-          ]);
-        },
-      },
-    });
 
     await sendToMystique(context);
-    expect(sqs.sendMessage).to.have.been.calledTwice;
     const [, message] = sqs.sendMessage.firstCall.args;
     expect(message.data.keywordQuestions).to.deep.equal([
       {
         keyword: 'adobe',
         questions: ['what is adobe?'],
         pageUrl: 'https://adobe.com/page1',
-        importTime: '2024-06-01T00:01:00Z',
-        volume: 5678,
+        importTime: '2024-06-01T00:14:00Z',
+        volume: 3234,
       },
       {
         keyword: 'photoshop',
         questions: ['how to use photoshop?'],
         pageUrl: 'https://adobe.com/page2',
-        importTime: '2024-06-02T00:00:00Z',
-        volume: 4000,
+        importTime: '2024-06-01T00:22:00Z',
+        volume: 3345,
+      },
+      {
+        keyword: 'firefly',
+        questions: ['how to generate AI images?'],
+        pageUrl: 'https://adobe.com/page3',
+        importTime: '2024-06-01T00:18:00Z',
+        volume: 3456,
       },
     ]);
   });
 
-  it('does not replace an earlier importTime if the later record has no importTime', async () => {
-    context.s3Client.send = sinon.stub().resolves({
-      Body: {
-        async transformToString() {
-          return JSON.stringify([
-            {
-              keyword: 'adobe',
-              questions: ['what is adobe?'],
-              url: 'https://adobe.com/page1',
-              importTime: '2024-06-01T00:00:00Z',
-              volume: 1234,
-            },
-            {
-              keyword: 'photoshop',
-              questions: ['how to use photoshop?'],
-              url: 'https://adobe.com/page2',
-              importTime: '2024-06-02T00:00:00Z',
-              volume: 4000,
-            },
-            {
-              keyword: 'adobe',
-              questions: ['what is adobe?'],
-              url: 'https://adobe.com/page1',
-              // no importTime
-              volume: 5678,
-            },
-          ]);
-        },
-      },
-    });
-
-    await sendToMystique(context);
-    expect(sqs.sendMessage).to.have.been.calledTwice;
-    const [, message] = sqs.sendMessage.firstCall.args;
-    expect(message.data.keywordQuestions).to.deep.equal([
+  it('does not send data to mystique if there are only imports without importTime', async () => {
+    fakeS3Response([
       {
         keyword: 'adobe',
         questions: ['what is adobe?'],
-        pageUrl: 'https://adobe.com/page1',
-        importTime: '2024-06-01T00:00:00Z',
+        url: 'https://adobe.com/page1',
+        // no importTime
         volume: 1234,
       },
       {
         keyword: 'photoshop',
         questions: ['how to use photoshop?'],
-        pageUrl: 'https://adobe.com/page2',
-        importTime: '2024-06-02T00:00:00Z',
+        url: 'https://adobe.com/page2',
         volume: 4000,
       },
-    ]);
-  });
-
-  it('replaces a record without importTime if a later record has one', async () => {
-    context.s3Client.send = sinon.stub().resolves({
-      Body: {
-        async transformToString() {
-          return JSON.stringify([
-            {
-              keyword: 'adobe',
-              questions: ['what is adobe?'],
-              url: 'https://adobe.com/page1',
-              // no importTime
-              volume: 1234,
-            },
-            {
-              keyword: 'photoshop',
-              questions: ['how to use photoshop?'],
-              url: 'https://adobe.com/page2',
-              importTime: '2024-06-02T00:00:00Z',
-              volume: 4000,
-            },
-            {
-              keyword: 'adobe',
-              questions: ['what is adobe?'],
-              url: 'https://adobe.com/page1',
-              importTime: '2024-06-01T00:00:00Z',
-              volume: 5678,
-            },
-          ]);
-        },
-      },
-    });
-
-    await sendToMystique(context);
-    expect(sqs.sendMessage).to.have.been.calledTwice;
-    const [, message] = sqs.sendMessage.firstCall.args;
-    expect(message.data.keywordQuestions).to.deep.equal([
       {
         keyword: 'adobe',
         questions: ['what is adobe?'],
-        pageUrl: 'https://adobe.com/page1',
-        importTime: '2024-06-01T00:00:00Z',
+        url: 'https://adobe.com/page1',
         volume: 5678,
       },
-      {
-        keyword: 'photoshop',
-        questions: ['how to use photoshop?'],
-        pageUrl: 'https://adobe.com/page2',
-        importTime: '2024-06-02T00:00:00Z',
-        volume: 4000,
-      },
     ]);
+
+    await sendToMystique(context);
+    expect(sqs.sendMessage).not.called;
   });
+
+  function fakeS3Response(response) {
+    s3Client.send.resolves({
+      Body: {
+        async transformToString() {
+          return JSON.stringify(response);
+        },
+      },
+    });
+  }
 });
