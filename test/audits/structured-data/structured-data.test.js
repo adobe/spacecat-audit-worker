@@ -321,6 +321,7 @@ describe('Structured Data Audit', () => {
 
     it('ensure unique error IDs for duplicate issues', async () => {
       const auditData = {
+        siteId: context.site.getId(),
         auditResult: {
           success: true,
           issues: [
@@ -332,6 +333,23 @@ describe('Structured Data Audit', () => {
           ],
         },
       };
+      const opportunity = {
+        auditId: 'audit-id-12345',
+        updatedBy: 'system',
+        setAuditId: () => {},
+        getSuggestions: () => [],
+        getType: () => 'structured-data',
+        getData: () => ({ dataSources: ['Ahrefs', 'Site'] }),
+        setData: () => {},
+        setUpdatedBy: () => {},
+        save: () => {},
+        getId: () => 'opportunity-id-12345',
+        addSuggestions: () => ({ errorItems: [] }),
+        setType: () => {},
+        getSiteId: () => 'site-id-12345',
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus = () => [opportunity];
+
       await opportunityAndSuggestions(finalUrl, auditData, context);
       const allErrorIds = auditData.auditResult.issues.map((issue) => issue.errors[0].id);
       expect(new Set(allErrorIds).size).to.equal(allErrorIds.length);

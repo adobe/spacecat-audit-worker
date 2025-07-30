@@ -200,10 +200,10 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     const errorTitle = `${issue.rootType}: ${issue.issueMessage}`;
     let errorId = errorTitle.replaceAll(/["\s]/g, '').toLowerCase();
     if (errorId in errorIdMap) {
-      errorId = `${errorId}:${errorIdMap[errorId]}`;
       errorIdMap[errorId] += 1;
+      errorId = `${errorId}:${errorIdMap[errorId]}`;
     } else {
-      errorIdMap[errorId] = 1;
+      errorIdMap[errorId] = 0;
     }
     issue.errors.push({ fix, id: errorId, errorTitle });
   }
