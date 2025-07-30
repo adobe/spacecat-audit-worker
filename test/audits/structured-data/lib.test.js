@@ -15,6 +15,7 @@
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
+import esmock from 'esmock';
 
 import { load as cheerioLoad } from 'cheerio';
 import jsBeautify from 'js-beautify';
@@ -28,6 +29,7 @@ import {
   getWrongMarkup,
   generateErrorMarkupForIssue,
   generateFirefallSuggestion,
+  includeIssue,
 } from '../../../src/structured-data/lib.js';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -298,6 +300,7 @@ describe('Structured Data Libs', () => {
           s3Client: s3ClientStub,
           site: {
             getId: () => '123',
+            getDeliveryType: sinon.stub().returns('other'),
           },
         })
         .build(message);
@@ -424,6 +427,54 @@ describe('Structured Data Libs', () => {
       expect(s3ClientStub.send.args[0][0].input).to.deep.equal({
         Bucket: 'test-bucket', Key: 'scrapes/123/product/1/scrape.json',
       });
+    });
+
+    it('does not throw an error if the validation fails', async () => {
+      // Create stubs for the StructuredDataValidator
+      const StructuredDataValidatorStub = sinon.stub().returns({
+        validate: sinon.stub().rejects(new Error('Validation failed')),
+      });
+
+      // Mock the module using esmock
+      const mockedLib = await esmock('../../../src/structured-data/lib.js', {
+        '@adobe/structured-data-validator': {
+          default: StructuredDataValidatorStub,
+        },
+      });
+
+      s3ClientStub.send.resolves(createS3ObjectStub({
+        scrapeResult: {
+          structuredData: {
+            jsonld: {
+              BreadcrumbList: [
+                {
+                  itemListElement: [
+                    {
+                      position: 1,
+                      name: 'Product',
+                      '@type': 'ListItem',
+                      item: 'https://example.com/product/1',
+                    },
+                    {
+                      position: 2,
+                      '@type': 'ListItem',
+                    },
+                  ],
+                  '@type': 'BreadcrumbList',
+                  '@location': '1690,2640',
+                },
+              ],
+            },
+            errors: [],
+          },
+        },
+      }));
+
+      const scrapeCache = new Map();
+      const result = await mockedLib.getIssuesFromScraper(context, [{ url: 'https://example.com/product/1' }], scrapeCache);
+
+      expect(result).to.deep.equal([]);
+      expect(context.log.error).to.be.calledWith('SDA: Failed to validate structured data for https://example.com/product/1.');
     });
   });
 
@@ -884,6 +935,142 @@ This is an error description
         correctedMarkup: '<div>Hello</div>',
         aiRationale: 'Some reason',
       });
+    });
+  });
+
+  describe('includeIssue', () => {
+    let context;
+    const suppressionMessage = 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing';
+    const Site = {
+      DELIVERY_TYPES: {
+        AEM_CS: 'aem_cs',
+        AEM_AMS: 'aem_ams',
+      },
+    };
+
+    beforeEach(() => {
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sinon.stub(),
+            warn: sinon.spy(),
+            error: sinon.stub(),
+            debug: sinon.spy(),
+          },
+          site: {
+            getDeliveryType: sinon.stub().returns('other'),
+          },
+        })
+        .build(message);
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('returns false for non-ERROR severity', () => {
+      context.site.getDeliveryType = sinon.stub().returns('other');
+      const issue = {
+        severity: 'WARNING',
+        rootType: 'ImageObject',
+        issueMessage: 'some message',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.false;
+    });
+
+    it('returns true for non-ImageObject type with ERROR severity', () => {
+      context.site.getDeliveryType = sinon.stub().returns('other');
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'Product',
+        issueMessage: 'some message',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+    });
+
+    it('returns true for ImageObject when delivery type is not in specified customer types', () => {
+      context.site.getDeliveryType = sinon.stub().returns('some-other-type');
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: suppressionMessage,
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+      expect(context.log.warn).not.to.be.called;
+    });
+
+    it('returns true for ImageObject with non-matching message in AEM_CS', () => {
+      context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_CS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: 'non-matching message',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+      expect(context.log.warn).not.to.be.called;
+    });
+
+    it('returns true for ImageObject with non-matching message in AEM_AMS', () => {
+      context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_AMS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: 'non-matching message',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+      expect(context.log.warn).not.to.be.called;
+    });
+
+    it('excludes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_CS, and message matches suppression', () => {
+      context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_CS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: suppressionMessage,
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.false;
+      expect(context.log.warn).to.be.calledWith('SDA: Suppressing issue', suppressionMessage);
+    });
+
+    it('excludes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_AMS, and message matches suppression', () => {
+      context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_AMS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: suppressionMessage,
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.false;
+      expect(context.log.warn).to.be.calledWith('SDA: Suppressing issue', suppressionMessage);
+    });
+
+    it('includes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_CS, but message does not match suppression', () => {
+      context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_CS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: 'Some other error',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
+    });
+
+    it('includes issue if severity is ERROR, rootType is ImageObject, delivery type is AEM_AMS, but message does not match suppression', () => {
+      context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_AMS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: 'Some other error',
+      };
+      const result = includeIssue(context, issue);
+      expect(result).to.be.true;
     });
   });
 });

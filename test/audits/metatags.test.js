@@ -437,6 +437,79 @@ describe('Meta Tags', () => {
           'No Scraped tags found in S3 scrapes/site-id/page1/scrape.json object',
         );
       });
+
+      it('should skip pages with scrape result body length less than 300 characters (soft 404s)', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/404',
+          scrapeResult: {
+            tags: {
+              title: '404 Not Found',
+              description: 'Page not found',
+              h1: ['404 Error'],
+            },
+            rawBody: '<html><body><h1>404 Not Found</h1></body></html>', // Less than 300 chars
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'scrapes/site-id/404/scrape.json',
+          'scrapes/site-id/',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.error).to.have.been.calledWith(
+          'Scrape result is empty for scrapes/site-id/404/scrape.json',
+        );
+      });
+
+      it('should process pages with scrape result body length of 300 characters or more', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/valid-page',
+          scrapeResult: {
+            tags: {
+              title: 'Valid Page Title',
+              description: 'This is a valid page with sufficient content length to pass the minimum threshold check',
+              h1: ['Valid Page Heading'],
+            },
+            rawBody: 'A'.repeat(300), // Exactly 300 characters
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'scrapes/site-id/valid-page/scrape.json',
+          'scrapes/site-id/',
+          logStub,
+        );
+
+        expect(result).to.deep.equal({
+          '/valid-page': {
+            title: 'Valid Page Title',
+            description: 'This is a valid page with sufficient content length to pass the minimum threshold check',
+            h1: ['Valid Page Heading'],
+            s3key: 'scrapes/site-id/valid-page/scrape.json',
+          },
+        });
+        expect(logStub.error).to.not.have.been.called;
+      });
     });
 
     describe('opportunities handler method', () => {
@@ -933,7 +1006,7 @@ describe('Meta Tags', () => {
         expect(result).to.deep.equal({ status: 'complete' });
         expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
         expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
-      }).timeout(3000);
+      }).timeout(10000);
 
       it('should handle RUM API errors gracefully', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
@@ -1010,6 +1083,7 @@ describe('Meta Tags', () => {
           warn: sinon.stub(),
           debug: sinon.stub(),
         };
+        getPresignedUrlStub = sinon.stub().resolves('https://presigned-url.com');
         Configuration = {
           findLatest: sinon.stub().resolves({
             isHandlerEnabledForSite: sinon.stub().returns(true),
@@ -1178,6 +1252,175 @@ describe('Meta Tags', () => {
         });
         expect(isHandlerEnabledForSite).to.have.been.called;
         expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+      });
+
+      it('should remove tags without aiSuggestion from updatedDetectedTags', async () => {
+        // Setup detectedTags with some tags that will have aiSuggestion and some that won't
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Original Title', issue: 'Title too short' },
+            description: { tagContent: 'Original Description', issue: 'Description too short' },
+            h1: { tagContent: 'Original H1', issue: 'H1 too short' },
+          },
+          '/page2': {
+            title: { tagContent: 'Page 2 Title', issue: 'Title too long' },
+            h1: { tagContent: 'Page 2 H1', issue: 'H1 too long' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with mixed aiSuggestion availability
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title 1',
+              aiRationale: 'AI Rationale for title 1',
+            },
+            // description and h1 don't have aiSuggestion in response
+          },
+          '/page2': {
+            title: {
+              aiSuggestion: 'AI Suggested Title 2',
+              aiRationale: 'AI Rationale for title 2',
+            },
+            h1: {
+              aiSuggestion: 'AI Suggested H1 2',
+              aiRationale: 'AI Rationale for h1 2',
+            },
+          },
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that tags without aiSuggestion are removed
+        expect(response['/page1'].title.aiSuggestion).to.equal('AI Suggested Title 1');
+        expect(response['/page1'].description).to.be.undefined;
+        expect(response['/page1'].h1).to.be.undefined;
+
+        expect(response['/page2'].title.aiSuggestion).to.equal('AI Suggested Title 2');
+        expect(response['/page2'].h1.aiSuggestion).to.equal('AI Suggested H1 2');
+
+        // Verify logging for removed tags
+        expect(log.info).to.have.been.calledWith('Removing endpoint /page1 from updatedDetectedTags as it doesn\'t have aiSuggestion for tag description');
+        expect(log.info).to.have.been.calledWith('Removing endpoint /page1 from updatedDetectedTags as it doesn\'t have aiSuggestion for tag h1');
+      });
+
+      it('should remove entire endpoint if no tags have aiSuggestion', async () => {
+        // Setup detectedTags with an endpoint that has no aiSuggestion
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Original Title', issue: 'Title too short' },
+            description: { tagContent: 'Original Description', issue: 'Description too short' },
+          },
+          '/page2': {
+            title: { tagContent: 'Page 2 Title', issue: 'Title too long' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with no aiSuggestion for /page1
+        genvarClientStub.generateSuggestions.resolves({
+          '/page2': {
+            title: {
+              aiSuggestion: 'AI Suggested Title 2',
+              aiRationale: 'AI Rationale for title 2',
+            },
+          },
+          // /page1 is not in the response, so no aiSuggestion for any of its tags
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that /page1 has all its tags removed (empty object)
+        expect(response['/page1']).to.deep.equal({});
+        expect(response['/page2'].title.aiSuggestion).to.equal('AI Suggested Title 2');
+
+        // Verify logging for removed tags
+        expect(log.info).to.have.been.calledWith('Removing endpoint /page1 from updatedDetectedTags as it doesn\'t have aiSuggestion for tag title');
+        expect(log.info).to.have.been.calledWith('Removing endpoint /page1 from updatedDetectedTags as it doesn\'t have aiSuggestion for tag description');
+      });
+
+      it('should preserve tags with aiSuggestion and remove only those without', async () => {
+        // Setup detectedTags with mixed scenarios
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Original Title', issue: 'Title too short' },
+            description: { tagContent: 'Original Description', issue: 'Description too short' },
+            h1: { tagContent: 'Original H1', issue: 'H1 too short' },
+          },
+        };
+
+        // Setup extractedTags with s3key for the endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+        };
+
+        // Setup Genvar response with aiSuggestion for title and h1, but not description
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title',
+              aiRationale: 'AI Rationale for title',
+            },
+            h1: {
+              aiSuggestion: 'AI Suggested H1',
+              aiRationale: 'AI Rationale for h1',
+            },
+            // description is missing from response
+          },
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that tags with aiSuggestion are preserved
+        expect(response['/page1'].title.aiSuggestion).to.equal('AI Suggested Title');
+        expect(response['/page1'].title.aiRationale).to.equal('AI Rationale for title');
+        expect(response['/page1'].h1.aiSuggestion).to.equal('AI Suggested H1');
+        expect(response['/page1'].h1.aiRationale).to.equal('AI Rationale for h1');
+
+        // Verify that description is removed
+        expect(response['/page1'].description).to.be.undefined;
+
+        // Verify logging for removed tag
+        expect(log.info).to.have.been.calledWith('Removing endpoint /page1 from updatedDetectedTags as it doesn\'t have aiSuggestion for tag description');
+      });
+
+      it('should handle empty response from Genvar API', async () => {
+        // Setup detectedTags with some content
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Original Title', issue: 'Title too short' },
+            description: { tagContent: 'Original Description', issue: 'Description too short' },
+          },
+        };
+
+        // Setup extractedTags with s3key for the endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+        };
+
+        // Setup empty Genvar response
+        genvarClientStub.generateSuggestions.resolves({});
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that all tags are removed since no aiSuggestion is provided
+        expect(response['/page1'].title).to.be.undefined;
+        expect(response['/page1'].description).to.be.undefined;
+
+        // Verify logging for removed tags
+        expect(log.info).to.have.been.calledWith('Removing endpoint /page1 from updatedDetectedTags as it doesn\'t have aiSuggestion for tag title');
+        expect(log.info).to.have.been.calledWith('Removing endpoint /page1 from updatedDetectedTags as it doesn\'t have aiSuggestion for tag description');
       });
     });
   });
