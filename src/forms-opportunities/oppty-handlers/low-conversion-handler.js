@@ -12,7 +12,11 @@
 
 import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import {
-  filterForms, generateOpptyData, shouldExcludeForm, calculateProjectedConversionValue,
+  filterForms,
+  generateOpptyData,
+  shouldExcludeForm,
+  calculateProjectedConversionValue,
+  sendMessageToFormsQualityAgent,
 } from '../utils.js';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { DATA_SOURCES } from '../../common/constants.js';
@@ -180,6 +184,8 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
       log.info(`forms opportunity high form views low conversions sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
+      // eslint-disable-next-line max-len,no-await-in-loop
+      await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData.data.form, opportunityData.data.formsource);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
