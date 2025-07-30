@@ -23,6 +23,7 @@ import {
 } from './utils/report-utils.js';
 import { buildLlmErrorPagesQuery } from './utils/query-builder.js';
 import { getAllLlmProviders } from './constants/user-agent-patterns.js';
+import { generateOpportunities } from './opportunity-handler.js';
 
 async function runLlmErrorPagesAudit(url, context, site) {
   const { log, message = {} } = context;
@@ -89,6 +90,8 @@ async function runLlmErrorPagesAudit(url, context, site) {
     const processedResults = processLlmErrorPagesResults(results);
 
     log.info(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
+
+    await generateOpportunities(processedResults, message, context);
 
     const auditResult = {
       success: true,
