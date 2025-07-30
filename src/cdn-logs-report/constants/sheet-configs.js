@@ -37,10 +37,6 @@ const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
   /* c8 ignore next */
 }) || [];
 
-const processWeekDataWithAgentType = (data, periods, valueExtractor) => (
-  processWeekData(data, periods, valueExtractor)
-);
-
 const processCountryWeekData = (data, periods) => {
   if (!data?.length) return [];
 
@@ -101,7 +97,7 @@ export const SHEET_CONFIGS = {
     getHeaders: (periods) => ['Country Code', 'Agent Type', ...periods.columns],
     headerColor: SHEET_COLORS.DEFAULT,
     getNumberColumns: (periods) => (
-      Array.from({ length: periods.columns.length - 1 }, (_, i) => i + 2)
+      Array.from({ length: periods.columns.length }, (_, i) => i + 2)
     ),
     processData: (data, reportPeriods) => {
       const aggregatedData = processCountryWeekData(data, reportPeriods);
@@ -110,20 +106,6 @@ export const SHEET_CONFIGS = {
         reportPeriods,
         (row) => [row.country_code, row.agent_type],
       );
-    },
-  },
-
-  pageType: {
-    getHeaders: (periods) => ['Page Type', 'Agent Type', ...periods.columns],
-    headerColor: SHEET_COLORS.DEFAULT,
-    getNumberColumns: (periods) => (
-      Array.from({ length: periods.columns.length - 1 }, (_, i) => i + 2)
-    ),
-    processData: (data, reportPeriods) => {
-      if (data?.length > 0) {
-        return processWeekDataWithAgentType(data, reportPeriods, (row) => [row.page_type || 'Other', row.agent_type || 'Other']);
-      }
-      return [['No data', 'Other', ...reportPeriods.weeks.map(() => 0)]];
     },
   },
 

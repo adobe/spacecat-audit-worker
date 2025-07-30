@@ -21,193 +21,259 @@ use(sinonChai);
 describe('CDN Logs Report Runner', () => {
   let sandbox;
   let reportRunner;
-  let saveExcelReportMock;
-
-  const baseMockParams = {
-    athenaClient: {
-      query: sinon.stub().resolves([]),
-    },
-    s3Config: {
-      databaseName: 'test_db',
-      customerName: 'test_customer',
-    },
-    log: {
-      info: sinon.stub(),
-      error: sinon.stub(),
-    },
-    site: {
-      getConfig: () => ({ getLlmoDataFolder: () => ({ outputLocation: 'test-output' }) }),
-      getBaseURL: () => 'https://example.com',
-    },
-    sharepointClient: {
-      write: sinon.stub().resolves(),
-    },
-  };
-
-  const baseEsmockConfig = {
-    '../../../src/cdn-logs-report/utils/query-builder.js': {
-      weeklyBreakdownQueries: {
-        createCountryWeeklyBreakdown: sinon.stub().resolves('SELECT country data'),
-        createUserAgentWeeklyBreakdown: sinon.stub().resolves('SELECT user agent data'),
-        createError404Urls: sinon.stub().resolves('SELECT 404 urls'),
-        createError503Urls: sinon.stub().resolves('SELECT 503 urls'),
-        createSuccessUrlsByCategory: sinon.stub().resolves('SELECT success urls'),
-        createTopUrls: sinon.stub().resolves('SELECT top urls'),
-        createHitsByProductAgentType: sinon.stub().resolves('SELECT hits by product'),
-        createHitsByPageCategoryAgentType: sinon.stub().resolves('SELECT hits by page category'),
-      },
-    },
-    '../../../src/cdn-logs-report/utils/excel-generator.js': {
-      createExcelReport: sinon.stub().resolves({ xlsx: { writeBuffer: () => Buffer.from('excel') } }),
-    },
-    '../../../src/utils/report-uploader.js': {
-      saveExcelReport: () => saveExcelReportMock,
-    },
-  };
-
-  function createEsmockConfig(overrides = {}) {
-    return {
-      '../../../src/cdn-logs-report/utils/query-builder.js': {
-        weeklyBreakdownQueries: {
-          createCountryWeeklyBreakdown: sinon.stub().resolves('SELECT country data'),
-          createUserAgentWeeklyBreakdown: sinon.stub().resolves('SELECT user agent data'),
-          createError404Urls: sinon.stub().resolves('SELECT 404 urls'),
-          createError503Urls: sinon.stub().resolves('SELECT 503 urls'),
-          createSuccessUrlsByCategory: sinon.stub().resolves('SELECT success urls'),
-          createTopUrls: sinon.stub().resolves('SELECT top urls'),
-          createHitsByProductAgentType: sinon.stub().resolves('SELECT hits by product'),
-          createHitsByPageCategoryAgentType: sinon.stub().resolves('SELECT hits by page category'),
-          ...(overrides.queryBuilder || {}),
-        },
-      },
-      '../../../src/cdn-logs-report/utils/excel-generator.js': {
-        createExcelReport: sinon.stub().resolves({ xlsx: { writeBuffer: () => Buffer.from('excel') } }),
-        ...overrides.excelGenerator,
-      },
-      '../../../src/utils/report-uploader.js': {
-        saveExcelReport: saveExcelReportMock,
-        ...overrides.reportUploader,
-      },
-    };
-  }
+  let mockAthenaClient;
+  let mockS3Config;
+  let mockLog;
+  let mockSite;
+  let mockSharepointClient;
+  let mockSaveExcelReport;
+  let mockCreateExcelReport;
+  let mockReportUtils;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    saveExcelReportMock = sandbox.stub().resolves();
-    reportRunner = await esmock('../../../src/cdn-logs-report/utils/report-runner.js', baseEsmockConfig);
+
+    mockAthenaClient = {
+      query: sandbox.stub().resolves([{ test: 'data' }]),
+    };
+
+    mockS3Config = {
+      databaseName: 'test_db',
+      tableName: 'test_table',
+      customerName: 'test_customer',
+    };
+
+    mockLog = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    mockSite = {
+      getBaseURL: sandbox.stub().returns('https://test.com'),
+      getConfig: sandbox.stub().returns({
+        getCdnLogsConfig: () => ({ filters: [{ key: 'test', value: 'filter' }] }),
+        getLlmoDataFolder: () => 'test-folder',
+        getGroupedURLs: () => [
+          { name: 'home', pattern: '^/$' },
+          { name: 'product', pattern: '/products/.+' },
+        ],
+      }),
+    };
+
+    mockSharepointClient = {};
+
+    mockSaveExcelReport = sandbox.stub().resolves();
+    mockCreateExcelReport = sandbox.stub().resolves({ worksheets: [] });
+
+    mockReportUtils = {
+      createDateRange: sandbox.stub().returns({
+        startDate: new Date('2025-01-01'),
+        endDate: new Date('2025-01-07'),
+      }),
+      generatePeriodIdentifier: sandbox.stub().returns('2025-W01'),
+      generateReportingPeriods: sandbox.stub().returns({
+        weeks: [{
+          startDate: new Date('2025-01-01'),
+          endDate: new Date('2025-01-07'),
+          weekLabel: 'Week 1',
+        }],
+      }),
+      buildSiteFilters: sandbox.stub().returns([]),
+    };
+
+    reportRunner = await esmock('../../../src/cdn-logs-report/utils/report-runner.js', {
+      '../../../src/cdn-logs-report/utils/report-utils.js': mockReportUtils,
+      '../../../src/utils/report-uploader.js': {
+        saveExcelReport: mockSaveExcelReport,
+      },
+      '../../../src/cdn-logs-report/utils/excel-generator.js': {
+        createExcelReport: mockCreateExcelReport,
+      },
+    });
   });
 
   afterEach(() => {
     sandbox.restore();
   });
 
-  it('executes collectReportData with valid queries', async () => {
-    const collectConfig = createEsmockConfig({
-      queryBuilder: {
-        createCountryWeeklyBreakdown: sandbox.stub().resolves('SELECT country'),
-        createUserAgentWeeklyBreakdown: sandbox.stub().resolves('SELECT agents'),
-        createError404Urls: sandbox.stub().resolves('SELECT 404s'),
-        createError503Urls: sandbox.stub().resolves('SELECT 503s'),
-        createSuccessUrlsByCategory: sandbox.stub().resolves('SELECT success'),
-        createTopUrls: sandbox.stub().resolves('SELECT top'),
-        createHitsByProductAgentType: sandbox.stub().resolves('SELECT product hits'),
-        createHitsByPageCategoryAgentType: sandbox.stub().resolves('SELECT category hits'),
-      },
+  describe('runReport', () => {
+    it('runs report with default parameters', async () => {
+      const options = {
+        provider: 'chatgpt',
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+      };
+
+      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, options);
+
+      expect(mockLog.info).to.have.been.calledWith('Running agentic report for chatgpt for 2025-W01');
+      expect(mockCreateExcelReport).to.have.been.called;
+      expect(mockSaveExcelReport).to.have.been.called;
     });
 
-    const collectRunner = await esmock('../../../src/cdn-logs-report/utils/report-runner.js', collectConfig);
-    await collectRunner.runWeeklyReport(baseMockParams);
+    it('runs report with custom date range', async () => {
+      const options = {
+        startDate: '2025-01-01',
+        endDate: '2025-01-07',
+        provider: 'perplexity',
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+        reportType: 'agentic',
+      };
 
-    // Just verify the test runs without throwing
-    expect(baseMockParams.log.info).to.have.been.called;
-  });
+      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, options);
 
-  it('handles null queries in collectReportData', async () => {
-    const nullQueryConfig = createEsmockConfig({
-      queryBuilder: {
-        createCountryWeeklyBreakdown: sandbox.stub().resolves(null),
-      },
+      expect(mockReportUtils.createDateRange).to.have.been.calledWith('2025-01-01', '2025-01-07');
+      expect(mockLog.info).to.have.been.calledWith('Running agentic report for perplexity for 2025-W01');
     });
 
-    const nullQueryRunner = await esmock('../../../src/cdn-logs-report/utils/report-runner.js', nullQueryConfig);
-    await nullQueryRunner.runWeeklyReport(baseMockParams);
+    it('handles query execution errors gracefully', async () => {
+      mockAthenaClient.query.rejects(new Error('Query failed'));
 
-    expect(baseMockParams.log.info).to.have.been.called;
-  });
+      const options = {
+        provider: 'chatgpt',
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+      };
 
-  it('runs weekly report successfully for all providers and report types', async () => {
-    await reportRunner.runWeeklyReport(baseMockParams);
+      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, options);
 
-    expect(baseMockParams.log.info).to.have.been.called;
-  });
-
-  it('runs custom date range report with specified dates', async () => {
-    const customParams = {
-      ...baseMockParams,
-      startDate: '2025-01-01',
-      endDate: '2025-01-07',
-    };
-
-    await reportRunner.runCustomDateRangeReport(customParams);
-
-    expect(baseMockParams.log.info).to.have.been.called;
-  });
-
-  it('logs success messages when provider reports complete successfully', async () => {
-    await reportRunner.runWeeklyReport(baseMockParams);
-
-    expect(baseMockParams.log.info).to.have.been.called;
-  });
-
-  it('handles query and Excel generation failures gracefully', async () => {
-    const failureConfig = createEsmockConfig({
-      queryBuilder: {
-        createCountryWeeklyBreakdown: sandbox.stub().throws(new Error('Query failed')),
-      },
+      expect(mockLog.error).to.have.been.called;
     });
 
-    const failureReportRunner = await esmock('../../../src/cdn-logs-report/utils/report-runner.js', failureConfig);
-
-    await failureReportRunner.runWeeklyReport(baseMockParams);
-
-    // Just verify the test runs without throwing
-    expect(true).to.be.true;
-  });
-
-  it('handles null getCdnLogsConfig gracefully', async () => {
-    const nullConfigParams = {
-      ...baseMockParams,
-      site: {
-        getConfig: () => ({ getCdnLogsConfig: () => null, getLlmoDataFolder: () => 'llmo' }),
-        getBaseURL: () => 'https://example.com',
-      },
-    };
-
-    await reportRunner.runWeeklyReport(nullConfigParams);
-
-    expect(baseMockParams.log.info).to.have.been.called;
-  });
-
-  describe('null query handling', () => {
-    it('handles null queries gracefully', async () => {
-      const nullQueryConfig = createEsmockConfig({
-        queryBuilder: {
-          createCountryWeeklyBreakdown: sandbox.stub().resolves(null),
-          createUserAgentWeeklyBreakdown: sandbox.stub().resolves(null),
-          createError404Urls: sandbox.stub().resolves(null),
-          createError503Urls: sandbox.stub().resolves(null),
-          createSuccessUrlsByCategory: sandbox.stub().resolves(null),
-          createTopUrls: sandbox.stub().resolves(null),
-          createHitsByProductAgentType: sandbox.stub().resolves(null),
-          createHitsByPageCategoryAgentType: sandbox.stub().resolves(null),
-        },
+    it('handles site config without filters', async () => {
+      mockSite.getConfig.returns({
+        getCdnLogsConfig: () => null,
+        getLlmoDataFolder: () => null,
+        getGroupedURLs: () => [],
       });
 
-      const nullQueryRunner = await esmock('../../../src/cdn-logs-report/utils/report-runner.js', nullQueryConfig);
+      const options = {
+        provider: 'chatgpt',
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+      };
 
-      await nullQueryRunner.runWeeklyReport(baseMockParams);
+      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, options);
 
-      expect(baseMockParams.log.info).to.have.been.called;
+      expect(mockReportUtils.buildSiteFilters).to.have.been.calledWith(undefined);
+    });
+
+    it('throws error when report generation fails', async () => {
+      mockCreateExcelReport.rejects(new Error('Excel creation failed'));
+
+      const options = {
+        provider: 'chatgpt',
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+      };
+
+      await expect(reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, options))
+        .to.be.rejectedWith('Excel creation failed');
+      expect(mockLog.error).to.have.been.calledWith('agentic report generation failed: Excel creation failed');
+    });
+  });
+
+  describe('runReportsForAllProviders', () => {
+    it('runs reports for all configured providers', async () => {
+      const options = {
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+        reportType: 'agentic',
+      };
+
+      await reportRunner.runReportsForAllProviders(
+        mockAthenaClient,
+        mockS3Config,
+        mockLog,
+        options,
+      );
+
+      expect(mockLog.info).to.have.been.calledWith('Generating agentic reports for providers: chatgpt, perplexity');
+      expect(mockLog.info).to.have.been.calledWith('Starting agentic report generation for chatgpt...');
+      expect(mockLog.info).to.have.been.calledWith('Successfully generated agentic chatgpt report');
+    });
+
+    it('handles individual provider failures gracefully', async () => {
+      mockCreateExcelReport.onFirstCall().rejects(new Error('Provider failed'));
+
+      const options = {
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+        reportType: 'agentic',
+      };
+
+      await reportRunner.runReportsForAllProviders(
+        mockAthenaClient,
+        mockS3Config,
+        mockLog,
+        options,
+      );
+
+      expect(mockLog.error).to.have.been.calledWith('Failed to generate agentic chatgpt report: Provider failed');
+      expect(mockLog.info).to.have.been.calledWith('Successfully generated agentic perplexity report');
+    });
+  });
+
+  describe('runWeeklyReport', () => {
+    it('runs weekly reports for all report types', async () => {
+      await reportRunner.runWeeklyReport({
+        athenaClient: mockAthenaClient,
+        s3Config: mockS3Config,
+        log: mockLog,
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+      });
+
+      expect(mockLog.info).to.have.been.calledWith('Starting weekly agentic reports...');
+      expect(mockLog.info).to.have.been.calledWith('Successfully completed weekly agentic reports');
+    });
+
+    it('handles report type failures gracefully', async () => {
+      mockCreateExcelReport.rejects(new Error('Weekly report failed'));
+
+      await reportRunner.runWeeklyReport({
+        athenaClient: mockAthenaClient,
+        s3Config: mockS3Config,
+        log: mockLog,
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+      });
+
+      expect(mockLog.error).to.have.been.calledWith('agentic report generation failed: Weekly report failed');
+    });
+  });
+
+  describe('runCustomDateRangeReport', () => {
+    it('runs custom date range reports for all report types', async () => {
+      await reportRunner.runCustomDateRangeReport({
+        athenaClient: mockAthenaClient,
+        startDateStr: '2025-01-01',
+        endDateStr: '2025-01-07',
+        s3Config: mockS3Config,
+        log: mockLog,
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+      });
+
+      expect(mockLog.info).to.have.been.calledWith('Starting custom date range agentic reports...');
+      expect(mockLog.info).to.have.been.calledWith('Successfully completed custom date range agentic reports');
+    });
+
+    it('handles custom date range failures gracefully', async () => {
+      mockCreateExcelReport.rejects(new Error('Custom range failed'));
+
+      await reportRunner.runCustomDateRangeReport({
+        athenaClient: mockAthenaClient,
+        startDateStr: '2025-01-01',
+        endDateStr: '2025-01-07',
+        s3Config: mockS3Config,
+        log: mockLog,
+        site: mockSite,
+        sharepointClient: mockSharepointClient,
+      });
+
+      expect(mockLog.error).to.have.been.calledWith('agentic report generation failed: Custom range failed');
     });
   });
 });

@@ -13,3 +13,4 @@ SELECT
 FROM classified_data
 GROUP BY product, agent_type
 ORDER BY hits DESC 
+LIMIT 1000
