@@ -87,7 +87,7 @@ describe('createLowConversionOpportunities handler method', () => {
     // with empty guidance due to no scraping
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
     // asserting spacecat to mystique message
-    const [queueArg, messageArg] = context.sqs.sendMessage.getCall(4).args;
+    const [queueArg, messageArg] = context.sqs.sendMessage.getCall(8).args;
     expect(queueArg).to.equal('spacecat-to-mystique');
     expect(messageArg.data).to.deep.equal(testData.mystiqueMessage.data);
   });
