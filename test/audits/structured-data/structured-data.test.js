@@ -318,6 +318,31 @@ describe('Structured Data Audit', () => {
         },
       }]);
     });
+
+    it('ensure unique error IDs for duplicate issues', async () => {
+      const auditData = {
+        auditResult: {
+          success: true,
+          issues: [
+            { rootType: 'Product', issueMessage: 'Missing field "name"' },
+            { rootType: 'Product', issueMessage: 'Missing field "name"' },
+            { rootType: 'Product', issueMessage: 'Missing field "price"' },
+            { rootType: 'BreadcrumbList', issueMessage: 'Missing field "name"' },
+            { rootType: 'Product', issueMessage: 'Missing field "name"' },
+          ],
+        },
+      };
+      await opportunityAndSuggestions(finalUrl, auditData, context);
+      const allErrorIds = auditData.auditResult.issues.map((issue) => issue.errors[0].id);
+      expect(new Set(allErrorIds).size).to.equal(allErrorIds.length);
+      expect(allErrorIds).to.deep.equal([
+        'product:missingfieldname',
+        'product:missingfieldname:1',
+        'product:missingfieldprice',
+        'breadcrumblist:missingfieldname',
+        'product:missingfieldname:2',
+      ]);
+    });
   });
 
   describe('generateSuggestionsData', () => {
