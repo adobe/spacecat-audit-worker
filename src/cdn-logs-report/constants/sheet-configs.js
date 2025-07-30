@@ -41,6 +41,36 @@ const processWeekDataWithAgentType = (data, periods, valueExtractor) => (
   processWeekData(data, periods, valueExtractor)
 );
 
+const processCountryWeekData = (data, periods) => {
+  if (!data?.length) return [];
+
+  const aggregatedData = data.reduce((acc, row) => {
+    const countryCode = validateCountryCode(row.country_code);
+    const agentType = row.agent_type || 'Other';
+    const key = `${countryCode}|${agentType}`;
+
+    if (!acc[key]) {
+      acc[key] = {
+        country_code: countryCode,
+        agent_type: agentType,
+      };
+      periods.weeks.forEach((week) => {
+        const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
+        acc[key][weekKey] = 0;
+      });
+    }
+
+    periods.weeks.forEach((week) => {
+      const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
+      acc[key][weekKey] += Number(row[weekKey]) || 0;
+    });
+
+    return acc;
+  }, {});
+
+  return Object.values(aggregatedData);
+};
+
 export const SHEET_CONFIGS = {
   userAgents: {
     getHeaders: (periods) => {
@@ -73,11 +103,14 @@ export const SHEET_CONFIGS = {
     getNumberColumns: (periods) => (
       Array.from({ length: periods.columns.length - 1 }, (_, i) => i + 2)
     ),
-    processData: (data, reportPeriods) => processWeekData(
-      data,
-      reportPeriods,
-      (row) => [validateCountryCode(row.country_code), row.agent_type || 'Other'],
-    ),
+    processData: (data, reportPeriods) => {
+      const aggregatedData = processCountryWeekData(data, reportPeriods);
+      return processWeekData(
+        aggregatedData,
+        reportPeriods,
+        (row) => [row.country_code, row.agent_type],
+      );
+    },
   },
 
   pageType: {

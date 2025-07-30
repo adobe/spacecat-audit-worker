@@ -69,23 +69,23 @@ describe('Sheet Configs', () => {
       it('processes country data with weekly aggregation', () => {
         const mockData = [
           {
-            country_code: 'US', agent_type: 'Other', week: 1, total_requests: 100,
+            country_code: 'US', agent_type: 'Other', week_1: 100, week_2: 0,
           },
           {
-            country_code: 'US', agent_type: 'Other', week: 2, total_requests: 150,
+            country_code: 'US', agent_type: 'Other', week_1: 0, week_2: 150,
           },
           {
-            country_code: 'CA', agent_type: 'Other', week: 1, total_requests: 50,
+            country_code: 'CA', agent_type: 'Other', week_1: 50, week_2: 0,
           },
         ];
 
         const result = SHEET_CONFIGS.country.processData(mockData, mockPeriods);
-        // The processWeekData function groups data and may include an "Other" category
-        expect(result).to.have.lengthOf(3);
-        // Find the US row in the results
+        expect(result).to.have.lengthOf(2);
         const usRow = result.find((row) => row[0] === 'US');
         expect(usRow).to.exist;
-        expect(usRow[1]).to.equal('Other'); // agent_type
+        expect(usRow[1]).to.equal('Other');
+        expect(usRow[2]).to.equal(100);
+        expect(usRow[3]).to.equal(150);
       });
     });
 
@@ -380,6 +380,38 @@ describe('Sheet Configs', () => {
 
       const nullResult = SHEET_CONFIGS.country.processData(null, mockPeriods);
       expect(nullResult).to.deep.equal([]);
+    });
+
+    it('aggregates data by validated country code and agent type', () => {
+      const data = [
+        {
+          country_code: 'US', agent_type: 'Desktop', week_1: 100, week_2: 150,
+        },
+        {
+          country_code: 'InvalidCode', agent_type: 'Desktop', week_1: 50, week_2: 75,
+        },
+        {
+          country_code: '', agent_type: 'Desktop', week_1: 25, week_2: 30,
+        },
+        {
+          country_code: 'US', agent_type: 'Mobile', week_1: 200, week_2: 250,
+        },
+      ];
+
+      const result = SHEET_CONFIGS.country.processData(data, mockPeriods);
+
+      expect(result).to.have.length(3);
+
+      const globalDesktopRow = result.find((row) => row[0] === 'GLOBAL' && row[1] === 'Desktop');
+      expect(globalDesktopRow).to.exist;
+      expect(globalDesktopRow[2]).to.equal(75);
+      expect(globalDesktopRow[3]).to.equal(105);
+
+      // US+Desktop should remain separate
+      const usDesktopRow = result.find((row) => row[0] === 'US' && row[1] === 'Desktop');
+      expect(usDesktopRow).to.exist;
+      expect(usDesktopRow[2]).to.equal(100);
+      expect(usDesktopRow[3]).to.equal(150);
     });
   });
 });
