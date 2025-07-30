@@ -73,7 +73,13 @@ describe('Image Alt Text Handler', () => {
           },
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
-            create: sandbox.stub().resolves({}),
+            create: sandbox.stub().resolves({
+              getId: () => 'new-opportunity-id',
+              getData: () => ({}),
+              setData: sandbox.stub(),
+              save: sandbox.stub().resolves(),
+              getType: () => AUDIT_TYPE,
+            }),
           },
         },
         imsHost: 'test-ims-host',

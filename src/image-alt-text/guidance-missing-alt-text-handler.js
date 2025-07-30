@@ -13,8 +13,6 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
-import { DATA_SOURCES } from '../common/constants.js';
-import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -24,8 +22,6 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  * @returns {Array} Array of suggestions in the same format as opportunityHandler
  */
 function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
-  console.log(`[${AUDIT_TYPE}]: Mystiquesuggestions: ${JSON.stringify(mystiquesuggestions)}`);
-
   return mystiquesuggestions.map((suggestion) => {
     const suggestionId = `${suggestion.pageUrl}/${suggestion.imageId}`;
 
@@ -53,10 +49,9 @@ export default async function handler(message, context) {
   const site = await Site.findById(siteId);
   const auditUrl = site.getBaseURL();
 
-  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${siteId}
-    and auditUrl: ${auditUrl}`);
-  let altTextOppty;
+  log.info(`[${AUDIT_TYPE}]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
 
+  let altTextOppty;
   try {
     const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
     altTextOppty = opportunities.find(
@@ -67,27 +62,16 @@ export default async function handler(message, context) {
     throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
-  // Map Mystique suggestions first
+  if (!altTextOppty) {
+    const errorMsg = `[${AUDIT_TYPE}]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
+    log.error(errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  // Map Mystique suggestions
   const mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(suggestions || []);
 
   // Calculate projected metrics based on Mystique suggestions
-  // (all suggestions are images without alt-text)
-  // const projectedMetrics = await getProjectedMetrics({
-  //   images: mappedSuggestions.map((suggestion) => ({
-  //     pageUrl: suggestion.pageUrl,
-  //     src: suggestion.imageUrl,
-  //   })),
-  //   auditUrl,
-  //   context,
-  //   log,
-  // });
-
-  // const opportunityData = {
-  //   ...projectedMetrics,
-  //   decorativeImagesCount:
-  //   mappedSuggestions.filter((suggestion) => suggestion.isDecorative === true).length,
-  // };
-
   const batchProjectedMetrics = await getProjectedMetrics({
     images: mappedSuggestions.map((suggestion) => ({
       pageUrl: suggestion.pageUrl,
@@ -102,73 +86,27 @@ export default async function handler(message, context) {
     suggestion,
   ) => suggestion.isDecorative === true).length;
 
-  // If opportunity exists, accumulate metrics with existing data
-  let opportunityData;
-  if (altTextOppty) {
-    const existingData = altTextOppty.getData() || {};
-    opportunityData = {
-      projectedTrafficLost: (existingData.projectedTrafficLost || 0)
-      + batchProjectedMetrics.projectedTrafficLost,
-      projectedTrafficValue: (existingData.projectedTrafficValue || 0)
-      + batchProjectedMetrics.projectedTrafficValue,
-      decorativeImagesCount: (existingData.decorativeImagesCount || 0) + batchDecorativeImagesCount,
-    };
-  } else {
-    // New opportunity, use batch metrics directly
-    opportunityData = {
-      ...batchProjectedMetrics,
-      decorativeImagesCount: batchDecorativeImagesCount,
-    };
-  }
+  // Accumulate metrics with existing data
+  const existingData = altTextOppty.getData() || {};
+  const updatedOpportunityData = {
+    projectedTrafficLost: (existingData.projectedTrafficLost || 0)
+    + batchProjectedMetrics.projectedTrafficLost,
+    projectedTrafficValue: (existingData.projectedTrafficValue || 0)
+    + batchProjectedMetrics.projectedTrafficValue,
+    decorativeImagesCount: (existingData.decorativeImagesCount || 0) + batchDecorativeImagesCount,
+    dataSources: existingData.dataSources,
+  };
 
-  opportunityData.dataSources = [
-    DATA_SOURCES.RUM,
-    DATA_SOURCES.SITE,
-    DATA_SOURCES.AHREFS,
-    DATA_SOURCES.GSC,
-  ];
-
-  const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
-
-  if (!isGoogleConnected && opportunityData.dataSources) {
-    opportunityData.dataSources = opportunityData.dataSources
-      .filter((source) => source !== DATA_SOURCES.GSC);
-  }
-
+  // Update opportunity with accumulated metrics
   try {
-    if (!altTextOppty) {
-      const opportunityDTO = {
-        siteId,
-        auditId,
-        runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
-        type: AUDIT_TYPE,
-        origin: 'AUTOMATION',
-        title: 'Missing alt text for images decreases accessibility and discoverability of content',
-        description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
-        guidance: {
-          recommendations: [
-            {
-              insight: 'Alt text for images decreases accessibility and limits discoverability',
-              recommendation: 'Add meaningful alt text on images that clearly articulate the subject matter of the image',
-              type: null,
-              rationale: 'Alt text for images is vital to ensure your content is discoverable and usable for many people as possible',
-            },
-          ],
-        },
-        data: opportunityData,
-        tags: ['seo', 'accessibility'],
-      };
-      altTextOppty = await Opportunity.create(opportunityDTO);
-      log.debug(`[${AUDIT_TYPE}]: Opportunity created`);
-    } else {
-      altTextOppty.setAuditId(auditId);
-      altTextOppty.setData(opportunityData);
-      altTextOppty.setUpdatedBy('system');
-      await altTextOppty.save();
-    }
+    altTextOppty.setAuditId(auditId);
+    altTextOppty.setData(updatedOpportunityData);
+    altTextOppty.setUpdatedBy('system');
+    await altTextOppty.save();
+    log.info(`[${AUDIT_TYPE}]: Updated opportunity with accumulated metrics`);
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Creating alt-text opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to create alt-text opportunity for siteId ${siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: Updating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
+    throw new Error(`[${AUDIT_TYPE}]: Failed to update opportunity for siteId ${siteId}: ${e.message}`);
   }
 
   // Process suggestions from Mystique
@@ -184,8 +122,9 @@ export default async function handler(message, context) {
       log,
     });
 
-    log.info(`[${AUDIT_TYPE}]: Successfully synced ${suggestions.length} suggestions from Mystique for siteId: ${siteId}`);
-    log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${siteId} and alt-text audit type.`);
+    log.info(`[${AUDIT_TYPE}]: Successfully processed ${suggestions.length} suggestions from Mystique for siteId: ${siteId}`);
+  } else {
+    log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
   }
 
   log.info(`[${AUDIT_TYPE}]: Successfully processed Mystique guidance for siteId: ${siteId}`);

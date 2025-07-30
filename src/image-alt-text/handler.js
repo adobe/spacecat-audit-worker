@@ -26,6 +26,8 @@ import {
   isImageDecorative,
 } from './utils.js';
 import { USE_MYSTIQUE_FOR_ALT_TEXT } from './constants.js';
+import { DATA_SOURCES } from '../common/constants.js';
+import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -217,11 +219,12 @@ export async function processAltTextWithMystique(context) {
 
   try {
     const { Opportunity } = dataAccess;
+    const siteId = site.getId();
+    const auditUrl = site.getBaseURL();
 
     // First, find or create the opportunity and clear existing suggestions
-    const siteId = site.getId();
     const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    const altTextOppty = opportunities.find(
+    let altTextOppty = opportunities.find(
       (oppty) => oppty.getType() === AUDIT_TYPE,
     );
 
@@ -239,6 +242,48 @@ export async function processAltTextWithMystique(context) {
       altTextOppty.setData(resetData);
       await altTextOppty.save();
       log.info(`[${AUDIT_TYPE}]: Reset opportunity data for fresh audit run`);
+    } else {
+      log.info(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
+      const opportunityDTO = {
+        siteId,
+        auditId: audit.getId(),
+        runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
+        type: AUDIT_TYPE,
+        origin: 'AUTOMATION',
+        title: 'Missing alt text for images decreases accessibility and discoverability of content',
+        description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
+        guidance: {
+          recommendations: [
+            {
+              insight: 'Alt text for images decreases accessibility and limits discoverability',
+              recommendation: 'Add meaningful alt text on images that clearly articulate the subject matter of the image',
+              type: null,
+              rationale: 'Alt text for images is vital to ensure your content is discoverable and usable for many people as possible',
+            },
+          ],
+        },
+        data: {
+          projectedTrafficLost: 0,
+          projectedTrafficValue: 0,
+          decorativeImagesCount: 0,
+          dataSources: [
+            DATA_SOURCES.RUM,
+            DATA_SOURCES.SITE,
+            DATA_SOURCES.AHREFS,
+            DATA_SOURCES.GSC,
+          ],
+        },
+        tags: ['seo', 'accessibility'],
+      };
+
+      const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
+      if (!isGoogleConnected) {
+        opportunityDTO.data.dataSources = opportunityDTO.data.dataSources
+          .filter((source) => source !== DATA_SOURCES.GSC);
+      }
+
+      altTextOppty = await Opportunity.create(opportunityDTO);
+      log.info(`[${AUDIT_TYPE}]: Created new opportunity with ID ${altTextOppty.getId()}`);
     }
 
     // Get top pages for a site (similar to metatags handler)

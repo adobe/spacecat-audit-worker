@@ -25,7 +25,6 @@ describe('Missing Alt Text Guidance Handler', () => {
   let guidanceHandler;
   let addAltTextSuggestionsStub;
   let getProjectedMetricsStub;
-  let checkGoogleConnectionStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -94,16 +93,12 @@ describe('Missing Alt Text Guidance Handler', () => {
       projectedTrafficLost: 100,
       projectedTrafficValue: 100,
     });
-    checkGoogleConnectionStub = sandbox.stub().resolves(true);
 
     // Mock the guidance handler with all dependencies
     guidanceHandler = await esmock('../../../src/image-alt-text/guidance-missing-alt-text-handler.js', {
       '../../../src/image-alt-text/opportunityHandler.js': {
         addAltTextSuggestions: addAltTextSuggestionsStub,
         getProjectedMetrics: getProjectedMetricsStub,
-      },
-      '../../../src/common/opportunity-utils.js': {
-        checkGoogleConnection: checkGoogleConnectionStub,
       },
     });
   });
@@ -126,11 +121,12 @@ describe('Missing Alt Text Guidance Handler', () => {
   it('should handle case when opportunity does not exist', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
-    const result = await guidanceHandler(mockMessage, context);
+    await expect(guidanceHandler(mockMessage, context))
+      .to.be.rejectedWith('[alt-text]: No existing opportunity found for siteId test-site-id. Opportunity should be created by main handler before processing suggestions.');
 
-    expect(result.status).to.equal(200);
-    expect(context.dataAccess.Opportunity.create).to.have.been.called;
-    expect(context.log.debug).to.have.been.calledWith('[alt-text]: Opportunity created');
+    expect(context.log.error).to.have.been.calledWith(
+      '[alt-text]: No existing opportunity found for siteId test-site-id. Opportunity should be created by main handler before processing suggestions.',
+    );
   });
 
   it('should handle empty suggestions', async () => {
@@ -171,43 +167,17 @@ describe('Missing Alt Text Guidance Handler', () => {
     );
   });
 
-  it('should handle errors when creating opportunity fails', async () => {
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    const error = new Error('Create failed');
-    context.dataAccess.Opportunity.create.rejects(error);
-
-    await expect(guidanceHandler(mockMessage, context))
-      .to.be.rejectedWith('[alt-text]: Failed to create alt-text opportunity for siteId test-site-id: Create failed');
-
-    expect(context.log.error).to.have.been.calledWith(
-      sinon.match(/Creating alt-text opportunity for siteId test-site-id failed with error: Create failed/),
-    );
-  });
-
   it('should handle errors when updating existing opportunity fails', async () => {
     const error = new Error('Save failed');
     mockOpportunity.save.rejects(error);
 
     await expect(guidanceHandler(mockMessage, context))
-      .to.be.rejectedWith('[alt-text]: Failed to create alt-text opportunity for siteId test-site-id: Save failed');
+      .to.be.rejectedWith('[alt-text]: Failed to update opportunity for siteId test-site-id: Save failed');
 
     expect(context.log.error).to.have.been.calledWith(
-      '[alt-text]: Creating alt-text opportunity for siteId test-site-id failed with error: Save failed',
+      '[alt-text]: Updating opportunity for siteId test-site-id failed with error: Save failed',
       error,
     );
-  });
-
-  it('should filter out GSC data source when Google is not connected', async () => {
-    checkGoogleConnectionStub.resolves(false);
-
-    const result = await guidanceHandler(mockMessage, context);
-
-    expect(result.status).to.equal(200);
-    expect(mockOpportunity.setData).to.have.been.called;
-
-    // Verify that GSC was filtered out from data sources
-    const setDataCall = mockOpportunity.setData.firstCall.args[0];
-    expect(setDataCall.dataSources).to.not.include('GSC');
   });
 
   it('should handle missing url in message', async () => {
@@ -299,6 +269,7 @@ describe('Missing Alt Text Guidance Handler', () => {
         projectedTrafficLost: 80,
         projectedTrafficValue: 80,
         decorativeImagesCount: 3,
+        dataSources: ['RUM', 'SITE'],
       }),
     );
   });
@@ -335,6 +306,7 @@ describe('Missing Alt Text Guidance Handler', () => {
         projectedTrafficLost: 25,
         projectedTrafficValue: 25,
         decorativeImagesCount: 0,
+        dataSources: undefined,
       }),
     );
   });
