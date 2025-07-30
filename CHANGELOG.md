@@ -1,3 +1,10 @@
+## [1.134.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.2...v1.134.3) (2025-07-30)
+
+
+### Bug Fixes
+
+* **metatags:** skip 403/404 pages which were unable to get scraped ([#1060](https://github.com/adobe/spacecat-audit-worker/issues/1060)) ([58ba6ae](https://github.com/adobe/spacecat-audit-worker/commit/58ba6ae31d5bfd110ee24118f294ec40faca3ca5))
+
 ## [1.134.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.1...v1.134.2) (2025-07-29)
 
 
