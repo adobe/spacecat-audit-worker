@@ -32,7 +32,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
       altText: suggestion.altText,
       isAppropriate: suggestion.isAppropriate,
       isDecorative: suggestion.isDecorative,
-      xpath: '', // TODO: Add logic to determine the xpath
+      xpath: suggestion.xpath,
       language: suggestion.language,
     };
   });
