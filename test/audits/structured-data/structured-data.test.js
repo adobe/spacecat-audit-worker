@@ -348,8 +348,8 @@ describe('Structured Data Audit', () => {
         setType: () => {},
         getSiteId: () => 'site-id-12345',
       };
-      context.dataAccess.Opportunity.allBySiteIdAndStatus = () => [opportunity];
 
+      context.dataAccess.Opportunity.allBySiteIdAndStatus = () => [opportunity];
       await opportunityAndSuggestions(finalUrl, auditData, context);
       const allErrorIds = auditData.auditResult.issues.map((issue) => issue.errors[0].id);
       expect(new Set(allErrorIds).size).to.equal(allErrorIds.length);
