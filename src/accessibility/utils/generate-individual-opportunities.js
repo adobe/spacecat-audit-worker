@@ -726,100 +726,147 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
   const { log, dataAccess } = context;
   const { auditId, siteId, data } = message;
   const {
-    opportunityId, suggestionId, pageUrl, remediations, totalIssues,
+    opportunityId, pageUrl, remediations, totalIssues,
   } = data;
 
-  log.info(`[A11yRemediationGuidance] Received accessibility remediation guidance for opportunity ${opportunityId}, suggestion ${suggestionId}`);
-  log.debug(`[A11yRemediationGuidance] Processing ${totalIssues} issues for page: ${pageUrl}`);
+  log.info(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Received accessibility remediation guidance with ${remediations.length} remediations and ${totalIssues} total issues`);
 
   try {
     const { Opportunity } = dataAccess;
     const opportunity = await Opportunity.findById(opportunityId);
 
     if (!opportunity) {
-      log.error(`[A11yRemediationGuidance] Opportunity not found for ID: ${opportunityId}`);
+      log.error(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Opportunity not found`);
       return { success: false, error: 'Opportunity not found' };
     }
 
     // Verify the opportunity belongs to the correct site
     if (opportunity.getSiteId() !== siteId) {
-      const errorMsg = `[A11yRemediationGuidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
-      log.error(errorMsg);
+      log.error(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`);
       return { success: false, error: 'Site ID mismatch' };
     }
 
-    // Get the current suggestions
-    const suggestions = await opportunity.getSuggestions();
-    const targetSuggestion = suggestions.find((suggestion) => suggestion.getId() === suggestionId);
-
-    if (!targetSuggestion) {
-      log.error(`[A11yRemediationGuidance] Suggestion not found for ID: ${suggestionId}`);
-      return { success: false, error: 'Suggestion not found' };
+    if (!remediations || remediations.length === 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: No remediations provided`);
+      return {
+        success: true,
+        totalIssues: 0,
+        pageUrl,
+        processedRemediations: 0,
+        notFoundSuggestionIds: [],
+        invalidRemediations: [],
+        failedSuggestionIds: [],
+      };
     }
 
-    // Process the remediations and match them to specific issues and HTML elements
-    const suggestionData = targetSuggestion.getData();
-    const updatedIssues = suggestionData.issues.map((issue) => {
-      if (isNonEmptyArray(issue.htmlWithIssues)) {
-        // Enhanced htmlWithIssues structure - match remediations directly by issue_id
-        const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => {
-          // Find the specific remediation that matches this HTML element by issue_id
-          const specificRemediation = remediations.find(
-            (remediation) => remediation.issue_id === htmlIssueObj.issue_id,
-          );
+    const suggestions = await opportunity.getSuggestions();
 
-          if (specificRemediation) {
-            // Return enhanced structure with specific remediation guidance
-            return {
+    const notFoundSuggestionIds = [];
+    const invalidRemediations = [];
+
+    // Separate valid and invalid remediations
+    const validRemediations = [];
+    for (const remediation of remediations) {
+      const { suggestionId } = remediation;
+      if (!suggestionId) {
+        invalidRemediations.push(remediation);
+      } else {
+        validRemediations.push(remediation);
+      }
+    }
+
+    // Process only valid remediations
+    const processingPromises = [];
+
+    for (const remediation of validRemediations) {
+      const { suggestionId } = remediation;
+
+      const targetSuggestion = suggestions.find(
+        (suggestion) => suggestion.getId() === suggestionId,
+      );
+
+      if (targetSuggestion) {
+        // Process this specific remediation for this specific suggestion
+        const suggestionData = targetSuggestion.getData();
+        const updatedIssues = suggestionData.issues.map((issue) => {
+          if (isNonEmptyArray(issue.htmlWithIssues)) {
+            const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => ({
               ...htmlIssueObj,
               guidance: {
-                general_suggestion: specificRemediation.generalSuggestion,
-                update_to: specificRemediation.updateTo,
-                user_impact: specificRemediation.userImpact,
+                generalSuggestion: remediation.generalSuggestion || remediation.general_suggestion,
+                updateTo: remediation.updateTo || remediation.update_to,
+                userImpact: remediation.userImpact || remediation.user_impact,
               },
+            }));
+
+            return {
+              ...issue,
+              htmlWithIssues: enhancedHtmlWithIssues,
             };
           }
-
-          // Return unchanged if no specific remediation found
-          return htmlIssueObj;
+          return issue;
         });
 
-        // Return enhanced issue with improved htmlWithIssues structure
-        return {
-          ...issue,
-          htmlWithIssues: enhancedHtmlWithIssues,
+        // Update the suggestion with enhanced issues containing remediation details
+        const updatedSuggestionData = {
+          ...suggestionData,
+          issues: updatedIssues,
         };
+
+        // Update the suggestion
+        targetSuggestion.setData(updatedSuggestionData);
+        processingPromises.push({
+          promise: targetSuggestion.save(),
+          suggestionId,
+        });
+      } else {
+        notFoundSuggestionIds.push(suggestionId);
       }
+    }
 
-      // Return issue unchanged if no matching remediation found
-      return issue;
+    // Wait for all suggestion updates to complete using allSettled
+    const saveResults = await Promise.allSettled(processingPromises.map((item) => item.promise));
+
+    // Process the results to track successful and failed saves
+    const failedSuggestionIds = [];
+    let successfulSaves = 0;
+
+    saveResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        failedSuggestionIds.push(processingPromises[index].suggestionId);
+        log.error(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Failed to save suggestion ${processingPromises[index].suggestionId}: ${result.reason}`);
+      } else {
+        successfulSaves += 1;
+      }
     });
-
-    // Update the suggestion with enhanced issues containing remediation details
-    const updatedSuggestionData = {
-      ...suggestionData,
-      issues: updatedIssues,
-    };
-
-    // Update the suggestion
-    targetSuggestion.setData(updatedSuggestionData);
-    await targetSuggestion.save();
 
     // Update the opportunity with new audit ID
     opportunity.setAuditId(auditId);
     opportunity.setUpdatedBy('system');
     await opportunity.save();
 
-    const logMsg = `Successfully updated suggestion ${suggestionId} with remediations`;
-    log.info(`[A11yRemediationGuidance] ${logMsg} for opportunity ${opportunityId}`);
+    if (invalidRemediations.length > 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${invalidRemediations.length} remediations missing suggestionId`);
+    }
+    if (notFoundSuggestionIds.length > 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${notFoundSuggestionIds.length} suggestions not found: ${notFoundSuggestionIds.join(', ')}`);
+    }
+    if (failedSuggestionIds.length > 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${failedSuggestionIds.length} suggestions failed to save: ${failedSuggestionIds.join(', ')}`);
+    }
+
+    log.info(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Successfully processed ${successfulSaves} remediations`);
 
     return {
       success: true,
       totalIssues,
       pageUrl,
+      notFoundSuggestionIds,
+      invalidRemediations,
+      failedSuggestionIds,
     };
   } catch (error) {
-    log.error(`[A11yRemediationGuidance] Failed to process accessibility remediation guidance: ${error.message}`);
+    log.error(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Failed to process accessibility remediation guidance: ${error.message}`);
     return { success: false, error: error.message };
   }
 }

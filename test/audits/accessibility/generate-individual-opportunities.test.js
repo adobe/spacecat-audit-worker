@@ -2919,15 +2919,14 @@ describe('handleAccessibilityRemediationGuidance', () => {
       siteId: 'site-456',
       data: {
         opportunityId: 'oppty-123',
-        suggestionId: 'sugg-789',
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
             issue_name: 'aria-allowed-attr',
-            issue_id: 'issue-123',
             general_suggestion: 'Remove disallowed ARIA attributes',
             update_to: '<div>Content</div>',
             user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
           },
         ],
         totalIssues: 1,
@@ -2940,16 +2939,16 @@ describe('handleAccessibilityRemediationGuidance', () => {
       success: true,
       totalIssues: 1,
       pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
     });
 
     expect(mockLog.info).to.have.been.calledWith(
-      '[A11yRemediationGuidance] Received accessibility remediation guidance for opportunity oppty-123, suggestion sugg-789',
-    );
-    expect(mockLog.debug).to.have.been.calledWith(
-      '[A11yRemediationGuidance] Processing 1 issues for page: https://example.com/page1',
+      '[A11yRemediationGuidance] site site-456, audit audit-new-123, page https://example.com/page1, opportunity oppty-123: Received accessibility remediation guidance with 1 remediations and 1 total issues',
     );
     expect(mockLog.info).to.have.been.calledWith(
-      '[A11yRemediationGuidance] Successfully updated suggestion sugg-789 with remediations for opportunity oppty-123',
+      '[A11yRemediationGuidance] site site-456, audit audit-new-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
     );
 
     expect(mockOpportunity.setAuditId).to.have.been.calledWith('audit-new-123');
@@ -2980,7 +2979,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       siteId: 'site-456',
       data: {
         opportunityId: 'oppty-nonexistent',
-        suggestionId: 'sugg-789',
         pageUrl: 'https://example.com/page1',
         remediations: [],
         totalIssues: 0,
@@ -2995,7 +2993,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] Opportunity not found for ID: oppty-nonexistent',
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-nonexistent: Opportunity not found',
     );
   });
 
@@ -3026,7 +3024,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       siteId: 'site-456',
       data: {
         opportunityId: 'oppty-123',
-        suggestionId: 'sugg-789',
         pageUrl: 'https://example.com/page1',
         remediations: [],
         totalIssues: 0,
@@ -3041,7 +3038,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] Site ID mismatch. Expected: site-456, Found: site-different',
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Site ID mismatch. Expected: site-456, Found: site-different',
     );
   });
 
@@ -3077,162 +3074,14 @@ describe('handleAccessibilityRemediationGuidance', () => {
       siteId: 'site-456',
       data: {
         opportunityId: 'oppty-123',
-        suggestionId: 'sugg-789',
-        pageUrl: 'https://example.com/page1',
-        remediations: [],
-        totalIssues: 0,
-      },
-    };
-
-    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
-
-    expect(result).to.deep.equal({
-      success: false,
-      error: 'Suggestion not found',
-    });
-
-    expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] Suggestion not found for ID: sugg-789',
-    );
-  });
-
-  it('should handle issues without matching remediations', async () => {
-    const mockOpportunity = {
-      getSiteId: () => 'site-456',
-      getSuggestions: sandbox.stub().resolves([
-        {
-          getId: () => 'sugg-789',
-          getData: () => ({
-            url: 'https://example.com/page1',
-            issues: [
-              {
-                type: 'aria-allowed-attr',
-                htmlWithIssues: [
-                  {
-                    update_from: '<div>Content</div>',
-                    target_selector: 'div.test',
-                    issue_id: 'issue-123',
-                  },
-                ],
-              },
-            ],
-          }),
-          setData: sandbox.stub(),
-          save: sandbox.stub().resolves(),
-        },
-      ]),
-      setAuditId: sandbox.stub(),
-      setUpdatedBy: sandbox.stub(),
-      save: sandbox.stub().resolves(),
-    };
-
-    const mockDataAccess = {
-      Opportunity: {
-        findById: sandbox.stub().resolves(mockOpportunity),
-      },
-    };
-
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-
-    const mockContext = {
-      log: mockLog,
-      dataAccess: mockDataAccess,
-    };
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-456',
-      data: {
-        opportunityId: 'oppty-123',
-        suggestionId: 'sugg-789',
-        pageUrl: 'https://example.com/page1',
-        remediations: [
-          {
-            issue_name: 'different-issue-type',
-            issue_id: 'issue-different',
-            general_suggestion: 'Different suggestion',
-            update_to: '<span>Different</span>',
-            user_impact: 'Different impact',
-          },
-        ],
-        totalIssues: 1,
-      },
-    };
-
-    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
-
-    expect(result).to.deep.equal({
-      success: true,
-      totalIssues: 1,
-      pageUrl: 'https://example.com/page1',
-    });
-  });
-
-  it('should handle htmlWithIssues without matching issue_id', async () => {
-    const mockOpportunity = {
-      getSiteId: () => 'site-456',
-      getSuggestions: sandbox.stub().resolves([
-        {
-          getId: () => 'sugg-789',
-          getData: () => ({
-            url: 'https://example.com/page1',
-            issues: [
-              {
-                type: 'aria-allowed-attr',
-                htmlWithIssues: [
-                  {
-                    update_from: '<div>Content</div>',
-                    target_selector: 'div.test',
-                    issue_id: 'issue-123',
-                  },
-                ],
-              },
-            ],
-          }),
-          setData: sandbox.stub(),
-          save: sandbox.stub().resolves(),
-        },
-      ]),
-      setAuditId: sandbox.stub(),
-      setUpdatedBy: sandbox.stub(),
-      save: sandbox.stub().resolves(),
-    };
-
-    const mockDataAccess = {
-      Opportunity: {
-        findById: sandbox.stub().resolves(mockOpportunity),
-      },
-    };
-
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-
-    const mockContext = {
-      log: mockLog,
-      dataAccess: mockDataAccess,
-    };
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-456',
-      data: {
-        opportunityId: 'oppty-123',
-        suggestionId: 'sugg-789',
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
             issue_name: 'aria-allowed-attr',
-            issue_id: 'issue-different',
-            general_suggestion: 'Different suggestion',
-            update_to: '<span>Different</span>',
-            user_impact: 'Different impact',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
           },
         ],
         totalIssues: 1,
@@ -3245,7 +3094,16 @@ describe('handleAccessibilityRemediationGuidance', () => {
       success: true,
       totalIssues: 1,
       pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: ['sugg-789'],
+      invalidRemediations: [],
     });
+
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 suggestions not found: sugg-789',
+    );
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: No remediations were processed',
+    );
   });
 
   it('should handle issues without htmlWithIssues and return them unchanged', async () => {
@@ -3309,15 +3167,14 @@ describe('handleAccessibilityRemediationGuidance', () => {
       siteId: 'site-456',
       data: {
         opportunityId: 'oppty-123',
-        suggestionId: 'sugg-789',
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
             issue_name: 'some-other-issue',
-            issue_id: 'issue-123',
             general_suggestion: 'Some suggestion',
             update_to: '<div>Fixed</div>',
             user_impact: 'Some impact',
+            suggestionId: 'sugg-789',
           },
         ],
         totalIssues: 1,
@@ -3330,6 +3187,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
       success: true,
       totalIssues: 1,
       pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
     });
 
     // Verify that setData was called with unchanged issues
@@ -3366,7 +3226,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       siteId: 'site-456',
       data: {
         opportunityId: 'oppty-123',
-        suggestionId: 'sugg-789',
         pageUrl: 'https://example.com/page1',
         remediations: [],
         totalIssues: 0,
@@ -3381,7 +3240,449 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] Failed to process accessibility remediation guidance: Database connection failed',
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to process accessibility remediation guidance: Database connection failed',
+    );
+  });
+
+  it('should handle empty remediations array', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [],
+        totalIssues: 0,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 0,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
+    });
+
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: No remediations provided',
+    );
+  });
+
+  it('should handle multiple remediations with unique suggestionIds', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+        {
+          getId: () => 'sugg-790',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'color-contrast',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div style="color: #ccc">Content</div>',
+                    target_selector: 'div.contrast',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+          {
+            issue_name: 'color-contrast',
+            general_suggestion: 'Improve color contrast',
+            update_to: '<div style="color: #000">Content</div>',
+            user_impact: 'Improves readability',
+            suggestionId: 'sugg-790',
+          },
+        ],
+        totalIssues: 2,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 2,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
+    });
+  });
+
+  it('should handle missing suggestionId in some remediations', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+          {
+            issue_name: 'color-contrast',
+            general_suggestion: 'Improve color contrast',
+            update_to: '<div style="color: #000">Content</div>',
+            user_impact: 'Improves readability',
+            // Missing suggestionId
+          },
+        ],
+        totalIssues: 2,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 2,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [
+        {
+          issue_name: 'color-contrast',
+          general_suggestion: 'Improve color contrast',
+          update_to: '<div style="color: #000">Content</div>',
+          user_impact: 'Improves readability',
+        },
+      ],
+      failedSuggestionIds: [],
+    });
+
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 remediations missing suggestionId',
+    );
+  });
+
+  it('should handle all suggestions not found', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-different',
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+          {
+            issue_name: 'color-contrast',
+            general_suggestion: 'Improve color contrast',
+            update_to: '<div style="color: #000">Content</div>',
+            user_impact: 'Improves readability',
+            suggestionId: 'sugg-790',
+          },
+        ],
+        totalIssues: 2,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 2,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: ['sugg-789', 'sugg-790'],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
+    });
+
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 2 suggestions not found: sugg-789, sugg-790',
+    );
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: No remediations were processed',
+    );
+  });
+
+  it('should handle suggestion save failures', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().rejects(new Error('Database connection failed')),
+        },
+        {
+          getId: () => 'sugg-790',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'color-contrast',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div style="color: #ccc">Content</div>',
+                    target_selector: 'div.contrast',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+          {
+            issue_name: 'color-contrast',
+            general_suggestion: 'Improve color contrast',
+            update_to: '<div style="color: #000">Content</div>',
+            user_impact: 'Improves readability',
+            suggestionId: 'sugg-790',
+          },
+        ],
+        totalIssues: 2,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 2,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: ['sugg-789'],
+    });
+
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to save suggestion sugg-789: Error: Database connection failed',
+    );
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 suggestions failed to save: sugg-789',
+    );
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
     );
   });
 });
