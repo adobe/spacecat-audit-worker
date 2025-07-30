@@ -1,9 +1,14 @@
-SELECT 
-  url,
-  user_agent,
-  status,
-  SUM(count) as total_requests
+SELECT
+    user_agent,
+    url,
+    status,
+    SUM(count) AS total_requests
 FROM {{databaseName}}.{{tableName}}
 {{whereClause}}
-GROUP BY url, user_agent, status
-ORDER BY total_requests DESC 
+GROUP BY
+    user_agent,
+    url,
+    status
+ORDER BY
+    total_requests DESC
+LIMIT 500
