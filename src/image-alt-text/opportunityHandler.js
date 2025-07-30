@@ -35,8 +35,9 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
   const existingSuggestions = await opportunity.getSuggestions();
 
+  const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
   const ignoredSuggestions = existingSuggestions.filter(
-    (s) => s.getStatus() === SuggestionModel.STATUSES.SKIPPED,
+    (s) => IGNORED_STATUSES.includes(s.getStatus()),
   );
   const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
 
