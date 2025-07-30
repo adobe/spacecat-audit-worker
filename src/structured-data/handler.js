@@ -199,7 +199,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     const fix = generateErrorMarkupForIssue(issue);
     const errorTitle = `${issue.rootType}: ${issue.issueMessage}`;
     const errorId = `${errorTitle}: ${errorIndex}`.replaceAll(/["\s]/g, '').toLowerCase();
-
     issue.errors.push({ fix, id: errorId, errorTitle });
     errorIndex += 1;
   }
