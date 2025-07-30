@@ -17,10 +17,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 
-/**
- * @import {type RequestOptions} from "@adobe/fetch"
- */
-
 export const HREFLANG_CHECKS = Object.freeze({
   HREFLANG_EXISTS: {
     check: 'hreflang-exists',
@@ -117,7 +113,7 @@ export async function validatePageHreflang(url, log) {
           });
         }
 
-        // Validate language code (skip x-default)
+        // Validate language code
         if (hreflang !== 'x-default') {
           const validation = isLangCode(hreflang);
           if (!validation.res) {
