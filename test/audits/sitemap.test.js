@@ -17,20 +17,22 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import chaiAsPromised from 'chai-as-promised';
 import {
-  ERROR_CODES,
   sitemapAuditRunner,
+  opportunityAndSuggestions,
+  generateSuggestions,
+  findSitemap,
+  getPagesWithIssues,
+  getSitemapsWithIssues,
+} from '../../src/sitemap/handler.js';
+import {
+  ERROR_CODES,
+  filterValidUrls,
   isSitemapContentValid,
   checkSitemap,
   checkRobotsForSitemap,
   fetchContent,
-  opportunityAndSuggestions,
-  generateSuggestions,
-  findSitemap,
-  filterValidUrls,
   getBaseUrlPagesFromSitemaps,
-  getPagesWithIssues,
-  getSitemapsWithIssues,
-} from '../../src/sitemap/handler.js';
+} from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 import { DATA_SOURCES } from '../../src/common/constants.js';
