@@ -94,13 +94,6 @@ describe('Geo Brand Presence Handler', () => {
         volume: 1000,
       },
       {
-        keyword: 'adobe',
-        questions: ['what is adobe?'],
-        url: 'https://adobe.com/page1',
-        importTime: '2024-05-01T00:00:00Z',
-        volume: 2000,
-      },
-      {
         keyword: 'photoshop',
         questions: ['how to use photoshop?'],
         url: 'https://adobe.com/page2',
@@ -112,7 +105,7 @@ describe('Geo Brand Presence Handler', () => {
         keyword: 'illustrator',
         questions: [],
         url: 'https://adobe.com/page3',
-        importTime: '2024-06-01T00:00:00Z',
+        importTime: '2024-05-01T00:00:00Z',
         volume: 3000,
       },
     ]);
