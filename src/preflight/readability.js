@@ -12,6 +12,7 @@
 
 import rs from 'text-readability';
 import { JSDOM } from 'jsdom';
+import { franc } from 'franc-min';
 import { saveIntermediateResults } from './utils.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
@@ -75,9 +76,26 @@ export default async function readability(context, auditContext) {
         let processedElements = 0;
         let poorReadabilityCount = 0;
 
+        // Helper function to detect if text is in English
+        const isEnglishContent = (text) => {
+          try {
+            const detectedLanguage = franc(text);
+            return detectedLanguage === 'eng';
+          } catch (error) {
+            log.warn(`[preflight-audit] readability: Error detecting language: ${error.message}`);
+            // Default to true if language detection fails
+            return true;
+          }
+        };
+
         // Helper function to calculate readability score and create audit opportunity
         const analyzeReadability = (text, element, elementIndex, paragraphIndex = null) => {
           try {
+            // Check if text is in English before analyzing readability
+            if (!isEnglishContent(text)) {
+              return; // Skip non-English content
+            }
+
             const readabilityScore = rs.fleschReadingEase(text.trim());
 
             if (readabilityScore < TARGET_READABILITY_SCORE) {
