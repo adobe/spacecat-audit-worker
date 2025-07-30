@@ -46,8 +46,8 @@ function createMystiqueMessage({
     time: new Date().toISOString(),
     data: {
       url,
-      opportunity_id: opportunity.getId(),
-      issues_list: issuesList,
+      opportunityId: opportunity.getId(),
+      issuesList,
     },
   };
 }
@@ -773,9 +773,9 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
             return {
               ...htmlIssueObj,
               guidance: {
-                general_suggestion: specificRemediation.general_suggestion,
-                update_to: specificRemediation.update_to,
-                user_impact: specificRemediation.user_impact,
+                general_suggestion: specificRemediation.generalSuggestion,
+                update_to: specificRemediation.updateTo,
+                user_impact: specificRemediation.userImpact,
               },
             };
           }

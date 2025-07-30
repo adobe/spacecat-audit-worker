@@ -53,11 +53,11 @@ export function processSuggestionsForMystique(suggestions) {
         if (isNonEmptyArray(singleIssue.htmlWithIssues)) {
           const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
           issuesList.push({
-            issue_name: singleIssue.type,
-            faulty_line: singleHtmlWithIssue.update_from || '',
-            target_selector: singleHtmlWithIssue.target_selector || '',
-            issue_description: singleIssue.description || '',
-            suggestion_id: issue.suggestionId,
+            issueName: singleIssue.type,
+            faultyLine: singleHtmlWithIssue.update_from || '',
+            targetSelector: singleHtmlWithIssue.target_selector || '',
+            issueDescription: singleIssue.description || '',
+            suggestionId: issue.suggestionId,
           });
         }
       }

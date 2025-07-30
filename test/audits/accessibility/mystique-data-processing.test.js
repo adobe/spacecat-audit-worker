@@ -101,11 +101,11 @@ describe('mystique-data-processing', () => {
       expect(result[0]).to.have.property('issuesList');
       expect(result[0].issuesList).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
-        issue_name: 'aria-allowed-attr',
-        faulty_line: '<dt aria-level="3">Term</dt>',
-        target_selector: 'dt',
-        issue_description: 'ARIA attribute not allowed on this element',
-        suggestion_id: 'sugg-1',
+        issueName: 'aria-allowed-attr',
+        faultyLine: '<dt aria-level="3">Term</dt>',
+        targetSelector: 'dt',
+        issueDescription: 'ARIA attribute not allowed on this element',
+        suggestionId: 'sugg-1',
       });
     });
 
@@ -144,8 +144,8 @@ describe('mystique-data-processing', () => {
       expect(result).to.have.length(1);
       expect(result[0].url).to.equal('https://example.com');
       expect(result[0].issuesList).to.have.length(2);
-      expect(result[0].issuesList[0].issue_name).to.equal('aria-allowed-attr');
-      expect(result[0].issuesList[1].issue_name).to.equal('aria-allowed-attr');
+      expect(result[0].issuesList[0].issueName).to.equal('aria-allowed-attr');
+      expect(result[0].issuesList[1].issueName).to.equal('aria-allowed-attr');
     });
 
     it('should handle issues without htmlWithIssues', () => {
@@ -221,11 +221,11 @@ describe('mystique-data-processing', () => {
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
-        issue_name: 'aria-allowed-attr',
-        faulty_line: '<dt aria-level="3">Term</dt>',
-        target_selector: '',
-        issue_description: 'ARIA attribute not allowed on this element',
-        suggestion_id: 'sugg-1',
+        issueName: 'aria-allowed-attr',
+        faultyLine: '<dt aria-level="3">Term</dt>',
+        targetSelector: '',
+        issueDescription: 'ARIA attribute not allowed on this element',
+        suggestionId: 'sugg-1',
       });
     });
 
@@ -252,11 +252,11 @@ describe('mystique-data-processing', () => {
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
-        issue_name: 'aria-allowed-attr',
-        faulty_line: '<dt aria-level="3">Term</dt>',
-        target_selector: 'dt',
-        issue_description: '',
-        suggestion_id: 'sugg-1',
+        issueName: 'aria-allowed-attr',
+        faultyLine: '<dt aria-level="3">Term</dt>',
+        targetSelector: 'dt',
+        issueDescription: '',
+        suggestionId: 'sugg-1',
       });
     });
 
@@ -295,7 +295,7 @@ describe('mystique-data-processing', () => {
       expect(result).to.have.length(1);
       expect(result[0].url).to.equal('https://example.com');
       expect(result[0].issuesList).to.have.length(1);
-      expect(result[0].issuesList[0].issue_name).to.equal('aria-allowed-attr');
+      expect(result[0].issuesList[0].issueName).to.equal('aria-allowed-attr');
     });
 
     it('should process multiple suggestions and group by URL', () => {
@@ -342,8 +342,8 @@ describe('mystique-data-processing', () => {
       expect(result).to.have.length(2);
       expect(result[0].url).to.equal('https://example.com/page1');
       expect(result[1].url).to.equal('https://example.com/page2');
-      expect(result[0].issuesList[0].suggestion_id).to.equal('sugg-1');
-      expect(result[1].issuesList[0].suggestion_id).to.equal('sugg-2');
+      expect(result[0].issuesList[0].suggestionId).to.equal('sugg-1');
+      expect(result[1].issuesList[0].suggestionId).to.equal('sugg-2');
     });
 
     it('should group suggestions with the same URL', () => {
@@ -390,8 +390,8 @@ describe('mystique-data-processing', () => {
       expect(result).to.have.length(1);
       expect(result[0].url).to.equal('https://example.com');
       expect(result[0].issuesList).to.have.length(2);
-      expect(result[0].issuesList[0].suggestion_id).to.equal('sugg-1');
-      expect(result[0].issuesList[1].suggestion_id).to.equal('sugg-2');
+      expect(result[0].issuesList[0].suggestionId).to.equal('sugg-1');
+      expect(result[0].issuesList[1].suggestionId).to.equal('sugg-2');
     });
 
     it('should handle mixed valid and invalid suggestions', () => {
@@ -461,8 +461,8 @@ describe('mystique-data-processing', () => {
       expect(result).to.have.length(1);
       expect(result[0].url).to.equal('https://example.com');
       expect(result[0].issuesList).to.have.length(2);
-      expect(result[0].issuesList[0].suggestion_id).to.equal('sugg-1');
-      expect(result[0].issuesList[1].suggestion_id).to.equal('sugg-3');
+      expect(result[0].issuesList[0].suggestionId).to.equal('sugg-1');
+      expect(result[0].issuesList[1].suggestionId).to.equal('sugg-3');
     });
 
     it('should handle missing faulty_line, target_selector, and issue_description', () => {
@@ -488,11 +488,11 @@ describe('mystique-data-processing', () => {
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
-        issue_name: 'aria-allowed-attr',
-        faulty_line: '', // Should default to empty string
-        target_selector: '', // Should default to empty string
-        issue_description: '', // Should default to empty string
-        suggestion_id: 'sugg-1',
+        issueName: 'aria-allowed-attr',
+        faultyLine: '', // Should default to empty string
+        targetSelector: '', // Should default to empty string
+        issueDescription: '', // Should default to empty string
+        suggestionId: 'sugg-1',
       });
     });
   });

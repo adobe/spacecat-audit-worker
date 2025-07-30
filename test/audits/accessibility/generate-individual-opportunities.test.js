@@ -2365,8 +2365,8 @@ describe('createMystiqueMessage', () => {
     });
     expect(result.data).to.deep.equal({
       url: 'https://example.com',
-      opportunity_id: 'oppty-123',
-      issues_list: issuesList,
+      opportunityId: 'oppty-123',
+      issuesList,
     });
     expect(result.time).to.be.a('string');
   });
