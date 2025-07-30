@@ -66,8 +66,6 @@ describe('CDN Logs Query Builder', () => {
       weeklyBreakdownQueries.createError404Urls(mockOptions),
       weeklyBreakdownQueries.createError503Urls(mockOptions),
       weeklyBreakdownQueries.createTopUrls(mockOptions),
-      weeklyBreakdownQueries.createReferralTrafficByCountryTopic(mockOptions),
-      weeklyBreakdownQueries.createReferralTrafficByUrlTopic(mockOptions),
       weeklyBreakdownQueries.createHitsByProductAgentType(mockOptions),
       weeklyBreakdownQueries.createHitsByPageCategoryAgentType(mockOptions),
     ]);
@@ -276,7 +274,7 @@ describe('CDN Logs Query Builder', () => {
     const nullConfigOptions = {
       ...mockOptions,
       site: {
-        getConfig: () => ({ getCdnLogsConfig: () => null }),
+        getConfig: () => ({ getCdnLogsConfig: () => null, getLlmoDataFolder: () => 'llmo' }),
         getBaseURL: () => 'https://example.com',
       },
     };
@@ -288,41 +286,6 @@ describe('CDN Logs Query Builder', () => {
       expect(query).to.include('test_db');
       expect(query).to.include('test_table');
     }
-  });
-
-  it('creates referral traffic queries with proper filtering', async () => {
-    const referralQueries = await Promise.all([
-      weeklyBreakdownQueries.createReferralTrafficByCountryTopic(mockOptions),
-      weeklyBreakdownQueries.createReferralTrafficByUrlTopic(mockOptions),
-    ]);
-
-    referralQueries.forEach((query) => {
-      expect(query).to.be.a('string');
-      expect(query).to.include('test_db');
-      expect(query).to.include('test_table');
-    });
-
-    const countryTopicQuery = referralQueries[0];
-    expect(countryTopicQuery).to.include('CASE');
-    expect(countryTopicQuery).to.include('REGEXP_EXTRACT');
-
-    const urlTopicQuery = referralQueries[1];
-    expect(urlTopicQuery).to.include('CASE');
-  });
-
-  it('handles unknown domains by returning Other for topic extraction', async () => {
-    const unknownDomainOptions = {
-      ...mockOptions,
-      site: {
-        getBaseURL: () => 'https://unknown-domain.com',
-        getConfig: () => ({ getGroupedURLs: () => [] }),
-      },
-    };
-
-    const query = await weeklyBreakdownQueries
-      .createReferralTrafficByCountryTopic(unknownDomainOptions);
-
-    expect(query).to.include("'Other'");
   });
 
   it('handles single pattern objects for topic extraction', async () => {
@@ -347,56 +310,19 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('test_table');
   });
 
-  it('covers all branches in buildTopicExtractionSQL', async () => {
+  it('handles patterns without name property (extract patterns only)', async () => {
     const extractOnlyOptions = {
       ...mockOptions,
       site: {
-        getConfig: () => ({ getCdnLogsConfig: () => ({ patterns: {} }) }),
+        getConfig: () => ({ getCdnLogsConfig: () => null, getLlmoDataFolder: () => 'llmo' }),
         getBaseURL: () => 'https://bulk.com',
       },
     };
 
-    const extractOnlyQuery = await weeklyBreakdownQueries
-      .createReferralTrafficByCountryTopic(extractOnlyOptions);
-    expect(extractOnlyQuery).to.include('COALESCE');
-    expect(extractOnlyQuery).to.include('REGEXP_EXTRACT');
-
-    const mixedOptions = {
-      ...mockOptions,
-      site: {
-        getConfig: () => ({ getCdnLogsConfig: () => ({ patterns: {} }) }),
-        getBaseURL: () => 'https://business.adobe.com',
-      },
-    };
-
-    const mixedQuery = await weeklyBreakdownQueries
-      .createReferralTrafficByCountryTopic(mixedOptions);
-    expect(mixedQuery).to.include('REGEXP_EXTRACT');
-
-    const namedOnlyOptions = {
-      ...mockOptions,
-      site: {
-        getConfig: () => ({ getCdnLogsConfig: () => ({ patterns: {} }) }),
-        getBaseURL: () => 'https://adobe.com',
-      },
-    };
-
-    const namedOnlyQuery = await weeklyBreakdownQueries
-      .createReferralTrafficByCountryTopic(namedOnlyOptions);
-    expect(namedOnlyQuery).to.include('CASE');
-    expect(namedOnlyQuery).to.include('Acrobat');
-
-    // Test unknown domain - covers lines 118-119
-    const unknownDomainOptions = {
-      ...mockOptions,
-      site: {
-        getConfig: () => ({ getCdnLogsConfig: () => ({ patterns: {} }) }),
-        getBaseURL: () => 'https://unknown-domain.com',
-      },
-    };
-
-    const unknownQuery = await weeklyBreakdownQueries
-      .createReferralTrafficByCountryTopic(unknownDomainOptions);
-    expect(unknownQuery).to.include("'Other'");
+    const query = await weeklyBreakdownQueries.createTopUrls(extractOnlyOptions);
+    expect(query).to.be.a('string');
+    expect(query).to.include('test_db');
+    expect(query).to.include('test_table');
+    expect(query).to.include('NULLIF(REGEXP_EXTRACT');
   });
 });

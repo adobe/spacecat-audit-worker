@@ -41,36 +41,6 @@ const processWeekDataWithAgentType = (data, periods, valueExtractor) => (
   processWeekData(data, periods, valueExtractor)
 );
 
-const processCountryWithFields = (data, additionalFields = []) => {
-  /* c8 ignore next */
-  if (!data?.length) return [];
-
-  const createKey = (row) => {
-    const country = validateCountryCode(row.country);
-    return additionalFields.length === 0
-      /* c8 ignore next */
-      ? country
-      : [country, ...additionalFields.map((field) => row[field] || 'Other')].join('|');
-  };
-
-  return Object.values(
-    data.reduce((acc, row) => {
-      const country = validateCountryCode(row.country);
-      const key = createKey(row);
-
-      acc[key] ??= {
-        country,
-        hits: 0,
-        ...Object.fromEntries(additionalFields.map((field) => [field, row[field] || 'Other'])),
-      };
-
-      /* c8 ignore next */
-      acc[key].hits += Number(row.hits) || 0;
-      return acc;
-    }, {}),
-  ).sort((a, b) => b.hits - a.hits);
-};
-
 export const SHEET_CONFIGS = {
   userAgents: {
     getHeaders: (periods) => {
@@ -106,7 +76,7 @@ export const SHEET_CONFIGS = {
     processData: (data, reportPeriods) => processWeekData(
       data,
       reportPeriods,
-      (row) => [row.country_code || '', row.agent_type || 'Other'],
+      (row) => [validateCountryCode(row.country_code), row.agent_type || 'Other'],
     ),
   },
 
@@ -184,31 +154,6 @@ export const SHEET_CONFIGS = {
       Number(row.success_rate) || 0,
       Number(row.avg_ttfb_ms) || 0,
       row.product || 'Other',
-    ]) || [],
-  },
-
-  referralCountryTopic: {
-    getHeaders: () => ['Country', 'Topic', 'Hits'],
-    headerColor: SHEET_COLORS.DEFAULT,
-    numberColumns: [2],
-    processData: (data) => {
-      const aggregatedData = processCountryWithFields(data, ['topic']);
-      return aggregatedData.map((row) => [
-        row.country,
-        capitalizeFirstLetter(row.topic),
-        row.hits,
-      ]);
-    },
-  },
-
-  referralUrlTopic: {
-    getHeaders: () => ['URL', 'Topic', 'Hits'],
-    headerColor: SHEET_COLORS.DEFAULT,
-    numberColumns: [2],
-    processData: (data) => data?.map((row) => [
-      row.url || '',
-      capitalizeFirstLetter(row.topic) || 'Other',
-      Number(row.hits) || 0,
     ]) || [],
   },
 

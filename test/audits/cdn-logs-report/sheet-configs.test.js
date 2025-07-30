@@ -44,8 +44,6 @@ describe('Sheet Configs', () => {
     });
 
     it('should return correct headers', () => {
-      expect(SHEET_CONFIGS.referralCountryTopic.getHeaders()).to.deep.equal(['Country', 'Topic', 'Hits']);
-      expect(SHEET_CONFIGS.referralUrlTopic.getHeaders()).to.deep.equal(['URL', 'Topic', 'Hits']);
       expect(SHEET_CONFIGS.country.getHeaders(mockPeriods)).to.deep.equal(['Country Code', 'Agent Type', 'Week 1', 'Week 2']);
       expect(SHEET_CONFIGS.userAgents.getHeaders(mockPeriods)).to.deep.equal([
         'Request User Agent', 'Agent Type', 'Status', 'Number of Hits', 'Avg TTFB (ms)',
@@ -67,38 +65,6 @@ describe('Sheet Configs', () => {
   });
 
   describe('Data Processing', () => {
-    describe('Referral Data Processing', () => {
-      it('processes referralCountryTopic with country validation and aggregation', () => {
-        const mockData = [
-          { country: 'US', topic: 'photoshop', hits: 100 },
-          { country: 'invalid', topic: 'photoshop', hits: 50 },
-          { country: 'US', topic: 'photoshop', hits: 75 },
-          { country: 'CA', topic: null, hits: 25 },
-        ];
-
-        const result = SHEET_CONFIGS.referralCountryTopic.processData(mockData);
-
-        expect(result).to.have.length(3);
-        expect(result[0]).to.deep.equal(['US', 'Photoshop', 175]);
-        expect(result[1]).to.deep.equal(['GLOBAL', 'Photoshop', 50]);
-        expect(result[2]).to.deep.equal(['CA', 'Other', 25]);
-      });
-
-      it('processes referralUrlTopic data', () => {
-        const mockData = [
-          { url: '/products/photoshop.html', topic: 'photoshop', hits: 100 },
-          { url: null, topic: null, hits: null },
-        ];
-
-        const result = SHEET_CONFIGS.referralUrlTopic.processData(mockData);
-
-        expect(result).to.deep.equal([
-          ['/products/photoshop.html', 'Photoshop', 100],
-          ['', 'Other', 0],
-        ]);
-      });
-    });
-
     describe('Weekly Data Processing', () => {
       it('processes country data with weekly aggregation', () => {
         const mockData = [
@@ -308,11 +274,6 @@ describe('Sheet Configs', () => {
     });
 
     it('covers all edge cases and fallbacks in processData functions', () => {
-      // Test referralUrlTopic with null topic fallback
-      const referralUrlTopicData = [{ url: 'test', topic: null, hits: 100 }];
-      const referralUrlResult = SHEET_CONFIGS.referralUrlTopic.processData(referralUrlTopicData);
-      expect(referralUrlResult[0][1]).to.equal('Other');
-
       // Test hitsByProductAgentType with null product fallback
       const productData = [{ product: null, agent_type: 'Desktop', hits: 50 }];
       const productResult = SHEET_CONFIGS.hitsByProductAgentType.processData(productData);
@@ -322,11 +283,6 @@ describe('Sheet Configs', () => {
       const categoryData = [{ category: null, agent_type: 'Mobile', hits: 25 }];
       const categoryResult = SHEET_CONFIGS.hitsByPageCategoryAgentType.processData(categoryData);
       expect(categoryResult[0][0]).to.equal('Other');
-
-      // Test capitalizeFirstLetter with empty string fallback
-      const emptyTopicData = [{ url: 'test', topic: '', hits: 100 }];
-      const emptyTopicResult = SHEET_CONFIGS.referralUrlTopic.processData(emptyTopicData);
-      expect(emptyTopicResult[0][1]).to.equal('Other');
 
       // Test capitalizeFirstLetter with empty product fallback
       const emptyProductData = [{ product: '', agent_type: 'Desktop', hits: 50 }];
@@ -342,18 +298,12 @@ describe('Sheet Configs', () => {
       // Test null data fallbacks for data?.map operations
       expect(SHEET_CONFIGS.hitsByProductAgentType.processData(null)).to.deep.equal([]);
       expect(SHEET_CONFIGS.hitsByPageCategoryAgentType.processData(null)).to.deep.equal([]);
-      expect(SHEET_CONFIGS.referralUrlTopic.processData(undefined)).to.deep.equal([]);
 
       // Test capitalizeFirstLetter with non-string types
       const numberProductData = [{ product: 123, agent_type: 'Desktop', hits: 50 }];
       const numberProductResult = SHEET_CONFIGS.hitsByProductAgentType
         .processData(numberProductData);
       expect(numberProductResult[0][0]).to.equal(123);
-
-      const numberTopicData = [{ url: 'test', topic: 123, hits: 100 }];
-      const numberTopicResult = SHEET_CONFIGS.referralUrlTopic
-        .processData(numberTopicData);
-      expect(numberTopicResult[0][1]).to.equal(123);
 
       const missingAgentData = [{ product: 'test', hits: 50 }];
       const missingAgentResult = SHEET_CONFIGS.hitsByProductAgentType.processData(missingAgentData);

@@ -15,6 +15,7 @@ import { weeklyBreakdownQueries } from '../utils/query-builder.js';
 export const REPORT_CONFIGS = {
   agentic: {
     filePrefix: 'agentictraffic',
+    folderSuffix: 'agentic-traffic',
     workbookCreator: 'Spacecat Agentic Traffic Report',
     providers: ['chatgpt', 'perplexity'],
     queries: {
@@ -41,35 +42,6 @@ export const REPORT_CONFIGS = {
         condition: (site) => site && site.getBaseURL().includes('bulk.com'),
         sheet: { name: 'shared-200s_by_category', dataKey: 'success_urls_by_category', type: 'category' },
       },
-    ],
-  },
-  traditional: {
-    filePrefix: 'traditionaltraffic',
-    workbookCreator: 'Spacecat Traditional Traffic Report',
-    providers: ['google', 'bing'],
-    queries: {
-      hits_by_page_category_traditional_search:
-        weeklyBreakdownQueries.createHitsByPageCategoryAgentType,
-    },
-    sheets: [
-      {
-        name: 'shared-hits_by_page_category',
-        dataKey: 'hits_by_page_category_traditional_search',
-        type: 'hitsByPageCategoryAgentType',
-      },
-    ],
-  },
-  referral: {
-    filePrefix: 'referraltraffic-v2',
-    workbookCreator: 'Spacecat Referral Traffic Report',
-    providers: ['chatgpt', 'perplexity'],
-    queries: {
-      referralCountryTopic: weeklyBreakdownQueries.createReferralTrafficByCountryTopic,
-      referralUrlTopic: weeklyBreakdownQueries.createReferralTrafficByUrlTopic,
-    },
-    sheets: [
-      { name: 'shared-hits_by_country_topic', dataKey: 'referralCountryTopic', type: 'referralCountryTopic' },
-      { name: 'shared-hits_by_url_topic', dataKey: 'referralUrlTopic', type: 'referralUrlTopic' },
     ],
   },
 };

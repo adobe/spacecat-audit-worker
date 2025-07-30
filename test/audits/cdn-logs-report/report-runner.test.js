@@ -36,7 +36,7 @@ describe('CDN Logs Report Runner', () => {
       error: sinon.stub(),
     },
     site: {
-      getConfig: () => ({ getCdnLogsConfig: () => ({ outputLocation: 'test-output' }) }),
+      getConfig: () => ({ getLlmoDataFolder: () => ({ outputLocation: 'test-output' }) }),
       getBaseURL: () => 'https://example.com',
     },
     sharepointClient: {
@@ -53,8 +53,6 @@ describe('CDN Logs Report Runner', () => {
         createError503Urls: sinon.stub().resolves('SELECT 503 urls'),
         createSuccessUrlsByCategory: sinon.stub().resolves('SELECT success urls'),
         createTopUrls: sinon.stub().resolves('SELECT top urls'),
-        createReferralTrafficByCountryTopic: sinon.stub().resolves('SELECT referral country'),
-        createReferralTrafficByUrlTopic: sinon.stub().resolves('SELECT referral url'),
         createHitsByProductAgentType: sinon.stub().resolves('SELECT hits by product'),
         createHitsByPageCategoryAgentType: sinon.stub().resolves('SELECT hits by page category'),
       },
@@ -77,8 +75,6 @@ describe('CDN Logs Report Runner', () => {
           createError503Urls: sinon.stub().resolves('SELECT 503 urls'),
           createSuccessUrlsByCategory: sinon.stub().resolves('SELECT success urls'),
           createTopUrls: sinon.stub().resolves('SELECT top urls'),
-          createReferralTrafficByCountryTopic: sinon.stub().resolves('SELECT referral country'),
-          createReferralTrafficByUrlTopic: sinon.stub().resolves('SELECT referral url'),
           createHitsByProductAgentType: sinon.stub().resolves('SELECT hits by product'),
           createHitsByPageCategoryAgentType: sinon.stub().resolves('SELECT hits by page category'),
           ...(overrides.queryBuilder || {}),
@@ -114,8 +110,6 @@ describe('CDN Logs Report Runner', () => {
         createError503Urls: sandbox.stub().resolves('SELECT 503s'),
         createSuccessUrlsByCategory: sandbox.stub().resolves('SELECT success'),
         createTopUrls: sandbox.stub().resolves('SELECT top'),
-        createReferralTrafficByCountryTopic: sandbox.stub().resolves('SELECT ref country'),
-        createReferralTrafficByUrlTopic: sandbox.stub().resolves('SELECT ref url'),
         createHitsByProductAgentType: sandbox.stub().resolves('SELECT product hits'),
         createHitsByPageCategoryAgentType: sandbox.stub().resolves('SELECT category hits'),
       },
@@ -184,7 +178,7 @@ describe('CDN Logs Report Runner', () => {
     const nullConfigParams = {
       ...baseMockParams,
       site: {
-        getConfig: () => ({ getCdnLogsConfig: () => null }),
+        getConfig: () => ({ getCdnLogsConfig: () => null, getLlmoDataFolder: () => 'llmo' }),
         getBaseURL: () => 'https://example.com',
       },
     };
@@ -204,8 +198,6 @@ describe('CDN Logs Report Runner', () => {
           createError503Urls: sandbox.stub().resolves(null),
           createSuccessUrlsByCategory: sandbox.stub().resolves(null),
           createTopUrls: sandbox.stub().resolves(null),
-          createReferralTrafficByCountryTopic: sandbox.stub().resolves(null),
-          createReferralTrafficByUrlTopic: sandbox.stub().resolves(null),
           createHitsByProductAgentType: sandbox.stub().resolves(null),
           createHitsByPageCategoryAgentType: sandbox.stub().resolves(null),
         },

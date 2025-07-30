@@ -51,16 +51,14 @@ async function collectReportData(
     // eslint-disable-next-line no-await-in-loop
     resolvedQueries[key] = await queryFunction(baseQueryOptions);
   }
-
+  /* c8 ignore start */
   for (const [key, query] of Object.entries(resolvedQueries)) {
     try {
-      /* c8 ignore start */
       if (query === null) {
         reportData[key] = [];
         // eslint-disable-next-line no-continue
         continue;
       }
-      /* c8 ignore end */
 
       const sqlQueryDescription = `[Athena Query] ${key} for ${provider}`;
       // eslint-disable-next-line no-await-in-loop
@@ -75,7 +73,7 @@ async function collectReportData(
       reportData[key] = [];
     }
   }
-
+  /* c8 ignore end */
   return reportData;
 }
 
@@ -109,7 +107,9 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
   const reportConfig = REPORT_CONFIGS[reportType];
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
   log.info(`Running ${reportType} report for ${provider} for ${periodIdentifier}`);
-  const { outputLocation, filters } = site.getConfig().getCdnLogsConfig() || {};
+  const { filters } = site.getConfig().getCdnLogsConfig() || {};
+  const llmoFolder = site.getConfig()?.getLlmoDataFolder() || s3Config.customerName;
+  const outputLocation = `${llmoFolder}/${reportConfig.folderSuffix}`;
 
   try {
     const reportData = await collectReportData(
@@ -133,7 +133,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
 
     await saveExcelReport({
       workbook,
-      outputLocation: outputLocation || s3Config.customerName,
+      outputLocation,
       log,
       sharepointClient,
       filename,

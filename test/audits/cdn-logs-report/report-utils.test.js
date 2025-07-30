@@ -33,7 +33,7 @@ describe('CDN Logs Report Utils', () => {
 
   const mockSite = (baseURL, cdnLogsConfig = null) => ({
     getBaseURL: () => baseURL,
-    getConfig: () => ({ getCdnLogsConfig: () => cdnLogsConfig }),
+    getConfig: () => ({ getCdnLogsConfig: () => cdnLogsConfig, getLlmoDataFolder: () => 'llmo' }),
   });
 
   beforeEach(() => {

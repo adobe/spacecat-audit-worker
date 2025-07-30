@@ -249,45 +249,6 @@ async function createTopUrlsQuery(options) {
   });
 }
 
-async function createReferralTrafficByCountryTopicQuery(options) {
-  const {
-    periods, databaseName, tableName, provider, site, siteFilters = [],
-  } = options;
-
-  const lastWeek = periods.weeks[periods.weeks.length - 1];
-  const whereClause = buildWhereClause([
-    buildDateFilter(lastWeek.startDate, lastWeek.endDate),
-    `REGEXP_LIKE(referer, '${provider}')`,
-  ], null, siteFilters);
-
-  return loadSql('referral-traffic-by-country-topic', {
-    countryExtraction: buildCountryExtractionSQL(),
-    topicExtraction: buildTopicExtractionSQL(site),
-    databaseName,
-    tableName,
-    whereClause,
-  });
-}
-
-async function createReferralTrafficByUrlTopicQuery(options) {
-  const {
-    periods, databaseName, tableName, provider, site, siteFilters = [],
-  } = options;
-
-  const lastWeek = periods.weeks[periods.weeks.length - 1];
-  const whereClause = buildWhereClause([
-    buildDateFilter(lastWeek.startDate, lastWeek.endDate),
-    `REGEXP_LIKE(referer, '${provider}')`,
-  ], null, siteFilters);
-
-  return loadSql('referral-traffic-by-url-topic', {
-    topicExtraction: buildTopicExtractionSQL(site),
-    databaseName,
-    tableName,
-    whereClause,
-  });
-}
-
 async function createHitsByProductAgentTypeQuery(options) {
   const {
     periods, databaseName, tableName, provider, site, siteFilters = [],
@@ -337,8 +298,6 @@ export const weeklyBreakdownQueries = {
   createError503Urls: createError503UrlsQuery,
   createSuccessUrlsByCategory: createSuccessUrlsByCategoryQuery,
   createTopUrls: createTopUrlsQuery,
-  createReferralTrafficByCountryTopic: createReferralTrafficByCountryTopicQuery,
-  createReferralTrafficByUrlTopic: createReferralTrafficByUrlTopicQuery,
   createHitsByProductAgentType: createHitsByProductAgentTypeQuery,
   createHitsByPageCategoryAgentType: createHitsByPageCategoryAgentTypeQuery,
 };
