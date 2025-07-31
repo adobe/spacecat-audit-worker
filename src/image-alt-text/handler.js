@@ -286,7 +286,7 @@ export async function processAltTextWithMystique(context) {
       log.info(`[${AUDIT_TYPE}]: Created new opportunity with ID ${altTextOppty.getId()}`);
     }
 
-    // Get top pages for a site (similar to metatags handler)
+    // Get top pages and included URLs
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
     const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
