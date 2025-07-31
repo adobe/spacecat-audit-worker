@@ -40,7 +40,6 @@ function buildWhereClause(conditions = [], llmProviders = null, siteFilters = []
     }
   }
 
-  // Add site-specific filters
   if (siteFilters && siteFilters.length > 0) {
     allConditions.push(siteFilters);
   }

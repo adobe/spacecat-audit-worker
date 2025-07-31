@@ -17,12 +17,8 @@ import {
   populateSuggestion,
   SUGGESTION_TEMPLATES,
 } from './opportunity-data-mapper.js';
+import { normalizeUserAgentToProvider } from './constants/user-agent-patterns.js';
 
-/**
- * Groups error pages by status code categories (404, 403, 5xx)
- * @param {Array} errorPages - Raw error pages from Athena results
- * @returns {Object} Grouped errors by category
- */
 function categorizeErrorsByStatusCode(errorPages) {
   const groups = { 404: [], 403: [], '5xx': [] };
 
@@ -40,33 +36,31 @@ function categorizeErrorsByStatusCode(errorPages) {
   return groups;
 }
 
-/**
- * Aggregates errors by URL, combining requests from different user agents
- * @param {Array} errors - Errors of the same status code type
- * @returns {Array} Aggregated errors by URL
- */
 function consolidateErrorsByUrl(errors) {
   const urlMap = new Map();
 
   errors.forEach((error) => {
-    const key = error.url;
+    // Normalize user agent to clean provider name
+    const normalizedUserAgent = normalizeUserAgentToProvider(error.user_agent);
+    const key = `${error.url}|${normalizedUserAgent}`;
     if (urlMap.has(key)) {
       const existing = urlMap.get(key);
       existing.totalRequests += parseInt(error.total_requests || 0, 10);
-      existing.userAgents.add(error.user_agent);
+      existing.rawUserAgents.add(error.user_agent); // Track all raw UAs for this provider
     } else {
       urlMap.set(key, {
         url: error.url,
         status: error.status,
+        userAgent: normalizedUserAgent, // Clean provider name (e.g., "ChatGPT")
+        rawUserAgents: new Set([error.user_agent]), // Raw UA strings
         totalRequests: parseInt(error.total_requests || 0, 10),
-        userAgents: new Set([error.user_agent]),
       });
     }
   });
 
   return Array.from(urlMap.values()).map((item) => ({
     ...item,
-    userAgents: Array.from(item.userAgents),
+    rawUserAgents: Array.from(item.rawUserAgents),
   }));
 }
 
@@ -99,12 +93,12 @@ async function createOpportunityForErrorCategory(
     null, // No specific URL for this audit type
     { siteId, id: auditId },
     context,
-    (kpiMetrics) => buildOpportunityDataForErrorType(errorType, aggregatedErrors, kpiMetrics),
+    () => buildOpportunityDataForErrorType(errorType, aggregatedErrors),
     'LLM_ERROR_PAGES',
   );
 
   // Build suggestions data
-  const buildKey = (error) => `${error.url}|${error.status}`;
+  const buildKey = (error) => `${error.url}|${error.status}|${error.userAgent}`;
 
   await syncSuggestions({
     opportunity,
@@ -113,7 +107,7 @@ async function createOpportunityForErrorCategory(
     context,
     mapNewSuggestion: (error, index) => {
       // Select template based on status code
-      let template = 'Fix error for {url}'; // Default template
+      let template = 'Fix error for {url} - {userAgent} crawler affected'; // Default template
       if (error.status === '404') {
         template = SUGGESTION_TEMPLATES.NOT_FOUND;
       } else if (error.status === '403') {
@@ -122,7 +116,7 @@ async function createOpportunityForErrorCategory(
         template = SUGGESTION_TEMPLATES.SERVER_ERROR;
       }
 
-      const suggestionText = populateSuggestion(template, error.url, error.status);
+      const suggestionText = populateSuggestion(template, error.url, error.status, error.userAgent);
 
       return {
         opportunityId: opportunity.getId(),
@@ -133,11 +127,9 @@ async function createOpportunityForErrorCategory(
           url: error.url,
           statusCode: error.status,
           totalRequests: error.totalRequests,
-          userAgents: error.userAgents,
+          userAgent: error.userAgent,
+          rawUserAgents: error.rawUserAgents,
           suggestion: suggestionText,
-        },
-        kpiDeltas: {
-          estimatedKPILift: 0, // Could be calculated based on traffic impact
         },
       };
     },

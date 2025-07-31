@@ -55,7 +55,6 @@ export async function validateDatabaseAndTable(athenaClient, s3Config, log) {
   const { tableName, databaseName } = s3Config;
 
   try {
-    // Simple query to validate table exists
     const validationQuery = `SELECT 1 FROM ${databaseName}.${tableName} LIMIT 1`;
     log.info(`Validating database and table: ${databaseName}.${tableName}`);
 

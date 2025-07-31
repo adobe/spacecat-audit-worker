@@ -38,3 +38,30 @@ export function buildLlmUserAgentFilter(providers = null) {
 
   return `REGEXP_LIKE(user_agent, '${patterns.join('|')}')`;
 }
+
+/**
+ * Normalizes raw user agent string to clean provider name
+ * @param {string} rawUserAgent - Raw user agent string like "mozilla chatgtpt sdd"
+ * @returns {string} Clean provider name like "ChatGPT" or original if no match
+ */
+export function normalizeUserAgentToProvider(rawUserAgent) {
+  if (!rawUserAgent) return 'Unknown';
+
+  if (/chatgpt|gptbot|oai-searchbot/i.test(rawUserAgent)) {
+    return 'ChatGPT';
+  }
+  if (/perplexity/i.test(rawUserAgent)) {
+    return 'Perplexity';
+  }
+  if (/claude|anthropic/i.test(rawUserAgent)) {
+    return 'Claude';
+  }
+  if (/gemini/i.test(rawUserAgent)) {
+    return 'Gemini';
+  }
+  if (/copilot/i.test(rawUserAgent)) {
+    return 'Copilot';
+  }
+
+  return rawUserAgent;
+}

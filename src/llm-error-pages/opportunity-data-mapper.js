@@ -19,18 +19,18 @@ export const ERROR_CATEGORY_TYPE = {
 };
 
 export const SUGGESTION_TEMPLATES = {
-  NOT_FOUND: 'Fix broken link: {url} is returning 404 for LLM crawlers',
-  FORBIDDEN: 'Review access permissions for {url} - LLM crawlers are blocked',
-  SERVER_ERROR: 'Fix server error for {url} - returning {statusCode} to LLM crawlers',
+  NOT_FOUND: 'Fix broken link: {url} is returning 404 for {userAgent} crawler',
+  FORBIDDEN: 'Review access permissions for {url} - {userAgent} crawler is blocked',
+  SERVER_ERROR: 'Fix server error for {url} - returning {statusCode} to {userAgent} crawler',
 };
 
-export function buildOpportunityDataForErrorType(errorType, aggregatedData, kpiMetrics = {}) {
+export function buildOpportunityDataForErrorType(errorType, aggregatedData) {
   const totalErrors = aggregatedData.reduce((sum, item) => sum + item.totalRequests, 0);
-  const uniqueUrls = aggregatedData.length;
-  const uniqueUserAgents = [...new Set(aggregatedData.flatMap((item) => item.userAgents))].length;
+  const uniqueUrls = [...new Set(aggregatedData.map((item) => item.url))].length;
+  const uniqueUserAgents = [...new Set(aggregatedData.map((item) => item.userAgent))].length;
 
   return {
-    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BTBD%7D', // TBD - placeholder
+    runbook: '', // TBD
     origin: 'AUTOMATION',
     title: `LLM ${ERROR_CATEGORY_TYPE[errorType]}`,
     description: `URLs returning ${errorType} errors to LLM crawlers`,
@@ -48,14 +48,14 @@ export function buildOpportunityDataForErrorType(errorType, aggregatedData, kpiM
       totalErrors,
       uniqueUrls,
       uniqueUserAgents,
-      ...kpiMetrics,
       dataSources: [DATA_SOURCES.CDN_LOGS],
     },
   };
 }
 
-export function populateSuggestion(template, url, statusCode) {
+export function populateSuggestion(template, url, statusCode, userAgent) {
   return template
     .replace('{url}', url)
-    .replace('{statusCode}', statusCode);
+    .replace('{statusCode}', statusCode)
+    .replace('{userAgent}', userAgent);
 }
