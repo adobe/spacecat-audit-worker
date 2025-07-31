@@ -752,7 +752,6 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
         success: true,
         totalIssues: 0,
         pageUrl,
-        processedRemediations: 0,
         notFoundSuggestionIds: [],
         invalidRemediations: [],
         failedSuggestionIds: [],
