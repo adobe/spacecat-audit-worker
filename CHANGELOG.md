@@ -1,3 +1,10 @@
+# [1.135.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.5...v1.135.0) (2025-07-31)
+
+
+### Features
+
+* support agentic traffic reports for new UI ([#1079](https://github.com/adobe/spacecat-audit-worker/issues/1079)) ([f3c82ef](https://github.com/adobe/spacecat-audit-worker/commit/f3c82efd12c5336f3467588b3b71c8d29eb786ed))
+
 ## [1.134.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.4...v1.134.5) (2025-07-31)
 
 
