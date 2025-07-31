@@ -2856,10 +2856,17 @@ describe('sendMystiqueMessage error handling', () => {
 describe('handleAccessibilityRemediationGuidance', () => {
   let testModule;
   let sandbox;
+  let mockLog;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
     testModule = await import('../../../src/accessibility/utils/generate-individual-opportunities.js');
+    mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
   });
 
   afterEach(() => {
@@ -2901,12 +2908,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       Opportunity: {
         findById: sandbox.stub().resolves(mockOpportunity),
       },
-    };
-
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
     };
 
     const mockContext = {
@@ -2963,12 +2964,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       },
     };
 
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-
     const mockContext = {
       log: mockLog,
       dataAccess: mockDataAccess,
@@ -3008,12 +3003,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       },
     };
 
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-
     const mockContext = {
       log: mockLog,
       dataAccess: mockDataAccess,
@@ -3050,18 +3039,15 @@ describe('handleAccessibilityRemediationGuidance', () => {
           getId: () => 'sugg-different',
         },
       ]),
+      setAuditId: sandbox.stub().resolves(),
+      setUpdatedBy: sandbox.stub().resolves(),
+      save: sandbox.stub().resolves(),
     };
 
     const mockDataAccess = {
       Opportunity: {
         findById: sandbox.stub().resolves(mockOpportunity),
       },
-    };
-
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
     };
 
     const mockContext = {
@@ -3094,6 +3080,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
       success: true,
       totalIssues: 1,
       pageUrl: 'https://example.com/page1',
+      failedSuggestionIds: [],
       notFoundSuggestionIds: ['sugg-789'],
       invalidRemediations: [],
     });
@@ -3151,12 +3138,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       },
     };
 
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-
     const mockContext = {
       log: mockLog,
       dataAccess: mockDataAccess,
@@ -3210,12 +3191,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       },
     };
 
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-
     const mockContext = {
       log: mockLog,
       dataAccess: mockDataAccess,
@@ -3257,13 +3232,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       Opportunity: {
         findById: sandbox.stub().resolves(mockOpportunity),
       },
-    };
-
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      warn: sandbox.stub(),
-      error: sandbox.stub(),
     };
 
     const mockContext = {
@@ -3352,12 +3320,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       },
     };
 
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-
     const mockContext = {
       log: mockLog,
       dataAccess: mockDataAccess,
@@ -3436,12 +3398,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       },
     };
 
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-
     const mockContext = {
       log: mockLog,
       dataAccess: mockDataAccess,
@@ -3513,13 +3469,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       Opportunity: {
         findById: sandbox.stub().resolves(mockOpportunity),
       },
-    };
-
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      warn: sandbox.stub(),
-      error: sandbox.stub(),
     };
 
     const mockContext = {
@@ -3624,13 +3573,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       Opportunity: {
         findById: sandbox.stub().resolves(mockOpportunity),
       },
-    };
-
-    const mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      warn: sandbox.stub(),
-      error: sandbox.stub(),
     };
 
     const mockContext = {
