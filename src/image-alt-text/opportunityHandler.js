@@ -162,6 +162,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   const opportunityData = {
     ...projectedMetrics,
     decorativeImagesCount: detectedImages.decorativeImagesCount,
+    unreachableImagesCount: detectedImages.unreachableImages?.length,
   };
   opportunityData.dataSources = [
     DATA_SOURCES.RUM,
@@ -223,7 +224,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
       el.language = image.language;
       return el;
     },
-  ).filter((image) => image !== null);
+  );
 
   const imageSuggestions = await suggestionsEngine.getImageSuggestions(
     imageUrls,
