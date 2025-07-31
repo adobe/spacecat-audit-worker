@@ -24,11 +24,13 @@ describe('CDN Logs Sheet Configs', () => {
     weeks: [
       {
         weekLabel: 'Week 1',
-        dateRange: { start: '2025-01-01', end: '2025-01-07' },
+        startDate: new Date('2025-01-01'),
+        endDate: new Date('2025-01-07'),
       },
       {
         weekLabel: 'Week 2',
-        dateRange: { start: '2025-01-08', end: '2025-01-14' },
+        startDate: new Date('2025-01-08'),
+        endDate: new Date('2025-01-14'),
       },
     ],
     columns: ['Week 1', 'Week 2'],

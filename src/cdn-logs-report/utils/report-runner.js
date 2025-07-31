@@ -11,7 +11,6 @@
  */
 
 import {
-  createDateRange,
   generatePeriodIdentifier,
   generateReportingPeriods,
   buildSiteFilters,
@@ -79,33 +78,20 @@ async function collectReportData(
 
 export async function runReport(athenaClient, s3Config, log, options = {}) {
   const {
-    startDate,
-    endDate,
     provider,
     site,
     sharepointClient,
     reportType = 'agentic',
   } = options;
 
-  let periodStart;
-  let periodEnd;
-  let referenceDate;
-
-  if (startDate && endDate) {
-    const parsed = createDateRange(startDate, endDate);
-    periodStart = parsed.startDate;
-    periodEnd = parsed.endDate;
-    referenceDate = periodEnd;
-  } else {
-    referenceDate = new Date();
-    const periods = generateReportingPeriods(referenceDate);
-    const week = periods.weeks[0];
-    periodStart = week.startDate;
-    periodEnd = week.endDate;
-  }
-
+  const referenceDate = new Date();
+  const periods = generateReportingPeriods(referenceDate);
+  const week = periods.weeks[0];
+  const periodStart = week.startDate;
+  const periodEnd = week.endDate;
   const reportConfig = REPORT_CONFIGS[reportType];
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
+
   log.info(`Running ${reportType} report for ${provider} for ${periodIdentifier}`);
   const { filters } = site.getConfig().getCdnLogsConfig() || {};
   const llmoFolder = site.getConfig()?.getLlmoDataFolder() || s3Config.customerName;
@@ -126,7 +112,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
     const filename = `${reportConfig.filePrefix}-${provider}-${periodIdentifier}.xlsx`;
 
     const workbook = await createExcelReport(reportData, reportConfig, {
-      customEndDate: referenceDate.toISOString().split('T')[0],
+      referenceDate: referenceDate.toISOString().split('T')[0],
       filename,
       site,
     });
@@ -191,35 +177,6 @@ export async function runWeeklyReport({
       /* c8 ignore start */
     } catch (error) {
       log.error(`Failed to generate weekly ${reportType} reports: ${error.message}`);
-    }
-    /* c8 ignore end */
-  }
-}
-
-export async function runCustomDateRangeReport({
-  athenaClient,
-  startDateStr,
-  endDateStr,
-  s3Config,
-  log,
-  site,
-  sharepointClient,
-}) {
-  for (const reportType of REPORT_TYPES) {
-    try {
-      log.info(`Starting custom date range ${reportType} reports...`);
-      // eslint-disable-next-line no-await-in-loop
-      await runReportsForAllProviders(athenaClient, s3Config, log, {
-        startDate: startDateStr,
-        endDate: endDateStr,
-        site,
-        sharepointClient,
-        reportType,
-      });
-      log.info(`Successfully completed custom date range ${reportType} reports`);
-      /* c8 ignore start */
-    } catch (error) {
-      log.error(`Failed to generate custom date range ${reportType} reports: ${error.message}`);
     }
     /* c8 ignore end */
   }

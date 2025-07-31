@@ -111,22 +111,6 @@ describe('CDN Logs Report Runner', () => {
       expect(mockSaveExcelReport).to.have.been.called;
     });
 
-    it('runs report with custom date range', async () => {
-      const options = {
-        startDate: '2025-01-01',
-        endDate: '2025-01-07',
-        provider: 'perplexity',
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-        reportType: 'agentic',
-      };
-
-      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, options);
-
-      expect(mockReportUtils.createDateRange).to.have.been.calledWith('2025-01-01', '2025-01-07');
-      expect(mockLog.info).to.have.been.calledWith('Running agentic report for perplexity for 2025-W01');
-    });
-
     it('handles query execution errors gracefully', async () => {
       mockAthenaClient.query.rejects(new Error('Query failed'));
 
@@ -241,39 +225,6 @@ describe('CDN Logs Report Runner', () => {
       });
 
       expect(mockLog.error).to.have.been.calledWith('agentic report generation failed: Weekly report failed');
-    });
-  });
-
-  describe('runCustomDateRangeReport', () => {
-    it('runs custom date range reports for all report types', async () => {
-      await reportRunner.runCustomDateRangeReport({
-        athenaClient: mockAthenaClient,
-        startDateStr: '2025-01-01',
-        endDateStr: '2025-01-07',
-        s3Config: mockS3Config,
-        log: mockLog,
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-      });
-
-      expect(mockLog.info).to.have.been.calledWith('Starting custom date range agentic reports...');
-      expect(mockLog.info).to.have.been.calledWith('Successfully completed custom date range agentic reports');
-    });
-
-    it('handles custom date range failures gracefully', async () => {
-      mockCreateExcelReport.rejects(new Error('Custom range failed'));
-
-      await reportRunner.runCustomDateRangeReport({
-        athenaClient: mockAthenaClient,
-        startDateStr: '2025-01-01',
-        endDateStr: '2025-01-07',
-        s3Config: mockS3Config,
-        log: mockLog,
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-      });
-
-      expect(mockLog.error).to.have.been.calledWith('agentic report generation failed: Custom range failed');
     });
   });
 });

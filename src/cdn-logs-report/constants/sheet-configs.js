@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { format } from 'date-fns';
 import { validateCountryCode } from '../utils/report-utils.js';
 
 const SHEET_COLORS = {
@@ -77,7 +78,7 @@ export const SHEET_CONFIGS = {
         'Status',
         'Number of Hits',
         'Avg TTFB (ms)',
-        `Interval: Last Week (${lastWeek.dateRange.start} - ${lastWeek.dateRange.end})`,
+        `Interval: Last Week (${format(lastWeek.startDate, 'yyyy-MM-dd')} - ${format(lastWeek.endDate, 'yyyy-MM-dd')})`,
       ];
     },
     headerColor: SHEET_COLORS.DEFAULT,
