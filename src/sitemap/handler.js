@@ -446,6 +446,7 @@ export async function findSitemap(inputUrl) {
       reasons: [{ value: 'Sitemaps found and checked.' }],
       url: inputUrl,
       details: { issues: notOkPagesFromSitemap },
+      extractedPaths,
     };
   }
 
