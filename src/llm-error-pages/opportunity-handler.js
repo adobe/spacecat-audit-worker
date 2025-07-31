@@ -230,23 +230,38 @@ export async function generateOpportunities(processedResults, message, context) 
 
         log.info(`${validatedUrls.length}/${sortedErrors.length} URLs passed validation for ${errorType}`);
 
-        // Step 2c: Get AI suggestions for validated URLs
-        log.info(`Processing AI suggestions for ${validatedUrls.length} validated URLs (${errorType})`);
-        const aiSuggestions = await processBatchedAiSuggestions(validatedUrls, siteId, context);
+        let enhancedErrors;
 
-        // Step 2d: Map AI suggestions back to error objects
-        const enhancedErrors = mapAiSuggestionsToErrors(aiSuggestions, validatedUrls);
+        // Step 2c: AI processing (only for 404 errors)
+        if (errorType === '404') {
+          log.info(`Processing AI suggestions for ${validatedUrls.length} validated 404 URLs`);
+          const aiSuggestions = await processBatchedAiSuggestions(validatedUrls, siteId, context);
 
-        const aiGeneratedCount = enhancedErrors.filter(
-          (e) => e.hasAiSuggestion && !e.aiSuggestion?.is_fallback,
-        ).length;
-        const fallbackCount = enhancedErrors.filter(
-          (e) => !e.hasAiSuggestion || e.aiSuggestion?.is_fallback,
-        ).length;
+          // Map AI suggestions back to error objects (only URLs with successful AI suggestions)
+          enhancedErrors = mapAiSuggestionsToErrors(aiSuggestions, validatedUrls);
 
-        log.info(`Enhanced ${enhancedErrors.length} errors for ${errorType}: ${aiGeneratedCount} AI-generated, ${fallbackCount} template fallbacks`);
+          const skippedCount = validatedUrls.length - enhancedErrors.length;
 
-        // Step 2e: Create opportunity with enhanced suggestions
+          log.info(`AI processing complete for 404s: ${enhancedErrors.length} URLs with AI suggestions, ${skippedCount} URLs skipped (AI failed)`);
+
+          if (skippedCount > 0) {
+            log.warn(`${skippedCount} 404 URLs will not get suggestions - AI processing failed and no fallbacks for 404s`);
+          }
+        } else {
+          // Step 2c: Template-only processing (for 403 and 5xx errors)
+          log.info(`Creating template suggestions for ${validatedUrls.length} validated ${errorType} URLs (no AI processing)`);
+
+          enhancedErrors = validatedUrls.map((error) => ({
+            ...error,
+            hasAiSuggestion: false,
+            aiSuggestion: null,
+            suggestionType: 'TEMPLATE',
+          }));
+
+          log.info(`Created ${enhancedErrors.length} template suggestions for ${errorType} errors`);
+        }
+
+        // Step 2d: Create opportunity with enhanced suggestions
         await createOpportunityForErrorCategory(
           errorType,
           enhancedErrors,

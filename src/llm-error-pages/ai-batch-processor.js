@@ -115,7 +115,7 @@ async function sendBatchToMystiqueAndWait(sqsMessage, timeout, log) {
       setTimeout(resolve, 2000);
     });
 
-    // Mock response structure
+    // Mock response structure for 404 AI suggestions
     const mockResponse = {
       batch_id: sqsMessage.batch_id,
       processed_count: sqsMessage.broken_urls.length,
@@ -123,10 +123,11 @@ async function sendBatchToMystiqueAndWait(sqsMessage, timeout, log) {
         broken_url: brokenUrl.url,
         user_agent: brokenUrl.user_agent,
         suggested_urls: [
-          '/suggested-page-1',
-          '/suggested-page-2',
+          '/suggested-alternative-1',
+          '/suggested-alternative-2',
+          '/related-content',
         ],
-        aiRationale: `AI analysis for ${brokenUrl.url} with ${brokenUrl.user_agent}: This URL appears to be broken due to page restructuring. Based on content analysis, we recommend redirecting to the suggested alternatives.`,
+        aiRationale: `AI analysis for ${brokenUrl.url} with ${brokenUrl.user_agent}: This 404 error appears to be caused by page restructuring or URL changes. Based on site content analysis and user intent, these alternative pages provide similar value and should be considered for redirects.`,
         confidence_score: 0.75 + (Math.random() * 0.2), // Random between 0.75-0.95
         processing_time_ms: 1500 + Math.floor(Math.random() * 1000),
       })),
@@ -143,25 +144,9 @@ async function sendBatchToMystiqueAndWait(sqsMessage, timeout, log) {
   }
 }
 
-/**
- * Creates fallback template suggestions when AI processing fails
- * @param {Array} urls - Array of URL objects that failed AI processing
- * @param {Object} log - Logger instance
- * @returns {Array} - Array of fallback suggestions
- */
-function createFallbackSuggestions(urls, log) {
-  log.warn(`Creating fallback template suggestions for ${urls.length} URLs due to AI processing failure`);
-
-  return urls.map((error) => ({
-    broken_url: error.url,
-    user_agent: error.userAgent,
-    suggested_urls: [], // No suggested URLs for fallback
-    aiRationale: `Template suggestion: ${error.url} is returning ${error.status} errors for ${error.userAgent} crawler. Manual review and fixing is recommended.`,
-    confidence_score: 0.5, // Lower confidence for template suggestions
-    processing_time_ms: 0,
-    is_fallback: true,
-  }));
-}
+// Note: Fallback suggestions removed for 404s
+// If AI processing fails, 404 URLs are skipped entirely
+// since the value is in the AI-generated alternative URLs
 
 /**
  * Processes validated URLs through AI in batches
@@ -216,10 +201,10 @@ export async function processBatchedAiSuggestions(validatedUrls, siteId, context
         log.info(`Batch ${concurrentBatches[index].batch_id} completed successfully (${result.value.processed_count} suggestions)`);
       } else {
         log.error(`Batch ${concurrentBatches[index].batch_id} failed: ${result.reason}`);
-        // Add fallback template suggestions for failed batch
+        // For 404s, no fallback suggestions - skip failed URLs
         const failedBatch = concurrentBatches[index];
-        const fallbackSuggestions = createFallbackSuggestions(failedBatch.urls, log);
-        groupSuggestions.push(...fallbackSuggestions);
+        log.warn(`Skipping ${failedBatch.urls.length} URLs from failed batch - no AI suggestions available for 404s`);
+        // Note: Failed 404 URLs will not get any suggestions, which is correct business logic
       }
     });
 
@@ -242,9 +227,11 @@ export async function processBatchedAiSuggestions(validatedUrls, siteId, context
 
 /**
  * Maps AI suggestions back to error objects for opportunity creation
+ * Only returns URLs that successfully received AI suggestions
  * @param {Array} aiSuggestions - Array of AI suggestion objects
  * @param {Array} validatedUrls - Original validated URL objects
  * @returns {Array} - Enhanced error objects with AI suggestions
+ *                   (URLs without AI suggestions are excluded)
  */
 export function mapAiSuggestionsToErrors(aiSuggestions, validatedUrls) {
   // Create a lookup map for AI suggestions
@@ -254,16 +241,24 @@ export function mapAiSuggestionsToErrors(aiSuggestions, validatedUrls) {
     suggestionsMap.set(key, suggestion);
   });
 
-  // Enhance validated URLs with AI suggestions
-  return validatedUrls.map((error) => {
-    const key = `${error.url}|${error.userAgent}`;
-    const aiSuggestion = suggestionsMap.get(key);
+  // Only return URLs that have AI suggestions (filter out failed ones)
+  const enhancedErrors = validatedUrls
+    .map((error) => {
+      const key = `${error.url}|${error.userAgent}`;
+      const aiSuggestion = suggestionsMap.get(key);
 
-    return {
-      ...error,
-      aiSuggestion: aiSuggestion || null,
-      hasAiSuggestion: !!aiSuggestion,
-      suggestionType: aiSuggestion?.is_fallback ? 'FALLBACK' : 'AI_GENERATED',
-    };
-  });
+      if (!aiSuggestion) {
+        return null; // No AI suggestion available - will be filtered out
+      }
+
+      return {
+        ...error,
+        aiSuggestion,
+        hasAiSuggestion: true,
+        suggestionType: 'AI_GENERATED',
+      };
+    })
+    .filter((error) => error !== null); // Remove URLs without AI suggestions
+
+  return enhancedErrors;
 }

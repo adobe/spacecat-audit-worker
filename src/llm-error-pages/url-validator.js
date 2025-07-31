@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { fetch } from '@adobe/spacecat-shared-http-utils';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
 /**
  * Normal browser user agent for baseline validation
@@ -27,28 +27,22 @@ const VALIDATION_TIMEOUT = 10000; // 10 seconds
 const MAX_CONCURRENT_VALIDATIONS = 20;
 
 /**
- * Validates a single URL with both baseline and LLM user agent
- * @param {Object} error - Error object with url, userAgent, rawUserAgents
+ * Validates a single URL with targeted validation based on error type
+ * @param {Object} error - Error object with url, userAgent, rawUserAgents, status
  * @param {Object} log - Logger instance
  * @returns {Promise<Object|null>} - Validated error object or null if invalid
  */
 async function validateSingleUrl(error, log) {
-  const { url, userAgent, rawUserAgents } = error;
+  const {
+    url, userAgent, rawUserAgents, status,
+  } = error;
 
   try {
-    // Step 1: Test with baseline (normal browser) user agent
-    const baselineResponse = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'User-Agent': BASELINE_USER_AGENT,
-      },
-      timeout: VALIDATION_TIMEOUT,
-    });
-
-    const baselineStatus = baselineResponse.status;
-
-    // Step 2: Test with one of the raw LLM user agents
+    let baselineStatus = null;
+    let llmStatus = null;
     const testUserAgent = rawUserAgents[0]; // Use first raw user agent
+
+    // Step 1: Test with LLM user agent (for all error types)
     const llmResponse = await fetch(url, {
       method: 'GET',
       headers: {
@@ -57,36 +51,48 @@ async function validateSingleUrl(error, log) {
       timeout: VALIDATION_TIMEOUT,
     });
 
-    const llmStatus = llmResponse.status;
+    llmStatus = llmResponse.status;
 
-    // Step 3: Apply validation rules
+    // Step 2: Baseline validation (only for 403 errors)
+    if (status === '403') {
+      const baselineResponse = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': BASELINE_USER_AGENT,
+        },
+        timeout: VALIDATION_TIMEOUT,
+      });
 
-    // Rule 1: If URL returns 200 with baseline, it's not actually broken
-    if (baselineStatus === 200) {
-      log.debug(`URL ${url} returns 200 with baseline browser - removing from suggestions`);
-      return null;
+      baselineStatus = baselineResponse.status;
+
+      // 403-specific rule: Remove if both baseline and LLM return 403 (universal blocking)
+      if (baselineStatus === 403 && llmStatus === 403) {
+        log.debug(`URL ${url} returns 403 for both baseline and LLM - universal blocking, removing`);
+        return null;
+      }
+
+      // 403-specific rule: Remove if baseline returns 200 (false positive)
+      if (baselineStatus === 200) {
+        log.debug(`URL ${url} returns 200 with baseline browser - 403 is crawler-specific, removing`);
+        return null;
+      }
     }
 
-    // Rule 2: For 403 errors, if both baseline and LLM return 403, it's universal blocking
-    if (error.status === '403' && baselineStatus === 403 && llmStatus === 403) {
-      log.debug(`URL ${url} returns 403 for both baseline and LLM - universal blocking, removing`);
-      return null;
-    }
-
-    // Rule 3: If LLM status doesn't match expected status, remove it
-    if (llmStatus.toString() !== error.status) {
-      log.debug(`URL ${url} status mismatch - expected ${error.status}, got ${llmStatus} - removing`);
+    // Step 3: Status consistency check (for all error types)
+    if (llmStatus.toString() !== status) {
+      log.debug(`URL ${url} status mismatch - expected ${status}, got ${llmStatus} - removing`);
       return null;
     }
 
     // URL passed validation
-    log.debug(`URL ${url} validated successfully - ${userAgent} status ${error.status}`);
+    log.debug(`URL ${url} validated successfully - ${userAgent} status ${status}`);
     return {
       ...error,
       validatedAt: new Date().toISOString(),
       baselineStatus,
       llmStatus,
       testUserAgent,
+      validationType: status === '403' ? 'BASELINE_CHECKED' : 'CONSISTENCY_CHECKED',
     };
   } catch (validationError) {
     // Network errors, timeouts, etc. - still include in suggestions
@@ -95,6 +101,7 @@ async function validateSingleUrl(error, log) {
       ...error,
       validatedAt: new Date().toISOString(),
       validationError: validationError.message,
+      validationType: 'ERROR_FALLBACK',
     };
   }
 }

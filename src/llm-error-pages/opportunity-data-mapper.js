@@ -19,7 +19,6 @@ export const ERROR_CATEGORY_TYPE = {
 };
 
 export const SUGGESTION_TEMPLATES = {
-  NOT_FOUND: 'Fix broken link: {url} is returning 404 for {userAgent} crawler',
   FORBIDDEN: 'Review access permissions for {url} - {userAgent} crawler is blocked',
   SERVER_ERROR: 'Fix server error for {url} - returning {statusCode} to {userAgent} crawler',
 };
