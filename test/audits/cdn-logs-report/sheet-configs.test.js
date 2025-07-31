@@ -38,14 +38,13 @@ describe('CDN Logs Sheet Configs', () => {
 
   describe('userAgents sheet config', () => {
     it('generates correct headers', () => {
-      const headers = SHEET_CONFIGS.userAgents.getHeaders(mockPeriods);
+      const headers = SHEET_CONFIGS.userAgents.getHeaders();
       expect(headers).to.deep.equal([
         'Request User Agent',
         'Agent Type',
         'Status',
         'Number of Hits',
         'Avg TTFB (ms)',
-        'Interval: Last Week (2025-01-08 - 2025-01-14)',
       ]);
     });
 
@@ -69,8 +68,8 @@ describe('CDN Logs Sheet Configs', () => {
 
       const result = SHEET_CONFIGS.userAgents.processData(mockData);
       expect(result).to.deep.equal([
-        ['chrome/100', 'browser', 200, 150, 250, ''],
-        ['Unknown', 'Other', 'All', 0, 0, ''],
+        ['chrome/100', 'browser', 200, 150, 250],
+        ['Unknown', 'Other', 'All', 0, 0],
       ]);
     });
 

@@ -112,7 +112,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
     const filename = `${reportConfig.filePrefix}-${provider}-${periodIdentifier}.xlsx`;
 
     const workbook = await createExcelReport(reportData, reportConfig, {
-      referenceDate: referenceDate.toISOString().split('T')[0],
+      referenceDate,
       filename,
       site,
     });

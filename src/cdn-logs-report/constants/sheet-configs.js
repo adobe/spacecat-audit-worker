@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { format } from 'date-fns';
 import { validateCountryCode } from '../utils/report-utils.js';
 
 const SHEET_COLORS = {
@@ -70,17 +69,13 @@ const processCountryWeekData = (data, periods) => {
 
 export const SHEET_CONFIGS = {
   userAgents: {
-    getHeaders: (periods) => {
-      const lastWeek = periods.weeks[periods.weeks.length - 1];
-      return [
-        'Request User Agent',
-        'Agent Type',
-        'Status',
-        'Number of Hits',
-        'Avg TTFB (ms)',
-        `Interval: Last Week (${format(lastWeek.startDate, 'yyyy-MM-dd')} - ${format(lastWeek.endDate, 'yyyy-MM-dd')})`,
-      ];
-    },
+    getHeaders: () => [
+      'Request User Agent',
+      'Agent Type',
+      'Status',
+      'Number of Hits',
+      'Avg TTFB (ms)',
+    ],
     headerColor: SHEET_COLORS.DEFAULT,
     numberColumns: [3, 4],
     processData: (data) => data?.map((row) => [
@@ -90,7 +85,6 @@ export const SHEET_CONFIGS = {
       Number(row.status) || 'All',
       Number(row.total_requests) || 0,
       Number(row.avg_ttfb_ms) || 0,
-      '',
     ]) || [],
   },
 
