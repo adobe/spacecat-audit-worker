@@ -95,6 +95,11 @@ describe('audit and send scraping step', () => {
           create: sinon.stub(),
         },
       },
+      dataAccess: {
+        SiteTopForm: {
+          allBySiteId: sinon.stub().resolves([]),
+        },
+      },
       auditUrl: 'https://example.com',
       formsOppty: {
         getId: () => 'opportunity-id',
@@ -179,6 +184,166 @@ describe('audit and send scraping step', () => {
     context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
     const result = await runAuditAndSendUrlsForScrapingStep(context);
     expect(result.urls.length).to.equal(10);
+  });
+
+  it('should include top forms without form source and sort by pageviews when less than 10 urls', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          formsource: 'form.contact',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 1000 },
+        },
+        {
+          url: 'https://example.com/form2',
+          formsource: 'form.newsletter',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 2000 },
+        },
+        {
+          url: 'https://example.com/form3',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 500 },
+        },
+      ],
+    };
+
+    // Create mock top forms - some with and without form sources
+    const mockTopForms = [
+      {
+        getUrl: () => 'https://example.com/top-form1',
+        getFormSource: () => null, // No form source - should be included
+      },
+      {
+        getUrl: () => 'https://example.com/top-form2',
+        getFormSource: () => 'form.signup', // Has form source - should not be included
+      },
+      {
+        getUrl: () => 'https://example.com/form1', // Existing URL
+        getFormSource: () => null,
+      },
+    ];
+
+    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves(mockTopForms);
+
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+
+    expect(context.dataAccess.SiteTopForm.allBySiteId).to.have.been.calledWith(siteId);
+
+    // Should have URLs from opportunities + top forms without form source + sorted form vitals
+    expect(result.urls.length).to.be.greaterThan(3);
+
+    // Check that top form without form source was included
+    const topFormUrl = result.urls.find((url) => url.url === 'https://example.com/top-form1');
+    expect(topFormUrl).to.exist;
+
+    // Check that form sources are properly filtered and included
+    const form1 = result.urls.find((url) => url.url === 'https://example.com/form1');
+    expect(form1).to.exist;
+    expect(form1.formSources).to.deep.equal(['form.contact']);
+
+    const form2 = result.urls.find((url) => url.url === 'https://example.com/form2');
+    expect(form2).to.exist;
+    expect(form2.formSources).to.deep.equal(['form.newsletter']);
+
+    // Form3 should not have formSources property since it has no formsource
+    const form3 = result.urls.find((url) => url.url === 'https://example.com/form3');
+    expect(form3).to.exist;
+    expect(form3.formSources).to.be.undefined;
+  });
+
+  it('should handle empty form vitals and only use top forms without form source', async () => {
+    const formVitals = {
+      'form-vitals': [],
+    };
+
+    const mockTopForms = [
+      {
+        getUrl: () => 'https://example.com/top-form1',
+        getFormSource: () => null, // No form source - should be included
+      },
+      {
+        getUrl: () => 'https://example.com/top-form2',
+        getFormSource: () => 'form.signup', // Has form source - should not be included
+      },
+    ];
+
+    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves(mockTopForms);
+
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+
+    expect(result.urls.length).to.equal(1);
+    expect(result.urls[0].url).to.equal('https://example.com/top-form1');
+    expect(result.urls[0].formSources).to.be.undefined;
+  });
+
+  it('should properly handle form sources filtering from formVitals', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          formsource: 'form.contact',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 1000 },
+        },
+        {
+          url: 'https://example.com/form1', // Same URL, different formsource
+          formsource: 'form.newsletter',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 1000 },
+        },
+        {
+          url: 'https://example.com/form2',
+          // No formsource property
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 500 },
+        },
+        {
+          url: 'https://example.com/form3',
+          // No formsource property
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 300 },
+        },
+      ],
+    };
+
+    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves([]);
+
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+
+    // Check form1 has both form sources
+    const form1 = result.urls.find((url) => url.url === 'https://example.com/form1');
+    expect(form1).to.exist;
+    expect(form1.formSources).to.include('form.contact');
+    expect(form1.formSources).to.include('form.newsletter');
+    expect(form1.formSources.length).to.equal(2);
+
+    // Check form2 and form3 don't have formSources property
+    const form2 = result.urls.find((url) => url.url === 'https://example.com/form2');
+    expect(form2).to.exist;
+    expect(form2.formSources).to.be.undefined;
+
+    const form3 = result.urls.find((url) => url.url === 'https://example.com/form3');
+    expect(form3).to.exist;
+    expect(form3.formSources).to.be.undefined;
   });
 });
 
@@ -330,7 +495,7 @@ describe('send a11y urls for scraping step', () => {
     const result = await sendA11yUrlsForScrapingStep(context);
 
     expect(context.dataAccess.SiteTopForm.allBySiteId).to.have.been.calledWith(siteId);
-    expect(result.urls).to.have.length(3); // Original 1 + 2 new URLs
+    expect(result.urls).to.have.length(2); // Original 1 + 1 new URL (only forms with form sources)
 
     // Check that new URLs are added
     const contactFormUrl = result.urls.find((url) => url.url === 'https://example.com/contact-form');
@@ -343,10 +508,9 @@ describe('send a11y urls for scraping step', () => {
     expect(newsletterUrl.formSources).to.include('#container-1 form.newsletter'); // Original
     expect(newsletterUrl.formSources).to.include('form.newsletter-signup'); // Merged
 
-    // Check URL without form source
+    // Check URL without form source should not be included
     const subscribeUrl = result.urls.find((url) => url.url === 'https://example.com/subscribe');
-    expect(subscribeUrl).to.exist;
-    expect(subscribeUrl.formSources).to.be.undefined;
+    expect(subscribeUrl).to.not.exist;
   });
 
   it('should work correctly when no top forms are found', async () => {
@@ -505,6 +669,62 @@ describe('send a11y urls for scraping step', () => {
     expect(signupUrl.formSources).to.include('.signup-form'); // Original form source
     expect(signupUrl.formSources).to.include('#signup-modal'); // Added form source
     expect(signupUrl.formSources).to.have.length(2); // Should have both
+  });
+
+  it('should only add top forms that have form sources', async () => {
+    // Reset and setup fresh mocks for this test
+    context.s3Client.send.reset();
+    context.dataAccess.SiteTopForm.allBySiteId.reset();
+
+    // Mock empty scraped data
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [],
+      IsTruncated: false,
+    });
+
+    // Create mock top forms - mix of forms with and without form sources
+    const mockTopForms = [
+      {
+        getUrl: () => 'https://example.com/form-with-source',
+        getFormSource: () => 'form.contact', // Has form source - should be included
+      },
+      {
+        getUrl: () => 'https://example.com/form-without-source',
+        getFormSource: () => null, // No form source - should NOT be included
+      },
+      {
+        getUrl: () => 'https://example.com/another-form-with-source',
+        getFormSource: () => 'form.newsletter', // Has form source - should be included
+      },
+      {
+        getUrl: () => 'https://example.com/empty-form-source',
+        getFormSource: () => '', // Empty form source - should NOT be included
+      },
+    ];
+
+    // Mock the SiteTopForm.allBySiteId to return the mock data
+    context.dataAccess.SiteTopForm.allBySiteId.resolves(mockTopForms);
+
+    const result = await sendA11yUrlsForScrapingStep(context);
+
+    expect(context.dataAccess.SiteTopForm.allBySiteId).to.have.been.calledWith(siteId);
+    expect(result.urls).to.have.length(2); // Only forms with form sources
+
+    // Check that only forms with form sources are included
+    const formWithSource = result.urls.find((url) => url.url === 'https://example.com/form-with-source');
+    expect(formWithSource).to.exist;
+    expect(formWithSource.formSources).to.deep.equal(['form.contact']);
+
+    const anotherFormWithSource = result.urls.find((url) => url.url === 'https://example.com/another-form-with-source');
+    expect(anotherFormWithSource).to.exist;
+    expect(anotherFormWithSource.formSources).to.deep.equal(['form.newsletter']);
+
+    // Check that forms without form sources are NOT included
+    const formWithoutSource = result.urls.find((url) => url.url === 'https://example.com/form-without-source');
+    expect(formWithoutSource).to.not.exist;
+
+    const emptyFormSource = result.urls.find((url) => url.url === 'https://example.com/empty-form-source');
+    expect(emptyFormSource).to.not.exist;
   });
 });
 

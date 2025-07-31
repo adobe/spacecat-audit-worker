@@ -52,8 +52,11 @@ export async function formsAuditRunner(auditUrl, context) {
 
 export async function runAuditAndSendUrlsForScrapingStep(context) {
   const {
-    site, log, finalUrl,
+    site, log, finalUrl, dataAccess,
   } = context;
+
+  const { SiteTopForm } = dataAccess;
+  const topForms = await SiteTopForm.allBySiteId(site.getId());
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit`);
   const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
@@ -64,6 +67,17 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   const uniqueUrls = new Set();
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
+  }
+
+  // Add topFormUrls that don't have formSource
+  for (const topForm of topForms) {
+    const url = topForm.getUrl();
+    const formSource = topForm.getFormSource();
+
+    // Add URL if it doesn't have a formSource
+    if (!formSource) {
+      uniqueUrls.add(url);
+    }
   }
 
   if (uniqueUrls.size < 10) {
@@ -124,23 +138,22 @@ export async function sendA11yUrlsForScrapingStep(context) {
     const url = topForm.getUrl();
     const formSource = topForm.getFormSource();
 
-    if (!existingUrls.has(url)) {
-      const formSources = formSource ? [formSource] : [];
+    // Only add forms that have a formSource
+    if (formSource && !existingUrls.has(url)) {
+      const formSources = [formSource];
       urlsData.push({
         url,
-        ...(formSources.length > 0 && { formSources }),
+        formSources,
       });
       existingUrls.add(url);
-    } else {
+    } else if (formSource && existingUrls.has(url)) {
       // URL exists, merge form sources if needed
       const existingItem = urlsData.find((item) => item.url === url);
-      if (existingItem && formSource) {
-        if (!existingItem.formSources.includes(formSource)) {
-          if (existingItem.formSources.length === 1 && existingItem.formSources[0] === 'form') {
-            existingItem.formSources = [formSource];
-          } else {
-            existingItem.formSources.push(formSource);
-          }
+      if (existingItem && !existingItem.formSources.includes(formSource)) {
+        if (existingItem.formSources.length === 1 && existingItem.formSources[0] === 'form') {
+          existingItem.formSources = [formSource];
+        } else {
+          existingItem.formSources.push(formSource);
         }
       }
     }

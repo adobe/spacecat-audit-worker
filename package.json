@@ -75,7 +75,7 @@
     "@adobe/helix-universal-logger": "3.0.27",
     "@adobe/spacecat-helix-content-sdk": "1.4.17",
     "@adobe/spacecat-shared-ahrefs-client": "1.9.0",
-    "@adobe/spacecat-shared-data-access": "2.36.0",
+    "@adobe/spacecat-shared-data-access": "https://gitpkg.now.sh/adobe/spacecat-shared/packages/spacecat-shared-data-access?2b75818a600b476292e0add99ed9e5296106d598",
     "@adobe/spacecat-shared-google-client": "1.4.34",
     "@adobe/spacecat-shared-gpt-client": "1.5.15",
     "@adobe/spacecat-shared-http-utils": "1.14.3",
