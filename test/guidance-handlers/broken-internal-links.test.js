@@ -17,7 +17,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import internalLinksGuidanceHandler from '../../src/internal-links/guidance-handler.js';
-import { guidance } from '../fixtures/broken-backlinks/mystique-guidance.js';
 import { MockContextBuilder } from '../shared.js';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
 
@@ -25,7 +24,18 @@ use(sinonChai);
 describe('guidance-internal-links-remediation handler', () => {
   let sandbox;
   let mockContext;
-  const mockMessage = guidance[0];
+  const mockMessage = {
+    id: 'test-opportunity-id',
+    siteId: 'test-site-id',
+    type: 'guidance:broken-backlinks',
+    data: {
+      suggestionId: 'test-suggestion-id-1',
+      opportunityId: 'test-opportunity-id',
+      brokenUrl: 'https://foo.com/redirects-throws-error',
+      suggestedUrls: ['https://foo.com/redirects-throws-error-1', 'https://foo.com/redirects-throws-error-2'],
+      aiRationale: 'The suggested URLs are similar to the original URL and are likely to be the correct destination.',
+    },
+  };
 
   before(async () => {
     sandbox = sinon.createSandbox();
@@ -75,8 +85,8 @@ describe('guidance-internal-links-remediation handler', () => {
     expect(mockSetData).to.have.been.calledWith({
       urlTo: mockMessage.data.broken_url,
       urlFrom: 'https://foo.com/redirects-throws-error',
-      suggestedUrls: mockMessage.data.suggested_urls,
-      aiRationale: mockMessage.data.ai_rationale,
+      suggestedUrls: mockMessage.data.suggestedUrls,
+      aiRationale: mockMessage.data.aiRationale,
     });
   });
 

@@ -123,7 +123,7 @@ export const generateSuggestionData = async (context) => {
   const {
     site, audit, dataAccess, log, sqs, env, finalUrl,
   } = context;
-  const { Configuration, Suggestion } = dataAccess;
+  const { Configuration, Suggestion, SiteTopPage } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
@@ -171,6 +171,7 @@ export const generateSuggestionData = async (context) => {
     opportunity.getId(),
     SuggestionModel.STATUSES.NEW,
   );
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   await Promise.all(suggestions.map(async (suggestion) => {
     const message = {
       type: 'guidance:broken-backlinks',
@@ -179,8 +180,9 @@ export const generateSuggestionData = async (context) => {
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
-        url_from: suggestion?.getData()?.url_from,
-        url_to: suggestion?.getData()?.url_to,
+        urlFrom: suggestion?.getData()?.url_from,
+        urlTo: suggestion?.getData()?.url_to,
+        alternativeUrls: topPages.map((page) => page.getUrl()),
         suggestionId: suggestion?.getId(),
         opportunityId: opportunity?.getId(),
       },

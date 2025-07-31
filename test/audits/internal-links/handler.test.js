@@ -32,6 +32,7 @@ import {
 } from '../../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../../shared.js';
 
+const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
 const AUDIT_RESULT_DATA = [
   {
     trafficDomain: 1800,
@@ -191,7 +192,6 @@ describe('Broken internal links audit ', () => {
   });
 
   it('prepareScrapingStep should send top pages to scraping service', async () => {
-    const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
@@ -252,6 +252,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     addSuggestionsResponse = {
       createdItems: [],
       errorItems: [],
+    };
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
 
     opportunity = {

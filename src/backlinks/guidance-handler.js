@@ -18,8 +18,7 @@ export default async function handler(message, context) {
   const { Audit, Suggestion, Site } = dataAccess;
   const { auditId, siteId, data } = message;
   const {
-  // eslint-disable-next-line camelcase
-    suggested_urls, ai_rationale, suggestionId, opportunityId,
+    suggestedUrls, aiRationale, suggestionId, opportunityId,
   } = data;
   log.info(`Message received in broken-backlinks suggestion handler: ${JSON.stringify(message, null, 2)}`);
 
@@ -54,13 +53,11 @@ export default async function handler(message, context) {
     log.error(`[BrokenBacklinksGuidance] Suggestion not found for ID: ${suggestionId}`);
     return notFound('Suggestion not found');
   }
-  const suggestedUrls = await filterBrokenSuggestedUrls(suggested_urls, site.getBaseURL());
+  const filteredSuggestedUrls = await filterBrokenSuggestedUrls(suggestedUrls, site.getBaseURL());
   suggestion.setData({
     ...suggestion.getData(),
-    // eslint-disable-next-line camelcase
-    suggestedUrls,
-    // eslint-disable-next-line camelcase
-    aiRationale: ai_rationale,
+    suggestedUrls: filteredSuggestedUrls,
+    aiRationale,
   });
 
   await suggestion.save();

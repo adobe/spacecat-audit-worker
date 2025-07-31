@@ -295,8 +295,8 @@ describe('Backlinks Tests', function () {
         deliveryType: 'aem_cs',
         time: sinon.match.any,
         data: {
-          url_from: 'https://from.com/from-2',
-          url_to: 'https://foo.com/redirects-throws-error',
+          urlFrom: 'https://from.com/from-2',
+          urlTo: 'https://foo.com/redirects-throws-error',
           suggestionId: 'test-suggestion-1',
           opportunityId: 'opportunity-id',
         },

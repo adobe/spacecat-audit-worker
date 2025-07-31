@@ -138,7 +138,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const {
     log, site, finalUrl, sqs, env, dataAccess, audit,
   } = context;
-  const { Configuration, Suggestion } = dataAccess;
+  const { Configuration, Suggestion, SiteTopPage } = dataAccess;
 
   const { brokenInternalLinks, success } = audit.getAuditResult();
 
@@ -209,6 +209,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   });
 
   const configuration = await Configuration.findLatest();
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   if (configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
     const suggestions = await Suggestion.allByOpportunityIdAndStatus(
       opportunity.getId(),
@@ -222,8 +223,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
         deliveryType: site.getDeliveryType(),
         time: new Date().toISOString(),
         data: {
-          url_from: suggestion?.getData()?.urlFrom,
-          url_to: suggestion?.getData()?.urlTo,
+          urlFrom: suggestion?.getData()?.urlFrom,
+          urlTo: suggestion?.getData()?.urlTo,
+          alternativeUrls: topPages.map((page) => page.getUrl()),
           suggestionId: suggestion?.getId(),
           opportunityId: opportunity?.getId(),
         },
