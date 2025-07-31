@@ -325,11 +325,11 @@ describe('Structured Data Audit', () => {
         auditResult: {
           success: true,
           issues: [
-            { rootType: 'Product', issueMessage: 'Missing field "name"' },
-            { rootType: 'Product', issueMessage: 'Missing field "name"' },
-            { rootType: 'Product', issueMessage: 'Missing field "price"' },
-            { rootType: 'BreadcrumbList', issueMessage: 'Missing field "name"' },
-            { rootType: 'Product', issueMessage: 'Missing field "name"' },
+            { rootType: 'Product', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page1' },
+            { rootType: 'Product', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page2' },
+            { rootType: 'Product', issueMessage: 'Missing field "price"', pageUrl: 'https://example.com/page1' },
+            { rootType: 'BreadcrumbList', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page1' },
+            { rootType: 'Product', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page1' },
           ],
         },
       };
@@ -351,15 +351,25 @@ describe('Structured Data Audit', () => {
 
       context.dataAccess.Opportunity.allBySiteIdAndStatus = () => [opportunity];
       await opportunityAndSuggestions(finalUrl, auditData, context);
-      const allErrorIds = auditData.auditResult.issues.map((issue) => issue.errors[0].id);
-      expect(new Set(allErrorIds).size).to.equal(allErrorIds.length);
-      expect(allErrorIds).to.deep.equal([
-        'product:missingfieldname',
-        'product:missingfieldname:1',
-        'product:missingfieldprice',
-        'breadcrumblist:missingfieldname',
-        'product:missingfieldname:2',
-      ]);
+      const pageUrlToErrorIds = auditData.auditResult.issues.reduce((acc, issue) => {
+        if (!acc[issue.pageUrl]) acc[issue.pageUrl] = [];
+        acc[issue.pageUrl].push(issue.errors[0].id);
+        return acc;
+      }, {});
+      Object.values(pageUrlToErrorIds).forEach((errorIds) => {
+        expect(new Set(errorIds).size).to.equal(errorIds.length);
+      });
+      expect(pageUrlToErrorIds).to.deep.equal({
+        'https://example.com/page1': [
+          'product:missingfieldname',
+          'product:missingfieldprice',
+          'breadcrumblist:missingfieldname',
+          'product:missingfieldname:1',
+        ],
+        'https://example.com/page2': [
+          'product:missingfieldname',
+        ],
+      });
     });
   });
 

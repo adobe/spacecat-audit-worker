@@ -199,11 +199,14 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     const fix = generateErrorMarkupForIssue(issue);
     const errorTitle = `${issue.rootType}: ${issue.issueMessage}`;
     let errorId = errorTitle.replaceAll(/["\s]/g, '').toLowerCase();
-    if (errorId in errorIdMap) {
-      errorIdMap[errorId] += 1;
-      errorId = `${errorId}:${errorIdMap[errorId]}`;
+
+    errorIdMap[issue.pageUrl] ??= {};
+    const pageErrors = errorIdMap[issue.pageUrl];
+    if (errorId in pageErrors) {
+      pageErrors[errorId] += 1;
+      errorId = `${errorId}:${pageErrors[errorId]}`;
     } else {
-      errorIdMap[errorId] = 0;
+      pageErrors[errorId] = 0;
     }
     issue.errors.push({ fix, id: errorId, errorTitle });
   }
