@@ -18,25 +18,41 @@ import {
   SUGGESTION_TEMPLATES,
 } from './opportunity-data-mapper.js';
 import { normalizeUserAgentToProvider } from './constants/user-agent-patterns.js';
+import { validateUrlsBatch } from './url-validator.js';
+import { processBatchedAiSuggestions, mapAiSuggestionsToErrors } from './ai-batch-processor.js';
 
-function categorizeErrorsByStatusCode(errorPages) {
-  const groups = { 404: [], 403: [], '5xx': [] };
+/**
+ * Categorizes error pages by status code into 404, 403, and 5xx groups
+ * @param {Array} errorPages - Raw error page data from Athena
+ * @returns {Object} - Object with categorized errors
+ */
+export function categorizeErrorsByStatusCode(errorPages) {
+  const categorized = {
+    404: [],
+    403: [],
+    '5xx': [],
+  };
 
   errorPages.forEach((error) => {
-    const { status } = error;
-    if (status === '404') {
-      groups['404'].push(error);
-    } else if (status === '403') {
-      groups['403'].push(error);
-    } else if (status.startsWith('5')) {
-      groups['5xx'].push(error);
+    const statusCode = error.status?.toString();
+    if (statusCode === '404') {
+      categorized[404].push(error);
+    } else if (statusCode === '403') {
+      categorized[403].push(error);
+    } else if (statusCode && statusCode.startsWith('5')) {
+      categorized['5xx'].push(error);
     }
   });
 
-  return groups;
+  return categorized;
 }
 
-function consolidateErrorsByUrl(errors) {
+/**
+ * Consolidates errors by URL + Normalized UserAgent combination
+ * @param {Array} errors - Array of error objects
+ * @returns {Array} - Consolidated errors with aggregated data
+ */
+export function consolidateErrorsByUrl(errors) {
   const urlMap = new Map();
 
   errors.forEach((error) => {
@@ -64,64 +80,86 @@ function consolidateErrorsByUrl(errors) {
   }));
 }
 
-function sortErrorsByTrafficVolume(errors) {
+/**
+ * Sorts consolidated errors by traffic volume (request count) in descending order
+ * @param {Array} errors - Array of consolidated error objects
+ * @returns {Array} - Sorted errors by traffic volume
+ */
+export function sortErrorsByTrafficVolume(errors) {
   return errors.sort((a, b) => b.totalRequests - a.totalRequests);
 }
 
 /**
- * Creates an opportunity for a specific error type
+ * Creates an opportunity for a specific error category with AI-enhanced suggestions
  * @param {string} errorType - Error type (404, 403, 5xx)
- * @param {Array} aggregatedErrors - Processed error data
+ * @param {Array} enhancedErrors - Errors with AI suggestions
  * @param {string} siteId - Site identifier
  * @param {string} auditId - Audit identifier
- * @param {Object} context - Audit context
- * @returns {Object} Created opportunity
+ * @param {Object} context - Context object with logger
+ * @returns {Promise<void>}
  */
 async function createOpportunityForErrorCategory(
   errorType,
-  aggregatedErrors,
+  enhancedErrors,
   siteId,
   auditId,
   context,
 ) {
   const { log } = context;
 
-  log.info(`Creating opportunity for ${errorType} errors: ${aggregatedErrors.length} URLs`);
+  if (!enhancedErrors || enhancedErrors.length === 0) {
+    log.info(`No validated errors for ${errorType} category - skipping opportunity creation`);
+    return;
+  }
 
-  // Create opportunity using the existing pattern
-  const opportunity = await convertToOpportunity(
-    null, // No specific URL for this audit type
-    { siteId, id: auditId },
-    context,
-    () => buildOpportunityDataForErrorType(errorType, aggregatedErrors),
-    'LLM_ERROR_PAGES',
-  );
+  log.info(`Creating opportunity for ${errorType} errors with ${enhancedErrors.length} suggestions`);
 
-  // Build suggestions data
-  const buildKey = (error) => `${error.url}|${error.status}|${error.userAgent}`;
+  // Build opportunity data
+  const opportunityData = buildOpportunityDataForErrorType(errorType, enhancedErrors);
+  const opportunity = convertToOpportunity({
+    siteId,
+    auditId,
+    ...opportunityData,
+  });
 
+  // Create suggestions using syncSuggestions
   await syncSuggestions({
     opportunity,
-    newData: aggregatedErrors,
-    buildKey,
+    newData: enhancedErrors,
+    buildKey: (error) => `${error.url}|${error.status}|${error.userAgent}`,
     context,
     mapNewSuggestion: (error, index) => {
-      // Select template based on status code
-      let template = 'Fix error for {url} - {userAgent} crawler affected'; // Default template
-      if (error.status === '404') {
-        template = SUGGESTION_TEMPLATES.NOT_FOUND;
-      } else if (error.status === '403') {
-        template = SUGGESTION_TEMPLATES.FORBIDDEN;
-      } else if (error.status.startsWith('5')) {
-        template = SUGGESTION_TEMPLATES.SERVER_ERROR;
-      }
+      // Use AI suggestion if available, otherwise fallback to template
+      let suggestionText;
+      let suggestedUrls = [];
+      let aiRationale = null;
+      let confidenceScore = null;
+      let suggestionType = 'TEMPLATE';
 
-      const suggestionText = populateSuggestion(template, error.url, error.status, error.userAgent);
+      if (error.hasAiSuggestion && error.aiSuggestion) {
+        // AI-generated suggestion
+        suggestionText = `Fix ${error.status} error for ${error.url} (${error.userAgent} crawler)`;
+        suggestedUrls = error.aiSuggestion.suggested_urls || [];
+        aiRationale = error.aiSuggestion.aiRationale;
+        confidenceScore = error.aiSuggestion.confidence_score;
+        suggestionType = error.suggestionType || 'AI_GENERATED';
+      } else {
+        // Template fallback suggestion
+        let template = 'Fix error for {url} - {userAgent} crawler affected';
+        if (error.status === '404') {
+          template = SUGGESTION_TEMPLATES.NOT_FOUND;
+        } else if (error.status === '403') {
+          template = SUGGESTION_TEMPLATES.FORBIDDEN;
+        } else if (error.status.startsWith('5')) {
+          template = SUGGESTION_TEMPLATES.SERVER_ERROR;
+        }
+        suggestionText = populateSuggestion(template, error.url, error.status, error.userAgent);
+      }
 
       return {
         opportunityId: opportunity.getId(),
         type: 'ERROR_REMEDIATION',
-        rank: index + 1, // Rank based on position (already sorted by request count)
+        rank: index + 1,
         status: 'NEW',
         data: {
           url: error.url,
@@ -130,68 +168,104 @@ async function createOpportunityForErrorCategory(
           userAgent: error.userAgent,
           rawUserAgents: error.rawUserAgents,
           suggestion: suggestionText,
+          suggestedUrls,
+          aiRationale,
+          confidenceScore,
+          suggestionType,
+          validatedAt: error.validatedAt,
+          baselineStatus: error.baselineStatus,
+          llmStatus: error.llmStatus,
+          testUserAgent: error.testUserAgent,
         },
       };
     },
     log,
   });
 
-  log.info(`Created opportunity ${opportunity.getId()} with ${aggregatedErrors.length} suggestions for ${errorType} errors`);
-  return opportunity;
+  log.info(`Created opportunity ${opportunity.getId()} for ${errorType} errors with ${enhancedErrors.length} suggestions`);
 }
 
 /**
- * Main function to process LLM error pages and create opportunities
- * @param {Object} processedResults - Results from processLlmErrorPagesResults
- * @param {Object} message - Original audit message
- * @param {Object} context - Audit context
+ * Enhanced opportunity generation with URL validation and AI suggestions
+ * @param {Object} processedResults - Processed Athena query results
+ * @param {Object} message - SQS message object
+ * @param {Object} context - Context object with logger and other utilities
+ * @returns {Promise<void>}
  */
 export async function generateOpportunities(processedResults, message, context) {
   const { log } = context;
   const { siteId, auditId } = message;
 
-  log.info(`Processing LLM error pages opportunities for site ${siteId}`);
-
-  if (!processedResults.errorPages || processedResults.errorPages.length === 0) {
-    log.info('No error pages found, skipping opportunity creation');
+  if (!processedResults?.errorPages?.length) {
+    log.info('No error pages to process for opportunities');
     return;
   }
 
-  try {
-    // Step 1: Group by status code categories
-    const groupedErrors = categorizeErrorsByStatusCode(processedResults.errorPages);
-    log.info(`Grouped errors: 404=${groupedErrors['404'].length}, 403=${groupedErrors['403'].length}, 5xx=${groupedErrors['5xx'].length}`);
+  log.info(`Starting enhanced opportunity generation for ${processedResults.errorPages.length} error pages`);
 
-    // Step 2: Process each error type
-    const errorTypesWithData = Object.entries(groupedErrors)
-      .filter(([, errors]) => errors.length > 0);
+  // Step 1: Categorize errors by status code
+  const categorizedErrors = categorizeErrorsByStatusCode(processedResults.errorPages);
 
-    // Process all error types in parallel
-    const opportunityPromises = errorTypesWithData.map(async ([errorType, errors]) => {
-      log.info(`Processing ${errorType} errors: ${errors.length} raw errors`);
+  // Step 2: Process each error category
+  const categoryPromises = Object.entries(categorizedErrors)
+    .filter(([, errors]) => errors.length > 0)
+    .map(async ([errorType, errors]) => {
+      log.info(`Processing ${errorType} category with ${errors.length} raw errors`);
 
-      // Step 3: Aggregate by URL within each group
-      const aggregatedErrors = consolidateErrorsByUrl(errors);
-      log.info(`Aggregated ${errorType} errors: ${aggregatedErrors.length} unique URLs`);
+      try {
+        // Step 2a: Consolidate and sort errors
+        const consolidatedErrors = consolidateErrorsByUrl(errors);
+        const sortedErrors = sortErrorsByTrafficVolume(consolidatedErrors);
 
-      // Step 4: Rank suggestions by request count
-      const rankedErrors = sortErrorsByTrafficVolume(aggregatedErrors);
+        log.info(`Consolidated to ${sortedErrors.length} unique URL+UserAgent combinations for ${errorType}`);
 
-      // Step 5: Create opportunity for this error type
-      return createOpportunityForErrorCategory(
-        errorType,
-        rankedErrors,
-        siteId,
-        auditId,
-        context,
-      );
+        // Step 2b: Validate URLs
+        log.info(`Starting URL validation for ${errorType} category`);
+        const validatedUrls = await validateUrlsBatch(sortedErrors, log);
+
+        if (validatedUrls.length === 0) {
+          log.info(`No URLs passed validation for ${errorType} category - skipping`);
+          return;
+        }
+
+        log.info(`${validatedUrls.length}/${sortedErrors.length} URLs passed validation for ${errorType}`);
+
+        // Step 2c: Get AI suggestions for validated URLs
+        log.info(`Processing AI suggestions for ${validatedUrls.length} validated URLs (${errorType})`);
+        const aiSuggestions = await processBatchedAiSuggestions(validatedUrls, siteId, context);
+
+        // Step 2d: Map AI suggestions back to error objects
+        const enhancedErrors = mapAiSuggestionsToErrors(aiSuggestions, validatedUrls);
+
+        const aiGeneratedCount = enhancedErrors.filter(
+          (e) => e.hasAiSuggestion && !e.aiSuggestion?.is_fallback,
+        ).length;
+        const fallbackCount = enhancedErrors.filter(
+          (e) => !e.hasAiSuggestion || e.aiSuggestion?.is_fallback,
+        ).length;
+
+        log.info(`Enhanced ${enhancedErrors.length} errors for ${errorType}: ${aiGeneratedCount} AI-generated, ${fallbackCount} template fallbacks`);
+
+        // Step 2e: Create opportunity with enhanced suggestions
+        await createOpportunityForErrorCategory(
+          errorType,
+          enhancedErrors,
+          siteId,
+          auditId,
+          context,
+        );
+      } catch (error) {
+        log.error(`Failed to process ${errorType} category: ${error.message}`, error);
+        // Continue with other categories even if one fails
+      }
     });
 
-    const createdOpportunities = await Promise.all(opportunityPromises);
+  // Step 3: Wait for all categories to complete
+  await Promise.allSettled(categoryPromises);
 
-    log.info(`Successfully created ${createdOpportunities.length} opportunities for LLM error pages`);
-  } catch (error) {
-    log.error(`Failed to process LLM error pages opportunities: ${error.message}`, error);
-    throw error;
-  }
+  // Step 4: Log final summary
+  const totalValidatedUrls = Object.values(categorizedErrors)
+    .filter((errors) => errors.length > 0).length;
+
+  log.info(`Enhanced opportunity generation completed for ${totalValidatedUrls} error categories`);
 }

@@ -76,7 +76,7 @@ const HANDLERS = {
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
-  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance, // ref
+  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
