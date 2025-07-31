@@ -193,11 +193,21 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   }
 
   // Convert suggestions to errors
+  const errorIdMap = {};
   for (const issue of auditData.auditResult.issues) {
     issue.errors = [];
     const fix = generateErrorMarkupForIssue(issue);
     const errorTitle = `${issue.rootType}: ${issue.issueMessage}`;
-    const errorId = errorTitle.replaceAll(/["\s]/g, '').toLowerCase();
+    let errorId = errorTitle.replaceAll(/["\s]/g, '').toLowerCase();
+
+    errorIdMap[issue.pageUrl] ??= {};
+    const pageErrors = errorIdMap[issue.pageUrl];
+    if (errorId in pageErrors) {
+      pageErrors[errorId] += 1;
+      errorId = `${errorId}:${pageErrors[errorId]}`;
+    } else {
+      pageErrors[errorId] = 0;
+    }
     issue.errors.push({ fix, id: errorId, errorTitle });
   }
 
