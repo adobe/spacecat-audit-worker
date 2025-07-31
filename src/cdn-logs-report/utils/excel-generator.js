@@ -37,7 +37,7 @@ export function getSheetConfig(type, periods) {
     /* c8 ignore next */
     headers: typeof config.getHeaders === 'function' ? config.getHeaders(periods) : config.getHeaders(),
     headerColor: config.headerColor,
-    numberColumns: typeof config.getNumberColumns === 'function' ? config.getNumberColumns(periods) : config.numberColumns,
+    numberColumns: config.numberColumns,
     processData: config.processData,
   };
 }
