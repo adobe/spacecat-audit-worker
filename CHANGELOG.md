@@ -1,3 +1,10 @@
+## [1.134.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.3...v1.134.4) (2025-07-31)
+
+
+### Bug Fixes
+
+* Suggestion error IDs are not unique in Structured Data Audit ([#1077](https://github.com/adobe/spacecat-audit-worker/issues/1077)) ([932cc48](https://github.com/adobe/spacecat-audit-worker/commit/932cc48a3e89cb03d66554e9d44602b14e96f6b8))
+
 ## [1.134.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.2...v1.134.3) (2025-07-30)
 
 
