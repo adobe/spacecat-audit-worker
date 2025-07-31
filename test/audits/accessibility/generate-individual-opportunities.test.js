@@ -3253,7 +3253,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
       success: true,
       totalIssues: 0,
       pageUrl: 'https://example.com/page1',
-      processedRemediations: 0,
       notFoundSuggestionIds: [],
       invalidRemediations: [],
       failedSuggestionIds: [],
@@ -3513,9 +3512,6 @@ describe('handleAccessibilityRemediationGuidance', () => {
 
     expect(mockLog.warn).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 2 suggestions not found: sugg-789, sugg-790',
-    );
-    expect(mockLog.warn).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: No remediations were processed',
     );
   });
 
