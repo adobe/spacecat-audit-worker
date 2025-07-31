@@ -30,11 +30,16 @@ import {
 
 const auditType = 'redirect-chains';
 
+// Misc constants
 export const AUDIT_LOGGING_NAME = 'RedC: Redirect Chains'; // used for logging, and in unit tests
 const USER_AGENT = 'Spacecat/1.0'; // identify ourselves in all HTTP requests
 const KEY_SEPARATOR = '~|~'; // part of building a unique key for each entry in the suggestions
+// Constants for redirect count tolerances
 const STOP_AFTER_N_REDIRECTS = 5; // per entry tested ... used to prevent infinite redirects
 const MAX_REDIRECTS_TO_TOLERATE = 1; // ex: only allow 1 redirect before we consider it a problem
+// Constants for projected traffic calculations
+const TRAFFIC_LOST_PERCENTAGE = 0.20; // 0.20 == 20% of total issues found
+const DOLLAR_PER_TRAFFIC_LOST = 1.00; // 1.00 == $1 per traffic lost
 
 // ----- support -----------------------------------------------------------------------------------
 
@@ -559,6 +564,31 @@ async function processEntries(pageUrls, baseUrl, log) {
   return { counts, entriesWithProblems };
 }
 
+/**
+ * Calculates projected traffic metrics for redirect chains based on the number of issues found
+ *
+ * @param {number} totalIssues - The total number of redirect chains issues found
+ * @returns {Object} Object containing projectedTrafficLost and projectedTrafficValue
+ */
+function calculateProjectedMetrics(totalIssues) {
+  // Calculate projected traffic lost as a percentage of total issues.  Ex: 20% of total issues
+  // Use Math.round for typical rounding (0.5 rounds up, less than 0.5 truncates)
+  const projectedTrafficLost = Math.round(
+    totalIssues * TRAFFIC_LOST_PERCENTAGE,
+  );
+
+  // Calculate projected traffic value as a dollar amount per projected traffic lost. Ex: $1 per
+  // Use Math.round to ensure whole numbers
+  const projectedTrafficValue = Math.round(
+    projectedTrafficLost * DOLLAR_PER_TRAFFIC_LOST,
+  );
+
+  return {
+    projectedTrafficLost,
+    projectedTrafficValue,
+  };
+}
+
 // ----- audit runner  -----------------------------------------------------------------------------
 
 /**
@@ -631,18 +661,28 @@ export async function redirectsAuditRunner(baseUrl, context) {
 }
 
 /**
- * Returns the suggested fix for the given result object.
+ * Returns an object with the suggested fix for the given result object.
  * @param {Object} result - The result object.
  *                          See the structure returned by `followAnyRedirectForUrl`.
- * @returns {string} The suggested fix.
+ * @returns {Object} The suggested fix object with the following properties:
+ *  {
+ *    fix: string,      // the human-readable suggested fix, written for en_US locale
+ *    finalUrl: string, // (in the style of the source URL)
+ *    fixType: string,  // kabob-case tokens ...
+ *       // {'duplicate-src', 'too-qualified', 'same-src-dest', 'manual-check', 'final-mismatch',
+ *       //   'max-redirects-exceeded', 'high-redirect-count', '404-page', 'unknown'}
+ *    canApplyFixAutomatically: boolean, // true if the fix could be applied automatically
+ *  }
  */
 export function getSuggestedFix(result) {
+  // sanity check
   if (!result || (typeof result === 'object' && Object.keys(result).length === 0)) {
-    return '';
+    return null;
   }
 
   // prep
-  let fix = '(no pre-determined fix)';
+  let fix = '(no pre-determined fix)'; // not expected to be returned
+  let fixType = 'unknown'; // not expected to be returned
 
   const baseUrl = new URL(result.referencedBy).origin;
   let finalUrl = result.fullFinal;
@@ -653,38 +693,57 @@ export function getSuggestedFix(result) {
     finalUrl = finalUrl.replace(baseUrl, '');
   }
 
-  const fixForDuplicate = `Automatically remove this entry: Source URL: ${result.origSrc} with the Destination URL: ${result.origDest} ... found in the ${result.referencedBy} file`;
-  const fixForTooQualified = `Automatically fix the actual Source URL and/or the Destination URL to use relative paths by removing the base URL: ${baseUrl} ... found in the ${result.referencedBy} file`;
-  const fixForHasSameSrcDest = `The Source URL: ${result.origSrc} and the Destination URL: ${result.origDest} are the same.  Automatically remove the entry from the ${result.referencedBy} file.`;
-  const fixForManualCheck = `Manually check the URL: ${finalUrl} since it resulted in an error code. Maybe remove the ${result.origSrc} entry from the ${result.referencedBy} file.`;
-  const fixFor404page = `It seems that the final URL: ${finalUrl} is a 404 page.  If so, then manually remove the ${result.origSrc} entry from the ${result.referencedBy} file.`;
-  const fixForFinalMismatch = `Automatically replace the Destination URL: ${result.origDest} with the final URL: ${finalUrl} ... found in the ${result.referencedBy} file`;
-  const fixForCircularRedirect = `There seem to be circular redirects (stopped after (${result.redirectCount} redirects).  Manually check the redirects that start from the Source URL: ${result.origSrc} ... found in the ${result.referencedBy} file`;
-  const fixForHighRedirectCount = `There were too many redirects (${result.redirectCount}) to get to the final URL: ${finalUrl}.  Manually check the redirects that start from the Source URL: ${result.origSrc} ... found in the ${result.referencedBy} file.`;
+  let canApplyFixAutomatically = false; // default is to manually apply the suggested fix
+
+  const fixForDuplicate = 'Remove this entry since the same Source URL is used later in the redirects file.';
+  const fixForTooQualified = `Update the Source URL and/or the Destination URL to use relative paths by removing the base URL: ${baseUrl}`;
+  const fixForHasSameSrcDest = 'Remove this entry since the Source URL is the same as the Destination URL.';
+  const fixForManualCheck = `Check the URL: ${finalUrl} since it resulted in an error code. Maybe remove the entry from the redirects file.`;
+  const fixFor404page = 'Update, or remove, this entry since the Source URL redirects to a 404 page.';
+  const fixForFinalMismatch = 'Replace the Destination URL with the Final URL, since the Source URL actually redirects to the Final URL.';
+  const fixForMaxRedirectsExceeded = 'Redesign the redirects that start from the Source URL. An excessive number of redirects were encountered.';
+  const fixForHighRedirectCount = 'Reduce the redirects that start from the Source URL. There are too many redirects to get to the Destination URL.';
 
   // determine the suggested fix
   if (result.isDuplicateSrc) {
     fix = fixForDuplicate;
+    fixType = 'duplicate-src';
+    canApplyFixAutomatically = true;
   } else if (result.tooQualified) {
     fix = fixForTooQualified;
+    fixType = 'too-qualified';
+    canApplyFixAutomatically = true;
   } else if (result.hasSameSrcDest) {
     fix = fixForHasSameSrcDest;
+    fixType = 'same-src-dest';
+    canApplyFixAutomatically = true;
   } else if (result.status >= 400) {
     fix = fixForManualCheck;
+    fixType = 'manual-check';
   } else if (!result.fullFinalMatchesDestUrl) {
     if (is404page(result.fullFinal)) {
       fix = fixFor404page;
+      fixType = '404-page';
     } else {
       fix = fixForFinalMismatch;
+      fixType = 'final-mismatch';
+      canApplyFixAutomatically = true;
     }
   } else if (result.redirectCount >= STOP_AFTER_N_REDIRECTS) {
-    fix = fixForCircularRedirect;
+    fix = fixForMaxRedirectsExceeded;
+    fixType = 'max-redirects-exceeded';
   } else if (result.redirectCount > MAX_REDIRECTS_TO_TOLERATE) {
     // although the "final" URL matched the expected "destination" URL,
     // there were too many redirects in between.
     fix = fixForHighRedirectCount;
+    fixType = 'high-redirect-count';
   }
-  return fix;
+  return {
+    fix,
+    finalUrl,
+    fixType,
+    canApplyFixAutomatically,
+  };
 }
 
 /**
@@ -706,9 +765,23 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
   log.debug(`${AUDIT_LOGGING_NAME} - Audit data: ${JSON.stringify(auditData)}`);
 
   for (const row of entriesWithIssues) {
-    const suggestedFix = getSuggestedFix(row);
-    if (suggestedFix) {
-      suggestedFixes.push({ key: buildUniqueKey(row), fix: suggestedFix });
+    const suggestedFixResult = getSuggestedFix(row);
+    if (suggestedFixResult) {
+      suggestedFixes.push({
+        key: buildUniqueKey(row), // string
+        fix: suggestedFixResult.fix, // string
+        fixType: suggestedFixResult.fixType, // string: kabob-case tokens
+        canApplyFixAutomatically: suggestedFixResult.canApplyFixAutomatically, // boolean
+        redirectsFile: row.referencedBy, // string
+        redirectCount: row.redirectCount, // int
+        httpStatusCode: row.status, // int
+        sourceUrl: row.origSrc, // string: the original source URL found in the redirects file
+        sourceUrlFull: row.fullSrc, // string: fully qualified URL
+        destinationUrl: row.origDest, // string: the original dest URL found in the redirects file
+        destinationUrlFull: row.fullDest, // string: fully qualified URL
+        finalUrl: suggestedFixResult.finalUrl, // string: (in the style of the source URL)
+        finalUrlFull: row.fullFinal, // string: fully qualified URL
+      });
     }
   }
   log.info(`${AUDIT_LOGGING_NAME} - Generated ${suggestedFixes.length} suggested fixes.`);
@@ -736,23 +809,33 @@ export async function generateOpportunities(auditUrl, auditData, context) {
 
   // check if audit itself ran successfully
   if (auditData.auditResult.success === false) {
-    log.info(`${AUDIT_LOGGING_NAME} audit itself failed, skipping opportunity creation`);
+    log.info(`${AUDIT_LOGGING_NAME} - Audit itself failed, skipping opportunity creation`);
     return { ...auditData };
   }
 
   // check if the audit produced any suggestions to resolve the issues it found
   if (!auditData.suggestions || !auditData.suggestions.length) {
-    log.info(`${AUDIT_LOGGING_NAME} has no suggested fixes found, skipping opportunity creation`);
+    log.info(`${AUDIT_LOGGING_NAME} - No suggested fixes found, skipping opportunity creation`);
     return { ...auditData };
   }
 
-  log.info(`${AUDIT_LOGGING_NAME} generated ${auditData.suggestions.length} suggestions.  Now creating opportunities for these.`);
+  // Calculate projected traffic metrics based on the number of issues found
+  const totalIssues = auditData.suggestions.length;
+  const { projectedTrafficLost, projectedTrafficValue } = calculateProjectedMetrics(totalIssues);
+
+  log.info(`${AUDIT_LOGGING_NAME} - Calculated projected traffic metrics: ${projectedTrafficLost} traffic lost, $${projectedTrafficValue} traffic value for ${totalIssues} issues`);
+
+  log.info(`${AUDIT_LOGGING_NAME} - Creating opportunities for each suggestion.`);
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
     context,
     createOpportunityData,
     auditType,
+    {
+      projectedTrafficLost,
+      projectedTrafficValue,
+    },
   );
 
   const buildKey = (data) => data.key;

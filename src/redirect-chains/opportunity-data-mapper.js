@@ -12,12 +12,14 @@
 
 import { DATA_SOURCES } from '../common/constants.js';
 
-export function createOpportunityData() {
+export function createOpportunityData(projectedTrafficMetrics = {}) {
+  const { projectedTrafficLost, projectedTrafficValue } = projectedTrafficMetrics;
+
   return {
     runbook: 'https://wiki.corp.adobe.com/display/AEMSites/%5BProject+Success+Studio%5D+CWV+degradation+by+redirect+chains',
     origin: 'AUTOMATION',
-    title: 'Issues found for the /redirects.json file',
-    description: '',
+    title: 'Redirect issues found with the /redirects.json file',
+    description: 'This audit identifies issues with the /redirects.json file that may lead to degraded Core Web Vitals (CWV) performance. It is recommended to review and resolve these issues to improve your site\'s performance.',
     guidance: {
       steps: [
         'For each affected entry in the /redirects.json file, check if the redirect is valid. See the suggestion provided for details on how to resolve.',
@@ -26,6 +28,8 @@ export function createOpportunityData() {
     tags: ['Traffic Acquisition'],
     data: {
       dataSources: [DATA_SOURCES.SITE],
+      projectedTrafficLost: projectedTrafficLost || 0,
+      projectedTrafficValue: projectedTrafficValue || 0,
     },
   };
 }

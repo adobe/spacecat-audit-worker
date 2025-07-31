@@ -1097,11 +1097,11 @@ describe('Redirect Chains Audit', () => {
 
   describe('Suggested Fixes', () => {
     describe('getSuggestedFix', () => {
-      it('should return empty string if getSuggestedFix is called with falsy result', () => {
-        expect(getSuggestedFix(undefined)).to.equal('');
-        expect(getSuggestedFix(null)).to.equal('');
-        expect(getSuggestedFix(false)).to.equal('');
-        expect(getSuggestedFix({})).to.equal('');
+      it('should return null if getSuggestedFix is called with falsy result', () => {
+        expect(getSuggestedFix(undefined)).to.equal(null);
+        expect(getSuggestedFix(null)).to.equal(null);
+        expect(getSuggestedFix(false)).to.equal(null);
+        expect(getSuggestedFix({})).to.equal(null);
       });
 
       it('should suggest fix for duplicate source URLs', () => {
@@ -1114,8 +1114,10 @@ describe('Redirect Chains Audit', () => {
           fullFinal: `${url}/duplicate`,
           referencedBy: `${url}/redirects.json`,
         };
-        const fix = getSuggestedFix(result);
-        expect(fix).to.include('Automatically remove this entry');
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('since the same');
+        expect(fixResult.fixType).to.equal('duplicate-src');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
       });
 
       it('should suggest fix for too qualified URLs', () => {
@@ -1128,8 +1130,10 @@ describe('Redirect Chains Audit', () => {
           fullFinal: `${url}/new`,
           referencedBy: `${url}/redirects.json`,
         };
-        const fix = getSuggestedFix(result);
-        expect(fix).to.include('Automatically fix the actual Source URL');
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('use relative path');
+        expect(fixResult.fixType).to.equal('too-qualified');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
       });
 
       it('should suggest fix for same source and destination URLs', () => {
@@ -1142,8 +1146,10 @@ describe('Redirect Chains Audit', () => {
           fullFinal: `${url}/same`,
           referencedBy: `${url}/redirects.json`,
         };
-        const fix = getSuggestedFix(result);
-        expect(fix).to.include('The Source URL: /same and the Destination URL: /same are the same');
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('the same as');
+        expect(fixResult.fixType).to.equal('same-src-dest');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
       });
 
       it('should suggest fix for 400 errors', () => {
@@ -1156,8 +1162,10 @@ describe('Redirect Chains Audit', () => {
           fullDest: `${url}/new`,
           referencedBy: `${url}/redirects.json`,
         };
-        const fix = getSuggestedFix(result);
-        expect(fix).to.include('Manually check the URL');
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Check the URL');
+        expect(fixResult.fixType).to.equal('manual-check');
+        expect(fixResult.canApplyFixAutomatically).to.be.false;
       });
 
       it('should suggest fix for mismatched destination URLs', () => {
@@ -1169,8 +1177,10 @@ describe('Redirect Chains Audit', () => {
           fullSrc: `${url}/old`,
           referencedBy: `${url}/redirects.json`,
         };
-        const fix = getSuggestedFix(result);
-        expect(fix).to.include('Automatically replace the Destination URL');
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Replace the Destination URL');
+        expect(fixResult.fixType).to.equal('final-mismatch');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
       });
 
       it('should suggest fix for too many redirects', () => {
@@ -1184,8 +1194,10 @@ describe('Redirect Chains Audit', () => {
           fullFinalMatchesDestUrl: true,
           referencedBy: `${url}/redirects.json`,
         };
-        const fix = getSuggestedFix(result);
-        expect(fix).to.include('There were too many redirects');
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('too many redirects');
+        expect(fixResult.fixType).to.equal('high-redirect-count');
+        expect(fixResult.canApplyFixAutomatically).to.be.false;
       });
 
       it('should return 404 fix if fullFinal is a 404 page', () => {
@@ -1198,9 +1210,10 @@ describe('Redirect Chains Audit', () => {
           fullDest: `${baseUrl}/404`,
           fullFinal: `${baseUrl}/404`,
         };
-        const fix = getSuggestedFix(result);
-        expect(fix).to.include('404 page');
-        expect(fix).to.include('/404');
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('redirects to a 404 page');
+        expect(fixResult.fixType).to.equal('404-page');
+        expect(fixResult.canApplyFixAutomatically).to.be.false;
       });
 
       it('should return circular redirect fix if redirectCount >= STOP_AFTER_N_REDIRECTS', () => {
@@ -1219,9 +1232,10 @@ describe('Redirect Chains Audit', () => {
           status: 200,
           fullFinalMatchesDestUrl: true,
         };
-        const fix = getSuggestedFix(result);
-        expect(fix).to.include('circular redirects');
-        expect(fix).to.include('/old');
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Redesign the redirects that start from the Source URL');
+        expect(fixResult.fixType).to.equal('max-redirects-exceeded');
+        expect(fixResult.canApplyFixAutomatically).to.be.false;
       });
 
       it('should generate suggested fixes for multiple entries with issues', () => {
@@ -1238,6 +1252,7 @@ describe('Redirect Chains Audit', () => {
                   origDest: '/new',
                   fullDest: `${baseUrl}/new`,
                   fullFinal: `${baseUrl}/duplicate`,
+                  redirectCount: 1,
                   isDuplicateSrc: true,
                 },
                 {
@@ -1247,6 +1262,7 @@ describe('Redirect Chains Audit', () => {
                   origDest: '/same',
                   fullDest: `${baseUrl}/same`,
                   fullFinal: `${baseUrl}/same`,
+                  redirectCount: 0,
                   hasSameSrcDest: true,
                 },
               ],
@@ -1260,8 +1276,25 @@ describe('Redirect Chains Audit', () => {
         expect(result.suggestions).to.be.an('array').with.lengthOf(2);
         expect(result.suggestions[0]).to.have.property('key');
         expect(result.suggestions[0]).to.have.property('fix');
-        expect(result.suggestions[0].fix).to.include('Automatically remove this entry');
-        expect(result.suggestions[1].fix).to.include('The Source URL: /same and the Destination URL: /same are the same');
+        expect(result.suggestions[0]).to.have.property('fixType', 'duplicate-src');
+        expect(result.suggestions[0]).to.have.property('finalUrl');
+        expect(result.suggestions[0]).to.have.property('canApplyFixAutomatically', true);
+        expect(result.suggestions[0]).to.have.property('redirectsFile', auditUrl);
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/duplicate');
+        expect(result.suggestions[0]).to.have.property('destinationUrl', '/new');
+        expect(result.suggestions[0]).to.have.property('redirectCount', 1);
+        expect(result.suggestions[0]).to.have.property('httpStatusCode');
+        expect(result.suggestions[0].fix).to.include('the same');
+        expect(result.suggestions[0].fix).to.include('used later');
+        expect(result.suggestions[1]).to.have.property('redirectsFile', auditUrl);
+        expect(result.suggestions[1]).to.have.property('sourceUrl', '/same');
+        expect(result.suggestions[1]).to.have.property('destinationUrl', '/same');
+        expect(result.suggestions[1]).to.have.property('redirectCount', 0);
+        expect(result.suggestions[1]).to.have.property('fixType', 'same-src-dest');
+        expect(result.suggestions[1]).to.have.property('finalUrl');
+        expect(result.suggestions[1]).to.have.property('canApplyFixAutomatically', true);
+        expect(result.suggestions[1]).to.have.property('httpStatusCode');
+        expect(result.suggestions[1].fix).to.include('is the same as');
 
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 2 affected entries.`);
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 2 suggested fixes.`);
@@ -1312,7 +1345,7 @@ describe('Redirect Chains Audit', () => {
         const result = await generateOpportunities(auditUrl, auditData, context);
 
         expect(result).to.deep.equal(auditData);
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} audit itself failed, skipping opportunity creation`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Audit itself failed, skipping opportunity creation`);
       });
 
       it('should skip opportunity creation when no suggestions exist', async () => {
@@ -1327,7 +1360,7 @@ describe('Redirect Chains Audit', () => {
         const result = await generateOpportunities(auditUrl, auditData, context);
 
         expect(result).to.deep.equal(auditData);
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} has no suggested fixes found, skipping opportunity creation`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - No suggested fixes found, skipping opportunity creation`);
       });
 
       it('should create opportunities for valid suggestions', async () => {
@@ -1386,6 +1419,14 @@ describe('Redirect Chains Audit', () => {
           origSrc: '/old-page',
           origDest: '/new-page',
           fix: 'Test fix',
+          fixType: 'duplicate-src',
+          finalUrl: '/final-page',
+          canApplyFixAutomatically: true,
+          redirectsFile: 'https://www.example.com/redirects.json',
+          sourceUrl: '/old-page',
+          destinationUrl: '/new-page',
+          redirectCount: 2,
+          httpStatusCode: 200,
         };
 
         const mappedSuggestion = mapNewSuggestion(sampleIssue);
@@ -1468,8 +1509,10 @@ describe('Redirect Chains Audit', () => {
         expect(opportunityData.runbook).to.include('redirect+chains');
 
         expect(opportunityData).to.have.property('origin', 'AUTOMATION');
-        expect(opportunityData).to.have.property('title', 'Issues found for the /redirects.json file');
-        expect(opportunityData).to.have.property('description', '');
+        expect(opportunityData).to.have.property('title', 'Redirect issues found with the /redirects.json file');
+
+        expect(opportunityData).to.have.property('description');
+        expect(opportunityData.description).to.include('This audit identifies issues with the /redirects.json file');
 
         expect(opportunityData).to.have.property('guidance');
         expect(opportunityData.guidance).to.have.property('steps');
@@ -1483,6 +1526,135 @@ describe('Redirect Chains Audit', () => {
         expect(opportunityData.data).to.have.property('dataSources');
         expect(opportunityData.data.dataSources).to.deep.equal([DATA_SOURCES.SITE]);
       });
+
+      it('should create opportunity data with projected traffic metrics when provided', () => {
+        const projectedTrafficMetrics = {
+          projectedTrafficLost: 30,
+          projectedTrafficValue: 45,
+        };
+        const opportunityData = createOpportunityData(projectedTrafficMetrics);
+
+        expect(opportunityData.data).to.have.property('projectedTrafficLost', 30);
+        expect(opportunityData.data).to.have.property('projectedTrafficValue', 45);
+      });
+
+      it('should create opportunity data with default projected traffic metrics when not provided', () => {
+        const opportunityData = createOpportunityData();
+
+        expect(opportunityData.data).to.have.property('projectedTrafficLost', 0);
+        expect(opportunityData.data).to.have.property('projectedTrafficValue', 0);
+      });
+
+      it('should create opportunity data with partial projected traffic metrics', () => {
+        const projectedTrafficMetrics = {
+          projectedTrafficLost: 15,
+          // projectedTrafficValue not provided ... expect it to use a default value
+        };
+        const opportunityData = createOpportunityData(projectedTrafficMetrics);
+
+        expect(opportunityData.data).to.have.property('projectedTrafficLost', 15);
+        expect(opportunityData.data).to.have.property('projectedTrafficValue', 0);
+      });
+    });
+  });
+
+  describe('Projected Traffic Calculation', () => {
+    it('should calculate correct metrics for 148 issues (example from user)', async () => {
+      const auditUrl = 'https://www.example.com/redirects.json';
+      const auditData = {
+        auditResult: { success: true },
+        suggestions: Array(148).fill({ key: 'test-key' }),
+      };
+
+      const result = await handlerModule.generateOpportunities(auditUrl, auditData, context);
+
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+
+      // Verify that convertToOpportunity was called with the correct projected traffic metrics
+      const convertCall = convertToOpportunityStub.getCall(0);
+      expect(convertCall.args[5]).to.deep.include({
+        projectedTrafficLost: 30, // 148 * 0.20 = 29.6, rounded to 30
+        projectedTrafficValue: 30, // 30 * $1 = $30
+      });
+    });
+
+    it('should handle rounding correctly (0.5 rounds up)', async () => {
+      const auditUrl = 'https://www.example.com/redirects.json';
+      const auditData = {
+        auditResult: { success: true },
+        suggestions: Array(5).fill({ key: 'test-key' }), // 5 issues
+      };
+
+      await handlerModule.generateOpportunities(auditUrl, auditData, context);
+
+      const convertCall = convertToOpportunityStub.getCall(0);
+      expect(convertCall.args[5]).to.deep.include({
+        projectedTrafficLost: 1, // 5 * 0.20 = 1.0, rounded to 1
+        projectedTrafficValue: 1, // 1 * $1 = $1
+      });
+    });
+
+    it('should handle rounding correctly (less than 0.5 truncates)', async () => {
+      const auditUrl = 'https://www.example.com/redirects.json';
+      const auditData = {
+        auditResult: { success: true },
+        suggestions: Array(2).fill({ key: 'test-key' }), // 2 issues
+      };
+
+      await handlerModule.generateOpportunities(auditUrl, auditData, context);
+
+      const convertCall = convertToOpportunityStub.getCall(0);
+      expect(convertCall.args[5]).to.deep.include({
+        projectedTrafficLost: 0, // 2 * 0.20 = 0.4, rounded to 0
+        projectedTrafficValue: 0, // 0 * $1 = $0
+      });
+    });
+
+    it('should handle zero issues by returning early', async () => {
+      const auditUrl = 'https://www.example.com/redirects.json';
+      const auditData = {
+        auditResult: { success: true },
+        suggestions: [], // 0 issues
+      };
+
+      const result = await handlerModule.generateOpportunities(auditUrl, auditData, context);
+
+      // eslint-disable-next-line max-len
+      // When there are no suggestions, generateOpportunities returns early without calling convertToOpportunity
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).to.not.have.been.called;
+    });
+
+    it('should handle multiple issues with various rounding scenarios', async () => {
+      const testCases = [
+        { issues: 3, expectedTrafficLost: 1, expectedValue: 1 }, // 3 * 0.20 = 0.6, rounds to 1
+        { issues: 7, expectedTrafficLost: 1, expectedValue: 1 }, // 7 * 0.20 = 1.4, rounds to 1
+        { issues: 8, expectedTrafficLost: 2, expectedValue: 2 }, // 8 * 0.20 = 1.6, rounds to 2
+        { issues: 10, expectedTrafficLost: 2, expectedValue: 2 }, // 10 * 0.20 = 2.0, rounds to 2
+        { issues: 12, expectedTrafficLost: 2, expectedValue: 2 }, // 12 * 0.20 = 2.4, rounds to 2
+        { issues: 13, expectedTrafficLost: 3, expectedValue: 3 }, // 13 * 0.20 = 2.6, rounds to 3
+      ];
+
+      for (const { issues, expectedTrafficLost, expectedValue } of testCases) {
+        // Reset stubs for each test case
+        convertToOpportunityStub.reset();
+
+        const auditUrl = 'https://www.example.com/redirects.json';
+        const auditData = {
+          auditResult: { success: true },
+          suggestions: Array(issues).fill({ key: 'test-key' }),
+        };
+
+        // eslint-disable-next-line no-await-in-loop
+        await handlerModule.generateOpportunities(auditUrl, auditData, context);
+
+        const convertCall = convertToOpportunityStub.getCall(0);
+        expect(convertCall.args[5]).to.deep.include({
+          projectedTrafficLost: expectedTrafficLost,
+          projectedTrafficValue: expectedValue,
+        });
+      }
     });
   });
 });
