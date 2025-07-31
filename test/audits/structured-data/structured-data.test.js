@@ -87,6 +87,7 @@ describe('Structured Data Audit', () => {
       getConfig: () => ({
         getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2', 'https://example.com/product/3'],
       }),
+      getDeliveryType: () => 'other',
     };
 
     auditStub = {
@@ -316,6 +317,59 @@ describe('Structured Data Audit', () => {
           ],
         },
       }]);
+    });
+
+    it('ensure unique error IDs for duplicate issues', async () => {
+      const auditData = {
+        siteId: context.site.getId(),
+        auditResult: {
+          success: true,
+          issues: [
+            { rootType: 'Product', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page1' },
+            { rootType: 'Product', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page2' },
+            { rootType: 'Product', issueMessage: 'Missing field "price"', pageUrl: 'https://example.com/page1' },
+            { rootType: 'BreadcrumbList', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page1' },
+            { rootType: 'Product', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page1' },
+          ],
+        },
+      };
+      const opportunity = {
+        auditId: 'audit-id-12345',
+        updatedBy: 'system',
+        setAuditId: () => {},
+        getSuggestions: () => [],
+        getType: () => 'structured-data',
+        getData: () => ({ dataSources: ['Ahrefs', 'Site'] }),
+        setData: () => {},
+        setUpdatedBy: () => {},
+        save: () => {},
+        getId: () => 'opportunity-id-12345',
+        addSuggestions: () => ({ errorItems: [] }),
+        setType: () => {},
+        getSiteId: () => 'site-id-12345',
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus = () => [opportunity];
+      await opportunityAndSuggestions(finalUrl, auditData, context);
+      const pageUrlToErrorIds = auditData.auditResult.issues.reduce((acc, issue) => {
+        if (!acc[issue.pageUrl]) acc[issue.pageUrl] = [];
+        acc[issue.pageUrl].push(issue.errors[0].id);
+        return acc;
+      }, {});
+      Object.values(pageUrlToErrorIds).forEach((errorIds) => {
+        expect(new Set(errorIds).size).to.equal(errorIds.length);
+      });
+      expect(pageUrlToErrorIds).to.deep.equal({
+        'https://example.com/page1': [
+          'product:missingfieldname',
+          'product:missingfieldprice',
+          'breadcrumblist:missingfieldname',
+          'product:missingfieldname:1',
+        ],
+        'https://example.com/page2': [
+          'product:missingfieldname',
+        ],
+      });
     });
   });
 
