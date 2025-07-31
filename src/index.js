@@ -56,6 +56,7 @@ import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
 import detectPageIntent from './page-intent/handler.detect.js';
+import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -96,6 +97,7 @@ const HANDLERS = {
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
   'detect:page-intent': detectPageIntent,
+  'llmo-referral-traffic': llmoReferralTraffic,
   dummy: (message) => ok(message),
 };
 
