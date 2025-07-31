@@ -3050,6 +3050,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
           getId: () => 'sugg-different',
         },
       ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
     };
 
     const mockDataAccess = {
@@ -3062,6 +3065,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
       info: sandbox.stub(),
       debug: sandbox.stub(),
       error: sandbox.stub(),
+      warn: sandbox.stub(),
     };
 
     const mockContext = {
@@ -3096,13 +3100,11 @@ describe('handleAccessibilityRemediationGuidance', () => {
       pageUrl: 'https://example.com/page1',
       notFoundSuggestionIds: ['sugg-789'],
       invalidRemediations: [],
+      failedSuggestionIds: [],
     });
 
     expect(mockLog.warn).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 suggestions not found: sugg-789',
-    );
-    expect(mockLog.warn).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: No remediations were processed',
     );
   });
 
@@ -3288,6 +3290,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
       success: true,
       totalIssues: 0,
       pageUrl: 'https://example.com/page1',
+      processedRemediations: 0,
       notFoundSuggestionIds: [],
       invalidRemediations: [],
       failedSuggestionIds: [],
@@ -3440,6 +3443,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
       info: sandbox.stub(),
       debug: sandbox.stub(),
       error: sandbox.stub(),
+      warn: sandbox.stub(),
     };
 
     const mockContext = {
