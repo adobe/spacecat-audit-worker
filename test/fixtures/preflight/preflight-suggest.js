@@ -58,26 +58,7 @@ export const suggestionData = [
       {
         name: 'metatags',
         type: 'seo',
-        opportunities: [
-          {
-            seoImpact: 'Moderate',
-            issue: 'Title too short',
-            issueDetails: '28 chars below limit',
-            seoRecommendation: '40-60 characters long',
-            tagContent: 'Page 1 Title',
-            aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
-            aiRationale: 'The title is catchy and broad...',
-            tagName: 'title',
-          },
-          {
-            seoImpact: 'Moderate',
-            issue: 'Description too short',
-            issueDetails: '122 chars below limit',
-            seoRecommendation: '140-160 characters long',
-            tagContent: 'Page 1 Description',
-            tagName: 'description',
-          },
-        ],
+        opportunities: [], // Added length check in metatags audit, no oppty when body is short
       },
       {
         name: 'links',
