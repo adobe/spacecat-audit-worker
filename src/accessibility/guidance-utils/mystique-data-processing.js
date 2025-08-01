@@ -44,6 +44,8 @@ export function processSuggestionsForMystique(suggestions) {
     const issuesList = [];
     for (const suggestion of suggestionsForUrl) {
       if (isNonEmptyArray(suggestion.issues)) {
+        // Starting with SITES-33832, a suggestion corresponds to a single granular issue,
+        // i.e. target selector and faulty HTML line
         const singleIssue = suggestion.issues[0];
         if (isNonEmptyArray(singleIssue.htmlWithIssues)) {
           const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
