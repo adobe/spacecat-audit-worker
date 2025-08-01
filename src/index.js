@@ -53,6 +53,7 @@ import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/
 import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
+import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -90,6 +91,7 @@ const HANDLERS = {
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
   'llm-error-pages': llmErrorPages,
+  'guidance:llm-error-pages': llmErrorPagesGuidance,
   dummy: (message) => ok(message),
 };
 
