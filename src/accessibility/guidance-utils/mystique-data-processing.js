@@ -20,44 +20,39 @@ import { issueTypesForMystique } from '../utils/constants.js';
  * @returns {Array} Array of message data objects ready for SQS sending
  */
 export function processSuggestionsForMystique(suggestions) {
-  // Handle null/undefined inputs safely
   if (!suggestions || !Array.isArray(suggestions)) {
     return [];
   }
 
-  const messageData = [];
-  // Group issues by url
-  const issuesByUrl = {};
-
+  // Group suggestions by url
+  const suggestionsByUrl = {};
   for (const suggestion of suggestions) {
     const suggestionData = suggestion.getData();
     const suggestionId = suggestion.getId();
-    if (suggestionData.issues && Array.isArray(suggestionData.issues)) {
-      for (const issue of suggestionData.issues) {
-        if (issueTypesForMystique.includes(issue.type)) {
-          const { url } = suggestionData;
-          if (!issuesByUrl[url]) {
-            issuesByUrl[url] = [];
-          }
-          issuesByUrl[url].push({ ...suggestionData, suggestionId });
-        }
+    if (suggestionData.issues && isNonEmptyArray(suggestionData.issues)
+      && issueTypesForMystique.includes(suggestionData.issues[0].type)) {
+      const { url } = suggestionData;
+      if (!suggestionsByUrl[url]) {
+        suggestionsByUrl[url] = [];
       }
+      suggestionsByUrl[url].push({ ...suggestionData, suggestionId });
     }
   }
 
-  for (const [url, issues] of Object.entries(issuesByUrl)) {
+  const messageData = [];
+  for (const [url, suggestionsForUrl] of Object.entries(suggestionsByUrl)) {
     const issuesList = [];
-    for (const issue of issues) {
-      if (isNonEmptyArray(issue.issues)) {
-        const singleIssue = issue.issues[0];
+    for (const suggestion of suggestionsForUrl) {
+      if (isNonEmptyArray(suggestion.issues)) {
+        const singleIssue = suggestion.issues[0];
         if (isNonEmptyArray(singleIssue.htmlWithIssues)) {
           const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
           issuesList.push({
             issueName: singleIssue.type,
-            faultyLine: singleHtmlWithIssue.update_from || '',
-            targetSelector: singleHtmlWithIssue.target_selector || '',
+            faultyLine: singleHtmlWithIssue.update_from || singleHtmlWithIssue.updateFrom || '',
+            targetSelector: singleHtmlWithIssue.target_selector || singleHtmlWithIssue.targetSelector || '',
             issueDescription: singleIssue.description || '',
-            suggestionId: issue.suggestionId,
+            suggestionId: suggestion.suggestionId,
           });
         }
       }

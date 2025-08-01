@@ -109,45 +109,6 @@ describe('mystique-data-processing', () => {
       });
     });
 
-    it('should group multiple issues of the same type from the same URL', () => {
-      const mockSuggestion = {
-        getData: () => ({
-          url: 'https://example.com',
-          issues: [
-            {
-              type: 'aria-allowed-attr',
-              htmlWithIssues: [
-                {
-                  update_from: '<dt aria-level="3">Term</dt>',
-                  target_selector: 'dt',
-                },
-              ],
-              description: 'ARIA attribute not allowed on this element',
-            },
-            {
-              type: 'aria-allowed-attr',
-              htmlWithIssues: [
-                {
-                  update_from: '<span aria-level="2">Text</span>',
-                  target_selector: 'span',
-                },
-              ],
-              description: 'ARIA attribute not allowed on this element',
-            },
-          ],
-        }),
-        getId: () => 'sugg-1',
-      };
-
-      const result = processSuggestionsForMystique([mockSuggestion]);
-
-      expect(result).to.have.length(1);
-      expect(result[0].url).to.equal('https://example.com');
-      expect(result[0].issuesList).to.have.length(2);
-      expect(result[0].issuesList[0].issueName).to.equal('aria-allowed-attr');
-      expect(result[0].issuesList[1].issueName).to.equal('aria-allowed-attr');
-    });
-
     it('should handle issues without htmlWithIssues', () => {
       const mockSuggestion = {
         getData: () => ({

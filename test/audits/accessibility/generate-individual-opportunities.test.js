@@ -1042,6 +1042,40 @@ describe('aggregateAccessibilityIssues', () => {
     expect(result.data).to.be.empty;
   });
 
+  it('should handle missing target list', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'aria-allowed-attr': {
+                description: 'Multiple elements with invalid ARIA',
+                successCriteriaTags: ['wcag412'],
+                count: 3,
+                htmlWithIssues: [
+                  '<div aria-fake="true">Content 1</div>',
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+
+    expect(result.data).to.have.lengthOf(1);
+    const opportunity = result.data[0];
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(1);
+    const assistiveOpportunity = opportunity['a11y-assistive'][0];
+
+    expect(assistiveOpportunity.url).to.equal('https://example.com');
+    expect(assistiveOpportunity.issues).to.have.lengthOf(1);
+    expect(assistiveOpportunity.issues[0].type).to.equal('aria-allowed-attr');
+    expect(assistiveOpportunity.issues[0].htmlWithIssues).to.have.lengthOf(1);
+    expect(assistiveOpportunity.issues[0].htmlWithIssues[0].target_selector).to.equal('');
+  });
+
   it('should create separate URL objects for multiple HTML elements', () => {
     const input = {
       'https://example.com': {
@@ -1057,10 +1091,10 @@ describe('aggregateAccessibilityIssues', () => {
                   '<span aria-invalid-attr="value">Content 2</span>',
                   '<p aria-made-up="test">Content 3</p>',
                 ],
-                targets: [
-                  ['div[aria-fake]'],
-                  ['span[aria-invalid-attr]'],
-                  ['p[aria-made-up]'],
+                target: [
+                  'div[aria-fake]',
+                  'span[aria-invalid-attr]',
+                  'p[aria-made-up]',
                 ],
               },
             },
@@ -1089,6 +1123,14 @@ describe('aggregateAccessibilityIssues', () => {
       .to.equal('<span aria-invalid-attr="value">Content 2</span>');
     expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].update_from)
       .to.equal('<p aria-made-up="test">Content 3</p>');
+
+    // Verify specific target
+    expect(opportunity['a11y-assistive'][0].issues[0].htmlWithIssues[0].target_selector)
+      .to.equal('div[aria-fake]');
+    expect(opportunity['a11y-assistive'][1].issues[0].htmlWithIssues[0].target_selector)
+      .to.equal('span[aria-invalid-attr]');
+    expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].target_selector)
+      .to.equal('p[aria-made-up]');
   });
 });
 
