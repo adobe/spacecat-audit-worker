@@ -26,7 +26,7 @@ describe('LLM Error Pages – url-validator', () => {
   beforeEach(async () => {
     fetchStub = sandbox.stub();
     // Use esmock to replace tracingFetch with our stub
-    urlValidator = await esmock('../../src/llm-error-pages/url-validator.js', {
+    urlValidator = await esmock('../../../src/llm-error-pages/url-validator.js', {
       '@adobe/spacecat-shared-utils': { tracingFetch: fetchStub },
     });
   });

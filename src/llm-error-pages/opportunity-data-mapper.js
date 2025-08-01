@@ -29,7 +29,7 @@ export function buildOpportunityDataForErrorType(errorType, aggregatedData) {
   const uniqueUserAgents = [...new Set(aggregatedData.map((item) => item.userAgent))].length;
 
   return {
-    runbook: '', // TBD
+    runbook: 'https://wiki.corp.adobe.com/pages/editpage.action?pageId=3564012596',
     origin: 'AUTOMATION',
     title: `LLM ${ERROR_CATEGORY_TYPE[errorType]}`,
     description: `URLs returning ${errorType} errors to LLM crawlers`,

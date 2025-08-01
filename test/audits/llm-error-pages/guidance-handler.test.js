@@ -37,7 +37,7 @@ describe('LLM Error Pages – guidance-handler', () => {
       Opportunity: OpportunityMock,
     };
 
-    guidanceHandler = await esmock('../../src/llm-error-pages/guidance-handler.js');
+    guidanceHandler = await esmock('../../../src/llm-error-pages/guidance-handler.js');
   });
 
   afterEach(() => sandbox.restore());

@@ -18,7 +18,7 @@ let utils;
 
 before(async () => {
   // Dynamically import opportunity-handler with no mocks – we just need the pure functions
-  utils = await esmock('../../src/llm-error-pages/opportunity-handler.js');
+  utils = await esmock('../../../src/llm-error-pages/opportunity-handler.js');
 });
 
 describe('LLM Error Pages – Opportunity Utils', () => {

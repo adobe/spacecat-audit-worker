@@ -35,7 +35,7 @@ describe('LLM Error Pages – opportunity-handler sendWithRetry', () => {
     // Stub SQS sendMessage to always reject
     const sendMessageStub = sandbox.stub().rejects(new Error('SQS down'));
 
-    opportunityModule = await esmock('../../src/llm-error-pages/opportunity-handler.js', {
+    opportunityModule = await esmock('../../../src/llm-error-pages/opportunity-handler.js', {
       '../common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
       '../utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
     });
