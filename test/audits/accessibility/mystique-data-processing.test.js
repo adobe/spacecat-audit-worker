@@ -337,13 +337,38 @@ describe('mystique-data-processing', () => {
         getId: () => 'sugg-2',
       };
 
-      const result = processSuggestionsForMystique([mockSuggestion1, mockSuggestion2]);
+      const mockSuggestion3 = {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          issues: [
+            {
+              type: 'aria-allowed-attr',
+              htmlWithIssues: [
+                {
+                  update_from: '<li aria-level="3">Term</li>',
+                  target_selector: 'li',
+                },
+              ],
+              description: 'ARIA attribute not allowed on this element',
+            },
+          ],
+        }),
+        getId: () => 'sugg-3',
+      };
+
+      const result = processSuggestionsForMystique(
+        [mockSuggestion1, mockSuggestion2, mockSuggestion3],
+      );
 
       expect(result).to.have.length(2);
       expect(result[0].url).to.equal('https://example.com/page1');
       expect(result[1].url).to.equal('https://example.com/page2');
       expect(result[0].issuesList[0].suggestionId).to.equal('sugg-1');
+      expect(result[0].issuesList[0].targetSelector).to.equal('dt');
+      expect(result[0].issuesList[1].suggestionId).to.equal('sugg-3');
+      expect(result[0].issuesList[1].targetSelector).to.equal('li');
       expect(result[1].issuesList[0].suggestionId).to.equal('sugg-2');
+      expect(result[1].issuesList[0].targetSelector).to.equal('span');
     });
 
     it('should group suggestions with the same URL', () => {
