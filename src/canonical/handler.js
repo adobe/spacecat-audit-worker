@@ -12,74 +12,95 @@
 
 import { JSDOM } from 'jsdom';
 import { composeBaseURL, tracingFetch as fetch, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { isPreviewPage } from '../utils/url-utils.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
 /**
  * @import {type RequestOptions} from "@adobe/fetch"
 */
 
+const auditType = Audit.AUDIT_TYPES.CANONICAL;
+
 export const CANONICAL_CHECKS = Object.freeze({
   CANONICAL_TAG_EXISTS: {
     check: 'canonical-tag-exists',
     explanation: 'The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.',
+    suggestion: (url) => `Add a canonical tag to the head section: <link rel="canonical" href="${url}" />`,
   },
   CANONICAL_TAG_ONCE: {
     check: 'canonical-tag-once',
     explanation: 'Multiple canonical tags detected, which confuses search engines and can dilute page authority.',
+    suggestion: () => 'Remove duplicate canonical tags and keep only one canonical tag in the head section.',
   },
   CANONICAL_TAG_NONEMPTY: {
     check: 'canonical-tag-nonempty',
     explanation: 'The canonical tag is empty. It should point to the preferred version of the page to avoid content duplication.',
+    suggestion: (url) => `Set the canonical URL in the href attribute: <link rel="canonical" href="${url}" />`,
   },
   CANONICAL_TAG_IN_HEAD: {
     check: 'canonical-tag-in-head',
     explanation: 'The canonical tag must be placed in the head section of the HTML document to ensure it is recognized by search engines.',
+    suggestion: () => 'Move the canonical tag to the <head> section of the HTML document.',
   },
   CANONICAL_URL_STATUS_OK: {
     check: 'canonical-url-status-ok',
     explanation: 'The canonical URL should return a 200 status code to ensure it is accessible and indexable by search engines.',
+    suggestion: () => 'Ensure the canonical URL returns a 200 status code and is accessible.',
   },
   CANONICAL_URL_NO_REDIRECT: {
     check: 'canonical-url-no-redirect',
     explanation: 'The canonical URL should be a direct link without redirects to ensure search engines recognize the intended page.',
+    suggestion: () => 'Update the canonical URL to point directly to the final destination without redirects.',
   },
   CANONICAL_URL_4XX: {
     check: 'canonical-url-4xx',
     explanation: 'The canonical URL returns a 4xx error, indicating it is inaccessible, which can harm SEO visibility.',
+    suggestion: () => 'Fix the canonical URL to resolve the 4xx client error and make it accessible.',
   },
   CANONICAL_URL_5XX: {
     check: 'canonical-url-5xx',
     explanation: 'The canonical URL returns a 5xx server error, indicating it is temporarily or permanently unavailable, affecting SEO performance.',
+    suggestion: () => 'Fix the canonical URL to resolve the 5xx server error and ensure it\'s accessible.',
   },
   CANONICAL_SELF_REFERENCED: {
     check: 'canonical-self-referenced',
     explanation: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
+    suggestion: (url) => `Update canonical URL to point to itself: <link rel="canonical" href="${url}" />`,
   },
   CANONICAL_URL_ABSOLUTE: {
     check: 'canonical-url-absolute',
     explanation: 'Canonical URLs must be absolute to avoid ambiguity in URL resolution and ensure proper indexing by search engines.',
+    suggestion: (url) => `Use an absolute URL for the canonical tag: <link rel="canonical" href="${url}" />`,
   },
   CANONICAL_URL_SAME_DOMAIN: {
     check: 'canonical-url-same-domain',
     explanation: 'The canonical URL should match the domain of the page to avoid signaling to search engines that the content is duplicated elsewhere.',
+    suggestion: (url) => `Update canonical URL to use the same domain as the page: <link rel="canonical" href="${url}" />`,
   },
   CANONICAL_URL_SAME_PROTOCOL: {
     check: 'canonical-url-same-protocol',
     explanation: 'The canonical URL must use the same protocol (HTTP or HTTPS) as the page to maintain consistency and avoid indexing issues.',
+    suggestion: (url) => `Update canonical URL to use the same protocol (HTTP/HTTPS): <link rel="canonical" href="${url}" />`,
   },
   CANONICAL_URL_LOWERCASED: {
     check: 'canonical-url-lowercased',
     explanation: 'Canonical URLs should be in lowercase to prevent duplicate content issues since URLs are case-sensitive.',
+    suggestion: (url) => `Update canonical URL to use lowercase: <link rel="canonical" href="${url.toLowerCase()}" />`,
   },
   CANONICAL_URL_FETCH_ERROR: {
     check: 'canonical-url-fetch-error',
     explanation: 'There was an error fetching the canonical URL, which prevents validation of the canonical tag.',
+    suggestion: () => 'Check if the canonical URL is accessible and fix any connectivity issues.',
   },
   CANONICAL_URL_INVALID: {
     check: 'canonical-url-invalid',
     explanation: 'The canonical URL is malformed or invalid.',
+    suggestion: (url) => `Fix the malformed canonical URL and ensure it follows proper URL format: <link rel="canonical" href="${url}" />`,
   },
   TOPPAGES: {
     check: 'top-pages',
@@ -468,6 +489,25 @@ export async function validateCanonicalRecursively(
 }
 
 /**
+ * Generates a suggestion for fixing a canonical issue based on the check type and URL.
+ *
+ * @param {string} checkType - The type of canonical check that failed.
+ * @param {string} url - The URL that has the canonical issue.
+ * @param {string} baseURL - The base URL of the site.
+ * @returns {string} A suggestion for fixing the canonical issue.
+ */
+export function generateCanonicalSuggestion(checkType, url, baseURL) {
+  const checkObj = Object.values(CANONICAL_CHECKS).find((check) => check.check === checkType);
+
+  if (checkObj && checkObj.suggestion) {
+    return checkObj.suggestion(url, baseURL);
+  }
+
+  // fallback suggestion
+  return 'Review and fix the canonical tag implementation according to SEO best practices.';
+}
+
+/**
  * Audits the canonical URLs for a given site.
  *
  * @param {string} baseURL -- not sure if baseURL like in apex or siteId as we see in logs
@@ -487,6 +527,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
+
       return {
         fullAuditRef: baseURL,
         auditResult: {
@@ -545,12 +586,11 @@ export async function canonicalAuditRunner(baseURL, context, site) {
           if (success === false) {
             if (!acc[checkType]) {
               acc[checkType] = {
-                success: false,
                 explanation,
-                url: [],
+                urls: [],
               };
             }
-            acc[checkType].url.push(url);
+            acc[checkType].urls.push(url);
           }
         });
       }
@@ -570,11 +610,23 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       };
     }
 
+    // final results structure
+    const results = Object.entries(aggregatedResults).map(([checkType, checkData]) => ({
+      type: checkType,
+      explanation: checkData.explanation,
+      affectedUrls: checkData.urls.map((url) => ({
+        url,
+        suggestion: generateCanonicalSuggestion(checkType, url, baseURL),
+      })),
+    }));
+
     return {
       fullAuditRef: baseURL,
-      auditResult: aggregatedResults,
+      auditResult: results,
     };
   } catch (error) {
+    log.info(`Canonical audit failed for site ${siteId}: ${error.message}`);
+
     return {
       fullAuditRef: baseURL,
       auditResult: {
@@ -585,7 +637,95 @@ export async function canonicalAuditRunner(baseURL, context, site) {
   }
 }
 
+/**
+ * Generates suggestions based on canonical audit results.
+ * Transforms the audit result array into a format suitable for the suggestions system.
+ *
+ * @param {string} auditUrl - The URL that was audited.
+ * @param {Object} auditData - The audit data containing results.
+ * @param {Object} context - The context object containing log and other utilities.
+ * @returns {Object} The audit data with suggestions added.
+ */
+export function generateSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
+
+  // if audit failed or has no issues, skip suggestions generation
+  if (!Array.isArray(auditData.auditResult)) {
+    log.info(`Canonical audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
+    return { ...auditData };
+  }
+
+  // transform audit results into suggestions
+  const suggestions = auditData.auditResult
+    .flatMap((issue) => issue.affectedUrls.map((urlData) => ({
+      type: 'CODE_CHANGE',
+      checkType: issue.type,
+      explanation: issue.explanation,
+      url: urlData.url,
+      suggestion: urlData.suggestion,
+      recommendedAction: urlData.suggestion,
+    })));
+
+  log.info(`Generated ${suggestions.length} canonical suggestions for ${auditUrl}`);
+  return { ...auditData, suggestions };
+}
+
+/**
+ * Creates opportunities and syncs suggestions for canonical issues.
+ *
+ * @param {string} auditUrl - The URL that was audited.
+ * @param {Object} auditData - The audit data containing results and suggestions.
+ * @param {Object} context - The context object containing log, dataAccess, etc.
+ * @returns {Object} The audit data unchanged (opportunities created as side effect).
+ */
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
+
+  // if audit failed or has no suggestions, skip opportunity creation
+  if (!Array.isArray(auditData.auditResult) || !auditData.suggestions?.length) {
+    log.info('Canonical audit has no issues, skipping opportunity creation');
+    return { ...auditData };
+  }
+
+  // create opportunity
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
+
+  const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
+
+  // sync suggestions with opportunity
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.suggestions,
+    context,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: suggestion.type,
+      rank: 0, // all suggestions are ranked equally
+      data: {
+        type: 'url',
+        url: suggestion.url,
+        checkType: suggestion.checkType,
+        explanation: suggestion.explanation,
+        suggestion: suggestion.suggestion,
+        recommendedAction: suggestion.recommendedAction,
+      },
+    }),
+    log,
+  });
+
+  log.info(`Canonical opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  return { ...auditData };
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(canonicalAuditRunner)
+  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();
