@@ -46,6 +46,7 @@ import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-
 import paidConsentGuidance from './paid/guidance-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import llmBlocked from './llm-blocked/handler.js';
 import { suggestionsInternalLinksHandler } from './internal-links/suggestions-internal-links-handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
@@ -78,6 +79,7 @@ const HANDLERS = {
   'meta-tags': metaTags,
   costs,
   'structured-data': structuredData,
+  'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance, // ref
