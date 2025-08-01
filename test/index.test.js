@@ -85,4 +85,89 @@ describe('Index Tests', () => {
     const resp = await main(request, context);
     expect(resp.status).to.equal(200);
   });
+
+  describe('Warmup Handler', () => {
+    it('handles warmup requests successfully', async () => {
+      messageBodyJson.type = 'warmup';
+      messageBodyJson.siteId = 'warmup-site-1';
+      messageBodyJson.warmupId = '1';
+      context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+
+      const infoSpy = sandbox.spy(console, 'info');
+      const resp = await main(request, context);
+
+      expect(resp.status).to.equal(200);
+      expect(infoSpy).to.have.been.calledWith('Warmup request 1 received for warmup-site-1 - keeping Lambda warm');
+
+      const responseBody = JSON.parse(await resp.text());
+      expect(responseBody).to.deep.include({
+        status: 'OK',
+        message: 'Lambda warmed successfully',
+        type: 'warmup',
+        warmupId: '1',
+        siteId: 'warmup-site-1',
+      });
+      expect(responseBody.timestamp).to.be.a('string');
+    });
+
+    it('handles warmup requests with missing warmupId', async () => {
+      messageBodyJson.type = 'warmup';
+      messageBodyJson.siteId = 'warmup-site-2';
+      // warmupId is missing
+      context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+
+      const resp = await main(request, context);
+
+      expect(resp.status).to.equal(200);
+
+      const responseBody = JSON.parse(await resp.text());
+      expect(responseBody).to.deep.include({
+        status: 'OK',
+        message: 'Lambda warmed successfully',
+        type: 'warmup',
+        warmupId: '1', // Should use default value
+        siteId: 'warmup-site-2',
+      });
+    });
+
+    it('handles warmup requests with different warmupId values', async () => {
+      messageBodyJson.type = 'warmup';
+      messageBodyJson.siteId = 'warmup-site-3';
+      messageBodyJson.warmupId = '5';
+      context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+
+      const resp = await main(request, context);
+
+      expect(resp.status).to.equal(200);
+
+      const responseBody = JSON.parse(await resp.text());
+      expect(responseBody).to.deep.include({
+        status: 'OK',
+        message: 'Lambda warmed successfully',
+        type: 'warmup',
+        warmupId: '5',
+        siteId: 'warmup-site-3',
+      });
+    });
+
+    it('handles warmup requests with missing siteId', async () => {
+      messageBodyJson.type = 'warmup';
+      messageBodyJson.warmupId = '3';
+      // siteId is missing
+      context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+
+      const resp = await main(request, context);
+
+      expect(resp.status).to.equal(200);
+
+      const responseBody = JSON.parse(await resp.text());
+      expect(responseBody).to.deep.include({
+        status: 'OK',
+        message: 'Lambda warmed successfully',
+        type: 'warmup',
+        warmupId: '3',
+      });
+      expect(responseBody.siteId).to.be.undefined;
+    });
+  });
 });

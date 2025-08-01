@@ -99,6 +99,26 @@ const HANDLERS = {
   'detect:page-intent': detectPageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
   dummy: (message) => ok(message),
+  warmup: async (message, context) => {
+    const { log } = context;
+    const { warmupId = '1', siteId } = message;
+
+    log.info(`Warmup request ${warmupId} received for ${siteId} - keeping Lambda warm`);
+
+    // Minimal work to ensure container stays active
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10); // 10ms delay
+    });
+
+    return ok({
+      status: 'OK',
+      message: 'Lambda warmed successfully',
+      timestamp: new Date().toISOString(),
+      type: 'warmup',
+      warmupId,
+      siteId,
+    });
+  },
 };
 
 function getElapsedSeconds(startTime) {
@@ -117,6 +137,7 @@ async function run(message, context) {
   const { log } = context;
   const { type, siteId } = message;
 
+  // Normal audit processing continues...
   log.info(`Received ${type} audit request for: ${siteId}`);
   log.info(`Message ${JSON.stringify(message)}`);
 
