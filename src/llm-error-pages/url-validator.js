@@ -11,23 +11,12 @@
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
-/**
- * Normal browser user agent for baseline validation
- */
-const BASELINE_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
-/**
- * Timeout for HTTP validation requests (in milliseconds)
- */
 const VALIDATION_TIMEOUT = 10000; // 10 seconds
 
-/**
- * Maximum concurrent validation requests
- */
 const MAX_CONCURRENT_VALIDATIONS = 20;
 
 /**
- * Validates a single URL with targeted validation based on error type
+ * Validates a single URL with simple status consistency check
  * @param {Object} error - Error object with url, userAgent, rawUserAgents, status
  * @param {Object} log - Logger instance
  * @returns {Promise<Object|null>} - Validated error object or null if invalid
@@ -38,12 +27,19 @@ async function validateSingleUrl(error, log) {
   } = error;
 
   try {
-    let baselineStatus = null;
-    let llmStatus = null;
     const testUserAgent = rawUserAgents[0]; // Use first raw user agent
 
-    // Step 1: Test with LLM user agent (for all error types)
-    const llmResponse = await fetch(url, {
+    // For 403 errors, check if it's universally blocked
+    if (status === '403') {
+      const simpleResponse = await fetch(url, { timeout: VALIDATION_TIMEOUT });
+      if (simpleResponse.status === 403) {
+        log.debug(`URL ${url} returns 403 even with simple GET - universally blocked, excluding`);
+        return null; // Exclude universal 403s
+      }
+    }
+
+    // Test with LLM user agent to verify status consistency
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
         'User-Agent': testUserAgent,
@@ -51,36 +47,9 @@ async function validateSingleUrl(error, log) {
       timeout: VALIDATION_TIMEOUT,
     });
 
-    llmStatus = llmResponse.status;
-
-    // Step 2: Baseline validation (only for 403 errors)
-    if (status === '403') {
-      const baselineResponse = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'User-Agent': BASELINE_USER_AGENT,
-        },
-        timeout: VALIDATION_TIMEOUT,
-      });
-
-      baselineStatus = baselineResponse.status;
-
-      // 403-specific rule: Remove if both baseline and LLM return 403 (universal blocking)
-      if (baselineStatus === 403 && llmStatus === 403) {
-        log.debug(`URL ${url} returns 403 for both baseline and LLM - universal blocking, removing`);
-        return null;
-      }
-
-      // 403-specific rule: Remove if baseline returns 200 (false positive)
-      if (baselineStatus === 200) {
-        log.debug(`URL ${url} returns 200 with baseline browser - 403 is crawler-specific, removing`);
-        return null;
-      }
-    }
-
-    // Step 3: Status consistency check (for all error types)
-    if (llmStatus.toString() !== status) {
-      log.debug(`URL ${url} status mismatch - expected ${status}, got ${llmStatus} - removing`);
+    // Status consistency check - remove if status changed
+    if (response.status.toString() !== status) {
+      log.debug(`URL ${url} status mismatch - expected ${status}, got ${response.status} - removing`);
       return null;
     }
 
@@ -89,19 +58,14 @@ async function validateSingleUrl(error, log) {
     return {
       ...error,
       validatedAt: new Date().toISOString(),
-      baselineStatus,
-      llmStatus,
-      testUserAgent,
-      validationType: status === '403' ? 'BASELINE_CHECKED' : 'CONSISTENCY_CHECKED',
     };
   } catch (validationError) {
-    // Network errors, timeouts, etc. - still include in suggestions
+    // Network errors, timeouts, etc. - still include in opportunities
     log.warn(`Validation failed for ${url} (${userAgent}): ${validationError.message} - including anyway`);
     return {
       ...error,
       validatedAt: new Date().toISOString(),
       validationError: validationError.message,
-      validationType: 'ERROR_FALLBACK',
     };
   }
 }
@@ -161,29 +125,4 @@ export async function validateUrlsBatch(errors, log) {
 
   log.info(`URL validation complete: ${validatedUrls.length}/${errors.length} URLs passed validation`);
   return validatedUrls;
-}
-
-/**
- * Groups errors by status code for batch validation
- * @param {Array} errors - Array of error objects
- * @returns {Object} - Errors grouped by status code
- */
-export function groupErrorsForValidation(errors) {
-  const grouped = {
-    404: [],
-    403: [],
-    '5xx': [],
-  };
-
-  errors.forEach((error) => {
-    if (error.status === '404') {
-      grouped['404'].push(error);
-    } else if (error.status === '403') {
-      grouped['403'].push(error);
-    } else if (error.status.startsWith('5')) {
-      grouped['5xx'].push(error);
-    }
-  });
-
-  return grouped;
 }

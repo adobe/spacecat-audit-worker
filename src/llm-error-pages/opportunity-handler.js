@@ -19,7 +19,6 @@ import {
 } from './opportunity-data-mapper.js';
 import { normalizeUserAgentToProvider } from './constants/user-agent-patterns.js';
 import { validateUrlsBatch } from './url-validator.js';
-import { processBatchedAiSuggestions, mapAiSuggestionsToErrors } from './ai-batch-processor.js';
 
 /**
  * Categorizes error pages by status code into 404, 403, and 5xx groups
@@ -105,7 +104,7 @@ async function createOpportunityForErrorCategory(
   auditId,
   context,
 ) {
-  const { log } = context;
+  const { log, sqs, env } = context;
 
   if (!enhancedErrors || enhancedErrors.length === 0) {
     log.info(`No validated errors for ${errorType} category - skipping opportunity creation`);
@@ -116,73 +115,140 @@ async function createOpportunityForErrorCategory(
 
   // Build opportunity data
   const opportunityData = buildOpportunityDataForErrorType(errorType, enhancedErrors);
-  const opportunity = convertToOpportunity({
+  const opportunity = await convertToOpportunity({
     siteId,
     auditId,
     ...opportunityData,
   });
 
-  // Create suggestions using syncSuggestions
-  await syncSuggestions({
-    opportunity,
-    newData: enhancedErrors,
-    buildKey: (error) => `${error.url}|${error.status}|${error.userAgent}`,
-    context,
-    mapNewSuggestion: (error, index) => {
-      // Use AI suggestion if available, otherwise fallback to template
-      let suggestionText;
-      let suggestedUrls = [];
-      let aiRationale = null;
-      let confidenceScore = null;
-      let suggestionType = 'TEMPLATE';
-
-      if (error.hasAiSuggestion && error.aiSuggestion) {
-        // AI-generated suggestion
-        suggestionText = `Fix ${error.status} error for ${error.url} (${error.userAgent} crawler)`;
-        suggestedUrls = error.aiSuggestion.suggested_urls || [];
-        aiRationale = error.aiSuggestion.aiRationale;
-        confidenceScore = error.aiSuggestion.confidence_score;
-        suggestionType = error.suggestionType || 'AI_GENERATED';
-      } else {
-        // Template fallback suggestion
+  // Create suggestions based on error type
+  if (errorType === '404') {
+    log.info(`Created opportunity ${opportunity.getId()} for ${errorType} errors - suggestions will be created by Mystique`);
+  } else {
+    // Create informational template suggestions for 403/5xx errors
+    await syncSuggestions({
+      opportunity,
+      newData: enhancedErrors,
+      buildKey: (error) => `${error.url}|${error.status}|${error.userAgent}`,
+      context,
+      mapNewSuggestion: (error, index) => {
+        // Template suggestion for 403/5xx errors
         let template = 'Fix error for {url} - {userAgent} crawler affected';
-        if (error.status === '404') {
-          template = SUGGESTION_TEMPLATES.NOT_FOUND;
-        } else if (error.status === '403') {
+        if (error.status === '403') {
           template = SUGGESTION_TEMPLATES.FORBIDDEN;
         } else if (error.status.startsWith('5')) {
           template = SUGGESTION_TEMPLATES.SERVER_ERROR;
         }
-        suggestionText = populateSuggestion(template, error.url, error.status, error.userAgent);
-      }
+        const suggestionText = populateSuggestion(
+          template,
+          error.url,
+          error.status,
+          error.userAgent,
+        );
 
-      return {
-        opportunityId: opportunity.getId(),
-        type: 'ERROR_REMEDIATION',
-        rank: index + 1,
-        status: 'NEW',
+        return {
+          opportunityId: opportunity.getId(),
+          type: 'ERROR_REMEDIATION',
+          rank: index + 1,
+          status: 'NEW',
+          data: {
+            url: error.url,
+            statusCode: error.status,
+            totalRequests: error.totalRequests,
+            userAgent: error.userAgent,
+            rawUserAgents: error.rawUserAgents,
+            suggestion: suggestionText,
+            suggestedUrls: [], // No alternatives for 403/5xx
+            aiRationale: null,
+            confidenceScore: null,
+            suggestionType: 'INFORMATIONAL',
+            validatedAt: error.validatedAt,
+          },
+        };
+      },
+      log,
+    });
+
+    log.info(`Created opportunity ${opportunity.getId()} for ${errorType} errors with ${enhancedErrors.length} informational suggestions`);
+  }
+
+  // Send SQS messages to Mystique for 404 errors only with enhanced error handling
+  if (errorType === '404' && sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+    log.info(`Sending ${enhancedErrors.length} 404 URLs to Mystique for AI processing`);
+
+    // Enhanced error handling with retry logic and partial failure reporting
+    const stats = {
+      total: enhancedErrors.length,
+      successful: 0,
+      failed: 0,
+      failedUrls: [],
+    };
+
+    // Send with retry logic
+    const sendWithRetry = async (error, maxRetries = 3) => {
+      const message = {
+        type: 'guidance:llm-error-pages',
+        siteId,
+        auditId,
+        deliveryType: context.site?.getDeliveryType?.() || 'aem_edge',
+        time: new Date().toISOString(),
         data: {
-          url: error.url,
+          brokenUrl: `${context.site.getBaseURL()}${error.url}`,
+          userAgent: error.userAgent,
           statusCode: error.status,
           totalRequests: error.totalRequests,
-          userAgent: error.userAgent,
+          opportunityId: opportunity.getId(),
           rawUserAgents: error.rawUserAgents,
-          suggestion: suggestionText,
-          suggestedUrls,
-          aiRationale,
-          confidenceScore,
-          suggestionType,
           validatedAt: error.validatedAt,
-          baselineStatus: error.baselineStatus,
-          llmStatus: error.llmStatus,
-          testUserAgent: error.testUserAgent,
         },
       };
-    },
-    log,
-  });
 
-  log.info(`Created opportunity ${opportunity.getId()} for ${errorType} errors with ${enhancedErrors.length} suggestions`);
+      for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+          return { success: true, error: null };
+        } catch (sqsError) {
+          if (attempt === maxRetries) {
+            return { success: false, error: sqsError };
+          }
+          // Exponential backoff
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((resolve) => {
+            setTimeout(resolve, 1000 * attempt);
+          });
+        }
+      }
+      return { success: false, error: new Error('Max retries exceeded') };
+    };
+
+    // Process all URLs with batch error handling
+    const results = await Promise.allSettled(
+      enhancedErrors.map((error) => sendWithRetry(error)),
+    );
+
+    // Collect statistics
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value.success) {
+        stats.successful += 1;
+        log.info(`Sent 404 URL to Mystique: ${enhancedErrors[index].url} (${enhancedErrors[index].userAgent})`);
+      } else {
+        stats.failed += 1;
+        stats.failedUrls.push(enhancedErrors[index].url);
+        const errorMsg = result.status === 'fulfilled'
+          ? result.value.error.message
+          : result.reason;
+        log.error(`Failed to send 404 URL to Mystique for ${enhancedErrors[index].url}: ${errorMsg}`);
+      }
+    });
+
+    log.info(`Completed sending 404 URLs to Mystique: ${stats.successful}/${stats.total} successful, ${stats.failed} failed`);
+    if (stats.failed > 0) {
+      log.warn(`Failed URLs: ${stats.failedUrls.join(', ')}`);
+    }
+  } else if (errorType === '404') {
+    log.warn('SQS or queue configuration missing - 404 URLs will not be processed by AI');
+  }
 }
 
 /**
@@ -193,8 +259,11 @@ async function createOpportunityForErrorCategory(
  * @returns {Promise<void>}
  */
 export async function generateOpportunities(processedResults, message, context) {
-  const { log } = context;
+  const { log, dataAccess } = context;
   const { siteId, auditId } = message;
+  const { Site } = dataAccess;
+
+  const site = await Site.findById(siteId);
 
   if (!processedResults?.errorPages?.length) {
     log.info('No error pages to process for opportunities');
@@ -203,17 +272,14 @@ export async function generateOpportunities(processedResults, message, context) 
 
   log.info(`Starting enhanced opportunity generation for ${processedResults.errorPages.length} error pages`);
 
-  // Step 1: Categorize errors by status code
   const categorizedErrors = categorizeErrorsByStatusCode(processedResults.errorPages);
 
-  // Step 2: Process each error category
   const categoryPromises = Object.entries(categorizedErrors)
     .filter(([, errors]) => errors.length > 0)
     .map(async ([errorType, errors]) => {
       log.info(`Processing ${errorType} category with ${errors.length} raw errors`);
 
       try {
-        // Step 2a: Consolidate and sort errors
         const consolidatedErrors = consolidateErrorsByUrl(errors);
         const sortedErrors = sortErrorsByTrafficVolume(consolidatedErrors);
 
@@ -232,42 +298,22 @@ export async function generateOpportunities(processedResults, message, context) 
 
         let enhancedErrors;
 
-        // Step 2c: AI processing (only for 404 errors)
         if (errorType === '404') {
-          log.info(`Processing AI suggestions for ${validatedUrls.length} validated 404 URLs`);
-          const aiSuggestions = await processBatchedAiSuggestions(validatedUrls, siteId, context);
+          log.info(`Prepared ${validatedUrls.length} validated 404 URLs for Mystique AI processing`);
 
-          // Map AI suggestions back to error objects (only URLs with successful AI suggestions)
-          enhancedErrors = mapAiSuggestionsToErrors(aiSuggestions, validatedUrls);
-
-          const skippedCount = validatedUrls.length - enhancedErrors.length;
-
-          log.info(`AI processing complete for 404s: ${enhancedErrors.length} URLs with AI suggestions, ${skippedCount} URLs skipped (AI failed)`);
-
-          if (skippedCount > 0) {
-            log.warn(`${skippedCount} 404 URLs will not get suggestions - AI processing failed and no fallbacks for 404s`);
-          }
+          enhancedErrors = validatedUrls;
         } else {
-          // Step 2c: Template-only processing (for 403 and 5xx errors)
-          log.info(`Creating template suggestions for ${validatedUrls.length} validated ${errorType} URLs (no AI processing)`);
+          log.info(`Prepared ${validatedUrls.length} validated ${errorType} URLs for template suggestions`);
 
-          enhancedErrors = validatedUrls.map((error) => ({
-            ...error,
-            hasAiSuggestion: false,
-            aiSuggestion: null,
-            suggestionType: 'TEMPLATE',
-          }));
-
-          log.info(`Created ${enhancedErrors.length} template suggestions for ${errorType} errors`);
+          enhancedErrors = validatedUrls;
         }
 
-        // Step 2d: Create opportunity with enhanced suggestions
         await createOpportunityForErrorCategory(
           errorType,
           enhancedErrors,
           siteId,
           auditId,
-          context,
+          { ...context, site },
         );
       } catch (error) {
         log.error(`Failed to process ${errorType} category: ${error.message}`, error);
@@ -275,12 +321,10 @@ export async function generateOpportunities(processedResults, message, context) 
       }
     });
 
-  // Step 3: Wait for all categories to complete
   await Promise.allSettled(categoryPromises);
 
-  // Step 4: Log final summary
-  const totalValidatedUrls = Object.values(categorizedErrors)
-    .filter((errors) => errors.length > 0).length;
+  const totalProcessedUrls = Object.values(categorizedErrors)
+    .reduce((sum, errors) => sum + errors.length, 0);
 
-  log.info(`Enhanced opportunity generation completed for ${totalValidatedUrls} error categories`);
+  log.info(`Enhanced opportunity generation completed for ${totalProcessedUrls} total error URLs`);
 }
