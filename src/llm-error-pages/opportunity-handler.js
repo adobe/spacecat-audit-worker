@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+/* eslint-disable no-await-in-loop */
+
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import {
@@ -88,6 +90,42 @@ export function sortErrorsByTrafficVolume(errors) {
   return errors.sort((a, b) => b.totalRequests - a.totalRequests);
 }
 
+export async function sendWithRetry(error, context, opportunity, maxRetries = 3) {
+  const {
+    sqs, env, site, log,
+  } = context;
+
+  const message = {
+    type: 'guidance:llm-error-pages',
+    siteId: site.getId?.() || 'unknown',
+    auditId: opportunity.auditId || 'unknown',
+    deliveryType: site?.getDeliveryType?.() || 'aem_edge',
+    time: new Date().toISOString(),
+    data: {
+      brokenUrl: `${site.getBaseURL()}${error.url}`,
+      userAgent: error.userAgent,
+      statusCode: error.status,
+      totalRequests: error.totalRequests,
+      opportunityId: opportunity.getId(),
+      rawUserAgents: error.rawUserAgents,
+      validatedAt: error.validatedAt,
+    },
+  };
+
+  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+    try {
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+      return { success: true, error: null };
+    } catch (sqsError) {
+      if (attempt === maxRetries) {
+        return { success: false, error: sqsError };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+
+  return { success: false, error: new Error('Max retries exceeded') };
+}
 /**
  * Creates an opportunity for a specific error category with AI-enhanced suggestions
  * @param {string} errorType - Error type (404, 403, 5xx)
@@ -184,54 +222,15 @@ async function createOpportunityForErrorCategory(
       failedUrls: [],
     };
 
-    // Send with retry logic
-    const sendWithRetry = async (error, maxRetries = 3) => {
-      const message = {
-        type: 'guidance:llm-error-pages',
-        siteId,
-        auditId,
-        deliveryType: context.site?.getDeliveryType?.() || 'aem_edge',
-        time: new Date().toISOString(),
-        data: {
-          brokenUrl: `${context.site.getBaseURL()}${error.url}`,
-          userAgent: error.userAgent,
-          statusCode: error.status,
-          totalRequests: error.totalRequests,
-          opportunityId: opportunity.getId(),
-          rawUserAgents: error.rawUserAgents,
-          validatedAt: error.validatedAt,
-        },
-      };
-
-      for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-          return { success: true, error: null };
-        } catch (sqsError) {
-          if (attempt === maxRetries) {
-            return { success: false, error: sqsError };
-          }
-          // Exponential backoff
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise((resolve) => {
-            setTimeout(resolve, 1000 * attempt);
-          });
-        }
-      }
-      return { success: false, error: new Error('Max retries exceeded') };
-    };
-
-    // Process all URLs with batch error handling
+    // Process all URLs with batch error handling - FIX: Pass all required parameters
     const results = await Promise.allSettled(
-      enhancedErrors.map((error) => sendWithRetry(error)),
+      enhancedErrors.map((error) => sendWithRetry(error, context, opportunity, 3)),
     );
 
     // Collect statistics
     results.forEach((result, index) => {
       if (result.status === 'fulfilled' && result.value.success) {
         stats.successful += 1;
-        log.info(`Sent 404 URL to Mystique: ${enhancedErrors[index].url} (${enhancedErrors[index].userAgent})`);
       } else {
         stats.failed += 1;
         stats.failedUrls.push(enhancedErrors[index].url);
@@ -259,18 +258,29 @@ async function createOpportunityForErrorCategory(
  * @returns {Promise<void>}
  */
 export async function generateOpportunities(processedResults, message, context) {
-  const { log, dataAccess } = context;
+  const { log, dataAccess, env } = context;
+
+  if (!message) {
+    log.error('Missing required message data');
+    return { status: 'error', reason: 'Missing required message data' };
+  }
+
+  if (!env || !env.QUEUE_SPACECAT_TO_MYSTIQUE) {
+    log.info('Missing required SQS queue configuration');
+    return { status: 'skipped', reason: 'Missing SQS configuration' };
+  }
+
   const { siteId, auditId } = message;
   const { Site } = dataAccess;
 
   const site = await Site.findById(siteId);
 
   if (!processedResults?.errorPages?.length) {
-    log.info('No error pages to process for opportunities');
-    return;
+    log.info('No LLM error pages found, skipping opportunity generation');
+    return { status: 'skipped', reason: 'No error pages to process' };
   }
 
-  log.info(`Starting enhanced opportunity generation for ${processedResults.errorPages.length} error pages`);
+  log.info(`Processing ${processedResults.totalErrors || processedResults.errorPages.length} LLM error pages for opportunity generation`);
 
   const categorizedErrors = categorizeErrorsByStatusCode(processedResults.errorPages);
 
@@ -327,4 +337,10 @@ export async function generateOpportunities(processedResults, message, context) 
     .reduce((sum, errors) => sum + errors.length, 0);
 
   log.info(`Enhanced opportunity generation completed for ${totalProcessedUrls} total error URLs`);
+
+  return {
+    status: 'completed',
+    processedUrls: totalProcessedUrls,
+    categorizedErrors,
+  };
 }

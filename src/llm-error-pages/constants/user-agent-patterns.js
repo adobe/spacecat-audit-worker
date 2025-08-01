@@ -19,7 +19,10 @@ export const LLM_USER_AGENT_PATTERNS = {
 };
 
 export function getLlmProviderPattern(provider) {
-  return LLM_USER_AGENT_PATTERNS[provider?.toLowerCase()] || null;
+  if (typeof provider !== 'string' || !provider.trim()) {
+    return null;
+  }
+  return LLM_USER_AGENT_PATTERNS[provider.toLowerCase()] || null;
 }
 
 export function getAllLlmProviders() {
@@ -45,7 +48,7 @@ export function buildLlmUserAgentFilter(providers = null) {
  * @returns {string} Clean provider name like "ChatGPT" or original if no match
  */
 export function normalizeUserAgentToProvider(rawUserAgent) {
-  if (!rawUserAgent) return 'Unknown';
+  if (!rawUserAgent || typeof rawUserAgent !== 'string') return 'Unknown';
 
   if (/chatgpt|gptbot|oai-searchbot/i.test(rawUserAgent)) {
     return 'ChatGPT';

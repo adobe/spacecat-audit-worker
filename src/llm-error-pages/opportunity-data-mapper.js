@@ -54,7 +54,7 @@ export function buildOpportunityDataForErrorType(errorType, aggregatedData) {
 
 export function populateSuggestion(template, url, statusCode, userAgent) {
   return template
-    .replace('{url}', url)
-    .replace('{statusCode}', statusCode)
-    .replace('{userAgent}', userAgent);
+    .replace(/{url}/g, url)
+    .replace(/{statusCode}/g, statusCode)
+    .replace(/{userAgent}/g, userAgent);
 }

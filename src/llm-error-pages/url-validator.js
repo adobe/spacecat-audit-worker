@@ -21,7 +21,7 @@ const MAX_CONCURRENT_VALIDATIONS = 20;
  * @param {Object} log - Logger instance
  * @returns {Promise<Object|null>} - Validated error object or null if invalid
  */
-async function validateSingleUrl(error, log) {
+export async function validateSingleUrl(error, log) {
   const {
     url, userAgent, rawUserAgents, status,
   } = error;
