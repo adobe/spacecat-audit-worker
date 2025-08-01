@@ -9,7 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { notFound, ok, badRequest } from '@adobe/spacecat-shared-http-utils';
+
+import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { filterBrokenSuggestedUrls } from '../utils/url-utils.js';
 
 export default async function handler(message, context) {
@@ -17,48 +18,54 @@ export default async function handler(message, context) {
   const { Audit, Suggestion, Site } = dataAccess;
   const { auditId, siteId, data } = message;
   const {
-    suggestedUrls, aiRationale, suggestionId, opportunityId,
+    brokenLinks, opportunityId,
   } = data;
-  log.info(`Message received in broken-internal-links suggestion handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`Message received in broken-links suggestion handler: ${JSON.stringify(message, null, 2)}`);
 
   const site = await Site.findById(siteId);
   if (!site) {
     log.error(`Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
+
   const audit = await Audit.findById(auditId);
   if (!audit) {
     log.warn(`No audit found for auditId: ${auditId}`);
-    return notFound('Audit not found');
+    return notFound();
   }
   const { Opportunity } = dataAccess;
   const opportunity = await Opportunity.findById(opportunityId);
 
   if (!opportunity) {
-    log.error(`[BrokenInternalLinksGuidance] Opportunity not found for ID: ${opportunityId}`);
+    log.error(`[Broken Links Guidance] Opportunity not found for ID: ${opportunityId}`);
     return notFound('Opportunity not found');
   }
 
   // Verify the opportunity belongs to the correct site
   if (opportunity.getSiteId() !== siteId) {
-    const errorMsg = `[BrokenInternalLinks] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
+    const errorMsg = `[${opportunity.getType()} Guidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
     log.error(errorMsg);
     return badRequest('Site ID mismatch');
   }
 
-  const suggestion = await Suggestion.findById(suggestionId);
-  if (!suggestion) {
-    log.error(`[BrokenInternalLinksGuidance] Suggestion not found for ID: ${suggestionId}`);
-    return notFound('Suggestion not found');
-  }
-  const filteredSuggestedUrls = await filterBrokenSuggestedUrls(suggestedUrls, site.getBaseURL());
-  suggestion.setData({
-    ...suggestion.getData(),
-    suggestedUrls: filteredSuggestedUrls,
-    aiRationale,
-  });
+  await Promise.all(brokenLinks.map(async (brokenLink) => {
+    const suggestion = await Suggestion.findById(brokenLink.suggestionId);
+    if (!suggestion) {
+      log.error(`[${opportunity.getType()}] Suggestion not found for ID: ${brokenLink.suggestionId}`);
+      return {};
+    }
+    const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
+      brokenLink.suggestedUrls,
+      site.getBaseURL(),
+    );
+    suggestion.setData({
+      ...suggestion.getData(),
+      suggestedUrls: filteredSuggestedUrls,
+      aiRationale: brokenLink.aiRationale,
+    });
 
-  await suggestion.save();
+    return suggestion.save();
+  }));
 
   return ok();
 }

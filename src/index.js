@@ -28,8 +28,7 @@ import sitemap from './sitemap/handler.js';
 import paid from './paid/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
-import brokenBacklinksGuidance from './backlinks/guidance-handler.js';
-import brokenInternalLinksGuidance from './internal-links/guidance-handler.js';
+import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
 import internalLinks from './internal-links/handler.js';
 import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
@@ -82,8 +81,7 @@ const HANDLERS = {
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
-  'guidance:broken-backlinks': brokenBacklinksGuidance,
-  'guidance:broken-internal-links': brokenInternalLinksGuidance,
+  'guidance:broken-links': brokenLinksGuidance,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,

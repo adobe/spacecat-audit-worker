@@ -16,12 +16,12 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import internalLinksGuidanceHandler from '../../src/internal-links/guidance-handler.js';
+import brokenLinksGuidanceHandler from '../../src/broken-links-guidance/guidance-handler.js';
 import { MockContextBuilder } from '../shared.js';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
 
 use(sinonChai);
-describe('guidance-internal-links-remediation handler', () => {
+describe('guidance-broken-links-remediation handler', () => {
   let sandbox;
   let mockContext;
   const mockMessage = {
@@ -29,11 +29,13 @@ describe('guidance-internal-links-remediation handler', () => {
     siteId: 'test-site-id',
     type: 'guidance:broken-backlinks',
     data: {
-      suggestionId: 'test-suggestion-id-1',
       opportunityId: 'test-opportunity-id',
-      brokenUrl: 'https://foo.com/redirects-throws-error',
-      suggestedUrls: ['https://foo.com/redirects-throws-error-1', 'https://foo.com/redirects-throws-error-2'],
-      aiRationale: 'The suggested URLs are similar to the original URL and are likely to be the correct destination.',
+      brokenLinks: [{
+        suggestionId: 'test-suggestion-id-1',
+        brokenUrl: 'https://foo.com/redirects-throws-error',
+        suggestedUrls: ['https://foo.com/redirects-throws-error-1', 'https://foo.com/redirects-throws-error-2'],
+        aiRationale: 'The suggested URLs are similar to the original URL and are likely to be the correct destination.',
+      }],
     },
   };
 
@@ -48,18 +50,28 @@ describe('guidance-internal-links-remediation handler', () => {
     sandbox.restore();
   });
 
-  it('should successfully process broken-internal-links remediation guidance', async () => {
+  it('should successfully process broken-backlinks remediation guidance', async () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
-      getAuditType: () => 'broken-internal-links',
+      getAuditType: () => 'broken-backlinks',
     });
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
       getSiteId: () => mockMessage.siteId,
       getId: () => mockMessage.data.opportunityId,
+    });
+    const mockSetData = sandbox.stub();
+    const mockSave = sandbox.stub().resolves();
+    mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({
+      setData: mockSetData,
+      getData: sandbox.stub().returns({
+        url_to: mockMessage.data.broken_url,
+        url_from: 'https://foo.com/redirects-throws-error',
+      }),
+      save: mockSave,
     });
     nock('https://foo.com')
       .head('/redirects-throws-error-1')
@@ -67,26 +79,15 @@ describe('guidance-internal-links-remediation handler', () => {
     nock('https://foo.com')
       .head('/redirects-throws-error-2')
       .reply(200);
-    const mockSetData = sandbox.stub();
-    const mockSave = sandbox.stub().resolves();
-    mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({
-      setData: mockSetData,
-      getData: sandbox.stub().returns({
-        urlTo: mockMessage.data.broken_url,
-        urlFrom: 'https://foo.com/redirects-throws-error',
-      }),
-      save: mockSave,
-    });
-
-    const response = await internalLinksGuidanceHandler(mockMessage, mockContext);
+    const response = await brokenLinksGuidanceHandler(mockMessage, mockContext);
     expect(response.status).to.equal(200);
 
     expect(mockSave).to.have.been.calledOnce;
     expect(mockSetData).to.have.been.calledWith({
-      urlTo: mockMessage.data.broken_url,
-      urlFrom: 'https://foo.com/redirects-throws-error',
-      suggestedUrls: mockMessage.data.suggestedUrls,
-      aiRationale: mockMessage.data.aiRationale,
+      url_to: mockMessage.data.brokenLinks[0].broken_url,
+      url_from: 'https://foo.com/redirects-throws-error',
+      suggestedUrls: mockMessage.data.brokenLinks[0].suggestedUrls,
+      aiRationale: mockMessage.data.brokenLinks[0].aiRationale,
     });
   });
 
@@ -96,7 +97,7 @@ describe('guidance-internal-links-remediation handler', () => {
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({});
 
-    const response = await internalLinksGuidanceHandler(mockMessage, mockContext);
+    const response = await brokenLinksGuidanceHandler(mockMessage, mockContext);
     expect(response.status).to.equal(404);
     expect(mockContext.dataAccess.Site.findById).to.have.been.calledWith(mockMessage.siteId);
     expect(mockContext.dataAccess.Opportunity.findById).to.not.have.been.called;
@@ -108,7 +109,7 @@ describe('guidance-internal-links-remediation handler', () => {
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({});
 
-    const response = await internalLinksGuidanceHandler(mockMessage, mockContext);
+    const response = await brokenLinksGuidanceHandler(mockMessage, mockContext);
     expect(response.status).to.equal(404);
     expect(mockContext.dataAccess.Audit.findById).to.have.been.calledWith(mockMessage.auditId);
     expect(mockContext.dataAccess.Opportunity.findById).to.not.have.been.called;
@@ -120,7 +121,7 @@ describe('guidance-internal-links-remediation handler', () => {
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves(null);
     mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({});
 
-    const response = await internalLinksGuidanceHandler(mockMessage, mockContext);
+    const response = await brokenLinksGuidanceHandler(mockMessage, mockContext);
     expect(response.status).to.equal(404);
     expect(mockContext.dataAccess.Audit.findById).to.have.been.calledWith(mockMessage.auditId);
     expect(mockContext.dataAccess.Opportunity.findById).to.have.been
@@ -129,14 +130,15 @@ describe('guidance-internal-links-remediation handler', () => {
   });
 
   it('should return error if Opportunity siteId does not match message siteId', async () => {
-    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({});
+    mockContext.dataAccess.Site.findById = sandbox.stub()
+      .resolves({ getId: () => mockMessage.siteId });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
       getSiteId: () => 'site-actual',
+      getType: () => 'broken-backlinks',
     });
     mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({});
-
-    const response = await internalLinksGuidanceHandler(mockMessage, mockContext);
+    const response = await brokenLinksGuidanceHandler(mockMessage, mockContext);
     expect(response.status).to.equal(400);
     expect(mockContext.dataAccess.Audit.findById).to.have.been.calledWith(mockMessage.auditId);
     expect(mockContext.dataAccess.Opportunity.findById).to.have.been
@@ -145,14 +147,19 @@ describe('guidance-internal-links-remediation handler', () => {
   });
 
   it('should return 404 if Suggestion is not found', async () => {
-    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({});
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves(
+      { getId: () => mockMessage.siteId },
+    );
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves(
-      { getSiteId: () => mockMessage.siteId },
+      {
+        getSiteId: () => mockMessage.siteId,
+        getType: () => 'broken-backlinks',
+      },
     );
     mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves(null);
 
-    const response = await internalLinksGuidanceHandler(mockMessage, mockContext);
-    expect(response.status).to.equal(404);
+    await brokenLinksGuidanceHandler(mockMessage, mockContext);
+    expect(mockContext.log.error).to.have.been.calledWith('[broken-backlinks] Suggestion not found for ID: test-suggestion-id-1');
   });
 });

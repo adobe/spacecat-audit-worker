@@ -215,24 +215,24 @@ export const opportunityAndSuggestionsStep = async (context) => {
       opportunity.getId(),
       SuggestionDataAccess.STATUSES.NEW,
     );
-    await Promise.all(suggestions.map(async (suggestion) => {
-      const message = {
-        type: 'guidance:broken-internal-links',
-        siteId: site.getId(),
-        auditId: audit.getId(),
-        deliveryType: site.getDeliveryType(),
-        time: new Date().toISOString(),
-        data: {
+    const message = {
+      type: 'guidance:broken-links',
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        alternativeUrls: topPages.map((page) => page.getUrl()),
+        brokenLinks: suggestions.map((suggestion) => ({
           urlFrom: suggestion?.getData()?.urlFrom,
           urlTo: suggestion?.getData()?.urlTo,
-          alternativeUrls: topPages.map((page) => page.getUrl()),
           suggestionId: suggestion?.getId(),
           opportunityId: opportunity?.getId(),
-        },
-      };
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-      log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
-    }));
+        })),
+      },
+    };
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
   }
   return {
     status: 'complete',

@@ -275,7 +275,7 @@ describe('Backlinks Tests', function () {
       }
     });
 
-    it('processes suggestions for broken backlinks, defaults to base URL if none found', async () => {
+    it('processes suggestions for broken backlinks and send message to mystique', async () => {
       configuration.isHandlerEnabledForSite.returns(true);
       context.audit.getAuditResult.returns({
         success: true,
@@ -289,16 +289,19 @@ describe('Backlinks Tests', function () {
       // 4x for headers + 4x for each page
       expect(result.status).to.deep.equal('complete');
       expect(context.sqs.sendMessage).to.have.been.calledWithMatch('test-queue', {
-        type: 'guidance:broken-backlinks',
+        type: 'guidance:broken-links',
         siteId: 'site-id',
         auditId: 'audit-id',
         deliveryType: 'aem_cs',
         time: sinon.match.any,
         data: {
-          urlFrom: 'https://from.com/from-2',
-          urlTo: 'https://foo.com/redirects-throws-error',
-          suggestionId: 'test-suggestion-1',
           opportunityId: 'opportunity-id',
+          alternativeUrls: topPages.map((page) => page.getUrl()),
+          brokenLinks: [{
+            urlFrom: 'https://from.com/from-2',
+            urlTo: 'https://foo.com/redirects-throws-error',
+            suggestionId: 'test-suggestion-1',
+          }],
         },
       });
     });

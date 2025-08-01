@@ -39,31 +39,6 @@ export const suggestions = [
     rank: 550000,
     getData: () => auditDataSuggestionsMock.auditResult.brokenBacklinks[0],
   },
-  {
-    opportunityId: 'test-opportunity-id',
-    getId: () => 'test-suggestion-2',
-    type: 'REDIRECT_UPDATE',
-    rank: 11000,
-    getData: () => auditDataSuggestionsMock.auditResult.brokenBacklinks[1],
-  },
-  {
-    opportunityId: 'test-opportunity-id',
-    getId: () => 'test-suggestion-2',
-    type: 'REDIRECT_UPDATE',
-    rank: 5500,
-    getData: () => auditDataSuggestionsMock.auditResult.brokenBacklinks[2],
-  },
-  {
-    opportunityId: 'test-opportunity-id',
-    type: 'REDIRECT_UPDATE',
-    getId: () => 'test-suggestion-4',
-    rank: 1100000,
-    getData: () => ({
-      ...auditDataSuggestionsMock.auditResult.brokenBacklinks[3],
-      urlsSuggested: [],
-      aiRationale: '',
-    }),
-  },
 ];
 
 brokenBacklinkExistingSuggestions[0].remove.resolves();

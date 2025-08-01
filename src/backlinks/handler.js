@@ -172,24 +172,23 @@ export const generateSuggestionData = async (context) => {
     SuggestionModel.STATUSES.NEW,
   );
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  await Promise.all(suggestions.map(async (suggestion) => {
-    const message = {
-      type: 'guidance:broken-backlinks',
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      data: {
+  const message = {
+    type: 'guidance:broken-links',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      alternativeUrls: topPages.map((page) => page.getUrl()),
+      opportunityId: opportunity?.getId(),
+      brokenLinks: suggestions.map((suggestion) => ({
         urlFrom: suggestion?.getData()?.url_from,
         urlTo: suggestion?.getData()?.url_to,
-        alternativeUrls: topPages.map((page) => page.getUrl()),
         suggestionId: suggestion?.getId(),
-        opportunityId: opportunity?.getId(),
-      },
-    };
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
-  }));
+      })),
+    },
+  };
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   return {
     status: 'complete',
   };
