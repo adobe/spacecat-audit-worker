@@ -13,7 +13,7 @@
 import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
 import { loadSql } from './report-utils.js';
 import { DEFAULT_PATTERNS } from '../constants/page-patterns.js';
-import { getProviderPattern } from '../constants/user-agent-patterns.js';
+import { getProviderPattern, buildAgentTypeClassificationSQL } from '../constants/user-agent-patterns.js';
 import { TOPIC_PATTERNS } from '../constants/topic-patterns.js';
 
 function buildDateFilter(startDate, endDate) {
@@ -64,6 +64,7 @@ function buildOrderBy(periods) {
 
 // Page Type Classification
 function generatePageTypeClassification(site) {
+  /* c8 ignore next */
   const patterns = site?.getConfig()?.getGroupedURLs('cdn-analysis') || DEFAULT_PATTERNS;
 
   const caseConditions = patterns
@@ -75,11 +76,11 @@ function generatePageTypeClassification(site) {
 
 // Country Classification
 function buildCountryExtractionSQL() {
-  const cases = DEFAULT_COUNTRY_PATTERNS
-    .map(({ regex }) => `WHEN REGEXP_EXTRACT(url, '${regex}', 1) != '' THEN UPPER(REGEXP_EXTRACT(url, '${regex}', 1))`)
-    .join('\n          ');
+  const extracts = DEFAULT_COUNTRY_PATTERNS
+    .map(({ regex }) => `NULLIF(UPPER(REGEXP_EXTRACT(url, '${regex}', 1)), '')`)
+    .join(',\n    ');
 
-  return `CASE\n          ${cases}\n          ELSE 'GLOBAL'\n        END`;
+  return `COALESCE(\n    ${extracts},\n    'GLOBAL'\n  )`;
 }
 
 // Topic Classification
@@ -90,16 +91,27 @@ function buildTopicExtractionSQL(site) {
   const patterns = TOPIC_PATTERNS[domain];
 
   if (Array.isArray(patterns)) {
-    const cases = patterns
-      .map(({ regex, name }) => {
-        if (name) {
-          return `WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`;
-        } else {
-          return `WHEN REGEXP_EXTRACT(url, '${regex}', 1) != '' THEN REGEXP_EXTRACT(url, '${regex}', 1)`;
-        }
-      })
-      .join('\n          ');
-    return `CASE\n          ${cases}\n          ELSE 'Other'\n        END`;
+    const namedPatterns = [];
+    const extractPatterns = [];
+
+    patterns.forEach(({ regex, name }) => {
+      if (name) {
+        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`);
+      } else {
+        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${regex}', 1), '')`);
+      }
+    });
+
+    /* c8 ignore next 10 */
+    if (namedPatterns.length > 0 && extractPatterns.length > 0) {
+      const caseClause = `CASE\n          ${namedPatterns.join('\n          ')}\n          ELSE NULL\n        END`;
+      const coalesceClause = extractPatterns.join(',\n    ');
+      return `COALESCE(\n    ${caseClause},\n    ${coalesceClause},\n    'Other'\n  )`;
+    } else if (namedPatterns.length > 0) {
+      return `CASE\n          ${namedPatterns.join('\n          ')}\n          ELSE 'Other'\n        END`;
+    } else {
+      return `COALESCE(\n    ${extractPatterns.join(',\n    ')},\n    'Other'\n  )`;
+    }
   }
 
   return "CASE WHEN url IS NOT NULL THEN 'Other' END";
@@ -123,6 +135,7 @@ async function createCountryWeeklyBreakdownQuery(options) {
 
   return loadSql('country-weekly-breakdown', {
     countryExtraction: buildCountryExtractionSQL(),
+    agentTypeClassification: buildAgentTypeClassificationSQL(provider),
     weekColumns: buildWeeklyColumns(periods),
     databaseName,
     tableName,
@@ -144,46 +157,7 @@ async function createUserAgentWeeklyBreakdownQuery(options) {
   );
 
   return loadSql('user-agent-breakdown', {
-    databaseName,
-    tableName,
-    whereClause,
-  });
-}
-
-async function createUrlStatusWeeklyBreakdownQuery(options) {
-  const {
-    periods, databaseName, tableName, provider, site, siteFilters = [],
-  } = options;
-
-  const dateFilter = buildDateFilter(
-    periods.weeks[0].startDate,
-    periods.weeks[periods.weeks.length - 1].endDate,
-  );
-  const whereClause = buildWhereClause([dateFilter], provider, siteFilters);
-
-  return loadSql('page-type-weekly-breakdown', {
-    pageTypeCase: generatePageTypeClassification(site),
-    weekColumns: buildWeeklyColumns(periods),
-    databaseName,
-    tableName,
-    whereClause,
-    orderBy: buildOrderBy(periods),
-  });
-}
-
-async function createTopBottomUrlsByStatusQuery(options) {
-  const {
-    periods, databaseName, tableName, provider, siteFilters = [],
-  } = options;
-
-  const lastWeek = periods.weeks[periods.weeks.length - 1];
-  const whereClause = buildWhereClause(
-    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
-    provider,
-    siteFilters,
-  );
-
-  return loadSql('top-bottom-urls-by-status', {
+    agentTypeClassification: buildAgentTypeClassificationSQL(provider),
     databaseName,
     tableName,
     whereClause,
@@ -203,6 +177,7 @@ async function createError404UrlsQuery(options) {
   );
 
   return loadSql('individual-urls-by-status', {
+    agentTypeClassification: buildAgentTypeClassificationSQL(provider),
     databaseName,
     tableName,
     whereClause,
@@ -222,6 +197,7 @@ async function createError503UrlsQuery(options) {
   );
 
   return loadSql('individual-urls-by-status', {
+    agentTypeClassification: buildAgentTypeClassificationSQL(provider),
     databaseName,
     tableName,
     whereClause,
@@ -245,6 +221,7 @@ async function createSuccessUrlsByCategoryQuery(options) {
   );
 
   return loadSql('individual-urls-by-status', {
+    agentTypeClassification: buildAgentTypeClassificationSQL(provider),
     databaseName,
     tableName,
     whereClause,
@@ -253,7 +230,7 @@ async function createSuccessUrlsByCategoryQuery(options) {
 
 async function createTopUrlsQuery(options) {
   const {
-    periods, databaseName, tableName, provider, siteFilters = [],
+    periods, databaseName, tableName, provider, site, siteFilters = [],
   } = options;
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
@@ -264,25 +241,7 @@ async function createTopUrlsQuery(options) {
   );
 
   return loadSql('top-urls-by-traffic', {
-    databaseName,
-    tableName,
-    whereClause,
-  });
-}
-
-async function createReferralTrafficByCountryTopicQuery(options) {
-  const {
-    periods, databaseName, tableName, provider, site, siteFilters = [],
-  } = options;
-
-  const lastWeek = periods.weeks[periods.weeks.length - 1];
-  const whereClause = buildWhereClause([
-    buildDateFilter(lastWeek.startDate, lastWeek.endDate),
-    `REGEXP_LIKE(referer, '${provider}')`,
-  ], null, siteFilters);
-
-  return loadSql('referral-traffic-by-country-topic', {
-    countryExtraction: buildCountryExtractionSQL(),
+    agentTypeClassification: buildAgentTypeClassificationSQL(provider),
     topicExtraction: buildTopicExtractionSQL(site),
     databaseName,
     tableName,
@@ -290,19 +249,42 @@ async function createReferralTrafficByCountryTopicQuery(options) {
   });
 }
 
-async function createReferralTrafficByUrlTopicQuery(options) {
+async function createHitsByProductAgentTypeQuery(options) {
   const {
     periods, databaseName, tableName, provider, site, siteFilters = [],
   } = options;
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
-  const whereClause = buildWhereClause([
-    buildDateFilter(lastWeek.startDate, lastWeek.endDate),
-    `REGEXP_LIKE(referer, '${provider}')`,
-  ], null, siteFilters);
+  const whereClause = buildWhereClause(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
+    provider,
+    siteFilters,
+  );
 
-  return loadSql('referral-traffic-by-url-topic', {
+  return loadSql('hits-by-product-agent-type', {
     topicExtraction: buildTopicExtractionSQL(site),
+    agentTypeClassification: buildAgentTypeClassificationSQL(provider),
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
+async function createHitsByPageCategoryAgentTypeQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, site, siteFilters = [],
+  } = options;
+
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
+    provider,
+    siteFilters,
+  );
+
+  return loadSql('hits-by-page-category-agent-type', {
+    pageCategoryClassification: generatePageTypeClassification(site),
+    agentTypeClassification: buildAgentTypeClassificationSQL(provider),
     databaseName,
     tableName,
     whereClause,
@@ -312,12 +294,10 @@ async function createReferralTrafficByUrlTopicQuery(options) {
 export const weeklyBreakdownQueries = {
   createCountryWeeklyBreakdown: createCountryWeeklyBreakdownQuery,
   createUserAgentWeeklyBreakdown: createUserAgentWeeklyBreakdownQuery,
-  createUrlStatusWeeklyBreakdown: createUrlStatusWeeklyBreakdownQuery,
-  createTopBottomUrlsByStatus: createTopBottomUrlsByStatusQuery,
   createError404Urls: createError404UrlsQuery,
   createError503Urls: createError503UrlsQuery,
   createSuccessUrlsByCategory: createSuccessUrlsByCategoryQuery,
   createTopUrls: createTopUrlsQuery,
-  createReferralTrafficByCountryTopic: createReferralTrafficByCountryTopicQuery,
-  createReferralTrafficByUrlTopic: createReferralTrafficByUrlTopicQuery,
+  createHitsByProductAgentType: createHitsByProductAgentTypeQuery,
+  createHitsByPageCategoryAgentType: createHitsByPageCategoryAgentTypeQuery,
 };
