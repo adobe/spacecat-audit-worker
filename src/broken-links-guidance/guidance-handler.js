@@ -60,7 +60,7 @@ export default async function handler(message, context) {
     );
     suggestion.setData({
       ...suggestion.getData(),
-      suggestedUrls: filteredSuggestedUrls,
+      urlsSuggested: filteredSuggestedUrls,
       aiRationale: brokenLink.aiRationale,
     });
 

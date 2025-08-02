@@ -86,7 +86,7 @@ describe('guidance-broken-links-remediation handler', () => {
     expect(mockSetData).to.have.been.calledWith({
       url_to: mockMessage.data.brokenLinks[0].broken_url,
       url_from: 'https://foo.com/redirects-throws-error',
-      suggestedUrls: mockMessage.data.brokenLinks[0].suggestedUrls,
+      urlsSuggested: mockMessage.data.brokenLinks[0].suggestedUrls,
       aiRationale: mockMessage.data.brokenLinks[0].aiRationale,
     });
   });
