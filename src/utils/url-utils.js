@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { prependSchema, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+
 /**
  * Checks if a given URL is a "preview" page
  *
@@ -19,6 +21,27 @@
 export function isPreviewPage(url) {
   const urlObj = new URL(url);
   return urlObj.hostname.endsWith('.page');
+}
+
+export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
+  const baseDomain = new URL(baseURL).hostname;
+  const checks = suggestedUrls.map(async (suggestedUrl) => {
+    try {
+      const schemaPrependedUrl = prependSchema(suggestedUrl);
+      const response = await fetch(schemaPrependedUrl, { method: 'HEAD' });
+      if (response.ok) {
+        const suggestedURLObj = new URL(schemaPrependedUrl);
+        if (suggestedURLObj.hostname === baseDomain) {
+          return suggestedUrl;
+        }
+      }
+      return null;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (error) {
+      return null;
+    }
+  });
+  return (await Promise.all(checks)).filter((url) => url !== null);
 }
 
 /**

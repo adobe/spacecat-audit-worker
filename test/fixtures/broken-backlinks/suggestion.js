@@ -34,31 +34,10 @@ export const brokenBacklinkExistingSuggestions = [{
 export const suggestions = [
   {
     opportunityId: 'test-opportunity-id',
+    getId: () => 'test-suggestion-1',
     type: 'REDIRECT_UPDATE',
     rank: 550000,
-    data: auditDataSuggestionsMock.auditResult.brokenBacklinks[0],
-  },
-  {
-    opportunityId: 'test-opportunity-id',
-    type: 'REDIRECT_UPDATE',
-    rank: 11000,
-    data: auditDataSuggestionsMock.auditResult.brokenBacklinks[1],
-  },
-  {
-    opportunityId: 'test-opportunity-id',
-    type: 'REDIRECT_UPDATE',
-    rank: 5500,
-    data: auditDataSuggestionsMock.auditResult.brokenBacklinks[2],
-  },
-  {
-    opportunityId: 'test-opportunity-id',
-    type: 'REDIRECT_UPDATE',
-    rank: 1100000,
-    data: {
-      ...auditDataSuggestionsMock.auditResult.brokenBacklinks[3],
-      urlsSuggested: [],
-      aiRationale: '',
-    },
+    getData: () => auditDataSuggestionsMock.auditResult.brokenBacklinks[0],
   },
 ];
 
