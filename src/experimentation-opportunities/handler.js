@@ -88,6 +88,22 @@ function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
 }
 
 /**
+ * Generates mock experimentation opportunities for URLs that don't have real RUM data
+ * @param {string[]} urlsWithoutData - Array of URLs missing real analytics
+ * @returns {Array} Array of mock experimentation opportunities
+ */
+function generateMockOpportunitiesForMissingUrls(urlsWithoutData) {
+  return urlsWithoutData.map((url) => ({
+    type: HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+    page: url,
+    pageViews: Math.round(1000 + Math.random() * 4000),
+    trackedPageKPIValue: 0.015 + Math.random() * 0.03,
+    trackedKPISiteAverage: 0.035,
+    organicTraffic: Math.round(800 + Math.random() * 1200),
+  }));
+}
+
+/**
  * Audit handler container for all the opportunities
  * @param {*} auditUrl
  * @param {*} context
@@ -95,7 +111,7 @@ function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
  * @returns
  */
 
-export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
+export async function experimentOpportunitiesAuditRunner(auditUrl, context, staticUrls = null) {
   const { log } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -107,6 +123,33 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   processRageClickOpportunities(experimentationOpportunities);
+
+  // Handle static URLs
+  if (staticUrls && staticUrls.length > 0) {
+    log.info(`Processing ${staticUrls.length} static URLs for experimentation opportunities`);
+
+    // Map real RUM data for the specific static URLs, if none, generate mock data
+    const realDataOpportunities = experimentationOpportunities.filter((oppty) => staticUrls.includes(oppty.page));
+    const urlsWithRealData = realDataOpportunities.map(oppty => oppty.page);
+    const urlsWithoutData = staticUrls.filter(url => !urlsWithRealData.includes(url));
+    const mockOpportunities = generateMockOpportunitiesForMissingUrls(urlsWithoutData);
+    const finalExperimentationOpportunities = [...realDataOpportunities, ...mockOpportunities];
+
+    if (realDataOpportunities.length > 0) {
+      log.info(`Using real RUM data for ${realDataOpportunities.length} URLs: ${urlsWithRealData.join(', ')}`);
+    }
+    if (mockOpportunities.length > 0) {
+      log.info(`Using mock data for ${mockOpportunities.length} URLs: ${urlsWithoutData.join(', ')}`);
+    }
+    
+    return {
+      auditResult: {
+        experimentationOpportunities: finalExperimentationOpportunities,
+      },
+      fullAuditRef: auditUrl,
+    };
+  }
+  
   log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {
