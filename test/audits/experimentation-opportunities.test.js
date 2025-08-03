@@ -351,4 +351,92 @@ describe('Experimentation Opportunities Tests', () => {
     await generateOpportunityAndSuggestions(context);
     expect(context.sqs.sendMessage).to.not.have.been.called;
   });
+
+  describe('Static URLs Functionality', () => {
+    it('should use static URLs for audit when provided', async () => {
+      context.auditContext = {
+        additionalAuditData: {
+          staticUrls: ['https://abc.com/page1', 'https://abc.com/page2'],
+        },
+      };
+
+      const auditData = await runAuditAndScrapeStep(context);
+
+      expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
+      expect(auditData.auditResult.experimentationOpportunities).to.have.length(2);
+      expect(auditData.auditResult.experimentationOpportunities[0].page).to.equal('https://abc.com/page1');
+      expect(auditData.auditResult.experimentationOpportunities[1].page).to.equal('https://abc.com/page2');
+      expect(auditData.auditResult.experimentationOpportunities[0]).to.have.property('pageViews');
+      expect(auditData.auditResult.experimentationOpportunities[0]).to.have.property('trackedPageKPIValue');
+    });
+
+    it('should combine real RUM data with mock data for static URLs', async () => {
+      const mockOpportunities = {
+        'high-organic-low-ctr': [
+          {
+            page: 'https://abc.com/page1',
+            pageViews: 5000,
+            trackedPageKPIValue: 0.02,
+            trackedKPISiteAverage: 0.035,
+            organicTraffic: 1500,
+            type: 'high-organic-low-ctr',
+          },
+        ],
+      };
+
+      context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+      context.auditContext = {
+        additionalAuditData: {
+          staticUrls: ['https://abc.com/page1', 'https://abc.com/page2'],
+        },
+      };
+
+      const auditData = await runAuditAndScrapeStep(context);
+      expect(auditData.auditResult.experimentationOpportunities).to.have.length(2);
+
+      const realOpportunity = auditData.auditResult.experimentationOpportunities.find(
+        (op) => op.page === 'https://abc.com/page1',
+      );
+      expect(realOpportunity.pageViews).to.equal(5000);
+
+      const mockOpportunity = auditData.auditResult.experimentationOpportunities.find(
+        (op) => op.page === 'https://abc.com/page2',
+      );
+      expect(mockOpportunity.pageViews).to.be.within(1000, 5000);
+    });
+
+    it('should work normally when no static URLs provided', async () => {
+      const auditData = await runAuditAndScrapeStep(context);
+      expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
+      expect(auditData.auditResult.experimentationOpportunities).to.exist;
+    });
+
+    it('should handle empty static URLs array', async () => {
+      context.auditContext = {
+        additionalAuditData: {
+          staticUrls: [],
+        },
+      };
+
+      expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
+    });
+
+    it('should generate mock data when no RUM data exists for static URLs', async () => {
+      context.rumApiClient.queryMulti = sinon.stub().resolves({});
+      context.auditContext = {
+        additionalAuditData: {
+          staticUrls: ['https://abc.com/new-page1', 'https://abc.com/new-page2'],
+        },
+      };
+
+      const auditData = await runAuditAndScrapeStep(context);
+      expect(auditData.auditResult.experimentationOpportunities).to.have.length(2);
+      auditData.auditResult.experimentationOpportunities.forEach((op) => {
+        expect(op.type).to.equal('high-organic-low-ctr');
+        expect(op.pageViews).to.be.within(1000, 5000);
+        expect(op.trackedPageKPIValue).to.be.within(0.015, 0.045);
+        expect(op.trackedKPISiteAverage).to.equal(0.035);
+      });
+    });
+  });
 });

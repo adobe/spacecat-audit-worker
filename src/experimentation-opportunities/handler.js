@@ -129,9 +129,11 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context, stat
     log.info(`Processing ${staticUrls.length} static URLs for experimentation opportunities`);
 
     // Map real RUM data for the specific static URLs, if none, generate mock data
-    const realDataOpportunities = experimentationOpportunities.filter((oppty) => staticUrls.includes(oppty.page));
-    const urlsWithRealData = realDataOpportunities.map(oppty => oppty.page);
-    const urlsWithoutData = staticUrls.filter(url => !urlsWithRealData.includes(url));
+    const realDataOpportunities = experimentationOpportunities.filter(
+      (oppty) => staticUrls.includes(oppty.page),
+    );
+    const urlsWithRealData = realDataOpportunities.map((oppty) => oppty.page);
+    const urlsWithoutData = staticUrls.filter((url) => !urlsWithRealData.includes(url));
     const mockOpportunities = generateMockOpportunitiesForMissingUrls(urlsWithoutData);
     const finalExperimentationOpportunities = [...realDataOpportunities, ...mockOpportunities];
 
@@ -141,7 +143,7 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context, stat
     if (mockOpportunities.length > 0) {
       log.info(`Using mock data for ${mockOpportunities.length} URLs: ${urlsWithoutData.join(', ')}`);
     }
-    
+
     return {
       auditResult: {
         experimentationOpportunities: finalExperimentationOpportunities,
@@ -149,7 +151,7 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context, stat
       fullAuditRef: auditUrl,
     };
   }
-  
+
   log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {
@@ -162,7 +164,8 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context, stat
 
 export async function runAuditAndScrapeStep(context) {
   const { site, finalUrl } = context;
-  const result = await experimentOpportunitiesAuditRunner(finalUrl, context);
+  const staticUrls = context.auditContext?.additionalAuditData?.staticUrls;
+  const result = await experimentOpportunitiesAuditRunner(finalUrl, context, staticUrls);
 
   return {
     auditResult: result.auditResult,
