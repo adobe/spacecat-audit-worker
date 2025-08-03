@@ -26,7 +26,9 @@ const capitalizeFirstLetter = (str) => {
 };
 
 const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
-  const result = [valueExtractor(row)];
+  const extractedValue = valueExtractor(row);
+  /* c8 ignore next */
+  const result = Array.isArray(extractedValue) ? [...extractedValue] : [extractedValue];
   periods.weeks.forEach((week) => {
     const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
     result.push(Number(row[weekKey]) || 0);
@@ -35,183 +37,93 @@ const processWeekData = (data, periods, valueExtractor) => data?.map((row) => {
   /* c8 ignore next */
 }) || [];
 
-const processCountryWeeklyData = (data, reportPeriods) => {
+const processCountryWeekData = (data, periods) => {
   if (!data?.length) return [];
 
-  const weekKeys = reportPeriods.weeks.map((week) => WEEK_KEY_TRANSFORMER(week.weekLabel));
+  const aggregatedData = data.reduce((acc, row) => {
+    const countryCode = validateCountryCode(row.country_code);
+    const agentType = row.agent_type || 'Other';
+    const key = `${countryCode}|${agentType}`;
 
-  return Object.values(
-    data.reduce((acc, row) => {
-      const country = validateCountryCode(row.country_code || '');
-
-      acc[country] ??= {
-        country_code: country,
-        ...Object.fromEntries(weekKeys.map((key) => [key, 0])),
+    if (!acc[key]) {
+      acc[key] = {
+        country_code: countryCode,
+        agent_type: agentType,
       };
-
-      weekKeys.forEach((key) => {
-        acc[country][key] += Number(row[key]) || 0;
+      periods.weeks.forEach((week) => {
+        const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
+        acc[key][weekKey] = 0;
       });
-
-      return acc;
-    }, {}),
-  );
-};
-
-const processCountryWithFields = (data, additionalFields = []) => {
-  if (!data?.length) return [];
-
-  const createKey = (row) => {
-    const country = validateCountryCode(row.country || '');
-    return additionalFields.length === 0
-      /* c8 ignore next */
-      ? country
-      : [country, ...additionalFields.map((field) => row[field] || 'Other')].join('|');
-  };
-
-  return Object.values(
-    data.reduce((acc, row) => {
-      const country = validateCountryCode(row.country || '');
-      const key = createKey(row);
-
-      acc[key] ??= {
-        country,
-        hits: 0,
-        ...Object.fromEntries(additionalFields.map((field) => [field, row[field] || 'Other'])),
-      };
-
-      acc[key].hits += Number(row.hits) || 0;
-      return acc;
-    }, {}),
-  ).sort((a, b) => b.hits - a.hits);
-};
-
-function analyzeTopBottomByStatus(data) {
-  if (!data?.length) return {};
-
-  const statusAnalysis = {};
-
-  data.forEach((row) => {
-    const status = row.status || 'Unknown';
-    if (!statusAnalysis[status]) {
-      statusAnalysis[status] = { urls: [] };
     }
-    statusAnalysis[status].urls.push({
-      url: row.url || '',
-      hits: row.total_requests || 0,
+
+    periods.weeks.forEach((week) => {
+      const weekKey = WEEK_KEY_TRANSFORMER(week.weekLabel);
+      acc[key][weekKey] += Number(row[weekKey]) || 0;
     });
-  });
 
-  Object.keys(statusAnalysis).forEach((status) => {
-    const urls = statusAnalysis[status].urls.sort((a, b) => b.hits - a.hits);
-    statusAnalysis[status] = {
-      top: urls.slice(0, 5),
-      bottom: urls.slice(-5).reverse(),
-    };
-  });
+    return acc;
+  }, {});
 
-  return statusAnalysis;
-}
+  return Object.values(aggregatedData);
+};
 
 export const SHEET_CONFIGS = {
   userAgents: {
-    getHeaders: (periods) => {
-      const lastWeek = periods.weeks[periods.weeks.length - 1];
-      return [
-        'Request User Agent',
-        'Status',
-        'Number of Hits',
-        `Interval: Last Week (${lastWeek.dateRange.start} - ${lastWeek.dateRange.end})`,
-      ];
-    },
+    getHeaders: () => [
+      'Request User Agent',
+      'Agent Type',
+      'Status',
+      'Number of Hits',
+      'Avg TTFB (ms)',
+    ],
     headerColor: SHEET_COLORS.DEFAULT,
-    numberColumns: [2],
+    numberColumns: [3, 4],
     processData: (data) => data?.map((row) => [
-      /* c8 ignore next 3 */
+      /* c8 ignore next 4 */
       row.user_agent || 'Unknown',
+      row.agent_type || 'Other',
       Number(row.status) || 'All',
       Number(row.total_requests) || 0,
-      '',
+      Number(row.avg_ttfb_ms) || 0,
     ]) || [],
   },
 
   country: {
-    getHeaders: (periods) => ['Country Code', ...periods.columns],
+    getHeaders: (periods) => ['Country Code', 'Agent Type', ...periods.columns],
     headerColor: SHEET_COLORS.DEFAULT,
     getNumberColumns: (periods) => (
-      Array.from({ length: periods.columns.length - 1 }, (_, i) => i + 1)
+      Array.from({ length: periods.columns.length }, (_, i) => i + 2)
     ),
     processData: (data, reportPeriods) => {
-      const aggregatedData = processCountryWeeklyData(data, reportPeriods);
+      const aggregatedData = processCountryWeekData(data, reportPeriods);
       return processWeekData(
         aggregatedData,
         reportPeriods,
-        (row) => row.country_code,
+        (row) => [row.country_code, row.agent_type],
       );
     },
   },
 
-  pageType: {
-    getHeaders: (periods) => ['Page Type', ...periods.columns],
-    headerColor: SHEET_COLORS.DEFAULT,
-    getNumberColumns: (periods) => (
-      Array.from({ length: periods.columns.length - 1 }, (_, i) => i + 1)
-    ),
-    processData: (data, reportPeriods) => {
-      if (data?.length > 0) {
-        return processWeekData(data, reportPeriods, (row) => row.page_type || 'Other');
-      }
-      return [['No data', ...reportPeriods.weeks.map(() => 0)]];
-    },
-  },
-
-  topBottom: {
-    getHeaders: () => ['Status', 'TOP', '', '', 'BOTTOM', ''],
-    headerColor: SHEET_COLORS.DEFAULT,
-    numberColumns: [2, 5],
-    processData: (data) => {
-      const rows = [['', 'URL', 'Hits', '', 'URL', 'Hits']];
-      const statusAnalysis = analyzeTopBottomByStatus(data);
-
-      Object.entries(statusAnalysis).forEach(([status, analysis]) => {
-        rows.push([status, '', '', '', '', '']);
-        for (let i = 0; i < 5; i += 1) {
-          const topUrl = analysis.top[i];
-          const bottomUrl = analysis.bottom[i];
-          rows.push([
-            '',
-            topUrl?.url || '',
-            Number(topUrl?.hits) || '',
-            '',
-            bottomUrl?.url || '',
-            Number(bottomUrl?.hits) || '',
-          ]);
-        }
-      });
-      return rows;
-    },
-  },
-
   error404: {
-    getHeaders: () => ['URL', 'Number of 404s'],
+    getHeaders: () => ['URL', 'Agent Type', 'Number of 404s'],
     headerColor: SHEET_COLORS.ERROR,
-    numberColumns: [1],
+    numberColumns: [2],
     /* c8 ignore next */
-    processData: (data) => data?.map((row) => [row.url || '', Number(row.total_requests) || 0]) || [],
+    processData: (data) => data?.map((row) => [row.url || '', row.agent_type || 'Other', Number(row.total_requests) || 0]) || [],
   },
 
   error503: {
-    getHeaders: () => ['URL', 'Number of 503s'],
+    getHeaders: () => ['URL', 'Agent Type', 'Number of 503s'],
     headerColor: SHEET_COLORS.ERROR,
-    numberColumns: [1],
+    numberColumns: [2],
     /* c8 ignore next */
-    processData: (data) => data?.map((row) => [row.url || '', Number(row.total_requests) || 0]) || [],
+    processData: (data) => data?.map((row) => [row.url || '', row.agent_type || 'Other', Number(row.total_requests) || 0]) || [],
   },
 
   category: {
-    getHeaders: () => ['Category', 'Number of Hits'],
+    getHeaders: () => ['Category', 'Agent Type', 'Number of Hits'],
     headerColor: SHEET_COLORS.SUCCESS,
-    numberColumns: [1],
+    numberColumns: [2],
     processData: (data) => {
       const urlCountMap = new Map();
 
@@ -220,49 +132,60 @@ export const SHEET_CONFIGS = {
         const url = row.url || '';
         const match = url.match(/\/[a-z]{2}\/products\/([^/]+)/);
         const categoryUrl = match ? `products/${match[1]}` : 'Other';
+        const agentType = row.agent_type || 'Other';
+        const key = `${categoryUrl}|${agentType}`;
 
         urlCountMap.set(
-          categoryUrl,
-          (urlCountMap.get(categoryUrl) || 0) + (Number(row.total_requests) || 0),
+          key,
+          (urlCountMap.get(key) || 0) + (Number(row.total_requests) || 0),
         );
       });
 
-      return Array.from(urlCountMap.entries()).sort((a, b) => b[1] - a[1]);
+      return Array.from(urlCountMap.entries())
+        .map(([key, hits]) => {
+          const [category, agentType] = key.split('|');
+          return [category, agentType, hits];
+        })
+        .sort((a, b) => b[2] - a[2]);
     },
   },
 
   topUrls: {
-    getHeaders: (periods) => ['URL', ...periods.columns],
+    getHeaders: () => ['URL', 'Total Hits', 'Unique Agents', 'Top Agent', 'Top Agent Type', 'Success Rate', 'Avg TTFB (ms)', 'Product'],
     headerColor: SHEET_COLORS.DEFAULT,
-    numberColumns: [2],
+    numberColumns: [1, 2, 5, 6],
     processData: (data) => data?.map((row) => [
-      /* c8 ignore next 2 */
+      /* c8 ignore next 7 */
       row.url || '',
-      Number(row.total_requests) || 0,
+      Number(row.total_hits) || 0,
+      Number(row.unique_agents) || 0,
+      row.top_agent || 'N/A',
+      row.top_agent_type || 'Other',
+      Number(row.success_rate) || 0,
+      Number(row.avg_ttfb_ms) || 0,
+      row.product || 'Other',
     ]) || [],
   },
 
-  referralCountryTopic: {
-    getHeaders: () => ['Country', 'Topic', 'Hits'],
-    headerColor: SHEET_COLORS.DEFAULT,
-    numberColumns: [2],
-    processData: (data) => {
-      const aggregatedData = processCountryWithFields(data, ['topic']);
-      return aggregatedData.map((row) => [
-        row.country,
-        capitalizeFirstLetter(row.topic),
-        row.hits,
-      ]);
-    },
-  },
-
-  referralUrlTopic: {
-    getHeaders: () => ['URL', 'Topic', 'Hits'],
+  hitsByProductAgentType: {
+    getHeaders: () => ['Product', 'Agent Type', 'Hits'],
     headerColor: SHEET_COLORS.DEFAULT,
     numberColumns: [2],
     processData: (data) => data?.map((row) => [
-      row.url || '',
-      capitalizeFirstLetter(row.topic) || 'Other',
+      capitalizeFirstLetter(row.product) || 'Other',
+      row.agent_type || 'Other',
+      Number(row.hits) || 0,
+    ]) || [],
+  },
+
+  hitsByPageCategoryAgentType: {
+    getHeaders: () => ['Category', 'Agent Type', 'Hits'],
+    headerColor: SHEET_COLORS.DEFAULT,
+    numberColumns: [2],
+    processData: (data) => data?.map((row) => [
+      /* c8 ignore next 3 */
+      row.category || 'Other',
+      row.agent_type || 'Other',
       Number(row.hits) || 0,
     ]) || [],
   },
