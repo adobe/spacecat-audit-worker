@@ -418,6 +418,7 @@ describe('Experimentation Opportunities Tests', () => {
         },
       };
 
+      await runAuditAndScrapeStep(context);
       expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
     });
 
