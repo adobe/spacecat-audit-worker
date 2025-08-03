@@ -128,11 +128,181 @@ describe('LLM Error Pages – guidance-handler', () => {
       Opportunity: { findById: sandbox.stub().resolves(null) },
     };
 
-    const context = { log: { error: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() }, dataAccess: dataAccessWithNoOpportunity };
+    const context = {
+      log: { error: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() },
+      dataAccess: dataAccessWithNoOpportunity,
+    };
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(404);
     expect(context.log.error).to.have.been.calledWith('[LLMErrorPagesGuidance] Opportunity not found for ID: nonexistent-opportunity');
+  });
+
+  describe('Handle missing fields', () => {
+    it('should handle missing confidenceScore', async () => {
+      const message = {
+        auditId: 'audit-1',
+        siteId: 'site-1',
+        data: {
+          opportunityId: 'oppty-1',
+          brokenUrl: 'https://example.com/missing-confidence',
+          userAgent: 'ChatGPT',
+          statusCode: 404,
+          totalRequests: 5,
+          suggestedUrls: ['/redirect'],
+          aiRationale: 'Some rationale',
+          // confidenceScore: undefined (missing)
+        },
+      };
+
+      const context = { log: console, dataAccess };
+      const resp = await guidanceHandler.default(message, context);
+
+      expect(resp.status).to.equal(200);
+      expect(SuggestionCreateStub).to.have.been.called;
+      const arg = SuggestionCreateStub.lastCall.args[0];
+      expect(arg.rank).to.equal(1); // Should fallback to 1
+      expect(arg.data.confidenceScore).to.equal(0); // Should fallback to 0
+    });
+
+    it('should handle missing suggestedUrls', async () => {
+      const message = {
+        auditId: 'audit-1',
+        siteId: 'site-1',
+        data: {
+          opportunityId: 'oppty-1',
+          brokenUrl: 'https://example.com/missing-suggestions',
+          userAgent: 'Claude',
+          statusCode: 404,
+          totalRequests: 3,
+          // suggestedUrls: undefined (missing)
+          aiRationale: 'No suggestions available',
+          confidenceScore: 0.7,
+        },
+      };
+
+      const context = { log: console, dataAccess };
+      const resp = await guidanceHandler.default(message, context);
+
+      expect(resp.status).to.equal(200);
+      expect(SuggestionCreateStub).to.have.been.called;
+      const arg = SuggestionCreateStub.lastCall.args[0];
+      expect(arg.data.suggestedUrls).to.deep.equal([]); // Should fallback to empty array
+    });
+
+    it('should handle missing aiRationale', async () => {
+      const message = {
+        auditId: 'audit-1',
+        siteId: 'site-1',
+        data: {
+          opportunityId: 'oppty-1',
+          brokenUrl: 'https://example.com/missing-rationale',
+          userAgent: 'Bard',
+          statusCode: 404,
+          totalRequests: 8,
+          suggestedUrls: ['/fixed-url'],
+          // aiRationale: undefined (missing)
+          confidenceScore: 0.5,
+        },
+      };
+
+      const context = { log: console, dataAccess };
+      const resp = await guidanceHandler.default(message, context);
+
+      expect(resp.status).to.equal(200);
+      expect(SuggestionCreateStub).to.have.been.called;
+      const arg = SuggestionCreateStub.lastCall.args[0];
+      expect(arg.data.aiRationale).to.equal(''); // Should fallback to empty string
+    });
+
+    it('should handle null/falsy values for all optional fields (comprehensive branch coverage)', async () => {
+      const message = {
+        auditId: 'audit-1',
+        siteId: 'site-1',
+        data: {
+          opportunityId: 'oppty-1',
+          brokenUrl: 'https://example.com/all-missing',
+          userAgent: 'TestBot',
+          statusCode: 404,
+          totalRequests: 1,
+          // All optional fields missing/null/falsy
+          suggestedUrls: null,
+          aiRationale: null,
+          confidenceScore: null,
+        },
+      };
+
+      const context = { log: console, dataAccess };
+      const resp = await guidanceHandler.default(message, context);
+
+      expect(resp.status).to.equal(200);
+      expect(SuggestionCreateStub).to.have.been.called;
+      const arg = SuggestionCreateStub.lastCall.args[0];
+
+      // Test all fallback branches
+      expect(arg.rank).to.equal(1); // confidenceScore || 1
+      expect(arg.data.suggestedUrls).to.deep.equal([]); // suggestedUrls || []
+      expect(arg.data.aiRationale).to.equal(''); // aiRationale || ''
+      expect(arg.data.confidenceScore).to.equal(0); // confidenceScore || 0
+    });
+
+    it('should handle empty suggestedUrls array for optional chaining branch', async () => {
+      const logInfoStub = sandbox.stub();
+      const message = {
+        auditId: 'audit-1',
+        siteId: 'site-1',
+        data: {
+          opportunityId: 'oppty-1',
+          brokenUrl: 'https://example.com/empty-suggestions',
+          userAgent: 'EmptyBot',
+          statusCode: 404,
+          totalRequests: 2,
+          suggestedUrls: [], // Empty array to test suggestedUrls?.length || 0
+          aiRationale: 'No suggestions found',
+          confidenceScore: 0.3,
+        },
+      };
+
+      const context = {
+        log: {
+          info: logInfoStub,
+          error: sandbox.stub(),
+          warn: sandbox.stub(),
+        },
+        dataAccess,
+      };
+      const resp = await guidanceHandler.default(message, context);
+
+      expect(resp.status).to.equal(200);
+      // Verify log message includes "0" from suggestedUrls?.length || 0
+      expect(logInfoStub).to.have.been.calledWithMatch(/0 suggested URLs/);
+    });
+
+    it('should handle zero confidenceScore specifically', async () => {
+      const message = {
+        auditId: 'audit-1',
+        siteId: 'site-1',
+        data: {
+          opportunityId: 'oppty-1',
+          brokenUrl: 'https://example.com/zero-confidence',
+          userAgent: 'ZeroBot',
+          statusCode: 404,
+          totalRequests: 1,
+          suggestedUrls: ['/some-url'],
+          aiRationale: 'Low confidence suggestion',
+          confidenceScore: 0, // Explicitly zero (falsy)
+        },
+      };
+
+      const context = { log: console, dataAccess };
+      const resp = await guidanceHandler.default(message, context);
+
+      expect(resp.status).to.equal(200);
+      expect(SuggestionCreateStub).to.have.been.called;
+      const arg = SuggestionCreateStub.lastCall.args[0];
+      expect(arg.rank).to.equal(1); // 0 || 1 should be 1
+      expect(arg.data.confidenceScore).to.equal(0); // 0 || 0 should be 0
+    });
   });
 
   it('should return 400 when site ID mismatch occurs', async () => {

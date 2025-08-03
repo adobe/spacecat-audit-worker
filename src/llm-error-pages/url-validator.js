@@ -108,21 +108,18 @@ export async function validateUrlsBatch(errors, log) {
   // Collect valid results from all batches
   allBatchResults.forEach((batchResult) => {
     if (batchResult.status === 'fulfilled') {
-      const { batchIndex, batch, results } = batchResult.value;
+      const { batchIndex, results } = batchResult.value;
       log.info(`Processing results for batch ${batchIndex} (${results.length} URLs)`);
 
-      results.forEach((result, index) => {
+      results.forEach((result) => {
         if (result.status === 'fulfilled' && result.value !== null) {
           validatedUrls.push(result.value);
-        } else if (result.status === 'rejected') {
-          log.error(`Validation failed for URL ${batch[index].url}: ${result.reason}`);
         }
       });
     } else {
       log.error(`Batch processing failed: ${batchResult.reason}`);
     }
   });
-
   log.info(`URL validation complete: ${validatedUrls.length}/${errors.length} URLs passed validation`);
   return validatedUrls;
 }

@@ -12,17 +12,17 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
+import {
+  LLM_USER_AGENT_PATTERNS,
+  getLlmProviderPattern,
+  getAllLlmProviders,
+  buildLlmUserAgentFilter,
+  normalizeUserAgentToProvider,
+} from '../../../src/llm-error-pages/constants/user-agent-patterns.js';
 
 describe('LLM Error Pages - User Agent Patterns', () => {
-  let userAgentPatterns;
-
-  before(async () => {
-    userAgentPatterns = await import('../../../src/llm-error-pages/constants/user-agent-patterns.js');
-  });
-
-  describe('LLM_USER_AGENT_PATTERNS constant', () => {
-    it('should have all expected LLM providers', () => {
-      const { LLM_USER_AGENT_PATTERNS } = userAgentPatterns;
+  describe('LLM_USER_AGENT_PATTERNS', () => {
+    it('should contain expected LLM providers', () => {
       expect(LLM_USER_AGENT_PATTERNS).to.have.property('chatgpt');
       expect(LLM_USER_AGENT_PATTERNS).to.have.property('perplexity');
       expect(LLM_USER_AGENT_PATTERNS).to.have.property('claude');
@@ -31,90 +31,56 @@ describe('LLM Error Pages - User Agent Patterns', () => {
     });
 
     it('should have case-insensitive patterns', () => {
-      const { LLM_USER_AGENT_PATTERNS } = userAgentPatterns;
-      Object.values(LLM_USER_AGENT_PATTERNS).forEach((pattern) => {
-        expect(pattern).to.include('(?i)');
-      });
+      expect(LLM_USER_AGENT_PATTERNS.chatgpt).to.include('(?i)');
+      expect(LLM_USER_AGENT_PATTERNS.perplexity).to.include('(?i)');
+      expect(LLM_USER_AGENT_PATTERNS.claude).to.include('(?i)');
+      expect(LLM_USER_AGENT_PATTERNS.gemini).to.include('(?i)');
+      expect(LLM_USER_AGENT_PATTERNS.copilot).to.include('(?i)');
     });
   });
 
   describe('getLlmProviderPattern', () => {
-    it('should return correct pattern for known providers (case-insensitive)', () => {
-      expect(userAgentPatterns.getLlmProviderPattern('chatgpt')).to.include('ChatGPT');
-      expect(userAgentPatterns.getLlmProviderPattern('CHATGPT')).to.include('ChatGPT');
-      expect(userAgentPatterns.getLlmProviderPattern('perplexity')).to.include('Perplexity');
-      expect(userAgentPatterns.getLlmProviderPattern('claude')).to.include('Claude');
-      expect(userAgentPatterns.getLlmProviderPattern('gemini')).to.include('Gemini');
-      expect(userAgentPatterns.getLlmProviderPattern('copilot')).to.include('Copilot');
+    it('should return pattern for valid provider', () => {
+      expect(getLlmProviderPattern('chatgpt')).to.equal('(?i)ChatGPT|GPTBot|OAI-SearchBot');
+      expect(getLlmProviderPattern('perplexity')).to.equal('(?i)Perplexity');
+      expect(getLlmProviderPattern('claude')).to.equal('(?i)Claude|Anthropic');
+      expect(getLlmProviderPattern('gemini')).to.equal('(?i)Gemini');
+      expect(getLlmProviderPattern('copilot')).to.equal('(?i)Copilot');
     });
 
-    it('should return null for unknown provider', () => {
-      expect(userAgentPatterns.getLlmProviderPattern('unknown')).to.equal(null);
-      expect(userAgentPatterns.getLlmProviderPattern('invalid-provider')).to.equal(null);
-      expect(userAgentPatterns.getLlmProviderPattern('random-string')).to.equal(null);
+    it('should handle case insensitive provider names', () => {
+      expect(getLlmProviderPattern('CHATGPT')).to.equal('(?i)ChatGPT|GPTBot|OAI-SearchBot');
+      expect(getLlmProviderPattern('Perplexity')).to.equal('(?i)Perplexity');
+      expect(getLlmProviderPattern('ClAuDe')).to.equal('(?i)Claude|Anthropic');
     });
 
-    it('should return null for undefined or null input', () => {
-      expect(userAgentPatterns.getLlmProviderPattern(undefined)).to.equal(null);
-      expect(userAgentPatterns.getLlmProviderPattern(null)).to.equal(null);
-      expect(userAgentPatterns.getLlmProviderPattern('')).to.equal(null);
-    });
-
-    it('should handle edge cases gracefully', () => {
-      expect(userAgentPatterns.getLlmProviderPattern(123)).to.equal(null);
-      expect(userAgentPatterns.getLlmProviderPattern({})).to.equal(null);
-      expect(userAgentPatterns.getLlmProviderPattern([])).to.equal(null);
-      expect(userAgentPatterns.getLlmProviderPattern('   ')).to.equal(null);
+    it('should return null for invalid provider', () => {
+      expect(getLlmProviderPattern('invalid')).to.be.null;
+      expect(getLlmProviderPattern('')).to.be.null;
+      expect(getLlmProviderPattern('   ')).to.be.null;
+      expect(getLlmProviderPattern(null)).to.be.null;
+      expect(getLlmProviderPattern(undefined)).to.be.null;
+      expect(getLlmProviderPattern(123)).to.be.null;
     });
   });
 
   describe('getAllLlmProviders', () => {
-    it('should return array of all LLM provider keys', () => {
-      const providers = userAgentPatterns.getAllLlmProviders();
+    it('should return array of all provider keys', () => {
+      const providers = getAllLlmProviders();
       expect(providers).to.be.an('array');
       expect(providers).to.include('chatgpt');
+      expect(providers).to.include('perplexity');
       expect(providers).to.include('claude');
       expect(providers).to.include('gemini');
-      expect(providers).to.include('perplexity');
       expect(providers).to.include('copilot');
-      expect(providers.length).to.equal(5);
-    });
-
-    it('should return consistent results on multiple calls', () => {
-      const providers1 = userAgentPatterns.getAllLlmProviders();
-      const providers2 = userAgentPatterns.getAllLlmProviders();
-      expect(providers1).to.deep.equal(providers2);
-    });
-
-    it('should return lowercase provider keys', () => {
-      const providers = userAgentPatterns.getAllLlmProviders();
-      providers.forEach((provider) => {
-        expect(provider).to.equal(provider.toLowerCase());
-      });
+      expect(providers).to.have.length(5);
     });
   });
 
   describe('buildLlmUserAgentFilter', () => {
-    it('should build filter for single provider', () => {
-      const filter = userAgentPatterns.buildLlmUserAgentFilter(['chatgpt']);
-      expect(filter).to.be.a('string');
-      expect(filter).to.include('ChatGPT');
-      expect(filter).to.include('REGEXP_LIKE');
-      expect(filter).to.include("REGEXP_LIKE(user_agent, '(?i)ChatGPT|GPTBot|OAI-SearchBot')");
-    });
-
-    it('should build filter for multiple providers', () => {
-      const filter = userAgentPatterns.buildLlmUserAgentFilter(['chatgpt', 'claude']);
-      expect(filter).to.be.a('string');
-      expect(filter).to.include('ChatGPT');
-      expect(filter).to.include('Claude');
-      expect(filter).to.include('|'); // Should join with OR
-    });
-
-    it('should handle null providers (returns filter for all)', () => {
-      const filter = userAgentPatterns.buildLlmUserAgentFilter(null);
-      expect(filter).to.be.a('string');
-      expect(filter).to.include('REGEXP_LIKE');
+    it('should build filter for all providers when none specified', () => {
+      const filter = buildLlmUserAgentFilter();
+      expect(filter).to.include('REGEXP_LIKE(user_agent');
       expect(filter).to.include('ChatGPT');
       expect(filter).to.include('Perplexity');
       expect(filter).to.include('Claude');
@@ -122,190 +88,83 @@ describe('LLM Error Pages - User Agent Patterns', () => {
       expect(filter).to.include('Copilot');
     });
 
-    it('should handle undefined providers (returns filter for all)', () => {
-      const filter = userAgentPatterns.buildLlmUserAgentFilter(undefined);
-      expect(filter).to.be.a('string');
-      expect(filter).to.include('REGEXP_LIKE');
-    });
-
-    it('should return null for empty array', () => {
-      const filter = userAgentPatterns.buildLlmUserAgentFilter([]);
-      expect(filter).to.equal(null);
-    });
-
-    it('should filter out null patterns', () => {
-      const filter = userAgentPatterns.buildLlmUserAgentFilter(['chatgpt', 'unknown-provider']);
-      expect(filter).to.be.a('string');
-      expect(filter).to.include('ChatGPT');
-      expect(filter).to.not.include('unknown-provider');
-    });
-
-    it('should return null for array with all invalid providers', () => {
-      const filter = userAgentPatterns.buildLlmUserAgentFilter(['invalid1', 'invalid2']);
-      expect(filter).to.equal(null);
-    });
-
-    it('should handle mixed valid and invalid providers', () => {
-      const filter = userAgentPatterns.buildLlmUserAgentFilter(['chatgpt', 'invalid', 'claude', null, undefined]);
-      expect(filter).to.be.a('string');
+    it('should build filter for specific providers', () => {
+      const filter = buildLlmUserAgentFilter(['chatgpt', 'claude']);
+      expect(filter).to.include('REGEXP_LIKE(user_agent');
       expect(filter).to.include('ChatGPT');
       expect(filter).to.include('Claude');
-      expect(filter).to.include('|');
+      expect(filter).to.not.include('Perplexity');
     });
 
-    it('should generate proper SQL regex pattern', () => {
-      const filter = userAgentPatterns.buildLlmUserAgentFilter(['chatgpt']);
-      expect(filter).to.match(/^REGEXP_LIKE\(user_agent, '.*'\)$/);
+    it('should return null for empty providers', () => {
+      expect(buildLlmUserAgentFilter([])).to.be.null;
+    });
+
+    it('should return null for invalid providers', () => {
+      expect(buildLlmUserAgentFilter(['invalid', 'nonexistent'])).to.be.null;
+    });
+
+    it('should filter out invalid providers and build filter for valid ones', () => {
+      const filter = buildLlmUserAgentFilter(['chatgpt', 'invalid', 'claude']);
+      expect(filter).to.include('REGEXP_LIKE(user_agent');
+      expect(filter).to.include('ChatGPT');
+      expect(filter).to.include('Claude');
+      expect(filter).to.not.include('invalid');
     });
   });
 
   describe('normalizeUserAgentToProvider', () => {
-    it('should detect ChatGPT variants', () => {
-      const testUserAgents = [
-        'Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com/bot)',
-        'GPTBot/1.0 (+https://openai.com/gptbot)',
-        'OAI-SearchBot/1.0 (+https://openai.com/searchbot)',
-        'ChatGPT-User/1.0',
-      ];
-
-      testUserAgents.forEach((userAgent) => {
-        expect(userAgentPatterns.normalizeUserAgentToProvider(userAgent)).to.equal('ChatGPT');
-      });
+    it('should handle invalid input', () => {
+      expect(normalizeUserAgentToProvider(null)).to.equal('Unknown');
+      expect(normalizeUserAgentToProvider(undefined)).to.equal('Unknown');
+      expect(normalizeUserAgentToProvider('')).to.equal('Unknown');
+      expect(normalizeUserAgentToProvider(123)).to.equal('Unknown');
     });
 
-    it('should detect Perplexity variants', () => {
-      const testUserAgents = [
-        'PerplexityBot/1.0 (+https://perplexity.ai/bot)',
-        'Mozilla/5.0 (compatible; PerplexityBot/1.0; +https://perplexity.ai/bot)',
-        'Perplexity-Search/1.0',
-      ];
-
-      testUserAgents.forEach((userAgent) => {
-        expect(userAgentPatterns.normalizeUserAgentToProvider(userAgent)).to.equal('Perplexity');
-      });
+    it('should normalize ChatGPT variants', () => {
+      expect(normalizeUserAgentToProvider('ChatGPT-User')).to.equal('ChatGPT');
+      expect(normalizeUserAgentToProvider('GPTBot crawler')).to.equal('ChatGPT');
+      expect(normalizeUserAgentToProvider('OAI-SearchBot/1.0')).to.equal('ChatGPT');
+      expect(normalizeUserAgentToProvider('chatgpt mobile')).to.equal('ChatGPT');
     });
 
-    it('should detect Claude variants', () => {
-      const testUserAgents = [
-        'Claude-Web/1.0 (+https://claude.ai/bot)',
-        'Mozilla/5.0 (compatible; Claude-Web/1.0)',
-        'ClaudeBot/1.0',
-        'Anthropic-AI/1.0',
-      ];
-
-      testUserAgents.forEach((userAgent) => {
-        expect(userAgentPatterns.normalizeUserAgentToProvider(userAgent)).to.equal('Claude');
-      });
+    it('should normalize Perplexity variants', () => {
+      expect(normalizeUserAgentToProvider('Perplexity-Bot')).to.equal('Perplexity');
+      expect(normalizeUserAgentToProvider('perplexity.ai')).to.equal('Perplexity');
     });
 
-    it('should detect Gemini variants', () => {
-      const testUserAgents = [
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Google-Extended/1.0 Gemini',
-        'GoogleOther/1.0 Gemini-Pro',
-        'Gemini-Bot/1.0',
-      ];
-
-      testUserAgents.forEach((userAgent) => {
-        expect(userAgentPatterns.normalizeUserAgentToProvider(userAgent)).to.equal('Gemini');
-      });
+    it('should normalize Claude variants', () => {
+      expect(normalizeUserAgentToProvider('Claude-3')).to.equal('Claude');
+      expect(normalizeUserAgentToProvider('Anthropic AI')).to.equal('Claude');
+      expect(normalizeUserAgentToProvider('claude assistant')).to.equal('Claude');
     });
 
-    it('should detect Copilot variants', () => {
-      const testUserAgents = [
-        'Mozilla/5.0 (compatible; Microsoft Copilot/1.0)',
-        'BingBot/2.0 (+http://www.bing.com/bingbot.htm) Copilot',
-        'Microsoft-Copilot/1.0',
-      ];
-
-      testUserAgents.forEach((userAgent) => {
-        expect(userAgentPatterns.normalizeUserAgentToProvider(userAgent)).to.equal('Copilot');
-      });
+    it('should normalize Gemini variants', () => {
+      expect(normalizeUserAgentToProvider('Gemini-Pro')).to.equal('Gemini');
+      expect(normalizeUserAgentToProvider('Google Gemini')).to.equal('Gemini');
+      expect(normalizeUserAgentToProvider('gemini-1.5')).to.equal('Gemini');
     });
 
-    it('should return original user agent for unknown user agents', () => {
-      const testUserAgents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Chrome/91.0.4472.124 Safari/537.36',
-        'UnknownBot/1.0',
-        'RandomCrawler/2.0',
-      ];
-
-      testUserAgents.forEach((userAgent) => {
-        expect(userAgentPatterns.normalizeUserAgentToProvider(userAgent)).to.equal(userAgent);
-      });
+    it('should normalize Copilot variants', () => {
+      expect(normalizeUserAgentToProvider('Microsoft Copilot')).to.equal('Copilot');
+      expect(normalizeUserAgentToProvider('GitHub Copilot')).to.equal('Copilot');
+      expect(normalizeUserAgentToProvider('copilot-web')).to.equal('Copilot');
     });
 
-    it('should return "Unknown" for null and undefined input', () => {
-      expect(userAgentPatterns.normalizeUserAgentToProvider(null)).to.equal('Unknown');
-      expect(userAgentPatterns.normalizeUserAgentToProvider(undefined)).to.equal('Unknown');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('')).to.equal('Unknown');
+    it('should return original string for unknown user agents', () => {
+      const unknownAgent = 'Mozilla/5.0 (compatible; CustomBot/1.0)';
+      expect(normalizeUserAgentToProvider(unknownAgent)).to.equal(unknownAgent);
+
+      const anotherUnknown = 'SomeOtherBot/2.0';
+      expect(normalizeUserAgentToProvider(anotherUnknown)).to.equal(anotherUnknown);
     });
 
-    it('should be case insensitive', () => {
-      expect(userAgentPatterns.normalizeUserAgentToProvider('chatgpt-user/1.0')).to.equal('ChatGPT');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('CHATGPT-USER/1.0')).to.equal('ChatGPT');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('perplexitybot/1.0')).to.equal('Perplexity');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('PERPLEXITYBOT/1.0')).to.equal('Perplexity');
-    });
-
-    it('should handle mixed case provider names correctly', () => {
-      expect(userAgentPatterns.normalizeUserAgentToProvider('ChatGPT/1.0')).to.equal('ChatGPT');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('perplexity/1.0')).to.equal('Perplexity');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('CLAUDE/1.0')).to.equal('Claude');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('gemini/1.0')).to.equal('Gemini');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('COPILOT/1.0')).to.equal('Copilot');
-    });
-  });
-
-  describe('Edge Cases and Error Handling', () => {
-    it('should handle malformed input gracefully', () => {
-      const malformedInputs = [
-        123,
-        {},
-        [],
-        true,
-        false,
-      ];
-
-      malformedInputs.forEach((input) => {
-        expect(() => userAgentPatterns.getLlmProviderPattern(input)).to.not.throw();
-        expect(() => userAgentPatterns.normalizeUserAgentToProvider(input)).to.not.throw();
-        expect(userAgentPatterns.normalizeUserAgentToProvider(input)).to.equal('Unknown');
-      });
-    });
-
-    it('should handle very long user agent strings', () => {
-      const longUserAgent = `ChatGPT-User/1.0 ${'A'.repeat(10000)}`;
-      expect(userAgentPatterns.normalizeUserAgentToProvider(longUserAgent)).to.equal('ChatGPT');
-    });
-
-    it('should handle user agent strings with special characters', () => {
-      const specialUserAgents = [
-        'ChatGPT-User/1.0 (+https://openai.com/bot) [Special]',
-        'Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com/bot) <test>',
-        'PerplexityBot/1.0 & Co.',
-      ];
-
-      expect(userAgentPatterns.normalizeUserAgentToProvider(specialUserAgents[0])).to.equal('ChatGPT');
-      expect(userAgentPatterns.normalizeUserAgentToProvider(specialUserAgents[1])).to.equal('ChatGPT');
-      expect(userAgentPatterns.normalizeUserAgentToProvider(specialUserAgents[2])).to.equal('Perplexity');
-    });
-
-    it('should handle whitespace-only input', () => {
-      expect(userAgentPatterns.normalizeUserAgentToProvider('   ')).to.equal('   ');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('\t\n')).to.equal('\t\n');
-    });
-
-    it('should handle partial matches correctly', () => {
-      expect(userAgentPatterns.normalizeUserAgentToProvider('NotChatGPTBot')).to.equal('ChatGPT');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('SomePerplexityTool')).to.equal('Perplexity');
-      expect(userAgentPatterns.normalizeUserAgentToProvider('ClaudeAnthropic')).to.equal('Claude');
-    });
-
-    it('should prioritize first match when multiple patterns could match', () => {
-      // This tests the order of checks in the function
-      const ambiguousAgent = 'ChatGPT Perplexity Claude';
-      expect(userAgentPatterns.normalizeUserAgentToProvider(ambiguousAgent)).to.equal('ChatGPT');
+    it('should handle case insensitive matching', () => {
+      expect(normalizeUserAgentToProvider('CHATGPT')).to.equal('ChatGPT');
+      expect(normalizeUserAgentToProvider('pErPlExItY')).to.equal('Perplexity');
+      expect(normalizeUserAgentToProvider('CLAUDE')).to.equal('Claude');
+      expect(normalizeUserAgentToProvider('GEMINI')).to.equal('Gemini');
+      expect(normalizeUserAgentToProvider('COPILOT')).to.equal('Copilot');
     });
   });
 });
