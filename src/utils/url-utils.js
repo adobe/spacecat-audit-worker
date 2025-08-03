@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { prependSchema, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { prependSchema, stripWWW, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
 /**
  * Checks if a given URL is a "preview" page
@@ -27,11 +27,11 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
   const baseDomain = new URL(baseURL).hostname;
   const checks = suggestedUrls.map(async (suggestedUrl) => {
     try {
-      const schemaPrependedUrl = prependSchema(suggestedUrl);
-      const response = await fetch(schemaPrependedUrl, { method: 'HEAD' });
-      if (response.ok) {
-        const suggestedURLObj = new URL(schemaPrependedUrl);
-        if (suggestedURLObj.hostname === baseDomain) {
+      const schemaPrependedUrl = prependSchema(stripWWW(suggestedUrl));
+      const suggestedURLObj = new URL(schemaPrependedUrl);
+      if (suggestedURLObj.hostname === baseDomain) {
+        const response = await fetch(schemaPrependedUrl);
+        if (response.ok) {
           return suggestedUrl;
         }
       }

@@ -74,10 +74,10 @@ describe('guidance-broken-links-remediation handler', () => {
       save: mockSave,
     });
     nock('https://foo.com')
-      .head('/redirects-throws-error-1')
+      .get('/redirects-throws-error-1')
       .reply(200);
     nock('https://foo.com')
-      .head('/redirects-throws-error-2')
+      .get('/redirects-throws-error-2')
       .reply(200);
     const response = await brokenLinksGuidanceHandler(mockMessage, mockContext);
     expect(response.status).to.equal(200);

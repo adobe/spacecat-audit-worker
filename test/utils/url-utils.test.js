@@ -48,6 +48,7 @@ describe('isPreviewPage', () => {
 describe('filterBrokenSuggestedUrls', () => {
   let fetchStub;
   let prependSchemaStub;
+  const baseURL = 'https://example.com';
 
   beforeEach(() => {
     fetchStub = sinon.stub();
@@ -64,11 +65,10 @@ describe('filterBrokenSuggestedUrls', () => {
       'https://www.example.com/page2',
       'https://www.other.com/page3',
     ];
-    const baseURL = 'https://www.example.com';
 
-    nock('https://www.example.com')
-      .head('/page1').reply(200)
-      .head('/page2')
+    nock('https://example.com')
+      .get('/page1').reply(200)
+      .get('/page2')
       .reply(200);
     nock('https://www.other.com')
       .head('/page3').reply(200);
@@ -90,10 +90,9 @@ describe('filterBrokenSuggestedUrls', () => {
       'https://www.example.com/page1',
       'https://www.example.com/page2',
     ];
-    const baseURL = 'https://www.example.com';
-    nock('https://www.example.com')
-      .head('/page1').reply(404)
-      .head('/page2')
+    nock('https://example.com')
+      .get('/page1').reply(404)
+      .get('/page2')
       .reply(200);
     prependSchemaStub.callsFake((url) => url);
     fetchStub.withArgs('https://www.example.com/page1').resolves({ ok: false });
@@ -108,10 +107,9 @@ describe('filterBrokenSuggestedUrls', () => {
       'https://www.example.com/page1',
       'https://www.other.com/page2',
     ];
-    const baseURL = 'https://www.example.com';
-    nock('https://www.example.com')
-      .head('/page1').reply(200)
-      .head('/page2')
+    nock('https://example.com')
+      .get('/page1').reply(200)
+      .get('/page2')
       .reply(200);
     fetchStub.resolves({ ok: true });
 
@@ -124,10 +122,9 @@ describe('filterBrokenSuggestedUrls', () => {
       'https://www.example.com/page1',
       'https://www.example.com/page2',
     ];
-    const baseURL = 'https://www.example.com';
-    nock('https://www.example.com')
-      .head('/page1').reply(404)
-      .head('/page2')
+    nock('https://example.com')
+      .get('/page1').replyWithError('Network error')
+      .get('/page2')
       .reply(200);
     prependSchemaStub.callsFake((url) => url);
     fetchStub.withArgs('https://www.example.com/page1').rejects(new Error('Network error'));
