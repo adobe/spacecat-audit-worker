@@ -327,13 +327,13 @@ const auditBuilderWithFirefall = new AuditBuilder()
 
 export default async function createAltTextHandler(message, context) {
   const { siteId } = message;
-  const { dataAccess } = context;
+  const { dataAccess, log } = context;
 
   const site = await dataAccess.Site.findById(siteId);
   const configuration = await dataAccess.Configuration.findLatest();
 
   const useMystique = configuration.isHandlerEnabledForSite('alt-text-auto-suggest-mystique', site);
-
+  log.info(`[${AUDIT_TYPE}]: Using Mystique for site ${siteId}: ${useMystique}`);
   const builder = useMystique ? auditBuilderWithMystique : auditBuilderWithFirefall;
   return builder.run(message, context);
 }
