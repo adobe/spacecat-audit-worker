@@ -281,6 +281,31 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
     });
 
     await saveIntermediateResults(context, auditsResult, 'accessibility audit');
+
+    // Clean up individual accessibility files after processing
+    try {
+      const filesToDelete = auditContext.previewUrls.map((url) => {
+        const filename = generateAccessibilityFilename(url);
+        return `accessibility-preflight/${siteId}/${filename}`;
+      });
+
+      log.info(`[preflight-audit] Cleaning up ${filesToDelete.length} individual accessibility files`);
+
+      const { DeleteObjectsCommand } = await import('@aws-sdk/client-s3');
+      const deleteCommand = new DeleteObjectsCommand({
+        Bucket: bucketName,
+        Delete: {
+          Objects: filesToDelete.map((Key) => ({ Key })),
+          Quiet: true,
+        },
+      });
+
+      await s3Client.send(deleteCommand);
+      log.info(`[preflight-audit] Successfully cleaned up ${filesToDelete.length} accessibility files`);
+    } catch (cleanupError) {
+      log.warn(`[preflight-audit] Failed to clean up accessibility files: ${cleanupError.message}`);
+      // Don't fail the entire audit if cleanup fails
+    }
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Accessibility audit failed: ${error.message}`, error);
 
