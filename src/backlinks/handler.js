@@ -10,20 +10,17 @@
  * governing permissions and limitations under the License.
  */
 
-import { getPrompt, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
-import { syncSuggestions } from '../utils/data-access.js';
+import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getScrapedDataForSiteId } from '../support/utils.js';
+import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import calculateKpiDeltasForAudit from './kpi-metrics.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-const auditType = Audit.AUDIT_TYPES.BROKEN_BACKLINKS;
 const TIMEOUT = 3000;
 
 async function filterOutValidBacklinks(backlinks, log) {
@@ -124,12 +121,12 @@ export async function submitForScraping(context) {
 
 export const generateSuggestionData = async (context) => {
   const {
-    site, audit, finalUrl, dataAccess, log,
+    site, audit, dataAccess, log, sqs, env, finalUrl,
   } = context;
-  const { Configuration, SiteTopPage } = dataAccess;
-  const { FIREFALL_MODEL } = context.env;
+  const { Configuration, Suggestion, SiteTopPage } = dataAccess;
 
-  if (audit.getAuditResult().success === false) {
+  const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
     log.info('Audit failed, skipping suggestions generation');
     throw new Error('Audit failed, skipping suggestions generation');
   }
@@ -140,143 +137,21 @@ export const generateSuggestionData = async (context) => {
     throw new Error('Auto-suggest is disabled for site');
   }
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  if (topPages.length === 0) {
-    log.error('No top pages found for site, will not be able to generate suggestions');
-    throw new Error('No top pages found for site, will not be able to generate suggestions');
-  }
-
-  log.info(`Generating suggestions for site ${finalUrl}`);
-
-  const firefallClient = FirefallClient.createFrom(context);
-  const firefallOptions = { responseFormat: 'json_object', model: FIREFALL_MODEL };
-  const BATCH_SIZE = 300;
-
-  const data = await getScrapedDataForSiteId(site, context);
-  const { siteData, headerLinks } = data;
-  const totalBatches = Math.ceil(siteData.length / BATCH_SIZE);
-  const dataBatches = Array.from(
-    { length: totalBatches },
-    (_, i) => siteData.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
-  );
-
-  log.info(`Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
-
-  const processBatch = async (batch, urlTo) => {
-    try {
-      const requestBody = await getPrompt(
-        { alternative_urls: batch, broken_url: urlTo },
-        'broken-backlinks',
-        log,
-      );
-      const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
-
-      if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-        log.error(`No suggestions found for ${urlTo}`);
-        return null;
-      }
-
-      return JSON.parse(response.choices[0].message.content);
-    } catch (error) {
-      log.error(`Batch processing error: ${error.message}`);
-      return null;
-    }
-  };
-
-  const processBacklink = async (backlink, headerSuggestions) => {
-    log.info(`Processing backlink: ${backlink.url_to}`);
-    const batchPromises = dataBatches.map((batch) => processBatch(batch, backlink.url_to));
-    const batchResults = await Promise.all(batchPromises);
-    const suggestions = batchResults.filter((result) => result !== null);
-
-    if (totalBatches > 1) {
-      log.info(`Compiling final suggestions for: ${backlink.url_to}`);
-      try {
-        const finalRequestBody = await getPrompt(
-          {
-            suggested_urls: suggestions,
-            header_links: headerSuggestions,
-            broken_url: backlink.url_to,
-          },
-          'broken-backlinks-followup',
-          log,
-        );
-        const finalResponse = await firefallClient
-          .fetchChatCompletion(finalRequestBody, firefallOptions);
-
-        if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
-          log.error(`No final suggestions found for ${backlink.url_to}`);
-          return { ...backlink };
-        }
-
-        const answer = JSON.parse(finalResponse.choices[0].message.content);
-        log.info(`Final suggestion for ${backlink.url_to}: ${JSON.stringify(answer)}`);
-        return {
-          ...backlink,
-          urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
-          aiRationale: answer.aiRationale?.length > 0 ? answer.aiRationale : 'No suitable suggestions found',
-        };
-      } catch (error) {
-        log.error(`Final suggestion error for ${backlink.url_to}: ${error.message}`);
-        return { ...backlink };
-      }
-    }
-
-    log.info(`Suggestions for ${backlink.url_to}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
-    return {
-      ...backlink,
-      urlsSuggested:
-        suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
-      aiRationale:
-        suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
-    };
-  };
-
-  const headerSuggestionsPromises = audit.getAuditResult().brokenBacklinks.map(async (backlink) => {
-    try {
-      const requestBody = await getPrompt(
-        { alternative_urls: headerLinks, broken_url: backlink.url_to },
-        'broken-backlinks',
-        log,
-      );
-      const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
-
-      if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
-        log.error(`No header suggestions for ${backlink.url_to}`);
-        return null;
-      }
-
-      return JSON.parse(response.choices[0].message.content);
-    } catch (error) {
-      log.error(`Header suggestion error: ${error.message}`);
-      return null;
-    }
-  });
-  const headerSuggestionsResults = await Promise.all(headerSuggestionsPromises);
-
-  const updatedBacklinkPromises = audit.getAuditResult().brokenBacklinks.map(
-    (backlink, index) => processBacklink(backlink, headerSuggestionsResults[index]),
-  );
-  const updatedBacklinks = await Promise.all(updatedBacklinkPromises);
-
-  log.info(`Broken backlinks suggestions generation for ${site.getId()} complete.`);
-
-  const kpiDeltas = await calculateKpiDeltasForAudit(audit, context, site);
+  const kpiDeltas = await calculateKpiMetrics(audit, context, site);
 
   const opportunity = await convertToOpportunity(
     finalUrl,
     { siteId: site.getId(), id: audit.getId() },
     context,
     createOpportunityData,
-    auditType,
+    Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
     kpiDeltas,
   );
 
   const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
-
   await syncSuggestions({
     opportunity,
-    newData: updatedBacklinks,
+    newData: auditResult?.brokenBacklinks,
     buildKey,
     context,
     mapNewSuggestion: (backlink) => ({
@@ -287,13 +162,33 @@ export const generateSuggestionData = async (context) => {
         title: backlink.title,
         url_from: backlink.url_from,
         url_to: backlink.url_to,
-        urlsSuggested: backlink.urlsSuggested || [],
-        aiRationale: backlink.aiRationale || '',
         traffic_domain: backlink.traffic_domain,
       },
     }),
     log,
   });
+  const suggestions = await Suggestion.allByOpportunityIdAndStatus(
+    opportunity.getId(),
+    SuggestionModel.STATUSES.NEW,
+  );
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const message = {
+    type: 'guidance:broken-links',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      alternativeUrls: topPages.map((page) => page.getUrl()),
+      opportunityId: opportunity?.getId(),
+      brokenLinks: suggestions.map((suggestion) => ({
+        urlFrom: suggestion?.getData()?.url_from,
+        urlTo: suggestion?.getData()?.url_to,
+        suggestionId: suggestion?.getId(),
+      })),
+    },
+  };
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   return {
     status: 'complete',
   };
@@ -303,5 +198,5 @@ export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
   .addStep('audit-and-import-top-pages', runAuditAndImportTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-  .addStep('generate-suggestions', generateSuggestionData)
+  .addStep('generate-suggestion-data', generateSuggestionData)
   .build();
