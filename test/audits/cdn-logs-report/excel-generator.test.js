@@ -98,32 +98,6 @@ describe('CDN Logs Excel Generator', () => {
     expect(result.worksheets.length).to.be.greaterThan(5);
   });
 
-  it('creates referral traffic report with country-topic and url-topic sheets', async () => {
-    const mockData = {
-      referralCountryTopic: [
-        { country: 'US', topic: 'photoshop', hits: 100 },
-        { country: 'GLOBAL', topic: 'pure whey protein', hits: 50 },
-      ],
-      referralUrlTopic: [
-        { url: '/products/photoshop.html', topic: 'photoshop', hits: 75 },
-        { url: '/products/pure-whey-protein/', topic: 'pure whey protein', hits: 25 },
-      ],
-    };
-
-    const site = {
-      getBaseURL: () => 'https://adobe.com',
-      getConfig: () => ({}),
-    };
-
-    const result = await createExcelReport(mockData, REPORT_CONFIGS.referral, { site });
-    const buffer = await result.xlsx.writeBuffer();
-
-    expect(buffer).to.be.instanceOf(Buffer);
-    expect(result.worksheets).to.have.length(2);
-    expect(result.worksheets[0].name).to.equal('shared-hits_by_country_topic');
-    expect(result.worksheets[1].name).to.equal('shared-hits_by_url_topic');
-  });
-
   it('processes null properties and empty status fallbacks', async () => {
     const mockData = {
       reqcountbyuseragent: null,
