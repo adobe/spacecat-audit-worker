@@ -27,6 +27,8 @@ async function scrapeAccessibilityData(context, auditContext) {
   const {
     site, job, log, env, sqs,
   } = context;
+  const jobMetadata = job.getMetadata();
+  const { enableAuthentication = true } = jobMetadata.payload;
   const jobId = job?.getId();
   const {
     previewUrls,
@@ -84,9 +86,10 @@ async function scrapeAccessibilityData(context, auditContext) {
         allowCache: false,
         forceRescrape: true,
         options: {
-          storagePath: `accessibility/${siteId}`,
+          enableAuthentication,
+          a11yPreflight: true,
+          ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
         },
-        ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
       };
 
       log.info(`[preflight-audit] Scrape message being sent: ${JSON.stringify(scrapeMessage, null, 2)}`);
