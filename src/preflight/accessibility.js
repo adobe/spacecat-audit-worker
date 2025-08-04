@@ -79,7 +79,7 @@ async function scrapeAccessibilityData(context, auditContext) {
         processingType: 'accessibility',
         s3BucketName: bucketName,
         completionQueueUrl: env.AUDIT_JOBS_QUEUE_URL,
-        skipMessage: false,
+        skipMessage: true,
         skipStorage: false,
         allowCache: false,
         forceRescrape: true,
@@ -279,7 +279,8 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
  * Accessibility preflight handler
  */
 export default async function accessibility(context, auditContext) {
-  const { checks, log } = auditContext;
+  const { checks } = auditContext;
+  const { log } = context;
 
   if (!checks || checks.includes(PREFLIGHT_ACCESSIBILITY)) {
     // Check if we have URLs to process
