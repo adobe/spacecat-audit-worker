@@ -88,6 +88,12 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
     log.error(`No Scraped tags found in S3 ${key} object`);
     return null;
   }
+  // if the scrape result is empty, skip the page for metatags audit
+  if (object?.scrapeResult?.rawBody?.length < 300) {
+    log.error(`Scrape result is empty for ${key}`);
+    return null;
+  }
+
   let pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
     : key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
   // handling for homepage
@@ -320,15 +326,16 @@ export async function submitForScraping(context) {
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  if (topPages.length === 0) {
-    throw new Error('No top pages found for site');
-  }
   const topPagesUrls = topPages.map((page) => page.getUrl());
   // Combine includedURLs and topPages URLs to scrape
   const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.info(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+
+  if (finalUrls.length === 0) {
+    throw new Error('No URLs found for site neither top pages nor included URLs');
+  }
 
   return {
     urls: finalUrls.map((url) => ({ url })),

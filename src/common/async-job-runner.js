@@ -11,7 +11,7 @@
  */
 
 import { isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
-import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { AsyncJob, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
 import { sendContinuationMessage, isAuditEnabledForSite } from './audit-utils.js';
@@ -36,17 +36,17 @@ export class AsyncJobRunner extends StepAudit {
 
   async chainStep(step, stepResult, context) {
     const {
-      type, job, urls, log,
+      type, job, urls, log, promiseToken,
     } = context;
 
     const destination = AUDIT_STEP_DESTINATION_CONFIGS[step.destination];
     const nextStepName = this.getNextStepName(step.name);
-
     const auditContext = {
       next: nextStepName,
       jobId: job.getId(),
       auditType: type,
       urls,
+      ...(promiseToken ? { promiseToken } : {}),
     };
 
     const queueUrl = destination.getQueueUrl(context);
@@ -64,7 +64,6 @@ export class AsyncJobRunner extends StepAudit {
     const {
       type, jobId, auditContext = {},
     } = message;
-
     try {
       const job = await this.jobProvider(auditContext.jobId || jobId, context);
 
@@ -85,6 +84,14 @@ export class AsyncJobRunner extends StepAudit {
 
       if (!(await isAuditEnabledForSite(type, site, context))) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
+        job.setStatus(AsyncJob.Status.CANCELLED);
+        job.setMetadata({
+          payload: {
+            siteId,
+            reason: `${type} audits disabled for site ${siteId}`,
+          },
+        });
+        await job.save();
         return ok();
       }
 
@@ -96,6 +103,11 @@ export class AsyncJobRunner extends StepAudit {
       };
 
       updatedStepContext.finalUrl = await this.urlResolver(site, context);
+      const promiseToken = message.promiseToken || message.auditContext?.promiseToken;
+      if (promiseToken) {
+        updatedStepContext.promiseToken = promiseToken;
+        log.info(`site: ${siteId}. Promise token added to step context`);
+      }
 
       const stepResult = await step.handler(updatedStepContext);
       let response = ok();

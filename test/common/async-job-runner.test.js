@@ -14,7 +14,7 @@
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access/src/models/audit/index.js';
+import { Audit as AuditModel, Site as SiteModel } from '@adobe/spacecat-shared-data-access';
 import sinon from 'sinon';
 import nock from 'nock';
 import { MockContextBuilder } from '../shared.js';
@@ -49,6 +49,7 @@ describe('Job-based Step-Audit Tests', () => {
       getId: () => '42322ae6-b8b1-4a61-9c88-25205fa65b07',
       getBaseURL: () => baseURL,
       getIsLive: () => true,
+      getDeliveryType: () => SiteModel.DELIVERY_TYPES.AEM_EDGE,
     };
 
     configuration = {
@@ -88,6 +89,9 @@ describe('Job-based Step-Audit Tests', () => {
     return {
       getId: () => metadata.jobId || 'job-123',
       getMetadata: () => metadata,
+      setStatus: sinon.spy(),
+      setMetadata: sinon.spy(),
+      save: sinon.spy(),
     };
   }
 
@@ -99,10 +103,12 @@ describe('Job-based Step-Audit Tests', () => {
       .addStep('first', async () => ({}), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
       .build();
 
-    // Mock job provider
-    runner.jobProvider = async () => createMockJob({
+    const job = createMockJob({
       payload: { siteId: site.getId() },
     });
+
+    // Mock job provider
+    runner.jobProvider = async () => job;
 
     const message = {
       type: 'content-audit',
@@ -113,6 +119,13 @@ describe('Job-based Step-Audit Tests', () => {
 
     expect(result.status).to.equal(200);
     expect(context.log.warn).to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
+    expect(job.setStatus).to.have.been.calledWith('CANCELLED');
+    expect(job.setMetadata).to.have.been.calledWith({
+      payload: {
+        siteId: site.getId(),
+        reason: 'content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07',
+      },
+    });
   });
 
   it('executes first step and sends continuation message', async () => {
@@ -265,5 +278,56 @@ describe('Job-based Step-Audit Tests', () => {
     };
 
     await expect(runner.run(message, context)).to.be.rejectedWith('content-audit audit failed for job job-123 at step initial. Reason: Job job-123 metadata is not an object');
+  });
+
+  it('adds promiseToken to step context for AEM_CS sites when message.promiseToken exists', async () => {
+    site.getDeliveryType = () => SiteModel.DELIVERY_TYPES.AEM_CS;
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async (stepContext) => {
+        expect(stepContext.promiseToken).to.equal('test-token');
+        return { ok: true };
+      }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .addStep('second', async (stepContext) => {
+        expect(stepContext.promiseToken).to.equal('test-token');
+        return { ok: true };
+      }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+      promiseToken: 'test-token',
+    };
+
+    await runner.run(message, context);
+  });
+
+  it('does not add promiseToken to step context for AEM_CS sites if message.promiseToken is missing', async () => {
+    site.getDeliveryType = () => SiteModel.DELIVERY_TYPES.AEM_CS;
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async (stepContext) => {
+        expect(stepContext.promiseToken).to.be.undefined;
+        return { ok: true };
+      }, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    const messageNoToken = {
+      type: 'content-audit',
+      jobId: 'job-123',
+    };
+
+    await runner.run(messageNoToken, context);
   });
 });

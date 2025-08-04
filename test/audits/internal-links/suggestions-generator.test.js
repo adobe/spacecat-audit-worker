@@ -39,6 +39,7 @@ describe('generateSuggestionData', async function test() {
   this.timeout(10000);
 
   let auditData;
+  let brokenInternalLinksData;
   let configuration;
   let firefallClient;
 
@@ -88,6 +89,10 @@ describe('generateSuggestionData', async function test() {
   };
 
   beforeEach(() => {
+    brokenInternalLinksData = [
+      { urlTo: 'https://example.com/broken1' },
+      { urlTo: 'https://example.com/broken2' },
+    ];
     auditData = {
       getAuditResult: () => ({
         success: true,
@@ -110,30 +115,6 @@ describe('generateSuggestionData', async function test() {
 
   afterEach(() => {
     sandbox.restore();
-  });
-
-  it('returns original auditData if audit result is unsuccessful', async () => {
-    const FailureAuditData = {
-      ...auditData,
-      getAuditResult: () => ({
-        ...auditData.getAuditResult(),
-        success: false,
-      }),
-    };
-
-    const result = await generateSuggestionData('https://example.com', FailureAuditData, context, site);
-
-    expect(result).to.deep.equal(auditData.getAuditResult().brokenInternalLinks);
-    expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
-  });
-
-  it('returns original auditData if auto-suggest is disabled for the site', async () => {
-    configuration.isHandlerEnabledForSite.returns(false);
-
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
-
-    expect(result).to.deep.equal(auditData.getAuditResult().brokenInternalLinks);
-    expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Auto-suggest is disabled for site`);
   });
 
   it('if sitedata is not found, return audit object as is', async () => {
@@ -188,7 +169,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
 
     expect(firefallClient.fetchChatCompletion).to.have.been.callCount(4);
     expect(result).to.deep.equal([
@@ -257,7 +238,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
 
     expect(firefallClient.fetchChatCompletion).to.have.been.callCount(8);
     expect(result).to.deep.equal([
@@ -306,7 +287,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    const result = await generateSuggestionData('https://example.com', auditData, context, site);
+    const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
 
     expect(result).to.deep.equal([
       {

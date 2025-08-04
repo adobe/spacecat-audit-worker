@@ -1,0 +1,47 @@
+/*
+ * Copyright 2025 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+import { weeklyBreakdownQueries } from '../utils/query-builder.js';
+
+export const REPORT_CONFIGS = {
+  agentic: {
+    filePrefix: 'agentictraffic',
+    folderSuffix: 'agentic-traffic',
+    workbookCreator: 'Spacecat Agentic Traffic Report',
+    providers: ['chatgpt', 'perplexity'],
+    queries: {
+      reqcountbycountry: weeklyBreakdownQueries.createCountryWeeklyBreakdown,
+      reqcountbyuseragent: weeklyBreakdownQueries.createUserAgentWeeklyBreakdown,
+      error_404_urls: weeklyBreakdownQueries.createError404Urls,
+      error_503_urls: weeklyBreakdownQueries.createError503Urls,
+      success_urls_by_category: weeklyBreakdownQueries.createSuccessUrlsByCategory,
+      top_urls: weeklyBreakdownQueries.createTopUrls,
+      hits_by_product_agent_type: weeklyBreakdownQueries.createHitsByProductAgentType,
+      hits_by_page_category_agent_type: weeklyBreakdownQueries.createHitsByPageCategoryAgentType,
+    },
+    sheets: [
+      { name: 'shared-hits_by_user_agents', dataKey: 'reqcountbyuseragent', type: 'userAgents' },
+      { name: 'shared-hits_by_country', dataKey: 'reqcountbycountry', type: 'country' },
+      { name: 'shared-404_all_urls', dataKey: 'error_404_urls', type: 'error404' },
+      { name: 'shared-503_all_urls', dataKey: 'error_503_urls', type: 'error503' },
+      { name: 'shared-hits_by_page', dataKey: 'top_urls', type: 'topUrls' },
+      { name: 'shared-hits_by_product', dataKey: 'hits_by_product_agent_type', type: 'hitsByProductAgentType' },
+      { name: 'shared-hits_by_page_category', dataKey: 'hits_by_page_category_agent_type', type: 'hitsByPageCategoryAgentType' },
+    ],
+    conditionalSheets: [
+      {
+        condition: (site) => site && site.getBaseURL().includes('bulk.com'),
+        sheet: { name: 'shared-200s_by_category', dataKey: 'success_urls_by_category', type: 'category' },
+      },
+    ],
+  },
+};

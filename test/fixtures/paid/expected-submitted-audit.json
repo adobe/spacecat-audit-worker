@@ -6,38 +6,136 @@
                 {
                     "ctr": 0.3435114503816794,
                     "clickedSessions": 900,
-                    "totalSessions": 2620,
+                    "pageViews": 12620,
                     "sessionsWithEnter": 2000,
                     "clicksOverViews": 0.3435114503816794,
                     "bounceRate": 0.6564885496183206,
                     "totalNumClicks": 1000,
                     "avgClicksPerSession": 1.1111111111111112,
                     "url": "https://www.aem.live/home",
-                    "pageType": "other | Other Pages"
-                },
-                {
-                    "ctr": 0.2,
-                    "clickedSessions": 400,
-                    "totalSessions": 2000,
-                    "sessionsWithEnter": 100,
-                    "clicksOverViews": 0.2,
-                    "bounceRate": 0.8,
-                    "totalNumClicks": 900,
-                    "avgClicksPerSession": 2.25,
-                    "url": "https://www.aem.live/developer/block-collection",
-                    "pageType": "other | Other Pages"
+                    "topURLs": [
+                        "https://www.aem.live/home"
+                    ]
                 },
                 {
                     "ctr": 0.31413612565445026,
                     "clickedSessions": 600,
-                    "totalSessions": 1910,
+                    "pageViews": 11910,
                     "sessionsWithEnter": 602,
                     "clicksOverViews": 0.31413612565445026,
                     "bounceRate": 0.6858638743455497,
                     "totalNumClicks": 700,
                     "avgClicksPerSession": 1.1666666666666667,
                     "url": "https://www.aem.live/docs/",
-                    "pageType": "other | Other Pages"
+                    "topURLs": [
+                        "https://www.aem.live/docs/"
+                    ]
+                },
+                {
+                    "ctr": 0.25,
+                    "clickedSessions": 400,
+                    "pageViews": 11600,
+                    "sessionsWithEnter": 700,
+                    "clicksOverViews": 0.25,
+                    "bounceRate": 0.75,
+                    "totalNumClicks": 600,
+                    "avgClicksPerSession": 1.5,
+                    "url": "https://www.aem.live/tools/rum/explorer.html",
+                    "topURLs": [
+                        "https://www.aem.live/tools/rum/explorer.html"
+                    ]
+                }
+            ]
+        },
+        {
+            "key": "urlTrafficSource",
+            "value": [
+                {
+                    "ctr": 0.2830188679245283,
+                    "clickedSessions": 600,
+                    "pageViews": 12120,
+                    "sessionsWithEnter": 1500,
+                    "clicksOverViews": 0.2830188679245283,
+                    "bounceRate": 0.7169811320754718,
+                    "totalNumClicks": 700,
+                    "avgClicksPerSession": 1.1666666666666667,
+                    "url": "https://www.aem.live/home",
+                    "source": "owned:direct:",
+                    "topURLs": [
+                        "https://www.aem.live/home"
+                    ]
+                },
+                {
+                    "ctr": 0.2,
+                    "clickedSessions": 400,
+                    "pageViews": 12000,
+                    "sessionsWithEnter": 100,
+                    "clicksOverViews": 0.2,
+                    "bounceRate": 0.8,
+                    "totalNumClicks": 900,
+                    "avgClicksPerSession": 2.25,
+                    "url": "https://www.aem.live/developer/block-collection",
+                    "source": "owned:direct:",
+                    "topURLs": [
+                        "https://www.aem.live/developer/block-collection"
+                    ]
+                }
+            ]
+        },
+        {
+            "key": "pageType",
+            "value": [
+                {
+                    "ctr": 0.2027468663384768,
+                    "clickedSessions": 4901,
+                    "pageViews": 124173,
+                    "sessionsWithEnter": 5603,
+                    "clicksOverViews": 0.2027468663384768,
+                    "bounceRate": 0.7972531336615232,
+                    "totalNumClicks": 11003,
+                    "avgClicksPerSession": 2.2450520301979187,
+                    "type": "sample-type",
+                    "topURLs": [
+                        "https://www.aem.live/home",
+                        "https://www.aem.live/docs/",
+                        "https://www.aem.live/tools/rum/explorer.html",
+                        "https://www.aem.live/developer/block-collection",
+                        "https://www.aem.live/developer/tutorial",
+                        "https://www.aem.live/developer/anatomy-of-a-franklin-project",
+                        "https://www.aem.live/developer/indexing",
+                        "https://www.aem.live/docs/custom-headers",
+                        "https://www.aem.live/developer/spreadsheets",
+                        "https://www.aem.live/docs/dev-collab-and-good-practices"
+                    ]
+                }
+            ]
+        },
+        {
+            "key": "pageTypeTrafficSource",
+            "value": [
+                {
+                    "ctr": 0.1728170823550259,
+                    "clickedSessions": 3901,
+                    "pageViews": 122573,
+                    "sessionsWithEnter": 4003,
+                    "clicksOverViews": 0.1728170823550259,
+                    "bounceRate": 0.8271829176449741,
+                    "totalNumClicks": 7403,
+                    "avgClicksPerSession": 1.8977185337093052,
+                    "type": "specific-type",
+                    "source": "owned:direct:",
+                    "topURLs": [
+                        "https://www.aem.live/home",
+                        "https://www.aem.live/docs/",
+                        "https://www.aem.live/tools/rum/explorer.html",
+                        "https://www.aem.live/developer/block-collection",
+                        "https://www.aem.live/developer/tutorial",
+                        "https://www.aem.live/developer/anatomy-of-a-franklin-project",
+                        "https://www.aem.live/developer/indexing",
+                        "https://www.aem.live/docs/custom-headers",
+                        "https://www.aem.live/developer/spreadsheets",
+                        "https://www.aem.live/docs/dev-collab-and-good-practices"
+                    ]
                 }
             ]
         }
