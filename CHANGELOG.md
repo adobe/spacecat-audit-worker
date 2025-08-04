@@ -1,3 +1,10 @@
+## [1.135.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.135.0...v1.135.1) (2025-08-04)
+
+
+### Bug Fixes
+
+* change-a11y-suggestion-data-structure-granularity ([#1082](https://github.com/adobe/spacecat-audit-worker/issues/1082)) ([dcace6f](https://github.com/adobe/spacecat-audit-worker/commit/dcace6f9b7d908c566b6220bf05e1c2d7ca55c63))
+
 # [1.135.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.5...v1.135.0) (2025-07-31)
 
 
