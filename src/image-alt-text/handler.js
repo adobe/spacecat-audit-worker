@@ -312,11 +312,11 @@ export async function processAltTextWithMystique(context) {
 }
 
 // Create two separate audit builders
-// const auditBuilderWithMystique = new AuditBuilder()
-//   .withUrlResolver((site) => site.getBaseURL())
-//   .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-//   .addStep('processAltTextWithMystique', processAltTextWithMystique)
-//   .build();
+const auditBuilderWithMystique = new AuditBuilder()
+  .withUrlResolver((site) => site.getBaseURL())
+  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('processAltTextWithMystique', processAltTextWithMystique)
+  .build();
 
 const auditBuilderWithFirefall = new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
@@ -325,18 +325,15 @@ const auditBuilderWithFirefall = new AuditBuilder()
   .addStep('processAltTextAudit', processAltTextAuditStep)
   .build();
 
-export default auditBuilderWithFirefall;
+export default async function createAltTextHandler(message, context) {
+  const { siteId } = message;
+  const { dataAccess, log } = context;
 
-// export default async function createAltTextHandler(message, context) {
-//   const { siteId } = message;
-//   const { dataAccess, log } = context;
+  const site = await dataAccess.Site.findById(siteId);
+  const configuration = await dataAccess.Configuration.findLatest();
 
-//   const site = await dataAccess.Site.findById(siteId);
-//   const configuration = await dataAccess.Configuration.findLatest();
-
-//   const useMystique =
-// configuration.isHandlerEnabledForSite('alt-text-auto-suggest-mystique', site);
-//   log.info(`[${AUDIT_TYPE}]: Using Mystique for site ${siteId}: ${useMystique}`);
-//   const builder = useMystique ? auditBuilderWithMystique : auditBuilderWithFirefall;
-//   return builder.run(message, context);
-// }
+  const useMystique = configuration.isHandlerEnabledForSite('alt-text-auto-suggest-mystique', site);
+  log.info(`[${AUDIT_TYPE}]: Using Mystique for site ${siteId}: ${useMystique}`);
+  const builder = useMystique ? auditBuilderWithMystique : auditBuilderWithFirefall;
+  return builder.run(message, context);
+}
