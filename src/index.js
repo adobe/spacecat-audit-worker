@@ -47,6 +47,7 @@ import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-
 import paidConsentGuidance from './paid/guidance-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import { suggestionsInternalLinksHandler } from './internal-links/suggestions-internal-links-handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
@@ -56,6 +57,8 @@ import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
 import detectPageIntent from './page-intent/handler.detect.js';
+import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
+import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -80,7 +83,8 @@ const HANDLERS = {
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
-  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
+  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance, // ref
+  'suggestions:internal-links': suggestionsInternalLinksHandler,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
@@ -91,11 +95,13 @@ const HANDLERS = {
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
+  'guidance:missing-alt-text': missingAltTextGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
   'detect:page-intent': detectPageIntent,
+  'llmo-referral-traffic': llmoReferralTraffic,
   dummy: (message) => ok(message),
 };
 

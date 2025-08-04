@@ -14,11 +14,10 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { generateSuggestionData } from './suggestions-generator.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { syncBrokenInternalLinksSuggestions } from './suggestions-internal-links-handler.js';
 import {
   calculateKpiDeltasForAudit,
   isLinkInaccessible,
@@ -28,6 +27,7 @@ import {
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
+const LINKS_CHUNK_SIZE = 30;
 
 /**
  * Perform an audit to check which internal links for domain are broken.
@@ -85,6 +85,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         fullAuditRef: auditUrl,
         finalUrl,
         auditContext: { interval: INTERVAL },
+        success: true,
       },
       fullAuditRef: auditUrl,
     };
@@ -136,29 +137,17 @@ export async function prepareScrapingStep(context) {
 
 export async function opportunityAndSuggestionsStep(context) {
   const {
-    log, site, finalUrl, audit, dataAccess,
+    log, site, finalUrl, sqs, env, dataAccess, audit,
   } = context;
 
-  let { brokenInternalLinks } = audit.getAuditResult();
+  const { brokenInternalLinks, success } = audit.getAuditResult();
 
-  // generate suggestions
-  try {
-    if (audit.getAuditResult().success) {
-      brokenInternalLinks = await generateSuggestionData(
-        finalUrl,
-        audit.getAuditResult().brokenInternalLinks,
-        context,
-        site,
-      );
-    } else {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
-    }
-  } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] suggestion generation error: ${error.message}`);
+  if (!success) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
+    return {
+      status: 'complete',
+    };
   }
-
-  // TODO: skip opportunity creation if no internal link items are found in the audit data
-  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
 
   if (!isNonEmptyArray(brokenInternalLinks)) {
     // no broken internal links found
@@ -175,10 +164,12 @@ export async function opportunityAndSuggestionsStep(context) {
     }
 
     if (!opportunity) {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`);
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}]
+  no broken internal links found, skipping opportunity creation`);
     } else {
       // no broken internal links found, update opportunity status to RESOLVED
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, but found opportunity, updating status to RESOLVED`);
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal
+  links found, but found opportunity, updating status to RESOLVED`);
       await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
 
       // We also need to update all suggestions inside this opportunity
@@ -198,6 +189,8 @@ export async function opportunityAndSuggestionsStep(context) {
     };
   }
 
+  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
+
   const opportunity = await convertToOpportunity(
     finalUrl,
     { siteId: site.getId(), id: audit.getId() },
@@ -209,28 +202,46 @@ export async function opportunityAndSuggestionsStep(context) {
     },
   );
 
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
-  await syncSuggestions({
-    opportunity,
-    newData: brokenInternalLinks,
-    context,
-    buildKey,
-    mapNewSuggestion: (entry) => ({
+  // if auto-suggest is disabled, sync suggestions and return
+  const configuration = await dataAccess.Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Auto-suggest is disabled for site`);
+    await syncBrokenInternalLinksSuggestions({
+      opportunity,
+      brokenInternalLinks,
+      context,
       opportunityId: opportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
-        trafficDomain: entry.trafficDomain,
-        priority: entry.priority,
-      },
-    }),
-    log,
-  });
+      log,
+    });
+    return {
+      status: 'complete',
+    };
+  }
+
+  // Chunk the brokenInternalLinks array into pieces of LINKS_CHUNK_SIZE URLs each
+  // for further processing in batches. This is done to avoid aws lambda function timeout.
+  const brokenInternalLinksChunks = [];
+  for (let i = 0; i < brokenInternalLinks.length; i += LINKS_CHUNK_SIZE) {
+    brokenInternalLinksChunks.push(brokenInternalLinks.slice(i, i + LINKS_CHUNK_SIZE));
+  }
+  // brokenInternalLinksChunks is an array of arrays, each containing up to LINKS_CHUNK_SIZE items.
+  const messages = brokenInternalLinksChunks.map((brokenInternalLinksChunk) => ({
+    type: 'suggestions:internal-links',
+    siteId: site.getId(),
+    // auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      brokenInternalLinks: brokenInternalLinksChunk,
+      size: brokenInternalLinksChunk.length,
+      opportunityId: opportunity.getId(),
+    },
+  }));
+  // Send all messages in parallel using Promise.all to avoid sequential processing
+  await Promise.all(messages.map(async (message) => {
+    await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, message);
+    log.info(`Message sent to audit queue: ${JSON.stringify(message)}`);
+  }));
   return {
     status: 'complete',
   };

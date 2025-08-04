@@ -732,3 +732,16 @@ export const accessibilityOpportunitiesMap = {
 export const issueTypesForMystique = [
   'aria-allowed-attr',
 ];
+
+/**
+ * WCAG 2.2 Success Criteria Counts
+ * These constants define the total number of success criteria being tested
+ * at different conformance levels
+ */
+export const WCAG_CRITERIA_COUNTS = {
+  LEVEL_A: 30,
+  LEVEL_AA: 20,
+  get TOTAL() {
+    return this.LEVEL_A + this.LEVEL_AA;
+  },
+};
