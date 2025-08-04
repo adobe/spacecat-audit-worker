@@ -43,12 +43,22 @@ async function scrapeAccessibilityData(context, auditContext) {
     return;
   }
 
+  // Check if we have URLs to scrape
+  if (!previewUrls || !Array.isArray(previewUrls) || previewUrls.length === 0) {
+    log.warn(`[preflight-audit] No URLs to scrape for accessibility audit`);
+    return;
+  }
+
   log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Step 1: Preparing accessibility scrape`);
 
   // Create accessibility audit entries for all pages
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
-    pageResult.audits.push({ name: PREFLIGHT_ACCESSIBILITY, type: 'a11y', opportunities: [] });
+    if (pageResult) {
+      pageResult.audits.push({ name: PREFLIGHT_ACCESSIBILITY, type: 'a11y', opportunities: [] });
+    } else {
+      log.warn(`[preflight-audit] No audit entry found for URL: ${url}`);
+    }
   });
 
   // Use the URLs from the preflight job request directly
@@ -94,6 +104,7 @@ async function scrapeAccessibilityData(context, auditContext) {
       log.error(
         `[preflight-audit] Failed to send accessibility scraping request: ${error.message}`,
       );
+      throw error;
     }
   } else {
     log.info('[preflight-audit] No URLs to scrape');
@@ -265,13 +276,18 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
 }
 
 /**
- * Accessibility handler for preflight that uses the same two-step pattern as main accessibility
- * handler
+ * Accessibility preflight handler
  */
 export default async function accessibility(context, auditContext) {
   const { checks } = auditContext;
 
   if (!checks || checks.includes(PREFLIGHT_ACCESSIBILITY)) {
+    // Check if we have URLs to process
+    if (!auditContext.previewUrls || !Array.isArray(auditContext.previewUrls) || auditContext.previewUrls.length === 0) {
+      log.warn(`[preflight-audit] No URLs to process for accessibility audit, skipping`);
+      return;
+    }
+
     // Step 1: Send URLs to content scraper for accessibility-specific processing
     await scrapeAccessibilityData(context, auditContext);
 
@@ -279,15 +295,18 @@ export default async function accessibility(context, auditContext) {
     const { log, s3Client, env } = context;
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const siteId = context.site.getId();
+    const jobId = context.job?.getId();
 
     log.info('[preflight-audit] Starting to poll for accessibility data');
     log.info(`[preflight-audit] S3 Bucket: ${bucketName}`);
     log.info(`[preflight-audit] Site ID: ${siteId}`);
+    log.info(`[preflight-audit] Job ID: ${jobId}`);
     log.info(`[preflight-audit] Looking for data in path: accessibility/${siteId}/`);
 
-    const maxWaitTime = 15 * 60 * 1000; // 15 minutes (increased from 10 minutes)
-    const pollInterval = 30 * 1000; // 30 seconds
+    const maxWaitTime = 10 * 60 * 1000;
+    const pollInterval = 30 * 1000;
     const startTime = Date.now();
+    const jobStartTime = Date.now();
 
     // Import ListObjectsV2Command outside the loop
     const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
@@ -307,26 +326,32 @@ export default async function accessibility(context, auditContext) {
         // eslint-disable-next-line no-await-in-loop
         const response = await s3Client.send(listCommand);
 
-        // Check if we have any files in the site folder (including final result files)
-        const hasFilesInSiteFolder = response.Contents && response.Contents.length > 0;
-
-        if (hasFilesInSiteFolder) {
-          log.info(`[preflight-audit] Files found in site folder: ${response.Contents.length} files`);
-
-          // Log all found files for debugging
-          response.Contents.forEach((obj, index) => {
-            log.info(`[preflight-audit] File ${index + 1}: ${obj.Key}`);
-          });
-
-          // Check if we have a final result file indicating processing is complete
-          const hasFinalResultFile = response.Contents.some((obj) => obj.Key && obj.Key.includes('-final-result.json'));
-
-          if (hasFinalResultFile) {
-            log.info('[preflight-audit] Final result file found, accessibility processing complete');
-            break;
-          } else {
-            log.info('[preflight-audit] Raw data files found but no final result yet, continuing to wait...');
+        // Check if we have a final result file in the accessibility/siteid folder that was created after the job started
+        const hasFinalResultFile = response.Contents && response.Contents.some((obj) => {
+          if (!obj.Key || !obj.Key.includes('-final-result.json') || !obj.Key.startsWith(`accessibility/${siteId}/`)) {
+            return false;
           }
+          
+          // Check if the file was created after this job started
+          const fileCreatedTime = obj.LastModified ? obj.LastModified.getTime() : 0;
+          return fileCreatedTime > jobStartTime;
+        });
+
+        if (hasFinalResultFile) {
+          log.info('[preflight-audit] Final result file found in accessibility/siteid folder (created after job start), accessibility processing complete');
+          
+          // Log the final result file for debugging
+          const finalResultFile = response.Contents.find((obj) => {
+            if (!obj.Key || !obj.Key.includes('-final-result.json') || !obj.Key.startsWith(`accessibility/${siteId}/`)) {
+              return false;
+            }
+            const fileCreatedTime = obj.LastModified ? obj.LastModified.getTime() : 0;
+            return fileCreatedTime > jobStartTime;
+          });
+          log.info(`[preflight-audit] Final result file: ${finalResultFile.Key} (created: ${finalResultFile.LastModified})`);
+          break;
+        } else {
+          log.info('[preflight-audit] No final result file found yet, continuing to wait...');
         }
 
         log.info('[preflight-audit] No accessibility data yet, waiting...');
@@ -339,7 +364,13 @@ export default async function accessibility(context, auditContext) {
       }
     }
 
-    log.info('[preflight-audit] Polling completed, proceeding to process accessibility data');
+    // Check if we timed out
+    if (pollAttempts >= maxPollAttempts) {
+      log.error(`[preflight-audit] Polling timed out after ${maxPollAttempts} attempts (${maxWaitTime / 1000 / 60} minutes)`);
+      throw new Error(`Accessibility polling timed out after ${maxWaitTime / 1000 / 60} minutes`);
+    }
+
+    log.info(`[preflight-audit] Polling completed after ${pollAttempts} attempts, proceeding to process accessibility data`);
 
     // Step 2: Process scraped data and create opportunities
     await processAccessibilityOpportunities(context, auditContext);
