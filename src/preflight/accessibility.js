@@ -328,33 +328,39 @@ export default async function accessibility(context, auditContext) {
         // eslint-disable-next-line no-await-in-loop
         const response = await s3Client.send(listCommand);
 
-        // Check if we have a final result file in the accessibility/siteid folder
-        // that was created after the job started
-        const hasFinalResultFile = response.Contents && response.Contents.some((obj) => {
-          if (!obj.Key || !obj.Key.includes('-final-result.json') || !obj.Key.startsWith(`accessibility/${siteId}/`)) {
+        // Check if we have accessibility folders created after the job started
+        const accessibilityFolders = response.Contents && response.Contents.filter((obj) => {
+          if (!obj.Key || !obj.Key.startsWith(`accessibility/${siteId}/`)) {
             return false;
           }
 
-          // Check if the file was created after this job started
+          // Look for timestamped folders (e.g., accessibility/siteId/1754292868496/)
+          const pathParts = obj.Key.split('/');
+          if (pathParts.length < 3) {
+            return false;
+          }
+
+          const folderName = pathParts[2];
+          // Check if folder name is a timestamp (numeric)
+          if (!/^\d+$/.test(folderName)) {
+            return false;
+          }
+
+          // Check if the folder was created after this job started
           const fileCreatedTime = obj.LastModified ? obj.LastModified.getTime() : 0;
           return fileCreatedTime > jobStartTime;
         });
 
-        if (hasFinalResultFile) {
-          log.info('[preflight-audit] Final result file found in accessibility/siteid folder (created after job start), accessibility processing complete');
+        if (accessibilityFolders && accessibilityFolders.length > 0) {
+          log.info(`[preflight-audit] Found ${accessibilityFolders.length} accessibility folders created after job start, accessibility processing complete`);
 
-          // Log the final result file for debugging
-          const finalResultFile = response.Contents.find((obj) => {
-            if (!obj.Key || !obj.Key.includes('-final-result.json') || !obj.Key.startsWith(`accessibility/${siteId}/`)) {
-              return false;
-            }
-            const fileCreatedTime = obj.LastModified ? obj.LastModified.getTime() : 0;
-            return fileCreatedTime > jobStartTime;
+          // Log the folders for debugging
+          accessibilityFolders.forEach((folder) => {
+            log.info(`[preflight-audit] Accessibility folder: ${folder.Key} (created: ${folder.LastModified})`);
           });
-          log.info(`[preflight-audit] Final result file: ${finalResultFile.Key} (created: ${finalResultFile.LastModified})`);
           break;
         } else {
-          log.info('[preflight-audit] No final result file found yet, continuing to wait...');
+          log.info('[preflight-audit] No accessibility folders found yet, continuing to wait...');
         }
 
         log.info('[preflight-audit] No accessibility data yet, waiting...');
