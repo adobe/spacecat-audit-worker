@@ -10,15 +10,30 @@
  * governing permissions and limitations under the License.
  */
 
-import { aggregateAccessibilityData } from '../accessibility/utils/data-processing.js';
 import {
   updateStatusToIgnored,
 } from '../accessibility/utils/scrape-utils.js';
-import { aggregateAccessibilityIssues } from '../accessibility/utils/generate-individual-opportunities.js';
 import { saveIntermediateResults } from './utils.js';
 import { sleep } from '../support/utils.js';
+import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
 
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
+
+/**
+ * Generate normalized filename from URL
+ */
+function generateAccessibilityFilename(url) {
+  try {
+    const parsedUrl = new URL(url);
+    let filename = parsedUrl.hostname + parsedUrl.pathname;
+    filename = filename.replace(/\/$/, ''); // Remove trailing slash
+    filename = filename.replace(/[^a-zA-Z0-9\-_]/g, '_'); // Replace invalid chars
+    filename = filename.substring(0, 200); // Limit length
+    return `${filename}.json`;
+  } catch {
+    return `invalid_url_${Date.now()}.json`;
+  }
+}
 
 /**
  * Step 1: Send URLs to content scraper for accessibility-specific processing
@@ -141,102 +156,111 @@ async function processAccessibilityOpportunities(context, auditContext) {
     return;
   }
 
-  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Step 2: Processing accessibility data`);
+  log.info(`[preflight-audit] Processing individual accessibility result files for ${site.getBaseURL()}`);
 
   try {
-    // Process scraped data
-    const version = new Date().toISOString().split('T')[0];
-    const outputKey = `accessibility/${siteId}/${version}-final-result.json`;
-
-    log.info(`[preflight-audit] Processing scraped accessibility data for ${site.getBaseURL()}`);
-
-    // Use the accessibility aggregator to process data
-    let aggregationResult;
-    try {
-      log.info(`[preflight-audit] Calling aggregateAccessibilityData for siteId: ${siteId}, bucket: ${bucketName}, version: ${version}`);
-      aggregationResult = await aggregateAccessibilityData(
-        s3Client,
-        bucketName,
-        siteId,
-        log,
-        outputKey,
-        version,
-      );
-
-      log.info(`[preflight-audit] aggregateAccessibilityData result: success=${aggregationResult.success}, message=${aggregationResult.message || 'N/A'}`);
-
-      if (!aggregationResult.success) {
-        log.error(`[preflight-audit] No data aggregated: ${aggregationResult.message}`);
-        return;
-      }
-    } catch (error) {
-      log.error(`[preflight-audit] Error processing accessibility data: ${error.message}`, error);
-      return;
-    }
-
     // Update existing opportunities status
     await updateStatusToIgnored(dataAccess, siteId, log);
 
-    // Map individual accessibility opportunities to preflight structure
-    try {
-      const accessibilityData = aggregationResult.finalResultFiles.current;
-      const totalIssues = accessibilityData.overall.violations.total;
-      const urlsProcessed = Object.keys(accessibilityData).length - 1;
+    // Process each preview URL's accessibility result file
+    for (const url of previewUrls) {
+      try {
+        // Generate the expected filename for this URL
+        const filename = generateAccessibilityFilename(url);
 
-      log.info(
-        `[preflight-audit] Found ${totalIssues} accessibility issues across \n${urlsProcessed} URLs`,
-      );
+        const fileKey = `accessibility-preflight/${siteId}/${filename}`;
+        log.info(`[preflight-audit] Processing accessibility file: ${fileKey}`);
 
-      log.info(`[preflight-audit] Accessibility data keys: ${JSON.stringify(Object.keys(accessibilityData))}`);
-      log.info(`[preflight-audit] Overall violations: ${JSON.stringify(accessibilityData.overall.violations)}`);
+        // Get the accessibility result file from S3
+        // eslint-disable-next-line no-await-in-loop
+        const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+        const getCommand = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: fileKey,
+        });
 
-      // Use the existing accessibility audit function to group issues by opportunity type
-      log.info('[preflight-audit] Calling aggregateAccessibilityIssues');
-      const aggregatedData = aggregateAccessibilityIssues(accessibilityData);
-      log.info(`[preflight-audit] aggregateAccessibilityIssues result: ${JSON.stringify(aggregatedData)}`);
+        // eslint-disable-next-line no-await-in-loop
+        const response = await s3Client.send(getCommand);
+        // eslint-disable-next-line no-await-in-loop
+        const fileContent = await response.Body.transformToString();
+        const accessibilityData = JSON.parse(fileContent);
 
-      const opportunityTypes = aggregatedData.data.map((item) => Object.keys(item)[0]).join(', ');
-      log.info(
-        `[preflight-audit] Grouped accessibility opportunities by type: \n${opportunityTypes}`,
-      );
+        log.info(`[preflight-audit] Successfully loaded accessibility data for ${url}`);
 
-      // Add grouped opportunities to each page's audit
-      previewUrls.forEach((url) => {
+        // Get the page result for this URL
         const pageResult = audits.get(url);
         const accessibilityAudit = pageResult.audits.find(
           (a) => a.name === PREFLIGHT_ACCESSIBILITY,
         );
 
         if (accessibilityAudit) {
-          // Add opportunities for each check type that has issues on this page
-          aggregatedData.data.forEach((opportunityTypeData) => {
-            const [, urlsWithIssues] = Object.entries(opportunityTypeData)[0];
-            const pageData = urlsWithIssues.find((urlData) => urlData.url === url);
+          // Process violations and map them to opportunity types
+          if (accessibilityData.violations) {
+            Object.entries(accessibilityData.violations).forEach(([impact, impactData]) => {
+              if (impact === 'total') return; // Skip the total count
 
-            if (pageData && pageData.issues.length > 0) {
-              // Add individual opportunities for this check type
-              pageData.issues.forEach((issue) => {
-                const opportunityType = Object.keys(opportunityTypeData)[0];
-                accessibilityAudit.opportunities.push({
-                  // eslint-disable-next-line max-len
-                  check: opportunityType, // Use opportunity type as check (e.g., 'a11y-assistive')
-                  type: issue.type, // Use the issue type as the type
-                  description: issue.description,
-                  wcagRule: issue.wcagRule,
-                  wcagLevel: issue.wcagLevel,
-                  severity: issue.severity,
-                  occurrences: issue.occurrences,
-                  htmlWithIssues: issue.htmlWithIssues,
-                  failureSummary: issue.failureSummary,
+              if (impactData.items) {
+                Object.entries(impactData.items).forEach(([violationId, violationData]) => {
+                  // Map violation to opportunity type based on accessibilityOpportunitiesMap
+                  let opportunityType = null;
+                  let checkType = violationId;
+
+                  // Check if this violation belongs to any defined opportunity type
+                  for (const [type, checks] of Object.entries(accessibilityOpportunitiesMap)) {
+                    if (checks.includes(violationId)) {
+                      opportunityType = type;
+                      checkType = violationId;
+                      break;
+                    }
+                  }
+
+                  // Skip violations that don't belong to any defined opportunity type
+                  if (!opportunityType) {
+                    return;
+                  }
+
+                  // Create opportunity object matching the accessibility audit format
+                  const opportunity = {
+                    wcagLevel: violationData.level || '',
+                    severity: impact,
+                    occurrences: violationData.count || '',
+                    htmlWithIssues: violationData.htmlWithIssues || [],
+                    failureSummary: violationData.failureSummary || '',
+                    wcagRule: violationData.successCriteriaNumber || '',
+                    description: violationData.description || '',
+                    check: opportunityType,
+                    type: checkType,
+                    understandingUrl: violationData.understandingUrl || '',
+                  };
+
+                  accessibilityAudit.opportunities.push(opportunity);
                 });
-              });
-            }
+              }
+            });
+          }
+
+          log.info(`[preflight-audit] Processed ${accessibilityAudit.opportunities.length} opportunities for ${url}`);
+        } else {
+          log.warn(`[preflight-audit] No accessibility audit found for URL: ${url}`);
+        }
+      } catch (error) {
+        log.error(`[preflight-audit] Error processing accessibility file for ${url}: ${error.message}`, error);
+
+        // Add error opportunity to the audit
+        const pageResult = audits.get(url);
+        const accessibilityAudit = pageResult.audits.find(
+          (a) => a.name === PREFLIGHT_ACCESSIBILITY,
+        );
+
+        if (accessibilityAudit) {
+          accessibilityAudit.opportunities.push({
+            type: 'accessibility-error',
+            title: 'Accessibility File Processing Error',
+            description: `Failed to process accessibility data for ${url}: ${error.message}`,
+            severity: 'error',
           });
         }
-      });
-    } catch (error) {
-      log.error(`[preflight-audit] Error mapping accessibility opportunities: ${error.message}`, error);
-      return;
+      }
     }
 
     const accessibilityEndTime = Date.now();
@@ -306,15 +330,20 @@ export default async function accessibility(context, auditContext) {
     log.info(`[preflight-audit] S3 Bucket: ${bucketName}`);
     log.info(`[preflight-audit] Site ID: ${siteId}`);
     log.info(`[preflight-audit] Job ID: ${jobId}`);
-    log.info(`[preflight-audit] Looking for data in path: accessibility/${siteId}/`);
+    log.info(`[preflight-audit] Looking for data in path: accessibility-preflight/${siteId}/`);
 
     const maxWaitTime = 10 * 60 * 1000;
     const pollInterval = 30 * 1000;
     const startTime = Date.now();
-    const jobStartTime = Date.now();
 
     // Import ListObjectsV2Command outside the loop
     const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+
+    // Generate expected filenames based on preview URLs
+    // eslint-disable-next-line max-len
+    const expectedFiles = auditContext.previewUrls.map((url) => generateAccessibilityFilename(url));
+
+    log.info(`[preflight-audit] Expected files: ${JSON.stringify(expectedFiles)}`);
 
     // eslint-disable-next-line no-await-in-loop
     while (Date.now() - startTime < maxWaitTime) {
@@ -324,46 +353,38 @@ export default async function accessibility(context, auditContext) {
         // Check if accessibility data files exist in S3
         const listCommand = new ListObjectsV2Command({
           Bucket: bucketName,
-          Prefix: `accessibility/${siteId}/`,
-          MaxKeys: 10,
+          Prefix: `accessibility-preflight/${siteId}/`,
+          MaxKeys: 100,
         });
 
         // eslint-disable-next-line no-await-in-loop
         const response = await s3Client.send(listCommand);
 
-        // Check if we have accessibility folders created after the job started
-        const accessibilityFolders = response.Contents && response.Contents.filter((obj) => {
-          if (!obj.Key || !obj.Key.startsWith(`accessibility/${siteId}/`)) {
+        // Check if we have the expected accessibility files
+        const foundFiles = response.Contents && response.Contents.filter((obj) => {
+          if (!obj.Key || !obj.Key.startsWith(`accessibility-preflight/${siteId}/`)) {
             return false;
           }
 
-          // Look for timestamped folders (e.g., accessibility/siteId/1754292868496/)
+          // Extract filename from the S3 key
           const pathParts = obj.Key.split('/');
-          if (pathParts.length < 3) {
-            return false;
-          }
+          const filename = pathParts[pathParts.length - 1];
 
-          const folderName = pathParts[2];
-          // Check if folder name is a timestamp (numeric)
-          if (!/^\d+$/.test(folderName)) {
-            return false;
-          }
-
-          // Check if the folder was created after this job started
-          const fileCreatedTime = obj.LastModified ? obj.LastModified.getTime() : 0;
-          return fileCreatedTime > jobStartTime;
+          // Check if this is one of our expected files
+          return expectedFiles.includes(filename);
         });
 
-        if (accessibilityFolders && accessibilityFolders.length > 0) {
-          log.info(`[preflight-audit] Found ${accessibilityFolders.length} accessibility folders created after job start, accessibility processing complete`);
+        if (foundFiles && foundFiles.length >= expectedFiles.length) {
+          log.info(`[preflight-audit] Found ${foundFiles.length} accessibility files out of ${expectedFiles.length} expected, accessibility processing complete`);
 
-          // Log the folders for debugging
-          accessibilityFolders.forEach((folder) => {
-            log.info(`[preflight-audit] Accessibility folder: ${folder.Key} (created: ${folder.LastModified})`);
+          // Log the found files for debugging
+          foundFiles.forEach((file) => {
+            log.info(`[preflight-audit] Accessibility file: ${file.Key} (created: ${file.LastModified})`);
           });
           break;
         } else {
-          log.info('[preflight-audit] No accessibility folders found yet, continuing to wait...');
+          const foundCount = foundFiles ? foundFiles.length : 0;
+          log.info(`[preflight-audit] Found ${foundCount} out of ${expectedFiles.length} expected accessibility files, continuing to wait...`);
         }
 
         log.info('[preflight-audit] No accessibility data yet, waiting...');
