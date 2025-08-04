@@ -20,14 +20,12 @@ export default async function handler(message, context) {
   const { siteId, data } = message;
   log.info(`Message received in form details handler: ${JSON.stringify(message, null, 2)}`);
   const {
-    url, form_source: formsource, form_details: formDetails, opportunity_type: opportunityType,
+    url, form_source: formsource, form_details: formDetails,
   } = data;
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  const opportunity = existingOpportunities
-    .filter((oppty) => oppty.getType() === opportunityType)
-    .find((oppty) => oppty.getData()?.form === url && (!formsource
-          || oppty.getData()?.formsource === formsource));
+  // eslint-disable-next-line max-len
+  const opportunity = existingOpportunities.find((oppty) => oppty.getData()?.form === url && (!formsource || oppty.getData()?.formsource === formsource));
 
   if (opportunity) {
     log.info(`Opportunity found: ${JSON.stringify(opportunity)}`);
@@ -44,7 +42,7 @@ export default async function handler(message, context) {
     // sending message to mystique for guidance
     log.info('sending message to mystique');
     const mystiqueMessage = {
-      type: `guidance:${opportunityType}`,
+      type: `guidance:${opportunity.getType()}`,
       siteId: opportunity.getSiteId(),
       auditId: opportunity.getAuditId(),
       deliveryType: opportunity.getDeliveryType(),
