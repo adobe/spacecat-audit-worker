@@ -899,7 +899,6 @@ const testData = {
   },
   mystiqueMessageForFormDetails: {
     form_source: undefined,
-    opportunity_type: 'high-form-views-low-conversions',
     url: 'https://www.surest.com/newsletter',
   },
   opportunityData: {

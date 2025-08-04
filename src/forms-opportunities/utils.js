@@ -495,7 +495,7 @@ export async function sendMessageToFormsQualityAgent(auditDataObject, context, o
     log, sqs, site, env,
   } = context;
   const mystiqueFormsQualityAgentMessage = {
-    type: 'detect:forms-metadata',
+    type: 'detect:form-details',
     siteId: auditData.siteId,
     auditId: auditData.auditId,
     deliveryType: site.getDeliveryType(),
@@ -503,7 +503,6 @@ export async function sendMessageToFormsQualityAgent(auditDataObject, context, o
     data: {
       url: opportunityData.data.form,
       form_source: opportunityData.data.formSource,
-      opportunity_type: opportunityData.type,
     },
   };
 

@@ -82,7 +82,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
     const expectedMessage = {
-      type: 'detect:forms-metadata',
+      type: 'detect:form-details',
       siteId: 'site-id',
       auditId: 'audit-id',
       deliveryType: 'eds',
