@@ -10,6 +10,14 @@
  * governing permissions and limitations under the License.
  */
 
+/**
+ * Makes an HTTP request with custom headers and timeout handling.
+ * @param {string} name - Identifier for the request.
+ * @param {string} url - Target URL.
+ * @param {object} req - Request options and headers.
+ * @param {number} timeout - Timeout in milliseconds.
+ * @returns {Promise<any|string|null>} - Response data or null.
+ */
 export async function request(name, url, req = [], timeout = 60000) {
   if (timeout <= 0 || timeout > 300000) { // max 5 minutes
     throw new Error('Timeout must be between 1ms and 300000ms');
@@ -52,6 +60,13 @@ export async function request(name, url, req = [], timeout = 60000) {
   throw new Error(`Request '${name}' to '${url}' failed (${resp.status}): ${resp.headers.get('x-error') || resp.statusText}${responseText.length > 0 ? ` responseText: ${responseText}` : ''}`);
 }
 
+/**
+ * Fetches spreadsheet data from a given config path and optional sheet name.
+ * Useful for loading configuration or data from remote sources.
+ * @param configPath - The URL or path to the spreadsheet config.
+ * @param sheet - Optional sheet name to request specific data.
+ * @returns {Promise<*|string|null>} - The spreadsheet data, string, or null.
+ */
 export async function requestSpreadsheet(configPath, sheet) {
   return request(
     'spreadsheet',
@@ -59,6 +74,12 @@ export async function requestSpreadsheet(configPath, sheet) {
   );
 }
 
+/**
+ * Validates the required fields in the config object for a given locale.
+ * @param config - Configuration object to validate.
+ * @param locale - Locale identifier.
+ * @returns {*} - The validated config object.
+ */
 export function validateConfig(config, locale) {
   const requiredConfigFields = [
     'commerce-customer-group',
@@ -83,6 +104,12 @@ export function validateConfig(config, locale) {
   return config;
 }
 
+/**
+ * Retrieves and validates configuration for a given store and locale.
+ * @param params - Parameters including store, locale, and config options.
+ * @param log - Logger instance for debug output.
+ * @returns {Promise<*>} - The validated configuration object.
+ */
 export async function getConfig(params, log) {
   const {
     configName = 'configs',
@@ -118,6 +145,15 @@ export async function getConfig(params, log) {
   return validateConfig(params.config, locale);
 }
 
+/**
+ * Sends a GraphQL request to the SaaS endpoint using store configuration.
+ * @param query - GraphQL query string.
+ * @param operationName - Name of the GraphQL operation.
+ * @param variables - Variables for the GraphQL query.
+ * @param params - Store and config parameters.
+ * @param log - Logger instance.
+ * @returns {Promise<*>} - The GraphQL response.
+ */
 export async function requestSaaS(query, operationName, variables, params, log) {
   const { storeUrl } = params;
   const config = await getConfig(params, log);

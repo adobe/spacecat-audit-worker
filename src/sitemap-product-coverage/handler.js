@@ -151,7 +151,7 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
         configName: customConfig?.configName,
         configSection: customConfig?.configSection,
         configSheet: customConfig?.configSheet,
-        productUrlTemplate: customConfig?.productUrlTemplate || '%baseUrl/%locale/products/%urlKey/%skuLowerCase',
+        productUrlTemplate: customConfig?.productUrlTemplate,
         config: customConfig?.config?.[locale],
       };
 
@@ -250,7 +250,6 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
 export async function generateOpportunities(auditUrl, auditData, context) {
   const { log } = context;
-  log.info(auditData);
 
   if (auditData.auditResult.success === false) {
     log.info(`The ${auditType} audit itself failed, skipping opportunity creation.`);
@@ -284,8 +283,6 @@ export async function generateOpportunities(auditUrl, auditData, context) {
     }),
     log,
   });
-
-  log.info(auditData);
 
   return { ...auditData };
 }
