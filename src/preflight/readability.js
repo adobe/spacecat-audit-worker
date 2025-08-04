@@ -116,10 +116,13 @@ export default async function readability(context, auditContext) {
                 ? `Text content has poor readability (Flesch score: ${readabilityScore.toFixed(1)}) in paragraph ${paragraphIndex + 1} of element ${selector}. Text preview: "${displayText}"`
                 : `Text content has poor readability (Flesch score: ${readabilityScore.toFixed(1)}) in element ${selector}. Text preview: "${displayText}"`;
 
+              // Determine SEO impact based on readability score
+              const seoImpact = readabilityScore < (TARGET_READABILITY_SCORE / 2) ? 'High' : 'Moderate';
+
               audit.opportunities.push({
                 check: 'poor-readability',
                 issue: issueText,
-                seoImpact: 'Moderate',
+                seoImpact,
                 seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
               });
             }
@@ -174,13 +177,7 @@ export default async function readability(context, auditContext) {
 
         log.info(`[preflight-audit] readability: Processed ${processedElements} text elements on ${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`);
       } catch (error) {
-        log.error(`[preflight-audit] readability: Error processing ${normalizedFinalUrl}: ${error.message}`);
-        audit.opportunities.push({
-          check: 'readability-analysis-error',
-          issue: `Failed to analyze page readability: ${error.message}`,
-          seoImpact: 'Low',
-          seoRecommendation: 'Review page content manually for readability issues',
-        });
+        log.warn(`[preflight-audit] readability: Error processing ${normalizedFinalUrl}: ${error.message}`);
       }
     });
 
