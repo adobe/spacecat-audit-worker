@@ -25,7 +25,6 @@ import {
   shouldShowImageAsSuggestion,
   isImageDecorative,
 } from './utils.js';
-import { USE_MYSTIQUE_FOR_ALT_TEXT } from './constants.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
@@ -326,5 +325,15 @@ const auditBuilderWithFirefall = new AuditBuilder()
   .addStep('processAltTextAudit', processAltTextAuditStep)
   .build();
 
-// Export the appropriate builder based on the flag
-export default USE_MYSTIQUE_FOR_ALT_TEXT ? auditBuilderWithMystique : auditBuilderWithFirefall;
+export default async function createAltTextHandler(message, context) {
+  const { siteId } = message;
+  const { dataAccess } = context;
+
+  const site = await dataAccess.Site.findById(siteId);
+  const configuration = await dataAccess.Configuration.findLatest();
+
+  const useMystique = configuration.isHandlerEnabledForSite('alt-text-auto-suggest-mystique', site);
+
+  const builder = useMystique ? auditBuilderWithMystique : auditBuilderWithFirefall;
+  return builder.run(message, context);
+}

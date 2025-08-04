@@ -74,11 +74,11 @@ describe('Image Alt Text Handler', () => {
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
             create: sandbox.stub().resolves({
-              getId: () => 'new-opportunity-id',
-              getData: () => ({}),
+              getId: sandbox.stub().returns('opportunity-id'),
+              getData: sandbox.stub().returns({}),
               setData: sandbox.stub(),
               save: sandbox.stub().resolves(),
-              getType: () => AUDIT_TYPE,
+              getType: sandbox.stub().returns('alt-text'),
             }),
           },
         },
@@ -883,29 +883,130 @@ describe('Image Alt Text Handler', () => {
         context,
       );
     });
+
+    it('should handle case when no top pages and no included URLs found', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns([]),
+        }),
+      };
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('No top pages found for site site-id');
+    });
   });
 
-  describe('audit builder selection', () => {
-    it('should use Mystique audit builder with 2 steps when USE_MYSTIQUE_FOR_ALT_TEXT is true', async () => {
-      const handlerModuleWithMystique = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/image-alt-text/constants.js': {
-          USE_MYSTIQUE_FOR_ALT_TEXT: true,
+  describe('configuration-based handler selection', () => {
+    function createMockAuditBuilder(runStub) {
+      return function MockAuditBuilder() {
+        return {
+          withUrlResolver() { return this; },
+          addStep() { return this; },
+          build() {
+            return {
+              run: runStub,
+              steps: { /* mock steps */ },
+            };
+          },
+        };
+      };
+    }
+
+    it('should use Mystique flow when alt-text-mystique is enabled for site', async () => {
+      const mockSite = {
+        getId: sandbox.stub().returns('test-site-id'),
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+      };
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(true), // Mystique enabled
+      };
+
+      const mockDataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves(mockSite),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves(mockConfiguration),
+        },
+      };
+
+      const mockContext = {
+        dataAccess: mockDataAccess,
+        log: console,
+      };
+
+      const mockMessage = {
+        siteId: 'test-site-id',
+        type: 'alt-text',
+      };
+
+      // Mock the audit builder's run method
+      const mockAuditResult = { success: true };
+      const runStub = sandbox.stub().resolves(mockAuditResult);
+
+      // Import the handler and mock the audit builders
+      const altTextHandlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/common/audit-builder.js': {
+          AuditBuilder: createMockAuditBuilder(runStub),
         },
       });
 
-      // Mystique builder should have 2 steps: processImport, processAltTextWithMystique
-      expect(Object.keys(handlerModuleWithMystique.default.steps)).to.have.lengthOf(2);
+      const result = await altTextHandlerModule.default(mockMessage, mockContext);
+
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('alt-text-auto-suggest-mystique', mockSite);
+      expect(runStub).to.have.been.calledWith(mockMessage, mockContext);
+      expect(result).to.equal(mockAuditResult);
     });
 
-    it('should use Firefall audit builder with 3 steps when USE_MYSTIQUE_FOR_ALT_TEXT is false', async () => {
-      const handlerModuleWithFirefall = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/image-alt-text/constants.js': {
-          USE_MYSTIQUE_FOR_ALT_TEXT: false,
+    it('should use Firefall flow when alt-text-mystique is disabled for site', async () => {
+      const mockSite = {
+        getId: sandbox.stub().returns('test-site-id'),
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+      };
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(false), // Mystique disabled
+      };
+
+      const mockDataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves(mockSite),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves(mockConfiguration),
+        },
+      };
+
+      const mockContext = {
+        dataAccess: mockDataAccess,
+        log: console,
+      };
+
+      const mockMessage = {
+        siteId: 'test-site-id',
+        type: 'alt-text',
+      };
+
+      // Mock the audit builder's run method
+      const mockAuditResult = { success: true };
+      const runStub = sandbox.stub().resolves(mockAuditResult);
+
+      // Import the handler and mock the audit builders
+      const altTextHandlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/common/audit-builder.js': {
+          AuditBuilder: createMockAuditBuilder(runStub),
         },
       });
 
-      // Firefall builder should have 3 steps: processImport, prepareScraping, processAltTextAudit
-      expect(Object.keys(handlerModuleWithFirefall.default.steps)).to.have.lengthOf(3);
+      const result = await altTextHandlerModule.default(mockMessage, mockContext);
+
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('alt-text-auto-suggest-mystique', mockSite);
+      expect(runStub).to.have.been.calledWith(mockMessage, mockContext);
+      expect(result).to.equal(mockAuditResult);
     });
   });
 });
