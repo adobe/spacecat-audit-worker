@@ -120,6 +120,18 @@ async function getAllSkus(params, log) {
 }
 
 async function sitemapProductCoverageAudit(inputUrl, context, site) {
+  const customConfig = site.getConfig().getHandlers()?.['sitemap-product-coverage'];
+  if (!customConfig?.productUrlTemplate) {
+    return {
+      success: false,
+      reasons: [{
+        value: 'Product URL template is not defined in the site configuration.',
+        error: ERROR_CODES.MISSING_PRODUCT_URL_TEMPLATE,
+      }],
+      url: inputUrl,
+      details: {},
+    };
+  }
   const siteMapUrlsResult = await getSitemapUrls(inputUrl);
   if (!siteMapUrlsResult.success) return siteMapUrlsResult;
   const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
@@ -130,7 +142,6 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
   const urlsFromSitemap = Object.values(extractedPaths).flat();
 
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
-    const customConfig = site.getConfig().getHandlers()?.['sitemap-product-coverage'];
     const locales = customConfig?.locales ? customConfig.locales.split(',') : ['default'];
 
     await Promise.all(locales.map(async (locale) => {
@@ -171,7 +182,7 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
         success: false,
         reasons: [{
           value: 'Errors occurred while checking locales.',
-          error: 'COLLECTING PRODUCTS FAILED',
+          error: ERROR_CODES.COLLECTING_PRODUCTS_BACKEND_FAILED,
         }],
         url: inputUrl,
         details: { issues: notCoveredProduct, errors: localeErrors },

@@ -11,6 +11,10 @@
  */
 
 export async function request(name, url, req = [], timeout = 60000) {
+  if (timeout <= 0 || timeout > 300000) { // max 5 minutes
+    throw new Error('Timeout must be between 1ms and 300000ms');
+  }
+
   // allow requests for 60s max
   const abortController = new AbortController();
   const abortTimeout = setTimeout(() => abortController.abort(), timeout);
@@ -55,6 +59,30 @@ export async function requestSpreadsheet(configPath, sheet) {
   );
 }
 
+export function validateConfig(config, locale) {
+  const requiredConfigFields = [
+    'commerce-customer-group',
+    'commerce-environment-id',
+    'commerce-store-code',
+    'commerce-store-view-code',
+    'commerce-website-code',
+    'commerce-x-api-key',
+  ];
+  const missingFields = [];
+
+  for (const field of requiredConfigFields) {
+    if (!config[field]) {
+      missingFields.push(`Missing required parameter: ${field}`);
+    }
+  }
+
+  if (missingFields.length > 0) {
+    throw new Error(`Missing required config parameters for ${locale} locale: ${missingFields.join(', ')}`);
+  }
+
+  return config;
+}
+
 export async function getConfig(params, log) {
   const {
     configName = 'configs',
@@ -76,24 +104,23 @@ export async function getConfig(params, log) {
       data = configData.data;
     }
 
-    if (data) {
+    if (data && Array.isArray(data)) {
       // eslint-disable-next-line no-param-reassign
       params.config = data.reduce((acc, { key, value }) => ({ ...acc, [key]: value }), {});
-    } else {
-      // Handle case where configData.public.default is an object
+    } else if (configData?.public?.default) {
       // eslint-disable-next-line no-param-reassign
-      params.config = data.public.default;
+      params.config = configData.public.default;
+    } else {
+      throw new Error(`Invalid config file ${configPath} format for ${locale || 'default'} locale`);
     }
   }
-  return params.config;
+
+  return validateConfig(params.config, locale);
 }
 
 export async function requestSaaS(query, operationName, variables, params, log) {
-  const { storeUrl, configOverrides = {} } = params;
-  const config = {
-    ...(await getConfig(params, log)),
-    ...configOverrides,
-  };
+  const { storeUrl } = params;
+  const config = await getConfig(params, log);
   const headers = {
     'Content-Type': 'application/json',
     origin: storeUrl,
@@ -124,9 +151,8 @@ export async function requestSaaS(query, operationName, variables, params, log) 
 
   // Log GraphQL errors
   if (response?.errors) {
-    for (const error of response.errors) {
-      log.error(`Request '${operationName}' returned GraphQL error`, error);
-    }
+    const errorMessages = response.errors.map((error) => error.message).join(', ');
+    throw new Error(`GraphQL operation '${operationName}' failed: ${errorMessages}`);
   }
 
   if (typeof response === 'string') {

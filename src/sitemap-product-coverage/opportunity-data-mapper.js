@@ -14,7 +14,7 @@ import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData() {
   return {
-    runbook: '',
+    runbook: 'https://wiki.corp.adobe.com/display/AEMSites/%5BProject+Success+Studio%5D+Full+product+catalog+coverage+in+the+sitemap',
     origin: 'AUTOMATION',
     title: 'Issues found for the sitemap product coverage',
     description: '',
