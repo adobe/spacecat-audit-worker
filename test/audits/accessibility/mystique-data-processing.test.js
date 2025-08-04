@@ -58,6 +58,7 @@ describe('mystique-data-processing', () => {
     it('should return empty array when suggestions is empty', () => {
       const mockSuggestion = {
         getData: () => ({ issues: [] }),
+        getId: () => 'sugg-1',
       };
       const result = processSuggestionsForMystique([mockSuggestion]);
       expect(result).to.be.an('array').that.is.empty;
@@ -65,18 +66,18 @@ describe('mystique-data-processing', () => {
 
     it('should skip suggestions without issues', () => {
       const mockSuggestion = {
-        getData: sandbox.stub().returns({
-          issues: null,
-        }),
+        getData: () => ({ issues: null }),
+        getId: () => 'sugg-1',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
       expect(result).to.deep.equal([]);
     });
 
-    it('should process suggestions with valid issues', () => {
+    it('should process suggestions with valid issues and group by URL', () => {
       const mockSuggestion = {
         getData: () => ({
+          url: 'https://example.com',
           issues: [
             {
               type: 'aria-allowed-attr',
@@ -84,124 +85,83 @@ describe('mystique-data-processing', () => {
                 {
                   update_from: '<dt aria-level="3">Term</dt>',
                   target_selector: 'dt',
-                  issue_id: 'test-uuid-1',
                 },
               ],
-              targetSelector: 'dt',
-              description: 'ARIA attribute not allowed on this element',
-            },
-            {
-              type: 'aria-allowed-attr',
-              htmlWithIssues: [
-                {
-                  update_from: '<span aria-level="2">Text</span>',
-                  target_selector: 'span',
-                  issue_id: 'test-uuid-2',
-                },
-              ],
-              targetSelector: 'span',
               description: 'ARIA attribute not allowed on this element',
             },
           ],
         }),
+        getId: () => 'sugg-1',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
-      expect(result[0]).to.have.property('suggestion', mockSuggestion);
-      expect(result[0]).to.have.property('issueType', 'aria-allowed-attr');
-      expect(result[0].issuesList).to.have.length(2);
+      expect(result[0]).to.have.property('url', 'https://example.com');
+      expect(result[0]).to.have.property('issuesList');
+      expect(result[0].issuesList).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
-        issue_name: 'aria-allowed-attr',
-        faulty_line: '<dt aria-level="3">Term</dt>',
-        target_selector: 'dt',
-        issue_description: 'ARIA attribute not allowed on this element',
+        issueName: 'aria-allowed-attr',
+        faultyLine: '<dt aria-level="3">Term</dt>',
+        targetSelector: 'dt',
+        issueDescription: 'ARIA attribute not allowed on this element',
+        suggestionId: 'sugg-1',
       });
-    });
-
-    it('should group multiple issues of the same type', () => {
-      const mockSuggestion = {
-        getData: () => ({
-          issues: [
-            {
-              type: 'aria-allowed-attr',
-              htmlWithIssues: [
-                {
-                  update_from: '<dt aria-level="3">Term</dt>',
-                  target_selector: 'dt',
-                  issue_id: 'test-uuid-1',
-                },
-              ],
-              targetSelector: 'dt',
-              description: 'ARIA attribute not allowed on this element',
-            },
-            {
-              type: 'aria-allowed-attr',
-              htmlWithIssues: [
-                {
-                  update_from: '<span aria-level="2">Text</span>',
-                  target_selector: 'span',
-                  issue_id: 'test-uuid-2',
-                },
-              ],
-              targetSelector: 'span',
-              description: 'ARIA attribute not allowed on this element',
-            },
-          ],
-        }),
-      };
-
-      const result = processSuggestionsForMystique([mockSuggestion]);
-
-      expect(result).to.have.length(1);
-      expect(result[0].issuesList).to.have.length(2);
-      expect(result[0].issuesList[0].issue_name).to.equal('aria-allowed-attr');
-      expect(result[0].issuesList[1].issue_name).to.equal('aria-allowed-attr');
     });
 
     it('should handle issues without htmlWithIssues', () => {
       const mockSuggestion = {
         getData: () => ({
+          url: 'https://example.com',
           issues: [
             {
               type: 'aria-allowed-attr',
-              targetSelector: 'dt',
               description: 'ARIA attribute not allowed on this element',
             },
           ],
         }),
+        getId: () => 'sugg-1',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
-      // Should return empty array since no htmlWithIssues means no items to process
-      expect(result).to.be.an('array').that.is.empty;
+      // Should return URL entry with empty issuesList when no htmlWithIssues to process
+      expect(result).to.have.length(1);
+      expect(result[0]).to.deep.equal({
+        url: 'https://example.com',
+        issuesList: [],
+      });
     });
 
     it('should handle issues with empty htmlWithIssues array', () => {
       const mockSuggestion = {
         getData: () => ({
+          url: 'https://example.com',
           issues: [
             {
               type: 'aria-allowed-attr',
               htmlWithIssues: [],
-              targetSelector: 'dt',
               description: 'ARIA attribute not allowed on this element',
             },
           ],
         }),
+        getId: () => 'sugg-1',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
-      // Should return empty array since empty htmlWithIssues means no items to process
-      expect(result).to.be.an('array').that.is.empty;
+      // Should return URL entry with empty issuesList when htmlWithIssues is empty
+      expect(result).to.have.length(1);
+      expect(result[0]).to.deep.equal({
+        url: 'https://example.com',
+        issuesList: [],
+      });
     });
 
-    it('should handle issues without targetSelector', () => {
+    it('should handle issues without target_selector', () => {
       const mockSuggestion = {
         getData: () => ({
+          url: 'https://example.com',
           issues: [
             {
               type: 'aria-allowed-attr',
@@ -209,29 +169,31 @@ describe('mystique-data-processing', () => {
                 {
                   update_from: '<dt aria-level="3">Term</dt>',
                   target_selector: '',
-                  issue_id: 'test-uuid-1',
                 },
               ],
               description: 'ARIA attribute not allowed on this element',
             },
           ],
         }),
+        getId: () => 'sugg-1',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
-        issue_name: 'aria-allowed-attr',
-        faulty_line: '<dt aria-level="3">Term</dt>',
-        target_selector: '',
-        issue_description: 'ARIA attribute not allowed on this element',
+        issueName: 'aria-allowed-attr',
+        faultyLine: '<dt aria-level="3">Term</dt>',
+        targetSelector: '',
+        issueDescription: 'ARIA attribute not allowed on this element',
+        suggestionId: 'sugg-1',
       });
     });
 
     it('should handle issues without description', () => {
       const mockSuggestion = {
         getData: () => ({
+          url: 'https://example.com',
           issues: [
             {
               type: 'aria-allowed-attr',
@@ -239,29 +201,30 @@ describe('mystique-data-processing', () => {
                 {
                   update_from: '<dt aria-level="3">Term</dt>',
                   target_selector: 'dt',
-                  issue_id: 'test-uuid-1',
                 },
               ],
-              targetSelector: 'dt',
             },
           ],
         }),
+        getId: () => 'sugg-1',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
-        issue_name: 'aria-allowed-attr',
-        faulty_line: '<dt aria-level="3">Term</dt>',
-        target_selector: 'dt',
-        issue_description: '',
+        issueName: 'aria-allowed-attr',
+        faultyLine: '<dt aria-level="3">Term</dt>',
+        targetSelector: 'dt',
+        issueDescription: '',
+        suggestionId: 'sugg-1',
       });
     });
 
     it('should filter out issue types not in issueTypesForMystique', () => {
       const mockSuggestion = {
         getData: () => ({
+          url: 'https://example.com',
           issues: [
             {
               type: 'aria-allowed-attr',
@@ -269,10 +232,8 @@ describe('mystique-data-processing', () => {
                 {
                   update_from: '<dt aria-level="3">Term</dt>',
                   target_selector: 'dt',
-                  issue_id: 'test-uuid-1',
                 },
               ],
-              targetSelector: 'dt',
               description: 'ARIA attribute not allowed on this element',
             },
             {
@@ -281,27 +242,27 @@ describe('mystique-data-processing', () => {
                 {
                   update_from: '<button style="color: #ccc">Button</button>',
                   target_selector: 'button',
-                  issue_id: 'test-uuid-2',
                 },
               ],
-              targetSelector: 'button',
               description: 'Insufficient color contrast',
             },
           ],
         }),
+        getId: () => 'sugg-1',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
-      expect(result[0].issueType).to.equal('aria-allowed-attr');
+      expect(result[0].url).to.equal('https://example.com');
       expect(result[0].issuesList).to.have.length(1);
-      expect(result[0].issuesList[0].issue_name).to.equal('aria-allowed-attr');
+      expect(result[0].issuesList[0].issueName).to.equal('aria-allowed-attr');
     });
 
-    it('should process multiple suggestions', () => {
+    it('should process multiple suggestions and group by URL', () => {
       const mockSuggestion1 = {
         getData: () => ({
+          url: 'https://example.com/page1',
           issues: [
             {
               type: 'aria-allowed-attr',
@@ -309,18 +270,18 @@ describe('mystique-data-processing', () => {
                 {
                   update_from: '<dt aria-level="3">Term</dt>',
                   target_selector: 'dt',
-                  issue_id: 'test-uuid-1',
                 },
               ],
-              targetSelector: 'dt',
               description: 'ARIA attribute not allowed on this element',
             },
           ],
         }),
+        getId: () => 'sugg-1',
       };
 
       const mockSuggestion2 = {
         getData: () => ({
+          url: 'https://example.com/page2',
           issues: [
             {
               type: 'aria-allowed-attr',
@@ -328,28 +289,53 @@ describe('mystique-data-processing', () => {
                 {
                   update_from: '<span aria-level="2">Text</span>',
                   target_selector: 'span',
-                  issue_id: 'test-uuid-2',
                 },
               ],
-              targetSelector: 'span',
               description: 'ARIA attribute not allowed on this element',
             },
           ],
         }),
+        getId: () => 'sugg-2',
       };
 
-      const result = processSuggestionsForMystique([mockSuggestion1, mockSuggestion2]);
+      const mockSuggestion3 = {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          issues: [
+            {
+              type: 'aria-allowed-attr',
+              htmlWithIssues: [
+                {
+                  update_from: '<li aria-level="3">Term</li>',
+                  target_selector: 'li',
+                },
+              ],
+              description: 'ARIA attribute not allowed on this element',
+            },
+          ],
+        }),
+        getId: () => 'sugg-3',
+      };
+
+      const result = processSuggestionsForMystique(
+        [mockSuggestion1, mockSuggestion2, mockSuggestion3],
+      );
 
       expect(result).to.have.length(2);
-      expect(result[0].suggestion).to.equal(mockSuggestion1);
-      expect(result[1].suggestion).to.equal(mockSuggestion2);
-      expect(result[0].issueType).to.equal('aria-allowed-attr');
-      expect(result[1].issueType).to.equal('aria-allowed-attr');
+      expect(result[0].url).to.equal('https://example.com/page1');
+      expect(result[1].url).to.equal('https://example.com/page2');
+      expect(result[0].issuesList[0].suggestionId).to.equal('sugg-1');
+      expect(result[0].issuesList[0].targetSelector).to.equal('dt');
+      expect(result[0].issuesList[1].suggestionId).to.equal('sugg-3');
+      expect(result[0].issuesList[1].targetSelector).to.equal('li');
+      expect(result[1].issuesList[0].suggestionId).to.equal('sugg-2');
+      expect(result[1].issuesList[0].targetSelector).to.equal('span');
     });
 
-    it('should handle mixed valid and invalid suggestions', () => {
+    it('should group suggestions with the same URL', () => {
       const mockSuggestion1 = {
         getData: () => ({
+          url: 'https://example.com',
           issues: [
             {
               type: 'aria-allowed-attr',
@@ -357,18 +343,66 @@ describe('mystique-data-processing', () => {
                 {
                   update_from: '<dt aria-level="3">Term</dt>',
                   target_selector: 'dt',
-                  issue_id: 'test-uuid-1',
                 },
               ],
-              targetSelector: 'dt',
               description: 'ARIA attribute not allowed on this element',
             },
           ],
         }),
+        getId: () => 'sugg-1',
       };
 
       const mockSuggestion2 = {
         getData: () => ({
+          url: 'https://example.com',
+          issues: [
+            {
+              type: 'aria-allowed-attr',
+              htmlWithIssues: [
+                {
+                  update_from: '<span aria-level="2">Text</span>',
+                  target_selector: 'span',
+                },
+              ],
+              description: 'ARIA attribute not allowed on this element',
+            },
+          ],
+        }),
+        getId: () => 'sugg-2',
+      };
+
+      const result = processSuggestionsForMystique([mockSuggestion1, mockSuggestion2]);
+
+      expect(result).to.have.length(1);
+      expect(result[0].url).to.equal('https://example.com');
+      expect(result[0].issuesList).to.have.length(2);
+      expect(result[0].issuesList[0].suggestionId).to.equal('sugg-1');
+      expect(result[0].issuesList[1].suggestionId).to.equal('sugg-2');
+    });
+
+    it('should handle mixed valid and invalid suggestions', () => {
+      const mockSuggestion1 = {
+        getData: () => ({
+          url: 'https://example.com',
+          issues: [
+            {
+              type: 'aria-allowed-attr',
+              htmlWithIssues: [
+                {
+                  update_from: '<dt aria-level="3">Term</dt>',
+                  target_selector: 'dt',
+                },
+              ],
+              description: 'ARIA attribute not allowed on this element',
+            },
+          ],
+        }),
+        getId: () => 'sugg-1',
+      };
+
+      const mockSuggestion2 = {
+        getData: () => ({
+          url: 'https://example.com',
           issues: [
             {
               type: 'color-contrast',
@@ -376,18 +410,18 @@ describe('mystique-data-processing', () => {
                 {
                   update_from: '<button style="color: #ccc">Button</button>',
                   target_selector: 'button',
-                  issue_id: 'test-uuid-2',
                 },
               ],
-              targetSelector: 'button',
               description: 'Insufficient color contrast',
             },
           ],
         }),
+        getId: () => 'sugg-2',
       };
 
       const mockSuggestion3 = {
         getData: () => ({
+          url: 'https://example.com',
           issues: [
             {
               type: 'aria-allowed-attr',
@@ -395,14 +429,13 @@ describe('mystique-data-processing', () => {
                 {
                   update_from: '<span aria-level="2">Text</span>',
                   target_selector: 'span',
-                  issue_id: 'test-uuid-3',
                 },
               ],
-              targetSelector: 'span',
               description: 'ARIA attribute not allowed on this element',
             },
           ],
         }),
+        getId: () => 'sugg-3',
       };
 
       const result = processSuggestionsForMystique([
@@ -411,39 +444,41 @@ describe('mystique-data-processing', () => {
         mockSuggestion3,
       ]);
 
-      expect(result).to.have.length(2);
-      expect(result[0].suggestion).to.equal(mockSuggestion1);
-      expect(result[1].suggestion).to.equal(mockSuggestion3);
-      expect(result[0].issueType).to.equal('aria-allowed-attr');
-      expect(result[1].issueType).to.equal('aria-allowed-attr');
+      expect(result).to.have.length(1);
+      expect(result[0].url).to.equal('https://example.com');
+      expect(result[0].issuesList).to.have.length(2);
+      expect(result[0].issuesList[0].suggestionId).to.equal('sugg-1');
+      expect(result[0].issuesList[1].suggestionId).to.equal('sugg-3');
     });
 
     it('should handle missing faulty_line, target_selector, and issue_description', () => {
       const mockSuggestion = {
         getData: () => ({
+          url: 'https://example.com',
           issues: [
             {
               type: 'aria-allowed-attr',
               htmlWithIssues: [
                 {
-                  // Missing update_from, target_selector, issue_id
+                  // Missing update_from, target_selector
                 },
               ],
-              // Missing targetSelector and description
+              // Missing description
             },
           ],
         }),
+        getId: () => 'sugg-1',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
       expect(result).to.have.length(1);
       expect(result[0].issuesList[0]).to.deep.include({
-        issue_name: 'aria-allowed-attr',
-        faulty_line: '', // Should default to empty string
-        target_selector: '', // Should default to empty string
-        issue_description: '', // Should default to empty string
-        issue_id: '', // Should default to empty string
+        issueName: 'aria-allowed-attr',
+        faultyLine: '', // Should default to empty string
+        targetSelector: '', // Should default to empty string
+        issueDescription: '', // Should default to empty string
+        suggestionId: 'sugg-1',
       });
     });
   });
