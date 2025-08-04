@@ -102,19 +102,18 @@ export default async function readability(context, auditContext) {
               poorReadabilityCount += 1;
 
               // Get element selector for identification
-              const elementTag = element.tagName.toLowerCase();
-              const elementId = element.id ? `#${element.id}` : '';
-              const elementClass = element.className ? `.${element.className.split(' ').join('.')}` : '';
-              const selector = `${elementTag}${elementId}${elementClass}`;
+              // const elementTag = element.tagName.toLowerCase();
+              // const elementId = element.id ? `#${element.id}` : '';
+              // const elementClass = element.className
+              //   ? `.${element.className.split(' ').join('.')}` : '';
+              // const selector = `${elementTag}${elementId}${elementClass}`;
 
               // Truncate text for display
               const displayText = text.length > MAX_CHARACTERS_DISPLAY
                 ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
                 : text;
 
-              const issueText = paragraphIndex !== null
-                ? `Text content has poor readability (Flesch score: ${readabilityScore.toFixed(1)}) in paragraph ${paragraphIndex + 1} of element ${selector}. Text preview: "${displayText}"`
-                : `Text content has poor readability (Flesch score: ${readabilityScore.toFixed(1)}) in element ${selector}. Text preview: "${displayText}"`;
+              const issueText = `Text content is difficult to read: "${displayText}"`;
 
               // Determine SEO impact based on readability score
               const seoImpact = readabilityScore < (TARGET_READABILITY_SCORE / 2) ? 'High' : 'Moderate';
