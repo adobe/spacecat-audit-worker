@@ -29,7 +29,7 @@ import { DATA_SOURCES } from '../../common/constants.js';
 // eslint-disable-next-line max-len
 export default async function createLowViewsOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeForms = new Set()) {
   const {
-    dataAccess, log, sqs, site, env,
+    dataAccess, log,
   } = context;
   const { Opportunity } = dataAccess;
 
@@ -105,26 +105,9 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormViewsOptty.save();
       }
-      log.info('sending message to mystique for high-page-views-low-form-views');
-      const mystiqueMessage = {
-        type: 'guidance:high-page-views-low-form-views',
-        siteId: auditData.siteId,
-        auditId: auditData.auditId,
-        deliveryType: site.getDeliveryType(),
-        time: new Date().toISOString(),
-        data: {
-          url: opportunityData.data.form,
-          form_source: opportunityData.data.formsource,
-          cta_text: '', // This will be available after merging the changes for scraping form CTA text
-          cta_source: '', // This will be available after merging the changes for scraping form CTA text
-        },
-      };
 
       // eslint-disable-next-line no-await-in-loop
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-      log.info(`forms opportunity high page views low form views sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
-      // eslint-disable-next-line max-len,no-await-in-loop
-      await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData.data.form, opportunityData.data.formsource);
+      await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form views for siteId ${auditData.siteId} failed with error: ${e.message}`, e);

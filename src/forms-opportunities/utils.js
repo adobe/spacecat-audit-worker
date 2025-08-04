@@ -489,7 +489,7 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
   }
 }
 
-export async function sendMessageToFormsQualityAgent(auditDataObject, context, form, formSource) {
+export async function sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData) {
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
   const {
     log, sqs, site, env,
@@ -501,8 +501,9 @@ export async function sendMessageToFormsQualityAgent(auditDataObject, context, f
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
     data: {
-      url: form,
-      form_source: formSource,
+      url: opportunityData.data.form,
+      form_source: opportunityData.data.formSource,
+      opportunity_type: opportunityData.type,
     },
   };
 

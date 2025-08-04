@@ -30,7 +30,7 @@ const formPathSegments = ['contact', 'newsletter', 'sign', 'enrol', 'subscribe',
 // eslint-disable-next-line max-len
 export default async function createLowNavigationOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeForms = new Set()) {
   const {
-    dataAccess, log, sqs, site, env,
+    dataAccess, log,
   } = context;
   const { Opportunity } = dataAccess;
 
@@ -119,26 +119,8 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         await highPageViewsLowFormNavOppty.save();
       }
 
-      log.info('sending message to mystique for high-page-views-low-form-nav');
-      const mystiqueMessage = {
-        type: 'guidance:high-page-views-low-form-nav',
-        siteId: auditData.siteId,
-        auditId: auditData.auditId,
-        deliveryType: site.getDeliveryType(),
-        time: new Date().toISOString(),
-        data: {
-          url: opportunityData.data.form,
-          cr: opportunityData.data.trackedFormKPIValue,
-          cta_source: opportunityData.data.formNavigation.source,
-          form_source: opportunityData.data.formsource || '',
-        },
-      };
-
       // eslint-disable-next-line no-await-in-loop
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-      log.info(`forms opportunity high page views low form nav sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
-      // eslint-disable-next-line max-len,no-await-in-loop
-      await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData.data.form, opportunityData.data.formsource);
+      await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form nav for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
