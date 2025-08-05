@@ -229,7 +229,6 @@ export async function hreflangAuditRunner(baseURL, context, site) {
         auditResult: {
           status: 'success',
           message: 'No hreflang issues detected',
-          pagesChecked: topPages.length,
         },
       };
     }
@@ -238,7 +237,6 @@ export async function hreflangAuditRunner(baseURL, context, site) {
       fullAuditRef: baseURL,
       auditResult: {
         ...aggregatedResults,
-        pagesChecked: topPages.length,
       },
     };
   } catch (error) {
