@@ -40,3 +40,39 @@ export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
   // If only language is present, return default
   return defaultCountry;
 }
+
+/**
+ * Parses additional data to extract and normalize URLs, handling comma-separated values
+ * @param {Array|null} additionalData - Raw additional data from SQS (array of strings)
+ * @param {string} domain - The domain to use for normalizing relative URLs
+ * @returns {Array|null} Array of normalized URLs or null
+ */
+export function parseCustomUrls(additionalData, domain = null) {
+  if (!additionalData || !Array.isArray(additionalData) || additionalData.length === 0) {
+    return null;
+  }
+
+  // Join all data and split by commas to handle comma-separated URLs
+  const allUrls = additionalData
+    .join(',')
+    .split(',')
+    .map((url) => url.trim())
+    .filter((url) => url.length > 0)
+    .map((url) => {
+      // Normalize relative paths to full URLs for consistency with RUM data
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        if (domain) {
+          // Clean domain (remove trailing slash) and ensure path starts with /
+          const cleanDomain = domain.replace(/\/$/, '');
+          const path = url.startsWith('/') ? url : `/${url}`;
+          return `${cleanDomain}${path}`;
+        }
+        // If no domain provided, return as-is (for backward compatibility)
+        return url;
+      }
+      return url;
+    })
+    .filter((url, index, array) => array.indexOf(url) === index); // Remove duplicates
+
+  return allUrls.length > 0 ? allUrls : null;
+}
