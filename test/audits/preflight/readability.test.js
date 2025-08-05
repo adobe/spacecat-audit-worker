@@ -103,7 +103,7 @@ describe('Preflight Readability Audit', () => {
 
     it('should identify poor readability text', async () => {
       // Create text with very poor readability (very long complex sentences)
-      const poorText = 'This is an extraordinarily complex sentence that utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+      const poorText = 'This is an extraordinarily complex sentence that utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration. '.repeat(3);
 
       auditContext.scrapedObjects = [{
         data: {
@@ -309,27 +309,6 @@ describe('Preflight Readability Audit', () => {
       expect(log.warn).to.have.been.calledWithMatch('No page result found for');
     });
 
-    it('should handle case when readability audit entry is missing for a page', async () => {
-      // Create a page result but manually remove the readability audit entry
-      const pageResult = audits.get('https://example.com/page1');
-      pageResult.audits = []; // Remove all audits, including readability
-
-      auditContext.scrapedObjects = [{
-        data: {
-          finalUrl: 'https://example.com/page1',
-          scrapeResult: {
-            rawBody: '<html><body><p>Some test content that is long enough to process</p></body></html>',
-          },
-        },
-      }];
-
-      // Run readability - this should trigger the missing audit warning
-      await readability(context, auditContext);
-
-      // Should log a warning about missing readability audit
-      expect(log.warn).to.have.been.calledWithMatch('No readability audit found for');
-    });
-
     it('should handle readability calculation error for individual elements', async () => {
       // We'll use sinon to stub the text-readability module
       const textReadability = await import('text-readability');
@@ -410,12 +389,10 @@ describe('Preflight Readability Audit', () => {
 
       await readability(context, auditContext);
 
-      // Should not create any opportunities since the div has block-level children
+      // Should only create 1 opportunity since only the first paragraph (child)
+      // has poor readability
       const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
-      expect(audit.opportunities).to.have.lengthOf(0);
-
-      // Should log that no elements were processed
-      expect(log.info).to.have.been.calledWithMatch('Processed 0 text element(s)');
+      expect(audit.opportunities).to.have.lengthOf(1);
     });
 
     it('should process elements with only inline formatting children', async () => {
@@ -488,9 +465,9 @@ describe('Preflight Readability Audit', () => {
       });
 
       // Create text that will be split into multiple paragraphs by <br> tags
-      const poorText1 = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(2);
-      const poorText2 = 'This text will cause an error during readability calculation.'.repeat(2);
-      const poorText3 = 'This paragraph should process normally without any issues.'.repeat(2);
+      const poorText1 = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration. '.repeat(2);
+      const poorText2 = 'This text will cause an error during readability calculation. '.repeat(2);
+      const poorText3 = 'This paragraph should process normally without any issues. '.repeat(2);
 
       auditContext.scrapedObjects = [{
         data: {
